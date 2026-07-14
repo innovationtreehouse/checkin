@@ -1,78 +1,121 @@
-# Productionization Plan
+# Production Launch Runbook (checkin → ops.innovationtreehouse.org)
 
-This document outlines the steps, considerations, and options for fully productionizing the Checkmein application, moving it off the manual AWS EC2 setup to a more maintainable, volunteer-friendly hosting environment.
+Supersedes the pre-AWS hosting-selection plan (2026-07-13). The infrastructure
+decisions are made and mostly applied; this is the ordered checklist from the
+current state to a served production app. Companion docs: the release-promotion
+security review (treehouse workspace root, untracked) whose findings are carried
+here, and infra `modules/checkin/overview.tf` for the design decisions.
 
-## Pre-Launch Checklist (TODOs)
+## Already in place (verified 2026-07-13)
 
-Moving to a "true" production environment involves more than just copying the code over. Here are the core steps to ensure the app is secure, functional, and ready for actual user traffic:
+- **Infra staged**: `checkin_prod_enabled = true` in infra `live/mgmt/main.tf` —
+  ECR `checkin-prod` (immutable tags), ECS service `checkin-prod` on the shared
+  `treehouse-prod` cluster (c6g capacity provider, `desired_count = 0` until a
+  real image + secrets exist), task-def families `checkin-prod` /
+  `checkin-migrate-prod`, per-env secret shells, IAM.
+- **Release pipeline** (`deploy-prod.yml`): publishing a `v*` GitHub release →
+  `validate` re-runs the FULL CI pipeline against the released tag (security
+  review H1 ✅) → `production` environment gate: required reviewers
+  (ryannazaretian, dkaygithub, thpr, dmkorten — one approval,
+  `prevent_self_review`, no admin bypass, `v*` tags only; H2 ✅) → migrate task
+  → ECS rollout → smoke against https://ops.innovationtreehouse.org.
+- **OIDC pinning** (C1, config level ✅): `checkin-deploy-prod` trust =
+  `repo:innovationtreehouse/checkin:environment:production`; dev role pinned to
+  `refs/heads/main`. Verify the APPLIED trust policy once during step 6.
+- **DNS**: `ops.innovationtreehouse.org` resolves (rides the wiki ALB cert).
+- **Per-env store domains** (M1 ✅): infra bakes
+  `9jhydb-ka.myshopify.com` (prod) / `treehouse-dev-4folhtgx` (dev) into the
+  task defs; the shared repo variable is gone.
+- **Dev as rehearsal**: the same parameterized module + pipeline shape runs
+  checkin-dev on every merge to main.
 
-- [ ] **1. Transactional Email Registration (Resend)**
-  - Create an account with [Resend](https://resend.com/pricing) (Free tier allows 3,000 emails/mo).
-  - Verify the custom domain (requires access to DNS records for `innovationtreehouse.org` to add TXT/MX records).
-  - Update the local application with the new production Resend API Key.
+## Launch sequence
 
-- [ ] **2. Choose Hosting Provider & Provision (See Options Below)**
-  - Select the final hosting provider (Railway, Vercel Pro, or AWS Amplify).
-  - Provision both the Next.js frontend and the PostgreSQL database.
-  - Configure automated backups for the database.
+### 1. Land the DDL/DML split FIRST (infra #119 — strongest C2 fix)
 
-- [ ] **3. Authentication & API Keys (NextAuth & GCP)**
-  - Generate a secure cryptographically strong `NEXTAUTH_SECRET` for production.
-  - Set the `NEXTAUTH_URL` to the new official domain in the hosting environment.
-  - Get API keys for the treehouse GCP project to support Google OAuth login and Calendar management.
-  - Update any third-party authentication providers (e.g., Google/Apple/GitHub OAuth) with the new production callback URLs.
+The prod database does not exist yet, so if #119 merges before the bootstrap
+run, `checkin_prod` is **born** with the split: the app role can never touch
+the schema, and dev/prod isolation on the shared Aurora cluster rests on
+per-database least-privilege roles (exactly what security finding C2 asks for).
+Order: merge infra #122 (verify-full TLS) → rebase #119 onto main (it rewrites
+bootstrap.sh, which #121/#122 touched) → merge.
+Side effect: the bootstrap run in step 3 also migrates checkin-DEV to the
+split model and rotates its credentials — **force-new-deployment the
+checkin-dev service immediately after** (running tasks hold the old password
+and fail on their next reconnect).
 
-- [ ] **4. Database Setup & Migration**
-  - Run [Prisma migrations](https://www.prisma.io/docs/orm/prisma-migrate/workflows/production) against the new production database (`npx prisma migrate deploy`).
-  - Plan a brief maintenance window to export the database from the current EC2 instance and import it into the new database to prevent data loss.
+### 2. Set the prod secret values (human-owned; never in chat/git)
 
-- [ ] **5. Environment Variables & Secrets**
-  - Gather all secrets from the current `.env` file.
-  - Securely input them into the new hosting provider's encrypted environment variables dashboard (never commit these to GitHub!).
+`aws secretsmanager put-secret-value --secret-id checkin-prod/<name> ...`:
 
-- [ ] **6. External Integrations (Shopify & Zoho)**
-  - Update Shopify Store webhooks to point to the new production domain so inventory and payments sync correctly.
-  - Ensure any Zoho integration endpoints or API keys correctly point to the new domain.
+| Secret | Source |
+|---|---|
+| `nextauth-secret`, `cron-secret` | generate (`openssl rand -base64 32`) |
+| `google-client-id` / `google-client-secret` | prod OAuth client in GCP (authorized origin/callback = ops.innovationtreehouse.org) |
+| `bootstrap-sysadmins` | comma-separated admin emails (first-login bootstrap) |
+| `resend-api-key` | Resend dashboard (prod sending domain verified) |
+| `kiosk-public-key` | kiosk client keypair |
+| `shopify-client-id` / `shopify-client-secret` | the REAL store's app (Dev Dashboard) |
+| `shopify-webhook-secret` | ⚠ store Settings→Notifications signing secret — prod uses the store-secret path, NOT the app client secret (see SHOPIFY_DEV_STORE_WEBHOOK.md §2/§4) |
+| `database-url` (+ `-ddl` after #119) | written automatically by step 3 — do NOT set by hand |
 
-- [ ] **7. Domain Go-Live (DNS Cutover)**
-  - Point the desired subdomain (e.g., `checkin.innovationtreehouse.org`) to your new hosting provider via your domain registrar.
-  - Verify SSL certificates are provisioning correctly.
+ECS refuses to launch a task referencing a valueless secret — every shell above
+needs a version before the first deploy.
 
----
+### 3. Provision the prod database
 
-## Hosting Options Summary
+Run the bootstrap task (infra modules/checkin-bootstrap, `terraform output
+-raw run_command`) with `TARGETS=checkin`: creates the `checkin_prod` role(s) +
+database on the shared Aurora cluster and writes the database-url secret(s),
+save-then-verify. Idempotent. Then the dev redeploy from step 1's side effect.
 
-Given the constraints of being a micro-non-profit run by volunteers, the primary goals for hosting are **low maintenance**, **low cost**, and **easy handover**.
+### 4. Upload the membership-agreement PDF
 
-### 1. [Railway](https://railway.app/pricing) (Recommended: Best Balance)
-Railway is a modern PaaS (Platform as a Service) that allows you to host both the Next.js frontend and PostgreSQL database in a single dashboard.  
+`aws s3 cp membership-agreement.pdf s3://<assets bucket>/membership-agreement.pdf`
+(bucket name: infra `terraform output`). The Zoho Sign flow reads it at runtime.
 
-- **Estimated Cost:** ~$5 to $10 / month (usage-based).
-- **Maintenance Level:** **Very Low**. It offers push-to-deploy from GitHub.
-- **Pros:** 
-  - No application/approval process required.
-  - Organization accounts allow multiple volunteers to have login access.
-  - The database and app are managed in the same UI.
-- **Cons:** No formal hardware grants or non-profit free tiers.
+### 5. Repo settings (GitHub)
 
-### 2. [Vercel Pro](https://vercel.com/pricing) + [Neon DB](https://neon.tech/pricing) (Premium DX)
-Vercel is the creator of Next.js and offers the absolute best developer experience. Because it strictly requires a Pro plan for organizational use, you have to use Vercel Pro to comply with their Terms of Service.
+- Enable **Require review from Code Owners** on `main` (security review L2 —
+  currently OFF; CODEOWNERS covers `.github/` so promotion workflows can't be
+  quietly weakened once this is on).
+- Consider adding the `s-read tests` job (#993) to required status checks.
 
-- **Estimated Cost:** $20/month per developer (Vercel Pro) + Free/$5 (Neon Postgres DB). *Note: Vercel offers 100% discount [sponsorships](https://vercel.com/docs/accounts/plans/pro/sponsorships) to registered 501(c)(3) organizations, but you must apply.*
-- **Maintenance Level:** **Extremely Low**. 
-- **Pros:** 
-  - Flawless Next.js integration and Preview deployments.
-  - Zero server management.
-- **Cons:** 
-  - Requires jumping through hoops to apply for the sponsorship or paying $20/mo per seat.
-  - Requires managing a separate database provider.
+### 6. One-time in-AWS verification (with `aws login`)
 
-### 3. AWS Amplify + [Neon DB](https://neon.tech/pricing) (via TechSoup)
-If minimizing monthly credit card charges is the absolute highest priority, you can leverage AWS through the [TechSoup non-profit program](https://www.techsoup.org/amazon-web-services).
+- All `checkin-prod/*` shells have versions; task defs reference ONLY
+  `checkin-prod/*` ARNs and set `CHECKIN_ENV=prod` (C3).
+- Applied trust policy of `checkin-deploy-prod` matches the pinned sub (C1).
+- ECR `checkin-prod` tag immutability is IMMUTABLE as applied (L3).
+- Capacity: wiki (1024 MiB) + checkin-prod (768 MiB) both place on the single
+  prepaid c6g.medium — confirm headroom before raising desired_count/memory.
 
-- **Estimated Cost:** $175 flat annual admin fee to TechSoup, which grants **$2,000/year** in AWS credits.
-- **Maintenance Level:** **Medium**.
-- **Pros:** 
-  - Huge credit surplus means you never worry about traffic spikes running up a monthly bill.
-- **Cons:** 
-  - AWS is notoriously complex. Handing over AWS IAM permissions, VPCs, and Amplify settings to the next volunteer engineer will be a much steeper learning curve than Vercel or Railway.
+### 7. Cut the release
+
+```bash
+gh release create v1.0.0 --target main --generate-notes
+```
+`validate` goes green on the tag → one reviewer approves the `production`
+deployment → migrate runs (expand/contract, retry loop for Aurora auto-pause
+resume) → service rolls out → workflow smoke-checks the app URL.
+
+### 8. First-boot configuration (in the app)
+
+- Sign in as a `bootstrap-sysadmins` member; confirm admin bootstrap.
+- `/settings/membership`: set the org membership variant id (BoardSettings —
+  never in code or seed).
+- Register the prod Shopify webhook via the store-admin path and confirm
+  deliveries return 200 (the secret-pairing rule from step 2 applies).
+- Walk one end-to-end journey: member check-in, a program registration link,
+  agreement signing.
+
+### 9. Post-launch follow-ups (tracked, not blocking)
+
+- M2: promote the tested artifact instead of rebuilding from the tag; pin base
+  images/actions by digest.
+- M3: delete the legacy `deploy/` + `install_aws/` bare-metal path once
+  confirmed dead (uncontrolled promotion path; `reload.sh` uses `prisma db push`).
+- Monitoring: wire checkin-prod into the watchdog/heartbeat stack; the s-read
+  `MONITORING_DATABASE_URL` gap is the same follow-up family.
+- checkin URLs still use `sslmode=require`: give the checkin image the RDS CA
+  treatment and pin verify-full (s-read did this in infra #122).
