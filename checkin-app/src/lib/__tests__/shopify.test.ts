@@ -664,35 +664,57 @@ describe('mintMemberDiscountCode', () => {
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    it('creates a price rule + discount code and returns the code', async () => {
+    it('creates the discount via GraphQL discountCodeBasicCreate and returns the code', async () => {
         mockTokenResponse(fetchMock);
-        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ price_rule: { id: 123 } }) });
-        fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({}) });
+        fetchMock.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { discountCodeBasicCreate: { codeDiscountNode: { id: 'gid://shopify/DiscountCodeNode/1' }, userErrors: [] } } }),
+        });
 
         const result = await mintMemberDiscountCode(42, '999888', 1000);
 
         expect(result).toMatch(/^PRG42-/);
-        expect(fetchMock).toHaveBeenCalledTimes(3); // token + price_rules + discount_codes
-        const priceRuleCall = fetchMock.mock.calls[1];
-        expect(String(priceRuleCall[0])).toContain('/price_rules.json');
-        const body = JSON.parse((priceRuleCall[1] as RequestInit).body as string);
-        expect(body.price_rule).toMatchObject({
-            value_type: 'fixed_amount',
-            value: '-10.00',
-            usage_limit: 1,
-            once_per_customer: true,
-            entitled_variant_ids: [999888],
+        expect(fetchMock).toHaveBeenCalledTimes(2); // token + one GraphQL mutation
+        const gqlCall = fetchMock.mock.calls[1];
+        expect(String(gqlCall[0])).toContain('/graphql.json');
+        const body = JSON.parse((gqlCall[1] as RequestInit).body as string);
+        expect(body.query).toContain('discountCodeBasicCreate');
+        expect(body.variables.discount).toMatchObject({
+            usageLimit: 1,
+            appliesOncePerCustomer: true,
+            customerSelection: { all: true },
+            customerGets: {
+                // appliesOnEachItem carries the 'each' per-unit semantics (multi-child carts).
+                value: { discountAmount: { amount: '10.00', appliesOnEachItem: true } },
+                items: { products: { productVariantsToAdd: ['gid://shopify/ProductVariant/999888'] } },
+            },
         });
+        expect(body.variables.discount.title).toBe(result);
+        expect(body.variables.discount.code).toBe(result);
     });
 
     it('returns null and does NOT email admins when minting fails (quiet fallback, never blocks checkout)', async () => {
         mockTokenResponse(fetchMock);
-        fetchMock.mockResolvedValueOnce({ ok: false, status: 422, text: async () => '{"errors":"bad price rule"}' });
+        fetchMock.mockResolvedValueOnce({ ok: false, status: 422, text: async () => '{"errors":"bad request"}' });
 
         const result = await mintMemberDiscountCode(42, '999888', 1000);
 
         expect(result).toBeNull();
         expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('returns null (quiet fallback) when the mutation reports userErrors', async () => {
+        mockTokenResponse(fetchMock);
+        fetchMock.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ data: { discountCodeBasicCreate: { codeDiscountNode: null, userErrors: [{ field: ['basicCodeDiscount'], message: 'nope' }] } } }),
+        });
+
+        const result = await mintMemberDiscountCode(42, '999888', 1000);
+
+        expect(result).toBeNull();
+        expect(sendEmail).not.toHaveBeenCalled();
+        expect(logIntegrationError).toHaveBeenCalled();
     });
 
     it('returns null without calling fetch when credentials are missing', async () => {

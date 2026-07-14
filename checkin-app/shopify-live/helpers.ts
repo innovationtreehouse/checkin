@@ -38,6 +38,19 @@ export async function adminGet<T>(path: string): Promise<T> {
     return (await res.json()) as T;
 }
 
+/** POST a GraphQL query/mutation, throwing on transport or GraphQL-level errors. */
+export async function adminGraphql<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+    const res = await shopifyFetch(adminUrl("graphql.json"), {
+        method: "POST",
+        headers: await authHeaders(),
+        body: JSON.stringify({ query, variables }),
+    }, "live GraphQL");
+    if (!res.ok) throw new Error(`live GraphQL -> ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const data = (await res.json()) as { data?: T; errors?: unknown[] };
+    if (data.errors?.length) throw new Error(`live GraphQL errors: ${JSON.stringify(data.errors).slice(0, 300)}`);
+    return data.data as T;
+}
+
 /** DELETE an Admin resource; 404 counts as already-gone (idempotent cleanup). */
 export async function adminDelete(path: string): Promise<void> {
     const res = await shopifyFetch(adminUrl(path), { method: "DELETE", headers: await authHeaders() }, `live DELETE ${path}`);
@@ -50,6 +63,7 @@ export async function adminDelete(path: string): Promise<void> {
 // known, so afterAll deletes it even when a later assertion throws. ──────────
 const createdProductIds: string[] = [];
 const createdPriceRuleIds: string[] = [];
+const createdDiscountIds: string[] = []; // DiscountCodeNode gids (GraphQL discounts)
 
 export function trackProduct(id: string | number | null | undefined): void {
     if (id) createdProductIds.push(String(id));
@@ -58,7 +72,17 @@ export function trackPriceRule(id: string | number | null | undefined): void {
     if (id) createdPriceRuleIds.push(String(id));
 }
 
+export function trackDiscount(id: string | null | undefined): void {
+    if (id) createdDiscountIds.push(id);
+}
+
 export async function cleanupTracked(): Promise<void> {
+    for (const id of createdDiscountIds.splice(0)) {
+        await adminGraphql(
+            `mutation($id: ID!) { discountCodeDelete(id: $id) { deletedCodeDiscountId userErrors { message } } }`,
+            { id },
+        ).catch((e) => console.error("cleanup discount", id, e));
+    }
     for (const id of createdPriceRuleIds.splice(0)) {
         await adminDelete(`price_rules/${id}.json`).catch((e) => console.error("cleanup price_rule", id, e));
     }
@@ -109,4 +133,70 @@ export interface AdminPriceRule {
 export async function findPriceRuleByTitle(title: string): Promise<AdminPriceRule | null> {
     const data = await adminGet<{ price_rules: AdminPriceRule[] }>(`price_rules.json?limit=250`);
     return data.price_rules.find((r) => r.title === title) ?? null;
+}
+
+
+// ── GraphQL discount lookup (the member-discount mint is GraphQL-native). ───
+export interface LiveDiscountBasic {
+    id: string;
+    title: string;
+    usageLimit: number | null;
+    appliesOncePerCustomer: boolean;
+    startsAt: string;
+    endsAt: string | null;
+    amount: string;
+    appliesOnEachItem: boolean;
+    variantGids: string[];
+}
+
+/** Fetch the stored discount for a code, or null when Shopify has no such code. */
+export async function findDiscountByCode(code: string): Promise<LiveDiscountBasic | null> {
+    const data = await adminGraphql<{
+        codeDiscountNodeByCode: {
+            id: string;
+            codeDiscount: {
+                __typename: string;
+                title: string;
+                usageLimit: number | null;
+                appliesOncePerCustomer: boolean;
+                startsAt: string;
+                endsAt: string | null;
+                customerGets: {
+                    value: { __typename: string; amount?: { amount: string }; appliesOnEachItem?: boolean };
+                    items: { __typename: string; productVariants?: { nodes: { id: string }[] } };
+                };
+            };
+        } | null;
+    }>(
+        `query($code: String!) {
+            codeDiscountNodeByCode(code: $code) {
+                id
+                codeDiscount {
+                    __typename
+                    ... on DiscountCodeBasic {
+                        title usageLimit appliesOncePerCustomer startsAt endsAt
+                        customerGets {
+                            value { __typename ... on DiscountAmount { amount { amount } appliesOnEachItem } }
+                            items { __typename ... on DiscountProducts { productVariants(first: 10) { nodes { id } } } }
+                        }
+                    }
+                }
+            }
+        }`,
+        { code },
+    );
+    const node = data.codeDiscountNodeByCode;
+    if (!node) return null;
+    const d = node.codeDiscount;
+    return {
+        id: node.id,
+        title: d.title,
+        usageLimit: d.usageLimit,
+        appliesOncePerCustomer: d.appliesOncePerCustomer,
+        startsAt: d.startsAt,
+        endsAt: d.endsAt,
+        amount: d.customerGets.value.amount?.amount ?? "",
+        appliesOnEachItem: d.customerGets.value.appliesOnEachItem ?? false,
+        variantGids: d.customerGets.items.productVariants?.nodes.map((n) => n.id) ?? [],
+    };
 }
