@@ -30,6 +30,12 @@ on:
 permissions:
   id-token: write   # assume the deploy role via OIDC (deploy job only)
   contents: read    # checkout the released tag (validate + deploy)
+  # checks: write is not used by THIS workflow — it's the ceiling for the
+  # reusable ci.yml call: its `test` job requests checks: write (dorny
+  # test-reporter), and a called job may never exceed the caller's grants.
+  # Without this line the run dies at startup_failure with zero jobs —
+  # which is exactly how v1.0.0's first deploy attempt failed (2026-07-14).
+  checks: write
 
 concurrency:
   group: checkin-deploy-prod
