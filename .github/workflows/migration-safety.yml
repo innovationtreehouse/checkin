@@ -100,6 +100,26 @@ jobs:
 
           if [ "${#REMOVED[@]}" -ge 2 ] && [ "${#ADDED[@]}" -eq 1 ]; then
             echo "Shape matches a coalesce PR — routing to the schema-identity check."
+
+            # TAG-ANCESTRY GUARD: a coalesce may only sweep migrations already
+            # contained in the latest v* release. Prod sits at that tag, and the
+            # ledger reconcile marks the swept set applied WITHOUT running any
+            # DDL — so sweeping an unreleased migration silently drops its DDL
+            # from prod forever (see MIGRATION_COALESCE_FLOW.md, "The tag rule").
+            git fetch --tags --force --quiet
+            LATEST_TAG=$(git tag -l 'v*' | sort -V | tail -1)
+            if [ -n "$LATEST_TAG" ]; then
+              for d in "${REMOVED[@]}"; do
+                if ! git ls-tree -d "$LATEST_TAG" -- "checkin-app/prisma/migrations/$d" | grep -q .; then
+                  echo "::error::Coalesce sweeps migration '$d', which is NOT in the latest release ($LATEST_TAG). Prod has never applied it — reconciling would mark its DDL applied without ever running it. Coalesce only released migrations (run the coalesce AFTER a release, not before)."
+                  exit 1
+                fi
+              done
+              echo "Tag-ancestry guard OK: all ${#REMOVED[@]} swept migration(s) exist in $LATEST_TAG."
+            else
+              echo "No v* release tags yet — tag-ancestry guard has nothing to check."
+            fi
+
             echo "coalesce=true" >> "$GITHUB_OUTPUT"
             echo "baseline=${ADDED[0]}" >> "$GITHUB_OUTPUT"
           else
