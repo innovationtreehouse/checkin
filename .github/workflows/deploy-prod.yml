@@ -63,21 +63,17 @@ jobs:
       ref: ${{ github.event.release.tag_name }}
     secrets: inherit
 
-  # Release gate: MEASURES the schema-migration merges since the previous
-  # release (each was individually replay-tested against a populated DB by
-  # migration-safety.yml at PR time; prisma migrate deploy applies them in
-  # order), and HARD-BLOCKS exactly one shape: a migration that was added
-  # since the previous release but is gone at the released tag — a coalesce
-  # swallowed unreleased work, which would mark DDL applied on prod without
-  # ever running it. Coalescing is post-release hygiene and may only sweep
-  # released migrations — see checkin-app/docs/MIGRATION_COALESCE_FLOW.md
-  # ("The tag rule").
+  # Release gate: AT MOST ONE prisma migration between tags, plus the
+  # swept-unreleased guard — both enforced by
+  # checkin-app/scripts/release-migration-gate.sh (unit-tested on scratch
+  # repos by scripts/__tests__/release-migration-gate.test.ts; policy in
+  # checkin-app/docs/MIGRATION_COALESCE_FLOW.md).
   #
   # This is not a step inside `validate`: that job is a reusable-workflow
   # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
   # own to add to. Runs as its own job instead; `deploy` needs both.
   migration-release-gate:
-    name: Release gate — migrations audit
+    name: Release gate — at most 1 migration between tags
     runs-on: ubuntu-latest
     steps:
       - name: Checkout released tag (full history + tags)
@@ -86,61 +82,10 @@ jobs:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
 
-      - name: Audit migrations merged since the previous release
+      - name: Run the migration gate
         run: |
-          set -euo pipefail
-          CURRENT_TAG="${{ github.event.release.tag_name }}"
           git fetch --tags --force
-
-          # `git tag -l` lists annotated and lightweight tags identically — no
-          # special-casing needed for either kind. `sort -V` is a real version
-          # sort (v1.2.10 sorts after v1.2.9), not a lexical one.
-          mapfile -t TAGS < <(git tag -l 'v*' | sort -V)
-
-          PREV_TAG=""
-          for i in "${!TAGS[@]}"; do
-            if [ "${TAGS[$i]}" = "$CURRENT_TAG" ]; then
-              if [ "$i" -gt 0 ]; then PREV_TAG="${TAGS[$((i-1))]}"; fi
-              break
-            fi
-          done
-
-          if [ -z "$PREV_TAG" ]; then
-            echo "No v* release tag found before $CURRENT_TAG — this is the first release, nothing to gate against. Skipping."
-            exit 0
-          fi
-          echo "Previous release tag: $PREV_TAG"
-
-          # MEASURE: migration dirs present at the released tag but not at the
-          # previous one — one per schema-bearing merge since the last release.
-          # Count directories, not files (a dir holds migration.sql and
-          # possibly reconcile.sql). --no-renames: a rewritten baseline must
-          # never be mistaken for a rename of a migration it replaces.
-          mapfile -t ADDED < <(git diff --no-renames --name-status "$PREV_TAG"..HEAD -- checkin-app/prisma/migrations \
-            | awk '$1=="A" {print $2}' | awk -F/ '{print $4}' | grep -v '^migration_lock.toml$' | sort -u)
-          {
-            echo "### Migrations audit"
-            echo "This release applies ${#ADDED[@]} new migration(s) merged since $PREV_TAG:"
-            for d in "${ADDED[@]}"; do echo "- $d"; done
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "New migration dir(s) since $PREV_TAG (${#ADDED[@]}): ${ADDED[*]:-none}"
-
-          # HARD BLOCK: every migration ADDED anywhere in the window must still
-          # exist at the released tag. An endpoint diff cannot see a migration
-          # that was added and then swept by a coalesce inside the window — but
-          # prod, sitting at $PREV_TAG, never applied it, and the coalesce's
-          # ledger reconcile would mark its DDL applied without running it.
-          mapfile -t WINDOW_ADDED < <(git log --no-renames --diff-filter=A --name-only --format= "$PREV_TAG"..HEAD -- checkin-app/prisma/migrations \
-            | awk -F/ 'NF>=5 {print $4}' | sort -u)
-          MISSING=()
-          for d in "${WINDOW_ADDED[@]}"; do
-            [ -d "checkin-app/prisma/migrations/$d" ] || MISSING+=("$d")
-          done
-          if [ "${#MISSING[@]}" -gt 0 ]; then
-            echo "::error::Migration(s) ${MISSING[*]} were merged after $PREV_TAG but are GONE at this tag — a coalesce swept unreleased work. Prod never applied their DDL, and the ledger reconcile would mark it applied anyway. Only coalesce migrations that have already shipped (MIGRATION_COALESCE_FLOW.md, 'The tag rule')."
-            exit 1
-          fi
-          echo "OK — every migration merged since $PREV_TAG is present at this tag."
+          checkin-app/scripts/release-migration-gate.sh "${{ github.event.release.tag_name }}"
 
   deploy:
     name: Build, migrate, roll out

@@ -2,17 +2,20 @@
 
 ## Policy
 
-Migrations accumulate on `main` between releases — every PR that needs a
-schema change adds its own migration, same as always, and **a release applies
-every migration merged since the previous release, in order** (each was
-individually replay-tested against a populated DB by `migration-safety.yml`
-at PR time). **Coalescing is post-release hygiene**: after a release ships,
+Every PR that needs a schema change adds its own migration, same as always
+— but **a release may apply at most ONE prisma migration between tags**,
+enforced by `scripts/release-migration-gate.sh` in `deploy-prod.yml` (RULE 1).
+If two schema PRs merge before a release ships the first, do NOT coalesce
+them — cut an **interim release targeted at the commit after the first
+migration** (`gh release create vX --target <sha>`), then release the second.
+
+**Coalescing is post-release hygiene**: after a release ships,
 `scripts/coalesce-migrations.ts` may squash history into a single baseline —
 but it may only sweep migrations **already contained in the latest `v*`
-release** ("the tag rule", below; enforced in CI). The `deploy-prod.yml`
-release gate measures and reports the migrations each release applies, and
-hard-blocks one shape only: a migration merged after the previous release
-that is gone at the released tag (a coalesce swallowed unreleased work).
+release** ("the tag rule", below; RULE 2 of the release gate, and enforced
+earlier at PR time by `migration-safety.yml`). Coalescing *before* a release
+sweeps migrations prod has never applied, and the ledger reconcile would mark
+their DDL applied without running it — silent schema loss.
 
 ### The tag rule
 
@@ -227,17 +230,19 @@ detection was added.
 
 ## Release gate (`deploy-prod.yml`)
 
-A `migration-release-gate` job (deploy's `validate` job is a
-reusable-workflow call to `ci.yml` with no step surface to extend — this
-runs alongside it, and `deploy` needs both):
+`scripts/release-migration-gate.sh <released-tag>` — a standalone, reviewed
+script (unit-tested on scratch repos by
+`scripts/__tests__/release-migration-gate.test.ts`), run by the
+`migration-release-gate` job from the checked-out released tag. `deploy`
+needs both this job and `validate` (which is a reusable-workflow call with
+no step surface to extend). It:
 
-1. Finds the previous `v*` release tag (`sort -V`, handles annotated and
-   lightweight tags identically) and **reports** every migration directory
-   this release adds relative to it — one per schema-bearing merge — in the
-   run summary.
-2. **Hard-blocks one shape**: it walks every commit in the window
-   (`git log --diff-filter=A`) and fails if any migration added since the
-   previous release no longer exists at the released tag. An endpoint diff
-   cannot see that case (added-then-swept inside the window), but it is
-   exactly the tag-rule violation that loses DDL on prod.
-3. First release (no previous `v*` tag): nothing to gate against; skips.
+1. Resolves the previous `v*` tag (`sort -V` — real version order) and
+   prints an **audit** of the migration directories this release adds to
+   the run summary. First release: nothing to gate; passes.
+2. **RULE 1** — fails if more than one migration directory was added
+   between the tags (remediation: an interim release, not a coalesce).
+3. **RULE 2** — commit-walks the window (`git log --diff-filter=A`) and
+   fails if any migration added since the previous release is *gone* at the
+   released tag: a coalesce swept unreleased work. An endpoint diff is
+   structurally blind to added-then-swept — the walk is not.
