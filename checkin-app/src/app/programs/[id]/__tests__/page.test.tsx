@@ -144,6 +144,36 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
+    it("labels the entry button 'Continue enrollment' when a household member is payment-pending", async () => {
+        setSession({ id: 101 });
+        mockFetchJson({
+            "/api/household": household,
+            // person.householdId is what links the participant to the viewer's
+            // household in myEnrolled (the real API includes it).
+            "/api/programs/10": baseProgram({
+                participants: [{ personId: 101, status: "PENDING", person: { name: "Kid One", householdId: 7 } }],
+            }),
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        expect(screen.getByText(/Kid One — Enrolled, payment pending/)).toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Continue enrollment" })).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Enroll" })).not.toBeInTheDocument();
+    });
+
+    it("keeps the plain 'Enroll' label when household enrollments are all paid", async () => {
+        setSession({ id: 101 });
+        mockFetchJson({
+            "/api/household": household,
+            "/api/programs/10": baseProgram({
+                participants: [{ personId: 101, status: "ACTIVE", person: { name: "Kid One", householdId: 7 } }],
+            }),
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        expect(screen.getByRole("button", { name: "Enroll" })).toBeInTheDocument();
+    });
+
     it("over-25 adult with only an already-enrolled child sees a no-eligible message, not a DOB error", async () => {
         setSession({ id: 200 });
         mockFetchJson({

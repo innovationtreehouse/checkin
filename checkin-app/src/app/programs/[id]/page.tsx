@@ -464,7 +464,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             <Group justify="center" wrap="wrap">
               {session ? (
                 <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed}>
-                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Enroll"}
+                  {/* A payment-pending household reads "Continue enrollment" — the
+                      button resumes their checkout (see the pending picker state),
+                      it doesn't start a new one. */}
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : myEnrolled.some((m) => !m.active) ? "Continue enrollment" : "Enroll"}
                 </Button>
               ) : (
                 // Auth-first: route through /signin (which picks Google vs. the
