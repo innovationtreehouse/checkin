@@ -69,10 +69,14 @@ Run the bootstrap task (infra modules/checkin-bootstrap, `terraform output
 database on the shared Aurora cluster and writes the database-url secret(s),
 save-then-verify. Idempotent. Then the dev redeploy from step 1's side effect.
 
-### 4. Upload the membership-agreement PDF
+### 4. Membership-agreement PDF (likely already done)
 
-`aws s3 cp membership-agreement.pdf s3://<assets bucket>/membership-agreement.pdf`
-(bucket name: infra `terraform output`). The Zoho Sign flow reads it at runtime.
+The assets bucket is deliberately ONE bucket shared by dev and prod (infra
+`live/mgmt/checkin-assets.tf` — single legal document; dev signatures are
+watermarked at runtime via `CHECKIN_ENV`). If dev's signing flow already
+works, the PDF is already there — just verify:
+`aws s3 ls s3://checkin-assets-639595353568/membership-agreement.pdf`
+Only upload (`aws s3 cp ...`) if missing.
 
 ### 5. Repo settings (GitHub)
 
