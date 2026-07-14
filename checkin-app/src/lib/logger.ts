@@ -18,12 +18,17 @@ export async function logBackendError(error: unknown, route?: string, context?: 
         const message = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
 
-        // 1. Insert the new error log
+        // Log stack trace securely to centralized logging infrastructure
+        if (stack) {
+            console.error(`Backend Error Trace [${route || 'Unknown Route'}]:`, stack);
+        }
+
+        // 1. Insert the new error log without the stack trace
         await prisma.errorLog.create({
             data: {
                 message,
                 route,
-                stack,
+                // stack intentionally omitted to prevent information leakage to the admin dashboard
                 context: context ? JSON.parse(JSON.stringify(context)) : undefined, // Ensure it's JSON serializable
             }
         });
