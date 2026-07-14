@@ -166,12 +166,13 @@ describe("ProgramEnrollmentPage", () => {
         // Declared adult reads as "(Adult)", never the confusing "(DOB missing)".
         expect(screen.getByText("(Adult)")).toBeInTheDocument();
         expect(screen.queryByText("(DOB missing)")).not.toBeInTheDocument();
-        // PENDING enrollment reads as payment-pending, not a bare "Enrolled".
-        expect(screen.getByText("(Enrolled — Payment Pending)")).toBeInTheDocument();
-        // No enrollable member -> first-time setup affordance (replaces the old
-        // dead-end alert), no direct enroll button.
-        expect(screen.getByRole("button", { name: "Finish setting up your household to enroll" })).toBeInTheDocument();
-        expect(screen.queryByRole("button", { name: "Complete Enrollment" })).not.toBeInTheDocument();
+        // PENDING enrollment is a RESUMABLE state, not a dead end: labeled as
+        // payment-pending, preselected, with the enroll button available — NOT
+        // the misleading household-setup affordance.
+        expect(screen.getByText("(Payment pending — select to finish payment)")).toBeInTheDocument();
+        expect(screen.getByLabelText("Only Kid")).toBeChecked();
+        expect(screen.queryByRole("button", { name: "Finish setting up your household to enroll" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Complete Enrollment" })).toBeInTheDocument();
     });
 
     it("priced program with no Shopify variant configured aborts before enrolling", async () => {
@@ -438,6 +439,54 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Robotics Club");
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         await screen.findByText("Which of your household wants to enroll?");
+        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+
+        expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
+        await waitFor(() =>
+            expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/programs/10/discount-code"))).toBe(true),
+        );
+    });
+
+    // The payment-pending resume path: an already-enrolled-but-unpaid household
+    // must be able to re-run checkout (participants POST 409s -> folded back in;
+    // a FRESH single-use discount code is minted — the old one is 48h/one-use).
+    it("lets a payment-pending member resume checkout with a fresh discount code", async () => {
+        setSession({ id: 101 });
+        setShopifyStoreDomain("shop.example.com");
+        // One-member household whose only participant is already PENDING — the
+        // resume case: nobody new to enroll, payment still owed.
+        const memberHousehold = { household: {
+            householdMembers: [{ id: 101, name: "Kid One", dateOfBirth: "2015-01-01" }],
+            orgMembership: { status: "ACTIVE" },
+        } };
+        const fetchMock = mockFetchJson({
+            "/api/programs/10/discount-code": { code: "PRG10-FRESH" },
+            "/api/household": memberHousehold,
+            "/api/programs/10": baseProgram({
+                participants: [{ personId: 101, status: "PENDING" }],
+                orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
+                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+            }),
+            "/api/programs/10/participants": () => ({ error: "Participant is already enrolled in this program." }),
+        });
+        // 409 for the already-enrolled participant — the idempotent re-checkout path.
+        const baseImpl = fetchMock.getMockImplementation()!;
+        fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.includes("/api/programs/10/participants") && init?.method === "POST") {
+                return { ok: false, status: 409, json: async () => ({ error: "Participant is already enrolled in this program." }) } as Response;
+            }
+            return baseImpl(input, init);
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+        await screen.findByText("Which of your household wants to enroll?");
+
+        // Preselected and selectable, not disabled.
+        expect(screen.getByLabelText("Kid One")).toBeChecked();
+        expect(screen.getByText("(Payment pending — select to finish payment)")).toBeInTheDocument();
+
         fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
 
         expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
