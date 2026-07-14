@@ -103,7 +103,7 @@ export const ORDERS_PROBE_QUERY = `
   }
 `;
 
-/** Paginated orders query. Pass query: "updated_at:>=<iso> status:any". */
+/** Paginated orders query. Pass query: "updated_at:>='<iso>' status:any" (datetime quoted — see streams.ts). */
 export const ORDERS_QUERY = `
   query Orders($first: Int!, $after: String, $query: String) {
     orders(first: $first, after: $after, query: $query, sortKey: UPDATED_AT) {
@@ -182,7 +182,7 @@ const PAYOUT_FIELDS = `
   }
 `;
 
-/** Paginated payouts query. Pass query: "issued_at:>=<iso>". */
+/** Paginated payouts query. Pass query: "issued_at:>='<iso>'" (datetime quoted — see streams.ts). */
 export const PAYOUTS_QUERY = `
   query Payouts($first: Int!, $after: String, $query: String) {
     shopifyPaymentsAccount {
@@ -253,7 +253,7 @@ export const CURRENT_BULK_OPERATION_QUERY = `
 export function buildOrdersBulkQuery(updatedAtFloorIso: string): string {
   return `
     {
-      orders(query: "updated_at:>=${updatedAtFloorIso} status:any", sortKey: UPDATED_AT) {
+      orders(query: "updated_at:>='${updatedAtFloorIso}' status:any", sortKey: UPDATED_AT) {
         edges {
           node {
             id
