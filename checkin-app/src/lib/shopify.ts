@@ -589,9 +589,17 @@ export async function adjustProgramInventory(
  * discount (its §5) is the planned upgrade once checkout identity is solved;
  * this mints one real Shopify object per checkout in the meantime.
  *
- * ponytail: one Price Rule + Discount Code per enrollee/checkout — fine at
- * Treehouse's program-enrollment volume. Upgrade to the segment design above
- * if that stops being true.
+ * Implemented via GraphQL `discountCodeBasicCreate` (scope: write_discounts).
+ * NOT the legacy REST price_rules API: that needs the separate
+ * write_price_rules scope that neither store's app grants (the dev store
+ * 403'd every mint until 2026-07-14), and Shopify has deprecated it anyway.
+ * `appliesOnEachItem: true` carries the load-bearing 'each' semantics: a
+ * member household enrolling N kids buys quantity N of the variant and every
+ * seat gets the member price (amount-off-once would overcharge N-1 seats).
+ *
+ * ponytail: one discount code per enrollee/checkout — fine at Treehouse's
+ * program-enrollment volume. Upgrade to the segment design above if that
+ * stops being true.
  *
  * Never throws: a failure returns null so the caller falls back to an
  * undiscounted checkout link rather than blocking it (member pays full price
@@ -624,51 +632,47 @@ export async function mintMemberDiscountCode(
         const startsAt = new Date();
         const endsAt = new Date(startsAt.getTime() + 48 * 60 * 60 * 1000); // ~48h, per design
 
-        const priceRuleRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/price_rules.json`, {
+        const mutation = `
+            mutation MintMemberDiscount($discount: DiscountCodeBasicInput!) {
+                discountCodeBasicCreate(basicCodeDiscount: $discount) {
+                    codeDiscountNode { id }
+                    userErrors { field message }
+                }
+            }`;
+        const res = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Shopify-Access-Token': accessToken,
             },
             body: JSON.stringify({
-                price_rule: {
-                    title: code,
-                    target_type: 'line_item',
-                    target_selection: 'entitled',
-                    entitled_variant_ids: [Number(variantId)],
-                    // 'each' applies the amount PER UNIT: a member household enrolling
-                    // N kids buys quantity N of the variant, and each seat gets the
-                    // member price ('across' would subtract the amount once from the
-                    // whole line, overcharging N-1 seats).
-                    allocation_method: 'each',
-                    value_type: 'fixed_amount',
-                    value: `-${(amountOffCents / 100).toFixed(2)}`,
-                    customer_selection: 'all',
-                    usage_limit: 1,
-                    once_per_customer: true,
-                    starts_at: startsAt.toISOString(),
-                    ends_at: endsAt.toISOString(),
+                query: mutation,
+                variables: {
+                    discount: {
+                        title: code,
+                        code,
+                        startsAt: startsAt.toISOString(),
+                        endsAt: endsAt.toISOString(),
+                        usageLimit: 1,
+                        appliesOncePerCustomer: true,
+                        customerSelection: { all: true },
+                        customerGets: {
+                            // appliesOnEachItem: the 'each' semantics (see doc comment).
+                            value: { discountAmount: { amount: (amountOffCents / 100).toFixed(2), appliesOnEachItem: true } },
+                            items: { products: { productVariantsToAdd: [`gid://shopify/ProductVariant/${variantId}`] } },
+                        },
+                    },
                 },
             }),
-        }, "Shopify create price rule");
-        if (!priceRuleRes.ok) {
-            throw new Error(`Shopify price rule creation failed: ${priceRuleRes.status} ${await priceRuleRes.text()}`);
+        }, "Shopify mint member discount");
+        if (!res.ok) {
+            throw new Error(`Shopify discount create failed: ${res.status} ${await res.text()}`);
         }
-        const priceRuleData = await priceRuleRes.json();
-        const priceRuleId = priceRuleData.price_rule?.id;
-        if (!priceRuleId) throw new Error("Shopify price rule response missing id");
-
-        const codeRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/price_rules/${priceRuleId}/discount_codes.json`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Shopify-Access-Token': accessToken,
-            },
-            body: JSON.stringify({ discount_code: { code } }),
-        }, "Shopify create discount code");
-        if (!codeRes.ok) {
-            throw new Error(`Shopify discount code creation failed: ${codeRes.status} ${await codeRes.text()}`);
-        }
+        const data = await res.json();
+        if (data.errors) throw new Error(`Shopify discount create GraphQL errors: ${JSON.stringify(data.errors)}`);
+        const result = data.data?.discountCodeBasicCreate;
+        if (result?.userErrors?.length) throw new Error(`Shopify discount create userErrors: ${JSON.stringify(result.userErrors)}`);
+        if (!result?.codeDiscountNode?.id) throw new Error("Shopify discount create response missing codeDiscountNode id");
 
         console.log(`[SHOPIFY] Minted single-use discount code ${code} for program ${programId} (-$${(amountOffCents / 100).toFixed(2)}, expires ${endsAt.toISOString()})`);
         return code;
