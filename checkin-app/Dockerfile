@@ -72,6 +72,11 @@ ENV PORT=4000
 # Bind all interfaces. The Next standalone server listens on $HOSTNAME, which
 # Docker otherwise sets to the container id — that resolves to the bridge IP
 # only, so published ports can miss it. 0.0.0.0 covers the bridge IP locally and
-# the task ENI in ECS.
+# the task ENI in ECS. The ENV alone is not enough: a runtime that sets a
+# container hostname injects HOSTNAME into the env OVER the image value — ECS
+# Managed Instances host-mode tasks inject HOSTNAME=default, which is
+# unresolvable, so the server exited at boot (the v1.0.0 launch failure; dev on
+# Fargate/awsvpc never injects). Pin the bind address in the command itself so
+# no runtime injection can override it.
 ENV HOSTNAME=0.0.0.0
-CMD ["node", "checkin-app/server.js"]
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 exec node checkin-app/server.js"]
