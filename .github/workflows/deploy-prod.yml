@@ -177,7 +177,12 @@ jobs:
           set -euo pipefail
           # Native arm64 runner -> a plain build produces the arm64 image the
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
+          # -f: there is no root Dockerfile — the app image builds from
+          # checkin-app/Dockerfile with the repo root as context, exactly like
+          # deploy-dev.yml (the release-scrub found this job would die here).
           docker build \
+            --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            -f checkin-app/Dockerfile \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
           docker push "$IMAGE"
           docker push "$IMAGE_TAGGED"
@@ -280,13 +285,36 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered app task def: $APP_ARN"
 
+          # --desired-count 1: the service is STAGED at 0 until the first
+          # release (infra sets desired_count = 0 with ignore_changes on it —
+          # "the deploy pipeline scales this up when it ships a real image").
+          # Without this, update-service keeps 0, a 0/0 service is instantly
+          # "stable", and the run goes green while serving nothing.
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
-            --task-definition "$APP_ARN" >/dev/null
+            --task-definition "$APP_ARN" \
+            --desired-count 1 >/dev/null
 
           echo "Waiting for the service to reach steady state..."
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
           echo "Service is stable."
+
+      - name: Smoke test the live app
+        run: |
+          set -euo pipefail
+          # A real probe of the DEPLOYED service (CI's boot/smoke checks the
+          # image, not production). The app answers 200 or an auth redirect;
+          # retries cover target registration + first boot after scale-up.
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
+            echo "attempt $i: $APP_URL -> HTTP $CODE"
+            case "$CODE" in
+              200|301|302|307|308) echo "Smoke OK."; exit 0 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
+          exit 1
 
       - name: Report result
         if: always()
