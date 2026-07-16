@@ -110,6 +110,9 @@ jobs:
     name: Run Tests (unit)
     needs: changes
     runs-on: ubuntu-latest
+    # Bound the job: the 2026-07-16 lock-wait hang burned a runner for 40+ min
+    # on the 6-hour default. Unit tier baseline is ~2-3 min end to end.
+    timeout-minutes: 15
 
     # checks: write is required by dorny/test-reporter (publishes the JUnit
     # results as a Check Run below); everything else defaults to the repo's
@@ -245,6 +248,8 @@ jobs:
     name: Run Tests (integration)
     needs: changes
     runs-on: ubuntu-latest
+    # See unit-tests: same bound reasoning; DB tier gets more headroom.
+    timeout-minutes: 25
 
     permissions:
       contents: read
@@ -365,15 +370,15 @@ jobs:
   coverage-gate:
     name: Coverage gate (merged)
     needs: [changes, unit-tests, integration-tests]
-    # always(): this job's status check must still report even when a
-    # client-only PR left unit-tests/integration-tests skipped (same
-    # required-check deadlock reasoning as `changes`'s header comment), OR
-    # when one of them genuinely failed — a real test failure already fails
-    # THAT job; we still want this job's own read on whatever coverage the
-    # other tier produced rather than leaving this required check stuck
-    # pending.
-    if: always() && needs.changes.outputs.app == 'true'
+    # always() ALONE at job level: a real test failure upstream already fails
+    # that job, but this required check must still report its own read on
+    # whatever coverage was produced — and on a client-only PR it must report
+    # SUCCESS (via the skip-notice step, like every other job here), not
+    # `skipped`. Gating the whole job on `app == 'true'` would skip it and
+    # dead-code the skip-notice step; the per-step guards below do that work.
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Skip notice (client-only change)
         if: needs.changes.outputs.app != 'true'
@@ -472,7 +477,18 @@ jobs:
       # Hardcoded instead and read straight from that file above.
       - name: Enforce merged coverage threshold
         if: needs.changes.outputs.app == 'true'
-        run: npx -y nyc check-coverage --temp-dir merged --lines 85 --branches 75 --functions 75
+        run: |
+          set -euo pipefail
+          # Guard the silent-zero failure mode first: nyc filters files outside
+          # its cwd, so a workspace-path mismatch between the test jobs and this
+          # job would report 0/0 and check-coverage would PASS an empty report
+          # (verified by running this pipeline from a foreign cwd). Refuse it.
+          TOTAL=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("merged-report/coverage-summary.json","utf8")).total.lines.total)')
+          if [ "$TOTAL" = "0" ]; then
+            echo "::error::merged coverage contains zero lines — path mismatch between the test jobs' workspaces and this gate; refusing to pass an empty report."
+            exit 1
+          fi
+          npx -y nyc check-coverage --temp-dir merged --lines 85 --branches 75 --functions 75
 
       # Coverage summary on the run's own Summary page — reuses the old `test`
       # job's script, pointed at the merged report instead of a single tier's
