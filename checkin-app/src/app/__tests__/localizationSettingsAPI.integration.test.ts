@@ -50,8 +50,13 @@ describe('Localization settings API', () => {
         })).map((p) => p.householdId);
         await prisma.person.deleteMany({ where: { id: { in: [adminId, plainId] } } });
         await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
-        // Restore the singleton so other suites see the original values.
+        // Restore the singleton so other suites see the original values. When NO
+        // row existed before this suite (every fresh per-worker CI database),
+        // restoring means DELETING the row this suite's PUTs created — leaving it
+        // would leak America/New_York to whatever suite shares the worker next
+        // (the intermittent eventsAPI 13:00-vs-12:00 failures in the merge queue).
         if (prevSettings) await prisma.appSettings.update({ where: { id: 1 }, data: prevSettings });
+        else await prisma.appSettings.deleteMany({ where: { id: 1 } });
         await prisma.$disconnect();
     });
 
