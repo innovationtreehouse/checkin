@@ -136,7 +136,8 @@ describe('AuditLog Integration Tests', () => {
                 name: 'Audit Test Program',
                 enrollmentStatus: 'OPEN',
                 startAt: new Date(),
-                leadMentorId: testAdminId
+                leadMentorId: testAdminId,
+                maxParticipants: 50
             })
         });
 

@@ -20,6 +20,15 @@ import { Prisma } from '@/generated/prisma/client'
  * future nested-write path must lowercase email itself.
  */
 
+/**
+ * The single definition of how a Person.email is normalized. Writes lowercase
+ * through this (below); every email *lookup* must run its key through the same
+ * function or a differently-cased address (`John.Doe@x` vs the stored
+ * `john.doe@x`) misses the row — the read half of issue #292. Keep read and
+ * write on this one function so they can never drift.
+ */
+export const normalizeEmail = (email: string): string => email.toLowerCase()
+
 /** Lowercase `data.email`, handling the plain (`email: "X"`) and wrapped
  * (`email: { set: "X" }`) forms. Null/undefined/non-string emails are left
  * untouched. Idempotent. Mutates `data` in place. */
@@ -28,14 +37,14 @@ function lowerEmailOnData(data: unknown): void {
     const d = data as { email?: unknown }
     const email = d.email
     if (typeof email === 'string' && email.length > 0) {
-        d.email = email.toLowerCase()
+        d.email = normalizeEmail(email)
         return
     }
     // Wrapped update form: { email: { set: "X" } }
     if (email != null && typeof email === 'object' && 'set' in email) {
         const wrapped = email as { set?: unknown }
         if (typeof wrapped.set === 'string' && wrapped.set.length > 0) {
-            wrapped.set = wrapped.set.toLowerCase()
+            wrapped.set = normalizeEmail(wrapped.set)
         }
     }
 }

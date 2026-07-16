@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { Stack, Title } from "@mantine/core";
+import { PageContainer } from "@/components/ui/PageContainer";
 import TrustedAdultPanel from "@/components/TrustedAdultPanel";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -22,9 +23,11 @@ export default function TrustedAdultsPage() {
     if (!isLead) return null; // redirect in flight
 
     return (
-        <Stack p="md">
-            <Title order={2}>Trusted Adults</Title>
-            <TrustedAdultPanel />
-        </Stack>
+        <PageContainer>
+            <Stack>
+                <Title order={2}>Trusted Adults</Title>
+                <TrustedAdultPanel />
+            </Stack>
+        </PageContainer>
     );
 }

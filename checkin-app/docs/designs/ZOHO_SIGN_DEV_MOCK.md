@@ -86,15 +86,21 @@ Leave `zohoClient` and `external.ts` untouched. Add a dev-only membership-page b
 
 ## 3. Prod safety — mock dead by construction
 
+> **Amendment (2026-07, #951 review):** the `NODE_ENV !== 'production'` clause was
+> **eliminated as a fuse repo-wide**. Every deployed instance — cloud-dev included —
+> runs the same production image (Dockerfile sets `NODE_ENV=production`), so the
+> clause could never distinguish a misconfigured prod box from a legitimate
+> deployment; it only broke dev-instance features (the Debug-nav 404 class).
+> `CHECKIN_ENV` is the single fuse. The idiom below is preserved as written for
+> historical context; the implemented gates are `readCheckinEnv()`-only.
+
 Selection uses the same idiom as persona-mint (`auth-options.ts:104`):
 
 ```
-isDevInstance() && process.env.NODE_ENV !== 'production'
+isDevInstance()   // CHECKIN_ENV !== 'prod' — the single server-only fuse
 ```
 
-Two independent conditions, both server-only:
 - `CHECKIN_ENV` fails safe to `prod` for any unrecognized/unset value (`readCheckinEnv`), and is **not** `NEXT_PUBLIC_` — never in the client bundle.
-- `NODE_ENV !== 'production'` is a second, build-level fuse.
 
 `zohoAvailable()` reduces to plain `zohoConfigured()` in prod (the dev disjunct is false), so prod requires real secrets exactly as today. The mock provider module is only ever *selected* behind that guard; the real adapter is the default export otherwise. No mock code path is reachable in prod. Recommend a unit test asserting the selector returns the real adapter when `CHECKIN_ENV=prod` and when `NODE_ENV=production`.
 

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { Alert, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { useSession } from "next-auth/react";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { sharesHousehold } from "@/lib/conflictOfInterest";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { StatusFilterBadge, ActiveFilterNotice, useStatusFilter } from "@/components/StatusFilter";
 
 interface Person {
   id: number;
@@ -61,6 +63,14 @@ const awaitingBg = (r: ProcessRow) =>
     ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
 
 export default function AdminMembershipPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <ApplicationsBoard />
+    </Suspense>
+  );
+}
+
+function ApplicationsBoard() {
   const { data: session } = useSession();
   const me = session?.user;
   // Conflict of interest: a board member may not certify/override their OWN household's
@@ -74,6 +84,7 @@ export default function AdminMembershipPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [messageId, setMessageId] = useState<number | null>(null);
+  const { active, toggle, clear } = useStatusFilter();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,6 +232,7 @@ export default function AdminMembershipPage() {
   };
 
   const statusCounts = rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+  const visibleRows = rows.filter((r) => !active || r.status === active);
 
   return (
     <Stack>
@@ -233,20 +245,29 @@ export default function AdminMembershipPage() {
       {!loading && rows.length > 0 && (
         <>
           {rows.some((r) => r.status === "BLOCKED") && (
-            <Alert color="red" variant="light" fw={600}>
+            <Alert
+              color="red"
+              variant="light"
+              fw={600}
+              onClick={() => toggle("BLOCKED")}
+              title="Click to filter to blocked applications"
+              style={{ cursor: "pointer" }}
+            >
               🚨 {rows.filter((r) => r.status === "BLOCKED").length} application(s) blocked at
               background review — board attention needed.
             </Alert>
           )}
           <Group gap="xs">
             {Object.entries(statusCounts).map(([status, count]) => (
-              <Badge key={status} color={statusColor(status)} variant="light">
+              <StatusFilterBadge key={status} value={status} active={active} onToggle={toggle} color={statusColor(status)}>
                 {statusLabel(status)}: {count}
-              </Badge>
+              </StatusFilterBadge>
             ))}
           </Group>
         </>
       )}
+
+      <ActiveFilterNotice active={active} label={statusLabel} onClear={clear} />
 
       {loading ? (
         <Center py="xl"><Loader /></Center>
@@ -254,9 +275,18 @@ export default function AdminMembershipPage() {
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">No in-flight membership applications.</Text>
         </Card>
+      ) : visibleRows.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed">
+              No applications in {statusLabel(active as string)} — clear the filter to see everything.
+            </Text>
+            <Button size="xs" variant="light" onClick={clear}>Clear filter</Button>
+          </Stack>
+        </Card>
       ) : (
         <Stack>
-          {rows.map((r) => (
+          {visibleRows.map((r) => (
             <Card key={r.id} withBorder radius="md" padding="lg">
               <Group justify="space-between" align="center" wrap="wrap">
                 <div>
@@ -266,7 +296,9 @@ export default function AdminMembershipPage() {
                     {r.orgMembership?.isVolunteer && <Text component="span" c="green"> · volunteer</Text>}
                   </Text>
                 </div>
-                <Badge color={statusColor(r.status)}>{statusLabel(r.status)}</Badge>
+                <StatusFilterBadge value={r.status} active={active} onToggle={toggle} color={statusColor(r.status)}>
+                  {statusLabel(r.status)}
+                </StatusFilterBadge>
               </Group>
 
               {r.status === "PENDING_EXTERNAL_ACTION" && (

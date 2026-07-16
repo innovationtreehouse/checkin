@@ -13,6 +13,7 @@ import { recordLedger } from "@/lib/dev/ledger";
 import { assignParticipantClaims } from "@/lib/authClaims";
 import { addHouseholdLead } from "@/lib/household/leads";
 import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
+import { normalizeEmail } from "@/lib/prismaEmailNormalize";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -90,8 +91,12 @@ const patchedAdapter = {
         return user ? toAdapterUser(user) : null;
     },
 
+    // NextAuth hands us the provider's email verbatim (Google's casing). The
+    // stored value is lowercased on write, so the lookup key must be too — else
+    // a differently-cased address misses the row and NextAuth mints a duplicate
+    // (issue #292). Read normalization mirrors the write extension.
     getUserByEmail: async (email: string) => {
-        const user = await prisma.person.findUnique({ where: { email } });
+        const user = await prisma.person.findUnique({ where: { email: normalizeEmail(email) } });
         return user ? toAdapterUser(user) : null;
     },
 
@@ -321,7 +326,9 @@ export const authOptions: NextAuthOptions = {
             // a logged-out visitor, while the persona-mint block above still stamped the gate claims
             // + impersonatedBy so the dev gate passes and "Return to me" works.
             if (user?.email) {
-                const email = user.email;
+                // Normalize the lookup key to match the lowercased stored value
+                // (issue #292); Google's casing is otherwise passed through verbatim.
+                const email = normalizeEmail(user.email);
                 const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
                     where: { email },
                     include: {

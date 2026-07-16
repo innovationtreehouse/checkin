@@ -196,7 +196,7 @@ export default function AdminTrustedAdultsPage() {
     if (!ready) return null;
 
     return (
-        <Stack p="md">
+        <Stack>
             <Modal opened={!!prompt} onClose={() => setPrompt(null)} title={prompt?.title} centered>
                 <Textarea
                     data-autofocus
