@@ -73,8 +73,10 @@ describe('Membership notifications API', () => {
     it('a plain user sees nothing', async () => {
         as(plainId);
         const data = await (await NOTIFS(req())).json();
+        // Exact shape on purpose: a plain user must see every count at zero, and a
+        // new board-only count added later must fail here until it's zeroed for them.
         expect(data).toEqual({
-            membership: { pendingReviews: 0, blocked: 0 },
+            membership: { pendingReviews: 0, blocked: 0, openPaymentExceptions: 0 },
             emergencyContacts: { householdsMissingValidContact: 0 },
         });
     });
