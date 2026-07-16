@@ -87,6 +87,7 @@ describe('POST /api/programs — startAt/endAt date preservation (issue #154)', 
                 leadMentorId: 7,
                 startAt: beginStr,
                 endAt: endStr,
+                maxParticipants: 50,
             }),
         }) as unknown as import('next/server').NextRequest;
 
@@ -138,6 +139,7 @@ describe('POST /api/programs — startAt/endAt date preservation (issue #154)', 
             body: JSON.stringify({
                 name: 'No-Date Program',
                 leadMentorId: 7,
+                maxParticipants: 50,
                 // startAt and endAt intentionally absent — simulates form left blank
             }),
         }) as unknown as import('next/server').NextRequest;

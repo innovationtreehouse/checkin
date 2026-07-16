@@ -30,6 +30,13 @@ on:
 permissions:
   id-token: write   # assume the deploy role via OIDC (deploy job only)
   contents: read    # checkout the released tag (validate + deploy)
+  packages: write   # push the image to ghcr.io (deploy job)
+  # checks: write is not used by THIS workflow — it's the ceiling for the
+  # reusable ci.yml call: its `test` job requests checks: write (dorny
+  # test-reporter), and a called job may never exceed the caller's grants.
+  # Without this line the run dies at startup_failure with zero jobs —
+  # which is exactly how v1.0.0's first deploy attempt failed (2026-07-14).
+  checks: write
 
 concurrency:
   group: checkin-deploy-prod
@@ -37,14 +44,23 @@ concurrency:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
-  ECR_REPOSITORY: checkin-prod
+  # The fleet standardized on ghcr.io (dev, arbor, s-read, bootstrap all push
+  # there; the prod task defs pull via the shared ghcr-pull-credentials
+  # secret). The ECR registry this workflow originally targeted is vestigial.
+  IMAGE_REPO: ghcr.io/innovationtreehouse/checkin-prod
   # Prod runs on the shared Managed-Instances cluster, not a dedicated
   # checkin-prod cluster (infra #104 destroyed that one). Names below come from
   # the infra repo — see the "prod infra" note in the PR description.
   ECS_CLUSTER: treehouse-prod
   ECS_SERVICE: checkin-prod
-  ECS_CAPACITY_PROVIDER: treehouse-prod-c6g
+  # Migrations run on FARGATE_SPOT, not the prepaid c6g (a one-off 512-MiB task
+  # can't place there while the wiki is awake — the v1.0.1 wedge). awsvpc needs
+  # explicit networking: the default-VPC public subnets + the checkin-prod
+  # service SG (Aurora ingress: infra network module, database_from_checkin_prod;
+  # public IP for the ghcr pull — no NAT). Values come from the infra repo
+  # (live/mgmt + modules/network); update together if infra changes them.
+  MIGRATE_SUBNETS: subnet-0597513f1c0c3173e,subnet-0a67d72908bffbcd4,subnet-0c84ac2840be3a2bc
+  MIGRATE_SG: sg-0a37ac72f79b2fd5b # checkin-prod-service
   APP_TASK_FAMILY: checkin-prod
   MIGRATE_TASK_FAMILY: checkin-migrate-prod
   DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-prod
@@ -64,64 +80,21 @@ jobs:
     secrets: inherit
 
   # Release gate: a release may apply AT MOST ONE new database migration.
-  # Migrations accumulate on main between releases and must be coalesced into
-  # a single migration (checkin-app/scripts/coalesce-migrations.ts, a manual
-  # PR) before a release ships them — see
-  # checkin-app/docs/MIGRATION_COALESCE_FLOW.md for the policy and flow.
+  # The rule lives in the callable migration-release-gate.yml — the same
+  # workflow runs advisory (allowed to fail) on every PR, so the "coalesce
+  # before preparing a release" signal shows up long before this blocking
+  # call. Passing exclude_tag makes the gate compare against the release's
+  # true predecessor; with no previous release, every migration counts.
   #
   # This is not a step inside `validate`: that job is a reusable-workflow
   # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
   # own to add to. Runs as its own job instead; `deploy` needs both.
   migration-release-gate:
     name: Release gate — at most 1 new migration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout released tag (full history + tags)
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.release.tag_name }}
-          fetch-depth: 0
-
-      - name: Find the previous v* release tag and count added migrations
-        run: |
-          set -euo pipefail
-          CURRENT_TAG="${{ github.event.release.tag_name }}"
-          git fetch --tags --force
-
-          # `git tag -l` lists annotated and lightweight tags identically — no
-          # special-casing needed for either kind. `sort -V` is a real version
-          # sort (v1.2.10 sorts after v1.2.9), not a lexical one.
-          mapfile -t TAGS < <(git tag -l 'v*' | sort -V)
-
-          PREV_TAG=""
-          for i in "${!TAGS[@]}"; do
-            if [ "${TAGS[$i]}" = "$CURRENT_TAG" ]; then
-              if [ "$i" -gt 0 ]; then PREV_TAG="${TAGS[$((i-1))]}"; fi
-              break
-            fi
-          done
-
-          if [ -z "$PREV_TAG" ]; then
-            echo "No v* release tag found before $CURRENT_TAG — this is the first release, nothing to gate against. Skipping."
-            exit 0
-          fi
-          echo "Previous release tag: $PREV_TAG"
-
-          # Count ADDED migration directories only — a coalesce release
-          # deletes many old ones and adds exactly 1, and that must PASS, not
-          # fail on the deletes. Count directories, not files: a coalesce
-          # baseline adds both migration.sql and reconcile.sql under one dir.
-          # --no-renames: a rewritten baseline must never be mistaken for a
-          # rename of one of the migrations it replaces.
-          mapfile -t ADDED < <(git diff --no-renames --name-status "$PREV_TAG"..HEAD -- checkin-app/prisma/migrations \
-            | awk '$1=="A" {print $2}' | awk -F/ '{print $4}' | grep -v '^migration_lock.toml$' | sort -u)
-          echo "New migration dir(s) since $PREV_TAG (${#ADDED[@]}): ${ADDED[*]:-none}"
-
-          if [ "${#ADDED[@]}" -gt 1 ]; then
-            echo "::error::This release would apply ${#ADDED[@]} new migrations (${ADDED[*]}) — a release may apply at most 1. Coalesce them into a single migration first: checkin-app/docs/MIGRATION_COALESCE_FLOW.md"
-            exit 1
-          fi
-          echo "OK — at most 1 new migration since the previous release."
+    uses: ./.github/workflows/migration-release-gate.yml
+    with:
+      ref: ${{ github.event.release.tag_name }}
+      exclude_tag: ${{ github.event.release.tag_name }}
 
   deploy:
     name: Build, migrate, roll out
@@ -152,22 +125,29 @@ jobs:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         id: build
         env:
-          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
-          IMAGE_TAGGED: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }}
-          # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
-          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
+          IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
+          IMAGE_TAGGED: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.tag }}
         run: |
           set -euo pipefail
           # Native arm64 runner -> a plain build produces the arm64 image the
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
+          # -f: there is no root Dockerfile — the app image builds from
+          # checkin-app/Dockerfile with the repo root as context, exactly like
+          # deploy-dev.yml (the release-scrub found this job would die here).
           docker build \
-            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
+            --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_RELEASE_TAG="${{ steps.vars.outputs.tag }}" \
+            -f checkin-app/Dockerfile \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
           docker push "$IMAGE"
           docker push "$IMAGE_TAGGED"
@@ -204,7 +184,7 @@ jobs:
             "containerOverrides": [{
               "name": "checkin-migrate",
               "command": ["sh", "-c",
-                "for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+                "cd checkin-app && for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
             }]
           }
           EOF
@@ -219,7 +199,8 @@ jobs:
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --capacity-provider-strategy capacityProvider=$ECS_CAPACITY_PROVIDER,weight=1 \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+            --network-configuration "awsvpcConfiguration={subnets=[$MIGRATE_SUBNETS],securityGroups=[$MIGRATE_SG],assignPublicIp=ENABLED}" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
           echo "Migration task: $TASK_ARN"
@@ -270,13 +251,36 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered app task def: $APP_ARN"
 
+          # --desired-count 1: the service is STAGED at 0 until the first
+          # release (infra sets desired_count = 0 with ignore_changes on it —
+          # "the deploy pipeline scales this up when it ships a real image").
+          # Without this, update-service keeps 0, a 0/0 service is instantly
+          # "stable", and the run goes green while serving nothing.
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
-            --task-definition "$APP_ARN" >/dev/null
+            --task-definition "$APP_ARN" \
+            --desired-count 1 >/dev/null
 
           echo "Waiting for the service to reach steady state..."
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
           echo "Service is stable."
+
+      - name: Smoke test the live app
+        run: |
+          set -euo pipefail
+          # A real probe of the DEPLOYED service (CI's boot/smoke checks the
+          # image, not production). The app answers 200 or an auth redirect;
+          # retries cover target registration + first boot after scale-up.
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
+            echo "attempt $i: $APP_URL -> HTTP $CODE"
+            case "$CODE" in
+              200|301|302|307|308) echo "Smoke OK."; exit 0 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
+          exit 1
 
       - name: Report result
         if: always()
@@ -292,7 +296,7 @@ jobs:
             {
               echo "### ✅ Released $TAG to prod"
               echo "Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL)."
-              echo "- Image: \`$ECR_REPOSITORY:$TAG\`"
+              echo "- Image: \`$IMAGE_REPO:$TAG\`"
               echo "- Migrations: applied · Service: stable"
               echo "- [Release]($RELEASE_URL) · [Deploy run]($RUN_URL)"
             } >> "$GITHUB_STEP_SUMMARY"

@@ -9,15 +9,22 @@ import { Text } from "@mantine/core";
 // local dev -> "dev".
 const FULL_SHA =
   process.env.NEXT_PUBLIC_GIT_SHA || process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA;
+// Release tag (e.g. "v1.0.0"), set only by the prod deploy workflow. Empty on
+// dev/local builds -> the footer shows the hash alone.
+const RELEASE_TAG = process.env.NEXT_PUBLIC_RELEASE_TAG;
 
-/** Short, human-facing build label: the 7-char SHA, or "dev" when unbuilt. */
-export function buildLabel(sha: string | undefined | null): string {
+/**
+ * Human-facing build label: "<tag> <7-char sha>" on a tagged prod build,
+ * the 7-char SHA alone otherwise, or "dev" when unbuilt.
+ */
+export function buildLabel(sha: string | undefined | null, tag?: string | null): string {
   if (!sha) return "dev";
-  return sha.slice(0, 7);
+  const short = sha.slice(0, 7);
+  return tag ? `${tag} ${short}` : short;
 }
 
 export function BuildInfoFooter() {
-  const label = buildLabel(FULL_SHA);
+  const label = buildLabel(FULL_SHA, RELEASE_TAG);
   return (
     <Text
       component="div"

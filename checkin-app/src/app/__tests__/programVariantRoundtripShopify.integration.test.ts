@@ -114,6 +114,7 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
             leadMentorId: leadId,
             memberPrice: '25.00',
             nonMemberPrice: '35.00',
+            maxParticipants: 50,
         }));
         expect(res.status).toBe(200);
         const data = await res.json();
@@ -168,6 +169,7 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
                 leadMentorId: leadId,
                 memberPrice: '25.00',
                 nonMemberPrice: '35.00',
+                maxParticipants: 50,
             }));
             expect(res.status).toBe(200);
             const data = await res.json();

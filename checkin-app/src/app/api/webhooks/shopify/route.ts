@@ -6,6 +6,7 @@ import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { recordShopifyWebhookReceipt, tryParseJson } from "@/lib/shopifyWebhookReceipt";
 
 interface ShopifyOrder {
     id?: number | string;
@@ -17,16 +18,26 @@ interface ShopifyOrder {
  * Verify the Shopify HMAC over the EXACT raw bytes. Config-not-set is a server
  * error (500); missing/wrong signature is unauthorized (401). Must run on the raw
  * body before it is parsed — re-serializing JSON would change the bytes.
+ *
+ * Every rejected delivery is also recorded to the receipt log (settings →
+ * Shopify Webhook): a delivery that arrives but fails the signature IS the
+ * secret-mismatch diagnostic the tab exists to surface. Recording is
+ * fire-and-forget (`void`) because verify is synchronous by contract, and the
+ * helper never throws — the rejection below is returned exactly as before.
+ * This hook lives here in the Shopify route's own verify, NOT in withWebhook,
+ * so other providers' webhooks are untouched.
  */
 function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: false; status: number; error: string } {
     const secret = config.shopifyWebhookSecret();
     if (!secret) {
         logger.error("Shopify webhook received but SHOPIFY_WEBHOOK_SECRET is not configured.");
+        void recordShopifyWebhookReceipt(req, tryParseJson(rawBody), { hmacValid: false, outcome: "rejected: webhook secret not configured" });
         return { ok: false, status: 500, error: "Configuration Error" };
     }
 
     const headerSignature = req.headers.get("x-shopify-hmac-sha256");
     if (!headerSignature) {
+        void recordShopifyWebhookReceipt(req, tryParseJson(rawBody), { hmacValid: false, outcome: "rejected: missing signature" });
         return { ok: false, status: 401, error: "Missing signature" };
     }
 
@@ -35,14 +46,14 @@ function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: 
         .update(rawBody, "utf8")
         .digest("base64");
 
-    // Convert both signatures to Buffers to prevent timing attacks using crypto.timingSafeEqual.
-    // Since HMAC-SHA256 in base64 is a known fixed length, an early length check does not leak
-    // any secret information about the signature itself.
-    const generatedBuffer = Buffer.from(generatedSignature);
-    const headerBuffer = Buffer.from(headerSignature);
+    // Hash both signatures to a fixed length before comparison to prevent timing attacks
+    // and avoid leaking the expected signature length, then use crypto.timingSafeEqual.
+    const generatedBuffer = crypto.createHash('sha256').update(generatedSignature).digest();
+    const headerBuffer = crypto.createHash('sha256').update(headerSignature).digest();
 
-    if (generatedBuffer.length !== headerBuffer.length || !crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
+    if (!crypto.timingSafeEqual(generatedBuffer, headerBuffer)) {
         logger.error("Shopify webhook signature mismatch.");
+        void recordShopifyWebhookReceipt(req, tryParseJson(rawBody), { hmacValid: false, outcome: "rejected: bad hmac" });
         return { ok: false, status: 401, error: "Invalid signature" };
     }
 
@@ -57,7 +68,7 @@ function verifyShopifyHmac(req: Request, rawBody: string): { ok: true } | { ok: 
 // The HMAC secret differs per env (config.shopifyWebhookSecret). The only env-branched
 // logic is the synthetic dev-mock variant fallback, gated on config.shopifyMockActive()
 // (⇔ CHECKIN_ENV=local) below.
-export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (_req, order: ShopifyOrder) => {
+export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac }, async (req, order: ShopifyOrder) => {
         // Iterate through line items to find CheckMeIn_Account_ID and Program_ID
         // We set these custom attributes in the permalink URL:
         // https://[store].myshopify.com/cart/[VariantID]:1?attributes[CheckMeIn_Account_ID]=123&attributes[Program_ID]=456
@@ -98,6 +109,9 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
         // token / Shopify-side segment exists.
         if (membershipProcessIdStr) {
             const processId = parseInt(membershipProcessIdStr, 10);
+            // Receipt outcome for the delivery log (settings → Shopify Webhook);
+            // mirrors the logger lines below, recorded just before each return.
+            let outcome = "invalid Membership_Process_ID — ignored";
             if (!isNaN(processId)) {
                 const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
                 const membershipVariantIds = new Set(
@@ -112,21 +126,31 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 const hasMembershipItem = (order.line_items ?? []).some((li) => membershipVariantIds.has(String(li.variant_id)));
                 const proc = await activateByProcessId(processId, order.id ? String(order.id) : "", hasMembershipItem);
                 if (proc?.status === "ACTIVE") {
+                    outcome = `settled process ${processId}`;
                     logger.info(`[SHOPIFY WEBHOOK] Activated membership for process ${processId}`);
                 } else if (proc?.status === "BLOCKED") {
+                    outcome = `payment recorded for BLOCKED process ${processId} — membership not activated`;
                     logger.warn(`[SHOPIFY WEBHOOK] Payment recorded for BLOCKED process ${processId} — membership NOT activated; board notified for refund`);
                 } else if (proc?.status === "PENDING_BG_CLEARANCE") {
+                    outcome = `payment recorded for process ${processId} — awaiting background check clearance`;
                     logger.info(`[SHOPIFY WEBHOOK] Payment recorded for process ${processId}; awaiting background-check clearance`);
                 } else {
+                    outcome = `no state change for process ${processId} — already processed`;
                     logger.info(`[SHOPIFY WEBHOOK] Payment webhook for process ${processId} — no state change (already processed)`);
                 }
             }
+            await recordShopifyWebhookReceipt(req, order, { hmacValid: true, outcome });
             return NextResponse.json({ success: true });
         }
+
+        // Receipt outcome for the delivery log — the default also covers Shopify's
+        // "Send test notification" sample order, which carries no cart attributes.
+        let outcome = "no membership or program attributes — ignored";
 
         if (accountIdStr && programIdStr) {
             const participantIds = accountIdStr.split(',').map((id: string) => parseInt(id.trim(), 10)).filter((id: number) => !isNaN(id));
             const programId = parseInt(programIdStr, 10);
+            outcome = "invalid CheckMeIn_Account_ID or Program_ID — ignored";
 
             if (participantIds.length > 0 && !isNaN(programId)) {
                 // Guard mirrors the membership H2 fix above: note_attributes
@@ -259,11 +283,14 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                         logger.error(`[SHOPIFY WEBHOOK] Failed to mirror sibling-variant inventory for program ${programId} after activating ${activatedCount} participant(s) — pools may be out of sync.`);
                     }
                 }
+
+                outcome = `program ${programId}: activated ${activatedCount} of ${participantIds.length} participant(s)`;
             }
         } else {
              logger.info(`[SHOPIFY WEBHOOK] Payload received but missing CheckMeIn_Account_ID or Program_ID attributes. Ignoring.`);
         }
 
         // Always return 200 OK to Shopify to acknowledge receipt, even if missing attributes.
+        await recordShopifyWebhookReceipt(req, order, { hmacValid: true, outcome });
         return NextResponse.json({ success: true });
 });

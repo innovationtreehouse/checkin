@@ -30,11 +30,11 @@ const balanceTxnPage = (nodes: unknown[], hasNextPage: boolean, endCursor: strin
 describe("fetchOrders pagination", () => {
   it("yields a single page and stops when hasNextPage is false", async () => {
     const client = fakeClient(ordersPage([{ id: "o1" }, { id: "o2" }], false, "c1"));
-    const nodes = await drain(fetchOrders(client, "updated_at:>=X status:any"));
+    const nodes = await drain(fetchOrders(client, "updated_at:>='X' status:any"));
 
     expect(nodes).toEqual([{ id: "o1" }, { id: "o2" }]);
     expect(client.calls).toHaveLength(1);
-    expect(client.calls[0].variables).toMatchObject({ first: 50, after: null, query: "updated_at:>=X status:any" });
+    expect(client.calls[0].variables).toMatchObject({ first: 50, after: null, query: "updated_at:>='X' status:any" });
   });
 
   it("threads endCursor into the next page's `after` and concatenates pages", async () => {
@@ -70,10 +70,10 @@ describe("fetchOrders pagination", () => {
 describe("fetchPayouts pagination (singleton account)", () => {
   it("reaches through shopifyPaymentsAccount.payouts and uses the 100-item page size", async () => {
     const client = fakeClient(payoutsPage([{ id: "p1" }], false, null));
-    const nodes = await drain(fetchPayouts(client, "issued_at:>=X"));
+    const nodes = await drain(fetchPayouts(client, "issued_at:>='X'"));
 
     expect(nodes).toEqual([{ id: "p1" }]);
-    expect(client.calls[0].variables).toMatchObject({ first: 100, after: null, query: "issued_at:>=X" });
+    expect(client.calls[0].variables).toMatchObject({ first: 100, after: null, query: "issued_at:>='X'" });
   });
 
   it("yields nothing when shopifyPaymentsAccount is null (Payments not enabled)", async () => {
@@ -91,10 +91,10 @@ describe("fetchPayouts pagination (singleton account)", () => {
 describe("fetchBalanceTransactions pagination (singleton account)", () => {
   it("reaches through shopifyPaymentsAccount.balanceTransactions", async () => {
     const client = fakeClient(balanceTxnPage([{ id: "b1" }, { id: "b2" }], false, null));
-    const nodes = await drain(fetchBalanceTransactions(client, "processed_at:>=X"));
+    const nodes = await drain(fetchBalanceTransactions(client, "processed_at:>='X'"));
 
     expect(nodes).toEqual([{ id: "b1" }, { id: "b2" }]);
-    expect(client.calls[0].variables).toMatchObject({ first: 100, query: "processed_at:>=X" });
+    expect(client.calls[0].variables).toMatchObject({ first: 100, query: "processed_at:>='X'" });
   });
 
   it("yields nothing when the balanceTransactions connection is absent", async () => {

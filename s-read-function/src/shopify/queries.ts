@@ -5,13 +5,10 @@
  * `associatedOrder`, `sourceOrderTransactionId`, `associatedPayout`) and the `processed_at`
  * search filter all exist.
  *
- * ⚠️ ONE FIELD STILL TO CONFIRM — `PAYOUT_FIELDS.summary` selects `refundsGross`, but the
- * documented sibling on ShopifyPaymentsPayoutSummary is `refundsFeeGross`. GraphQL rejects
- * the ENTIRE request on an unknown field, so confirm the exact spelling before the first live
- * payouts run:
- *   https://shopify.dev/docs/api/admin-graphql/2025-07/objects/ShopifyPaymentsPayoutSummary
- * The Zod schemas are lenient (a missing value degrades to 0/undefined), but the query itself
- * must validate.
+ * CONFIRMED live (2026-07-13, first dev payouts run): ShopifyPaymentsPayoutSummary has NO
+ * `refundsGross` — the gross-refunds field is named `refundsFeeGross` (sic; Shopify's naming,
+ * verified against the schema docs and the live API). GraphQL rejects the ENTIRE request on an
+ * unknown field. Internally we still call it refundsGrossCents, because that's what it is.
  */
 
 const MONEY_BAG = `{ shopMoney { amount currencyCode } }`;
@@ -29,12 +26,13 @@ export const SHOP_PING_QUERY = `
   }
 `;
 
-/** Authoritative store identity, resolved at sync start to derive store_id. */
+/** Authoritative store identity, resolved at sync start to derive store_id.
+ * NOTE: unlike Order/Payout, the Shop type does NOT expose legacyResourceId —
+ * requesting it fails the whole query. The numeric id is derived from the gid. */
 export const SHOP_IDENTITY_QUERY = `
   query ShopIdentity {
     shop {
       id
-      legacyResourceId
       myshopifyDomain
       name
     }
@@ -105,7 +103,7 @@ export const ORDERS_PROBE_QUERY = `
   }
 `;
 
-/** Paginated orders query. Pass query: "updated_at:>=<iso> status:any". */
+/** Paginated orders query. Pass query: "updated_at:>='<iso>' status:any" (datetime quoted — see streams.ts). */
 export const ORDERS_QUERY = `
   query Orders($first: Int!, $after: String, $query: String) {
     orders(first: $first, after: $after, query: $query, sortKey: UPDATED_AT) {
@@ -175,7 +173,7 @@ const PAYOUT_FIELDS = `
   summary {
     chargesGross ${MONEY_V2}
     chargesFee ${MONEY_V2}
-    refundsGross ${MONEY_V2}
+    refundsFeeGross ${MONEY_V2}
     refundsFee ${MONEY_V2}
     adjustmentsGross ${MONEY_V2}
     adjustmentsFee ${MONEY_V2}
@@ -184,7 +182,7 @@ const PAYOUT_FIELDS = `
   }
 `;
 
-/** Paginated payouts query. Pass query: "issued_at:>=<iso>". */
+/** Paginated payouts query. Pass query: "issued_at:>='<iso>'" (datetime quoted — see streams.ts). */
 export const PAYOUTS_QUERY = `
   query Payouts($first: Int!, $after: String, $query: String) {
     shopifyPaymentsAccount {
@@ -255,7 +253,7 @@ export const CURRENT_BULK_OPERATION_QUERY = `
 export function buildOrdersBulkQuery(updatedAtFloorIso: string): string {
   return `
     {
-      orders(query: "updated_at:>=${updatedAtFloorIso} status:any", sortKey: UPDATED_AT) {
+      orders(query: "updated_at:>='${updatedAtFloorIso}' status:any", sortKey: UPDATED_AT) {
         edges {
           node {
             id

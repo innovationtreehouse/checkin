@@ -1,0 +1,86 @@
+name: Migration release gate
+
+# A release may apply AT MOST ONE new database migration: `prisma migrate
+# deploy` is not transactional ACROSS migrations, so a multi-migration release
+# that fails mid-batch leaves prod partially migrated behind a P3009 (the
+# 2026-07-02 incident). Migrations may accumulate freely on main/dev between
+# releases — the rule is they get COALESCED into a single migration
+# (checkin-app/scripts/coalesce-migrations.ts, a manual PR) before a release
+# ships them. Policy and flow: checkin-app/docs/MIGRATION_COALESCE_FLOW.md.
+#
+# One rule, two call sites:
+#   - pull_request (this file's own trigger): ADVISORY. The job is
+#     continue-on-error on PR runs — a red gate job warns early that the next
+#     release would carry 2+ migrations, without blocking merges while work
+#     accumulates on dev.
+#   - deploy-prod.yml (workflow_call, exclude_tag = the tag being released):
+#     BLOCKING. A release carrying 2+ new migrations fails before the human
+#     approval gate is ever asked.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit/tag to check (defaults to the triggering commit)
+        type: string
+        required: false
+        default: ''
+      exclude_tag:
+        description: Tag being released — excluded when resolving the previous release
+        type: string
+        required: false
+        default: ''
+
+jobs:
+  count:
+    name: At most 1 new migration per release
+    runs-on: ubuntu-latest
+    # Advisory on PRs (allowed to fail); blocking when called from deploy-prod
+    # (a called workflow inherits the caller's event: release).
+    continue-on-error: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
+          # Full history + tags: the gate resolves the previous v* release by
+          # reachability from HEAD.
+          fetch-depth: 0
+
+      - name: Count migrations added since the previous v* release
+        env:
+          EXCLUDE_TAG: ${{ inputs.exclude_tag || '' }}
+        run: |
+          set -euo pipefail
+          # `git tag -l` lists annotated and lightweight tags identically — no
+          # special-casing needed. `sort -V` is a real version sort (v1.2.10
+          # sorts after v1.2.9). Only tags REACHABLE from HEAD count as a
+          # previous release; the tag being released (EXCLUDE_TAG) is excluded
+          # so the release compares against its true predecessor.
+          PREV_RELEASE=$(git tag --list 'v*' --merged HEAD | grep -vxF -- "$EXCLUDE_TAG" | sort -V | tail -n1 || true)
+
+          # Set difference of migration DIRECTORIES (ls-tree, not git diff):
+          # a coalesce release deletes many old dirs and adds exactly 1, and
+          # that must PASS; edits to already-shipped migrations count as 0;
+          # directories not files, since a coalesce baseline ships both
+          # migration.sql and reconcile.sql under one dir. With no previous
+          # release reachable, EVERY migration counts against the same limit.
+          HEAD_DIRS=$(git ls-tree --name-only "HEAD:checkin-app/prisma/migrations" | grep -v '^migration_lock\.toml$' | sort)
+          if [ -n "$PREV_RELEASE" ]; then
+            NEW_DIRS=$(comm -13 \
+              <(git ls-tree --name-only "$PREV_RELEASE:checkin-app/prisma/migrations" | grep -v '^migration_lock\.toml$' | sort) \
+              <(printf '%s\n' "$HEAD_DIRS"))
+          else
+            NEW_DIRS="$HEAD_DIRS"
+          fi
+          COUNT=$(printf '%s' "$NEW_DIRS" | grep -c . || true)
+          echo "Migrations added since ${PREV_RELEASE:-the beginning (no previous v* release reachable)}: $COUNT"
+          [ -z "$NEW_DIRS" ] || printf '%s\n' "$NEW_DIRS"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo "::error::$COUNT new migrations (listed above) — a release may apply at most 1. Coalesce them into a single migration before preparing a release (checkin-app/docs/MIGRATION_COALESCE_FLOW.md): prisma migrate deploy is not transactional across migrations, so a multi-migration release risks a partial apply (P3009)."
+            exit 1
+          fi
+          echo "OK — at most 1 new migration."

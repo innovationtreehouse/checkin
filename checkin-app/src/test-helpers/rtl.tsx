@@ -16,6 +16,8 @@
 import { render, configure, type RenderOptions } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import type { ReactElement, ReactNode } from "react";
+import { EnvProvider } from "@/components/EnvProvider";
+import type { CheckinEnv } from "@/lib/config";
 
 // RTL's default findBy*/waitFor timeout is 1000ms of real (non-fake) timers.
 // The full coverage run's CI job (290 suites, --coverage instrumentation, no
@@ -51,9 +53,29 @@ if (typeof window !== "undefined") {
         } as unknown as typeof ResizeObserver);
 }
 
-/** Render `ui` wrapped in a MantineProvider (required by any Mantine component). */
+// EnvProvider mirrors what the server layout injects at request time. Tests that
+// exercise env-gated UI (Shopify checkout links, local-only login) set these via
+// setShopifyStoreDomain / setCheckinEnv; resetRtl restores the prod defaults.
+let checkinEnv: CheckinEnv = "prod";
+let shopifyStoreDomain: string | null = null;
+
+/** Set the mocked CHECKIN_ENV seen by useCheckinEnv/useIsLocalInstance. */
+export function setCheckinEnv(env: CheckinEnv) {
+    checkinEnv = env;
+}
+/** Set the mocked Shopify store domain seen by useShopifyStoreDomain. */
+export function setShopifyStoreDomain(domain: string | null) {
+    shopifyStoreDomain = domain;
+}
+
+/** Render `ui` wrapped in the providers a page/component tree needs. */
 export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
-    return render(<MantineProvider>{ui}</MantineProvider>, options);
+    return render(
+        <MantineProvider>
+            <EnvProvider value={{ checkinEnv, shopifyStoreDomain }}>{ui}</EnvProvider>
+        </MantineProvider>,
+        options,
+    );
 }
 
 // ── next/navigation + next-auth/react mocks ──────────────────────────────────
@@ -106,6 +128,8 @@ export function resetRtl() {
     pathname = "/";
     searchParams = new URLSearchParams();
     session = { data: null, status: "unauthenticated" };
+    checkinEnv = "prod";
+    shopifyStoreDomain = null;
 }
 
 // ── fetch stub ───────────────────────────────────────────────────────────────

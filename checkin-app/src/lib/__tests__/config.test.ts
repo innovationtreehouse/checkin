@@ -55,17 +55,19 @@ describe("requireEnv-backed getters", () => {
     });
 });
 
-describe("checkinEnv / isProd / isDevInstance / isLocal", () => {
+describe("checkinEnv / isProd / isDevInstance / isLocal / devToolsActive", () => {
     it("unset fails safe to prod", () => {
         delete process.env.CHECKIN_ENV;
         expect(config.checkinEnv()).toBe("prod");
         expect(config.isProd()).toBe(true);
         expect(config.isDevInstance()).toBe(false);
         expect(config.isLocal()).toBe(false);
+        expect(config.devToolsActive()).toBe(false);
     });
     it("garbage value also fails safe to prod", () => {
         process.env.CHECKIN_ENV = "staging";
         expect(config.checkinEnv()).toBe("prod");
+        expect(config.devToolsActive()).toBe(false);
     });
     it("'dev'", () => {
         process.env.CHECKIN_ENV = "dev";
@@ -73,12 +75,29 @@ describe("checkinEnv / isProd / isDevInstance / isLocal", () => {
         expect(config.isProd()).toBe(false);
         expect(config.isDevInstance()).toBe(true);
         expect(config.isLocal()).toBe(false);
+        expect(config.devToolsActive()).toBe(true);
     });
     it("'local'", () => {
         process.env.CHECKIN_ENV = "local";
         expect(config.checkinEnv()).toBe("local");
         expect(config.isDevInstance()).toBe(true);
         expect(config.isLocal()).toBe(true);
+        expect(config.devToolsActive()).toBe(true);
+    });
+    it("devToolsActive ignores NODE_ENV: cloud-dev runs the production image", () => {
+        // Regression for the Debug-nav 404: every deployed instance has
+        // NODE_ENV=production (Dockerfile), so a NODE_ENV fuse killed the /dev
+        // tools on cloud-dev itself. The gate must be CHECKIN_ENV alone.
+        const original = process.env.NODE_ENV;
+        Object.defineProperty(process.env, "NODE_ENV", { value: "production", configurable: true });
+        try {
+            process.env.CHECKIN_ENV = "dev";
+            expect(config.devToolsActive()).toBe(true);
+            process.env.CHECKIN_ENV = "prod";
+            expect(config.devToolsActive()).toBe(false);
+        } finally {
+            Object.defineProperty(process.env, "NODE_ENV", { value: original, configurable: true });
+        }
     });
 });
 
@@ -104,7 +123,7 @@ describe("zohoConfigured", () => {
 });
 
 describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
-    it("mock active when unconfigured, non-prod, non-production NODE_ENV", () => {
+    it("mock active when unconfigured on a non-prod instance", () => {
         clearZoho();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
@@ -128,11 +147,12 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
         expect(config.zohoMockActive()).toBe(false);
         expect(config.zohoAvailable()).toBe(false);
     });
-    it("mock inactive when NODE_ENV is production", () => {
+    it("mock STAYS active under a production build (NODE_ENV eliminated as a fuse, #951)", () => {
+        // Deployed instances all run NODE_ENV=production; CHECKIN_ENV alone decides.
         clearZoho();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "production";
-        expect(config.zohoMockActive()).toBe(false);
+        expect(config.zohoMockActive()).toBe(true);
     });
     it("ZOHO_WEBHOOK_SECRET env wins regardless of mock state", () => {
         clearZoho();
@@ -148,7 +168,7 @@ describe("zohoMockActive / zohoAvailable / zohoWebhookSecret", () => {
 });
 
 describe("shopifyMockActive / shopifyWebhookSecret", () => {
-    it("mock active on local, non-production NODE_ENV", () => {
+    it("mock active on local", () => {
         clearShopify();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
@@ -176,12 +196,12 @@ describe("shopifyMockActive / shopifyWebhookSecret", () => {
         expect(config.shopifyMockActive()).toBe(false);
         expect(config.shopifyWebhookSecret()).toBeNull();
     });
-    it("mock inactive when NODE_ENV is production", () => {
+    it("mock STAYS active under a production build (NODE_ENV eliminated as a fuse, #951)", () => {
         clearShopify();
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "production";
-        expect(config.shopifyMockActive()).toBe(false);
-        expect(config.shopifyWebhookSecret()).toBeNull();
+        expect(config.shopifyMockActive()).toBe(true);
+        expect(config.shopifyWebhookSecret()).toBe(DEV_MOCK_SHOPIFY_WEBHOOK_SECRET);
     });
     it("SHOPIFY_WEBHOOK_SECRET env wins regardless of mock state", () => {
         clearShopify();
@@ -192,7 +212,7 @@ describe("shopifyMockActive / shopifyWebhookSecret", () => {
 });
 
 describe("bgMockActive", () => {
-    it("mock active when Averity unset, non-prod, non-production NODE_ENV", () => {
+    it("mock active when Averity unset on a non-prod instance", () => {
         delete process.env.AVERITY_CONSENT_URL;
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "test";
@@ -210,11 +230,11 @@ describe("bgMockActive", () => {
         (process.env as Record<string, string>).NODE_ENV = "test";
         expect(config.bgMockActive()).toBe(false);
     });
-    it("mock inactive when NODE_ENV is production", () => {
+    it("mock STAYS active under a production build (NODE_ENV eliminated as a fuse, #951)", () => {
         delete process.env.AVERITY_CONSENT_URL;
         process.env.CHECKIN_ENV = "local";
         (process.env as Record<string, string>).NODE_ENV = "production";
-        expect(config.bgMockActive()).toBe(false);
+        expect(config.bgMockActive()).toBe(true);
     });
 });
 
