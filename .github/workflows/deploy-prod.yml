@@ -307,3 +307,15 @@ jobs:
               echo "- Prod still runs the previous image."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # s-read rides every prod release, after the human-approved app deploy. The
+  # called job carries `environment: production` (required by the prod deploy
+  # role's OIDC trust), so the release gets a SECOND approval prompt for the
+  # s-read half — a deliberate gate, not an accident. Same released tag.
+  s-read:
+    name: Deploy s-read (prod)
+    needs: deploy
+    uses: ./.github/workflows/deploy-s-read.yml
+    with:
+      environment: prod
+      ref: ${{ github.event.release.tag_name }}
