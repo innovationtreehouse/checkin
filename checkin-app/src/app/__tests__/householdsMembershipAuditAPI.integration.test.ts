@@ -31,6 +31,8 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     let inactiveHouseholdId: number;
     let activeHouseholdId: number;
     let comingYearHouseholdId: number;
+    let midFlowHouseholdId: number;
+    let midFlowProcessId: number;
 
     beforeAll(async () => {
         const leaked = await prisma.person.findMany({
@@ -64,6 +66,17 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
             data: { email: `comingyear-${TAG}@example.com`, name: 'Coming Year', household: { create: { name: "Test HH" } } },
         });
         comingYearHouseholdId = comingYear.householdId;
+
+        // An ACTIVE household mid-flow — a payable PENDING_PAYMENT renewal — that the
+        // coming-year override must supersede (ARCHIVE) rather than leave alongside.
+        const midFlow = await prisma.person.create({
+            data: { email: `midflow-${TAG}@example.com`, name: 'Mid Flow', household: { create: { name: "Test HH" } } },
+        });
+        midFlowHouseholdId = midFlow.householdId;
+        const midMembership = await prisma.orgMembership.create({ data: { householdId: midFlowHouseholdId, status: 'ACTIVE' } });
+        midFlowProcessId = (await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: midMembership.id, kind: 'RENEWAL', status: 'PENDING_PAYMENT' },
+        })).id;
     });
 
     afterAll(async () => {
@@ -140,6 +153,31 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
             orderBy: { id: 'desc' },
         });
         expect((audit!.newData as { comingYearOverride: boolean }).comingYearOverride).toBe(true);
+    });
+
+    it('supersedes an in-flight process (ARCHIVED) when granting for the coming year', async () => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+        const res = await post({ householdId: midFlowHouseholdId, comingYear: true });
+        expect(res.status).toBe(200);
+
+        // The payable PENDING_PAYMENT renewal is disposed, not left alongside the grant.
+        const old = await prisma.orgMembershipProcess.findUnique({ where: { id: midFlowProcessId } });
+        expect(old?.status).toBe('ARCHIVED');
+        const supersedeAudit = await prisma.auditLog.findFirst({
+            where: { actorId: boardId, tableName: 'OrgMembershipProcess', affectedEntityId: midFlowProcessId },
+            orderBy: { id: 'desc' },
+        });
+        expect((supersedeAudit!.newData as { supersededByOverride: boolean }).supersededByOverride).toBe(true);
+
+        // And a fresh terminal ACTIVE RENEWAL is the live process.
+        const membership = await prisma.orgMembership.findUnique({ where: { householdId: midFlowHouseholdId } });
+        expect(membership?.status).toBe('ACTIVE');
+        const live = await prisma.orgMembershipProcess.findMany({
+            where: { orgMembershipId: membership!.id, status: 'ACTIVE' },
+        });
+        expect(live).toHaveLength(1);
+        expect(live[0].kind).toBe('RENEWAL');
     });
 
     it("refuses coming-year grant for the actor's OWN household (conflict of interest)", async () => {

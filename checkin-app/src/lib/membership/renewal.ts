@@ -66,9 +66,10 @@ function monthsBefore(date: Date, months: number): Date {
  * sits inside the renewal lead window before it. Pure; the single source of the
  * "are we in renewal season" calc shared by runRenewalSweep and isRenewalSeason.
  */
-export function renewalWindow(configuredBoundary: Date, now: Date): { boundary: Date; inSeason: boolean } {
+export function renewalWindow(configuredBoundary: Date, now: Date): { boundary: Date; windowStart: Date; inSeason: boolean } {
     const boundary = nextBoundary(configuredBoundary, now);
-    return { boundary, inSeason: now.getTime() >= monthsBefore(boundary, RENEWAL_LEAD_MONTHS).getTime() };
+    const windowStart = monthsBefore(boundary, RENEWAL_LEAD_MONTHS);
+    return { boundary, windowStart, inSeason: now.getTime() >= windowStart.getTime() };
 }
 
 /**
@@ -95,16 +96,32 @@ export async function runRenewalSweep(now: Date) {
         return { opened: 0, skipped: 0, reason: "no membership-year boundary configured" };
     }
 
-    const { boundary, inSeason } = renewalWindow(settings.orgMembershipYearBoundary, now);
+    const { boundary, windowStart, inSeason } = renewalWindow(settings.orgMembershipYearBoundary, now);
     if (!inSeason) {
         return { opened: 0, skipped: 0, reason: "not yet within renewal window" };
     }
 
     const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
-        // "Already open" = an in-flight RENEWAL by status (matches the partial unique
-        // index + openRenewalsForAllActive), not the leakier createdAt window.
-        select: { id: true, householdId: true, processes: { where: { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } }, select: { id: true } } },
+        // "Handled this cycle" = an in-flight RENEWAL by status (matches the partial
+        // unique index + openRenewalsForAllActive), OR a RENEWAL already resolved this
+        // cycle — a member who finished renewal early, or the admin "Grant for coming
+        // year" override, both leave a terminal (ACTIVE/ARCHIVED) RENEWAL with
+        // stageEnteredAt in this window. Without the second clause a completed renewal
+        // gets re-opened + re-reminded, since terminal rows aren't in-flight.
+        select: {
+            id: true, householdId: true,
+            processes: {
+                where: {
+                    kind: "RENEWAL",
+                    OR: [
+                        { status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } },
+                        { status: { in: ["ACTIVE", "ARCHIVED"] }, stageEnteredAt: { gte: windowStart } },
+                    ],
+                },
+                select: { id: true },
+            },
+        },
     });
 
     let opened = 0;

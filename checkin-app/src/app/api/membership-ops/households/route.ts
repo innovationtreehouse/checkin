@@ -170,6 +170,38 @@ export const POST = withAuth(
                         create: { householdId, status: "ACTIVE" },
                         update: { status: "ACTIVE" },
                     });
+                    // Supersede any in-flight process so the override doesn't coexist with a
+                    // stale flow: a payable PENDING_PAYMENT that activate() would later settle
+                    // (double process + a charge for an already-granted household), a review
+                    // still sitting in the queue, or the member's /membership page showing the
+                    // old cards. Board disposal = the terminal ARCHIVED status (same as
+                    // archiveApplication); it drops off every live read with one status check.
+                    // Anything already terminal (a prior cycle's ACTIVE, an earlier ARCHIVED)
+                    // is left alone. Archiving the in-flight RENEWAL also clears the
+                    // one-inflight-renewal partial index before the new terminal row is written.
+                    const superseded = await tx.orgMembershipProcess.findMany({
+                        where: { orgMembershipId: membership.id, status: { notIn: ["ACTIVE", "ARCHIVED"] } },
+                        select: { id: true, status: true },
+                    });
+                    for (const p of superseded) {
+                        await tx.orgMembershipProcess.update({
+                            where: { id: p.id },
+                            data: { status: "ARCHIVED", stageEnteredAt: now },
+                        });
+                        if (actorId !== null) {
+                            await tx.auditLog.create({
+                                data: {
+                                    actorId,
+                                    action: "EDIT",
+                                    tableName: "OrgMembershipProcess",
+                                    affectedEntityId: p.id,
+                                    secondaryAffectedEntity: householdId,
+                                    oldData: { status: p.status },
+                                    newData: { status: "ARCHIVED", supersededByOverride: true },
+                                },
+                            });
+                        }
+                    }
                     const process = await tx.orgMembershipProcess.create({
                         data: {
                             orgMembershipId: membership.id,
