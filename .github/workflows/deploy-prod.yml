@@ -182,6 +182,7 @@ jobs:
           # deploy-dev.yml (the release-scrub found this job would die here).
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_RELEASE_TAG="${{ steps.vars.outputs.tag }}" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
           docker push "$IMAGE"
