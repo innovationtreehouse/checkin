@@ -139,10 +139,14 @@ jobs:
           }
           EOF
 
+          # FARGATE_SPOT (associated on the cluster) instead of on-demand
+          # --launch-type FARGATE: matches prod's migrate path; a Spot reclaim
+          # mid-run fails the step loudly and a re-run is safe (one small
+          # migration per release, retry loop below handles DB wake-up).
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --launch-type FARGATE \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
             --network-configuration "$NETWORK_CONFIG" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)

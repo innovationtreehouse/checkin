@@ -53,7 +53,14 @@ env:
   # the infra repo — see the "prod infra" note in the PR description.
   ECS_CLUSTER: treehouse-prod
   ECS_SERVICE: checkin-prod
-  ECS_CAPACITY_PROVIDER: treehouse-prod-c6g
+  # Migrations run on FARGATE_SPOT, not the prepaid c6g (a one-off 512-MiB task
+  # can't place there while the wiki is awake — the v1.0.1 wedge). awsvpc needs
+  # explicit networking: the default-VPC public subnets + the checkin-prod
+  # service SG (Aurora ingress: infra network module, database_from_checkin_prod;
+  # public IP for the ghcr pull — no NAT). Values come from the infra repo
+  # (live/mgmt + modules/network); update together if infra changes them.
+  MIGRATE_SUBNETS: subnet-0597513f1c0c3173e,subnet-0a67d72908bffbcd4,subnet-0c84ac2840be3a2bc
+  MIGRATE_SG: sg-0a37ac72f79b2fd5b # checkin-prod-service
   APP_TASK_FAMILY: checkin-prod
   MIGRATE_TASK_FAMILY: checkin-migrate-prod
   DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-prod
@@ -73,64 +80,21 @@ jobs:
     secrets: inherit
 
   # Release gate: a release may apply AT MOST ONE new database migration.
-  # Migrations accumulate on main between releases and must be coalesced into
-  # a single migration (checkin-app/scripts/coalesce-migrations.ts, a manual
-  # PR) before a release ships them — see
-  # checkin-app/docs/MIGRATION_COALESCE_FLOW.md for the policy and flow.
+  # The rule lives in the callable migration-release-gate.yml — the same
+  # workflow runs advisory (allowed to fail) on every PR, so the "coalesce
+  # before preparing a release" signal shows up long before this blocking
+  # call. Passing exclude_tag makes the gate compare against the release's
+  # true predecessor; with no previous release, every migration counts.
   #
   # This is not a step inside `validate`: that job is a reusable-workflow
   # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
   # own to add to. Runs as its own job instead; `deploy` needs both.
   migration-release-gate:
     name: Release gate — at most 1 new migration
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout released tag (full history + tags)
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.release.tag_name }}
-          fetch-depth: 0
-
-      - name: Find the previous v* release tag and count added migrations
-        run: |
-          set -euo pipefail
-          CURRENT_TAG="${{ github.event.release.tag_name }}"
-          git fetch --tags --force
-
-          # `git tag -l` lists annotated and lightweight tags identically — no
-          # special-casing needed for either kind. `sort -V` is a real version
-          # sort (v1.2.10 sorts after v1.2.9), not a lexical one.
-          mapfile -t TAGS < <(git tag -l 'v*' | sort -V)
-
-          PREV_TAG=""
-          for i in "${!TAGS[@]}"; do
-            if [ "${TAGS[$i]}" = "$CURRENT_TAG" ]; then
-              if [ "$i" -gt 0 ]; then PREV_TAG="${TAGS[$((i-1))]}"; fi
-              break
-            fi
-          done
-
-          if [ -z "$PREV_TAG" ]; then
-            echo "No v* release tag found before $CURRENT_TAG — this is the first release, nothing to gate against. Skipping."
-            exit 0
-          fi
-          echo "Previous release tag: $PREV_TAG"
-
-          # Count ADDED migration directories only — a coalesce release
-          # deletes many old ones and adds exactly 1, and that must PASS, not
-          # fail on the deletes. Count directories, not files: a coalesce
-          # baseline adds both migration.sql and reconcile.sql under one dir.
-          # --no-renames: a rewritten baseline must never be mistaken for a
-          # rename of one of the migrations it replaces.
-          mapfile -t ADDED < <(git diff --no-renames --name-status "$PREV_TAG"..HEAD -- checkin-app/prisma/migrations \
-            | awk '$1=="A" {print $2}' | awk -F/ '{print $4}' | grep -v '^migration_lock.toml$' | sort -u)
-          echo "New migration dir(s) since $PREV_TAG (${#ADDED[@]}): ${ADDED[*]:-none}"
-
-          if [ "${#ADDED[@]}" -gt 1 ]; then
-            echo "::error::This release would apply ${#ADDED[@]} new migrations (${ADDED[*]}) — a release may apply at most 1. Coalesce them into a single migration first: checkin-app/docs/MIGRATION_COALESCE_FLOW.md"
-            exit 1
-          fi
-          echo "OK — at most 1 new migration since the previous release."
+    uses: ./.github/workflows/migration-release-gate.yml
+    with:
+      ref: ${{ github.event.release.tag_name }}
+      exclude_tag: ${{ github.event.release.tag_name }}
 
   deploy:
     name: Build, migrate, roll out
@@ -235,7 +199,8 @@ jobs:
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --capacity-provider-strategy capacityProvider=$ECS_CAPACITY_PROVIDER,weight=1 \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+            --network-configuration "awsvpcConfiguration={subnets=[$MIGRATE_SUBNETS],securityGroups=[$MIGRATE_SG],assignPublicIp=ENABLED}" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
           echo "Migration task: $TASK_ARN"
