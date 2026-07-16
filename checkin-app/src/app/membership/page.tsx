@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
-  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group, Loader,
+  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
   SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -24,9 +24,8 @@ import { useIsLocalInstance } from "@/components/EnvProvider";
 import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
-// Payment holdoff (below): how often we poll for a status change after a real
-// Shopify checkout click.
-const AWAITING_PAYMENT_POLL_MS = 10 * 1000;
+// Payment holdoff (below): sessionStorage key for the awaiting-payment record
+// set by a real Shopify checkout click.
 const awaitingPaymentKey = (processId: number) => `membership_awaiting_payment_${processId}`;
 
 interface PersonPrefill {
@@ -157,8 +156,8 @@ export default function MembershipPage() {
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
 
-  // Drop the holdoff and its sessionStorage record, if one is set. Shared by the
-  // escape hatch, the implicit status-change clear, and the timeout below.
+  // Drop the holdoff and its sessionStorage record — the "Show the payment
+  // button again" escape hatch for an abandoned checkout.
   const clearAwaitingPayment = useCallback(() => {
     setAwaitingPayment((cur) => {
       if (cur) sessionStorage.removeItem(awaitingPaymentKey(cur.processId));
@@ -293,23 +292,18 @@ export default function MembershipPage() {
     if (sessionStorage.getItem(awaitingPaymentKey(processId))) setAwaitingPayment({ processId });
   }, [state?.process?.id, state?.process?.status]);
 
-  // Implicit clearing: once the process is no longer PENDING_PAYMENT — the
-  // orders/paid webhook settled it, or (possibly, in the future) an s-read
-  // reconciliation did — drop the holdoff and its sessionStorage record.
+  // Implicit clearing, at page-load time: if the process has moved out of
+  // PENDING_PAYMENT — the orders/paid webhook settled it, or (possibly, in the
+  // future) an s-read reconciliation did — drop the holdoff and its
+  // sessionStorage record. Deliberately no background polling or focus
+  // listeners: the dev instance scales to zero, and an idle tab must not keep
+  // it (and the database) awake. The message resolves on the next page load.
   useEffect(() => {
-    if (state?.process?.status === "PENDING_PAYMENT") return;
-    clearAwaitingPayment();
-  }, [state?.process?.status, clearAwaitingPayment]);
-
-  // While awaiting payment, poll the existing load() every ~10s: a status
-  // change re-renders the card out of PENDING_PAYMENT (handled above) — no
-  // separate "clear" path needed for that. Polling runs as long as the message
-  // shows; the escape-hatch link is the way out of an abandoned checkout.
-  useEffect(() => {
-    if (!awaitingPayment) return;
-    const timer = setInterval(load, AWAITING_PAYMENT_POLL_MS);
-    return () => clearInterval(timer);
-  }, [awaitingPayment, load]);
+    const processId = state?.process?.id;
+    if (!processId || state?.process?.status === "PENDING_PAYMENT") return;
+    sessionStorage.removeItem(awaitingPaymentKey(processId));
+    setAwaitingPayment(null);
+  }, [state?.process?.id, state?.process?.status]);
 
   const flash = (msg: string, error = false) => {
     setMessage(msg ? { text: msg, tone: error ? "error" : "success" } : undefined);
@@ -862,10 +856,10 @@ export default function MembershipPage() {
                     </Text>
                     {awaitingPayment ? (
                       <Stack gap="xs" mt="md" align="flex-start">
-                        <Group gap="sm">
-                          <Loader size="sm" />
-                          <Text>We&apos;ll update your status here when we receive your payment.</Text>
-                        </Group>
+                        <Text>
+                          We&apos;ll update your status here when we receive your payment — refresh
+                          this page after you finish checkout.
+                        </Text>
                         <Anchor component="button" type="button" size="sm" c="dimmed" onClick={clearAwaitingPayment}>
                           Show the payment button again
                         </Anchor>
