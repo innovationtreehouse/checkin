@@ -7,7 +7,7 @@ import { modals } from "@mantine/modals";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
 import { AdminEditHouseholdModal, isFormDirty } from "../AdminEditHouseholdModal";
 
-const base = { name: "Smith", line1: "1 Main", line2: "", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Jo", emergencyContactPhone: "5550000", memberSince: "2020-01-15" };
+const base = { name: "Smith", line1: "1 Main", line2: "", city: "Austin", state: "TX", postalCode: "78701", emergencyContactName: "Jo", emergencyContactPhone: "5550000", memberSince: "2020-01-15", isVolunteer: false };
 
 describe("isFormDirty", () => {
   it("is false when snapshots match", () => {
@@ -18,6 +18,7 @@ describe("isFormDirty", () => {
     expect(isFormDirty(base, { ...base, name: "Jones" })).toBe(true);
     expect(isFormDirty(base, { ...base, emergencyContactPhone: "5551111" })).toBe(true);
     expect(isFormDirty(base, { ...base, memberSince: "2021-06-01" })).toBe(true);
+    expect(isFormDirty(base, { ...base, isVolunteer: true })).toBe(true);
   });
 });
 
@@ -220,6 +221,25 @@ describe("AdminEditHouseholdModal", () => {
     global.fetch = jest.fn(() => Promise.reject(new Error("net"))) as unknown as typeof fetch;
     fireEvent.click(screen.getAllByRole("button", { name: "Remove lead" })[0]);
     await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error.", autoClose: false })));
+  });
+
+  it("toggles the volunteer-only flag and sends isVolunteer in the PATCH body", async () => {
+    const withMembership = { ...household, orgMembership: { memberSince: "2024-01-15T00:00:00.000Z", isVolunteer: false } };
+    const fetchMock = mockFetchJson({
+      "/api/membership-ops/households?id=55": { household: withMembership },
+      "/api/membership-ops/households/55": { household: withMembership },
+    });
+    renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByDisplayValue("Smith Family");
+
+    fireEvent.click(screen.getByText("Volunteer-only household"));
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/membership-ops/households/55", expect.objectContaining({ method: "PATCH" })),
+    );
+    const [, patchOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PATCH")!;
+    expect(JSON.parse(patchOpts!.body as string)).toEqual(expect.objectContaining({ isVolunteer: true }));
   });
 
   it("shows the no-leads state for a household with no household leads", async () => {
