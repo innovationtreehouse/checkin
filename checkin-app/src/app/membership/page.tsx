@@ -609,8 +609,8 @@ export default function MembershipPage() {
           <Title order={2}>Time to renew</Title>
           <Text c="dimmed" my="md">
             Your household membership is up for renewal. You&apos;re still an active member — confirm
-            below to continue for another year. No contract to re-sign; we&apos;ll only re-check a
-            background if it has expired.
+            below to continue for another year. You&apos;ll sign a fresh membership agreement; a new
+            background check is only needed if your previous one has expired.
           </Text>
           <Text c="dimmed" mb="md">
             Did anything change — new members, address, phone, or email?{" "}
@@ -629,8 +629,8 @@ export default function MembershipPage() {
         </Card>
       ) : (
         <Group align="flex-start" gap="xl" wrap="wrap">
-          {/* Renewals ride the same stepper as new applications — same phases,
-              same progress, whether the check is fresh, expired, or first-time. */}
+          {/* Renewals ride the same stepper as new applications — same phases, same
+              progress, whether the background check is valid, expired, or first-time. */}
           <Box style={{ flex: "0 0 auto" }}>
             <MembershipFlowStepper currentStatus={inStatus} />
           </Box>
@@ -736,29 +736,25 @@ export default function MembershipPage() {
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="md">
                   <div>
-                    <Title order={2}>{isRenewal ? "Start your background check" : "Sign & start your background check"}</Title>
+                    <Title order={2}>Sign &amp; start your background check</Title>
                     <Text c="dimmed">
                       {isRenewal
-                        ? "Your household's background check has expired, so this renewal needs a new one — no contract to re-sign. Once it's underway, we'll move you straight to payment, and your membership stays active in the meantime."
-                        : "Once your agreement is signed and your background check is underway, we'll move you straight to payment — you won't have to wait for the check to come back."}
+                        ? "Renewing means signing a fresh membership agreement for the year, and a new background check if your previous one has expired. Once both are underway, we'll move you straight to payment — your membership stays active in the meantime."
+                        : "Once your agreement is signed and your background check is underway, we'll move you straight to payment — you won't have to wait for the background check to come back."}
                     </Text>
                   </div>
 
-                  {/* Renewals never re-sign the agreement (renewal.ts) — only the
-                      background check brings them to this step. */}
-                  {!isRenewal && (
-                    <ExternalTask done={!!state.external?.contractSigned} title="Sign your membership agreement" doneText="Agreement signed — thank you!">
-                      <Stack gap="xs" align="flex-start">
-                        <Text c="dimmed">
-                          Sign your personalized membership agreement online. This page updates
-                          automatically once it&apos;s signed.
-                        </Text>
-                        <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
-                          {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
-                        </Button>
-                      </Stack>
-                    </ExternalTask>
-                  )}
+                  <ExternalTask done={!!state.external?.contractSigned} title="Sign your membership agreement" doneText="Agreement signed — thank you!">
+                    <Stack gap="xs" align="flex-start">
+                      <Text c="dimmed">
+                        Sign your personalized membership agreement online. This page updates
+                        automatically once it&apos;s signed.
+                      </Text>
+                      <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
+                        {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
+                      </Button>
+                    </Stack>
+                  </ExternalTask>
 
                   {state.external?.bgCleared ? (
                     <ExternalTask done title="Background check" doneText="Your household&apos;s background check is still valid — no new check needed.">

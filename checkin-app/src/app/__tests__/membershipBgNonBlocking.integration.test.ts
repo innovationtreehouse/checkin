@@ -302,10 +302,16 @@ describe('background check is non-blocking', () => {
         await beginRenewal(processId);
 
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        // Fresh check, so no request flow — but the note holds it for review at
-        // the same status INITIAL uses (RENEWAL_PENDING_BG is legacy, unwritten).
-        expect(proc?.status).toBe('PENDING_BG_REVIEW');
-        expect(proc?.bgClearedAt).toBeNull();
+        // Every renewal re-signs at the external step; the note disqualifies the
+        // bgClearedAt shortcut for the still-valid background check (mirrors
+        // submitIntake), so after sign + consent the advance holds at
+        // PENDING_BG_REVIEW instead of opening payment.
+        expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
+        expect(proc?.bgClearedAt).toBeNull(); // shortcut disqualified by the note
+
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held for the note
     });
 
     it('conflict of interest: a certifier in the applicant household is blocked; sysadmin overrides', async () => {

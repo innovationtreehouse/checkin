@@ -2,7 +2,6 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
-import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { config } from "@/lib/config";
 
 /**
@@ -10,14 +9,14 @@ import { config } from "@/lib/config";
  * household. Two months out, the cron opens a RENEWAL process at PENDING_RENEWAL
  * and reminds the household — the membership stays ACTIVE throughout.
  *
- * When the member begins renewal, the background-check rule decides the path: if
- * EITHER parent's check is still valid at the boundary (lastBackgroundCheck within
- * BoardSettings.bgRecheckMonths of it), skip straight to PENDING_PAYMENT; otherwise
- * the member goes through the SAME background-check request flow as a new applicant
- * (PENDING_EXTERNAL_ACTION: consent on Averity, then payment while the review runs
- * in parallel — the contract half is waived for renewals, see external.ts). The
- * interval is board-configured, not hardcoded. The Zoho contract is NOT re-signed
- * at renewal. No auto-revoke — manual admin action. RENEWAL_PENDING_BG is legacy:
+ * When the member begins renewal they enter the SAME external step a new applicant
+ * gets (PENDING_EXTERNAL_ACTION): a fresh membership agreement is signed EVERY
+ * cycle, and the background-check rule decides the other half — if EITHER parent's
+ * background check is still valid at the boundary (lastBackgroundCheck within
+ * BoardSettings.bgRecheckMonths of it, board-configured), bgClearedAt is stamped
+ * and signing alone opens payment; otherwise the member requests a new background
+ * check on Averity and the 2-of-N review runs in parallel with payment, exactly
+ * like INITIAL. No auto-revoke — manual admin action. RENEWAL_PENDING_BG is legacy:
  * nothing writes it anymore (a migration moved open rows to the request flow).
  */
 
@@ -97,10 +96,11 @@ export async function runRenewalSweep(now: Date) {
 }
 
 /**
- * Member begins renewal: PENDING_RENEWAL -> PENDING_EXTERNAL_ACTION (check expired
- * or missing — the member requests a new check, same flow as INITIAL), or
- * PENDING_BG_REVIEW (check fresh but a household intake note awaits a reviewer), or
- * PENDING_PAYMENT (check fresh, no note). Idempotent-ish: only acts from PENDING_RENEWAL.
+ * Member begins renewal: PENDING_RENEWAL -> PENDING_EXTERNAL_ACTION, always — a
+ * fresh membership agreement is signed every cycle. A still-valid background
+ * check (no household note) is pre-cleared so only the signature is left;
+ * otherwise the member also requests a new background check, same flow as
+ * INITIAL. Idempotent-ish: only acts from PENDING_RENEWAL.
  */
 export async function beginRenewal(processId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -118,36 +118,27 @@ export async function beginRenewal(processId: number) {
     const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
     const hasNote = !!membership.household.intakeNotes?.trim();
 
-    // Expired/missing check → the same background-check request flow INITIAL uses:
-    // the member consents on Averity at PENDING_EXTERNAL_ACTION (renewals skip the
-    // contract half — advanceExternalIfComplete waives it), then pays while the
-    // review runs in parallel. Reviewers are NOT pinged here — there is nothing to
-    // review until consent is recorded; the advance pings them, same as INITIAL.
-    // Fresh check + household note (#900): the note must reach a reviewer before
-    // payment (#907), so hold at PENDING_BG_REVIEW (reviewers pinged now — the note
-    // is reviewable immediately). Fresh check, no note: straight to payment.
-    const nextStatus = !bgFresh ? "PENDING_EXTERNAL_ACTION" : hasNote ? "PENDING_BG_REVIEW" : "PENDING_PAYMENT";
-    // Fresh + no note ⇒ no re-review at all, so clear the BG requirement here.
-    // Without this the renewal pays and parks at PENDING_BG_CLEARANCE forever.
-    // (Fresh + note must NOT set bgClearedAt — the review queue only lists
-    // uncleared rows.) Re-check renewals get bgClearedAt from clearBackgroundCheck.
+    // A still-valid background check with no household note ⇒ stamp bgClearedAt
+    // now: the external card shows "no new background check needed" and the
+    // signature alone opens payment. A note (#900) disqualifies the shortcut
+    // exactly like submitIntake —
+    // the member consents anyway and advanceExternalIfComplete holds the process
+    // at PENDING_BG_REVIEW so the note reaches a reviewer before payment (#907).
+    // Reviewers are NOT pinged here — nothing is reviewable until consent is
+    // recorded; the advance pings them, same as INITIAL. Volunteer allowlist
+    // matching (#874) also happens at the advance's PENDING_PAYMENT transition.
     const clearNow = bgFresh && !hasNote;
     // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
     // here, but only the winner's updateMany flips it (count === 1) — so the audit
-    // row and reviewer ping fire exactly once. Mirrors external.ts markContractSigned.
+    // row is written exactly once. Mirrors external.ts markContractSigned.
     const { count } = await prisma.orgMembershipProcess.updateMany({
         where: { id: processId, status: "PENDING_RENEWAL" },
-        data: { status: nextStatus, stageEnteredAt: new Date(), ...(clearNow ? { bgClearedAt: new Date() } : {}) },
+        data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date(), ...(clearNow ? { bgClearedAt: new Date() } : {}) },
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(clearNow ? { bgClearedAt: true } : {}) } },
+            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: "PENDING_EXTERNAL_ACTION", ...(clearNow ? { bgClearedAt: true } : {}) } },
         });
-        if (nextStatus === "PENDING_BG_REVIEW") await notifyReviewers();
-        // Fresh check ⇒ clearBackgroundCheck never runs this cycle, so a household
-        // designated volunteer since last cycle would pay full dues — match the
-        // allowlist at this PENDING_PAYMENT transition too (#874).
-        if (clearNow) await applyVolunteerStatus(prisma, process.orgMembershipId!, membership.householdId, false);
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
@@ -240,7 +231,7 @@ export async function beginRenewalForUser(userId: number) {
 }
 
 /**
- * True if EITHER guardian (household lead) has a check still valid at the boundary,
+ * True if EITHER guardian (household lead) has a background check still valid at the boundary,
  * i.e. lastBackgroundCheck >= boundary - recheckMonths. When recheckMonths is 0 (the
  * board hasn't set the policy), nothing counts as fresh — renewals re-run review.
  */

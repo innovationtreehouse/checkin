@@ -387,10 +387,11 @@ export async function overrideBlocked(processId: number, actorId: number, action
         // paid, else PENDING_PAYMENT. An unpaid one with a household intake note
         // re-holds at PENDING_BG_REVIEW — the reset restarts review, and a note keeps
         // payment gated on it (#907). Renewals follow the same household path, except
-        // one blocked BEFORE consent was recorded (fresh-check note-hold, or a legacy
-        // RENEWAL_PENDING_BG row) restarts at the request flow itself — the parallel
-        // queue only lists PENDING_PAYMENT/PENDING_BG_CLEARANCE rows WITH consent, so
-        // parking an unconsented renewal there would strand it.
+        // one blocked BEFORE consent was recorded (only legacy RENEWAL_PENDING_BG
+        // rows — every current renewal path records consent before review can block)
+        // restarts at the external step itself — the parallel queue only lists
+        // PENDING_PAYMENT/PENDING_BG_CLEARANCE rows WITH consent, so parking an
+        // unconsented renewal there would strand it.
         const reviewStatus: OrgMembershipProcessStatus =
             process.kind === "PERSON_BG" ? "PENDING_BG_REVIEW"
             : process.kind === "RENEWAL" && !process.bgConsentAt ? "PENDING_EXTERNAL_ACTION"

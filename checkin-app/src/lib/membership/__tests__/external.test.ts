@@ -268,24 +268,16 @@ describe('advanceExternalIfComplete', () => {
         expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
 
-    it('RENEWAL: consent alone advances — the contract gate is waived (no re-sign at renewal)', async () => {
-        const renewal = { ...readyProcess, kind: 'RENEWAL', contractSignedAt: null };
-        prisma.orgMembershipProcess.findUnique
-            .mockResolvedValueOnce(renewal)
-            .mockResolvedValueOnce({ ...renewal, status: 'PENDING_PAYMENT' });
-        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+    it('RENEWAL: the contract gate applies too — an unsigned renewal does not advance on consent alone', async () => {
+        // A fresh agreement is signed every cycle (beginRenewal), so a renewal
+        // with consent but no signature must stay at PENDING_EXTERNAL_ACTION.
+        prisma.orgMembershipProcess.findUnique.mockResolvedValueOnce({ ...readyProcess, kind: 'RENEWAL', contractSignedAt: null });
 
         await advanceExternalIfComplete(20);
 
-        // The conditional update must not require contractSignedAt for a renewal.
-        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({
-                where: expect.not.objectContaining({ contractSignedAt: expect.anything() }),
-                data: expect.objectContaining({ status: 'PENDING_PAYMENT' }),
-            }),
-        );
-        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
-        expect(notifyReviewers).toHaveBeenCalledTimes(1); // check not cleared → review needed
+        expect(prisma.orgMembershipProcess.updateMany).not.toHaveBeenCalled();
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
+        expect(notifyReviewers).not.toHaveBeenCalled();
     });
 });
 

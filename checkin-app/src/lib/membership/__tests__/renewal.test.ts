@@ -4,10 +4,12 @@
 /**
  * Unit tests for renewal.ts edge logic (prisma mocked, no DB):
  *   - householdBgIsFresh: the recheckMonths<=0 short-circuit, and the `gte`
- *     threshold boundary (a check exactly at the threshold counts as fresh).
+ *     threshold boundary (a background check exactly at the threshold counts
+ *     as fresh).
  *   - beginRenewal: a process not in PENDING_RENEWAL → RenewalError wrong_phase;
- *     the fresh-check path stamps bgClearedAt AND matches the volunteer
- *     allowlist at its PENDING_PAYMENT transition (#874).
+ *     every path lands at PENDING_EXTERNAL_ACTION (a fresh agreement is signed
+ *     each cycle) and only a still-valid background check with no household
+ *     note pre-stamps bgClearedAt.
  */
 import { householdBgIsFresh, beginRenewal, RenewalError } from '@/lib/membership/renewal';
 
@@ -45,7 +47,7 @@ describe('householdBgIsFresh', () => {
     const boundary = new Date(Date.UTC(2026, 8, 1)); // 2026-09-01
 
     it('recheckMonths = 0 → not fresh, and never queries (policy unset)', async () => {
-        // Even a recent check on file must not count when the board hasn't set the policy.
+        // Even a recent background check on file must not count when the board hasn't set the policy.
         prisma.person.findFirst.mockResolvedValue({ id: 1 });
 
         const result = await householdBgIsFresh(42, boundary, 0);
@@ -54,7 +56,7 @@ describe('householdBgIsFresh', () => {
         expect(prisma.person.findFirst).not.toHaveBeenCalled();
     });
 
-    it('a lead with a check at exactly the threshold → fresh (gte boundary)', async () => {
+    it('a lead with a background check at exactly the threshold → fresh (gte boundary)', async () => {
         prisma.person.findFirst.mockResolvedValue({ id: 1 });
 
         const result = await householdBgIsFresh(42, boundary, 12);
@@ -71,7 +73,7 @@ describe('householdBgIsFresh', () => {
         );
     });
 
-    it('no lead with a fresh-enough check → not fresh', async () => {
+    it('no lead with a fresh-enough background check → not fresh', async () => {
         prisma.person.findFirst.mockResolvedValue(null);
         expect(await householdBgIsFresh(42, boundary, 12)).toBe(false);
     });
@@ -104,23 +106,23 @@ describe('beginRenewal', () => {
             prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_PAYMENT' });
         });
 
-        it('fresh check → PENDING_PAYMENT + bgClearedAt + volunteer allowlist matched (#874), no reviewer ping', async () => {
-            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid check
+        it('valid background check → PENDING_EXTERNAL_ACTION with bgClearedAt stamped: only the signature is left', async () => {
+            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid background check
 
             await beginRenewal(5);
 
             expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
                 where: { id: 5, status: 'PENDING_RENEWAL' },
-                data: expect.objectContaining({ status: 'PENDING_PAYMENT', bgClearedAt: expect.any(Date) }),
+                data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION', bgClearedAt: expect.any(Date) }),
             });
-            // Fresh-check renewals skip clearBackgroundCheck, so a designation added
-            // since last cycle must be matched here or the household pays full dues.
-            expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 9, 7, false);
+            // The advance's PENDING_PAYMENT transition matches the volunteer
+            // allowlist (#874) and pings reviewers — beginRenewal does neither.
+            expect(applyVolunteerStatus).not.toHaveBeenCalled();
             expect(notifyReviewers).not.toHaveBeenCalled();
         });
 
-        it('stale check → PENDING_EXTERNAL_ACTION (the request flow), no ping — reviewers wait for consent', async () => {
-            prisma.person.findFirst.mockResolvedValue(null); // no valid check on file
+        it('expired background check → PENDING_EXTERNAL_ACTION without bgClearedAt: sign + request a new background check', async () => {
+            prisma.person.findFirst.mockResolvedValue(null); // no valid background check on file
             prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_EXTERNAL_ACTION' });
 
             await beginRenewal(5);
@@ -139,25 +141,27 @@ describe('beginRenewal', () => {
             expect(notifyReviewers).not.toHaveBeenCalled();
         });
 
-        it('fresh check + household intake note → PENDING_BG_REVIEW: the note must reach a reviewer before payment (#907)', async () => {
-            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid check
+        it('valid background check + household intake note → no bgClearedAt shortcut: the note must reach a reviewer (#907)', async () => {
+            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid background check
             prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'treat us as a volunteer household' } });
-            prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_BG_REVIEW' });
+            prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_EXTERNAL_ACTION' });
 
             await beginRenewal(5);
 
             expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
                 where: { id: 5, status: 'PENDING_RENEWAL' },
-                // No bgClearedAt despite the fresh check: the review queue only
-                // lists uncleared rows, so clearing here would strand the note.
+                // No bgClearedAt despite the valid background check (mirrors submitIntake): the
+                // member consents anyway, and the advance holds at PENDING_BG_REVIEW
+                // so the note reaches a reviewer before payment. Clearing here would
+                // skip the hold — the review queue only lists uncleared rows.
                 data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
             });
             expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
                 where: { id: 5, status: 'PENDING_RENEWAL' },
-                data: expect.objectContaining({ status: 'PENDING_BG_REVIEW' }),
+                data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION' }),
             });
-            expect(applyVolunteerStatus).not.toHaveBeenCalled(); // clearBackgroundCheck applies it after the review
-            expect(notifyReviewers).toHaveBeenCalledTimes(1); // the note is reviewable immediately
+            expect(applyVolunteerStatus).not.toHaveBeenCalled(); // the advance / clearBackgroundCheck applies it
+            expect(notifyReviewers).not.toHaveBeenCalled(); // pinged at consent, not before
         });
 
         it('double-submit loser (count 0) → no audit, no allowlist match, no ping', async () => {
