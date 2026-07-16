@@ -629,11 +629,11 @@ export default function MembershipPage() {
         </Card>
       ) : (
         <Group align="flex-start" gap="xl" wrap="wrap">
-          {!isRenewal && (
-            <Box style={{ flex: "0 0 auto" }}>
-              <MembershipFlowStepper currentStatus={inStatus} />
-            </Box>
-          )}
+          {/* Renewals ride the same stepper as new applications — same phases,
+              same progress, whether the check is fresh, expired, or first-time. */}
+          <Box style={{ flex: "0 0 auto" }}>
+            <MembershipFlowStepper currentStatus={inStatus} />
+          </Box>
 
           <Box style={{ flex: "1 1 420px", minWidth: 320 }}>
             {isIntake ? (
@@ -736,25 +736,29 @@ export default function MembershipPage() {
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="md">
                   <div>
-                    <Title order={2}>Sign &amp; start your background check</Title>
+                    <Title order={2}>{isRenewal ? "Start your background check" : "Sign & start your background check"}</Title>
                     <Text c="dimmed">
-                      Once your agreement is signed and your background check is underway, we&apos;ll
-                      move you straight to payment — you won&apos;t have to wait for the check to come
-                      back.
+                      {isRenewal
+                        ? "Your household's background check has expired, so this renewal needs a new one — no contract to re-sign. Once it's underway, we'll move you straight to payment, and your membership stays active in the meantime."
+                        : "Once your agreement is signed and your background check is underway, we'll move you straight to payment — you won't have to wait for the check to come back."}
                     </Text>
                   </div>
 
-                  <ExternalTask done={!!state.external?.contractSigned} title="Sign your membership agreement" doneText="Agreement signed — thank you!">
-                    <Stack gap="xs" align="flex-start">
-                      <Text c="dimmed">
-                        Sign your personalized membership agreement online. This page updates
-                        automatically once it&apos;s signed.
-                      </Text>
-                      <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
-                        {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
-                      </Button>
-                    </Stack>
-                  </ExternalTask>
+                  {/* Renewals never re-sign the agreement (renewal.ts) — only the
+                      background check brings them to this step. */}
+                  {!isRenewal && (
+                    <ExternalTask done={!!state.external?.contractSigned} title="Sign your membership agreement" doneText="Agreement signed — thank you!">
+                      <Stack gap="xs" align="flex-start">
+                        <Text c="dimmed">
+                          Sign your personalized membership agreement online. This page updates
+                          automatically once it&apos;s signed.
+                        </Text>
+                        <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
+                          {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
+                        </Button>
+                      </Stack>
+                    </ExternalTask>
+                  )}
 
                   {state.external?.bgCleared ? (
                     <ExternalTask done title="Background check" doneText="Your household&apos;s background check is still valid — no new check needed.">

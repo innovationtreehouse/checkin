@@ -302,7 +302,9 @@ describe('background check is non-blocking', () => {
         await beginRenewal(processId);
 
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        expect(proc?.status).toBe('RENEWAL_PENDING_BG');
+        // Fresh check, so no request flow — but the note holds it for review at
+        // the same status INITIAL uses (RENEWAL_PENDING_BG is legacy, unwritten).
+        expect(proc?.status).toBe('PENDING_BG_REVIEW');
         expect(proc?.bgClearedAt).toBeNull();
     });
 

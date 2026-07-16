@@ -267,6 +267,26 @@ describe('advanceExternalIfComplete', () => {
         expect(prisma.orgMembershipProcess.updateMany).not.toHaveBeenCalled();
         expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
+
+    it('RENEWAL: consent alone advances — the contract gate is waived (no re-sign at renewal)', async () => {
+        const renewal = { ...readyProcess, kind: 'RENEWAL', contractSignedAt: null };
+        prisma.orgMembershipProcess.findUnique
+            .mockResolvedValueOnce(renewal)
+            .mockResolvedValueOnce({ ...renewal, status: 'PENDING_PAYMENT' });
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        await advanceExternalIfComplete(20);
+
+        // The conditional update must not require contractSignedAt for a renewal.
+        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.not.objectContaining({ contractSignedAt: expect.anything() }),
+                data: expect.objectContaining({ status: 'PENDING_PAYMENT' }),
+            }),
+        );
+        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
+        expect(notifyReviewers).toHaveBeenCalledTimes(1); // check not cleared → review needed
+    });
 });
 
 describe('getOrCreateContractSigningUrl', () => {

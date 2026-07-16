@@ -70,7 +70,9 @@ export async function getExternalStatus(process: {
 /**
  * Once the contract is signed AND the background check is handled — either a
  * still-valid prior check (bgClearedAt) or fresh consent recorded (bgConsentAt)
- * — advance from EXTERNAL straight to PENDING_PAYMENT. The check no longer gates
+ * — advance from EXTERNAL straight to PENDING_PAYMENT. RENEWAL processes only
+ * ever land here for an expired check (no re-sign at renewal), so for them the
+ * check alone advances. The check no longer gates
  * payment: when it still needs a human review (no prior valid check), it runs in
  * PARALLEL while the applicant pays, and only the final ACTIVE flip waits on it.
  * EXCEPTION: a household intake note holds the application at PENDING_BG_REVIEW
@@ -87,7 +89,10 @@ export async function advanceExternalIfComplete(processId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) return process;
     if (process.status !== "PENDING_EXTERNAL_ACTION") return process;
-    if (!process.contractSignedAt) return process;
+    // Renewals don't re-sign the agreement (renewal.ts) — only an expired
+    // background check brings them here, so the contract gate is INITIAL-only.
+    const contractNeeded = process.kind !== "RENEWAL";
+    if (contractNeeded && !process.contractSignedAt) return process;
     if (!process.bgClearedAt && !process.bgConsentAt) return process;
 
     const advanced = await prisma.$transaction(async (tx) => {
@@ -111,7 +116,7 @@ export async function advanceExternalIfComplete(processId: number) {
             where: {
                 id: processId,
                 status: "PENDING_EXTERNAL_ACTION",
-                contractSignedAt: { not: null },
+                ...(contractNeeded ? { contractSignedAt: { not: null } } : {}),
                 OR: [{ bgClearedAt: { not: null } }, { bgConsentAt: { not: null } }],
             },
             data: { status: nextStatus, stageEnteredAt: new Date() },
