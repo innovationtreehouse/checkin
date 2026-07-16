@@ -30,7 +30,7 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
-jest.mock('@/lib/membership/external', () => ({ getExternalStatus: jest.fn() }));
+jest.mock('@/lib/membership/external', () => ({ getExternalStatus: jest.fn(), advanceExternalIfComplete: jest.fn() }));
 jest.mock('@/lib/emergencyContacts/service', () => ({
     upsertPrimaryContact: jest.fn(),
     reconcileHouseholdConflicts: jest.fn(),
@@ -57,6 +57,8 @@ const { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } = requi
 const { householdBgIsFresh } = require('@/lib/membership/renewal');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { applyVolunteerStatus } = require('@/lib/membership/review');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { advanceExternalIfComplete } = require('@/lib/membership/external');
 
 const user = {
     id: 1,
@@ -415,6 +417,31 @@ describe('submitIntake', () => {
         // Fresh-check shortcut skips clearBackgroundCheck for the whole cycle, so
         // the designation allowlist must be matched here or never.
         expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
+        expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
+    });
+
+    it('re-runs the external advance after landing at PENDING_EXTERNAL_ACTION and returns its result (#878)', async () => {
+        householdBgIsFresh.mockResolvedValue(false);
+        // Board pre-marked contract + BG consent on the INTAKE row, so the gate is
+        // already met when we arrive — the advance carries the process to PENDING_PAYMENT.
+        advanceExternalIfComplete.mockResolvedValue({ id: 11, status: 'PENDING_PAYMENT' });
+
+        const result = await submitIntake(1);
+
+        expect(advanceExternalIfComplete).toHaveBeenCalledWith(11);
+        expect(result).toEqual({ id: 11, status: 'PENDING_PAYMENT' });
+    });
+
+    it('falls back to the update result when the external advance is a no-op (#878)', async () => {
+        householdBgIsFresh.mockResolvedValue(false);
+        // Nothing pre-marked ⇒ advanceExternalIfComplete finds the gate unmet and
+        // returns the still-PENDING_EXTERNAL_ACTION process (here left undefined to
+        // exercise the fallback); submitIntake reports the phase it advanced to.
+        advanceExternalIfComplete.mockResolvedValue(undefined);
+
+        const result = await submitIntake(1);
+
+        expect(advanceExternalIfComplete).toHaveBeenCalledWith(11);
         expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
 

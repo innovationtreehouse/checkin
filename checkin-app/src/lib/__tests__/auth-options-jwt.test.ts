@@ -185,6 +185,23 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
         expect(result.emailVerified).toBe(true);
     });
 
+    it('lowercases a mixed-case user.email before the lookup (#292 read normalization)', async () => {
+        mockFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: false }));
+
+        await jwt({
+            token: {},
+            user: { email: 'John.Doe@Example.com' },
+            account: { provider: 'google' },
+            profile: { email_verified: true },
+        } as unknown as Parameters<JwtCallback>[0]);
+
+        // Stored emails are lowercased on write, so the sign-in lookup key must be too —
+        // otherwise Google's casing misses the row and NextAuth mints a duplicate.
+        expect(mockFindUnique).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { email: 'john.doe@example.com' } }),
+        );
+    });
+
     it('promotes a BOOTSTRAP_SYSADMINS email to isSysadmin on sign-in', async () => {
         const prevEnv = process.env.BOOTSTRAP_SYSADMINS;
         process.env.BOOTSTRAP_SYSADMINS = 'Boss@Example.com';

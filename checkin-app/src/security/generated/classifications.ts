@@ -114,6 +114,7 @@ export const classifications = {
         volunteerDuesCents: 'public',
         orgMembershipYearBoundary: 'public',
         orgMembershipVariantId: 'internal',
+        orgMembershipProductUrl: 'internal',
         volunteerDiscountCode: 'internal',
         bgRecheckMonths: 'public',
         devSigningTarget: 'internal',

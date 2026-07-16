@@ -70,9 +70,12 @@ export async function getExternalStatus(process: {
 /**
  * Once the contract is signed AND the background check is handled — either a
  * still-valid prior check (bgClearedAt) or fresh consent recorded (bgConsentAt)
- * — advance from EXTERNAL straight to PENDING_PAYMENT. The check no longer gates
- * payment: when it still needs a human review (no prior valid check), it runs in
- * PARALLEL while the applicant pays, and only the final ACTIVE flip waits on it.
+ * — advance from EXTERNAL straight to PENDING_PAYMENT. RENEWAL processes take
+ * this gate too: a fresh agreement is signed every cycle (beginRenewal), and a
+ * still-valid background check arrives here pre-cleared so only the signature
+ * is pending. The background check no longer gates payment: when it still needs
+ * a human review (no still-valid prior background check), it runs in PARALLEL
+ * while the applicant pays, and only the final ACTIVE flip waits on it.
  * EXCEPTION: a household intake note holds the application at PENDING_BG_REVIEW
  * instead — payment opens only after the reviewers (who are shown the note) clear
  * the check, so a note like "treat us as a volunteer household" settles dues first.

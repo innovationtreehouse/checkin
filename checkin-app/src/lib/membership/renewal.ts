@@ -2,7 +2,6 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
-import { notifyReviewers, applyVolunteerStatus } from "@/lib/membership/review";
 import { config } from "@/lib/config";
 
 /**
@@ -10,15 +9,37 @@ import { config } from "@/lib/config";
  * household. Two months out, the cron opens a RENEWAL process at PENDING_RENEWAL
  * and reminds the household — the membership stays ACTIVE throughout.
  *
- * When the member begins renewal, the background-check rule decides the path: if
- * EITHER parent's check is still valid at the boundary (lastBackgroundCheck within
- * BoardSettings.bgRecheckMonths of it), skip straight to PENDING_PAYMENT; otherwise
- * re-run review (RENEWAL_PENDING_BG). The interval is board-configured, not hardcoded.
- * The Zoho contract is NOT re-signed at renewal. No auto-revoke — manual admin action.
+ * When the member begins renewal they enter the SAME external step a new applicant
+ * gets (PENDING_EXTERNAL_ACTION): a fresh membership agreement is signed EVERY
+ * cycle, and the background-check rule decides the other half — if EITHER parent's
+ * background check is still valid at the boundary (lastBackgroundCheck within
+ * BoardSettings.bgRecheckMonths of it, board-configured), bgClearedAt is stamped
+ * and signing alone opens payment; otherwise the member requests a new background
+ * check on Averity and the 2-of-N review runs in parallel with payment, exactly
+ * like INITIAL. No auto-revoke — manual admin action. RENEWAL_PENDING_BG is legacy:
+ * nothing writes it anymore (a migration moved open rows to the request flow).
  */
 
 const SYSTEM_ACTOR = 0;
 const RENEWAL_LEAD_MONTHS = 2;
+
+/**
+ * A renewal cycle counts as open while its process sits in any of these — the
+ * request-flow states (PENDING_EXTERNAL_ACTION onward) included, or the sweep
+ * would open a duplicate renewal for a household mid-flow. Must stay in step
+ * with the partial unique index `membership_one_inflight_renewal` (raw SQL,
+ * see the 20260715 renewal_bg_request_flow migration). BLOCKED is deliberately
+ * out (pre-existing semantics: a blocked renewal is the board's to resolve).
+ * RENEWAL_PENDING_BG is legacy — unwritten since that migration, still guarded.
+ */
+const IN_FLIGHT_RENEWAL_STATUSES = [
+    "PENDING_RENEWAL",
+    "PENDING_EXTERNAL_ACTION",
+    "PENDING_BG_REVIEW",
+    "PENDING_PAYMENT",
+    "PENDING_BG_CLEARANCE",
+    "RENEWAL_PENDING_BG",
+] as const;
 
 export class RenewalError extends Error {
     constructor(public readonly code: "not_found" | "wrong_phase", message: string) {
@@ -60,7 +81,7 @@ export async function runRenewalSweep(now: Date) {
         where: { status: "ACTIVE" },
         // "Already open" = an in-flight RENEWAL by status (matches the partial unique
         // index + openRenewalsForAllActive), not the leakier createdAt window.
-        select: { id: true, householdId: true, processes: { where: { kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } }, select: { id: true } } },
+        select: { id: true, householdId: true, processes: { where: { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } }, select: { id: true } } },
     });
 
     let opened = 0;
@@ -75,9 +96,11 @@ export async function runRenewalSweep(now: Date) {
 }
 
 /**
- * Member begins renewal: PENDING_RENEWAL -> RENEWAL_PENDING_BG (re-review needed,
- * or a household intake note awaits a reviewer) or PENDING_PAYMENT (background
- * check still valid, no note). Idempotent-ish: only acts from PENDING_RENEWAL.
+ * Member begins renewal: PENDING_RENEWAL -> PENDING_EXTERNAL_ACTION, always — a
+ * fresh membership agreement is signed every cycle. A still-valid background
+ * check (no household note) is pre-cleared so only the signature is left;
+ * otherwise the member also requests a new background check, same flow as
+ * INITIAL. Idempotent-ish: only acts from PENDING_RENEWAL.
  */
 export async function beginRenewal(processId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -92,35 +115,30 @@ export async function beginRenewal(processId: number) {
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
-    // A household note (#900) must reach a reviewer before payment (#907): even
-    // with a still-fresh check, the renewal goes through review so the note (e.g.
-    // "treat us as a volunteer household") can settle dues first. Households clear
-    // the note in my-household once it no longer applies.
-    const bgFresh =
-        (await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0)) &&
-        !membership.household.intakeNotes?.trim();
+    const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
+    const hasNote = !!membership.household.intakeNotes?.trim();
 
-    const nextStatus = bgFresh ? "PENDING_PAYMENT" : "RENEWAL_PENDING_BG";
+    // A still-valid background check with no household note ⇒ stamp bgClearedAt
+    // now: the external card shows "no new background check needed" and the
+    // signature alone opens payment. A note (#900) disqualifies the shortcut
+    // exactly like submitIntake —
+    // the member consents anyway and advanceExternalIfComplete holds the process
+    // at PENDING_BG_REVIEW so the note reaches a reviewer before payment (#907).
+    // Reviewers are NOT pinged here — nothing is reviewable until consent is
+    // recorded; the advance pings them, same as INITIAL. Volunteer allowlist
+    // matching (#874) also happens at the advance's PENDING_PAYMENT transition.
+    const clearNow = bgFresh && !hasNote;
     // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
     // here, but only the winner's updateMany flips it (count === 1) — so the audit
-    // row and reviewer ping fire exactly once. Mirrors external.ts markContractSigned.
-    // Fresh check ⇒ no re-review, so clear the BG requirement here (there's no
-    // consent step / reviewer queue for a fresh renewal). Without this the renewal
-    // pays and parks at PENDING_BG_CLEARANCE forever. Re-review renewals
-    // (RENEWAL_PENDING_BG) get bgClearedAt from clearBackgroundCheck instead.
+    // row is written exactly once. Mirrors external.ts markContractSigned.
     const { count } = await prisma.orgMembershipProcess.updateMany({
         where: { id: processId, status: "PENDING_RENEWAL" },
-        data: { status: nextStatus, stageEnteredAt: new Date(), ...(bgFresh ? { bgClearedAt: new Date() } : {}) },
+        data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date(), ...(clearNow ? { bgClearedAt: new Date() } : {}) },
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: nextStatus, ...(bgFresh ? { bgClearedAt: true } : {}) } },
+            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: "PENDING_EXTERNAL_ACTION", ...(clearNow ? { bgClearedAt: true } : {}) } },
         });
-        if (nextStatus === "RENEWAL_PENDING_BG") await notifyReviewers();
-        // Fresh check ⇒ clearBackgroundCheck never runs this cycle, so a household
-        // designated volunteer since last cycle would pay full dues — match the
-        // allowlist at this PENDING_PAYMENT transition too (#874).
-        if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId!, membership.householdId, false);
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
 }
@@ -144,7 +162,7 @@ export async function createRenewalProcess(orgMembershipId: number, householdId:
             // Lock the membership row so overlapping opens serialize here, not at the INSERT.
             await tx.$queryRaw`SELECT id FROM "OrgMembership" WHERE id = ${orgMembershipId} FOR UPDATE`;
             const existing = await tx.orgMembershipProcess.findFirst({
-                where: { orgMembershipId, kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } },
+                where: { orgMembershipId, kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } },
                 select: { id: true },
             });
             if (existing) return null; // someone else already opened the renewal
@@ -186,7 +204,7 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
         select: {
             id: true,
             householdId: true,
-            processes: { where: { kind: "RENEWAL", status: { in: ["PENDING_RENEWAL", "RENEWAL_PENDING_BG", "PENDING_PAYMENT"] } }, select: { id: true } },
+            processes: { where: { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } }, select: { id: true } },
         },
     });
 
@@ -213,7 +231,7 @@ export async function beginRenewalForUser(userId: number) {
 }
 
 /**
- * True if EITHER guardian (household lead) has a check still valid at the boundary,
+ * True if EITHER guardian (household lead) has a background check still valid at the boundary,
  * i.e. lastBackgroundCheck >= boundary - recheckMonths. When recheckMonths is 0 (the
  * board hasn't set the policy), nothing counts as fresh — renewals re-run review.
  */
