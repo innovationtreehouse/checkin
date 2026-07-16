@@ -151,6 +151,29 @@ describe("HouseholdPage", () => {
     expect(router.push).toHaveBeenCalledWith("/membership");
   });
 
+  it("prompts a former member to renew (REVOKED)", async () => {
+    setSession({ id: 10, email: "sam@example.com" });
+    mockRoutes({ "/api/household": { household: { ...householdData, orgMembership: { status: "REVOKED" } } } });
+    renderWithProviders(<HouseholdPage />);
+    await screen.findByRole("heading", { name: "Smith Household", level: 1 });
+
+    expect(screen.getByText("Renew your membership now!")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Renew!" }));
+    expect(router.push).toHaveBeenCalledWith("/membership");
+  });
+
+  it("prompts an ACTIVE member to renew when a renewal is open", async () => {
+    setSession({ id: 10, email: "sam@example.com" });
+    mockRoutes({ "/api/membership/renewal-status": { renewalDue: true } });
+    renderWithProviders(<HouseholdPage />);
+    await screen.findByRole("heading", { name: "Smith Household", level: 1 });
+
+    expect(await screen.findByText("Renew your membership now!")).toBeInTheDocument();
+    expect(screen.queryByText(/Member since/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Renew!" }));
+    expect(router.push).toHaveBeenCalledWith("/membership");
+  });
+
   it("shows a volunteer-only badge when memberSince is absent", async () => {
     setSession({ id: 10, email: "sam@example.com" });
     mockRoutes({ "/api/household": { household: { ...householdData, orgMembership: { status: "ACTIVE", isVolunteer: true } } } });
