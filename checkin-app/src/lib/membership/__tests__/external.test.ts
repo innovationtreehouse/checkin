@@ -267,6 +267,18 @@ describe('advanceExternalIfComplete', () => {
         expect(prisma.orgMembershipProcess.updateMany).not.toHaveBeenCalled();
         expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
+
+    it('RENEWAL: the contract gate applies too — an unsigned renewal does not advance on consent alone', async () => {
+        // A fresh agreement is signed every cycle (beginRenewal), so a renewal
+        // with consent but no signature must stay at PENDING_EXTERNAL_ACTION.
+        prisma.orgMembershipProcess.findUnique.mockResolvedValueOnce({ ...readyProcess, kind: 'RENEWAL', contractSignedAt: null });
+
+        await advanceExternalIfComplete(20);
+
+        expect(prisma.orgMembershipProcess.updateMany).not.toHaveBeenCalled();
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
+        expect(notifyReviewers).not.toHaveBeenCalled();
+    });
 });
 
 describe('getOrCreateContractSigningUrl', () => {

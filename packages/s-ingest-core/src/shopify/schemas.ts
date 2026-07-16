@@ -185,7 +185,8 @@ const payoutSummarySchema = z
   .object({
     chargesGross: moneyV2.nullish(),
     chargesFee: moneyV2.nullish(),
-    refundsGross: moneyV2.nullish(),
+    // sic: Shopify's name for GROSS refunds on the payout summary (no `refundsGross` exists)
+    refundsFeeGross: moneyV2.nullish(),
     refundsFee: moneyV2.nullish(),
     adjustmentsGross: moneyV2.nullish(),
     adjustmentsFee: moneyV2.nullish(),
@@ -237,7 +238,7 @@ export function normalizePayout(node: PayoutNode): NormalizedPayout {
     netCents: v2Cents(node.net),
     chargesGrossCents: v2Cents(s.chargesGross),
     chargesFeeCents: v2Cents(s.chargesFee),
-    refundsGrossCents: v2Cents(s.refundsGross),
+    refundsGrossCents: v2Cents(s.refundsFeeGross),
     refundsFeeCents: v2Cents(s.refundsFee),
     adjustmentsGrossCents: v2Cents(s.adjustmentsGross),
     adjustmentsFeeCents: v2Cents(s.adjustmentsFee),

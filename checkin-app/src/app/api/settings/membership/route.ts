@@ -17,7 +17,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 /**
  * PUT /api/settings/membership — update board settings.
  * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
- * orgMembershipVariantId (string|null), volunteerDiscountCode (string|null),
+ * orgMembershipVariantId (string|null), orgMembershipProductUrl (string|null),
+ * volunteerDiscountCode (string|null),
  * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
@@ -30,6 +31,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         volunteerDuesCents?: number;
         orgMembershipYearBoundary?: string | null;
         orgMembershipVariantId?: string | null;
+        orgMembershipProductUrl?: string | null;
         volunteerDiscountCode?: string | null;
         bgRecheckMonths?: number;
         devSigningTarget?: string | null;
@@ -58,6 +60,11 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         const variantId = body.orgMembershipVariantId?.trim();
         if (variantId && !/^\d+$/.test(variantId)) return apiError("orgMembershipVariantId must be a numeric Shopify variant ID", 400);
         data.orgMembershipVariantId = variantId || null;
+    }
+    // Reference only — the checkout link is built from the variant ID, never this
+    // URL, and /extract-variant re-validates it hard before any server-side fetch.
+    if (body.orgMembershipProductUrl !== undefined) {
+        data.orgMembershipProductUrl = body.orgMembershipProductUrl?.trim() || null;
     }
     if (body.volunteerDiscountCode !== undefined) {
         data.volunteerDiscountCode = body.volunteerDiscountCode?.trim() || null;

@@ -66,7 +66,7 @@ describe("CreateProgramPage", () => {
     expect(screen.getByText("End date must be on or after start date.")).toBeInTheDocument();
   });
 
-  it("warns when the member price exceeds the non-member price and no max participants is set", async () => {
+  it("warns when the member price exceeds the non-member price", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({});
     renderWithProviders(<CreateProgramPage />);
@@ -77,10 +77,23 @@ describe("CreateProgramPage", () => {
     fireEvent.change(screen.getByLabelText("Non-Member Price ($)"), { target: { value: "20" } });
 
     expect(screen.getByText(/Member price is higher than non-member price/)).toBeInTheDocument();
-    expect(screen.getByText(/No max participants set/)).toBeInTheDocument();
+  });
 
-    fireEvent.change(screen.getByLabelText("Max Participants (Optional)"), { target: { value: "30" } });
-    expect(screen.queryByText(/No max participants set/)).not.toBeInTheDocument();
+  it("defaults max participants to 50 and disables submit when it is cleared", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/people/search": { people: [mentor] } });
+    renderWithProviders(<CreateProgramPage />);
+    const nameInput = await screen.findByLabelText("Program Name", { exact: false });
+
+    const maxInput = screen.getByLabelText("Max Participants", { exact: false });
+    expect(maxInput).toHaveValue("50");
+
+    fireEvent.change(nameInput, { target: { value: "FRC Robotics 2026" } });
+    await pickMentor();
+    expect(screen.getByRole("button", { name: "Create Program" })).toBeEnabled();
+
+    fireEvent.change(maxInput, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Create Program" })).toBeDisabled();
   });
 
   it("searches for and selects a lead mentor, then clears the selection", async () => {
@@ -141,7 +154,7 @@ describe("CreateProgramPage", () => {
             maxAge: 18,
             memberPrice: null,
             nonMemberPrice: null,
-            maxParticipants: null,
+            maxParticipants: 50,
             leadMentorId: 7,
           }),
         }),

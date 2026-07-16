@@ -213,7 +213,7 @@ describe('Membership BG review API', () => {
         }
     });
 
-    it('board reset on a BLOCKED RENEWAL returns it to RENEWAL_PENDING_BG (not PENDING_BG_REVIEW), attestations cleared', async () => {
+    it('board reset on a BLOCKED RENEWAL without consent restarts the request flow (PENDING_EXTERNAL_ACTION), attestations cleared', async () => {
         const proc = await makeProcess('RenewalReset', 'RENEWAL', 'RENEWAL_PENDING_BG');
 
         // A reject from an eligible reviewer (different household) blocks it.
@@ -224,9 +224,11 @@ describe('Membership BG review API', () => {
         as(board, { isBoardMember: true });
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
         expect(res.status).toBe(200);
-        // Renewal branch: must restore the RENEWAL review phase, not the INITIAL one.
+        // No consent was ever recorded, so the reset must restart the member-facing
+        // request flow — the parallel review queue can't list an unconsented renewal
+        // (PENDING_PAYMENT rows only enter it once bgConsentAt is set).
         const after = await prisma.orgMembershipProcess.findUnique({ where: { id: proc.processId } });
-        expect(after?.status).toBe('RENEWAL_PENDING_BG');
+        expect(after?.status).toBe('PENDING_EXTERNAL_ACTION');
         expect(await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } })).toBe(0);
     });
 
