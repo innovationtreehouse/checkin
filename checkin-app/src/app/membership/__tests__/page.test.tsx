@@ -4,12 +4,12 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, setCheckinEnv, resetRtl } from "@/test-helpers/rtl";
 import MembershipPage from "../page";
 
-beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
+beforeEach(() => { resetRtl(); sessionStorage.clear(); (notifications.show as jest.Mock).mockClear(); });
 afterEach(() => window.history.pushState({}, "", "/"));
 
 const emptyPrefill = { household: null, primaryParent: null, secondaryParent: null, children: [] };
@@ -351,6 +351,171 @@ describe("membership page", () => {
     renderWithProviders(<MembershipPage />);
 
     expect(await screen.findByText("Preparing your invoice…")).toBeInTheDocument();
+  });
+
+  // ── PENDING_PAYMENT payment holdoff ──────────────────────────────────────────
+  it("clicking the Shopify checkout link shows the holdoff message and persists it to sessionStorage", async () => {
+    setSession({ id: 1 });
+    mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+
+    fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
+
+    expect(await screen.findByText("We'll update your status here when we receive your payment.")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Pay here with Shopify/ })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("membership_awaiting_payment_1")).not.toBeNull();
+  });
+
+  it("clears the holdoff and shows the paid-state card once a poll finds the payment settled", async () => {
+    setSession({ id: 1 });
+    jest.useFakeTimers();
+    try {
+      let status = "PENDING_PAYMENT";
+      mockFetchJson({
+        "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+        "/api/membership": () => state({
+          process: { id: 1, kind: "INITIAL", status },
+          external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+        }),
+      });
+      renderWithProviders(<MembershipPage />);
+      fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
+      await screen.findByText("We'll update your status here when we receive your payment.");
+
+      // Simulate the orders/paid webhook settling the payment server-side —
+      // the next poll's load() picks up the new status.
+      status = "PENDING_BG_CLEARANCE";
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10_000);
+      });
+
+      expect(await screen.findByText("Payment received", { exact: false })).toBeInTheDocument();
+      expect(sessionStorage.getItem("membership_awaiting_payment_1")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("restores the pay button and shows a soft note after the 10-minute holdoff times out", async () => {
+    setSession({ id: 1 });
+    jest.useFakeTimers();
+    try {
+      mockFetchJson({
+        "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+        "/api/membership": state({
+          process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+          external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+        }),
+      });
+      renderWithProviders(<MembershipPage />);
+      fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
+      await screen.findByText("We'll update your status here when we receive your payment.");
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+      });
+
+      expect(await screen.findByRole("link", { name: /Pay here with Shopify/ })).toBeInTheDocument();
+      expect(screen.getByText("We haven't seen your payment yet", { exact: false })).toBeInTheDocument();
+      expect(sessionStorage.getItem("membership_awaiting_payment_1")).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("dismissing the soft timeout note hides it", async () => {
+    setSession({ id: 1 });
+    jest.useFakeTimers();
+    try {
+      mockFetchJson({
+        "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+        "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" } }),
+      });
+      renderWithProviders(<MembershipPage />);
+      fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
+      await screen.findByText("We'll update your status here when we receive your payment.");
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
+      });
+      const note = await screen.findByText("We haven't seen your payment yet", { exact: false });
+
+      fireEvent.click(note.closest(".mantine-Alert-root")!.querySelector(".mantine-Alert-closeButton")!);
+
+      expect(screen.queryByText("We haven't seen your payment yet", { exact: false })).not.toBeInTheDocument();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("the 'Show the payment button again' escape hatch restores the pay button without waiting", async () => {
+    setSession({ id: 1 });
+    mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" } }),
+    });
+    renderWithProviders(<MembershipPage />);
+    fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
+    await screen.findByText("We'll update your status here when we receive your payment.");
+
+    fireEvent.click(screen.getByText("Show the payment button again"));
+
+    expect(await screen.findByRole("link", { name: /Pay here with Shopify/ })).toBeInTheDocument();
+    expect(sessionStorage.getItem("membership_awaiting_payment_1")).toBeNull();
+  });
+
+  it("never shows the payment holdoff for the local mock payment path", async () => {
+    setSession({ id: 1 });
+    setCheckinEnv("local");
+    mockFetchJson({
+      "/api/membership/payment": { amountCents: 9900, checkoutUrl: null },
+      "/api/dev/shopify/orders-paid": {},
+      "/api/membership": state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Pay now \(local mock\)/ }));
+
+    await waitFor(() => expect(screen.getByText("Payment mocked (local) — updating status.")).toBeInTheDocument());
+    expect(screen.queryByText("We'll update your status here when we receive your payment.")).not.toBeInTheDocument();
+    expect(sessionStorage.getItem("membership_awaiting_payment_1")).toBeNull();
+  });
+
+  it("clears the poll interval on unmount", async () => {
+    setSession({ id: 1 });
+    jest.useFakeTimers();
+    try {
+      const fetchMock = mockFetchJson({
+        "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+        "/api/membership": state({
+          process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+          external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+        }),
+      });
+      const { unmount } = renderWithProviders(<MembershipPage />);
+      fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
+      await screen.findByText("We'll update your status here when we receive your payment.");
+
+      const callsBeforeUnmount = fetchMock.mock.calls.length;
+      unmount();
+
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect(fetchMock.mock.calls.length).toBe(callsBeforeUnmount);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   // ── PENDING_EXTERNAL_ACTION branches ─────────────────────────────────────────

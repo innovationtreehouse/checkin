@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
-  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
+  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group, Loader,
   SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -23,6 +23,13 @@ import { useIsLocalInstance } from "@/components/EnvProvider";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
+
+// Payment holdoff (below): how long we wait after a real Shopify checkout click
+// before giving up and restoring the pay button, and how often we poll for a
+// status change in the meantime.
+const AWAITING_PAYMENT_TIMEOUT_MS = 10 * 60 * 1000;
+const AWAITING_PAYMENT_POLL_MS = 10 * 1000;
+const awaitingPaymentKey = (processId: number) => `membership_awaiting_payment_${processId}`;
 
 interface PersonPrefill {
   id: number;
@@ -135,6 +142,16 @@ export default function MembershipPage() {
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [notes, setNotes] = useState("");
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Set when the applicant clicks the real Shopify checkout link (not the local
+  // mock, which settles synchronously and never needs a holdoff). Persisted to
+  // sessionStorage keyed by process id, so a tab refresh mid-checkout keeps the
+  // message. Cleared implicitly whenever a server-side path — the orders/paid
+  // webhook today, an s-read reconciliation possibly in the future — moves the
+  // process out of PENDING_PAYMENT, or after a 10-minute timeout.
+  const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number; startedAt: number } | null>(null);
+  // Soft note shown once the holdoff times out with no status change. Distinct
+  // from a payment-received message — a timeout isn't a confirmation.
+  const [paymentTimedOut, setPaymentTimedOut] = useState(false);
   // Flips true once the household asks the finance committee for a payment plan.
   const [planRequested, setPlanRequested] = useState(false);
   // Self-attest gate for the background-check task (#875): the confirm checkbox
@@ -144,6 +161,15 @@ export default function MembershipPage() {
   const [bgAttesting, setBgAttesting] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
+
+  // Drop the holdoff and its sessionStorage record, if one is set. Shared by the
+  // escape hatch, the implicit status-change clear, and the timeout below.
+  const clearAwaitingPayment = useCallback(() => {
+    setAwaitingPayment((cur) => {
+      if (cur) sessionStorage.removeItem(awaitingPaymentKey(cur.processId));
+      return null;
+    });
+  }, []);
 
   const hydrate = useCallback((s: IntakeState) => {
     setState(s);
@@ -265,6 +291,46 @@ export default function MembershipPage() {
     return () => { cancelled = true; };
   }, [state?.process?.status]);
 
+  // Restore an in-flight payment holdoff after a tab refresh mid-Shopify-checkout
+  // — same process, still inside the 10-minute window.
+  useEffect(() => {
+    const processId = state?.process?.id;
+    if (!processId || state?.process?.status !== "PENDING_PAYMENT") return;
+    const raw = sessionStorage.getItem(awaitingPaymentKey(processId));
+    if (!raw) return;
+    const startedAt = Number(raw);
+    if (Date.now() - startedAt < AWAITING_PAYMENT_TIMEOUT_MS) setAwaitingPayment({ processId, startedAt });
+    else sessionStorage.removeItem(awaitingPaymentKey(processId));
+  }, [state?.process?.id, state?.process?.status]);
+
+  // Implicit clearing: once the process is no longer PENDING_PAYMENT — the
+  // orders/paid webhook settled it, or (possibly, in the future) an s-read
+  // reconciliation did — drop the holdoff and its sessionStorage record.
+  useEffect(() => {
+    if (state?.process?.status === "PENDING_PAYMENT") return;
+    clearAwaitingPayment();
+    setPaymentTimedOut(false);
+  }, [state?.process?.status, clearAwaitingPayment]);
+
+  // While awaiting payment, poll the existing load() every ~10s: a status
+  // change re-renders the card out of PENDING_PAYMENT (handled above) — no
+  // separate "clear" path needed for that. One interval also carries the
+  // 10-minute deadline check.
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    const { startedAt } = awaitingPayment;
+    const timer = setInterval(() => {
+      if (Date.now() - startedAt >= AWAITING_PAYMENT_TIMEOUT_MS) {
+        clearInterval(timer);
+        clearAwaitingPayment();
+        setPaymentTimedOut(true);
+        return;
+      }
+      load();
+    }, AWAITING_PAYMENT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [awaitingPayment, load, clearAwaitingPayment]);
+
   const flash = (msg: string, error = false) => {
     setMessage(msg ? { text: msg, tone: error ? "error" : "success" } : undefined);
     // Clear stale warnings when starting an action (msg === "") or on a hard
@@ -275,6 +341,16 @@ export default function MembershipPage() {
   // Prefer the API's user-facing error string; fall back to a friendly default.
   const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
     data?.error || fallback;
+
+  // Real Shopify checkout only (opens a new tab) — starts the payment holdoff.
+  // The local mock below settles synchronously and never needs one.
+  const handlePayClick = () => {
+    if (!state?.process) return;
+    const startedAt = Date.now();
+    sessionStorage.setItem(awaitingPaymentKey(state.process.id), String(startedAt));
+    setPaymentTimedOut(false);
+    setAwaitingPayment({ processId: state.process.id, startedAt });
+  };
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
@@ -806,8 +882,18 @@ export default function MembershipPage() {
                     <Text c="dimmed">
                       Your annual household dues are <strong>${(payment.amountCents / 100).toFixed(2)}</strong>.
                     </Text>
-                    {payment.checkoutUrl ? (
-                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md">
+                    {awaitingPayment ? (
+                      <Stack gap="xs" mt="md" align="flex-start">
+                        <Group gap="sm">
+                          <Loader size="sm" />
+                          <Text>We&apos;ll update your status here when we receive your payment.</Text>
+                        </Group>
+                        <Anchor component="button" type="button" size="sm" c="dimmed" onClick={clearAwaitingPayment}>
+                          Show the payment button again
+                        </Anchor>
+                      </Stack>
+                    ) : payment.checkoutUrl ? (
+                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md" onClick={handlePayClick}>
                         Pay here with Shopify →
                       </Button>
                     ) : isLocalInstance ? (
@@ -816,6 +902,13 @@ export default function MembershipPage() {
                       </Button>
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
+                    )}
+                    {paymentTimedOut && (
+                      <Alert color="yellow" variant="light" mt="md" withCloseButton onClose={() => setPaymentTimedOut(false)}>
+                        We haven&apos;t seen your payment yet — payments can take a few minutes to
+                        confirm. If you completed checkout, check back shortly; otherwise you can pay
+                        again below.
+                      </Alert>
                     )}
                     {planRequested ? (
                       <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
