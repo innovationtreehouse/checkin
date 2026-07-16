@@ -4,10 +4,16 @@
 -- next release). Scoped to the replaced names — NOT a wholesale ledger wipe,
 -- because the released 20260711 baseline row must survive.
 BEGIN;
+-- Includes the coalesced name itself: the deploy that runs between the merge
+-- and this reconcile ATTEMPTS the coalesced migration against the already-
+-- migrated schema and records it as a FAILED ledger row (the P3009 every
+-- subsequent deploy short-circuits on). That row must go before the applied
+-- row below is inserted, or P3009 survives the reconcile.
 DELETE FROM "_prisma_migrations"
  WHERE migration_name IN
    ('20260715210000_org_membership_product_url',
-    '20260716120000_payment_reconciliation');
+    '20260716120000_payment_reconciliation',
+    '20260716150000_coalesced_post_v1_0_1');
 INSERT INTO "_prisma_migrations"
     (id, checksum, migration_name, started_at, finished_at, applied_steps_count)
 VALUES
