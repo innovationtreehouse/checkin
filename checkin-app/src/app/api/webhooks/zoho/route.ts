@@ -3,8 +3,26 @@ import { logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { verifyZohoToken, parseZohoWebhook, ZOHO_WEBHOOK_HEADER } from "@/lib/membership/contract/zoho";
 import { findProcessByEnvelope, markContractSigned } from "@/lib/membership/external";
+import { withWebhook } from "@/lib/webhookAuth";
+import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Zoho has no native HMAC — verify the shared-secret header. Config-not-set is a
+ * server error (500); a missing/wrong token is unauthorized (401). Runs against
+ * headers only; the raw body is unused here.
+ */
+function verifyZoho(req: Request): { ok: true } | { ok: false; status: number; error: string } {
+    if (!config.zohoWebhookSecret()) {
+        logger.error("Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured.");
+        return { ok: false, status: 500, error: "Configuration Error" };
+    }
+    if (!verifyZohoToken(req.headers.get(ZOHO_WEBHOOK_HEADER))) {
+        return { ok: false, status: 401, error: "Invalid signature" };
+    }
+    return { ok: true };
+}
 
 /**
  * POST /api/webhooks/zoho — Zoho Sign contract completion callback.
@@ -13,27 +31,11 @@ export const dynamic = "force-dynamic";
  * Zoho request id, and (on a completed signing) records the contract as signed —
  * which may advance the application to PENDING_BG_REVIEW. We never read contract content.
  */
-export async function POST(req: Request) {
-    if (!config.zohoWebhookSecret()) {
-        logger.error("Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured.");
-        return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
-    }
-
-    if (!verifyZohoToken(req.headers.get(ZOHO_WEBHOOK_HEADER))) {
-        return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
-    }
-
-    let body: unknown;
-    try {
-        body = await req.json();
-    } catch {
-        return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
-    }
-
+export const POST = withWebhook({ provider: "zoho", verify: verifyZoho }, async (_req, body) => {
     const { requestId, completed } = parseZohoWebhook(body);
     if (!requestId) {
         logger.error("Zoho webhook missing request id.");
-        return NextResponse.json({ error: "Missing request id" }, { status: 400 });
+        return apiError("Missing request id", 400);
     }
 
     // Only act on completed signings; acknowledge other events so Zoho stops retrying.
@@ -48,4 +50,4 @@ export async function POST(req: Request) {
 
     await markContractSigned(mp.id);
     return NextResponse.json({ ok: true });
-}
+});

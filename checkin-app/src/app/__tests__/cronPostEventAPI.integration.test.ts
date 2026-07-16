@@ -8,23 +8,27 @@ jest.mock("@/lib/email", () => ({
 
 describe("GET /api/cron/post-event", () => {
     beforeEach(async () => {
-        await prisma.visit.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.rSVP.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
+        await prisma.visit.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.rSVP.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Past Event' } } });
         await prisma.event.deleteMany({ where: { name: { startsWith: 'Future Event' } } });
         await prisma.program.deleteMany({ where: { name: 'Test Program' } });
-        await prisma.toolStatus.deleteMany({ where: { user: { email: { contains: 'example.com' } } } });
-        await prisma.householdLead.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participant: { email: { contains: 'example.com' } } } });
-        await prisma.participant.deleteMany({ where: { email: { contains: 'example.com' } } });
-        await prisma.household.deleteMany({ where: { participants: { none: {} } } });
+        await prisma.toolStatus.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { person: { email: { contains: 'example.com' } } } });
+        await prisma.person.deleteMany({ where: { email: { contains: 'example.com' } } });
+        // Global participant-less household delete: clear the membership chain for those
+        // households first or Membership_householdId_fkey (RESTRICT) blocks the delete.
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { household: { householdMembers: { none: {} } } } } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { household: { householdMembers: { none: {} } } } } });
+        await prisma.orgMembership.deleteMany({ where: { household: { householdMembers: { none: {} } } } });
+        await prisma.household.deleteMany({ where: { householdMembers: { none: {} } } });
         jest.clearAllMocks();
     });
 
     it("should send emails for finished events and mark them as sent", async () => {
         // Setup data
-        const lead = await prisma.participant.create({
-            data: { email: "lead@example.com", name: "Lead Mentor", household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: "lead@example.com", name: "Lead Mentor", household: { create: { name: "Test HH" } } }
         });
 
         const program = await prisma.program.create({
@@ -38,24 +42,24 @@ describe("GET /api/cron/post-event", () => {
         const event = await prisma.event.create({
             data: {
                 name: "Past Event",
-                start: pastStart,
-                end: pastEnd,
+                startAt: pastStart,
+                endAt: pastEnd,
                 programId: program.id,
                 postEventEmailSent: false
             }
         });
 
         // Add some RSVPs and Visits
-        const user = await prisma.participant.create({
-            data: { email: "user@example.com", name: "User", household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: "user@example.com", name: "User", household: { create: { name: "Test HH" } } }
         });
         
         await prisma.rSVP.create({
-            data: { eventId: event.id, participantId: user.id, status: "ATTENDING" }
+            data: { eventId: event.id, personId: user.id, status: "ATTENDING" }
         });
 
         await prisma.visit.create({
-            data: { associatedEventId: event.id, participantId: user.id, arrived: pastStart }
+            data: { associatedEventId: event.id, personId: user.id, arrivedAt: pastStart }
         });
 
         process.env.CRON_SECRET = 'test-secret';
@@ -93,8 +97,8 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.create({
             data: {
                 name: "Future Event",
-                start: futureStart,
-                end: futureEnd,
+                startAt: futureStart,
+                endAt: futureEnd,
                 programId: program.id,
                 postEventEmailSent: false
             }
@@ -123,8 +127,8 @@ describe("GET /api/cron/post-event", () => {
         await prisma.event.create({
             data: {
                 name: "Past Event Sent",
-                start: pastStart,
-                end: pastEnd,
+                startAt: pastStart,
+                endAt: pastEnd,
                 programId: program.id,
                 postEventEmailSent: true
             }

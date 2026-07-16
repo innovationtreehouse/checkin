@@ -31,7 +31,7 @@ export interface RequireRoleResult {
  * lack every allowed role are sent to `options.redirectTo` (default `/`).
  *
  * Usage:
- *   const { user, loading, ready } = useRequireRole(['sysadmin', 'boardMember']);
+ *   const { user, loading, ready } = useRequireRole(['isSysadmin', 'isBoardMember']);
  *   if (loading) return <Center mih="60vh"><Loader /></Center>;
  *   if (!ready) return null; // a redirect is in flight
  */
@@ -43,7 +43,9 @@ export function useRequireRole(
   const { data: session, status } = useSession();
   const router = useRouter();
   const user = session?.user;
-  const authorized = !!user && allowed.some((role) => user[role] === true);
+  // Empty `allowed` = any authenticated user (a plain sign-in gate); otherwise
+  // the user must hold one of the listed roles.
+  const authorized = !!user && (allowed.length === 0 || allowed.some((role) => user[role] === true));
 
   useEffect(() => {
     if (status === "unauthenticated") {

@@ -1,35 +1,49 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { normalizeAddressInput, pickAddress, assertValidAddress, AddressValidationError } from "@/lib/address";
+import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { emergencyContactName, emergencyContactPhone, address } = body;
+            const { emergencyContactName, emergencyContactPhone, notes } = body;
+            const addressData = normalizeAddressInput(body);
+            // Address is optional on this route (emergency-contact-only PATCHes
+            // send no address keys); when any address field is supplied, the
+            // whole address must be complete + valid.
+            if (Object.keys(addressData).length > 0) assertValidAddress(addressData);
+            // Optional "anything else we should know?" note rides along on the same
+            // household.update. Trimmed to null so an emptied box clears it; only
+            // touched when the key is present.
+            const householdData = {
+                ...addressData,
+                ...(notes !== undefined && { intakeNotes: typeof notes === "string" && notes.trim() ? notes.trim() : null }),
+            };
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { householdId: true, isHouseholdLead: true, isSysadmin: true }
             });
 
             if (!user || !user.householdId) {
-                return NextResponse.json({ error: "Household not found" }, { status: 404 });
+                return apiError("Household not found", 404);
             }
 
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
-                return NextResponse.json({ error: "Only household leads can edit household settings" }, { status: 403 });
+            if (!user.isHouseholdLead && !user.isSysadmin) {
+                return apiError("Only household leads can edit household settings", 403);
             }
 
             const updatedHousehold = await prisma.household.update({
                 where: { id: user.householdId },
-                data: { address: address !== undefined ? address : undefined },
+                data: householdData,
             });
 
             // Emergency contact is a separate entity; the settings form edits the
@@ -47,18 +61,18 @@ export const PATCH = withAuth(
                     action: "EDIT",
                     tableName: "Household",
                     affectedEntityId: user.householdId,
-                    newData: JSON.stringify({ emergencyContactName, emergencyContactPhone, address })
+                    newData: { emergencyContactName, emergencyContactPhone, ...pickAddress(updatedHousehold) }
                 }
             });
 
             return NextResponse.json({ household: updatedHousehold }, { status: 200 });
 
         } catch (error: unknown) {
-            if (error instanceof EmergencyContactError) {
-                return NextResponse.json({ error: error.message }, { status: 400 });
+            if (error instanceof EmergencyContactError || error instanceof AddressValidationError) {
+                return apiError(error.message, 400);
             }
-            console.error("Household Settings PATCH Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            logger.error("Household Settings PATCH Error:", error);
+            return apiError("Internal Server Error", 500);
         }
     }
 );

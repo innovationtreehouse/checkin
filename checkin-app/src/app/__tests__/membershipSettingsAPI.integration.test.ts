@@ -5,8 +5,8 @@
  * Integration tests for board membership settings + volunteer designations.
  */
 
-import { GET as SETTINGS_GET, PUT as SETTINGS_PUT } from '@/app/api/admin/membership/settings/route';
-import { GET as DESIG_GET, POST as DESIG_POST, DELETE as DESIG_DELETE } from '@/app/api/admin/membership/volunteer-designations/route';
+import { GET as SETTINGS_GET, PUT as SETTINGS_PUT } from '@/app/api/settings/membership/route';
+import { GET as DESIG_GET, POST as DESIG_POST, DELETE as DESIG_DELETE } from '@/app/api/settings/membership/volunteer-designations/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -15,10 +15,10 @@ jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 const TAG = 'settings-test';
 
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function jsonReq(method: string, body?: unknown, url = 'http://localhost:4000/x') {
     return new Request(url, { method, ...(body ? { body: JSON.stringify(body) } : {}) }) as never;
@@ -33,12 +33,11 @@ describe('Membership settings + volunteer designations API', () => {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
@@ -46,12 +45,12 @@ describe('Membership settings + volunteer designations API', () => {
         prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents } : null;
         await wipe();
 
-        boardId = (await prisma.participant.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', boardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
-        plainId = (await prisma.participant.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
+        boardId = (await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
+        plainId = (await prisma.person.create({ data: { email: `plain-${TAG}@example.com`, name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
 
         // A full-price active member, for the designation warning.
-        await prisma.participant.create({
-            data: { email: `fullmember-${TAG}@example.com`, name: 'Full', household: { create: { name: `Full HH ${TAG}`, membership: { create: { status: 'ACTIVE', isVolunteer: false } } } } },
+        await prisma.person.create({
+            data: { email: `fullmember-${TAG}@example.com`, name: 'Full', household: { create: { name: `Full HH ${TAG}`, orgMembership: { create: { status: 'ACTIVE', isVolunteer: false } } } } },
         });
     });
 
@@ -79,6 +78,18 @@ describe('Membership settings + volunteer designations API', () => {
         expect(settings.volunteerDuesCents).toBe(3000);
     });
 
+    it('saves and clears the membership product URL', async () => {
+        asBoard(boardId);
+        const url = 'https://test-store.myshopify.com/products/annual-membership';
+        const putRes = await SETTINGS_PUT(jsonReq('PUT', { orgMembershipProductUrl: `  ${url}  ` }));
+        expect(putRes.status).toBe(200);
+        expect((await putRes.json()).settings.orgMembershipProductUrl).toBe(url); // trimmed
+
+        const cleared = await SETTINGS_PUT(jsonReq('PUT', { orgMembershipProductUrl: null }));
+        expect(cleared.status).toBe(200);
+        expect((await cleared.json()).settings.orgMembershipProductUrl).toBeNull();
+    });
+
     it('rejects negative dues and keeps the previous value', async () => {
         asBoard(boardId);
         // Establish a known good value.
@@ -93,6 +104,25 @@ describe('Membership settings + volunteer designations API', () => {
         const getRes = await SETTINGS_GET(jsonReq('GET'));
         const { settings } = await getRes.json();
         expect(settings.normalDuesCents).toBe(12000);
+    });
+
+    it('accepts a positive scholarshipDenialGraceDays and clears it back to null', async () => {
+        asBoard(boardId);
+        const res = await SETTINGS_PUT(jsonReq('PUT', { scholarshipDenialGraceDays: 14 }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).settings.scholarshipDenialGraceDays).toBe(14);
+
+        const cleared = await SETTINGS_PUT(jsonReq('PUT', { scholarshipDenialGraceDays: null }));
+        expect(cleared.status).toBe(200);
+        expect((await cleared.json()).settings.scholarshipDenialGraceDays).toBeNull();
+    });
+
+    it('rejects a non-positive or fractional scholarshipDenialGraceDays', async () => {
+        asBoard(boardId);
+        for (const bad of [0, -1, 1.5]) {
+            const res = await SETTINGS_PUT(jsonReq('PUT', { scholarshipDenialGraceDays: bad }));
+            expect(res.status).toBe(400);
+        }
     });
 
     it('adds, lists, and removes a volunteer designation', async () => {

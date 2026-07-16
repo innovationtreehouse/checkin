@@ -63,29 +63,41 @@ export function useAutoCycle<T>({
     // If everything fits on one page, don't cycle
     if (totalPages <= 1) {
        if (currentPage !== 0) {
-           setTimeout(() => setCurrentPage(0), 0);
+           const resetTimer = setTimeout(() => setCurrentPage(0), 0);
+           return () => clearTimeout(resetTimer);
        }
        return;
     }
 
     // Ensure currentPage is valid if items shrink
     if (currentPage >= totalPages) {
-       setTimeout(() => setCurrentPage(0), 0);
-       return;
+       const resetTimer = setTimeout(() => setCurrentPage(0), 0);
+       return () => clearTimeout(resetTimer);
     }
+
+    // fadeTimer is the nested timeout scheduled inside the interval callback below.
+    // clearInterval alone does NOT cancel it — left untracked, an unmount mid-fade
+    // (or mid-transition on a dep change) leaks a live timer: it keeps firing
+    // setState on an unmounted component and, in a Node test process, keeps the
+    // event loop alive indefinitely (the actual cause of a hung `jest --coverage`
+    // run with no --forceExit to paper over it).
+    let fadeTimer: ReturnType<typeof setTimeout> | undefined;
 
     const timer = setInterval(() => {
       setIsTransitioning(true);
-      
+
       // Wait for fade out
-      setTimeout(() => {
+      fadeTimer = setTimeout(() => {
         setCurrentPage((prev) => (prev + 1) % totalPages);
         setIsTransitioning(false);
       }, 500); // 500ms fade transition time matches CSS
 
     }, intervalMs);
 
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      if (fadeTimer !== undefined) clearTimeout(fadeTimer);
+    };
   }, [totalPages, currentPage, intervalMs]);
 
   const startIndex = currentPage * itemsPerPage;

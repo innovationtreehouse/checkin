@@ -6,10 +6,11 @@
  * Tests POST (create participant with parent/household logic)
  */
 
-import { POST } from '@/app/api/admin/participants/route';
-import { PUT } from '@/app/api/admin/participants/[id]/route';
+import { POST } from '@/app/api/membership-ops/participants/route';
+import { PUT } from '@/app/api/membership-ops/participants/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
@@ -20,74 +21,69 @@ describe('Admin Participants API Integration Tests', () => {
     let testAdminId: number;
     let testUserId: number;
 
+    // Scoping membership deletes to exactly the households these
+    // filters own (not a blanket deleteMany({})) matters: this suite runs
+    // alongside ~285 other integration files sharing one DB per jest worker, and
+    // an unscoped wipe of every Membership row would silently
+    // corrupt their fixtures.
+    //
+    // Two scopes, matching the two lifetimes in this file: the admin/user
+    // fixtures below are created once in beforeAll and must survive every
+    // individual test, torn down only by afterAll; PER_TEST_EMAIL_FILTERS is
+    // what individual tests create and afterEach must clean between tests
+    // WITHOUT touching the persistent admin/user fixtures.
+    const PERSISTENT_EMAIL_FILTERS = [{ email: { contains: 'participants-test' } }];
+    const PER_TEST_EMAIL_FILTERS = [
+        { email: { contains: 'new-child-participants-test' } },
+        { email: { contains: 'new-lone-participants-test' } },
+        { email: { contains: 'new-parent-participants-test' } },
+        { email: { contains: 'edit-test-user' } },
+        { email: 'updated-email@example.com' },
+    ];
+
+    /** Delete participants matching `filters`, their memberships, then sweep any household left empty. */
+    async function wipe(filters: Array<Record<string, unknown>>) {
+        const rows = await prisma.person.findMany({ where: { OR: filters }, select: { householdId: true } });
+        const householdIds = [...new Set(rows.map((r) => r.householdId).filter((id): id is number => id != null))];
+        if (householdIds.length) {
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
+        }
+        await prisma.person.deleteMany({ where: { OR: filters } });
+        // Only sweep households the deletion above emptied — a household this file
+        // doesn't own could share a similar name (e.g. "Test Household"), and the
+        // Participant->Household FK is RESTRICT.
+        if (householdIds.length) {
+            await prisma.household.deleteMany({ where: { id: { in: householdIds }, householdMembers: { none: {} } } });
+        }
+    }
+
     beforeAll(async () => {
-        // Clean up any leaked state
-        await prisma.membership.deleteMany({});
-        await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'participants-test' } }
-        });
-        await prisma.household.deleteMany({
-            where: { name: { contains: 'Test Household' } }
-        });
+        // Clean up any leaked state from a prior failed run.
+        await wipe(PERSISTENT_EMAIL_FILTERS);
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-participants-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
-            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: 'user-participants-test@example.com', name: 'User Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
     });
 
-    afterAll(async () => {
-        // Clean up
-        await prisma.membership.deleteMany({});
-        await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'participants-test' } }
-        });
-        await prisma.household.deleteMany({
-            where: { name: { contains: 'Test Household' } }
-        });
-    });
+    afterAll(() => wipe(PERSISTENT_EMAIL_FILTERS));
 
-    afterEach(async () => {
-        // Clean up participants created during tests
-        await prisma.membership.deleteMany({});
-        await prisma.householdLead.deleteMany({});
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'new-child-participants-test' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'new-lone-participants-test' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'new-parent-participants-test' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: { contains: 'edit-test-user' } }
-        });
-        await prisma.participant.deleteMany({
-            where: { email: 'updated-email@example.com' }
-        });
-        // Only sweep households the deletions above emptied — the name filter
-        // alone also matches other data's households, and the FK is RESTRICT.
-        await prisma.household.deleteMany({
-            where: { name: { contains: 'Household' }, participants: { none: {} } }
-        });
-    });
+    afterEach(() => wipe(PER_TEST_EMAIL_FILTERS));
 
-    describe('POST /api/admin/participants', () => {
+    describe('POST /api/membership-ops/participants', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/participants', {
+             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                  method: 'POST',
                  body: JSON.stringify({ name: 'Test', email: 'test@example.com' })
              });
@@ -98,10 +94,10 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should return 400 Bad Request if no email, parentEmail, or householdId is provided', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Test No Email' })
             });
@@ -115,10 +111,10 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should return 400 Bad Request if email format is invalid', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Test Invalid Email', email: 'invalid-email' })
             });
@@ -132,10 +128,10 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should return 409 Conflict if participant with email already exists', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Duplicate Email Test', email: 'admin-participants-test@example.com' })
             });
@@ -149,10 +145,10 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should create a lone participant and auto-generate a household for them', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ name: 'Lone Adult', email: 'new-lone-participants-test@example.com' })
             });
@@ -166,7 +162,7 @@ describe('Admin Participants API Integration Tests', () => {
 
             // The API returns the participant created BEFORE the household is linked since it does not refetch
             // We should just verify it exists in the DB correctly
-            const updatedParticipant = await prisma.participant.findUnique({
+            const updatedParticipant = await prisma.person.findUnique({
                 where: { id: data.participant.id }
             });
             expect(updatedParticipant?.householdId).not.toBeNull();
@@ -178,7 +174,7 @@ describe('Admin Participants API Integration Tests', () => {
             expect(household?.name).toBe('Adult Household');
 
             // D4.5: admin-created participants default to visitors (no membership)
-            const membership = await prisma.membership.findUnique({
+            const membership = await prisma.orgMembership.findUnique({
                 where: { householdId: updatedParticipant!.householdId! }
             });
             expect(membership).toBeNull();
@@ -186,10 +182,10 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should grant an ACTIVE membership when alreadyMember is true', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({
                     name: 'Paid Adult',
@@ -202,10 +198,10 @@ describe('Admin Participants API Integration Tests', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
 
-            const created = await prisma.participant.findUnique({
+            const created = await prisma.person.findUnique({
                 where: { id: data.participant.id }
             });
-            const membership = await prisma.membership.findUnique({
+            const membership = await prisma.orgMembership.findUnique({
                 where: { householdId: created!.householdId! }
             });
             expect(membership?.status).toBe('ACTIVE');
@@ -213,10 +209,10 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should create a child participant and auto-generate a parent and household if parentEmail does not exist', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/participants', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
                 body: JSON.stringify({ 
                     name: 'Child User', 
@@ -234,7 +230,7 @@ describe('Admin Participants API Integration Tests', () => {
             expect(data.participant.householdId).not.toBeNull();
 
             // Verify the parent was created
-            const parent = await prisma.participant.findUnique({
+            const parent = await prisma.person.findUnique({
                 where: { email: 'new-parent-participants-test@example.com' }
             });
             expect(parent).toBeDefined();
@@ -242,13 +238,13 @@ describe('Admin Participants API Integration Tests', () => {
         });
     });
 
-    describe('PUT /api/admin/participants/[id]', () => {
+    describe('PUT /api/membership-ops/participants/[id]', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
-             const req = new Request(`http://localhost:4000/api/admin/participants/${testUserId}`, {
+             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testUserId}`, {
                  method: 'PUT',
                  body: JSON.stringify({ name: 'Hacked Name' })
              });
@@ -259,15 +255,15 @@ describe('Admin Participants API Integration Tests', () => {
 
         it('should successfully update a participant name, email, and phone', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             // Create a disposable user just for this edit test
-            const editUser = await prisma.participant.create({
-                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: {} } }
+            const editUser = await prisma.person.create({
+                data: { email: 'edit-test-user@example.com', name: 'Original Name', household: { create: { name: "Test HH" } } }
             });
 
-            const req = new Request(`http://localhost:4000/api/admin/participants/${editUser.id}`, {
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${editUser.id}`, {
                 method: 'PUT',
                 body: JSON.stringify({ name: 'Updated Name', email: 'updated-email@example.com', phone: '5551234567' })
             });
@@ -278,13 +274,22 @@ describe('Admin Participants API Integration Tests', () => {
             const data = await res.json();
             expect(data.participant.name).toBe('Updated Name');
             expect(data.participant.email).toBe('updated-email@example.com');
-            expect(data.participant.phone).toBe('5551234567');
+            // The route formats via formatPhone() before saving (dashed, not raw digits).
+            expect(data.participant.phone).toBe('555-123-4567');
 
             // Verify the DB actually saved it
-            const dbCheck = await prisma.participant.findUnique({ where: { id: editUser.id } });
+            const dbCheck = await prisma.person.findUnique({ where: { id: editUser.id } });
             expect(dbCheck?.name).toBe('Updated Name');
-            expect(dbCheck?.phone).toBe('5551234567');
-            
+            expect(dbCheck?.phone).toBe('555-123-4567');
+
+            // PII edits MUST leave an audit trail naming the acting admin and the
+            // before/after of the field — a regression dropping the actor or the
+            // log fails right here.
+            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Participant', affectedEntityId: editUser.id });
+            expect(log.actorId).toBe(testAdminId);
+            expect(auditJson(log.oldData).name).toBe('Original Name');
+            expect(auditJson(log.newData).name).toBe('Updated Name');
+
             // Cleanup is handled by afterEach
         });
     });

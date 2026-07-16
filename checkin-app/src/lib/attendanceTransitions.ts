@@ -1,14 +1,5 @@
 import prisma from "@/lib/prisma";
-import type { PrismaClient, Prisma } from "@/generated/prisma/client";
-
-/**
- * A Prisma client that can run queries: either the global singleton or a
- * transaction-scoped client passed in by a caller that has already opened a
- * `$transaction` (e.g. the scan route's per-participant lock). Threading this
- * through lets the same reads/writes run under the caller's transaction and
- * lock instead of on independent connections.
- */
-type DbClient = PrismaClient | Prisma.TransactionClient;
+import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
 
 /**
  * Finds all program IDs that a participant is associated with
@@ -18,11 +9,11 @@ type DbClient = PrismaClient | Prisma.TransactionClient;
 async function getRelevantProgramIds(participantId: number, db: DbClient = prisma): Promise<number[]> {
     const [participantPrograms, volunteerPrograms, leadPrograms] = await Promise.all([
         db.programParticipant.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.programVolunteer.findMany({
-            where: { participantId },
+            where: { personId: participantId },
             select: { programId: true }
         }),
         db.program.findMany({
@@ -60,21 +51,21 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
             programId: { in: relevantProgramIds },
             // Event must either overlap with targetTime, or start within 4 hours of targetTime
             OR: [
-                // Ongoing: start <= targetTime <= end
+                // Ongoing: startAt <= targetTime <= endAt
                 {
-                    start: { lte: targetTime },
-                    end: { gte: targetTime }
+                    startAt: { lte: targetTime },
+                    endAt: { gte: targetTime }
                 },
-                // Upcoming: targetTime < start <= targetTime + 4h
+                // Upcoming: targetTime < startAt <= targetTime + 4h
                 {
-                    start: {
+                    startAt: {
                         gt: targetTime,
                         lte: timePlus4Hours
                     }
                 }
             ]
         },
-        orderBy: { start: 'asc' }
+        orderBy: { startAt: 'asc' }
     });
 
     return matchingEvent ? matchingEvent.id : null;
@@ -86,16 +77,18 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
  * 
  * It returns the final list of visits spanning their arrival to departure.
  */
-export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma) {
+export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "WEB" | "SYSTEM" = "WEB") {
     const originalVisit = await db.visit.findUnique({
         where: { id: visitId }
     });
 
-    if (!originalVisit || originalVisit.departed) {
+    if (!originalVisit || originalVisit.departedAt) {
         return []; // Already checked out or doesn't exist
     }
 
-    const { participantId, arrived } = originalVisit;
+    // Chunks recreated below are all segments of one physical visit: they keep
+    // the original arrival's source and take `source` as their departure channel.
+    const { personId: participantId, arrivedAt, arrivedVia } = originalVisit;
 
     const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
@@ -103,7 +96,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No programs enrolled, just close the visit normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departed: checkoutTime }
+            data: { departedAt: checkoutTime, departedVia: source }
         })];
     }
 
@@ -112,30 +105,30 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         where: {
             programId: { in: relevantProgramIds },
             // An event overlaps if it starts before checkout time AND ends after arrival time
-            start: { lt: checkoutTime },
-            end: { gt: arrived }
+            startAt: { lt: checkoutTime },
+            endAt: { gt: arrivedAt }
         },
-        orderBy: { start: 'asc' }
+        orderBy: { startAt: 'asc' }
     });
 
     if (eventsDuringStay.length === 0) {
         // No relevant events during their stay, just close normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departed: checkoutTime }
+            data: { departedAt: checkoutTime, departedVia: source }
         })];
     }
 
     // We have at least one event. We need to chunk the visit by deleting the
     // original open visit and recreating the chunks atomically.
-    const chunk = async (tx: Prisma.TransactionClient) => {
+    const chunk = async (tx: TxClient) => {
         // First, delete the original open visit
         await tx.visit.delete({
             where: { id: visitId }
         });
 
         const createdVisits = [];
-        let currentIterStart = arrived;
+        let currentIterStart = arrivedAt;
 
         for (let i = 0; i < eventsDuringStay.length; i++) {
             const event = eventsDuringStay[i];
@@ -143,14 +136,16 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
             // If there's a gap between current time and the event start time,
             // create an unassociated visit for the gap time
-            if (currentIterStart < event.start) {
-                const gapEnd = event.start < checkoutTime ? event.start : checkoutTime;
+            if (currentIterStart < event.startAt) {
+                const gapEnd = event.startAt < checkoutTime ? event.startAt : checkoutTime;
                 if (currentIterStart < gapEnd) {
                     createdVisits.push(await tx.visit.create({
                         data: {
-                            participantId,
-                            arrived: currentIterStart,
-                            departed: gapEnd,
+                            personId: participantId,
+                            arrivedAt: currentIterStart,
+                            departedAt: gapEnd,
+                            arrivedVia,
+                            departedVia: source,
                             associatedEventId: null
                         }
                     }));
@@ -165,20 +160,22 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
 
             // Create visit associated with the event
             // The boundaries are constrained by arrival, checkout, and event boundaries
-            const eventVisitStart = currentIterStart > event.start ? currentIterStart : event.start;
-            
+            const eventVisitStart = currentIterStart > event.startAt ? currentIterStart : event.startAt;
+
             // Check out when the next event starts, or when they physically leave
             let eventVisitEnd = checkoutTime;
-            if (nextEvent && nextEvent.start < checkoutTime) {
-                eventVisitEnd = nextEvent.start;
+            if (nextEvent && nextEvent.startAt < checkoutTime) {
+                eventVisitEnd = nextEvent.startAt;
             }
 
             if (eventVisitStart < eventVisitEnd) {
                 createdVisits.push(await tx.visit.create({
                     data: {
-                        participantId,
-                        arrived: eventVisitStart,
-                        departed: eventVisitEnd,
+                        personId: participantId,
+                        arrivedAt: eventVisitStart,
+                        departedAt: eventVisitEnd,
+                        arrivedVia,
+                        departedVia: source,
                         associatedEventId: event.id
                     }
                 }));
@@ -190,9 +187,11 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         if (currentIterStart < checkoutTime) {
             createdVisits.push(await tx.visit.create({
                 data: {
-                    participantId,
-                    arrived: currentIterStart,
-                    departed: checkoutTime,
+                    personId: participantId,
+                    arrivedAt: currentIterStart,
+                    departedAt: checkoutTime,
+                    arrivedVia,
+                    departedVia: source,
                     associatedEventId: null
                 }
             }));
@@ -205,8 +204,5 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
     // the scan route's per-participant lock), run the chunking on it directly:
     // Postgres has no nested transactions and the tx client has no `$transaction`.
     // Otherwise open our own transaction so the delete + recreates stay atomic.
-    if ("$transaction" in db) {
-        return await db.$transaction(chunk);
-    }
-    return await chunk(db);
+    return withTx(db, chunk);
 }

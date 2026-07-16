@@ -71,6 +71,11 @@ export interface BuiltMember {
     dob: Date | null;
     lastBackgroundCheck: Date | null;
     isPrimary: boolean;
+    /** No DoB in Zoho but treated as an adult — only the household primary contact
+     *  is inferred (they signed the Zoho membership as the responsible adult). Maps
+     *  to Participant.isDeclaredAdult so they show as "Adult", not "Age Unavailable",
+     *  under the new age model (#606). Members WITH a DoB derive age from it. */
+    isDeclaredAdult: boolean;
     /** Provenance / prior-system reference, surfaced into the AuditLog row. */
     source: {
         zohoId: string;
@@ -81,13 +86,22 @@ export interface BuiltMember {
     };
 }
 
+/** Legacy Zoho stores address as one string; the modern Household has separate columns. */
+export interface ParsedAddress {
+    line1: string | null;
+    line2: string | null;
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+}
+
 export interface BuiltHousehold {
     groupKey: string; // canonical (aliased) primary-contact email
     name: string;
-    address: string | null;
+    address: ParsedAddress;
     members: BuiltMember[];
     membershipActive: boolean;
-    source: { familyZohoId: string | null; inputZohoId: string | null; rawPrimaryEmail: string };
+    source: { familyZohoId: string | null; inputZohoId: string | null; rawPrimaryEmail: string; rawAddress: string | null };
 }
 
 export interface ImportReport {
@@ -102,7 +116,7 @@ export interface ImportReport {
         rowDob: string;
     }[];
     emailCollisions: { email: string; keptFor: string; nulledFor: string[] }[];
-    minorsAsPrimary: { name: string; dob: string; householdKey: string }[];
+    youthAsPrimary: { name: string; dob: string; householdKey: string }[];
     secondaryAdultsNotPromoted: number;
     flags: string[];
 }
@@ -113,6 +127,28 @@ export interface BuiltImport {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+const ZIP_RE = /^\d{5}(-\d{4})?$/;
+/** "Texas"/"tx" → "TX"; any 2-letter → upper; else leave as-is. */
+const normState = (s: string) => (/^texas$/i.test(s) ? "TX" : s.length === 2 ? s.toUpperCase() : s);
+
+/**
+ * Split a legacy Zoho single-line address ("line1[, line2], city, state, zip")
+ * into the modern Household columns. Parses right-to-left — zip, state, city are
+ * the trailing fields — and never consumes the last remaining part, so partial or
+ * malformed rows keep their street line instead of dropping it.
+ */
+export function parseAddress(raw: string | null | undefined): ParsedAddress {
+    const parts = (raw || "").split(",").map((p) => p.trim()).filter(Boolean);
+    const out: ParsedAddress = { line1: null, line2: null, city: null, state: null, postalCode: null };
+    if (parts.length === 0) return out;
+    if (parts.length > 1 && ZIP_RE.test(parts[parts.length - 1])) out.postalCode = parts.pop()!;
+    if (parts.length > 1) out.state = normState(parts.pop()!);
+    if (parts.length > 1) out.city = parts.pop()!;
+    out.line1 = parts.shift() ?? null;
+    out.line2 = parts.length ? parts.join(", ") : null;
+    return out;
+}
 
 const norm = (e: string) => (e || "").trim().toLowerCase();
 const canonKey = (e: string) => PCE_ALIASES[norm(e)] ?? norm(e);
@@ -169,7 +205,7 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
         activeMemberships: 0,
         blankNamesSkipped: [],
         emailCollisions: [],
-        minorsAsPrimary: [],
+        youthAsPrimary: [],
         secondaryAdultsNotPromoted: 0,
         flags: [],
     };
@@ -244,6 +280,10 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
                 dob,
                 lastBackgroundCheck: bgDate,
                 isPrimary: idx === primaryIdx,
+                // Only the primary contact is inferred adult, and only when Zoho has
+                // no DoB for them (with a DoB, age is derived). Other no-DoB members
+                // stay unknown for board review.
+                isDeclaredAdult: idx === primaryIdx && !dob,
                 source: {
                     zohoId: p.ID,
                     rawEmail: p.Email.trim(),
@@ -262,10 +302,10 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
             (input?.Payment_Status || "").trim() === "Completed" &&
             (input?.Membership_Agreement_Status || "").trim() === "Completed";
 
-        // Flag minors listed as the household's primary contact.
+        // Flag youth listed as the household's primary contact.
         const primaryAge = ageYears(primary.dob, now);
         if (primaryAge !== null && primaryAge < 18) {
-            report.minorsAsPrimary.push({
+            report.youthAsPrimary.push({
                 name: primary.name,
                 dob: primary.dob?.toISOString().slice(0, 10) ?? "?",
                 householdKey: key,
@@ -277,16 +317,22 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
             (m) => !m.isPrimary && (ageYears(m.dob, now) ?? 0) >= 18,
         ).length;
 
+        const rawAddress = (family?.Address || "").trim() || null;
+        // ponytail: no Household.intakeNotes mapped — legacy Zoho has no free-text
+        // "anything else?" column, and it's the volunteer-magic-text a NEW applicant
+        // types for the reviewer, not something imported members ever supplied. Add a
+        // source→intakeNotes map here only if Zoho gains such a column.
         households.push({
             groupKey: key,
             name: ln ? `${ln} Household` : "Household",
-            address: (family?.Address || "").trim() || null,
+            address: parseAddress(rawAddress),
             members,
             membershipActive,
             source: {
                 familyZohoId: family?.ID ?? null,
                 inputZohoId: input?.ID ?? null,
                 rawPrimaryEmail: key,
+                rawAddress,
             },
         });
     }
@@ -299,6 +345,13 @@ export function buildImport(files: ZohoFiles, now: Date): BuiltImport {
     report.flags.push(
         "All households imported without an emergency contact (not present in Zoho) — members/board must fill this in.",
     );
+
+    const declaredAdults = households.reduce((n, h) => n + h.members.filter((m) => m.isDeclaredAdult).length, 0);
+    if (declaredAdults > 0) {
+        report.flags.push(
+            `${declaredAdults} household primary contact(s) had no date of birth in Zoho and were marked as declared adults (shown as "Adult") — board should confirm.`,
+        );
+    }
 
     return { households, report };
 }
@@ -371,7 +424,7 @@ async function audit(
     newData: object,
 ) {
     await tx.auditLog.create({
-        data: { actorId, action, tableName, affectedEntityId, newData: JSON.stringify(newData) },
+        data: { actorId, action, tableName, affectedEntityId, newData },
     });
 }
 
@@ -398,31 +451,32 @@ export async function applyImport(
         let householdId: number | null = null;
         for (const m of h.members) {
             if (!m.email) continue;
-            const existing = await tx.participant.findUnique({ where: { email: m.email } });
+            const existing = await tx.person.findUnique({ where: { email: m.email } });
             if (existing) {
                 householdId = existing.householdId;
                 break;
             }
         }
 
+        const addr = h.address;
         if (householdId === null) {
             const created = await tx.household.create({
-                data: { name: h.name, address: h.address },
+                data: { name: h.name, ...addr },
             });
             householdId = created.id;
             res.householdsCreated++;
             await audit(tx, actorId, "CREATE", "Household", householdId, {
                 name: h.name,
-                address: h.address,
-                source: { system: "Zoho", familyId: h.source.familyZohoId, primaryEmail: h.source.rawPrimaryEmail },
+                address: addr,
+                source: { system: "Zoho", familyId: h.source.familyZohoId, primaryEmail: h.source.rawPrimaryEmail, rawAddress: h.source.rawAddress },
             });
         } else {
-            await tx.household.update({ where: { id: householdId }, data: { name: h.name, address: h.address } });
+            await tx.household.update({ where: { id: householdId }, data: { name: h.name, ...addr } });
             res.householdsUpdated++;
             await audit(tx, actorId, "EDIT", "Household", householdId, {
                 name: h.name,
-                address: h.address,
-                source: { system: "Zoho", familyId: h.source.familyZohoId },
+                address: addr,
+                source: { system: "Zoho", familyId: h.source.familyZohoId, rawAddress: h.source.rawAddress },
             });
         }
 
@@ -432,14 +486,15 @@ export async function applyImport(
             const data = {
                 name: m.name,
                 ...(m.email ? { email: m.email } : {}),
-                dob: m.dob,
+                dateOfBirth: m.dob,
                 lastBackgroundCheck: m.lastBackgroundCheck,
+                isDeclaredAdult: m.isDeclaredAdult,
                 householdId,
             };
 
-            let participant = m.email ? await tx.participant.findUnique({ where: { email: m.email } }) : null;
+            let participant = m.email ? await tx.person.findUnique({ where: { email: m.email } }) : null;
             if (!participant) {
-                participant = await tx.participant.findFirst({ where: { householdId, name: m.name } });
+                participant = await tx.person.findFirst({ where: { householdId, name: m.name } });
             }
 
             const bg = m.lastBackgroundCheck
@@ -454,7 +509,7 @@ export async function applyImport(
                 : {};
 
             if (participant) {
-                participant = await tx.participant.update({ where: { id: participant.id }, data });
+                participant = await tx.person.update({ where: { id: participant.id }, data });
                 res.participantsUpdated++;
                 await audit(tx, actorId, "EDIT", "Participant", participant.id, {
                     name: m.name,
@@ -463,7 +518,7 @@ export async function applyImport(
                     ...bg,
                 });
             } else {
-                participant = await tx.participant.create({ data });
+                participant = await tx.person.create({ data });
                 res.participantsCreated++;
                 await audit(tx, actorId, "CREATE", "Participant", participant.id, {
                     name: m.name,
@@ -476,26 +531,25 @@ export async function applyImport(
             if (m.isPrimary) primaryParticipantId = participant.id;
         }
 
-        // The primary contact is the household lead.
+        // The primary contact is the household lead (a1: flag on the person).
         if (primaryParticipantId !== null) {
-            await tx.householdLead.upsert({
-                where: { householdId_participantId: { householdId, participantId: primaryParticipantId } },
-                create: { householdId, participantId: primaryParticipantId },
-                update: {},
+            await tx.person.update({
+                where: { id: primaryParticipantId },
+                data: { isHouseholdLead: true },
             });
         }
 
         // ACTIVE membership only where they paid AND signed in Zoho.
         if (h.membershipActive) {
-            const before = await tx.membership.findUnique({ where: { householdId } });
-            const membership = await tx.membership.upsert({
+            const before = await tx.orgMembership.findUnique({ where: { householdId } });
+            const membership = await tx.orgMembership.upsert({
                 where: { householdId },
                 create: { householdId, status: "ACTIVE" },
                 update: { status: "ACTIVE" },
             });
             if (!before || before.status !== "ACTIVE") {
                 res.membershipsActivated++;
-                await audit(tx, actorId, before ? "EDIT" : "CREATE", "Membership", membership.id, {
+                await audit(tx, actorId, before ? "EDIT" : "CREATE", "OrgMembership", membership.id, {
                     status: "ACTIVE",
                     source: { system: "Zoho import" },
                 });
@@ -524,8 +578,8 @@ export function renderReport(report: ImportReport): string {
     for (const c of report.emailCollisions) {
         lines.push(`    - ${c.email}: kept for ${c.keptFor}; nulled for ${c.nulledFor.join(", ")}`);
     }
-    lines.push(`Minors as primary:   ${report.minorsAsPrimary.length}`);
-    for (const m of report.minorsAsPrimary) lines.push(`    - ${m.name} (DOB ${m.dob}, household ${m.householdKey})`);
+    lines.push(`Youth as primary:   ${report.youthAsPrimary.length}`);
+    for (const m of report.youthAsPrimary) lines.push(`    - ${m.name} (DOB ${m.dob}, household ${m.householdKey})`);
     lines.push(`Secondary adults not promoted to lead: ${report.secondaryAdultsNotPromoted}`);
     lines.push("Flags:");
     for (const f of report.flags) lines.push(`    ! ${f}`);

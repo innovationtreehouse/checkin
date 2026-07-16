@@ -11,6 +11,20 @@ services:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    # Server-side safety net (issue #688): a jest process killed abruptly (not a
+    # graceful $disconnect() — e.g. an orphaned background worktree run) leaves
+    # its Postgres backend "alive" from the server's own point of view, holding
+    # whatever lock/transaction it was mid-way through (e.g. the scan route's
+    # pg_advisory_xact_lock) forever. The client-side keepAlive fix in
+    # checkin-app/src/lib/prisma.ts only helps OTHER connections detect a dead
+    # peer; it can't force a truly-orphaned session's own stuck transaction to
+    # end. This does: Postgres kills the session itself once it's sat idle
+    # inside an open transaction, or a single statement has run, past these
+    # limits — turning a permanent hang into, at worst, a multi-minute wait.
+    command: >
+      postgres
+      -c idle_in_transaction_session_timeout=120000
+      -c statement_timeout=60000
 
   web:
     # Context is the repo root (one level up from deploy/) so the workspace

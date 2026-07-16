@@ -25,32 +25,32 @@ describe('My Events API Integration Tests', () => {
     beforeAll(async () => {
         // Clean up any leaked state
         await prisma.rSVP.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.event.deleteMany({
             where: { name: { contains: 'Mine Test Event' } }
         });
         await prisma.programParticipant.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.programVolunteer.deleteMany({
-            where: { participant: { email: { contains: 'mine-events-test' } } }
+            where: { person: { email: { contains: 'mine-events-test' } } }
         });
         await prisma.program.deleteMany({
             where: { name: { contains: 'Mine Test Program' } }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'mine-events-test' } }
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
-            data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test', household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: 'user-mine-events-test@example.com', name: 'User Mine Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
-        const volunteer = await prisma.participant.create({
-            data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test', household: { create: {} } }
+        const volunteer = await prisma.person.create({
+            data: { email: 'volunteer-mine-events-test@example.com', name: 'Volunteer Mine Test', household: { create: { name: "Test HH" } } }
         });
         testVolunteerId = volunteer.id;
 
@@ -78,7 +78,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.programParticipant.create({
             data: {
                 programId: testProgram1Id,
-                participantId: testUserId
+                personId: testUserId
             }
         });
 
@@ -86,7 +86,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.programVolunteer.create({
             data: {
                 programId: testProgram2Id,
-                participantId: testVolunteerId
+                personId: testVolunteerId
             }
         });
 
@@ -100,8 +100,8 @@ describe('My Events API Integration Tests', () => {
             data: {
                 name: 'Mine Test Event Upcoming 1',
                 programId: testProgram1Id,
-                start: futureStart1,
-                end: new Date(futureStart1.getTime() + 1 * 60 * 60 * 1000)
+                startAt: futureStart1,
+                endAt: new Date(futureStart1.getTime() + 1 * 60 * 60 * 1000)
             }
         });
         testEventUpcoming1Id = event1.id;
@@ -111,8 +111,8 @@ describe('My Events API Integration Tests', () => {
             data: {
                 name: 'Mine Test Event Past',
                 programId: testProgram1Id,
-                start: pastStart,
-                end: new Date(pastStart.getTime() + 1 * 60 * 60 * 1000)
+                startAt: pastStart,
+                endAt: new Date(pastStart.getTime() + 1 * 60 * 60 * 1000)
             }
         });
         testEventPastId = eventPast.id;
@@ -122,8 +122,8 @@ describe('My Events API Integration Tests', () => {
             data: {
                 name: 'Mine Test Event Upcoming 2',
                 programId: testProgram2Id,
-                start: futureStart2,
-                end: new Date(futureStart2.getTime() + 1 * 60 * 60 * 1000)
+                startAt: futureStart2,
+                endAt: new Date(futureStart2.getTime() + 1 * 60 * 60 * 1000)
             }
         });
         testEventUpcoming2Id = event2.id;
@@ -132,7 +132,7 @@ describe('My Events API Integration Tests', () => {
         await prisma.rSVP.create({
             data: {
                 eventId: testEventUpcoming1Id,
-                participantId: testUserId,
+                personId: testUserId,
                 status: 'ATTENDING'
             }
         });
@@ -141,7 +141,7 @@ describe('My Events API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.rSVP.deleteMany({
-            where: { participantId: { in: [testUserId, testVolunteerId] } }
+            where: { personId: { in: [testUserId, testVolunteerId] } }
         });
         await prisma.event.deleteMany({
             where: { id: { in: [testEventUpcoming1Id, testEventUpcoming2Id, testEventPastId] } }
@@ -156,12 +156,12 @@ describe('My Events API Integration Tests', () => {
             where: { id: { in: [testProgram1Id, testProgram2Id] } }
         });
         // RESTRICT: delete participants before their (auto-created) households.
-        const householdIds = (await prisma.participant.findMany({
+        const householdIds = (await prisma.person.findMany({
             where: { id: { in: [testUserId, testVolunteerId] } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testUserId, testVolunteerId] } }
         });
         await prisma.household.deleteMany({
@@ -172,7 +172,7 @@ describe('My Events API Integration Tests', () => {
     describe('GET /api/events/mine', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
-             const res = await GET() as Response;
+             const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
              expect(res.status).toBe(401);
         });
 
@@ -180,7 +180,7 @@ describe('My Events API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({
                  user: { id: testUserId }
              });
-             const res = await GET() as Response;
+             const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
              expect(res.status).toBe(200);
 
              const data = await res.json();
@@ -189,16 +189,16 @@ describe('My Events API Integration Tests', () => {
              
              const event = data[0];
              expect(event.name).toBe('Mine Test Event Upcoming 1');
-             expect(event.rsvps.length).toBe(1);
-             expect(event.rsvps[0].status).toBe('ATTENDING');
-             expect(event.rsvps[0].participantId).toBe(testUserId);
+             // One row per (event, household member); rsvp is that member's status.
+             expect(event.participant.id).toBe(testUserId);
+             expect(event.rsvp).toBe('ATTENDING');
         });
 
         it('should return upcoming events for volunteer programs', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testVolunteerId }
             });
-            const res = await GET() as Response;
+            const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
             expect(res.status).toBe(200);
 
             const data = await res.json();
@@ -213,7 +213,7 @@ describe('My Events API Integration Tests', () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testUserId }
             });
-            const res = await GET() as Response;
+            const res = await GET(new Request('http://localhost') as unknown as import("next/server").NextRequest) as Response;
             const data = await res.json();
             
             const hasPastEvent = data.some((e: { name: string }) => e.name === 'Mine Test Event Past');

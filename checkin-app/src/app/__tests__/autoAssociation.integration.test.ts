@@ -25,13 +25,13 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         await prisma.programParticipant.deleteMany();
         await prisma.event.deleteMany();
         await prisma.program.deleteMany();
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: 'auto-assoc-test@example.com' }
         });
 
         // Setup User
-        const user = await prisma.participant.create({
-            data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester', household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: 'auto-assoc-test@example.com', name: 'Auto Assoc Tester', household: { create: { name: "Test HH" } } }
         });
         participantId = user.id;
         householdId = user.householdId;
@@ -54,8 +54,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programAId,
                 name: 'Event A',
-                start: new Date(`${baseDateString}10:00:00Z`),
-                end: new Date(`${baseDateString}12:00:00Z`)
+                startAt: new Date(`${baseDateString}10:00:00Z`),
+                endAt: new Date(`${baseDateString}12:00:00Z`)
             }
         });
         eventAId = evtA.id;
@@ -65,8 +65,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programBId,
                 name: 'Event B',
-                start: new Date(`${baseDateString}12:00:00Z`),
-                end: new Date(`${baseDateString}14:00:00Z`)
+                startAt: new Date(`${baseDateString}12:00:00Z`),
+                endAt: new Date(`${baseDateString}14:00:00Z`)
             }
         });
         eventBId = evtB.id;
@@ -76,8 +76,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programCId,
                 name: 'Event C',
-                start: new Date(`${baseDateString}12:00:00Z`),
-                end: new Date(`${baseDateString}14:00:00Z`)
+                startAt: new Date(`${baseDateString}12:00:00Z`),
+                endAt: new Date(`${baseDateString}14:00:00Z`)
             }
         });
         eventCId = evtC.id;
@@ -87,18 +87,18 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             data: {
                 programId: programDId,
                 name: 'Event D',
-                start: new Date(`${baseDateString}14:00:00Z`),
-                end: new Date(`${baseDateString}16:00:00Z`)
+                startAt: new Date(`${baseDateString}14:00:00Z`),
+                endAt: new Date(`${baseDateString}16:00:00Z`)
             }
         });
         eventDId = evtD.id;
 
         // Enroll User in A and B
         await prisma.programParticipant.create({
-            data: { programId: programAId, participantId }
+            data: { programId: programAId, personId: participantId }
         });
         await prisma.programParticipant.create({
-            data: { programId: programBId, participantId }
+            data: { programId: programBId, personId: participantId }
         });
     });
 
@@ -108,7 +108,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         await prisma.programParticipant.deleteMany();
         await prisma.event.deleteMany();
         await prisma.program.deleteMany();
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: participantId }
         });
         await prisma.household.deleteMany({
@@ -154,8 +154,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         it('should not split a visit that falls completely within one event', async () => {
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
-                    arrived: new Date(`${baseDateString}10:15:00Z`),
+                    personId: participantId,
+                    arrivedAt: new Date(`${baseDateString}10:15:00Z`),
                     associatedEventId: eventAId
                 }
             });
@@ -165,7 +165,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
 
             expect(finalVisits.length).toBe(1);
             expect(finalVisits[0].associatedEventId).toBe(eventAId);
-            expect(finalVisits[0].departed).toEqual(checkoutTime);
+            expect(finalVisits[0].departedAt).toEqual(checkoutTime);
         });
 
         it('should split a visit spanning back-to-back enrolled events', async () => {
@@ -173,8 +173,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}09:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
-                    arrived: arrivalTime,
+                    personId: participantId,
+                    arrivedAt: arrivalTime,
                     associatedEventId: null // We'll say it wasn't associated on entry for testing the chunker
                 }
             });
@@ -189,31 +189,31 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             
             expect(finalVisits.length).toBe(3);
             
-            expect(finalVisits[0].arrived).toEqual(arrivalTime);
-            expect(finalVisits[0].departed).toEqual(new Date(`${baseDateString}10:00:00Z`));
+            expect(finalVisits[0].arrivedAt).toEqual(arrivalTime);
+            expect(finalVisits[0].departedAt).toEqual(new Date(`${baseDateString}10:00:00Z`));
             expect(finalVisits[0].associatedEventId).toBeNull();
 
-            expect(finalVisits[1].arrived).toEqual(new Date(`${baseDateString}10:00:00Z`));
-            expect(finalVisits[1].departed).toEqual(new Date(`${baseDateString}12:00:00Z`));
+            expect(finalVisits[1].arrivedAt).toEqual(new Date(`${baseDateString}10:00:00Z`));
+            expect(finalVisits[1].departedAt).toEqual(new Date(`${baseDateString}12:00:00Z`));
             expect(finalVisits[1].associatedEventId).toBe(eventAId);
 
-            expect(finalVisits[2].arrived).toEqual(new Date(`${baseDateString}12:00:00Z`));
-            expect(finalVisits[2].departed).toEqual(checkoutTime);
+            expect(finalVisits[2].arrivedAt).toEqual(new Date(`${baseDateString}12:00:00Z`));
+            expect(finalVisits[2].departedAt).toEqual(checkoutTime);
             expect(finalVisits[2].associatedEventId).toBe(eventBId);
         });
 
         it('should continue to chunk into the first event if the user is not enrolled in subsequent events', async () => {
             // Un-enroll user from B so they are ONLY enrolled in A.
             await prisma.programParticipant.deleteMany({
-                where: { participantId, programId: programBId }
+                where: { personId: participantId, programId: programBId }
             });
 
             // Arrives during A, leaves during B time
             const arrivalTime = new Date(`${baseDateString}10:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
-                    arrived: arrivalTime,
+                    personId: participantId,
+                    arrivedAt: arrivalTime,
                     associatedEventId: eventAId
                 }
             });
@@ -227,8 +227,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             expect(finalVisits.length).toBe(1);
 
             expect(finalVisits[0].associatedEventId).toBe(eventAId);
-            expect(finalVisits[0].arrived).toEqual(arrivalTime);
-            expect(finalVisits[0].departed).toEqual(checkoutTime);
+            expect(finalVisits[0].arrivedAt).toEqual(arrivalTime);
+            expect(finalVisits[0].departedAt).toEqual(checkoutTime);
         });
 
         it('should chunk into Event D if user is lead mentor', async () => {
@@ -236,8 +236,8 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             const arrivalTime = new Date(`${baseDateString}13:30:00Z`);
             const visit = await prisma.visit.create({
                 data: {
-                    participantId,
-                    arrived: arrivalTime
+                    personId: participantId,
+                    arrivedAt: arrivalTime
                 }
             });
 
@@ -248,11 +248,11 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
 
             // 1. Unassociated gap (13:30 -> 14:00)
             expect(finalVisits[0].associatedEventId).toBeNull();
-            expect(finalVisits[0].departed).toEqual(new Date(`${baseDateString}14:00:00Z`));
+            expect(finalVisits[0].departedAt).toEqual(new Date(`${baseDateString}14:00:00Z`));
 
             // 2. Event D (14:00 -> 15:00)
             expect(finalVisits[1].associatedEventId).toBe(eventDId);
-            expect(finalVisits[1].departed).toEqual(checkoutTime);
+            expect(finalVisits[1].departedAt).toEqual(checkoutTime);
         });
     });
 });

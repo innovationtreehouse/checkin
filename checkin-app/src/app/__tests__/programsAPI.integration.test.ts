@@ -25,7 +25,7 @@ describe('Programs API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'programs-api-test' } },
             select: { id: true }
         });
@@ -39,34 +39,34 @@ describe('Programs API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-programs-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-programs-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
-            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-programs-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-programs-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
         // Create mock programs
         await prisma.program.createMany({
             data: [
-                { name: 'Public API Test Program', phase: 'RUNNING', memberOnly: false, minAge: 10, maxAge: 18 },
-                { name: 'Draft API Test Program', phase: 'PLANNING', memberOnly: false, leadMentorId: leadId },
-                { name: 'Member Only API Test Program', phase: 'RUNNING', memberOnly: true }
+                { name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18 },
+                { name: 'Draft API Test Program', phase: 'PLANNING', orgMemberOnly: false, leadMentorId: leadId },
+                { name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true }
             ]
         });
     });
@@ -82,7 +82,7 @@ describe('Programs API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
     });
@@ -99,11 +99,11 @@ describe('Programs API Integration Tests', () => {
              
              const publicActive = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Public API Test Program');
              const draft = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Draft API Test Program');
-             const memberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
+             const orgMemberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
 
              expect(publicActive).toBeDefined();
              expect(draft).toBeUndefined(); // Filtered because it is in PLANNING
-             expect(memberOnly).toBeUndefined(); // Filtered because memberOnly is true
+             expect(orgMemberOnly).toBeUndefined(); // Filtered because orgMemberOnly is true
         });
 
         it('should return drafts if the authenticated user is the lead mentor', async () => {
@@ -120,7 +120,7 @@ describe('Programs API Integration Tests', () => {
         });
 
         it('should return all programs including drafts and member-only for admins', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
@@ -128,10 +128,10 @@ describe('Programs API Integration Tests', () => {
 
              const programs = await res.json();
              const draft = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Draft API Test Program');
-             const memberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
+             const orgMemberOnly = programs.find((p: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => p.name === 'Member Only API Test Program');
 
              expect(draft).toBeDefined(); // Revealed because admin
-             expect(memberOnly).toBeDefined(); // Revealed because admin
+             expect(orgMemberOnly).toBeDefined(); // Revealed because admin
         });
     });
 
@@ -150,7 +150,7 @@ describe('Programs API Integration Tests', () => {
         });
 
         it('should missing required program name', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
@@ -160,22 +160,36 @@ describe('Programs API Integration Tests', () => {
              expect(res.status).toBe(400);
         });
 
-        it('should allow admins to create a program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+        it('should require max participants', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
-                 body: JSON.stringify({ name: 'Created API Test Program', leadMentorId: leadId, minAge: 12, maxAge: 17 })
+                 body: JSON.stringify({ name: 'New API Test Program', leadMentorId: leadId })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest);
+             expect(res.status).toBe(400);
+             const data = await res.json();
+             expect(data.error).toMatch(/Max participants/);
+        });
+
+        it('should allow admins to create a program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request('http://localhost:4000/api/programs', {
+                 method: 'POST',
+                 body: JSON.stringify({ name: 'Created API Test Program', leadMentorId: leadId, minAge: 12, maxAge: 17, maxParticipants: 50 })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.program.name).toBe('Created API Test Program');
              expect(data.program.leadMentorId).toBe(leadId);
              expect(data.program.minAge).toBe(12);
              expect(data.program.maxAge).toBe(17);
+             expect(data.program.maxParticipants).toBe(50);
         });
     });
 });

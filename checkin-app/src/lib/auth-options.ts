@@ -5,27 +5,56 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { getToken } from "next-auth/jwt";
 import { cookies as requestCookies } from "next/headers";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import type { AdapterAccount, AdapterUser } from "next-auth/adapters";
 import prisma from "@/lib/prisma";
 import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
 import { assignParticipantClaims } from "@/lib/authClaims";
 import { addHouseholdLead } from "@/lib/household/leads";
+import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
+import { normalizeEmail } from "@/lib/prismaEmailNormalize";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
 
-// NextAuth PrismaAdapter hardcodes `prisma.user` for its user operations.
-// We map `.user` to `.participant` so the adapter can find our custom model.
-const prismaAdapterCore = prisma as unknown as Record<string, unknown> & { participant: unknown };
-const prismaAdapterClient = {
-    ...prismaAdapterCore,
-    user: prismaAdapterCore.participant,
-};
+// ── NextAuth adapter: the Int ↔ string id boundary, in ONE place ─────────────
+//
+// NextAuth models every id as a string (its cuid default); our Person.id and
+// Account.userId are Int, and the stock PrismaAdapter coerces nothing. That
+// boundary has bitten twice: the Participant→Person rename (#708) fixed the
+// model map for only the methods it happened to touch, and a later change left
+// createUser returning a string id that then crashed linkAccount's Int `userId`
+// column on every first Google sign-in. Both slipped past CI because these
+// methods run ONLY inside the real Google OAuth callback — persona-mint /
+// credentials sign-in (what flow tests exercise via loginAs) never touches the
+// adapter, and the global prisma mock resolves any model name.
+//
+// The fix is structural, not another spot-patch: every user/account method the
+// OAuth flow can reach is defined together below, and every id crosses through
+// exactly one of the two converters — never an inline String()/parseInt(). A new
+// adapter method that forgets them is the failure mode to guard against;
+// auth-options-adapter.test.ts calls these directly (the only tier that reaches
+// them) to hold that line.
+
+// The stock adapter still backs the methods this flow never overrides (sessions,
+// verification tokens); those operate on the real prisma client and touch no id
+// boundary. `prisma.person` stays a plain, type-checked access on purpose — a
+// cast is exactly how #708 kept a stale model name tsc-green.
+const baseAdapter = PrismaAdapter({
+    ...(prisma as unknown as Record<string, unknown>),
+    user: prisma.person,
+}) as unknown as Record<string, unknown>;
+
+// Int (DB) → string (NextAuth), filling the non-null email an AdapterUser needs.
+const toAdapterUser = (u: { id: number; email: string | null }): AdapterUser =>
+    ({ ...u, id: String(u.id), email: u.email ?? "" }) as AdapterUser;
+// string (NextAuth) → Int (DB). NaN-safe; callers treat NaN as "no such id".
+const toDbId = (id: string | number): number => (typeof id === "number" ? id : parseInt(id, 10));
 
 // Every participant must belong to a household (Participant.householdId is
 // required), so new sign-ups get a single-person household they lead.
-async function createParticipantWithHousehold(data: {
+export async function createParticipantWithHousehold(data: {
     name?: string | null;
     email?: string | null;
     image?: string | null;
@@ -34,9 +63,9 @@ async function createParticipantWithHousehold(data: {
 }) {
     return prisma.$transaction(async (tx) => {
         const household = await tx.household.create({
-            data: { name: data.name ?? data.email ?? null },
+            data: { name: data.name?.trim() || data.email?.trim() || "Household" },
         });
-        const participant = await tx.participant.create({
+        const participant = await tx.person.create({
             data: { ...data, householdId: household.id },
         });
         await addHouseholdLead(tx, household.id, participant.id);
@@ -44,33 +73,86 @@ async function createParticipantWithHousehold(data: {
     });
 }
 
-// Wrap the adapter so `getUser` can handle string IDs from CredentialsProvider.
-// NextAuth always coerces IDs to strings, but our Participant.id is an Int.
-// `createUser` is overridden so first sign-in also creates the household.
-const baseAdapter = PrismaAdapter(prismaAdapterClient) as unknown as Record<string, unknown>;
+// Every Person/Account id read or written by the OAuth flow lives in this one
+// object, and every one of them goes through toAdapterUser / toDbId. Keep it that
+// way: a method that touches an id without a converter is the bug this guards.
 const patchedAdapter = {
     ...baseAdapter,
-    createUser: async (user: Parameters<typeof createParticipantWithHousehold>[0]) => {
-        const created = await createParticipantWithHousehold(user);
-        return { ...created, id: String(created.id), email: created.email || "" };
-    },
+
+    // First Google sign-in also provisions the household (base createUser would
+    // create only the Person). googleId rides along at runtime.
+    createUser: async (user: Parameters<typeof createParticipantWithHousehold>[0]) =>
+        toAdapterUser(await createParticipantWithHousehold(user)),
+
     getUser: async (id: string) => {
-        const numericId = parseInt(id, 10);
-        if (isNaN(numericId)) return null;
-        const user = await prisma.participant.findUnique({ where: { id: numericId } });
-        return user ? { ...user, id: String(user.id), email: user.email || "" } : null;
+        const dbId = toDbId(id);
+        if (isNaN(dbId)) return null;
+        const user = await prisma.person.findUnique({ where: { id: dbId } });
+        return user ? toAdapterUser(user) : null;
+    },
+
+    // NextAuth hands us the provider's email verbatim (Google's casing). The
+    // stored value is lowercased on write, so the lookup key must be too — else
+    // a differently-cased address misses the row and NextAuth mints a duplicate
+    // (issue #292). Read normalization mirrors the write extension.
+    getUserByEmail: async (email: string) => {
+        const user = await prisma.person.findUnique({ where: { email: normalizeEmail(email) } });
+        return user ? toAdapterUser(user) : null;
+    },
+
+    getUserByAccount: async (key: { provider: string; providerAccountId: string }) => {
+        const account = await prisma.account.findUnique({
+            where: { provider_providerAccountId: key },
+            include: { user: true },
+        });
+        return account?.user ? toAdapterUser(account.user) : null;
+    },
+
+    updateUser: async ({ id, ...data }: { id: string; name?: string | null; email?: string | null; image?: string | null; emailVerified?: Date | null }) => {
+        const user = await prisma.person.update({
+            where: { id: toDbId(id) },
+            data: { name: data.name, email: data.email ?? undefined, image: data.image, emailVerified: data.emailVerified },
+        });
+        return toAdapterUser(user);
+    },
+
+    deleteUser: async (id: string) => {
+        await prisma.person.delete({ where: { id: toDbId(id) } });
+    },
+
+    // The crash this whole boundary exists to prevent: the stock linkAccount
+    // writes NextAuth's string userId straight into Account.userId (Int). Coerce
+    // it, and map only our own columns so a provider's extra token fields can't
+    // reach prisma.account.create.
+    linkAccount: async (account: AdapterAccount) => {
+        await prisma.account.create({
+            data: {
+                userId: toDbId(account.userId),
+                type: account.type,
+                provider: account.provider,
+                providerAccountId: account.providerAccountId,
+                refresh_token: account.refresh_token,
+                access_token: account.access_token,
+                expires_at: account.expires_at,
+                token_type: account.token_type,
+                scope: account.scope,
+                id_token: account.id_token,
+                session_state: (account.session_state ?? null) as string | null,
+            },
+        });
+        return account;
     },
 };
 
-// Bootstrap sysadmin emails — comma-separated list from env.
-// Any account matching these emails will be auto-promoted to sysadmin on login.
+// Bootstrap isSysadmin emails — comma-separated list from env.
+// Any account matching these emails will be auto-promoted to isSysadmin on login.
 const BOOTSTRAP_SYSADMINS = (process.env.BOOTSTRAP_SYSADMINS || "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
 
 export const authOptions: NextAuthOptions = {
-    debug: true,
+    debug: config.isDevInstance(),
     adapter: patchedAdapter,
     providers: [
         GoogleProvider({
@@ -100,7 +182,15 @@ export const authOptions: NextAuthOptions = {
         // lives in evaluateMint(); this provider just supplies the caller's claims and the target.
         // (Replaces the old local-only "Offline Login" provider — local mints are the
         // unauthenticated-caller case in evaluateMint.)
-        ...(config.isDevInstance() && process.env.NODE_ENV !== 'production' ? [
+        //
+        // Registration gates on CHECKIN_ENV only (via isDevInstance) — NOT NODE_ENV. The cloud dev
+        // instance runs the prod image (NODE_ENV=production, CHECKIN_ENV=dev; see Dockerfile +
+        // deploy-dev.yml), so a NODE_ENV clause here (added by #280) unregistered the provider on
+        // the very instance impersonation is designed for, and every mint failed. isDevInstance()
+        // fails safe to prod (unset CHECKIN_ENV → 'prod'), matching the shared dev fence
+        // (lib/dev/guard.ts), and evaluateMint independently denies prod even if the provider
+        // somehow runs — both covered in auth-options-authorize.test.ts.
+        ...(config.isDevInstance() ? [
             CredentialsProvider({
                 id: PERSONA_MINT_PROVIDER_ID,
                 name: "Persona",
@@ -162,14 +252,17 @@ export const authOptions: NextAuthOptions = {
                     // Resolve the target participant (fake data only — must already exist).
                     let dbParticipant;
                     if (mode === "return") {
-                        dbParticipant = await prisma.participant.findUnique({
+                        dbParticipant = await prisma.person.findUnique({
                             where: { email: decision.targetEmail! },
                         });
                     } else {
                         const personaId = parseInt(String(credentials?.personaId ?? ""), 10);
                         if (isNaN(personaId)) return null;
-                        dbParticipant = await prisma.participant.findUnique({
-                            where: { id: personaId },
+                        // Restrict the mintable target to seeded @example.com personas (matches the
+                        // dev-personas picker's filter) so a caller can never mint a real participant,
+                        // even if one exists in the dev DB.
+                        dbParticipant = await prisma.person.findFirst({
+                            where: { id: personaId, email: { endsWith: "@example.com" } },
                         });
                     }
                     if (!dbParticipant) return null;
@@ -233,8 +326,11 @@ export const authOptions: NextAuthOptions = {
             // a logged-out visitor, while the persona-mint block above still stamped the gate claims
             // + impersonatedBy so the dev gate passes and "Return to me" works.
             if (user?.email) {
-                const dbParticipant = await prisma.participant.findUnique({
-                    where: { email: user.email },
+                // Normalize the lookup key to match the lowercased stored value
+                // (issue #292); Google's casing is otherwise passed through verbatim.
+                const email = normalizeEmail(user.email);
+                const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
+                    where: { email },
                     include: {
                         toolStatuses: {
                             select: {
@@ -242,21 +338,23 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
-                        household: { include: { membership: true } }
+                        // Program ids led — drives the client program-ops row gate.
+                        programsLed: { select: { id: true } },
+                        household: { include: { orgMembership: true } }
                     }
-                });
+                }));
 
                 if (dbParticipant) {
                     if (
-                        !dbParticipant.sysadmin &&
+                        !dbParticipant.isSysadmin &&
                         dbParticipant.email &&
                         BOOTSTRAP_SYSADMINS.includes(dbParticipant.email.toLowerCase())
                     ) {
-                        await prisma.participant.update({
+                        await prisma.person.update({
                             where: { id: dbParticipant.id },
-                            data: { sysadmin: true },
+                            data: { isSysadmin: true },
                         });
-                        dbParticipant.sysadmin = true;
+                        dbParticipant.isSysadmin = true;
                     }
 
                     // Stamp authority claims, applying the household login gate (a board
@@ -267,10 +365,10 @@ export const authOptions: NextAuthOptions = {
                 // On every subsequent request (no `user` present), re-sync authority
                 // flags from the DB so role grants/revocations take effect without
                 // waiting for the token to expire. Previously these flags were only
-                // read at sign-in, which let a revoked sysadmin/keyholder keep their
-                // privileges (including the /api/admin/roles endpoint) until the JWT
+                // read at sign-in, which let a revoked isSysadmin/isKeyholder keep their
+                // privileges (including the /api/roles endpoint) until the JWT
                 // aged out — up to 30 days.
-                const dbParticipant = await prisma.participant.findUnique({
+                const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
                     where: { id: token.id as number },
                     include: {
                         toolStatuses: {
@@ -279,9 +377,11 @@ export const authOptions: NextAuthOptions = {
                                 level: true
                             }
                         },
-                        household: { include: { membership: true } }
+                        // Program ids led — drives the client program-ops row gate.
+                        programsLed: { select: { id: true } },
+                        household: { include: { orgMembership: true } }
                     }
-                });
+                }));
 
                 if (!dbParticipant) {
                     // Account no longer exists — return an empty token so every
@@ -301,11 +401,13 @@ export const authOptions: NextAuthOptions = {
             if (session.user) {
                 session.user.id = token.id;
                 session.user.denied = token.denied ?? false;
-                session.user.sysadmin = token.sysadmin;
-                session.user.keyholder = token.keyholder;
-                session.user.boardMember = token.boardMember;
-                session.user.backgroundCheckReviewer = token.backgroundCheckReviewer;
+                session.user.isSysadmin = token.isSysadmin;
+                session.user.isKeyholder = token.isKeyholder;
+                session.user.isBoardMember = token.isBoardMember;
+                session.user.isBackgroundCheckReviewer = token.isBackgroundCheckReviewer;
                 session.user.householdId = token.householdId;
+                session.user.householdLead = token.householdLead ?? false;
+                session.user.programsLed = token.programsLed ?? [];
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;
                 // Surface the org-gate claims so dev-only server actions (assertDevActor) can

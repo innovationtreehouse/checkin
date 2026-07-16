@@ -21,10 +21,11 @@ describe('Program Publish API Integration Tests', () => {
     let validProgramId: number;
     let noLeadProgramId: number;
     let noEventsProgramId: number;
+    let finishedProgramId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'publish-api-test' } },
             select: { id: true }
         });
@@ -42,25 +43,25 @@ describe('Program Publish API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-publish-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-publish-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
-            data: { email: 'lead-publish-api-test@example.com', name: 'Lead', household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: 'lead-publish-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-publish-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-publish-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -73,8 +74,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -88,8 +89,8 @@ describe('Program Publish API Integration Tests', () => {
                 events: {
                     create: {
                         name: 'No Lead Publish API Test Event',
-                        start: new Date(Date.now() + 86400000),
-                        end: new Date(Date.now() + 90000000)
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
                     }
                 }
             }
@@ -104,11 +105,30 @@ describe('Program Publish API Integration Tests', () => {
             }
         });
         noEventsProgramId = noEventsProgram.id;
+
+        // A fully-configured but already-FINISHED program: re-publishing it must
+        // not resurrect it back to UPCOMING/OPEN.
+        const finishedProgram = await prisma.program.create({
+            data: {
+                name: 'Finished Publish API Test',
+                phase: 'FINISHED',
+                enrollmentStatus: 'CLOSED',
+                leadMentorId: leadId,
+                events: {
+                    create: {
+                        name: 'Finished Publish API Test Event',
+                        startAt: new Date(Date.now() + 86400000),
+                        endAt: new Date(Date.now() + 90000000)
+                    }
+                }
+            }
+        });
+        finishedProgramId = finishedProgram.id;
     });
 
     afterAll(async () => {
         const existingUserIds = [adminId, leadId, commonId];
-        const validProgramIds = [validProgramId, noLeadProgramId, noEventsProgramId].filter(id => id !== undefined);
+        const validProgramIds = [validProgramId, noLeadProgramId, noEventsProgramId, finishedProgramId].filter(id => id !== undefined);
 
         await prisma.event.deleteMany({
             where: { programId: { in: validProgramIds } }
@@ -122,7 +142,7 @@ describe('Program Publish API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
     });
@@ -155,7 +175,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should return 404 Not Found for non-existent program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs/999999/publish', {
                  method: 'POST',
@@ -179,7 +199,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should return 400 Bad Request if no lead mentor is assigned', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${noLeadProgramId}/publish`, {
                  method: 'POST',
@@ -192,7 +212,7 @@ describe('Program Publish API Integration Tests', () => {
         });
 
         it('should return 400 Bad Request if no events are scheduled', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${noEventsProgramId}/publish`, {
                  method: 'POST',
@@ -202,6 +222,24 @@ describe('Program Publish API Integration Tests', () => {
              expect(res.status).toBe(400);
              const data = await res.json();
              expect(data.error).toBe('Cannot publish a program without any scheduled events');
+        });
+
+        it('should reject re-publishing a FINISHED program and leave its phase unchanged', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${finishedProgramId}/publish`, {
+                 method: 'POST',
+                 body: JSON.stringify({ publish: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(finishedProgramId) as unknown as never);
+             expect(res.status).toBe(409);
+             const data = await res.json();
+             expect(data.error).toMatch(/already finished/i);
+
+             // Phase/enrollment must be untouched — the program stays terminal.
+             const after = await prisma.program.findUnique({ where: { id: finishedProgramId } });
+             expect(after?.phase).toBe('FINISHED');
+             expect(after?.enrollmentStatus).toBe('CLOSED');
         });
 
         it('should allow the lead mentor to publish a fully configured program', async () => {

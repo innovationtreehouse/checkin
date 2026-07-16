@@ -10,10 +10,10 @@ type RoleMeta = { label: string; color: string };
 
 const ROLE_META: Record<string, RoleMeta> = {
   // Participant roles
-  sysadmin: { label: 'Sysadmin', color: 'red' },
-  boardMember: { label: 'Board', color: 'grape' },
-  keyholder: { label: 'Keyholder', color: 'blue' },
-  backgroundCheckReviewer: { label: 'BG Reviewer', color: 'indigo' },
+  isSysadmin: { label: 'Sysadmin', color: 'red' },
+  isBoardMember: { label: 'Board', color: 'grape' },
+  isKeyholder: { label: 'Keyholder', color: 'blue' },
+  isBackgroundCheckReviewer: { label: 'BG Reviewer', color: 'indigo' },
   coreVolunteer: { label: 'Core Volunteer', color: 'pink' },
   // Tool certification levels
   BASIC: { label: 'Basic', color: 'gray' },

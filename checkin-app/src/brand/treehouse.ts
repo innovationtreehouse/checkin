@@ -21,8 +21,9 @@ const treehousePurple: MantineColorsTuple = [
 
 /**
  * Innovation Treehouse — a specialization of the base app. Extends baseTheme (shapes +
- * component behaviors) with the brand palette, fonts, and the "Fredoka headings render
- * lowercase" rule. Auto light/dark is retained; primaryShade is tuned per scheme.
+ * component behaviors) with the brand palette and fonts. The lowercase wordmark style is
+ * applied per-instance (tt="lowercase") where the app name renders, not globally to all
+ * headings. Auto light/dark is retained; primaryShade is tuned per scheme.
  *
  * NOTE: this module is imported by the server-side root layout, so the theme must be built
  * with createTheme alone — mergeThemeOverrides is a client-only Mantine export and throws if
@@ -55,12 +56,6 @@ export const treehouseBrand: Brand = {
     headings: {
       fontFamily: 'var(--font-fredoka), var(--font-nunito), "Trebuchet MS", system-ui, sans-serif',
       fontWeight: '600',
-    },
-
-    components: {
-      ...baseTheme.components,
-      // BRAND RULE: Fredoka (heading face) always renders lowercase, matching the wordmark.
-      Title: { styles: { root: { textTransform: 'lowercase' } } },
     },
   }),
 };

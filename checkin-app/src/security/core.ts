@@ -3,8 +3,25 @@
  *
  * Token grammar:
  *   'public'                — public-tier fields, always visible (no row gate)
+ *   'member'                — member-tier fields; flat token (no row gate) like
+ *                             'public', but held only by authenticated members.
+ *                             Granted to authenticated-session views, NOT to
+ *                             anonymous/kiosk views. A member view holds BOTH
+ *                             'member' and 'public'; anon holds only 'public'.
  *   '<scope>:<tier>'        — tier ∈ {pii, personal, internal}; the grant
  *                             applies on rows where the caller holds <scope>
+ *
+ * Sensitive-tier SEMANTICS (which fields go where):
+ *   'pii'      — contact-identity band (email, phone, googleId). Routinely
+ *                grantable to operational roles: program leads, keyholders,
+ *                background-check reviewers.
+ *   'personal' — the STRICT band: intimate data (dateOfBirth, home address,
+ *                allergies, emergency contacts, visit times). Self, own
+ *                household, and board/sysadmin; any other grant must be a
+ *                deliberate, per-route operational decision (e.g. a lead's
+ *                own program participants).
+ *   'internal' — org/system bookkeeping (role flags, process state, audit
+ *                fields). Board/sysadmin, plus narrow self-scoped grants.
  *   scope = 'everyones'     — broad grant; held on every row by default, but a
  *                             row-scoped model missing its scope key fails
  *                             closed and does NOT hold it (see scopesHeld)
@@ -15,6 +32,7 @@
  * Field visibility (per row):
  *   - field.tier === 'secret'        → never
  *   - field.tier === 'public'        → iff view includes 'public'
+ *   - field.tier === 'member'        → iff view includes 'member'
  *   - otherwise (pii/personal/internal):
  *       iff view includes 'everyones:<tier>',
  *       OR view includes '<scope>:<tier>' for some <scope> the caller holds
@@ -32,7 +50,7 @@ export type { Models, FieldsOf };
 export { classifications };
 
 export type SensitiveTier = 'pii' | 'personal' | 'internal';
-export type Tier = 'public' | SensitiveTier | 'secret';
+export type Tier = 'public' | 'member' | SensitiveTier | 'secret';
 
 export type Scope =
     | 'everyones'
@@ -42,11 +60,11 @@ export type Scope =
     // Caller leads/core-vols a program that a child of this row's household is
     // enrolled in (used for Trusted Adult pickup notes).
     | 'their_program_households'
-    // Caller is a keyholder (global — front-desk staff). Unconditional per-row.
+    // Caller is a isKeyholder (global — front-desk staff). Unconditional per-row.
     | 'keyholders'
     | 'all_current_visitors';
 
-export type Token = 'public' | `${Scope}:${SensitiveTier}`;
+export type Token = 'public' | 'member' | `${Scope}:${SensitiveTier}`;
 
 /**
  * Role vocabulary. Roles are properties of the caller (sometimes parameterised
@@ -57,10 +75,13 @@ export type Role =
     | 'unauthenticated'
     | 'authenticated'
     | 'kiosk'
-    | 'sysadmin'
-    | 'boardMember'
-    | 'keyholder'
-    | 'backgroundCheckReviewer'
+    | 'isSysadmin'
+    | 'isBoardMember'
+    | 'isKeyholder'
+    | 'isBackgroundCheckReviewer'
+    // Holds a MAY_CERTIFY_OTHERS toolStatus (a shop certifier). Not a Person
+    // role boolean — derived from session.user.toolStatuses (see callerHoldsRole).
+    | 'certifier'
     | 'householdLead'
     | 'programLeadMentor'
     | 'programCoreVolunteer';
@@ -80,17 +101,21 @@ const VALID_ROLES = new Set<Role>([
     'unauthenticated',
     'authenticated',
     'kiosk',
-    'sysadmin',
-    'boardMember',
-    'keyholder',
-    'backgroundCheckReviewer',
+    'isSysadmin',
+    'isBoardMember',
+    'isKeyholder',
+    'isBackgroundCheckReviewer',
+    'certifier',
     'householdLead',
     'programLeadMentor',
     'programCoreVolunteer',
 ]);
 
-export function parseToken(t: string): { scope: Scope; tier: SensitiveTier } | 'public' | null {
+export function parseToken(
+    t: string,
+): { scope: Scope; tier: SensitiveTier } | 'public' | 'member' | null {
     if (t === 'public') return 'public';
+    if (t === 'member') return 'member';
     const colon = t.indexOf(':');
     if (colon < 1) return null;
     const scope = t.slice(0, colon);
@@ -109,6 +134,10 @@ export type Authorize =
     | 'authenticated'
     | 'self'
     | { anyRole: BusinessRole[] }
+    // Shop certifier (a MAY_CERTIFY_OTHERS toolStatus). Admits certifiers OR
+    // admins (isSysadmin/isBoardMember) — see resolveAccess. Backed by a
+    // predicate because 'certifier' is not a Person role boolean.
+    | 'certifier'
     | 'program-lead-mentor'
     | 'program-core-volunteer'
     | 'household-lead'
@@ -135,6 +164,14 @@ export interface RouteSpec {
      * meaningful.
      */
     orderedView: readonly OrderedViewEntry[];
+    /**
+     * The models this route's handler is declared to return (top-level bag keys
+     * + the models reached through their relations). Optional documentation of
+     * the response surface; consumed by the §8 seam validator to check the
+     * declared set against what the handler actually ships. Not enforced by the
+     * runtime stripper (that gates per-field regardless of this list).
+     */
+    returns?: readonly Models[];
 }
 
 /**
@@ -213,10 +250,11 @@ export function fieldVisible(
 ): boolean {
     if (tier === 'secret') return false;
     if (tier === 'public') return tokens.includes('public');
+    if (tier === 'member') return tokens.includes('member');
     for (const tok of tokens) {
-        if (tok === 'public') continue;
+        if (tok === 'public' || tok === 'member') continue;
         const parsed = parseToken(tok);
-        if (parsed === null || parsed === 'public') continue;
+        if (parsed === null || parsed === 'public' || parsed === 'member') continue;
         if (parsed.tier !== tier) continue;
         // 'everyones' is a normal scope here: scopesHeld() seeds it for every
         // row EXCEPT a row-scoped model whose scope key is absent, which fails

@@ -1,8 +1,13 @@
 import prisma from "@/lib/prisma";
+import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
-import { getExternalStatus } from "@/lib/membership/external";
+import { getExternalStatus, advanceExternalIfComplete } from "@/lib/membership/external";
+import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
+import { applyVolunteerStatus } from "@/lib/membership/review";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
+import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
+import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -12,7 +17,7 @@ import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergen
  * Intake data lives in the real tables (Household + Participant), so the form
  * is naturally resumable: returning applicants are re-served their saved data.
  * A long-lived Membership (status NONE until paid) anchors the per-cycle
- * MembershipProcess that tracks application progress.
+ * OrgMembershipProcess that tracks application progress.
  */
 
 export class IntakeError extends Error {
@@ -43,26 +48,24 @@ export type IntakeRejection = {
     message: string;
 };
 
-type ParentInput = { id?: number; name?: string; email?: string; dob?: string | null; allergies?: string | null };
+type ParentInput = { id?: number; name?: string; email?: string; dob?: string | null; over25?: boolean; allergies?: string | null };
 type ChildInput = { id?: number; name?: string; email?: string | null; dob?: string | null; allergies?: string | null };
 
 export interface IntakeSaveInput {
-    household?: { address?: string; emergencyContactName?: string; emergencyContactPhone?: string };
+    household?: Partial<StructuredAddress> & { emergencyContactName?: string; emergencyContactPhone?: string; emergencyContactEmail?: string; notes?: string | null };
     primaryParent?: ParentInput;
     secondaryParent?: ParentInput | null;
     children?: ChildInput[];
 }
 
 async function loadUserWithHousehold(userId: number) {
-    return prisma.participant.findUnique({
+    return prisma.person.findUnique({
         where: { id: userId },
         include: {
-            householdLeads: true,
             household: {
                 include: {
-                    participants: { orderBy: { id: "asc" } },
-                    leads: true,
-                    membership: { include: { processes: true } },
+                    householdMembers: { orderBy: { id: "asc" } },
+                    orgMembership: { include: { processes: true } },
                     emergencyContacts: { orderBy: [{ priority: "asc" }, { id: "asc" }] },
                 },
             },
@@ -71,9 +74,7 @@ async function loadUserWithHousehold(userId: number) {
 }
 
 function assertLead(user: NonNullable<Awaited<ReturnType<typeof loadUserWithHousehold>>>) {
-    if (!user.householdId) throw new IntakeError("no_household", "You must create a household first.");
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.sysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
+    if (!user.isHouseholdLead && !user.isSysadmin) throw new IntakeError("not_lead", "Only a household lead can manage the membership application.");
 }
 
 /** Read the caller's current membership/application state, prefilled for the form. */
@@ -82,26 +83,30 @@ export async function getIntakeState(userId: number) {
     if (!user) throw new IntakeError("no_household", "User not found.");
 
     const household = user.household;
-    const membership = household?.membership ?? null;
+    const membership = household?.orgMembership ?? null;
     // The current in-flight process of any kind (INITIAL or RENEWAL) — anything
-    // not yet ACTIVE. During renewal the membership stays ACTIVE while its RENEWAL
-    // process cycles, so we surface that here rather than the "you're a member" card.
+    // not in a terminal status. During renewal the membership stays ACTIVE while
+    // its RENEWAL process cycles, so we surface that here rather than the "you're
+    // a member" card. ARCHIVED (board-disposed) is terminal like ACTIVE, so a
+    // returning applicant sees a clean slate rather than resuming a ghost.
     const process = membership?.processes
-        .filter((p) => p.status !== "ACTIVE")
+        .filter((p) => p.status !== "ACTIVE" && p.status !== "ARCHIVED")
         .sort((a, b) => b.id - a.id)[0] ?? null;
 
     // Parents/guardians are the household leads; children are non-lead members.
-    const leadIds = new Set((household?.leads ?? []).map((l) => l.participantId));
-    const parents = (household?.participants ?? []).filter((p) => leadIds.has(p.id));
-    const children = (household?.participants ?? []).filter((p) => !leadIds.has(p.id));
+    const members = household?.householdMembers ?? [];
+    const leadIds = new Set(members.filter((p) => p.isHouseholdLead).map((p) => p.id));
+    const parents = members.filter((p) => p.isHouseholdLead);
+    const children = members.filter((p) => !p.isHouseholdLead);
     const primary = parents.find((p) => p.id === userId) ?? null;
     const secondary = parents.find((p) => p.id !== userId) ?? null;
 
-    const shape = (p: { id: number; name: string | null; email: string | null; dob: Date | null; allergies: string | null }) => ({
+    const shape = (p: { id: number; name: string | null; email: string | null; dateOfBirth: Date | null; isDeclaredAdult: boolean; allergies: string | null }) => ({
         id: p.id,
         name: p.name,
         email: p.email,
-        dob: p.dob ? p.dob.toISOString().slice(0, 10) : null,
+        dob: p.dateOfBirth ? p.dateOfBirth.toISOString().slice(0, 10) : null,
+        over25: !p.dateOfBirth && !!p.isDeclaredAdult,
         allergies: p.allergies,
     });
 
@@ -109,6 +114,7 @@ export async function getIntakeState(userId: number) {
 
     return {
         hasHousehold: !!household,
+        isLead: leadIds.has(userId),
         membershipStatus: membership?.status ?? null,
         process: process ? { id: process.id, kind: process.kind, status: process.status } : null,
         external,
@@ -116,11 +122,13 @@ export async function getIntakeState(userId: number) {
             household: household
                 ? {
                       name: household.name,
-                      address: household.address,
+                      notes: household.intakeNotes,
+                      ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
                       emergencyContactName: household.emergencyContacts[0]?.name ?? null,
                       emergencyContactPhone: household.emergencyContacts[0]?.phone ?? null,
+                      emergencyContactEmail: household.emergencyContacts[0]?.email ?? null,
                   }
                 : null,
             primaryParent: primary ? shape(primary) : null,
@@ -133,59 +141,73 @@ export async function getIntakeState(userId: number) {
 /**
  * Begin (or resume) an INITIAL application for the caller's household. Ensures a
  * household exists, anchors a Membership (status NONE), and opens a
- * MembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
+ * OrgMembershipProcess at INTAKE. Idempotent: an in-flight process is returned as-is.
+ *
+ * The caller's own read of `user.household.orgMembership.processes` (above) is stale
+ * the instant it's read, so a double-click or two tabs can both pass it and both
+ * reach the create. Mirrors renewal's createRenewalProcess: the check+create is
+ * re-run inside a transaction holding a `SELECT ... FOR UPDATE` lock on the
+ * Membership row, so a concurrent caller blocks until the winner commits, then
+ * sees the winner's in-flight process instead of inserting a duplicate. The
+ * partial unique index `membership_one_inflight_initial` is defense-in-depth.
  */
 export async function startIntake(userId: number) {
-    let user = await loadUserWithHousehold(userId);
+    const user = await loadUserWithHousehold(userId);
     if (!user) throw new IntakeError("no_household", "User not found.");
-
-    // Ensure a household exists, with the caller as a lead + parent.
-    if (!user.householdId) {
-        const lastName = (user.name || "").trim().split(/\s+/).pop() || "";
-        await prisma.household.create({
-            data: {
-                name: lastName ? `${lastName} Household` : "Household",
-                leads: { create: { participantId: userId } },
-                participants: { connect: { id: userId } },
-            },
-        });
-        user = await loadUserWithHousehold(userId);
-        if (!user) throw new IntakeError("no_household", "User not found.");
-    }
 
     assertLead(user);
     const householdId = user.householdId!;
 
-    if (user.household?.membership?.status === "ACTIVE") {
+    if (user.household?.orgMembership?.status === "ACTIVE") {
         throw new IntakeError("already_member", "Your household is already an active member.");
     }
 
-    const existing = user.household?.membership?.processes
-        .filter((p) => p.kind === "INITIAL" && IN_FLIGHT_INITIAL_STATUSES.includes(p.status))
-        .sort((a, b) => b.id - a.id)[0];
-    if (existing) return existing;
-
-    const membership = await prisma.membership.upsert({
+    const membership = await prisma.orgMembership.upsert({
         where: { householdId },
         create: { householdId, status: "NONE" },
         update: {},
     });
 
-    const process = await prisma.membershipProcess.create({
-        data: { membershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
-    });
+    try {
+        return await prisma.$transaction(async (tx) => {
+            // Lock the membership row so overlapping starts serialize here, not at the INSERT.
+            await tx.$queryRaw`SELECT id FROM "OrgMembership" WHERE id = ${membership.id} FOR UPDATE`;
+            const existing = await tx.orgMembershipProcess.findFirst({
+                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (existing) return existing;
 
-    await prisma.auditLog.create({
-        data: {
-            actorId: userId,
-            action: "CREATE",
-            tableName: "MembershipProcess",
-            affectedEntityId: process.id,
-            newData: JSON.stringify({ membershipId: membership.id, kind: "INITIAL", status: "INTAKE" }),
-        },
-    });
+            const process = await tx.orgMembershipProcess.create({
+                data: { orgMembershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+            });
 
-    return process;
+            await tx.auditLog.create({
+                data: {
+                    actorId: userId,
+                    action: "CREATE",
+                    tableName: "OrgMembershipProcess",
+                    affectedEntityId: process.id,
+                    newData: { orgMembershipId: membership.id, kind: "INITIAL", status: "INTAKE" },
+                },
+            });
+
+            return process;
+        });
+    } catch (e) {
+        // The FOR UPDATE lock serializes same-version callers, but a rolling deploy can
+        // leave a pre-fix instance (no lock) inserting concurrently — the partial unique
+        // index membership_one_inflight_initial then rejects the duplicate with P2002.
+        // Return the winner instead of surfacing a 500 to the applicant (mirrors renewal).
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+            const winner = await prisma.orgMembershipProcess.findFirst({
+                where: { orgMembershipId: membership.id, kind: "INITIAL", status: { in: IN_FLIGHT_INITIAL_STATUSES } },
+                orderBy: { id: "desc" },
+            });
+            if (winner) return winner;
+        }
+        throw e;
+    }
 }
 
 /** Persist intake form data onto the caller's household + participants. Resumable; never deletes. */
@@ -194,7 +216,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (!user) throw new IntakeError("no_household", "User not found.");
     assertLead(user);
     const householdId = user.householdId!;
-    const householdParticipantIds = new Set((user.household?.participants ?? []).map((p) => p.id));
+    const householdMemberIds = new Set((user.household?.householdMembers ?? []).map((p) => p.id));
 
     const toDate = (d?: string | null) => (d ? new Date(d) : null);
 
@@ -221,16 +243,27 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     };
 
     if (input.household) {
-        if (input.household.address !== undefined) {
-            await prisma.household.update({ where: { id: householdId }, data: { address: input.household.address } });
+        // Address + the optional "anything else we should know?" note share one
+        // household.update. Note is trimmed to null so an empty box clears it.
+        const householdData = {
+            ...normalizeAddressInput(input.household),
+            ...(input.household.notes !== undefined && { intakeNotes: input.household.notes?.trim() || null }),
+        };
+        if (Object.keys(householdData).length > 0) {
+            await prisma.household.update({ where: { id: householdId }, data: householdData });
         }
         // Emergency contact lives in its own table now; the single-field intake
         // form maps onto the household's primary contact. Tolerant of partial
         // saves; rejects (direction A) a contact that is a household member.
-        if (input.household.emergencyContactName !== undefined || input.household.emergencyContactPhone !== undefined) {
+        if (
+            input.household.emergencyContactName !== undefined ||
+            input.household.emergencyContactPhone !== undefined ||
+            input.household.emergencyContactEmail !== undefined
+        ) {
             await upsertPrimaryContact(prisma, householdId, {
                 name: input.household.emergencyContactName,
                 phone: input.household.emergencyContactPhone,
+                email: input.household.emergencyContactEmail,
             });
         }
     }
@@ -238,11 +271,12 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Primary parent is always the caller.
     if (input.primaryParent) {
         // The primary applicant is already a household lead (set at startIntake).
-        await prisma.participant.update({
+        await prisma.person.update({
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
-                ...(input.primaryParent.dob !== undefined && { dob: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
+                ...(input.primaryParent.over25 !== undefined && { isDeclaredAdult: input.primaryParent.dob ? false : !!input.primaryParent.over25 }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -251,24 +285,26 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Secondary parent: update if it belongs to this household, else create.
     if (input.secondaryParent) {
         const sp = input.secondaryParent;
-        if (sp.id && householdParticipantIds.has(sp.id)) {
-            await prisma.participant.update({
+        if (sp.id && householdMemberIds.has(sp.id)) {
+            await prisma.person.update({
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
-                    ...(sp.dob !== undefined && { dob: toDate(sp.dob) }),
+                    ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
+                    ...(sp.over25 !== undefined && { isDeclaredAdult: sp.dob ? false : !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
         } else if (sp.name || sp.email) {
-            const created = await prisma.participant.create({
+            const created = await prisma.person.create({
                 data: {
                     householdId,
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
-                    dob: toDate(sp.dob),
+                    dateOfBirth: toDate(sp.dob),
+                    isDeclaredAdult: sp.dob ? false : !!sp.over25,
                     allergies: sp.allergies ?? null,
                 },
             });
@@ -279,22 +315,22 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Children are non-lead household members. Update existing (own household
     // only), create the rest. Never delete; never add a HouseholdLead row.
     for (const child of input.children ?? []) {
-        if (child.id && householdParticipantIds.has(child.id)) {
-            await prisma.participant.update({
+        if (child.id && householdMemberIds.has(child.id)) {
+            await prisma.person.update({
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
-                    ...(child.dob !== undefined && { dob: toDate(child.dob) }),
+                    ...(child.dob !== undefined && { dateOfBirth: toDate(child.dob) }),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
         } else if (child.name) {
-            await prisma.participant.create({
+            await prisma.person.create({
                 data: {
                     householdId,
                     name: child.name,
                     ...(child.email && { email: child.email.toLowerCase() }),
-                    dob: toDate(child.dob),
+                    dateOfBirth: toDate(child.dob),
                     allergies: child.allergies ?? null,
                 },
             });
@@ -318,22 +354,23 @@ export async function submitIntake(userId: number) {
     assertLead(user);
 
     const household = user.household!;
-    const process = household.membership?.processes
+    const process = household.orgMembership?.processes
         .filter((p) => p.kind === "INITIAL" && p.status === "INTAKE")
         .sort((a, b) => b.id - a.id)[0];
     if (!process) throw new IntakeError("no_process", "No application is awaiting your information.");
 
-    // Each missing requirement carries the form field key to highlight + a label
-    // for the summary message.
-    const missing: { field: string; label: string }[] = [];
-    if (!household.address?.trim()) missing.push({ field: "address", label: "home address" });
-    // A household must keep >= 1 valid (non-member, complete) emergency contact.
-    const hasValidContact = household.emergencyContacts.some(
-        (c) => c.conflictParticipantId === null && c.name.trim() && c.phone.trim(),
-    );
-    if (!hasValidContact) missing.push({ field: "emergencyContact", label: "a valid emergency contact (someone outside the household)" });
-    const primary = household.participants.find((p) => p.id === userId);
-    if (!primary?.name?.trim()) missing.push({ field: "primaryName", label: "primary parent name" });
+    // Required-field validation is driven by the membership-initial profile (one
+    // declarative source of truth shared across intake surfaces), not inline
+    // literals. Field keys + labels + order are unchanged from the hardcoded set.
+    const primary = household.householdMembers.find((p) => p.id === userId);
+    const missing = missingRequiredFields(INTAKE_PROFILES["membership-initial"], {
+        addressLine1: household.line1,
+        addressCity: household.city,
+        addressState: household.state,
+        addressPostalCode: household.postalCode,
+        emergencyContacts: household.emergencyContacts,
+        primaryName: primary?.name,
+    });
     if (missing.length) {
         throw new IntakeError(
             "incomplete",
@@ -342,21 +379,46 @@ export async function submitIntake(userId: number) {
         );
     }
 
-    const advanced = await prisma.membershipProcess.update({
+    // If a household guardian already holds a still-valid background check (same
+    // rule as renewals), auto-clear the BG requirement now — the applicant won't
+    // need to consent to or wait on a new check, just sign + pay. An intake note
+    // (#900) disqualifies the shortcut: it must reach a human reviewer before
+    // payment (#907), and the review track is the only surface that shows it —
+    // the application instead holds at PENDING_BG_REVIEW (advanceExternalIfComplete).
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
+    const bgFresh = !household.intakeNotes?.trim() && (await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0));
+
+    const advanced = await prisma.orgMembershipProcess.update({
         where: { id: process.id },
-        data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date() },
+        data: {
+            status: "PENDING_EXTERNAL_ACTION",
+            stageEnteredAt: new Date(),
+            ...(bgFresh ? { bgClearedAt: new Date() } : {}),
+        },
     });
 
     await prisma.auditLog.create({
         data: {
             actorId: userId,
             action: "EDIT",
-            tableName: "MembershipProcess",
+            tableName: "OrgMembershipProcess",
             affectedEntityId: process.id,
-            oldData: JSON.stringify({ status: "INTAKE" }),
-            newData: JSON.stringify({ status: "PENDING_EXTERNAL_ACTION" }),
+            oldData: { status: "INTAKE" },
+            newData: { status: "PENDING_EXTERNAL_ACTION", ...(bgFresh ? { bgClearedAt: true } : {}) },
         },
     });
 
-    return advanced;
+    // Fresh-check shortcut ⇒ clearBackgroundCheck never runs this cycle, so match
+    // the volunteer-designation allowlist here or it would never be applied (#874).
+    if (bgFresh) await applyVolunteerStatus(prisma, process.orgMembershipId!, household.id, false);
+
+    // The external actions (contract sign, BG consent) can already be satisfied the
+    // moment we land at PENDING_EXTERNAL_ACTION: bgFresh stamps bgClearedAt above,
+    // and the board can pre-mark contractSignedAt/bgConsentAt on the INTAKE row via
+    // the ops API (#878). advanceExternalIfComplete didn't re-fire on those marks
+    // (status wasn't PENDING_EXTERNAL_ACTION yet), so without this the process would
+    // strand here with its gate already met. Re-run the advance now — it's a no-op
+    // (status guard, contract/BG checks) when the actions aren't actually done.
+    return (await advanceExternalIfComplete(process.id)) ?? advanced;
 }

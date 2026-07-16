@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Kiosk Certifications API
- * Tests GET /api/kiosk/certifications to secure participant tool statuses for active shop users
+ * Tests GET /api/kioskdisplay/certifications to secure participant tool statuses for active shop users
  */
 
-import { GET } from '@/app/api/kiosk/certifications/route';
+import { GET } from '@/app/api/kioskdisplay/certifications/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { getKioskPublicKeys, verifyKioskSignature } from '@/lib/verify-kiosk';
@@ -29,7 +29,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'certifications-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -38,11 +38,11 @@ describe('Kiosk Certifications API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
 
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.toolStatus.deleteMany({
-            where: { userId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.tool.deleteMany({
@@ -50,7 +50,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'certifications-api-test' } }
         });
 
@@ -59,8 +59,8 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
-            data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test', household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: 'user-certifications-api-test@example.com', name: 'User Kiosk Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
         testHouseholdId = user.householdId;
@@ -72,14 +72,14 @@ describe('Kiosk Certifications API Integration Tests', () => {
 
         await prisma.toolStatus.create({
             data: { 
-                userId: testUserId,
+                personId: testUserId,
                 toolId: toolId,
                 level: 'CERTIFIED'
             }
         });
 
         await prisma.visit.create({
-            data: { participantId: testUserId, arrived: new Date() }
+            data: { personId: testUserId, arrivedAt: new Date() }
         });
     });
 
@@ -90,12 +90,12 @@ describe('Kiosk Certifications API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
         await prisma.toolStatus.deleteMany({
-            where: { userId: testUserId }
+            where: { personId: testUserId }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: testUserId }
         });
         // RESTRICT: delete the household only after its participant is gone
@@ -107,12 +107,12 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
     });
 
-    describe('GET /api/kiosk/certifications', () => {
+    describe('GET /api/kioskdisplay/certifications', () => {
         it('should return 401 Unauthorized without session or Kiosk header', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
              (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
-             const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
+             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { method: 'GET' });
              const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
         });
@@ -122,7 +122,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
              (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
              (verifyKioskSignature as jest.Mock).mockReturnValue({ ok: false, status: 401, error: 'Invalid Signature' });
 
-             const req = new Request('http://localhost:4000/api/kiosk/certifications', { 
+             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { 
                  method: 'GET',
                  headers: new Headers({
                      'x-kiosk-signature': 'bad-sig',
@@ -133,7 +133,10 @@ describe('Kiosk Certifications API Integration Tests', () => {
              const res = await GET(req as unknown as NextRequest);
              expect(res.status).toBe(401);
              const data = await res.json();
-             expect(data.error).toBe('Invalid Signature');
+             // A bad kiosk signature falls through to the session check (here: no session),
+             // so withAuth fails closed with the generic 401. The verifier's own error string
+             // is intentionally not surfaced to the caller.
+             expect(data.error).toBe('Unauthorized');
         });
 
         it('should return active visits and tools if Kiosk signature is valid', async () => {
@@ -141,7 +144,7 @@ describe('Kiosk Certifications API Integration Tests', () => {
              (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
              (verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
 
-             const req = new Request('http://localhost:4000/api/kiosk/certifications', { 
+             const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { 
                  method: 'GET',
                  headers: new Headers({
                      'x-kiosk-signature': 'good-sig',
@@ -159,6 +162,9 @@ describe('Kiosk Certifications API Integration Tests', () => {
              const visitMatches = data.participants.filter((v: {id: number}) => v.id === testUserId);
              expect(visitMatches.length).toBe(1);
              expect(visitMatches[0].toolStatuses.some((t: {toolId: number, level: string}) => t.toolId === toolId && t.level === 'CERTIFIED')).toBe(true);
+             // Returns a display name and never the raw email — data minimization (#329).
+             expect(visitMatches[0].name).toBe('User Kiosk Test');
+             expect('email' in visitMatches[0]).toBe(false);
              
              const toolMatches = data.tools.filter((t: {id: number}) => t.id === toolId);
              expect(toolMatches.length).toBe(1);
@@ -166,10 +172,12 @@ describe('Kiosk Certifications API Integration Tests', () => {
         });
 
         it('should return active visits and tools for authenticated web users', async () => {
-            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+            // This endpoint is privileged (isSysadmin/isBoardMember/isKeyholder or kiosk); a plain
+            // member session gets 403. Grant a role flag so the session passes the gate.
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId, isKeyholder: true } });
             (getKioskPublicKeys as jest.Mock).mockReturnValue(['mock-pub-key']);
 
-            const req = new Request('http://localhost:4000/api/kiosk/certifications', { method: 'GET' });
+            const req = new Request('http://localhost:4000/api/kioskdisplay/certifications', { method: 'GET' });
             const res = await GET(req as unknown as NextRequest);
             expect(res.status).toBe(200);
 

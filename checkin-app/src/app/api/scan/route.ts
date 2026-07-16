@@ -1,35 +1,23 @@
-import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
-import { logBackendError } from "@/lib/logger";
 import { config } from "@/lib/config";
+import { withKiosk } from "@/lib/kioskAuth";
 
-export async function POST(req: NextRequest) {
+// High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
+// reads the raw body, authenticates it (kiosk signature OR session), rejects
+// unauthenticated, and hands us the parsed body + actor. We own authorization.
+export const POST = withKiosk(
+    { rateLimit: { name: "scan", limit: 300 } },
+    async (_req, body: { participantId?: unknown }, auth) => {
     const startTime = Date.now();
+
     try {
-        const rawBody = await req.text();
-
-        // 1. Authenticate
-        const auth = await authenticateRequest(req, rawBody);
-
-        let body;
-        try {
-            body = JSON.parse(rawBody);
-        } catch {
-            return apiError("Invalid JSON payload.", 400);
-        }
-
         const participantId = body.participantId;
 
         if (!participantId || typeof participantId !== 'number') {
             return apiError("A valid numeric participantId is required.", 400);
-        }
-
-        // 2. Authorization
-        if (auth.type === 'unauthenticated') {
-            return apiError("Unauthorized: Missing kiosk signature or invalid session", 401);
         }
 
         // Web session: check if user can scan this participant
@@ -37,7 +25,7 @@ export async function POST(req: NextRequest) {
         if (auth.type === 'session') {
             const user = auth.user;
             const isSelf = participantId === Number(user.id);
-            const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+            const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
             // In production, only privileged users may self-check-in via web.
             // Everyone else must use the kiosk badge scanner.
@@ -55,7 +43,7 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Lookup participant
-        const participant = await prisma.participant.findUnique({
+        const participant = await prisma.person.findUnique({
             where: { id: participantId },
         });
 
@@ -93,10 +81,10 @@ export async function POST(req: NextRequest) {
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = await tx.rawBadgeEvent.findFirst({
+            const recentScan = await tx.rawBadgeLog.findFirst({
                 where: {
-                    participantId: participant.id,
-                    time: {
+                    personId: participant.id,
+                    timestamp: {
                         gte: threeSecondsAgo
                     }
                 }
@@ -111,9 +99,9 @@ export async function POST(req: NextRequest) {
             }
 
             // 5. Record raw badge event
-            await tx.rawBadgeEvent.create({
+            await tx.rawBadgeLog.create({
                 data: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     location: "Main Entrance",
                 },
             });
@@ -121,10 +109,10 @@ export async function POST(req: NextRequest) {
             // 6. Check-in or check-out
             const activeVisit = await tx.visit.findFirst({
                 where: {
-                    participantId: participant.id,
-                    departed: null,
+                    personId: participant.id,
+                    departedAt: null,
                 },
-                orderBy: { arrived: "desc" },
+                orderBy: { arrivedAt: "desc" },
             });
 
             if (activeVisit) {
@@ -142,23 +130,21 @@ export async function POST(req: NextRequest) {
 
         // Facility-wide close runs here, AFTER the per-participant transaction
         // commits and the advisory lock is released. Keeping the sweep + email
-        // kick out of the locked section means a last-keyholder close no longer
+        // kick out of the locked section means a last-isKeyholder close no longer
         // blocks concurrent scans for other participants. No-op unless the
         // response reports facilityClosed.
         await finalizeFacilityClose(res);
 
         return res;
-    } catch (error) {
-        console.error("Scan processing error:", error);
-        await logBackendError(error, "POST /api/scan");
-        return apiError("Internal Server Error while processing scan.", 500);
     } finally {
+        // Errors propagate to withKiosk's top-level catch/500; this finally only
+        // records the metric. Times the handler body (post-auth), not rate-limit.
         const durationMs = Date.now() - startTime;
-        prisma.systemMetric.create({
+        prisma.systemMetricLog.create({
             data: {
                 metric: "scan_response_time",
                 value: durationMs,
             }
-        }).catch((err: unknown) => console.error("Failed to log scan_response_time metric:", err));
+        }).catch((err: unknown) => logger.error("Failed to log scan_response_time metric:", err));
     }
-}
+});

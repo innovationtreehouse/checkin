@@ -4,13 +4,14 @@ import { assignParticipantClaims, type ClaimSourceParticipant } from '@/lib/auth
 function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSourceParticipant {
     return {
         id: 7,
-        sysadmin: true,
-        keyholder: true,
-        boardMember: true,
-        backgroundCheckReviewer: true,
+        isSysadmin: true,
+        isKeyholder: true,
+        isBoardMember: true,
+        isBackgroundCheckReviewer: true,
         householdId: 99,
+        isHouseholdLead: false,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
-        household: { membership: { status: 'ACTIVE' } },
+        household: { orgMembership: { status: 'ACTIVE' } },
         ...overrides,
     };
 }
@@ -18,13 +19,13 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
 describe('assignParticipantClaims — household login gate', () => {
     it('forces denied=true and strips every authority flag for a DENIED household', () => {
         const token = {} as JWT;
-        assignParticipantClaims(token, participant({ household: { membership: { status: 'DENIED' } } }));
+        assignParticipantClaims(token, participant({ household: { orgMembership: { status: 'DENIED' } } }));
 
         expect(token.denied).toBe(true);
-        expect(token.sysadmin).toBe(false);
-        expect(token.keyholder).toBe(false);
-        expect(token.boardMember).toBe(false);
-        expect(token.backgroundCheckReviewer).toBe(false);
+        expect(token.isSysadmin).toBe(false);
+        expect(token.isKeyholder).toBe(false);
+        expect(token.isBoardMember).toBe(false);
+        expect(token.isBackgroundCheckReviewer).toBe(false);
         expect(token.toolStatuses).toEqual([]);
         // Identity is preserved so the session still resolves and the gate can act.
         expect(token.id).toBe(7);
@@ -36,8 +37,8 @@ describe('assignParticipantClaims — household login gate', () => {
         assignParticipantClaims(token, participant());
 
         expect(token.denied).toBe(false);
-        expect(token.sysadmin).toBe(true);
-        expect(token.keyholder).toBe(true);
+        expect(token.isSysadmin).toBe(true);
+        expect(token.isKeyholder).toBe(true);
         expect(token.toolStatuses).toHaveLength(1);
     });
 
@@ -45,11 +46,34 @@ describe('assignParticipantClaims — household login gate', () => {
         'does not deny for non-DENIED status: %s',
         (status) => {
             const token = {} as JWT;
-            const household = status === undefined ? null : { membership: { status } };
+            const household = status === undefined ? null : { orgMembership: { status } };
             assignParticipantClaims(token, participant({ household }));
 
             expect(token.denied).toBe(false);
-            expect(token.keyholder).toBe(true);
+            expect(token.isKeyholder).toBe(true);
         },
     );
+});
+
+describe('assignParticipantClaims — householdLead claim', () => {
+    it('stamps householdLead=true when isHouseholdLead is set', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ isHouseholdLead: true }));
+        expect(token.householdLead).toBe(true);
+    });
+
+    it('stamps householdLead=false when isHouseholdLead is unset', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ isHouseholdLead: false }));
+        expect(token.householdLead).toBe(false);
+    });
+
+    it('forces householdLead=false for a DENIED household even when isHouseholdLead is set', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({
+            isHouseholdLead: true,
+            household: { orgMembership: { status: 'DENIED' } },
+        }));
+        expect(token.householdLead).toBe(false);
+    });
 });

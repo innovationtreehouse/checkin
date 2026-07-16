@@ -23,7 +23,7 @@ describe('Program Settings API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'settings-api-test' } },
             select: { id: true }
         });
@@ -37,31 +37,31 @@ describe('Program Settings API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-settings-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-settings-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
-            data: { email: 'lead-settings-api-test@example.com', name: 'Lead', household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: 'lead-settings-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create New Lead Candidate
-        const newLead = await prisma.participant.create({
-            data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', household: { create: {} } }
+        const newLead = await prisma.person.create({
+            data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', household: { create: { name: "Test HH" } } }
         });
         newLeadId = newLead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-settings-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-settings-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -76,6 +76,9 @@ describe('Program Settings API Integration Tests', () => {
         const existingUserIds = [adminId, leadId, newLeadId, commonId].filter(id => id !== undefined);
 
         if (targetProgramId) {
+            await prisma.programParticipant.deleteMany({
+                where: { programId: targetProgramId }
+            });
             await prisma.program.deleteMany({
                 where: { id: targetProgramId }
             });
@@ -86,7 +89,7 @@ describe('Program Settings API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
@@ -151,7 +154,7 @@ describe('Program Settings API Integration Tests', () => {
         });
 
         it('should allow admins to reassign the leadMentorId', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
                  method: 'PATCH',
@@ -164,6 +167,84 @@ describe('Program Settings API Integration Tests', () => {
              expect(data.success).toBe(true);
              expect(data.program.leadMentorId).toBe(newLeadId);
              expect(data.program.phase).toBe('RUNNING');
+        });
+
+        it('should reject a negative maxParticipants with 400', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxParticipants: -5 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+        });
+
+        it('should reject a zero maxParticipants with 400', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxParticipants: 0 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+        });
+
+        it('should reject shrinking maxParticipants below current enrollment and not persist it', async () => {
+             // Enroll 2 participants.
+             await prisma.programParticipant.createMany({
+                 data: [
+                     { programId: targetProgramId, personId: commonId, status: 'ACTIVE' },
+                     { programId: targetProgramId, personId: leadId, status: 'PENDING' },
+                 ]
+             });
+
+             const before = await prisma.program.findUnique({ where: { id: targetProgramId } });
+
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxParticipants: 1 }) // below enrollment of 2
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+
+             const data = await res.json();
+             expect(data.error).toMatch(/current enrollment of 2/);
+
+             // Value did NOT persist.
+             const after = await prisma.program.findUnique({ where: { id: targetProgramId } });
+             expect(after?.maxParticipants).toBe(before?.maxParticipants);
+        });
+
+        it('should allow editing maxAge after creation (regression: was non-updatable)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ maxAge: 18 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.program.maxAge).toBe(18);
+
+             const persisted = await prisma.program.findUnique({ where: { id: targetProgramId } });
+             expect(persisted?.maxAge).toBe(18);
+        });
+
+        it('should reject minAge greater than maxAge with 400', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ minAge: 30, maxAge: 10 })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
         });
     });
 });

@@ -21,6 +21,7 @@ function ctx(opts: Partial<CallerContext> = {}): CallerContext {
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
         ...opts,
     };
@@ -71,48 +72,48 @@ describe('scopesHeld', () => {
         expect(scopesHeld('Tool', { id: 1 }, ctx())).toEqual(new Set(['everyones']));
     });
 
-    it('Participant.their_own when row.id === caller.selfId', () => {
-        const s = scopesHeld('Participant', { id: 5 }, ctx({ selfId: 5 }));
+    it('Person.their_own when row.id === caller.selfId', () => {
+        const s = scopesHeld('Person', { id: 5 }, ctx({ selfId: 5 }));
         expect(s.has('their_own')).toBe(true);
     });
 
-    it('Participant.their_own NOT held when row.id !== caller.selfId', () => {
-        const s = scopesHeld('Participant', { id: 7 }, ctx({ selfId: 5 }));
+    it('Person.their_own NOT held when row.id !== caller.selfId', () => {
+        const s = scopesHeld('Person', { id: 7 }, ctx({ selfId: 5 }));
         expect(s.has('their_own')).toBe(false);
     });
 
-    it('Participant.their_households when householdIds match', () => {
-        const s = scopesHeld('Participant', { id: 9, householdId: 2 }, ctx({ selfId: 5, householdId: 2 }));
+    it('Person.their_households when householdIds match', () => {
+        const s = scopesHeld('Person', { id: 9, householdId: 2 }, ctx({ selfId: 5, householdId: 2 }));
         expect(s.has('their_households')).toBe(true);
     });
 
-    it('Participant.their_program_participants when row.id in scope-programs set', () => {
+    it('Person.their_program_participants when row.id in scope-programs set', () => {
         const s = scopesHeld(
-            'Participant',
+            'Person',
             { id: 9 },
             ctx({ selfId: 5, participantIdsInScopePrograms: new Set([9, 10]) }),
         );
         expect(s.has('their_program_participants')).toBe(true);
     });
 
-    it('Participant.all_current_visitors requires keyholder AND row in active set', () => {
+    it('Person.all_current_visitors requires isKeyholder AND row in active set', () => {
         const ctxWithKey = ctx({ isKeyholder: true, activeVisitorIds: new Set([9]) });
-        expect(scopesHeld('Participant', { id: 9 }, ctxWithKey).has('all_current_visitors')).toBe(true);
-        expect(scopesHeld('Participant', { id: 99 }, ctxWithKey).has('all_current_visitors')).toBe(false);
+        expect(scopesHeld('Person', { id: 9 }, ctxWithKey).has('all_current_visitors')).toBe(true);
+        expect(scopesHeld('Person', { id: 99 }, ctxWithKey).has('all_current_visitors')).toBe(false);
 
         const ctxNoKey = ctx({ isKeyholder: false, activeVisitorIds: new Set([9]) });
-        expect(scopesHeld('Participant', { id: 9 }, ctxNoKey).has('all_current_visitors')).toBe(false);
+        expect(scopesHeld('Person', { id: 9 }, ctxNoKey).has('all_current_visitors')).toBe(false);
     });
 
-    it('Visit.their_own when row.participantId === selfId', () => {
-        expect(scopesHeld('Visit', { participantId: 5, departed: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
+    it('Visit.their_own when row.personId === selfId', () => {
+        expect(scopesHeld('Visit', { personId: 5, departedAt: null }, ctx({ selfId: 5 })).has('their_own')).toBe(true);
     });
 
-    it('Visit.all_current_visitors requires keyholder AND departed === null', () => {
+    it('Visit.all_current_visitors requires isKeyholder AND departedAt === null', () => {
         const keyCtx = ctx({ isKeyholder: true });
-        expect(scopesHeld('Visit', { participantId: 7, departed: null }, keyCtx).has('all_current_visitors')).toBe(true);
-        expect(scopesHeld('Visit', { participantId: 7, departed: new Date() }, keyCtx).has('all_current_visitors')).toBe(false);
-        expect(scopesHeld('Visit', { participantId: 7, departed: null }, ctx()).has('all_current_visitors')).toBe(false);
+        expect(scopesHeld('Visit', { participantId: 7, departedAt: null }, keyCtx).has('all_current_visitors')).toBe(true);
+        expect(scopesHeld('Visit', { participantId: 7, departedAt: new Date() }, keyCtx).has('all_current_visitors')).toBe(false);
+        expect(scopesHeld('Visit', { participantId: 7, departedAt: null }, ctx()).has('all_current_visitors')).toBe(false);
     });
 
     it('Household.their_households when row.id === caller.householdId', () => {
@@ -135,20 +136,20 @@ describe('scopesHeld', () => {
 
 // ─── stripValue (the contributor-handler scenario) ─────────────────────────
 
-describe('stripValue — Participant', () => {
+describe('stripValue — Person', () => {
     const callerCtx = ctx({ selfId: 5 });
     const tokens = ['their_own:pii', 'their_own:personal', 'public'] as const;
 
     it('exposes pii on self row', () => {
         const row = { id: 5, name: 'Me', email: 'me@x.com', phone: '555' };
-        const out = stripValue('Participant', row, tokens, callerCtx);
+        const out = stripValue('Person', row, tokens, callerCtx);
         expect(out).toEqual({ id: 5, name: 'Me', email: 'me@x.com', phone: '555' });
     });
 
     it('strips pii on non-self row (THE buggy-handler case)', () => {
         // Simulates a contributor handler that fetched the wrong row.
         const row = { id: 7, name: 'Other', email: 'leaked@x.com', phone: '555' };
-        const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
+        const out = stripValue('Person', row, tokens, callerCtx) as Record<string, unknown>;
         expect(out.id).toBe(7);
         expect(out.name).toBe('Other');
         expect(out.email).toBeUndefined();
@@ -157,7 +158,7 @@ describe('stripValue — Participant', () => {
 
     it('public-only view strips even name without "public" token', () => {
         const row = { id: 5, name: 'Me' };
-        const out = stripValue('Participant', row, ['their_own:pii'], callerCtx) as Record<string, unknown>;
+        const out = stripValue('Person', row, ['their_own:pii'], callerCtx) as Record<string, unknown>;
         expect(out.id).toBeUndefined();
         expect(out.name).toBeUndefined();
     });
@@ -165,7 +166,7 @@ describe('stripValue — Participant', () => {
     it('everyones:pii exposes pii on every row regardless of caller', () => {
         const stranger = ctx(); // no selfId
         const row = { id: 99, name: 'X', email: 'x@x.com' };
-        const out = stripValue('Participant', row, ['everyones:pii', 'public'], stranger) as Record<string, unknown>;
+        const out = stripValue('Person', row, ['everyones:pii', 'public'], stranger) as Record<string, unknown>;
         expect(out.email).toBe('x@x.com');
     });
 
@@ -174,21 +175,21 @@ describe('stripValue — Participant', () => {
         const leadCtx = ctx({ selfId: 5, programsLed: new Set([10]), participantIdsInScopePrograms: new Set([9]) });
         const row = { id: 9, name: 'P', email: 'p@x.com' };
         // View only grants the program-scoped pii, not their_own.
-        const out = stripValue('Participant', row, ['their_program_participants:pii', 'public'], leadCtx) as Record<string, unknown>;
+        const out = stripValue('Person', row, ['their_program_participants:pii', 'public'], leadCtx) as Record<string, unknown>;
         expect(out.email).toBe('p@x.com');
         // Same view but a row outside the program — email stripped.
         const outsider = { id: 999, name: 'Q', email: 'q@x.com' };
-        const out2 = stripValue('Participant', outsider, ['their_program_participants:pii', 'public'], leadCtx) as Record<string, unknown>;
+        const out2 = stripValue('Person', outsider, ['their_program_participants:pii', 'public'], leadCtx) as Record<string, unknown>;
         expect(out2.email).toBeUndefined();
     });
 
     it('their_households grants household members on self/household rows', () => {
         const homeCtx = ctx({ selfId: 5, householdId: 2 });
         const sibling = { id: 6, name: 'Sib', householdId: 2, notificationSettings: { emailNewsletter: true } };
-        const out = stripValue('Participant', sibling, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
+        const out = stripValue('Person', sibling, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
         expect(out.notificationSettings).toEqual({ emailNewsletter: true });
         const stranger = { id: 7, name: 'X', householdId: 99, notificationSettings: { emailNewsletter: true } };
-        const out2 = stripValue('Participant', stranger, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
+        const out2 = stripValue('Person', stranger, ['their_households:personal', 'public'], homeCtx) as Record<string, unknown>;
         expect(out2.notificationSettings).toBeUndefined();
     });
 });
@@ -213,7 +214,7 @@ describe('stripValue — arrays', () => {
             { id: 5, name: 'me', email: 'me@x.com' },
             { id: 7, name: 'them', email: 'them@x.com' },
         ];
-        const out = stripValue('Participant', rows, tokens, callerCtx) as Record<string, unknown>[];
+        const out = stripValue('Person', rows, tokens, callerCtx) as Record<string, unknown>[];
         expect(out[0].email).toBe('me@x.com');
         expect(out[1].email).toBeUndefined();
         expect(out[1].name).toBe('them');
@@ -221,34 +222,34 @@ describe('stripValue — arrays', () => {
 });
 
 describe('stripValue — nested relations', () => {
-    it('recursively strips household relation on a Participant', () => {
+    it('recursively strips household relation on a Person', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
         const tokens = ['their_own:pii', 'public'] as const; // no household:personal granted
         const row = {
             id: 5,
             name: 'Me',
             email: 'me@x.com',
-            household: { id: 2, name: 'Home', address: 'private street' },
+            household: { id: 2, name: 'Home', line1: 'private street' },
         };
-        const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
+        const out = stripValue('Person', row, tokens, callerCtx) as Record<string, unknown>;
         expect(out.email).toBe('me@x.com');
         const household = out.household as Record<string, unknown>;
         expect(household.id).toBe(2);
         expect(household.name).toBe('Home');
-        expect(household.address).toBeUndefined(); // personal — no token grants it
+        expect(household.line1).toBeUndefined(); // internal — no token grants it
     });
 
-    it('grants household.address when their_households:personal is in the view', () => {
+    it('grants household.line1 when their_households:internal is in the view', () => {
         const callerCtx = ctx({ selfId: 5, householdId: 2 });
-        const tokens = ['their_own:pii', 'their_households:personal', 'public'] as const;
+        const tokens = ['their_own:pii', 'their_households:internal', 'public'] as const;
         const row = {
             id: 5,
             email: 'me@x.com',
-            household: { id: 2, name: 'Home', address: 'private street' },
+            household: { id: 2, name: 'Home', line1: 'private street' },
         };
-        const out = stripValue('Participant', row, tokens, callerCtx) as Record<string, unknown>;
+        const out = stripValue('Person', row, tokens, callerCtx) as Record<string, unknown>;
         const household = out.household as Record<string, unknown>;
-        expect(household.address).toBe('private street');
+        expect(household.line1).toBe('private street');
     });
 });
 
@@ -330,23 +331,52 @@ describe('stripValue — nested EmergencyContact (the leak)', () => {
     });
 });
 
-describe('stripValue — _count preservation', () => {
-    it('preserves Prisma _count aggregate', () => {
+describe('stripValue — _count gating', () => {
+    it('preserves _count for a relation the view can see (Visit has a public field)', () => {
         const row = { id: 5, name: 'Me', _count: { visits: 3 } };
-        const out = stripValue('Participant', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        const out = stripValue('Person', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
         expect(out._count).toEqual({ visits: 3 });
+    });
+
+    it('strips a _count the low-privilege view has no grant on', () => {
+        // RawBadgeLog has no public field — its fields are personal/internal.
+        // A view with only `public` cannot see any RawBadgeLog field, so the
+        // count of a Person's rawBadgeLogs must not leak.
+        const row = { id: 5, name: 'Me', _count: { rawBadgeLogs: 9 } };
+        const out = stripValue('Person', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toBeUndefined();
+    });
+
+    it('passes that same _count to an authorized view', () => {
+        // `their_own:personal` on the caller's own row grants RawBadgeLog's
+        // personal-tier fields (time/location), so the count is now visible.
+        const row = { id: 5, name: 'Me', _count: { rawBadgeLogs: 9 } };
+        const out = stripValue('Person', row, ['their_own:personal', 'public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toEqual({ rawBadgeLogs: 9 });
+    });
+
+    it('strips only the ungranted keys from a mixed _count', () => {
+        const row = { id: 5, name: 'Me', _count: { visits: 3, rawBadgeLogs: 9 } };
+        const out = stripValue('Person', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toEqual({ visits: 3 });
+    });
+
+    it('drops unknown relation keys (fail-closed)', () => {
+        const row = { id: 5, name: 'Me', _count: { notARelation: 7 } };
+        const out = stripValue('Person', row, ['public'], ctx({ selfId: 5 })) as Record<string, unknown>;
+        expect(out._count).toBeUndefined();
     });
 });
 
 describe('stripValue — edge cases', () => {
     it('null and undefined pass through unchanged', () => {
-        expect(stripValue('Participant', null, ['public'], ctx())).toBeNull();
-        expect(stripValue('Participant', undefined, ['public'], ctx())).toBeUndefined();
+        expect(stripValue('Person', null, ['public'], ctx())).toBeNull();
+        expect(stripValue('Person', undefined, ['public'], ctx())).toBeUndefined();
     });
 
     it('empty tokens strip everything to an empty object', () => {
         const row = { id: 5, name: 'Me', email: 'me@x.com' };
-        const out = stripValue('Participant', row, [], ctx({ selfId: 5 })) as Record<string, unknown>;
+        const out = stripValue('Person', row, [], ctx({ selfId: 5 })) as Record<string, unknown>;
         expect(out).toEqual({});
     });
 
@@ -360,8 +390,8 @@ describe('stripValue — edge cases', () => {
 
 describe('stripBag', () => {
     it('drops unknown-model bag entries with a warn', () => {
-        const out = stripBag({ Participant: { id: 5, name: 'Me' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
-        expect(out.Participant).toEqual({ id: 5, name: 'Me' });
+        const out = stripBag({ Person: { id: 5, name: 'Me' }, NotAModel: { foo: 'bar' } }, ['public'], ctx({ selfId: 5 }));
+        expect(out.Person).toEqual({ id: 5, name: 'Me' });
         expect(out.NotAModel).toBeUndefined();
         expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("'NotAModel'"));
     });
@@ -369,13 +399,100 @@ describe('stripBag', () => {
     it('strips each known model with the same tokens/context', () => {
         const out = stripBag(
             {
-                Participant: { id: 5, name: 'Me', email: 'me@x.com' },
-                Household: { id: 2, name: 'Home', address: 'street' },
+                Person: { id: 5, name: 'Me', email: 'me@x.com' },
+                Household: { id: 2, name: 'Home', line1: 'street' },
             },
-            ['their_own:pii', 'their_households:personal', 'public'],
+            ['their_own:pii', 'their_households:internal', 'public'],
             ctx({ selfId: 5, householdId: 2 }),
         );
-        expect((out.Participant as Record<string, unknown>).email).toBe('me@x.com');
-        expect((out.Household as Record<string, unknown>).address).toBe('street');
+        expect((out.Person as Record<string, unknown>).email).toBe('me@x.com');
+        expect((out.Household as Record<string, unknown>).line1).toBe('street');
+    });
+});
+
+// ─── Event roster (GET /api/events/[id] policy shape) ──────────────────────
+// The route is FAIL-CLOSED, staff-only (admission gated in the handler fn), so
+// the only views that reach the stripper are the staff tiers. These cover the
+// staff field-tiering (defense-in-depth) AND pin the reason admission must be
+// gated: per-field stripping CANNOT hide the "who attends" roster, because a
+// participant's name is tier 'public'. The route's view carries
+// their_program_participants tokens, granted per-row only on a program the
+// caller leads/core-vols (admin gets everyones:* via its own view).
+
+describe('Event roster strip (events/[id] view)', () => {
+    // The exact token grant the 'authenticated' role gets in registry.ts.
+    const EVENTS_VIEW = [
+        'their_program_participants:pii',
+        'their_program_participants:personal',
+        'their_program_participants:internal',
+        'their_own:pii',
+        'their_own:personal',
+        'member',
+        'public',
+    ] as const;
+
+    const PROGRAM_ID = 77;
+    const ROSTER_ID = 501; // a participant enrolled in the program
+
+    // Event bag shaped like the route's Prisma include.
+    const eventBag = () => ({
+        id: 9,
+        programId: PROGRAM_ID,
+        name: 'Build Night',
+        attendanceConfirmedAt: new Date('2026-01-01'), // internal tier
+        program: {
+            id: PROGRAM_ID,
+            name: 'Robotics',
+            participants: [
+                {
+                    programId: PROGRAM_ID,
+                    personId: ROSTER_ID,
+                    person: {
+                        id: ROSTER_ID,
+                        name: 'Youth Kid',     // public
+                        email: 'kid@x.com',    // pii
+                        phone: '555-0100',     // pii
+                        dateOfBirth: '2012-05-01', // personal
+                        allergies: 'peanuts',  // personal
+                    },
+                },
+            ],
+        },
+    });
+
+    function roster(out: unknown): Record<string, unknown> {
+        const program = (out as Record<string, unknown>).program as Record<string, unknown>;
+        const participants = program.participants as Array<Record<string, unknown>>;
+        return participants[0].person as Record<string, unknown>;
+    }
+
+    it('lead mentor of the event\'s program sees roster pii/personal + internal', () => {
+        const leadCtx = ctx({
+            selfId: 1,
+            programsLed: new Set([PROGRAM_ID]),
+            participantIdsInScopePrograms: new Set([ROSTER_ID]),
+        });
+        const out = stripValue('Event', eventBag(), EVENTS_VIEW, leadCtx);
+        const kid = roster(out);
+        expect(kid.email).toBe('kid@x.com');
+        expect(kid.phone).toBe('555-0100');
+        expect(kid.dateOfBirth).toBe('2012-05-01');
+        expect(kid.allergies).toBe('peanuts');
+        // internal Event field reaches this event's staff (UI renders it).
+        expect((out as Record<string, unknown>).attendanceConfirmedAt).toBeInstanceOf(Date);
+    });
+
+    // WHY the route gates admission instead of relying on stripping: a non-staff
+    // scope strips email/phone (pii) and dob/allergies (personal) — but the
+    // participant's NAME is tier 'public', so it survives. Stripping alone would still leak the full
+    // attendee roster. This asserts that leak exists, documenting the reason the
+    // handler fn 403s non-staff before the roster is ever returned.
+    it('stripping alone leaves the roster name (tier public) — hence the fail-closed admission gate', () => {
+        const strangerCtx = ctx({ selfId: 999 }); // leads nothing, not on roster
+        const out = stripValue('Event', eventBag(), EVENTS_VIEW, strangerCtx);
+        const kid = roster(out);
+        expect(kid.email).toBeUndefined();      // pii stripped
+        expect(kid.dateOfBirth).toBeUndefined();
+        expect(kid.name).toBe('Youth Kid');     // but name (public) survives → the leak
     });
 });

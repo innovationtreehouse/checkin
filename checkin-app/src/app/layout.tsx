@@ -11,7 +11,9 @@ import DevImpersonationBar from '@/components/DevImpersonationBar';
 import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
 import RenewalBanner from '@/components/RenewalBanner';
+import DbWakeNotice from '@/components/DbWakeNotice';
 import AppFrame from '@/components/AppFrame';
+import { UnsavedChangesProvider } from '@/components/UnsavedChangesProvider';
 import { brand } from '@/brand';
 import { config } from '@/lib/config';
 
@@ -20,7 +22,7 @@ import { config } from '@/lib/config';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'CheckMeIn Next',
+  title: 'Innovation Treehouse',
   description: 'The Innovation Treehouse next-generation check-in system',
 };
 
@@ -38,14 +40,17 @@ export default function RootLayout({
         <MantineProvider theme={brand.theme} defaultColorScheme="auto">
           <ModalsProvider>
             <Notifications />
-            <EnvProvider value={config.checkinEnv()}>
+            <EnvProvider value={{ checkinEnv: config.checkinEnv(), shopifyStoreDomain: config.shopifyStoreDomain() }}>
               <AuthProvider>
                 <OnboardingGate>
                   <DevImpersonationBar />
-                  <AppFrame>
-                    <RenewalBanner />
-                    {children}
-                  </AppFrame>
+                  <UnsavedChangesProvider>
+                    <AppFrame>
+                      <DbWakeNotice />
+                      <RenewalBanner />
+                      {children}
+                    </AppFrame>
+                  </UnsavedChangesProvider>
                   <DevDashboard />
                 </OnboardingGate>
               </AuthProvider>

@@ -12,7 +12,7 @@ jest.mock("@/lib/prisma", () => {
                 findMany: jest.fn(),
                 update: jest.fn(),
             },
-            participant: {
+            person: {
                 findUnique: jest.fn(),
                 findMany: jest.fn(),
             }
@@ -59,7 +59,7 @@ describe("processPostEventEmails", () => {
         expect(prisma.event.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
-                    end: { lte: expectedCutoff },
+                    endAt: { lte: expectedCutoff },
                     postEventEmailSent: false,
                     attendanceConfirmedAt: null,
                     programId: { not: null }
@@ -78,7 +78,7 @@ describe("processPostEventEmails", () => {
         expect(prisma.event.findMany).toHaveBeenCalledWith(
             expect.objectContaining({
                 where: expect.objectContaining({
-                    end: { lte: mockNow }
+                    endAt: { lte: mockNow }
                 }),
                 take: 50,
                 orderBy: { id: 'asc' }
@@ -107,7 +107,7 @@ describe("processPostEventEmails", () => {
             .mockResolvedValueOnce(batch2)
             .mockResolvedValueOnce([]); // end loop
 
-        (prisma.participant.findMany as jest.Mock).mockResolvedValue([{ id: 100, email: "lead@example.com" }]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValue([{ id: 100, email: "lead@example.com" }]);
         (sendEmail as jest.Mock).mockResolvedValue(true);
 
         const result = await processPostEventEmails({ batchSize: 2 });
@@ -150,12 +150,12 @@ describe("processPostEventEmails", () => {
                 visits: [{}, {}]
             }
         ]).mockResolvedValueOnce([]);
-        (prisma.participant.findMany as jest.Mock).mockResolvedValue([{ id: 100, email: "lead@example.com" }]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValue([{ id: 100, email: "lead@example.com" }]);
         (sendEmail as jest.Mock).mockResolvedValue(true);
 
         const result = await processPostEventEmails();
 
-        expect(prisma.participant.findMany).toHaveBeenCalledWith({
+        expect(prisma.person.findMany).toHaveBeenCalledWith({
             where: { id: { in: [100] } },
             select: { id: true, email: true }
         });
@@ -164,7 +164,7 @@ describe("processPostEventEmails", () => {
             eventName: "Test Event",
             attendingRsvps: 1,
             actualVisits: 2,
-            eventLink: "http://localhost:3000/admin/events/10"
+            eventLink: "http://localhost:3000/program-ops/sessions/10"
         });
 
         expect(sendEmail).toHaveBeenCalledWith(
@@ -190,7 +190,7 @@ describe("processPostEventEmails", () => {
                 program: {
                     leadMentorId: null,
                     volunteers: [
-                        { participant: { email: "core@example.com" } }
+                        { person: { email: "core@example.com" } }
                     ]
                 },
                 rsvps: [],
@@ -199,10 +199,10 @@ describe("processPostEventEmails", () => {
         ]).mockResolvedValueOnce([]);
         (sendEmail as jest.Mock).mockResolvedValue(true);
 
-        (prisma.participant.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValue([]);
         const result = await processPostEventEmails();
 
-        expect(prisma.participant.findMany).not.toHaveBeenCalled();
+        expect(prisma.person.findMany).not.toHaveBeenCalled();
         expect(sendEmail).toHaveBeenCalledWith(
             "core@example.com",
             expect.any(String),
@@ -241,11 +241,11 @@ describe("processPostEventEmails", () => {
                 visits: []
             }
         ]).mockResolvedValueOnce([]);
-        (prisma.participant.findMany as jest.Mock).mockResolvedValue([{ id: 101, email: null }]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValue([{ id: 101, email: null }]);
 
         const result = await processPostEventEmails();
 
-        expect(prisma.participant.findMany).toHaveBeenCalledWith({
+        expect(prisma.person.findMany).toHaveBeenCalledWith({
             where: { id: { in: [101] } },
             select: { id: true, email: true }
         });
@@ -263,7 +263,7 @@ describe("processPostEventEmails", () => {
                 visits: []
             }
         ]).mockResolvedValueOnce([]);
-        (prisma.participant.findMany as jest.Mock).mockResolvedValue([{ id: 100, email: "lead@example.com" }]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValue([{ id: 100, email: "lead@example.com" }]);
         (sendEmail as jest.Mock).mockResolvedValue(false); // sending fails
 
         const result = await processPostEventEmails();

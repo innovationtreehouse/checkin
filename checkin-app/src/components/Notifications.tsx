@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Badge, Button, Group } from "@mantine/core";
+import { Button, Group } from "@mantine/core";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 interface NotificationData {
   membership: { pendingReviews: number; blocked: number };
@@ -30,28 +31,20 @@ export default function Notifications() {
   }, []);
 
   const m = data?.membership;
-  if (!m || (m.pendingReviews === 0 && m.blocked === 0)) return null;
+  if (!m || m.blocked === 0) return null;
 
   return (
     <Group gap="sm" wrap="wrap">
-      {m.pendingReviews > 0 && (
-        <Button
-          component={Link}
-          href="/membership/review"
-          variant="light"
-          color="grape"
-          rightSection={<Badge color="grape" circle>{m.pendingReviews}</Badge>}
-        >
-          🔍 Background-check reviews
-        </Button>
-      )}
+      {/* Reviewer's pending-review queue moved to the green /membership-ops nav+tab
+          pill (reviewBadges → review.canActOn, branch claude/cool-chatelet-760f39):
+          same count, same gate, an action-green surface in the right place. */}
       {m.blocked > 0 && (
         <Button
           component={Link}
-          href="/admin/membership"
+          href="/membership-ops/applications"
           variant="light"
           color="red"
-          rightSection={<Badge color="red" circle>{m.blocked}</Badge>}
+          rightSection={<CountBadge intent="alert">{m.blocked}</CountBadge>}
         >
           🚨 Blocked applications
         </Button>

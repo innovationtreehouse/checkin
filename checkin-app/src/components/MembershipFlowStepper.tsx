@@ -1,6 +1,6 @@
 import { Alert, Card, Stepper, Text } from "@mantine/core";
-import { INITIAL_PHASES, phaseIndex } from "@/lib/membership/phases";
-import type { MembershipProcessStatus } from "@/generated/prisma/client";
+import { INITIAL_PHASES, stepperActiveIndex } from "@/lib/membership/phases";
+import type { OrgMembershipProcessStatus } from "@/generated/prisma/client";
 
 /**
  * Left-rail flow diagram for the membership application. Shows the INITIAL
@@ -10,11 +10,12 @@ import type { MembershipProcessStatus } from "@/generated/prisma/client";
 export default function MembershipFlowStepper({
   currentStatus,
 }: {
-  currentStatus: MembershipProcessStatus | null;
+  currentStatus: OrgMembershipProcessStatus | null;
 }) {
   const blocked = currentStatus === "BLOCKED";
-  // Before starting (null), nothing is complete; treat position as -1.
-  const activeIdx = currentStatus ? phaseIndex(currentStatus) : -1;
+  // Position in the 4-step payment track. PENDING_BG_CLEARANCE (paid, awaiting
+  // the parallel check) counts payment as done with Member still pending.
+  const activeIdx = stepperActiveIndex(currentStatus);
 
   return (
     <Card withBorder radius="md" padding="lg" miw={240}>

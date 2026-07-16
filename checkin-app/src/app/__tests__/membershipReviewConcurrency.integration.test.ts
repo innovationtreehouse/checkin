@@ -3,13 +3,14 @@
  */
 /**
  * Concurrency test for attest(): two reviewers attesting the same
- * MembershipProcess at the same time must serialize on the FOR UPDATE lock so
+ * OrgMembershipProcess at the same time must serialize on the FOR UPDATE lock so
  * the process advances to payment exactly once (no double advance / double
  * background-date stamp). Regression guard for the TOCTOU race fixed in
  * lib/membership/review.ts.
  */
 
 import { attest, ReviewError } from '@/lib/membership/review';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
@@ -18,11 +19,11 @@ const TAG = 'review-concurrency-test';
 
 /** A background-check reviewer in their own (distinct) household. */
 async function makeReviewer(label: string): Promise<number> {
-    const r = await prisma.participant.create({
+    const r = await prisma.person.create({
         data: {
             email: `${label}-${TAG}@example.com`,
             name: label,
-            backgroundCheckReviewer: true,
+            isBackgroundCheckReviewer: true,
             household: { create: { name: `${label} HH ${TAG}` } },
         },
     });
@@ -32,28 +33,27 @@ async function makeReviewer(label: string): Promise<number> {
 /** A fresh applicant household + membership + a process awaiting BG review. */
 async function makePendingProcess(): Promise<number> {
     const hh = await prisma.household.create({ data: { name: `Applicant ${TAG}` } });
-    const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE' } });
-    const proc = await prisma.membershipProcess.create({
-        data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' },
+    const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+    const proc = await prisma.orgMembershipProcess.create({
+        data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_BG_REVIEW' },
     });
     return proc.id;
 }
 
 async function wipe() {
     const hhs = await prisma.household.findMany({
-        where: { OR: [{ name: { contains: TAG } }, { participants: { some: { email: { contains: TAG } } } }] },
+        where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] },
         select: { id: true },
     });
     const ids = hhs.map((h) => h.id);
     if (ids.length) {
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { membership: { householdId: { in: ids } } } } });
-        await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-        await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
+        await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
-    await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+    await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
 }
 
 describe('attest() concurrency', () => {
@@ -92,16 +92,31 @@ describe('attest() concurrency', () => {
         expect(statuses.filter((s) => s === 'PENDING_PAYMENT')).toHaveLength(1);
         expect(statuses.filter((s) => s === 'wrong_phase')).toHaveLength(1);
 
-        const proc = await prisma.membershipProcess.findUnique({ where: { id: processId } });
+        // The winner is whichever attest returned PENDING_PAYMENT — its id is what the advance audit must carry.
+        const winner = b.status === 'fulfilled' && (b.value as { status: string }).status === 'PENDING_PAYMENT' ? revB : revC;
+
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_PAYMENT');
 
         // The loser created no attestation (it threw before the create): 2 total, not 3.
         const attestations = await prisma.backgroundCheckAttestation.count({ where: { processId } });
         expect(attestations).toBe(2);
 
-        // advanceToPayment ran exactly once → exactly one PENDING_PAYMENT audit row.
-        const audits = await prisma.auditLog.findMany({ where: { tableName: 'MembershipProcess', affectedEntityId: processId }, select: { newData: true } });
-        const advances = audits.filter((a) => String(a.newData).includes('"status":"PENDING_PAYMENT"')).length;
-        expect(advances).toBe(1);
+        // advanceToPayment ran exactly once → exactly one PENDING_PAYMENT audit row, stamped with the winner's id.
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, select: { newData: true, actorId: true } });
+        const advances = audits.filter((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"status":"PENDING_PAYMENT"'));
+        expect(advances).toHaveLength(1);
+        expect(advances[0].actorId).toBe(winner); // not revA (prior approver) nor the loser
+    });
+
+    it('a REJECT audit carries the rejecting reviewer\'s id, not another reviewer\'s', async () => {
+        const processId = await makePendingProcess();
+        // revB rejects; revA never touches this process.
+        await attest(revB, processId, { result: 'REJECT' });
+
+        const blocked = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, orderBy: { id: 'desc' } });
+        expect(JSON.stringify(normalizeAuditData(blocked?.newData))).toContain('"status":"BLOCKED"');
+        expect(blocked?.actorId).toBe(revB);
+        expect(blocked?.actorId).not.toBe(revA);
     });
 });

@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { createContact, listContacts, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { leadHousehold } from "@/lib/household/leads";
+import { apiError } from "@/lib/api-response";
 
 /** Shape a contact for the client, exposing the validity flag. */
 function present(c: { id: number; name: string; phone: string; email: string | null; relationship: string | null; priority: number; conflictParticipantId: number | null }) {
@@ -16,29 +20,24 @@ function present(c: { id: number; name: string; phone: string; email: string | n
     };
 }
 
-async function leadHousehold(userId: number): Promise<number | { error: string; status: number }> {
-    const user = await prisma.participant.findUnique({ where: { id: userId }, include: { householdLeads: true } });
-    if (!user?.householdId) return { error: "You must create a household first.", status: 400 };
-    const isLead = user.householdLeads.some((l) => l.householdId === user.householdId);
-    if (!isLead && !user.sysadmin) return { error: "Only household leads can manage emergency contacts.", status: 403 };
-    return user.householdId;
-}
-
 export const GET = withAuth({}, async (_req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     const hh = await leadHousehold(auth.user.id);
-    if (typeof hh !== "number") return NextResponse.json({ error: hh.error }, { status: hh.status });
+    if (typeof hh !== "number") return apiError(hh.error, hh.status);
     const contacts = await listContacts(prisma, hh);
     return NextResponse.json({ contacts: contacts.map(present) });
 });
 
 export const POST = withAuth({}, async (req, auth) => {
-    if (auth.type !== "session") return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (auth.type !== "session") return apiError("Unauthorized", 401);
     const hh = await leadHousehold(auth.user.id);
-    if (typeof hh !== "number") return NextResponse.json({ error: hh.error }, { status: hh.status });
+    if (typeof hh !== "number") return apiError(hh.error, hh.status);
 
     try {
         const { name, phone, email, relationship, priority } = await req.json();
+        if (email && !isValidEmail(email)) {
+            return apiError("Invalid email format", 400);
+        }
         const contact = await createContact(prisma, hh, { name, phone, email, relationship, priority });
         await prisma.auditLog.create({
             data: {
@@ -47,13 +46,13 @@ export const POST = withAuth({}, async (req, auth) => {
                 tableName: "EmergencyContact",
                 affectedEntityId: contact.id,
                 secondaryAffectedEntity: hh,
-                newData: JSON.stringify({ name: contact.name, phone: contact.phone }),
+                newData: { name: contact.name, phone: contact.phone },
             },
         });
         return NextResponse.json({ contact: present(contact) }, { status: 201 });
     } catch (error) {
-        if (error instanceof EmergencyContactError) return NextResponse.json({ error: error.message }, { status: 400 });
-        console.error("Emergency contact POST error:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+        if (error instanceof EmergencyContactError) return apiError(error.message, 400);
+        logger.error("Emergency contact POST error:", error);
+        return apiError("Internal Server Error", 500);
     }
 });

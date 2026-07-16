@@ -19,19 +19,24 @@ describe('Individual Program API Integration Tests', () => {
     let commonId: number;
     let memberId: number;
     let memberHouseholdId: number;
+    let enrolledId: number;
     let publicProgramId: number;
-    let memberOnlyProgramId: number;
+    let orgMemberOnlyProgramId: number;
+
+    // Distinctive name we assert NEVER appears in an anonymous response — the
+    // roster/association leak (#P0-5.1a) is closed iff this string is absent.
+    const ENROLLED_NAME = 'Roster Leak Canary';
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'prog-id-api-test' } },
             select: { id: true, householdId: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
         const existingHouseholdIds = existingUsers.map(u => u.householdId);
 
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
             where: { householdId: { in: existingHouseholdIds } }
         });
 
@@ -43,39 +48,40 @@ describe('Individual Program API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-prog-id-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
-            data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead', household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: 'lead-prog-id-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User (no membership)
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-prog-id-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-prog-id-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
         // Create Member User (household holds an active membership)
-        const memberUser = await prisma.participant.create({
+        const memberUser = await prisma.person.create({
             data: {
                 email: 'member-prog-id-api-test@example.com',
                 name: 'Member',
                 household: {
                     create: {
-                        membership: {
+                        name: "Test HH",
+                        orgMembership: {
                             create: {
                                 status: 'ACTIVE',
-                                since: new Date()
+                                memberSince: new Date()
                             }
                         }
                     }
@@ -88,27 +94,41 @@ describe('Individual Program API Integration Tests', () => {
 
         // Create mock programs
         const publicProgram = await prisma.program.create({
-            data: { name: 'Public Prog ID API Test', phase: 'RUNNING', memberOnly: false, leadMentorId: leadId }
+            data: { name: 'Public Prog ID API Test', phase: 'RUNNING', orgMemberOnly: false, leadMentorId: leadId }
         });
         publicProgramId = publicProgram.id;
 
-        const memberOnlyProgram = await prisma.program.create({
-            data: { name: 'Member Only Prog ID API Test', phase: 'RUNNING', memberOnly: true, leadMentorId: leadId }
+        const orgMemberOnlyProgram = await prisma.program.create({
+            data: { name: 'Member Only Prog ID API Test', phase: 'RUNNING', orgMemberOnly: true, leadMentorId: leadId }
         });
-        memberOnlyProgramId = memberOnlyProgram.id;
+        orgMemberOnlyProgramId = orgMemberOnlyProgram.id;
+
+        // Enroll a participant with a recognizable name into the public program so
+        // the leak tests have a roster identity to look for.
+        const enrolled = await prisma.person.create({
+            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: { name: "Test HH" } } }
+        });
+        enrolledId = enrolled.id;
+        await prisma.programParticipant.create({
+            data: { programId: publicProgramId, personId: enrolledId, status: 'ACTIVE' }
+        });
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, memberId];
+        const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId];
 
         if (memberHouseholdId) {
-            await prisma.membership.deleteMany({
+            await prisma.orgMembership.deleteMany({
                 where: { householdId: memberHouseholdId }
             });
         }
 
-        const validProgramIds = [publicProgramId, memberOnlyProgramId].filter(id => id !== undefined);
+        const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
         if (validProgramIds.length > 0) {
+            // ProgramParticipant has no cascade — clear enrollments before the program.
+            await prisma.programParticipant.deleteMany({
+                where: { programId: { in: validProgramIds } }
+            });
             await prisma.program.deleteMany({
                 where: { id: { in: validProgramIds } }
             });
@@ -118,7 +138,7 @@ describe('Individual Program API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
     });
@@ -161,8 +181,8 @@ describe('Individual Program API Integration Tests', () => {
         it('should block common users from viewing member-only programs', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
-             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(403);
              
              const data = await res.json();
@@ -172,8 +192,8 @@ describe('Individual Program API Integration Tests', () => {
         it('should allow active members to view member-only programs', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
-             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(200);
              
              const data = await res.json();
@@ -181,14 +201,76 @@ describe('Individual Program API Integration Tests', () => {
         });
 
         it('should allow admins to view member-only programs without active membership', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}`, { method: 'GET' });
-             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.name).toBe('Member Only Prog ID API Test');
+        });
+
+        // ── Roster / association leak regression (auth-consistency §5.1a) ───────────
+        // ProgramParticipant rows + Participant.name are tier 'public', so per-field
+        // stripping cannot hide WHO is enrolled. The route gates the association:
+        // anonymous/non-enrolled get metadata + counts only, never the roster.
+        it('does NOT leak the participant roster to an unauthenticated caller', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue(null);
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             // Metadata still flows (public catalog/registration page).
+             expect(data.name).toBe('Public Prog ID API Test');
+             // Roster rows are absent — no participant/volunteer arrays at all.
+             expect(data.participants).toBeUndefined();
+             expect(data.volunteers).toBeUndefined();
+             // The enrolled identity must not appear anywhere in the payload.
+             expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+             // Capacity is preserved via an aggregate count, not the rows.
+             expect(data._count?.participants).toBe(1);
+        });
+
+        it('does NOT leak the roster to a plain authenticated non-enrolled caller', async () => {
+             // memberId is authenticated but not enrolled in / staffing this program.
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.name).toBe('Public Prog ID API Test');
+             expect(data.participants).toBeUndefined();
+             expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+        });
+
+        it('returns the roster to the program lead mentor (staff tier unchanged)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(Array.isArray(data.participants)).toBe(true);
+             expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
+             expect(JSON.stringify(data)).toContain(ENROLLED_NAME);
+        });
+
+        it('returns the roster to an enrolled participant (their own household)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: enrolledId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(Array.isArray(data.participants)).toBe(true);
+             expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
         });
     });
 
@@ -202,6 +284,21 @@ describe('Individual Program API Integration Tests', () => {
              });
              const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
              expect(res.status).toBe(401);
+        });
+
+        // P1-3: bad-parse id (malformed input) returns 400, matching GET — NOT the
+        // 404 reserved for a valid id with no matching row. Checked before the
+        // not-found/forbidden gates, so even an admin gets 400.
+        it('returns 400 for an unparseable program ID (not 404)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const badParams = { params: Promise.resolve({ id: 'abc' }) };
+             const req = new Request('http://localhost:4000/api/programs/abc', {
+                 method: 'PATCH',
+                 body: JSON.stringify({ name: 'Nope' })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, badParams as unknown as never);
+             expect(res.status).toBe(400);
         });
 
         it('should block common users from updating a program', async () => {
@@ -224,13 +321,15 @@ describe('Individual Program API Integration Tests', () => {
              });
              const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.program.maxParticipants).toBe(50);
+             // No Shopify variant on this program — capacity propagation never engages.
+             expect(data.warning).toBeUndefined();
         });
 
         it('should allow admins to update a program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
                  method: 'PATCH',
@@ -238,9 +337,125 @@ describe('Individual Program API Integration Tests', () => {
              });
              const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.program.phase).toBe('FINISHED');
+        });
+
+        // Denied-household lockout (auth-consistency §5 risk #2 / GAP-1). A denied
+        // lead mentor keeps `user.id`, so the leadMentorId-match gate would still
+        // pass — the denied check must reject before any mutation. No write occurs.
+        it('blocks a denied lead mentor from editing their own program (401, no mutation)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId, denied: true } });
+
+             const before = await prisma.program.findUnique({ where: { id: publicProgramId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ name: 'Denied Hack' })
+             });
+             const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(401);
+
+             const after = await prisma.program.findUnique({ where: { id: publicProgramId } });
+             expect(after?.name).toBe(before?.name);
+             expect(after?.name).not.toBe('Denied Hack');
+        });
+    });
+
+    // Shopify is the source of truth for program capacity (product decision
+    // 2026-07-06): a maxParticipants edit on a program with a Shopify variant
+    // propagates as a relative inventory adjustment. Runs against the
+    // CHECKIN_ENV=local mock (config.shopifyMockActive), same as
+    // programSyncShopifyAPI.integration.test.ts, so no real Admin API calls happen.
+    describe('PATCH /api/programs/[id] — Shopify capacity propagation', () => {
+        let prevCheckinEnv: string | undefined;
+        let cappedProgramId: number;
+        let uncappedProgramId: number;
+
+        beforeAll(async () => {
+            prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+
+            const capped = await prisma.program.create({
+                data: {
+                    name: 'Prog ID API Test Shopify Capacity',
+                    phase: 'RUNNING',
+                    leadMentorId: leadId,
+                    orgMemberPriceCents: 5000,
+                    maxParticipants: 20,
+                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-capacity',
+                },
+            });
+            cappedProgramId = capped.id;
+
+            const uncapped = await prisma.program.create({
+                data: {
+                    name: 'Prog ID API Test Shopify Uncapped',
+                    phase: 'RUNNING',
+                    leadMentorId: leadId,
+                    orgMemberPriceCents: 5000,
+                    maxParticipants: null,
+                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-uncapped',
+                },
+            });
+            uncappedProgramId = uncapped.id;
+        });
+
+        afterAll(async () => {
+            process.env.CHECKIN_ENV = prevCheckinEnv;
+            await prisma.program.deleteMany({ where: { id: { in: [cappedProgramId, uncappedProgramId] } } });
+        });
+
+        it('returns 200 with no warning when the mock adjusts inventory for a maxParticipants change', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            // A cookie header is required: CHECKIN_ENV=local (for the Shopify mock) also
+            // arms the keyless-kiosk fallback in authenticateRequest, which hijacks any
+            // cookie-less request as `kiosk` -> 403 before the session/role gate runs.
+            const req = new Request(`http://localhost:4000/api/programs/${cappedProgramId}`, {
+                method: 'PATCH',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ maxParticipants: 25 }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(cappedProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBe(25);
+            expect(data.warning).toBeUndefined();
+        });
+
+        it('returns 200 with a warning transitioning capped -> uncapped (inventory not auto-adjusted)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${cappedProgramId}`, {
+                method: 'PATCH',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ maxParticipants: null }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(cappedProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBeNull();
+            expect(data.warning).toMatch(/capped and uncapped/i);
+        });
+
+        it('returns 200 with a warning transitioning uncapped -> capped (inventory not auto-adjusted)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${uncappedProgramId}`, {
+                method: 'PATCH',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ maxParticipants: 30 }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(uncappedProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBe(30);
+            expect(data.warning).toMatch(/capped and uncapped/i);
         });
     });
 });

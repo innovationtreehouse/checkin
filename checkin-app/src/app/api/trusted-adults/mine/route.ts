@@ -12,14 +12,15 @@ export const dynamic = "force-dynamic";
 export const GET = handler("GET /api/trusted-adults/mine", async ({ auth }) => {
     if (auth.type !== "session") throw unauthorized();
     const trustedAdults = await prisma.trustedAdult.findMany({
-        where: { householdId: auth.user.householdId },
+        where: { householdId: auth.user.householdId, hiddenAt: null },
         orderBy: { createdAt: "desc" },
         select: {
             id: true,
             householdId: true,
-            counterpartyParticipantId: true,
-            counterpartyName: true,
-            counterpartyContact: true,
+            trustedAdultPersonId: true,
+            trustedAdultName: true,
+            trustedAdultPhone: true,
+            trustedAdultEmail: true,
             familyContext: true,
             createdAt: true,
             reviews: {
@@ -33,6 +34,10 @@ export const GET = handler("GET /api/trusted-adults/mine", async ({ auth }) => {
                     sharedNote: true,
                     effectiveFrom: true,
                     reviewBy: true,
+                    proposedName: true,
+                    proposedPhone: true,
+                    proposedEmail: true,
+                    proposedContext: true,
                     createdAt: true,
                 },
             },

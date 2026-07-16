@@ -8,9 +8,10 @@
  */
 
 import crypto from 'crypto';
+import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
-import { POST as CERTIFY } from '@/app/api/admin/membership/certify-payment/route';
-import { computeDuesCents, ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
+import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
+import { ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { sendEmail } from '@/lib/email';
@@ -25,10 +26,10 @@ const VARIANT_ID = '4567';
 const DISCOUNT_CODE = 'VOLUNTEER';
 
 function asBoard(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: true } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: true } });
 }
 function asUser(id: number) {
-    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, sysadmin: false, boardMember: false } });
+    (getServerSession as jest.Mock).mockResolvedValue({ user: { id, isSysadmin: false, isBoardMember: false } });
 }
 function shopifyReq(payload: unknown, secret: string) {
     const raw = JSON.stringify(payload);
@@ -47,42 +48,44 @@ describe('Membership payment API', () => {
     let certProc: number;
     const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
     const prevStoreDomain = process.env.SHOPIFY_STORE_DOMAIN;
-    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; membershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
+    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; orgMembershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
 
     async function makeProc(label: string, isVolunteer: boolean, withLead = false) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
         if (withLead) {
-            const lead = await prisma.participant.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
-            await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
+            const lead = await prisma.person.create({ data: { email: `lead-${TAG}@example.com`, name: 'Lead', householdId: hh.id } });
+            await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
             leadId = lead.id;
         }
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer } });
-        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
-        return { householdId: hh.id, membershipId: m.id, processId: p.id };
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer } });
+        // bgClearedAt set: the background check has already cleared, so paying
+        // activates the membership (the BG-not-cleared path is covered by the
+        // non-blocking flow test).
+        const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });
+        return { householdId: hh.id, orgMembershipId: m.id, processId: p.id };
     }
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
-            await prisma.membershipProcess.deleteMany({ where: { membership: { householdId: { in: ids } } } });
-            await prisma.membership.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.householdLead.deleteMany({ where: { householdId: { in: ids } } });
-            await prisma.participant.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
-        await prisma.participant.deleteMany({ where: { email: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
     }
 
     beforeAll(async () => {
         process.env.SHOPIFY_WEBHOOK_SECRET = WEBHOOK_SECRET;
         process.env.SHOPIFY_STORE_DOMAIN = STORE_DOMAIN;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, membershipVariantId: existing.membershipVariantId, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
+        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, orgMembershipVariantId: existing.orgMembershipVariantId, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
         const settingsData = {
             normalDuesCents: 10000,
             volunteerDuesCents: 2500,
-            membershipVariantId: VARIANT_ID,
+            orgMembershipVariantId: VARIANT_ID,
             volunteerDiscountCode: DISCOUNT_CODE,
         };
         await prisma.boardSettings.upsert({
@@ -94,7 +97,7 @@ describe('Membership payment API', () => {
 
         const normal = await makeProc('Normal', false, true);
         normalProc = normal.processId;
-        normalMembership = normal.membershipId;
+        normalMembership = normal.orgMembershipId;
         volProc = (await makeProc('Vol', true)).processId;
         certProc = (await makeProc('Cert', false)).processId;
     });
@@ -107,11 +110,6 @@ describe('Membership payment API', () => {
         if (prevStoreDomain === undefined) delete process.env.SHOPIFY_STORE_DOMAIN;
         else process.env.SHOPIFY_STORE_DOMAIN = prevStoreDomain;
         await prisma.$disconnect();
-    });
-
-    it('computes dues by tier from BoardSettings', async () => {
-        expect(await computeDuesCents(false)).toBe(10000);
-        expect(await computeDuesCents(true)).toBe(2500);
     });
 
     it('builds a checkout link to the membership product (no discount for normal)', async () => {
@@ -133,15 +131,16 @@ describe('Membership payment API', () => {
     });
 
     it('orders/paid webhook activates the membership (and is idempotent)', async () => {
-        const payload = { id: 555, note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
+        // line_items must contain the configured orgMembershipVariantId or the H2 check rejects it (no membership item).
+        const payload = { id: 555, line_items: [{ variant_id: VARIANT_ID }], note_attributes: [{ name: 'Membership_Process_ID', value: String(normalProc) }] };
         const res = await SHOPIFY_WEBHOOK(shopifyReq(payload, WEBHOOK_SECRET) as never);
         expect(res.status).toBe(200);
 
-        const proc = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: normalProc } });
         expect(proc?.status).toBe('ACTIVE');
         expect(proc?.paidAt).not.toBeNull();
         expect(proc?.shopifyOrderId).toBe('555');
-        const m = await prisma.membership.findUnique({ where: { id: normalMembership } });
+        const m = await prisma.orgMembership.findUnique({ where: { id: normalMembership } });
         expect(m?.status).toBe('ACTIVE');
 
         // Idempotent: a second identical webhook does not throw or change state.
@@ -158,9 +157,38 @@ describe('Membership payment API', () => {
         asBoard(leadId); // leadId is fine as an actor id; role mocked as board
         const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: certProc }) }) as never);
         expect(res.status).toBe(200);
-        const proc = await prisma.membershipProcess.findUnique({ where: { id: certProc } });
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: certProc } });
         expect(proc?.status).toBe('ACTIVE');
         expect(proc?.certifiedById).toBe(leadId);
+
+        // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
+        expect(audit?.actorId).toBe(leadId);
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'ACTIVE' });
+    });
+
+    it('certify on a non-PENDING_PAYMENT process is rejected (409 wrong_phase, no state change)', async () => {
+        asBoard(leadId);
+        const bg = await makeProc('Bg', false);
+        await prisma.orgMembershipProcess.update({ where: { id: bg.processId }, data: { status: 'PENDING_BG_REVIEW' } });
+
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: bg.processId }) }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+
+        // No state change: status untouched and no activation audit row written.
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: bg.processId } });
+        expect(proc?.status).toBe('PENDING_BG_REVIEW');
+        expect(proc?.paidAt).toBeNull();
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: bg.processId } });
+        expect(audit).toBeNull();
+    });
+
+    it('certify on a non-existent process returns 404', async () => {
+        asBoard(leadId);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 999999999 }) }) as never);
+        expect(res.status).toBe(404);
+        expect((await res.json()).code).toBe('not_found');
     });
 
     it('non-board cannot certify', async () => {
@@ -172,10 +200,11 @@ describe('Membership payment API', () => {
     it('concurrent activate() of the same process sends one email and writes one audit row', async () => {
         // Fresh proc with a lead so a congrats email would fire.
         const hh = await prisma.household.create({ data: { name: `Concurrent ${TAG}` } });
-        const lead = await prisma.participant.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
-        await prisma.householdLead.create({ data: { householdId: hh.id, participantId: lead.id } });
-        const m = await prisma.membership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
-        const p = await prisma.membershipProcess.create({ data: { membershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
+        const lead = await prisma.person.create({ data: { email: `concurrent-${TAG}@example.com`, name: 'C Lead', householdId: hh.id } });
+        await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE', isVolunteer: false } });
+        // bgClearedAt set so paying activates (and the one congrats email fires).
+        const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });
 
         (sendEmail as jest.Mock).mockClear();
 
@@ -185,18 +214,18 @@ describe('Membership payment API', () => {
             activate(p.id, { via: 'payment', shopifyOrderId: 'race-2' }),
         ]);
 
-        const auditRows = await prisma.auditLog.count({ where: { tableName: 'MembershipProcess', affectedEntityId: p.id } });
+        const auditRows = await prisma.auditLog.count({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: p.id } });
         expect(auditRows).toBe(1);
         expect(sendEmail as jest.Mock).toHaveBeenCalledTimes(1);
 
-        const proc = await prisma.membershipProcess.findUnique({ where: { id: p.id } });
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: p.id } });
         expect(proc?.status).toBe('ACTIVE');
     });
 
     it('activate() is a no-op once already ACTIVE', async () => {
-        const before = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
+        const before = await prisma.orgMembershipProcess.findUnique({ where: { id: normalProc } });
         await activate(normalProc, { via: 'payment', shopifyOrderId: 'ignored' });
-        const after = await prisma.membershipProcess.findUnique({ where: { id: normalProc } });
+        const after = await prisma.orgMembershipProcess.findUnique({ where: { id: normalProc } });
         expect(after?.shopifyOrderId).toBe(before?.shopifyOrderId); // unchanged
     });
 });

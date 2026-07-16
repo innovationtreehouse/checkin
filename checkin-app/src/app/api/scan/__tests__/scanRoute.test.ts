@@ -11,17 +11,17 @@ jest.mock('@/lib/auth', () => ({
 
 jest.mock('@/lib/prisma', () => {
     const mock = {
-        participant: {
+        person: {
             findUnique: jest.fn(),
         },
-        rawBadgeEvent: {
+        rawBadgeLog: {
             create: jest.fn(),
             findFirst: jest.fn(),
         },
         visit: {
             findFirst: jest.fn(),
         },
-        systemMetric: {
+        systemMetricLog: {
             create: jest.fn().mockResolvedValue({}),
         },
         // The route runs steps 4–6 inside a $transaction under a per-participant
@@ -97,8 +97,8 @@ describe('POST /api/scan', () => {
             body: JSON.stringify({ participantId: 1 })
         }) as unknown as import('next/server').NextRequest;
 
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
-        (prisma.rawBadgeEvent.findFirst as jest.Mock).mockResolvedValue({ time: new Date(Date.now() - 1000) });
+        (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1 });
+        (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date(Date.now() - 1000) });
 
         const res = await POST(req);
         expect(res.status).toBe(200);

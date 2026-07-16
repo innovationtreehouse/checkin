@@ -50,7 +50,7 @@ export default function RenewalBanner() {
           Your household membership is up for renewal{dueDate ? ` by ${dueDate}` : ""}. You&apos;re
           still active — confirm to continue for another year.
         </Text>
-        <Button component={Link} href="/membership" size="xs" color="yellow" variant="filled">
+        <Button component={Link} href="/membership" size="xs" fz={15} color="yellow" variant="filled">
           Renew now
         </Button>
       </Group>

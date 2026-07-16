@@ -24,12 +24,17 @@ describe('Eligible Participants API Integration Tests', () => {
     let alreadyEnrolledId: number;
 
     let publicProgramId: number;
-    let memberOnlyProgramId: number;
+    let orgMemberOnlyProgramId: number;
     let testHouseholdId: number;
 
+    const ENV_BEFORE = process.env.CHECKIN_ENV;
     beforeAll(async () => {
+        // The route now authenticates via authenticateRequest, whose local-kiosk
+        // fallback (CHECKIN_ENV=local) treats a cookieless request as kiosk. Pin to
+        // 'dev' so unauthenticated stays unauthenticated (401), like registryAuthz.
+        process.env.CHECKIN_ENV = 'dev';
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'elig-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -39,55 +44,56 @@ describe('Eligible Participants API Integration Tests', () => {
             .filter((id): id is number => id !== null && id !== undefined);
 
         await prisma.programParticipant.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         // Memberships live on the household now; scope cleanup to this test's households.
-        await prisma.membership.deleteMany({
+        await prisma.orgMembership.deleteMany({
              where: { householdId: { in: existingHouseholdIds } }
         });
 
         await prisma.household.deleteMany({
-             where: { participants: { some: { id: { in: existingUserIds } } } }
+             where: { householdMembers: { some: { id: { in: existingUserIds } } } }
         });
 
         await prisma.program.deleteMany({
             where: { name: { contains: 'Elig API Test' } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-elig-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Lead
-        const lead = await prisma.participant.create({
-            data: { email: 'lead-elig-api-test@example.com', name: 'Lead', household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: 'lead-elig-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-elig-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-elig-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
         // Create Active Member — membership now lives on the household (status ACTIVE).
-        const activeMember = await prisma.participant.create({
+        const activeMember = await prisma.person.create({
             data: {
                 email: 'active-member-elig-api-test@example.com',
                 name: 'Active Member Candidate',
                 household: {
                     create: {
-                        membership: {
+                        name: "Test HH",
+                        orgMembership: {
                             create: {
                                 status: 'ACTIVE',
-                                since: new Date()
+                                memberSince: new Date()
                             }
                         }
                     }
@@ -100,17 +106,17 @@ describe('Eligible Participants API Integration Tests', () => {
         const household = await prisma.household.create({
             data: {
                 name: 'Elig API Test Household',
-                membership: {
+                orgMembership: {
                     create: {
                         status: 'ACTIVE',
-                        since: new Date()
+                        memberSince: new Date()
                     }
                 }
             }
         });
         testHouseholdId = household.id;
 
-        const householdMember = await prisma.participant.create({
+        const householdMember = await prisma.person.create({
             data: { 
                 email: 'household-member-elig-api-test@example.com', 
                 name: 'Household Member Candidate',
@@ -120,32 +126,32 @@ describe('Eligible Participants API Integration Tests', () => {
         householdMemberId = householdMember.id;
 
         // Create Non-Member
-        const nonMember = await prisma.participant.create({
+        const nonMember = await prisma.person.create({
             data: {
                 email: 'non-member-elig-api-test@example.com',
                 name: 'Non Member Candidate',
-                household: { create: {} }
+                household: { create: { name: "Test HH" } }
             }
         });
         nonMemberId = nonMember.id;
 
         // Create mock programs
         const publicProgram = await prisma.program.create({
-            data: { name: 'Public Elig API Test', phase: 'RUNNING', memberOnly: false, leadMentorId: leadId }
+            data: { name: 'Public Elig API Test', phase: 'RUNNING', orgMemberOnly: false, leadMentorId: leadId }
         });
         publicProgramId = publicProgram.id;
 
-        const memberOnlyProgram = await prisma.program.create({
-            data: { name: 'Member Only Elig API Test', phase: 'RUNNING', memberOnly: true, leadMentorId: leadId }
+        const orgMemberOnlyProgram = await prisma.program.create({
+            data: { name: 'Member Only Elig API Test', phase: 'RUNNING', orgMemberOnly: true, leadMentorId: leadId }
         });
-        memberOnlyProgramId = memberOnlyProgram.id;
+        orgMemberOnlyProgramId = orgMemberOnlyProgram.id;
 
         // Create already enrolled participant for public program
-        const alreadyEnrolled = await prisma.participant.create({
+        const alreadyEnrolled = await prisma.person.create({
             data: {
                 email: 'enrolled-elig-api-test@example.com',
                 name: 'Already Enrolled Candidate',
-                household: { create: {} },
+                household: { create: { name: "Test HH" } },
                 programParticipants: {
                     create: {
                         programId: publicProgramId
@@ -157,18 +163,19 @@ describe('Eligible Participants API Integration Tests', () => {
     });
 
     afterAll(async () => {
+        process.env.CHECKIN_ENV = ENV_BEFORE;
         const existingUserIds = [adminId, leadId, commonId, activeMemberId, householdMemberId, nonMemberId, alreadyEnrolledId].filter(id => id !== undefined);
-        const validProgramIds = [publicProgramId, memberOnlyProgramId].filter(id => id !== undefined);
+        const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
 
             // Memberships are held by households. Scope the cleanup to exactly the
             // households this test touched: each test participant's household plus the
             // explicitly created Elig API Test household.
-            const testParticipants = await prisma.participant.findMany({
+            const testParticipants = await prisma.person.findMany({
                 where: { id: { in: existingUserIds } },
                 select: { householdId: true }
             });
@@ -180,22 +187,19 @@ describe('Eligible Participants API Integration Tests', () => {
             ));
 
             if (testHouseholdIds.length > 0) {
-                await prisma.membership.deleteMany({
+                await prisma.orgMembership.deleteMany({
                      where: { householdId: { in: testHouseholdIds } }
                 });
             }
         }
 
         if (existingUserIds.length > 0) {
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
 
         if (testHouseholdId) {
-            await prisma.householdLead.deleteMany({
-                where: { householdId: testHouseholdId }
-            });
             await prisma.household.deleteMany({
                 where: { id: testHouseholdId }
             });
@@ -210,11 +214,14 @@ describe('Eligible Participants API Integration Tests', () => {
 
     // Helper function to mock Next.js App Router params
     const createParams = (id: number) => ({ params: Promise.resolve({ id: id.toString() }) });
+    // A REAL Request: the route now runs through the security handler(), which
+    // calls authenticateRequest(req) and reads req.headers — a bare {nextUrl}
+    // mock crashes there. The route reads the query via new URL(req.url).
     const createReq = (id: number, search: string = '') => {
-        return {
-            nextUrl: new URL(`http://localhost:4000/api/programs/${id}/eligible-participants${search ? `?q=${encodeURIComponent(search)}` : ''}`),
-            method: 'GET'
-        } as unknown as never;
+        return new Request(
+            `http://localhost:4000/api/programs/${id}/eligible-participants${search ? `?q=${encodeURIComponent(search)}` : ''}`,
+            { method: 'GET' },
+        ) as unknown as never;
     };
 
     describe('GET /api/programs/[id]/eligible-participants', () => {
@@ -226,7 +233,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should return 404 Not Found for non-existent program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(999999), createParams(999999));
              expect(res.status).toBe(404);
@@ -259,7 +266,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should filter candidates by query string via name', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(publicProgramId, 'Active'), createParams(publicProgramId));
              expect(res.status).toBe(200);
@@ -270,7 +277,7 @@ describe('Eligible Participants API Integration Tests', () => {
         });
 
         it('should filter candidates by query string via email', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const res = await GET(createReq(publicProgramId, 'non-member-elig'), createParams(publicProgramId));
              expect(res.status).toBe(200);
@@ -280,10 +287,10 @@ describe('Eligible Participants API Integration Tests', () => {
              expect(data.members[0].name).toBe('Non Member Candidate');
         });
 
-        it('should strictly limit candidates for memberOnly programs to members and household members', async () => {
+        it('should strictly limit candidates for orgMemberOnly programs to members and household members', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 
-             const res = await GET(createReq(memberOnlyProgramId, 'Candidate'), createParams(memberOnlyProgramId));
+             const res = await GET(createReq(orgMemberOnlyProgramId, 'Candidate'), createParams(orgMemberOnlyProgramId));
              expect(res.status).toBe(200);
              
              const data = await res.json();

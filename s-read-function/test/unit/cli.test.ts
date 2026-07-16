@@ -25,7 +25,7 @@ vi.mock("@inventory/s-ingest-core", () => ({
   injectFile: m.injectFile,
   logger: m.logger,
 }));
-vi.mock("../../src/handler.js", () => ({ handler: m.handler }));
+vi.mock("../../src/handler.js", () => ({ handler: m.handler, armSyncDeadline: vi.fn() }));
 vi.mock("../../src/shopify/client.js", () => ({
   createShopifyClient: vi.fn(() => ({ request: m.request, endpoint: "https://shop/graphql.json" })),
 }));

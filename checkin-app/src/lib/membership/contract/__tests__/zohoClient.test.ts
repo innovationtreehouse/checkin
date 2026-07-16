@@ -5,6 +5,7 @@ import {
     getAccessToken,
     createRequest,
     getEmbeddedSignUrl,
+    getRequestStatus,
     ZohoError,
     _resetTokenCache,
 } from "@/lib/membership/contract/zohoClient";
@@ -66,8 +67,20 @@ describe("zohoClient", () => {
             recipientName: "X",
             requestName: "Agreement",
             expirationDays: 15,
+            redirectPages: {
+                sign_completed: "https://app.example.com/membership?signed=1",
+                sign_success: "https://app.example.com/membership?signed=1",
+                sign_declined: "https://app.example.com/membership?declined=1",
+                sign_later: "https://app.example.com/membership",
+            },
         });
         expect(result).toEqual({ requestId: "req-1", actionId: "act-1", documentId: "doc-1" });
+        // redirect_pages must ride in the create payload so the embedded signer is
+        // returned to checkin after signing (not stranded on Zoho's page).
+        const sentData = JSON.parse(
+            ((global.fetch as jest.Mock).mock.calls[0][1].body as FormData).get("data") as string,
+        );
+        expect(sentData.requests.redirect_pages.sign_completed).toContain("/membership?signed=1");
     });
 
     it("createRequest throws when Zoho reports a non-success status", async () => {
@@ -81,6 +94,12 @@ describe("zohoClient", () => {
                 recipientName: "X",
                 requestName: "Agreement",
                 expirationDays: 15,
+                redirectPages: {
+                    sign_completed: "https://app.example.com/membership?signed=1",
+                    sign_success: "https://app.example.com/membership?signed=1",
+                    sign_declined: "https://app.example.com/membership?declined=1",
+                    sign_later: "https://app.example.com/membership",
+                },
             }),
         ).rejects.toBeInstanceOf(ZohoError);
     });
@@ -92,5 +111,40 @@ describe("zohoClient", () => {
         const calledUrl = (global.fetch as jest.Mock).mock.calls[0][0] as URL;
         expect(calledUrl.toString()).toContain("/requests/req-1/actions/act-1/embedtoken");
         expect(calledUrl.searchParams.get("host")).toBe("https://app.example.com");
+    });
+
+    it("getRequestStatus normalizes completed / in-flight / dead request states", async () => {
+        mockFetchOnce({ requests: { request_status: "completed" } });
+        await expect(getRequestStatus("t", "req-1")).resolves.toBe("completed");
+
+        mockFetchOnce({ requests: { request_status: "inprogress" } });
+        await expect(getRequestStatus("t", "req-1")).resolves.toBe("in_progress");
+
+        // Declined and expired requests can never be signed — they must surface as
+        // terminal so the caller creates a fresh request (#876).
+        for (const dead of ["declined", "expired", "recalled"]) {
+            mockFetchOnce({ requests: { request_status: dead } });
+            await expect(getRequestStatus("t", "req-1")).resolves.toBe("terminal");
+        }
+    });
+
+    it("rejects with a ZohoError timeout when the connection hangs (never resolves)", async () => {
+        // Drive the deadline manually: the per-request AbortSignal.timeout is replaced with a
+        // controller we fire ourselves, standing in for the timeout elapsing. The fetch only
+        // settles on abort — a hung TCP connection that would otherwise never resolve.
+        const deadline = new AbortController();
+        const timeoutSpy = jest.spyOn(AbortSignal, "timeout").mockReturnValue(deadline.signal);
+        (global.fetch as jest.Mock).mockImplementation(
+            (_url, init: RequestInit) =>
+                new Promise((_resolve, reject) => {
+                    const signal = init.signal as AbortSignal;
+                    signal.addEventListener("abort", () => reject(signal.reason));
+                }),
+        );
+
+        const p = getAccessToken();
+        deadline.abort(new DOMException("The operation timed out", "TimeoutError"));
+        await expect(p).rejects.toThrow(/Zoho token exchange timed out after 20000ms/);
+        timeoutSpy.mockRestore();
     });
 });

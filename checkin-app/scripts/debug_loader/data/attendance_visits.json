@@ -1,0 +1,249 @@
+{
+  "type": "visits",
+  "byPersona": [
+    {
+      "personaEmail": "child.family@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-04-06T15:48:00",
+          "departedAt": "2026-04-06T17:43:00"
+        },
+        {
+          "arrivedAt": "2026-04-07T15:49:00",
+          "departedAt": "2026-04-07T18:12:00"
+        },
+        {
+          "arrivedAt": "2026-04-08T15:55:00",
+          "departedAt": "2026-04-08T18:03:00"
+        },
+        {
+          "arrivedAt": "2026-04-13T16:25:00",
+          "departedAt": "2026-04-13T17:43:00"
+        },
+        {
+          "arrivedAt": "2026-04-14T16:30:00",
+          "departedAt": "2026-04-14T18:08:00"
+        },
+        {
+          "arrivedAt": "2026-04-15T16:06:00",
+          "departedAt": "2026-04-15T17:39:00"
+        },
+        {
+          "arrivedAt": "2026-04-20T15:54:00",
+          "departedAt": "2026-04-20T18:06:00"
+        },
+        {
+          "arrivedAt": "2026-04-21T16:14:00",
+          "departedAt": "2026-04-21T17:35:00"
+        },
+        {
+          "arrivedAt": "2026-04-22T15:48:00",
+          "departedAt": "2026-04-22T17:53:00"
+        },
+        {
+          "arrivedAt": "2026-05-05T15:50:00",
+          "departedAt": "2026-05-05T18:09:00"
+        },
+        {
+          "arrivedAt": "2026-05-05T16:57:00",
+          "departedAt": "2026-05-05T19:06:00"
+        },
+        {
+          "arrivedAt": "2026-05-12T16:06:00",
+          "departedAt": "2026-05-12T18:03:00"
+        },
+        {
+          "arrivedAt": "2026-05-19T15:50:00",
+          "departedAt": "2026-05-19T18:09:00"
+        },
+        {
+          "arrivedAt": "2026-05-26T15:53:00",
+          "departedAt": "2026-05-26T17:35:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "parent.family@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-04-07T15:49:00",
+          "departedAt": "2026-04-07T18:01:00"
+        },
+        {
+          "arrivedAt": "2026-04-14T15:54:00",
+          "departedAt": "2026-04-14T17:52:00"
+        },
+        {
+          "arrivedAt": "2026-04-21T15:53:00",
+          "departedAt": "2026-04-21T18:00:00"
+        },
+        {
+          "arrivedAt": "2026-05-05T15:57:00",
+          "departedAt": "2026-05-05T18:11:00"
+        },
+        {
+          "arrivedAt": "2026-05-19T15:53:00",
+          "departedAt": "2026-05-19T18:04:00"
+        },
+        {
+          "arrivedAt": "2026-05-26T16:27:00",
+          "departedAt": "2026-05-26T17:41:00"
+        },
+        {
+          "arrivedAt": "2026-06-11T17:57:00",
+          "departedAt": "2026-06-11T20:04:00"
+        },
+        {
+          "arrivedAt": "2026-06-18T18:09:00",
+          "departedAt": "2026-06-18T20:06:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "certified.adult@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-04-07T15:55:00",
+          "departedAt": "2026-04-07T18:03:00"
+        },
+        {
+          "arrivedAt": "2026-04-14T15:55:00",
+          "departedAt": "2026-04-14T17:42:00"
+        },
+        {
+          "arrivedAt": "2026-04-21T15:57:00",
+          "departedAt": "2026-04-21T18:12:00"
+        },
+        {
+          "arrivedAt": "2026-04-28T16:17:00",
+          "departedAt": "2026-04-28T18:09:00"
+        },
+        {
+          "arrivedAt": "2026-05-12T15:54:00",
+          "departedAt": "2026-05-12T18:00:00"
+        },
+        {
+          "arrivedAt": "2026-05-19T15:53:00",
+          "departedAt": "2026-05-19T17:37:00"
+        },
+        {
+          "arrivedAt": "2026-05-26T15:57:00",
+          "departedAt": "2026-05-26T18:05:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "parent2.family@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-04-06T15:50:00",
+          "departedAt": "2026-04-06T18:09:00"
+        },
+        {
+          "arrivedAt": "2026-04-08T15:54:00",
+          "departedAt": "2026-04-08T18:01:00"
+        },
+        {
+          "arrivedAt": "2026-04-13T16:14:00",
+          "departedAt": "2026-04-13T18:05:00"
+        },
+        {
+          "arrivedAt": "2026-04-15T15:56:00",
+          "departedAt": "2026-04-15T18:07:00"
+        },
+        {
+          "arrivedAt": "2026-04-20T15:49:00",
+          "departedAt": "2026-04-20T18:02:00"
+        },
+        {
+          "arrivedAt": "2026-04-22T15:50:00",
+          "departedAt": "2026-04-22T18:11:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "keyholder2@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-04-08T15:56:00",
+          "departedAt": "2026-04-08T18:11:00"
+        },
+        {
+          "arrivedAt": "2026-04-13T16:22:00",
+          "departedAt": "2026-04-13T18:05:00"
+        },
+        {
+          "arrivedAt": "2026-04-15T15:55:00",
+          "departedAt": "2026-04-15T18:05:00"
+        },
+        {
+          "arrivedAt": "2026-04-20T15:56:00",
+          "departedAt": "2026-04-20T18:06:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "tool.certifier@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-05-05T16:51:00",
+          "departedAt": "2026-05-05T19:06:00"
+        },
+        {
+          "arrivedAt": "2026-05-12T16:50:00",
+          "departedAt": "2026-05-12T18:39:00"
+        },
+        {
+          "arrivedAt": "2026-05-26T17:27:00",
+          "departedAt": "2026-05-26T19:01:00"
+        },
+        {
+          "arrivedAt": "2026-06-02T16:50:00",
+          "departedAt": "2026-06-02T19:00:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "bg.reviewer@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-05-05T17:10:00",
+          "departedAt": "2026-05-05T19:12:00"
+        },
+        {
+          "arrivedAt": "2026-05-12T16:50:00",
+          "departedAt": "2026-05-12T19:03:00"
+        },
+        {
+          "arrivedAt": "2026-05-19T16:54:00",
+          "departedAt": "2026-05-19T19:12:00"
+        },
+        {
+          "arrivedAt": "2026-05-26T16:54:00",
+          "departedAt": "2026-05-26T19:09:00"
+        },
+        {
+          "arrivedAt": "2026-06-02T16:55:00",
+          "departedAt": "2026-06-02T19:00:00"
+        }
+      ]
+    },
+    {
+      "personaEmail": "parent.family2@example.com",
+      "visits": [
+        {
+          "arrivedAt": "2026-06-04T17:53:00",
+          "departedAt": "2026-06-04T20:01:00"
+        },
+        {
+          "arrivedAt": "2026-06-11T17:54:00",
+          "departedAt": "2026-06-11T20:06:00"
+        },
+        {
+          "arrivedAt": "2026-06-18T17:52:00",
+          "departedAt": "2026-06-18T20:09:00"
+        }
+      ]
+    }
+  ]
+}

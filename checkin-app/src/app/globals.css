@@ -20,3 +20,11 @@ body {
 .kiosk-mode * {
   cursor: none !important;
 }
+
+/* Mantine's default NavLink hover fill is near-white — invisible under the white
+   labels on the purple sidebar. Own the hover here rather than overriding Mantine's
+   internal hover token, which has changed name across versions. Attached via
+   classNames in AppFrame.tsx (colored sidebar only). */
+.appframe-sidebar-navlink:not([data-active]):hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}

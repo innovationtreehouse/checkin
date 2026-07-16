@@ -1,35 +1,20 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { logger } from "@/lib/logger";
+import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 
-export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    try {
+export const GET = withCron(async () => {
         const now = new Date();
 
         // 1. Find all users who are currently checked in (abandoned visits)
         const abandonedVisits = await prisma.visit.findMany({
             where: {
-                departed: null
+                departedAt: null
             },
             include: {
-                participant: true
+                person: true
             }
         });
 
@@ -37,22 +22,29 @@ export async function GET(req: Request) {
         let boardNotified = false;
 
         if (abandonedVisits.length > 0) {
-            // Force everybody out concurrently
-            await Promise.all(
-                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now))
+            // Force everybody out concurrently. One bad checkout must not abort the rest.
+            const results = await Promise.allSettled(
+                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now, undefined, "SYSTEM"))
             );
-            checkedOutCount += abandonedVisits.length;
+            results.forEach((result, i) => {
+                if (result.status === "fulfilled") {
+                    checkedOutCount += 1;
+                } else {
+                    const visit = abandonedVisits[i];
+                    logger.error(`Failed to check out visit ${visit.id} (person ${visit.person.email}):`, result.reason);
+                }
+            });
 
-            // If at least one was a keyholder, the facility was left "Open". We need to alert the board.
-            const abandonedKeyholders = abandonedVisits.filter(v => v.participant.keyholder);
+            // If at least one was a isKeyholder, the facility was left "Open". We need to alert the board.
+            const abandonedKeyholders = abandonedVisits.filter(v => v.person.isKeyholder);
             
             if (abandonedKeyholders.length > 0) {
-                const boardMembers = await prisma.participant.findMany({
-                    where: { boardMember: true },
+                const boardMembers = await prisma.person.findMany({
+                    where: { isBoardMember: true },
                     select: { email: true }
                 });
 
-                const keyholderNames = abandonedKeyholders.map(v => v.participant.name || v.participant.email).join(', ');
+                const keyholderNames = abandonedKeyholders.map(v => v.person.name || v.person.email).join(', ');
 
                 // System Audit Log for the violation
                 await prisma.auditLog.create({
@@ -65,8 +57,8 @@ export async function GET(req: Request) {
                     }
                 });
 
-                console.log(`CRITICAL NOTIFICATION TO BOARD MEMBERS (${boardMembers.map(m => m.email).join(', ')}):`);
-                console.log(`Facility was auto-closed by the nightly cron. The following keyholders failed to badge out: ${keyholderNames}`);
+                logger.info(`CRITICAL NOTIFICATION TO BOARD MEMBERS (${boardMembers.map(m => m.email).join(', ')}):`);
+                logger.info(`Facility was auto-closed by the nightly cron. The following keyholders failed to badge out: ${keyholderNames}`);
                 
                 boardNotified = true;
             }
@@ -83,9 +75,4 @@ export async function GET(req: Request) {
             },
             postEvents: emailResult
         });
-
-    } catch (error) {
-        console.error("Failed to run nightly cron:", error);
-        return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
-    }
-}
+});

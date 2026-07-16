@@ -1,5 +1,5 @@
 import { POST as CreateProgram } from '@/app/api/programs/route';
-import { POST as AddEvent } from '@/app/api/programs/[id]/events/route';
+import { POST as AddEvent } from '@/app/api/events/route';
 import { POST as PublishProgram } from '@/app/api/programs/[id]/publish/route';
 import { PATCH as AddHouseholdMember } from '@/app/api/household/route';
 import { POST as EnrollParticipant } from '@/app/api/programs/[id]/participants/route';
@@ -19,18 +19,22 @@ jest.mock('@/lib/notifications', () => ({
 jest.mock('@/lib/shopify', () => ({
     createShopifyProgramVariants: jest.fn().mockResolvedValue({
         shopifyProductId: 'mock-product-id',
-        shopifyMemberVariantId: 'mock-member-variant-id',
-        shopifyNonMemberVariantId: 'mock-non-member-variant-id',
+        shopifyOrgMemberVariantId: 'mock-member-variant-id',
+        shopifyNonOrgMemberVariantId: 'mock-non-member-variant-id',
+    }),
+    createShopifySingleVariantProgram: jest.fn().mockResolvedValue({
+        shopifyProductId: 'mock-product-id',
+        shopifyVariantId: 'mock-variant-id',
     }),
 }));
 
 // Mock Prisma
-jest.mock('@/lib/prisma', () => ({
-  __esModule: true,
-  default: {
-    participant: {
+jest.mock('@/lib/prisma', () => {
+  const mock = {
+    person: {
       create: jest.fn(),
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       findMany: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
@@ -45,16 +49,12 @@ jest.mock('@/lib/prisma', () => ({
     },
     event: {
       create: jest.fn(),
+      createMany: jest.fn(),
       deleteMany: jest.fn(),
     },
     household: {
       create: jest.fn(),
       delete: jest.fn(),
-    },
-    householdLead: {
-      create: jest.fn(),
-      findUnique: jest.fn(),
-      deleteMany: jest.fn(),
     },
     membership: {
       create: jest.fn(),
@@ -65,12 +65,23 @@ jest.mock('@/lib/prisma', () => ({
       findUnique: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
+      count: jest.fn(),
     },
     auditLog: {
       create: jest.fn(),
     },
-  },
-}));
+    appSettings: {
+      // Event creation reads the org timezone via getAppSettings().
+      upsert: jest.fn().mockResolvedValue({ id: 1, timezone: 'America/Chicago', locale: 'en-US' }),
+    },
+    // Enroll route now wraps the insert in $transaction + a FOR UPDATE
+    // capacity check; run the callback against this same mock as the tx client.
+    $queryRaw: jest.fn(),
+  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (mock as any).$transaction = jest.fn((cb: (tx: typeof mock) => unknown) => cb(mock));
+  return { __esModule: true, default: mock };
+});
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockGetSession = require('next-auth/next').getServerSession;
@@ -90,7 +101,7 @@ describe('Full Program Signup Integration Flow', () => {
 
     it('should complete the full program signup flow', async () => {
         // 1. SysAdmin creates a program
-        mockGetSession.mockResolvedValue({ user: { id: sysAdminId, sysadmin: true } });
+        mockGetSession.mockResolvedValue({ user: { id: sysAdminId, isSysadmin: true } });
         (prisma.program.create as jest.Mock).mockResolvedValue({ id: programId, name: 'Integration Test Program' });
         (prisma.auditLog.create as jest.Mock).mockResolvedValue({});
 
@@ -101,26 +112,29 @@ describe('Full Program Signup Integration Flow', () => {
                 memberPrice: 50,
                 nonMemberPrice: 100,
                 leadMentorId: sysAdminId,
+                maxParticipants: 50,
             }),
         });
-        const createProgramRes = await CreateProgram(createProgramReq);
+        const createProgramRes = await CreateProgram(createProgramReq as unknown as import("next/server").NextRequest);
         expect(createProgramRes.status).toBe(200);
         const createProgramData = await createProgramRes.json();
         expect(createProgramData.program.id).toBe(programId);
 
         // 2. SysAdmin adds an event (required for publishing)
         (prisma.program.findUnique as jest.Mock).mockResolvedValue({ id: programId, leadMentorId: sysAdminId });
-        (prisma.event.create as jest.Mock).mockResolvedValue({ id: 1, programId });
+        (prisma.event.createMany as jest.Mock).mockResolvedValue({ count: 1 });
 
-        const addEventReq = new Request(`http://localhost/api/programs/${programId}/events`, {
+        const addEventReq = new Request('http://localhost/api/events', {
             method: 'POST',
             body: JSON.stringify({
                 name: 'First Class',
-                start: new Date(Date.now() + 86400000).toISOString(),
-                end: new Date(Date.now() + 86400000 + 3600000).toISOString(),
+                programId: String(programId),
+                startDate: '2099-01-01',
+                startTime: '15:00',
+                endTime: '16:00',
             }),
         });
-        const addEventRes = await AddEvent(addEventReq, { params: Promise.resolve({ id: String(programId) }) });
+        const addEventRes = await AddEvent(addEventReq as unknown as import("next/server").NextRequest);
         expect(addEventRes.status).toBe(200);
 
         // 3. SysAdmin publishes the program
@@ -135,15 +149,15 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({ publish: true }),
         });
-        const publishRes = await PublishProgram(publishReq, { params: Promise.resolve({ id: String(programId) }) });
+        const publishRes = await PublishProgram(publishReq as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(publishRes.status).toBe(200);
 
         // 4. Lead user (who already has a household from signup) adds a child member
         mockGetSession.mockResolvedValue({ user: { id: leadUserId } });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, householdLeads: [{ householdId, participantId: leadUserId }] });
-        (prisma.participant.create as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId });
+        (prisma.person.findUnique as jest.Mock).mockResolvedValueOnce({ id: leadUserId, householdId, isHouseholdLead: true });
+        (prisma.person.create as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId });
         // Adding a member reconciles emergency contacts (direction B); no contacts/members to flag here.
-        (prisma.participant.findMany as jest.Mock).mockResolvedValue([]);
+        (prisma.person.findMany as jest.Mock).mockResolvedValue([]);
         (prisma.emergencyContact.findMany as jest.Mock).mockResolvedValue([]);
 
         const addChildReq = new Request('http://localhost/api/household', {
@@ -167,27 +181,27 @@ describe('Full Program Signup Integration Flow', () => {
             maxParticipants: null,
             _count: { participants: 0 }
         });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dob: new Date('2015-01-01') });
-        (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue({ householdId, participantId: leadUserId });
-        (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
+        (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
+        (prisma.person.findFirst as jest.Mock).mockResolvedValue({ id: leadUserId });
+        (prisma.programParticipant.create as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {
             method: 'POST',
             body: JSON.stringify({ participantId: childParticipantId }),
         });
-        const enrollRes = await EnrollParticipant(enrollReq, { params: Promise.resolve({ id: String(programId) }) });
+        const enrollRes = await EnrollParticipant(enrollReq as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(enrollRes.status).toBe(200);
 
         // 7. Verify PENDING status
-        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
+        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
         const participantRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: childParticipantId } },
+            where: { programId_personId: { programId, personId: childParticipantId } },
         });
         expect(participantRecord?.status).toBe('PENDING');
 
         // 8. Shopify Webhook call
-        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'PENDING' });
-        (prisma.programParticipant.update as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'ACTIVE' });
+        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'PENDING' });
+        (prisma.programParticipant.update as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'ACTIVE' });
 
         const webhookPayload = JSON.stringify({
             note_attributes: [
@@ -207,9 +221,9 @@ describe('Full Program Signup Integration Flow', () => {
         expect(webhookRes.status).toBe(200);
 
         // 9. Final Verification - ACTIVE status
-        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, participantId: childParticipantId, status: 'ACTIVE' });
+        (prisma.programParticipant.findUnique as jest.Mock).mockResolvedValue({ programId, personId: childParticipantId, status: 'ACTIVE' });
         const finalParticipantRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId, participantId: childParticipantId } },
+            where: { programId_personId: { programId, personId: childParticipantId } },
         });
         expect(finalParticipantRecord?.status).toBe('ACTIVE');
     });
@@ -224,14 +238,14 @@ describe('Full Program Signup Integration Flow', () => {
             maxParticipants: null,
             _count: { participants: 0 }
         });
-        (prisma.participant.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dob: new Date('2015-01-01') });
-        (prisma.householdLead.findUnique as jest.Mock).mockResolvedValue(null); // Not a lead
+        (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: childParticipantId, householdId, dateOfBirth: new Date('2015-01-01') });
+        (prisma.person.findFirst as jest.Mock).mockResolvedValue(null); // Not a lead
 
         const enrollReq = new Request(`http://localhost/api/programs/${programId}/participants`, {
             method: 'POST',
             body: JSON.stringify({ participantId: childParticipantId }),
         });
-        const enrollRes = await EnrollParticipant(enrollReq, { params: Promise.resolve({ id: String(programId) }) });
+        const enrollRes = await EnrollParticipant(enrollReq as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(enrollRes.status).toBe(403);
     });
 });

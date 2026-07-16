@@ -1,19 +1,12 @@
 /**
- * Single source of truth for the Facility Ops tools. Rendered both as the
- * persistent sidebar (facility/layout.tsx) and as the landing card grid on the
- * Facility Ops hub (/facility). Add a tool once here and it shows up in both.
+ * Single source of truth for the Facility Ops tools. Rendered as the persistent
+ * top tabs (facility/layout.tsx); /facility itself redirects to the first tab.
  */
-export interface FacilityNavLink {
-  name: string;
-  href: string;
-  icon: string;
-  /** One-line description shown on the hub landing grid (not in the sidebar). */
-  description?: string;
-}
+import type { NavLink } from "@/lib/nav/types";
 
-export const FACILITY_NAV_LINKS: FacilityNavLink[] = [
-  { name: "Visit History", href: "/facility/visits", icon: "🕒", description: "View and edit past visit records." },
-  { name: "Raw Badge Events", href: "/facility/badges", icon: "📡", description: "Audit the raw RFID badge tap log." },
-  { name: "Print ID Badges", href: "/facility/print-badges", icon: "🖨️", description: "Generate printable participant ID badges." },
-  { name: "Participation Trends", href: "/facility/trends", icon: "📈", description: "Attendance and participation analytics." },
+export const FACILITY_NAV_LINKS: NavLink[] = [
+  { name: "Visit History", href: "/facility-ops/visits", icon: "🕒" },
+  { name: "Raw Badge Events", href: "/facility-ops/badges", icon: "📡" },
+  { name: "Print ID Badges", href: "/facility-ops/print-badges", icon: "🖨️" },
+  { name: "Participation Trends", href: "/facility-ops/trends", icon: "📈" },
 ];

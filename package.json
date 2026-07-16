@@ -15,6 +15,9 @@
     "test": "npm -w checkin-app run test",
     "test:ci": "npm -w checkin-app run test:ci",
     "test:integration": "npm -w checkin-app run test:integration",
+    "test:coverage": "npm -w checkin-app run test:coverage",
+    "test:coverage:unit": "npm -w checkin-app run test:coverage:unit",
+    "test:coverage:integration": "npm -w checkin-app run test:coverage:integration",
     "check-route-coverage": "npm -w checkin-app run check-route-coverage",
     "prepare": "husky"
   },
@@ -30,5 +33,16 @@
     "esbuild": "^0.28.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.2"
+  },
+  "overrides": {
+    "next-auth": {
+      "uuid": "^11.1.1"
+    },
+    "next": {
+      "postcss": "^8.5.10"
+    },
+    "@prisma/dev": {
+      "@hono/node-server": "^1.19.13"
+    }
   }
 }

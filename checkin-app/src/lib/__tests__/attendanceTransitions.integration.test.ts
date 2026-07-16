@@ -26,37 +26,37 @@ describe('attendanceTransitions', () => {
         });
         programId = program.id;
 
-        const p = await prisma.participant.create({
-            data: { name: 'AT Enrolled', email: `enrolled-${TAG}@example.com`, household: { create: {} } },
+        const p = await prisma.person.create({
+            data: { name: 'AT Enrolled', email: `enrolled-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         participantId = p.id;
         householdIds.push(p.householdId);
         await prisma.programParticipant.create({
-            data: { programId, participantId, status: 'ACTIVE', pendingSince: null },
+            data: { programId, personId: participantId, status: 'ACTIVE', pendingSince: null },
         });
 
-        const u = await prisma.participant.create({
-            data: { name: 'AT Unenrolled', email: `unenrolled-${TAG}@example.com`, household: { create: {} } },
+        const u = await prisma.person.create({
+            data: { name: 'AT Unenrolled', email: `unenrolled-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
         });
         unenrolledId = u.id;
         householdIds.push(u.householdId);
     });
 
     afterEach(async () => {
-        await prisma.visit.deleteMany({ where: { participantId: { in: [participantId, unenrolledId] } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: [participantId, unenrolledId] } } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
     });
 
     afterAll(async () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
-        await prisma.participant.deleteMany({ where: { id: { in: [participantId, unenrolledId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [participantId, unenrolledId] } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
     function makeEvent(label: string, start: Date, end: Date) {
         return prisma.event.create({
-            data: { name: `${TAG} ${label}`, programId, start, end, description: 'x' },
+            data: { name: `${TAG} ${label}`, programId, startAt: start, endAt: end, description: 'x' },
         });
     }
 
@@ -97,14 +97,14 @@ describe('attendanceTransitions', () => {
     });
 
     describe('processVisitCheckout', () => {
-        it('closes a plain visit with no events into a single departed visit', async () => {
-            const arrived = new Date(Date.now() - 2 * HOUR);
+        it('closes a plain visit with no events into a single departedAt visit', async () => {
+            const arrivedAt = new Date(Date.now() - 2 * HOUR);
             const checkout = new Date();
-            const visit = await prisma.visit.create({ data: { participantId, arrived } });
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt } });
 
             const result = await processVisitCheckout(visit.id, checkout);
             expect(result).toHaveLength(1);
-            expect(result[0].departed).toEqual(checkout);
+            expect(result[0].departedAt).toEqual(checkout);
             expect(result[0].associatedEventId).toBeNull();
         });
 
@@ -114,7 +114,7 @@ describe('attendanceTransitions', () => {
             const eventEnd = new Date(t0.getTime() + 2 * HOUR);
             const checkout = new Date(t0.getTime() + 3 * HOUR);
             const ev = await makeEvent('mid', eventStart, eventEnd);
-            const visit = await prisma.visit.create({ data: { participantId, arrived: t0 } });
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
 
             const result = await processVisitCheckout(visit.id, checkout);
 
@@ -127,10 +127,10 @@ describe('attendanceTransitions', () => {
             expect(gap).toBeDefined();
             expect(eventVisit).toBeDefined();
             // Gap covers arrival → event start; event visit covers event start → checkout.
-            expect(gap!.arrived).toEqual(t0);
-            expect(gap!.departed).toEqual(eventStart);
-            expect(eventVisit!.arrived).toEqual(eventStart);
-            expect(eventVisit!.departed).toEqual(checkout);
+            expect(gap!.arrivedAt).toEqual(t0);
+            expect(gap!.departedAt).toEqual(eventStart);
+            expect(eventVisit!.arrivedAt).toEqual(eventStart);
+            expect(eventVisit!.departedAt).toEqual(checkout);
         });
 
         it('splits back-to-back events into adjacent event visits at the handoff', async () => {
@@ -142,7 +142,7 @@ describe('attendanceTransitions', () => {
             const checkout = new Date(t0.getTime() + 4 * HOUR);
             const e1 = await makeEvent('back1', e1Start, e1End);
             const e2 = await makeEvent('back2', e2Start, e2End);
-            const visit = await prisma.visit.create({ data: { participantId, arrived: t0 } });
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
 
             const result = await processVisitCheckout(visit.id, checkout);
 
@@ -151,14 +151,14 @@ describe('attendanceTransitions', () => {
             expect(v1).toBeDefined();
             expect(v2).toBeDefined();
             // Handoff: e1 visit ends exactly where e2 visit begins.
-            expect(v1!.departed).toEqual(e2Start);
-            expect(v2!.arrived).toEqual(e2Start);
-            expect(v2!.departed).toEqual(checkout);
+            expect(v1!.departedAt).toEqual(e2Start);
+            expect(v2!.arrivedAt).toEqual(e2Start);
+            expect(v2!.departedAt).toEqual(checkout);
         });
 
-        it('returns [] for an already-departed visit (idempotent)', async () => {
+        it('returns [] for an already-departedAt visit (idempotent)', async () => {
             const visit = await prisma.visit.create({
-                data: { participantId, arrived: new Date(Date.now() - HOUR), departed: new Date() },
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - HOUR), departedAt: new Date() },
             });
             const result = await processVisitCheckout(visit.id, new Date());
             expect(result).toEqual([]);

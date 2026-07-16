@@ -16,6 +16,8 @@ export interface AlertBannerProps {
   tone?: AlertTone;
   title?: string;
   mb?: string | number;
+  mt?: string | number;
+  onClose?: () => void;
 }
 
 /**
@@ -24,10 +26,10 @@ export interface AlertBannerProps {
  * across green/red/cyan/yellow and a `message.includes('success')` heuristic) with one tone→color
  * mapping and a built-in empty-message guard.
  */
-export function AlertBanner({ message, tone = "info", title, mb }: AlertBannerProps) {
+export function AlertBanner({ message, tone = "info", title, mb, mt, onClose }: AlertBannerProps) {
   if (!message) return null;
   return (
-    <Alert color={TONE_COLOR[tone]} title={title} mb={mb}>
+    <Alert color={TONE_COLOR[tone]} title={title} mb={mb} mt={mt} withCloseButton={!!onClose} onClose={onClose}>
       {message}
     </Alert>
   );

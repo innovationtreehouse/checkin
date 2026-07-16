@@ -6,7 +6,7 @@
  * Tests CSV file uploads, parsing, household generation, and merging
  */
 
-import { POST } from '@/app/api/admin/participants/import/route';
+import { POST } from '@/app/api/membership-ops/participants/import/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as xlsx from 'xlsx';
@@ -23,12 +23,11 @@ describe('Admin Bulk Import API Integration Tests', () => {
     beforeAll(async () => {
         try {
             // Clean up any leaked state
-            await prisma.membership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({
+            await prisma.orgMembership.deleteMany({});
+            await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
             });
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { name: { contains: 'Import Test' } }
             });
             await prisma.household.deleteMany({
@@ -40,13 +39,13 @@ describe('Admin Bulk Import API Integration Tests', () => {
         } catch {}
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-import-test@example.com', name: 'Admin Import Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
-            data: { email: 'user-import-test@example.com', name: 'User Import Test', household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: 'user-import-test@example.com', name: 'User Import Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
     });
@@ -54,12 +53,11 @@ describe('Admin Bulk Import API Integration Tests', () => {
     afterAll(async () => {
         try {
             // Clean up
-            await prisma.membership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({
+            await prisma.orgMembership.deleteMany({});
+            await prisma.person.deleteMany({
                 where: { email: { contains: 'import-test' } }
             });
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { name: { contains: 'Import Test' } }
             });
             await prisma.household.deleteMany({
@@ -74,12 +72,11 @@ describe('Admin Bulk Import API Integration Tests', () => {
     afterEach(async () => {
         try {
             // Clean up participants created during tests
-            await prisma.membership.deleteMany({});
-            await prisma.householdLead.deleteMany({});
-            await prisma.participant.deleteMany({
+            await prisma.orgMembership.deleteMany({});
+            await prisma.person.deleteMany({
                 where: { email: { contains: 'batch-import-test' } }
             });
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { name: { contains: 'Batch Import Test' } }
             });
             await prisma.household.deleteMany({
@@ -100,13 +97,13 @@ describe('Admin Bulk Import API Integration Tests', () => {
         return formData;
     };
 
-    describe('POST /api/admin/participants/import', () => {
+    describe('POST /api/membership-ops/participants/import', () => {
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/participants/import', {
+             const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                  method: 'POST',
              });
 
@@ -116,11 +113,11 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should return 400 Bad Request if no file is provided', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const formData = new FormData();
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -135,7 +132,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should return 400 Bad Request if required columns are missing', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             // Missing Last Name column
@@ -144,7 +141,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
                 ['John', 'john@example.com']
             ]);
 
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -159,7 +156,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
 
         it('should successfully import a batch of new participants and link their households', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const formData = createMockCsvFormData([
@@ -169,7 +166,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
                 ['Charlie', 'Batch Import Test', 'charlie-batch-import-test@example.com', '', 'Alice Batch Import Test'], // Adult in Alice's household using name reference
             ]);
 
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -183,34 +180,34 @@ describe('Admin Bulk Import API Integration Tests', () => {
             expect(data.message).toContain('3 participants');
 
             // Verify Alice
-            const alice = await prisma.participant.findUnique({ where: { email: 'alice-batch-import-test@example.com' } });
+            const alice = await prisma.person.findUnique({ where: { email: 'alice-batch-import-test@example.com' } });
             expect(alice).toBeDefined();
             expect(alice?.householdId).not.toBeNull();
 
             // Verify Bob
-            const bob = await prisma.participant.findFirst({ where: { name: 'Bob Batch Import Test' } });
+            const bob = await prisma.person.findFirst({ where: { name: 'Bob Batch Import Test' } });
             expect(bob).toBeDefined();
             expect(bob?.householdId).toBe(alice?.householdId);
 
             // Verify Charlie
-            const charlie = await prisma.participant.findUnique({ where: { email: 'charlie-batch-import-test@example.com' } });
+            const charlie = await prisma.person.findUnique({ where: { email: 'charlie-batch-import-test@example.com' } });
             expect(charlie).toBeDefined();
             expect(charlie?.householdId).toBe(alice?.householdId);
         });
 
         it('should automatically create households for participants with no household links, and correctly assign lead status based on age', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
             const formData = createMockCsvFormData([
                 ['First Name', 'Last Name', 'DOB'],
                 ['Adult', 'Import Test', '1990-01-01'],
-                ['Minor', 'Import Test', '2015-01-01'],
+                ['Youth', 'Import Test', '2015-01-01'],
                 ['Default', 'Import Test', ''], 
             ]);
 
-            const req = new Request('http://localhost:4000/api/admin/participants/import', {
+            const req = new Request('http://localhost:4000/api/membership-ops/participants/import', {
                 method: 'POST',
                 body: formData
             }) as unknown as Parameters<typeof POST>[0];
@@ -220,24 +217,24 @@ describe('Admin Bulk Import API Integration Tests', () => {
             if (data.errors) console.log("Import Errors:", data.errors);
             expect(res.status).toBe(200);
             
-            const adult = await prisma.participant.findFirst({ where: { name: 'Adult Import Test' } });
+            const adult = await prisma.person.findFirst({ where: { name: 'Adult Import Test' } });
             expect(adult).not.toBeNull();
             expect(adult!.householdId).not.toBeNull();
             
-            const adultLead = await prisma.householdLead.findFirst({ where: { participantId: adult!.id } });
+            const adultLead = await prisma.person.findFirst({ where: { id: adult!.id, isHouseholdLead: true }, select: { id: true } });
             // In some environments, lead assignment might delay or fail if the household creation isn't atomic.
             // But here it should be present.
             expect(adultLead).not.toBeNull();
 
-            const minor = await prisma.participant.findFirst({ where: { name: 'Minor Import Test' } });
-            expect(minor).not.toBeNull();
-            expect(minor!.householdId).not.toBeNull();
-            const minorLead = await prisma.householdLead.findFirst({ where: { participantId: minor!.id } });
-            expect(minorLead).toBeNull();
+            const youth = await prisma.person.findFirst({ where: { name: 'Youth Import Test' } });
+            expect(youth).not.toBeNull();
+            expect(youth!.householdId).not.toBeNull();
+            const youthLead = await prisma.person.findFirst({ where: { id: youth!.id, isHouseholdLead: true }, select: { id: true } });
+            expect(youthLead).toBeNull();
 
-            const defaultAdult = await prisma.participant.findFirst({ where: { name: 'Default Import Test' } });
+            const defaultAdult = await prisma.person.findFirst({ where: { name: 'Default Import Test' } });
             expect(defaultAdult?.householdId).not.toBeNull();
-            const defaultLead = await prisma.householdLead.findFirst({ where: { participantId: defaultAdult?.id } });
+            const defaultLead = await prisma.person.findFirst({ where: { id: defaultAdult?.id, isHouseholdLead: true }, select: { id: true } });
             expect(defaultLead).not.toBeNull();
         });
     });

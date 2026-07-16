@@ -1,12 +1,30 @@
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { sendEmail } from "@/lib/email";
 
+// Track how many sendEmail calls are in flight at once. Parallel dispatch
+// (Promise.all) lets all 11 enter before any resolves, so maxInFlight === 11.
+// A sequential `for await` loop would cap maxInFlight at 1.
+//
+// The resolve is deferred with a macrotask (setTimeout), not a microtask, so an
+// in-flight send survives the `await prisma.person.findMany` (household leads) that
+// sits between the participant send and the 10 household-lead sends — otherwise the
+// participant email would resolve during that await and cap the count at 10.
+let inFlight = 0;
+let maxInFlight = 0;
+
 jest.mock("@/lib/email", () => ({
-    sendEmail: jest.fn().mockImplementation(() => new Promise(resolve => setTimeout(resolve, 50))) // Simulate 50ms delay per email
+    sendEmail: jest.fn().mockImplementation(() => new Promise<void>(resolve => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        setTimeout(() => {
+            inFlight--;
+            resolve();
+        }, 0);
+    }))
 }));
 
 jest.mock("@/lib/prisma", () => ({
-    participant: {
+    person: {
         findUnique: jest.fn().mockResolvedValue({
             id: 1,
             name: "Test Participant",
@@ -15,18 +33,14 @@ jest.mock("@/lib/prisma", () => ({
                 emailCheckinReceipts: true
             },
             householdId: 1
-        })
-    },
-    householdLead: {
+        }),
         findMany: jest.fn().mockResolvedValue(
             Array.from({ length: 10 }).map((_, i) => ({
-                participant: {
-                    id: 2 + i,
-                    name: `Lead ${i}`,
-                    email: `lead${i}@example.com`,
-                    notificationSettings: {
-                        emailDependentCheckins: true
-                    }
+                id: 2 + i,
+                name: `Lead ${i}`,
+                email: `lead${i}@example.com`,
+                notificationSettings: {
+                    emailDependentCheckins: true
                 }
             }))
         )
@@ -36,19 +50,16 @@ jest.mock("@/lib/prisma", () => ({
 describe("Performance: sendCheckinNotifications", () => {
     beforeEach(() => {
         jest.clearAllMocks();
+        inFlight = 0;
+        maxInFlight = 0;
     });
 
     it("should send notifications in parallel", async () => {
-        const start = Date.now();
         await sendCheckinNotifications(1, "checkin");
-        const end = Date.now();
-        const duration = end - start;
 
-        console.log(`Execution time: ${duration}ms`);
         expect(sendEmail).toHaveBeenCalledTimes(11);
-
-        // If emails are sent sequentially, it should take at least 50ms * 11 = 550ms.
-        // If sent in parallel (Promise.all), it should take around 50ms.
-        expect(duration).toBeLessThan(400);
+        // All 11 emails must be in flight simultaneously — proves parallel
+        // dispatch. If the code regressed to sequential sends, this drops to 1.
+        expect(maxInFlight).toBe(11);
     });
 });

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
+import { apiError } from "@/lib/api-response";
 
-export async function GET() {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const GET = withAuth({}, async (_req, auth) => {
+    // withAuth funnels the denied-household check (auth.ts) and rejects kiosk —
+    // a raw getServerSession would let a board-denied member keep reading shop data.
+    if (auth.type !== 'session') {
+        return apiError("Unauthorized", 401);
     }
 
     try {
@@ -24,21 +24,20 @@ export async function GET() {
         return NextResponse.json(tools);
     } catch (error) {
         await logBackendError(error, "GET /api/shop/tools");
-        return NextResponse.json({ error: "Failed to fetch tools" }, { status: 500 });
+        return apiError("Failed to fetch tools", 500);
     }
-}
+});
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-
-    if (!session) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = withAuth({}, async (req, auth) => {
+    if (auth.type !== 'session') {
+        return apiError("Unauthorized", 401);
     }
+    const session = { user: auth.user };
 
-    const isAuthorized = session.user?.sysadmin || session.user?.boardMember;
+    const isAuthorized = session.user?.isSysadmin || session.user?.isBoardMember;
 
     if (!isAuthorized) {
-        return NextResponse.json({ error: "Forbidden: Only admins and board members can create tools" }, { status: 403 });
+        return apiError("Forbidden: Only admins and board members can create tools", 403);
     }
 
     try {
@@ -46,7 +45,7 @@ export async function POST(req: Request) {
         const { name, safetyGuide } = body;
 
         if (!name) {
-            return NextResponse.json({ error: "Tool name is required" }, { status: 400 });
+            return apiError("Tool name is required", 400);
         }
 
         const newTool = await prisma.tool.create({
@@ -62,13 +61,13 @@ export async function POST(req: Request) {
                 action: 'CREATE',
                 tableName: 'Tool',
                 affectedEntityId: newTool.id,
-                newData: JSON.stringify(newTool)
+                newData: newTool
             }
         });
 
         return NextResponse.json({ success: true, tool: newTool });
     } catch (error: unknown) {
         await logBackendError(error, "POST /api/shop/tools");
-        return NextResponse.json({ error: "Failed to create tool" }, { status: 500 });
+        return apiError("Failed to create tool", 500);
     }
-}
+});

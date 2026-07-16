@@ -3,30 +3,31 @@ import { sendEmail } from "./email";
 import { formatTime, formatDate } from "./time";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
-import { escapeHtml } from "./email-templates/base";
+import { escapeHtml, type VisitSource } from "./email-templates/base";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
  */
 
 export type NotificationEvent =
-    | 'RSVP_REMINDER'
     | 'PROGRAM_ENROLLMENT'
-    | 'EVENT_STARTING_SOON'
-    | 'ATTENDANCE_VALIDATED'
-    | 'RSVP_UPDATED'
     | 'PROGRAM_ASSIGNMENT'
     | 'CHECKIN'
     | 'CHECKOUT';
 
-export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, unknown>) {
+/**
+ * @returns true if delivery succeeded or there was nothing to send (don't retry),
+ *          false if the send failed (caller should retry).
+ */
+export async function sendNotification(userId: number, eventType: NotificationEvent, payload: Record<string, unknown>): Promise<boolean> {
     try {
-        const user = await prisma.participant.findUnique({
+        const user = await prisma.person.findUnique({
             where: { id: userId },
             select: { email: true, notificationSettings: true, name: true }
         });
 
-        if (!user || !user.email) return;
+        // No user / no address: nothing can ever be sent here — treat as done, not retryable.
+        if (!user || !user.email) return true;
 
         // Construct message based on type
         let message = "";
@@ -36,14 +37,6 @@ export async function sendNotification(userId: number, eventType: NotificationEv
             case 'PROGRAM_ENROLLMENT':
                 subject = `Confirmed: Enrollment in ${payload.programName}`;
                 message = `Hi ${user.name}, you have been successfully enrolled in ${payload.programName}.`;
-                break;
-            case 'EVENT_STARTING_SOON':
-                subject = `Reminder: ${payload.eventName} starts soon!`;
-                message = `Hi ${user.name}, your event ${payload.eventName} is starting in ${payload.hours} hours.`;
-                break;
-            case 'ATTENDANCE_VALIDATED':
-                subject = `Attendance Verified: ${payload.eventName}`;
-                message = `Hi ${user.name}, your attendance at ${payload.eventName} has been recorded by administrators.`;
                 break;
             case 'CHECKIN':
                 subject = `✅ Checked In — ${user.name}`;
@@ -61,12 +54,45 @@ export async function sendNotification(userId: number, eventType: NotificationEv
         const settings = user.notificationSettings as unknown as Record<string, boolean>;
         const wantsEmail = settings?.email !== false; // Active by default
 
-        if (wantsEmail) {
-            await sendEmail(user.email, subject, `<p>${escapeHtml(message)}</p>`);
-        }
+        // Email disabled: return true so a user who opted out isn't retried forever.
+        if (!wantsEmail) return true;
+
+        const ok = await sendEmail(user.email, subject, `<p>${escapeHtml(message)}</p>`);
+        return ok;
 
     } catch (error) {
         console.error("Failed to sequence notification:", error);
+        return false;
+    }
+}
+
+/**
+ * Broadcast a "new program announced" email to every user opted into
+ * notifyNewPrograms. Fired when a program first becomes BOTH phase=UPCOMING and
+ * enrollmentStatus=OPEN. Respects the global `email` opt-out too. Both prefs
+ * default ON — only an explicit `false` opts out.
+ */
+export async function notifyNewProgramAnnounced(programName: string): Promise<void> {
+    try {
+        // ponytail: full scan of users-with-email, filtered in JS. This fires at
+        // most once per program (the UPCOMING+OPEN edge), so a table scan is fine;
+        // switch to a JSON-path where-filter if the person table grows large.
+        const users = await prisma.person.findMany({
+            where: { email: { not: null } },
+            select: { email: true, name: true, notificationSettings: true },
+        });
+
+        const subject = `New program: ${programName}`;
+        await Promise.all(users.map(u => {
+            if (!u.email) return;
+            const s = u.notificationSettings as unknown as Record<string, boolean> | null;
+            if (s?.notifyNewPrograms === false) return; // opted out of this notice
+            if (s?.email === false) return;             // opted out of all email
+            const message = `Hi ${u.name}, a new program "${programName}" is now open for enrollment.`;
+            return sendEmail(u.email, subject, `<p>${escapeHtml(message)}</p>`);
+        }));
+    } catch (error) {
+        console.error("Failed to send new-program notifications:", error);
     }
 }
 
@@ -77,9 +103,9 @@ export async function sendNotification(userId: number, eventType: NotificationEv
  * - emailCheckinReceipts: send to the participant themselves
  * - emailDependentCheckins: send to household leads when a dependent checks in/out
  */
-export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout') {
+export async function sendCheckinNotifications(participantId: number, type: 'checkin' | 'checkout', source?: VisitSource | null) {
     try {
-        const participant = await prisma.participant.findUnique({
+        const participant = await prisma.person.findUnique({
             where: { id: participantId },
             select: {
                 id: true,
@@ -114,41 +140,38 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         const settings = participant.notificationSettings as unknown as Record<string, boolean>;
         if (settings?.emailCheckinReceipts && participant.email) {
             const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
-            const html = checkinReceiptTemplate({ name, type, date: dateStr, time: timeStr });
+            const html = checkinReceiptTemplate({ name, type, date: dateStr, time: timeStr, source });
             emailPromises.push(sendEmail(participant.email, subject, html));
         }
 
         // 2. Notify household leads if the participant is in a household
         if (participant.householdId) {
-            const householdLeads = await prisma.householdLead.findMany({
-                where: { householdId: participant.householdId },
-                include: {
-                    participant: {
-                        select: {
-                            id: true,
-                            email: true,
-                            name: true,
-                            notificationSettings: true
-                        }
-                    }
+            const householdLeads = await prisma.person.findMany({
+                where: { householdId: participant.householdId, isHouseholdLead: true },
+                select: {
+                    id: true,
+                    email: true,
+                    name: true,
+                    notificationSettings: true
                 }
             });
 
             for (const lead of householdLeads) {
                 // Don't double-notify if the lead IS the participant
-                if (lead.participant.id === participant.id) continue;
+                if (lead.id === participant.id) continue;
 
-                const leadSettings = lead.participant.notificationSettings as unknown as Record<string, boolean>;
-                if (leadSettings?.emailDependentCheckins && lead.participant.email) {
+                const leadSettings = lead.notificationSettings as unknown as Record<string, boolean>;
+                if (leadSettings?.emailDependentCheckins && lead.email) {
                     const subject = `${emoji} ${name} ${action} Innovation Treehouse`;
                     const html = householdMemberTemplate({
-                        leadName: lead.participant.name || 'there',
+                        leadName: lead.name || 'there',
                         memberName: name,
                         type,
                         date: dateStr,
-                        time: timeStr
+                        time: timeStr,
+                        source
                     });
-                    emailPromises.push(sendEmail(lead.participant.email, subject, html));
+                    emailPromises.push(sendEmail(lead.email, subject, html));
                 }
             }
         }

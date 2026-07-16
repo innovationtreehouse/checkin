@@ -3,15 +3,18 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { Alert, Badge, Button, Card, Center, Checkbox, Divider, Group, Loader, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { Alert, Badge, Button, Card, Checkbox, Divider, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { formatDate } from '@/lib/time';
+import { PageContainer } from '@/components/ui/PageContainer';
 
+import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramSummary = {
   id: number;
   name: string;
-  begin: string | null;
-  end: string | null;
-  memberOnly: boolean;
+  startAt: string | null;
+  endAt: string | null;
+  orgMemberOnly: boolean;
   phase: string;
   enrollmentStatus: string;
   leadMentorId: number | null;
@@ -29,7 +32,7 @@ export default function PublicProgramsDirectory() {
   const [message, setMessage] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
 
-  const isAuthorized = session && (session.user?.sysadmin || session.user?.boardMember);
+  const isAuthorized = session && (session.user?.isSysadmin || session.user?.isBoardMember);
 
   useEffect(() => {
     const fetchPrograms = async () => {
@@ -44,7 +47,7 @@ export default function PublicProgramsDirectory() {
           setMessage("Failed to load program directory.");
         }
       } catch {
-        setMessage("Network error loading programs.");
+        notifications.show({ color: "red", message: "Network error loading programs.", autoClose: false });
       } finally {
         setLoading(false);
       }
@@ -54,11 +57,12 @@ export default function PublicProgramsDirectory() {
   }, [activeOnly, isAuthorized]);
 
   if (loading) {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   return (
-    <Stack>
+    <PageContainer>
+      <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <div>
           <Title order={1}>Programs Directory</Title>
@@ -73,7 +77,7 @@ export default function PublicProgramsDirectory() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.currentTarget.checked)}
             />
-            <Button component={Link} href="/admin/programs/new" color="green" variant="light">
+            <Button component={Link} href="/program-ops/new" color="green" variant="light">
               + New Program
             </Button>
           </Group>
@@ -89,21 +93,23 @@ export default function PublicProgramsDirectory() {
       ) : (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }}>
           {programs.map((program) => {
-            const canManage = session && (session.user?.sysadmin || session.user?.boardMember || session.user?.id === program.leadMentorId);
+            const isOwner = session && session.user?.id === program.leadMentorId;
+            const canManage = session && (session.user?.isSysadmin || session.user?.isBoardMember || isOwner);
             return (
               <Card key={program.id} withBorder radius="md" padding="lg">
                 <Group justify="space-between" align="flex-start" mb="sm">
                   <Title order={4}>{program.name}</Title>
                   <Group gap={4}>
-                    {program.memberOnly && <Badge color="grape" variant="light">Member Only</Badge>}
+                    {isOwner && <Badge color="green">Yours</Badge>}
+                    {program.orgMemberOnly && <Badge color="grape" variant="light">Treehouse Members Only</Badge>}
                     {program.phase === 'PLANNING' && <Badge color="yellow" variant="light">Planning</Badge>}
                     {program.enrollmentStatus === 'CLOSED' && <Badge color="red" variant="light">Closed</Badge>}
                   </Group>
                 </Group>
 
                 <Text c="dimmed" style={{ flex: 1 }} mb="md">
-                  {program.begin ? formatDate(program.begin) : 'Start Date TBD'}
-                  {program.end ? ` - ${formatDate(program.end)}` : ' (Ongoing)'}
+                  {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
+                  {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
                 </Text>
 
                 <Card withBorder radius="sm" padding="xs" mb="md">
@@ -130,7 +136,7 @@ export default function PublicProgramsDirectory() {
                     View Details
                   </Button>
                   {canManage && (
-                    <Button component={Link} href={`/admin/programs/${program.id}`} variant="light" color="green">
+                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">
                       Manage
                     </Button>
                   )}
@@ -140,6 +146,8 @@ export default function PublicProgramsDirectory() {
           })}
         </SimpleGrid>
       )}
-    </Stack>
+      </Stack>
+    </PageContainer>
   );
 }
+

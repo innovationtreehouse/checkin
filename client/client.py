@@ -12,6 +12,7 @@ A thin client for Raspberry Pi that:
 import html
 import json
 import os
+import secrets
 import sys
 import time
 import threading
@@ -49,11 +50,16 @@ def load_signing_key(path):
     return SigningKey(seed)
 
 def sign_request(signing_key, method, path, body=""):
+    # Nonce is bound into the signed message and is single-use server-side, so a
+    # captured request can't be replayed within the 60s timestamp window. Server
+    # must verify the same format — ship client and server together.
     timestamp = str(int(time.time()))
-    message = f"{timestamp}:{method}:{path}:{body}".encode()
+    nonce = secrets.token_hex(16)
+    message = f"{timestamp}:{nonce}:{method}:{path}:{body}".encode()
     signature = signing_key.sign(message).signature.hex()
     return {
         "X-Kiosk-Timestamp": timestamp,
+        "X-Kiosk-Nonce": nonce,
         "X-Kiosk-Signature": signature,
     }
 
@@ -677,8 +683,8 @@ def main():
     KioskHandler.backend = backend
     KioskHandler.kiosk_path = kiosk_path
     KioskHandler.disable_blackout = disable_blackout
-    server = ThreadingHTTPServer(("0.0.0.0", port), KioskHandler)
-    log.info(f"Proxy running on http://0.0.0.0:{port}")
+    server = ThreadingHTTPServer(("127.0.0.1", port), KioskHandler)
+    log.info(f"Proxy running on http://127.0.0.1:{port}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

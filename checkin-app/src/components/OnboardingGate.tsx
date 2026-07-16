@@ -3,7 +3,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { usePathname } from 'next/navigation';
+import { notifications } from '@mantine/notifications';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { isValidEmail } from '@/lib/emergencyContacts/identity';
+import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
 import {
   Alert,
   Box,
@@ -27,6 +30,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
   const [phone, setPhone] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
+  const [emergencyContactEmail, setEmergencyContactEmail] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +66,20 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (needsPhone && !isValidPhone(phone)) {
+      setError(PHONE_ERROR);
+      return;
+    }
+    if (needsEmergencyContact && !isValidPhone(emergencyContactPhone)) {
+      setError(`Emergency contact: ${PHONE_ERROR}`);
+      return;
+    }
+    if (needsEmergencyContact && emergencyContactEmail.trim() && !isValidEmail(emergencyContactEmail)) {
+      setError("That emergency contact email doesn't look right.");
+      return;
+    }
+
     setSaving(true);
     setError('');
 
@@ -73,6 +91,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
       if (needsEmergencyContact && emergencyContactName.trim() && emergencyContactPhone.trim()) {
         payload.emergencyContactName = emergencyContactName.trim();
         payload.emergencyContactPhone = emergencyContactPhone.trim();
+        if (emergencyContactEmail.trim()) payload.emergencyContactEmail = emergencyContactEmail.trim();
       }
 
       const res = await fetch('/api/profile/onboarding', {
@@ -86,11 +105,11 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
         await checkStatus();
         notifyNavRefresh();
       } else {
-        const data = await res.json();
+        const data = await res.json().catch(() => ({}));
         setError(data.error || 'Failed to save information');
       }
     } catch {
-      setError('Network error');
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setSaving(false);
     }
@@ -109,7 +128,7 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
         closeOnEscape={false}
         centered
         size="lg"
-        title={<Title order={3}>Action Required</Title>}
+        title="Action Required"
       >
         <Text c="dimmed" mb="lg">
           To ensure the safety of our facility and compliance with our policies, we need a bit
@@ -154,6 +173,13 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                     value={emergencyContactPhone}
                     onChange={(e) => setEmergencyContactPhone(e.currentTarget.value)}
                     required
+                  />
+                  <TextInput
+                    type="email"
+                    label="Contact Email (optional)"
+                    placeholder="jane@example.com"
+                    value={emergencyContactEmail}
+                    onChange={(e) => setEmergencyContactEmail(e.currentTarget.value)}
                   />
                 </Stack>
               </Paper>

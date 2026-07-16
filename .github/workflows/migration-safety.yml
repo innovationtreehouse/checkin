@@ -1,0 +1,238 @@
+name: Migration safety (populated DB)
+
+# Mimics how deploy-dev.yml actually applies migrations: `prisma migrate
+# deploy` against a database that already has real rows in it — NOT the
+# always-empty DB that CI's own drift check (ci.yml "Check migrations match
+# schema") and every local dev setup use.
+#
+# Motivating incident: on 2026-07-02 Prisma generated three "rename"
+# migrations as DROP+ADD / DROP TABLE+CREATE TABLE instead of RENAMEs. They
+# passed CI and every local run because those DBs are always freshly created
+# (empty tables) — then migration 20260702054206 failed on dev's populated
+# RSVP with `23502: column "personId" of relation "RSVP" contains null
+# values`, and because `prisma migrate deploy` does not wrap a migration in a
+# transaction, it PARTIALLY applied (FeePayment's ALTER committed, RSVP's
+# rolled back), wedging every deploy behind a P3009 for over a day until
+# manual surgery + PR #791 (rewriting them as RENAMEs). No CI job had ever
+# applied a NEW migration on top of a POPULATED database. This job closes
+# that gap.
+#
+# Only runs when migrations (or this file) change — most PRs don't touch
+# migrations/prisma/schema.prisma, so there's nothing new to verify.
+#
+# Coalesce PRs (checkin-app/scripts/coalesce-migrations.ts — see
+# checkin-app/docs/MIGRATION_COALESCE_FLOW.md) are a special case the normal
+# "replay new migrations on the populated base DB" check CANNOT run: a
+# coalesce PR deletes the whole migration chain it replaces, so there is
+# nothing to replay on top of a base DB that already has that chain applied.
+# Detected by shape (deletes >=2 migration dirs, adds exactly 1) and routed to
+# a different check: does the PR's one baseline dump the SAME schema as the
+# full chain it replaces? Normal PRs are entirely unaffected — same steps,
+# same conditions, as before.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'checkin-app/prisma/migrations/**'
+      - '.github/workflows/migration-safety.yml'
+
+jobs:
+  migrate-populated:
+    name: Migrations apply to populated DB
+    runs-on: ubuntu-latest
+
+    # Version matches deploy/docker-compose.yml's `db` service (postgres:15) —
+    # same major version dev/prod run migrations against.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: checkmein_migtest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/checkmein_migtest
+
+    steps:
+      # fetch-depth: 0 so origin/main's full history is available locally —
+      # needed to compute the merge-base below.
+      - name: Checkout PR
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Determine base + check for migration changes
+        id: base
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          BASE=$(git merge-base origin/main HEAD)
+          echo "Merge base with origin/main: $BASE"
+          echo "sha=$BASE" >> "$GITHUB_OUTPUT"
+          if git diff --quiet "$BASE" HEAD -- checkin-app/prisma/migrations; then
+            echo "No migration changes vs $BASE — nothing to verify, exiting early."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "coalesce=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "New/changed migrations vs $BASE — running the populated-DB check."
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+          # Coalesce-PR signature: deletes >=2 migration dirs AND adds exactly 1
+          # (--no-renames: a wholly-rewritten baseline must never be detected as a
+          # rename of one of the migrations it replaces). Count DIRECTORIES, not
+          # files — a coalesce PR adds both migration.sql and reconcile.sql under
+          # its one new dir.
+          mapfile -t ADDED < <(git diff --no-renames --name-status "$BASE" HEAD -- checkin-app/prisma/migrations \
+            | awk '$1=="A" {print $2}' | awk -F/ '{print $4}' | grep -v '^migration_lock.toml$' | sort -u)
+          mapfile -t REMOVED < <(git diff --no-renames --name-status "$BASE" HEAD -- checkin-app/prisma/migrations \
+            | awk '$1=="D" {print $2}' | awk -F/ '{print $4}' | grep -v '^migration_lock.toml$' | sort -u)
+          echo "Added migration dir(s) (${#ADDED[@]}): ${ADDED[*]:-none}"
+          echo "Removed migration dir(s) (${#REMOVED[@]}): ${REMOVED[*]:-none}"
+
+          if [ "${#REMOVED[@]}" -ge 2 ] && [ "${#ADDED[@]}" -eq 1 ]; then
+            echo "Shape matches a coalesce PR — routing to the schema-identity check."
+            echo "coalesce=true" >> "$GITHUB_OUTPUT"
+            echo "baseline=${ADDED[0]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "coalesce=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.base.outputs.skip == 'false'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install PR dependencies
+        if: steps.base.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Generate Prisma Client (PR)
+        if: steps.base.outputs.skip == 'false'
+        run: npm -w checkin-app exec -- prisma generate
+
+      # Materialize the BASE commit as a full sibling checkout (its own
+      # worktree) — the base migrations must be applied/seeded with BASE's
+      # OWN prisma dir (schema.prisma, seed.ts) in case those changed too,
+      # not the PR's.
+      - name: Materialize base checkout
+        if: steps.base.outputs.skip == 'false'
+        run: git worktree add "${{ runner.temp }}/base" "${{ steps.base.outputs.sha }}"
+
+      - name: Apply base migrations + seed (populates the DB)
+        if: steps.base.outputs.skip == 'false'
+        working-directory: ${{ runner.temp }}/base
+        run: |
+          npm ci
+          npm -w checkin-app exec -- prisma generate
+          npm -w checkin-app exec -- prisma migrate deploy
+          npm -w checkin-app exec -- prisma db seed
+
+      # `prisma db seed` (seedBaseline) only populates Household/Person/Tool/
+      # ToolStatus/Program — it never creates Event/Fee/FeePayment/RSVP rows.
+      # Those are exactly the tables the 2026-07-02 incident hit (RSVP,
+      # FeePayment), so top them up here with a handful of rows referencing
+      # the seed's own baseline data (the "Woodworking 101" program + its
+      # personas) — this is what makes a destructive/non-applying migration
+      # on those tables fail here instead of on dev.
+      - name: Top up seed-empty tables the incident hit (Event/Fee/FeePayment/RSVP)
+        if: steps.base.outputs.skip == 'false' && steps.base.outputs.coalesce == 'false'
+        env:
+          PGPASSWORD: testpassword
+        run: |
+          psql -h localhost -U testuser -d checkmein_migtest <<'SQL'
+          INSERT INTO "Event" (name, "programId", "startAt", "endAt", description)
+          SELECT 'CI Fixture Event', p.id, now(), now() + interval '2 hours', 'migration-safety CI fixture'
+          FROM "Program" p WHERE p.name = 'Woodworking 101';
+
+          INSERT INTO "Fee" (name, "programId", "nonOrgMemberPriceCents", "orgMemberPriceCents")
+          SELECT 'CI Fixture Fee', p.id, 4000, 2500
+          FROM "Program" p WHERE p.name = 'Woodworking 101';
+
+          INSERT INTO "RSVP" ("eventId", "personId", status)
+          SELECT e.id, pe.id, 'ATTENDING'::"RSVPStatus"
+          FROM "Event" e, "Person" pe
+          WHERE e.name = 'CI Fixture Event'
+            AND pe.email IN ('parent.family@example.com', 'parent2.family@example.com');
+
+          INSERT INTO "FeePayment" ("feeId", "personId")
+          SELECT f.id, pe.id
+          FROM "Fee" f, "Person" pe
+          WHERE f.name = 'CI Fixture Fee'
+            AND pe.email IN ('parent.family@example.com', 'parent2.family@example.com');
+          SQL
+
+      # The actual regression test: apply ONLY the PR's new migrations on top
+      # of a database that already has real rows in the tables they touch.
+      # Failing here means the migration doesn't apply to a real database —
+      # exactly what wedged dev on 2026-07-02. Skipped for a coalesce PR: it
+      # deletes the whole chain this base DB already has applied, so there is
+      # nothing to "apply on top of" — see the coalesce-path steps below.
+      - name: Apply PR's new migrations on top of the populated DB
+        if: steps.base.outputs.skip == 'false' && steps.base.outputs.coalesce == 'false'
+        run: npm -w checkin-app exec -- prisma migrate deploy
+
+      # Proves the migrations land exactly on schema.prisma (Prisma 7:
+      # --from-url was removed, use --from-config-datasource).
+      - name: Drift check — migrations match schema.prisma
+        if: steps.base.outputs.skip == 'false' && steps.base.outputs.coalesce == 'false'
+        run: npm -w checkin-app exec -- prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      # --- Coalesce PR path -----------------------------------------------
+      # The base DB (checkmein_migtest, migrated+seeded above) already has the
+      # FULL chain this PR replaces applied — its schema stands in for "TRUTH"
+      # without spinning up a third database. What we need to prove is
+      # different from the normal path: not "do the new migrations apply",
+      # but "does the PR's one baseline produce the SAME schema".
+      - name: "Coalesce: create a fresh DB for the candidate baseline"
+        if: steps.base.outputs.coalesce == 'true'
+        env:
+          PGPASSWORD: testpassword
+        run: psql -h localhost -U testuser -d checkmein_migtest -c 'CREATE DATABASE checkmein_migtest_candidate;'
+
+      # Runs through the PR's own (post-coalesce) prisma/migrations dir, which
+      # at this point contains exactly the one baseline — `migrate deploy`
+      # against an empty DB applies just that.
+      - name: "Coalesce: apply the PR's single baseline to the fresh DB"
+        if: steps.base.outputs.coalesce == 'true'
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/checkmein_migtest_candidate
+        run: npm -w checkin-app exec -- prisma migrate deploy
+
+      # The actual coalesce regression test: the PR's single baseline must
+      # reproduce the exact schema the full chain it deletes produces. Shared
+      # normalize+diff logic with scripts/coalesce-migrations.ts (which runs
+      # this same check locally before the baseline is ever committed) — one
+      # comparison, one behavior.
+      - name: "Coalesce: verify candidate baseline is schema-identical to the replaced chain"
+        if: steps.base.outputs.coalesce == 'true'
+        run: |
+          bash checkin-app/scripts/compare-schema-dumps.sh \
+            "postgresql://testuser:testpassword@localhost:5432/checkmein_migtest" \
+            "postgresql://testuser:testpassword@localhost:5432/checkmein_migtest_candidate"
+
+      # Ledger-reconcile artifact convention (see MIGRATION_COALESCE_FLOW.md):
+      # prisma/migrations/<baseline>/reconcile.sql must ship alongside the
+      # baseline, or already-migrated envs (dev/prod) have no reconcile script
+      # to run and their next deploy fails looking for the deleted chain.
+      - name: "Coalesce: verify the reconcile.sql artifact is present"
+        if: steps.base.outputs.coalesce == 'true'
+        run: |
+          set -euo pipefail
+          BASELINE="${{ steps.base.outputs.baseline }}"
+          FILE="checkin-app/prisma/migrations/$BASELINE/reconcile.sql"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::Coalesce PR is missing $FILE — already-migrated environments (dev, prod) need this to reconcile their _prisma_migrations ledger to the new baseline. See checkin-app/docs/MIGRATION_COALESCE_FLOW.md."
+            exit 1
+          fi
+          echo "Found $FILE"

@@ -1,40 +1,31 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import { logger } from "@/lib/logger";
+import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
+import { withdrawAndReleaseHold } from "@/lib/program/capacity";
 
-export async function GET(req: Request) {
-    const authHeader = req.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-
-    if (!cronSecret || !authHeader) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const expectedHeader = `Bearer ${cronSecret}`;
-    const providedBuffer = Buffer.from(authHeader);
-    const expectedBuffer = Buffer.from(expectedHeader);
-
-    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    try {
+export const GET = withCron(async () => {
         const now = new Date();
         const pendingParticipants = await prisma.programParticipant.findMany({
             where: {
                 status: 'PENDING',
-                paymentPlanRequested: false,
+                isPaymentPlanRequested: false,
+                // Denied scholarship applicants are governed by the
+                // scholarship-grace-expiry cron (scholarshipDenialGraceDays),
+                // not this 7-day clock — a denial never resets pendingSince, so
+                // without this exclusion they'd be kicked the night after denial.
+                paymentPlanDeniedAt: null,
                 pendingSince: { not: null }
             },
             include: {
-                participant: true,
+                person: true,
                 program: true
             }
         });
 
         let kickedCount = 0;
         let warnedCount = 0;
-        const toDelete: { programId: number; participantId: number }[] = [];
+        const toDelete: typeof pendingParticipants = [];
 
         for (const record of pendingParticipants) {
             if (!record.pendingSince) continue;
@@ -43,45 +34,52 @@ export async function GET(req: Request) {
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); // Calculate total full days
 
             // Email text for warnings
-            const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finances@innovationtreehouse.org`;
+            const warningText = `If not paid, your spot in ${record.program.name} will be freed up. If a payment plan is needed, contact the board via finance@innovationtreehouse.org`;
 
             if (diffDays >= 7) {
-                // Collect IDs for batch deletion
-                toDelete.push({
-                    programId: record.programId,
-                    participantId: record.participantId
-                });
+                // Collect for removal below (denied scholarship applicants are
+                // excluded by the query above; anything caught here is an
+                // ordinary non-payer, though withdrawAndReleaseHold still
+                // handles a held seat correctly if one slips through).
+                toDelete.push(record);
 
                 kickedCount++;
 
-                console.log(`[CRON] Removed participant ${record.participant.name} from ${record.program.name} after ${diffDays} days.`);
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Removed from ${record.program.name} due to non-payment`);
+                logger.info(`[CRON] Removed participant ${record.person.name} from ${record.program.name} after ${diffDays} days.`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Removed from ${record.program.name} due to non-payment`);
             } else if (diffDays === 6) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: FINAL WARNING: 24 hours left to pay for ${record.program.name}`);
-                console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: FINAL WARNING: 24 hours left to pay for ${record.program.name}`);
+                logger.info(`[EMAIL DISPATCH] Body: ${warningText}`);
             } else if (diffDays === 3) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Please pay for ${record.program.name} within 4 days`);
-                console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Please pay for ${record.program.name} within 4 days`);
+                logger.info(`[EMAIL DISPATCH] Body: ${warningText}`);
             } else if (diffDays === 1) {
                 warnedCount++;
-                console.log(`[EMAIL DISPATCH] To: ${record.participant.email}, Subject: Reminder: Payment required for ${record.program.name}`);
-                console.log(`[EMAIL DISPATCH] Body: ${warningText}`);
+                logger.info(`[EMAIL DISPATCH] To: ${record.person.email}, Subject: Reminder: Payment required for ${record.program.name}`);
+                logger.info(`[EMAIL DISPATCH] Body: ${warningText}`);
             }
         }
 
-        if (toDelete.length > 0) {
-            await prisma.programParticipant.deleteMany({
-                where: {
-                    OR: toDelete
+        // Removed one row at a time (not a bulk deleteMany) so the hold-ledger
+        // release (withdrawAndReleaseHold) runs per participant, and one bad row
+        // can't block the rest of the sweep.
+        for (const record of toDelete) {
+            try {
+                await withdrawAndReleaseHold(record.programId, record.personId, record.program);
+            } catch (err) {
+                // P2025 = already removed by another path (e.g. self-withdraw)
+                // between this sweep's read and now — benign, skip.
+                if (!isPrismaP2025(err)) {
+                    logger.error(`[CRON] Failed to remove pending participant ${record.personId} from program ${record.programId}:`, err);
                 }
-            });
+            }
         }
 
         return NextResponse.json({ success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount });
-    } catch (error) {
-        console.error("Cron script error:", error);
-        return NextResponse.json({ error: "Cron Failed" }, { status: 500 });
-    }
+});
+
+function isPrismaP2025(err: unknown): boolean {
+    return typeof err === 'object' && err !== null && 'code' in err && (err as { code?: unknown }).code === 'P2025';
 }

@@ -1,29 +1,36 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth-options";
+import { withAuth, getOptionalSessionUser } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
-import { createShopifyProgramVariants } from "@/lib/shopify";
-import { logBackendError } from "@/lib/logger";
-import { isActiveMember } from "@/lib/membership";
+import { createShopifySingleVariantProgram } from "@/lib/shopify";
+import { logBackendError, logger } from "@/lib/logger";
+import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
+import { apiError } from "@/lib/api-response";
+import { validateProgramAgeBounds } from "@/lib/programAge";
 
+// GET is the PUBLIC program catalog — anonymous callers legitimately get the
+// non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
+// so it can't move to withAuth (which 401s anonymous). getOptionalSessionUser
+// applies the shared denied-household gate: a denied member is locked out of
+// the whole app, so it collapses to undefined (anonymous) — they see only the
+// public list and never the orgMemberOnly programs isActiveOrgMember would otherwise
+// reveal (P0-C).
 export async function GET(req: Request) {
-    const session = await getServerSession(authOptions);
+    const user = await getOptionalSessionUser(req);
 
     try {
         const { searchParams } = new URL(req.url);
         const activeOnly = searchParams.get("active") === "true";
 
-        // Determine if the user is allowed to see memberOnly programs
-        let canSeeMemberOnly = false;
+        // Determine if the user is allowed to see orgMemberOnly programs
+        let canSeeOrgMemberOnly = false;
 
-        if (session && session.user) {
-            const user = session.user;
-            if (user.sysadmin || user.boardMember) {
-                canSeeMemberOnly = true;
+        if (user) {
+            if (user.isSysadmin || user.isBoardMember) {
+                canSeeOrgMemberOnly = true;
             } else {
-                canSeeMemberOnly = await isActiveMember(user.id);
+                canSeeOrgMemberOnly = await isActiveOrgMember(user.id);
             }
         }
 
@@ -32,21 +39,21 @@ export async function GET(req: Request) {
         if (activeOnly) {
             andClauses.push({
                 OR: [
-                    { end: null },
-                    { end: { gte: new Date() } }
+                    { endAt: null },
+                    { endAt: { gte: new Date() } }
                 ]
             });
         }
 
-        if (!canSeeMemberOnly) {
-            andClauses.push({ memberOnly: false });
+        if (!canSeeOrgMemberOnly) {
+            andClauses.push({ orgMemberOnly: false });
         }
 
         let canSeeDrafts = false;
         let userId: number | undefined;
-        if (session && session.user) {
-            userId = session.user.id;
-            if (session.user.sysadmin || session.user.boardMember) {
+        if (user) {
+            userId = user.id;
+            if (user.isSysadmin || user.isBoardMember) {
                 canSeeDrafts = true;
             }
         }
@@ -66,7 +73,7 @@ export async function GET(req: Request) {
 
         const programs = await prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
-            orderBy: { begin: 'asc' },
+            orderBy: { startAt: 'asc' },
             include: {
                 _count: {
                     select: {
@@ -81,68 +88,79 @@ export async function GET(req: Request) {
         return NextResponse.json(programs);
     } catch (error) {
         await logBackendError(error, "GET /api/programs");
-        return NextResponse.json({ error: "Failed to fetch programs" }, { status: 500 });
+        return apiError("Failed to fetch programs", 500);
     }
 }
 
-export async function POST(req: Request) {
-    const session = await getServerSession(authOptions);
-    const canCreate = session?.user?.sysadmin || session?.user?.boardMember;
+export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
+    if (auth.type !== 'session') return apiError("Unauthorized", 401);
 
-    if (!session || !canCreate) {
-        return NextResponse.json({ error: "Forbidden: Only Admin or Board Members can create programs" }, { status: 403 });
-    }
+    // Hoisted so the catch can name an orphaned Shopify product (created, but DB write failed) for manual cleanup.
+    let shopifyData: { shopifyProductId: string, shopifyVariantId: string } | null = null;
 
     try {
         const body = await req.json();
-        const { name, leadMentorId, begin, end, memberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
+        const { name, leadMentorId, startAt, endAt, orgMemberOnly, minAge, maxAge, memberPrice, nonMemberPrice, maxParticipants } = body;
 
         if (!name) {
-            return NextResponse.json({ error: "Program name is required" }, { status: 400 });
+            return apiError("Program name is required", 400);
         }
 
         if (!leadMentorId) {
-            return NextResponse.json({ error: "Lead Mentor is required" }, { status: 400 });
+            return apiError("Lead Mentor is required", 400);
+        }
+
+        const maxPart = maxParticipants != null ? parseInt(maxParticipants, 10) : null;
+        if (maxPart == null || isNaN(maxPart) || maxPart < 1) {
+            return apiError("Max participants is required and must be at least 1", 400);
+        }
+
+        const ageErr = validateProgramAgeBounds(minAge, maxAge);
+        if (ageErr) {
+            return apiError(ageErr, 400);
         }
 
         // Client sends a raw dollar string; tolerate a number too. Convert to cents here.
         const mPrice = dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined);
         const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
-        const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
-        // Try to create Shopify entities
-        let shopifyData: { shopifyProductId: string, shopifyMemberVariantId: string | null, shopifyNonMemberVariantId: string | null } | null = null;
-        
-        // Only try to create if at least one price is provided. Otherwise it's a free program.
-        if ((mPrice && mPrice > 0) || (nmPrice && nmPrice > 0)) {
-            shopifyData = await createShopifyProgramVariants(name, mPrice, nmPrice, maxPart);
+        // Single-pool model (product decision 2026-07-06): ONE Shopify variant,
+        // priced at the base/non-member rate — replaces the two-variant model for
+        // NEW program creation going forward (legacy programs keep working via
+        // the columns createShopifyProgramVariants still writes; see
+        // sync-shopify's repair route). ponytail: falls back to the member price
+        // only when no non-member price is set (e.g. a members-only-priced
+        // program with no listed non-member tier) — normally sells at the
+        // non-member/base rate per the design.
+        const basePriceCents = nmPrice ?? mPrice ?? null;
+        if (basePriceCents && basePriceCents > 0) {
+            shopifyData = await createShopifySingleVariantProgram(name, basePriceCents, maxPart);
         }
 
         const newProgram = await prisma.program.create({
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                begin: begin ? new Date(begin) : null,
-                end: end ? new Date(end) : null,
-                memberOnly: memberOnly || false,
+                startAt: startAt ? new Date(startAt) : null,
+                endAt: endAt ? new Date(endAt) : null,
+                orgMemberOnly: orgMemberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
-                memberPrice: mPrice,
-                nonMemberPrice: nmPrice,
+                orgMemberPriceCents: mPrice,
+                nonOrgMemberPriceCents: nmPrice,
                 maxParticipants: maxPart,
                 shopifyProductId: shopifyData?.shopifyProductId || null,
-                shopifyMemberVariantId: shopifyData?.shopifyMemberVariantId || null,
-                shopifyNonMemberVariantId: shopifyData?.shopifyNonMemberVariantId || null,
+                shopifyVariantId: shopifyData?.shopifyVariantId || null,
             }
         });
 
         await prisma.auditLog.create({
             data: {
-                actorId: session.user.id,
+                actorId: auth.user.id,
                 action: 'CREATE',
                 tableName: 'Program',
                 affectedEntityId: newProgram.id,
-                newData: JSON.stringify(newProgram)
+                newData: newProgram
             }
         });
 
@@ -157,7 +175,10 @@ export async function POST(req: Request) {
 
         return NextResponse.json(responseObj);
     } catch (error: unknown) {
+        if (shopifyData?.shopifyProductId) {
+            logger.error("[Shopify] Orphaned product after program DB write failed, manual cleanup needed:", shopifyData.shopifyProductId);
+        }
         await logBackendError(error, "POST /api/programs");
-        return NextResponse.json({ error: "Failed to create program" }, { status: 500 });
+        return apiError("Failed to create program", 500);
     }
-}
+});

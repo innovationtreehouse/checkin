@@ -1,56 +1,59 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { addHouseholdLead, removeHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const body = await req.json();
             const { participantId } = body;
 
             if (!participantId) {
-                return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
+                return apiError("Participant ID is required", 400);
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { isSysadmin: true, isBoardMember: true, isHouseholdLead: true, householdId: true }
             });
 
-            if (!user?.householdId) {
-                return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
+            const targetMember = await prisma.person.findUnique({ where: { id: participantId } });
+            if (!targetMember) {
+                return apiError("Participant not found", 404);
+            }
+            const targetHouseholdId = targetMember.householdId;
+
+            // Board members and sysadmins can set a lead on ANY household (e.g. fixing
+            // a leadless household imported without a primary contact). A regular
+            // household lead can only promote within their own household.
+            const isPrivileged = !!user?.isSysadmin || !!user?.isBoardMember;
+            const isLeadOfTarget = !!user?.isHouseholdLead && user.householdId === targetHouseholdId;
+            if (!isPrivileged && !isLeadOfTarget) {
+                return apiError("Only household leads, board members, or sysadmins can promote members", 403);
             }
 
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
-                return NextResponse.json({ error: "Only household leads or sysadmins can promote members" }, { status: 403 });
-            }
-
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
-            if (!targetMember || targetMember.householdId !== user.householdId) {
-                return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
-            }
-
-            const { created } = await addHouseholdLead(prisma, user.householdId, participantId);
+            const { created } = await addHouseholdLead(prisma, targetHouseholdId, participantId);
 
             if (!created) {
                 return NextResponse.json({ message: "Member is already a lead" }, { status: 200 });
             }
 
-            const newLead = { householdId: user.householdId, participantId };
+            const newLead = { householdId: targetHouseholdId, participantId };
             await prisma.auditLog.create({
                 data: {
                     actorId: userId,
                     action: "CREATE",
-                    tableName: "HouseholdLead",
-                    affectedEntityId: user.householdId,
+                    tableName: "Person",
+                    affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
-                    newData: JSON.stringify(newLead)
+                    newData: { ...newLead, isHouseholdLead: true }
                 }
             });
 
@@ -58,10 +61,10 @@ export const POST = withAuth(
 
         } catch (error: unknown) {
             if (error instanceof HouseholdLeadLimitError) {
-                return NextResponse.json({ error: error.message }, { status: 400 });
+                return apiError(error.message, 400);
             }
-            console.error("Household Lead POST Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            logger.error("Household Lead POST Error:", error);
+            return apiError("Internal Server Error", 500);
         }
     }
 );
@@ -70,81 +73,69 @@ export const DELETE = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const body = await req.json();
             const { participantId } = body;
 
             if (!participantId) {
-                return NextResponse.json({ error: "Participant ID is required" }, { status: 400 });
+                return apiError("Participant ID is required", 400);
             }
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { isSysadmin: true, isBoardMember: true, isHouseholdLead: true, householdId: true }
             });
 
-            if (!user?.householdId) {
-                 return NextResponse.json({ error: "You must create a household first" }, { status: 400 });
-            }
-
-            const isLead = user.householdLeads.some(lead => lead.householdId === user.householdId);
-            if (!isLead && !user.sysadmin) {
-                return NextResponse.json({ error: "Only household leads or sysadmins can remove leads" }, { status: 403 });
-            }
-
-            const targetMember = await prisma.participant.findUnique({ where: { id: participantId } });
-            if (!targetMember || targetMember.householdId !== user.householdId) {
-                return NextResponse.json({ error: "Member not found in your household" }, { status: 404 });
-            }
-
-            const allLeads = await prisma.householdLead.findMany({
-                where: { householdId: user.householdId }
+            const targetMember = await prisma.person.findUnique({
+                where: { id: participantId },
+                select: { householdId: true, isHouseholdLead: true }
             });
-
-            if (allLeads.length <= 1 && allLeads.some(l => l.participantId === participantId)) {
-                return NextResponse.json({ error: "Cannot remove the last lead of a household." }, { status: 400 });
+            if (!targetMember) {
+                return apiError("Participant not found", 404);
+            }
+            const targetHouseholdId = targetMember.householdId;
+            if (!targetHouseholdId) {
+                return apiError("Member has no household", 400);
             }
 
-            const existingLead = await prisma.householdLead.findUnique({
-                where: {
-                    householdId_participantId: {
-                        householdId: user.householdId,
-                        participantId: participantId
-                    }
+            // Board members and sysadmins can remove a lead from ANY household — the
+            // mirror of the promote path in POST. A regular household lead can only
+            // remove leads within their own household.
+            const isPrivileged = !!user?.isSysadmin || !!user?.isBoardMember;
+            const isLeadOfTarget = !!user?.isHouseholdLead && user.householdId === targetHouseholdId;
+            if (!isPrivileged && !isLeadOfTarget) {
+                return apiError("Only household leads, board members, or sysadmins can remove leads", 403);
+            }
+
+            // Locked demote: refuses to drop the household's last lead, and
+            // serializes concurrent demotes so two can't both pass the guard and
+            // zero-lead the household (see removeHouseholdLead).
+            const result = await removeHouseholdLead(prisma, targetHouseholdId, participantId);
+            if (!result.removed) {
+                if (result.reason === "last_lead") {
+                    return apiError("Cannot remove the last lead of a household.", 400);
                 }
-            });
-
-            if (!existingLead) {
-                 return NextResponse.json({ error: "Member is not a lead" }, { status: 400 });
+                return apiError("Member is not a lead", 400);
             }
-
-            await prisma.householdLead.delete({
-                where: {
-                    householdId_participantId: {
-                        householdId: user.householdId,
-                        participantId: participantId
-                    }
-                }
-            });
 
             await prisma.auditLog.create({
                 data: {
                     actorId: userId,
                     action: "DELETE",
-                    tableName: "HouseholdLead",
-                    affectedEntityId: user.householdId,
+                    tableName: "Person",
+                    affectedEntityId: targetHouseholdId,
                     secondaryAffectedEntity: participantId,
-                    oldData: JSON.stringify(existingLead)
+                    oldData: { householdId: targetHouseholdId, personId: participantId, isHouseholdLead: true }
                 }
             });
 
             return NextResponse.json({ message: "Lead removed successfully." }, { status: 200 });
 
         } catch (error: unknown) {
-            console.error("Household Lead DELETE Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            logger.error("Household Lead DELETE Error:", error);
+            return apiError("Internal Server Error", 500);
         }
     }
 );

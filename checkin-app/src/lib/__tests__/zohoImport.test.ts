@@ -1,4 +1,18 @@
-import { parseUSDate, parseZoho, buildImport, type RawPerson, type RawFamily, type RawInput } from "@/lib/dev/zoho-import";
+import {
+    parseUSDate,
+    parseAddress,
+    parseZoho,
+    buildImport,
+    resolveEmailCollisions,
+    applyImport,
+    renderReport,
+    type RawPerson,
+    type RawFamily,
+    type RawInput,
+    type BuiltMember,
+    type BuiltHousehold,
+    type ImportReport,
+} from "@/lib/dev/zoho-import";
 
 const NOW = new Date(Date.UTC(2026, 5, 14, 12, 0, 0)); // 2026-06-14, matches the export era
 
@@ -45,6 +59,30 @@ describe("parseUSDate", () => {
     });
 });
 
+describe("parseAddress", () => {
+    it("splits the 4-part street/city/state/zip form", () => {
+        expect(parseAddress("8306 Farmington Ct, Austin, TX, 78736")).toEqual({
+            line1: "8306 Farmington Ct", line2: null, city: "Austin", state: "TX", postalCode: "78736",
+        });
+    });
+    it("uses the 5th part as line2 and normalizes full/lowercase state", () => {
+        expect(parseAddress("1301 Greenlawn Pkwy , Apt D, Blanco, Texas, 78606")).toEqual({
+            line1: "1301 Greenlawn Pkwy", line2: "Apt D", city: "Blanco", state: "TX", postalCode: "78606",
+        });
+    });
+    it("keeps zip+4 and does not treat a #suite in line1 as a separate field", () => {
+        expect(parseAddress("403 E. Bluebonnet Ln. #1733, Johnson City, Texas, 78636-2125")).toEqual({
+            line1: "403 E. Bluebonnet Ln. #1733", line2: null, city: "Johnson City", state: "TX", postalCode: "78636-2125",
+        });
+    });
+    it("degrades gracefully — never eats the street line", () => {
+        expect(parseAddress("388 Sawtooth, TX")).toEqual({ line1: "388 Sawtooth", line2: null, city: null, state: "TX", postalCode: null });
+        expect(parseAddress("126 Grapevine Ct")).toEqual({ line1: "126 Grapevine Ct", line2: null, city: null, state: null, postalCode: null });
+        expect(parseAddress("")).toEqual({ line1: null, line2: null, city: null, state: null, postalCode: null });
+        expect(parseAddress(null)).toEqual({ line1: null, line2: null, city: null, state: null, postalCode: null });
+    });
+});
+
 describe("buildImport", () => {
     function build(people: RawPerson[], families: RawFamily[], inputs: RawInput[]) {
         return buildImport(parseZoho({
@@ -66,7 +104,7 @@ describe("buildImport", () => {
         expect(households).toHaveLength(1);
         const h = households[0];
         expect(h.name).toBe("Spinosa Household");
-        expect(h.address).toBe("388 Sawtooth, TX");
+        expect(h.address).toEqual({ line1: "388 Sawtooth", line2: null, city: null, state: "TX", postalCode: null });
         expect(h.members).toHaveLength(2);
         expect(report.participants).toBe(2);
     });
@@ -140,7 +178,7 @@ describe("buildImport", () => {
         );
         expect(households).toHaveLength(1);
         expect(households[0].name).toBe("Kay Household");
-        expect(households[0].address).toBe("126 Grapevine Ct");
+        expect(households[0].address).toEqual({ line1: "126 Grapevine Ct", line2: null, city: null, state: null, postalCode: null });
         // Primary detected by name (email doesn't match the family key).
         const danae = households[0].members.find((m) => m.name === "Danae Kay")!;
         expect(danae.isPrimary).toBe(true);
@@ -161,13 +199,296 @@ describe("buildImport", () => {
         expect(members.find((m) => m.name === "Pending Two")!.lastBackgroundCheck).toBeNull();
     });
 
-    it("flags a minor listed as primary contact", () => {
+    it("flags a youth listed as primary contact", () => {
         const { report } = build(
             [person({ Name: "Ari Mizell", Email: "kailemizell@gmail.com", Primary_Contact_E_mail: "kailemizell@gmail.com", Date_Of_Birth: "03/04/2012", ID: "p1" })],
             [family({ Primary_Contact_E_mail: "kailemizell@gmail.com", Primary_Contact_Name: "Ari Mizell" })],
             [input({ Primary_Contact_E_mail: "kailemizell@gmail.com" })],
         );
-        expect(report.minorsAsPrimary).toHaveLength(1);
-        expect(report.minorsAsPrimary[0].name).toBe("Ari Mizell");
+        expect(report.youthAsPrimary).toHaveLength(1);
+        expect(report.youthAsPrimary[0].name).toBe("Ari Mizell");
+    });
+
+    it("declares the primary an adult only when Zoho has no DoB (age model, #606)", () => {
+        // Primary WITH a DoB → age derived, not declared. Child (non-primary, no DoB) → unknown, not declared.
+        const withDob = build(
+            [
+                person({ Name: "Pat Lee", Email: "pat@lee.com", Primary_Contact_E_mail: "pat@lee.com", Date_Of_Birth: "05/24/1983", ID: "p1" }),
+                person({ Name: "Kid Lee", Email: "", Primary_Contact_E_mail: "pat@lee.com", ID: "p2" }),
+            ],
+            [family({ Primary_Contact_E_mail: "pat@lee.com", Primary_Contact_Name: "Pat Lee" })],
+            [input({ Primary_Contact_E_mail: "pat@lee.com" })],
+        );
+        const pat = withDob.households[0].members.find((m) => m.name === "Pat Lee")!;
+        const kid = withDob.households[0].members.find((m) => m.name === "Kid Lee")!;
+        expect(pat.isDeclaredAdult).toBe(false); // has a DoB
+        expect(kid.isDeclaredAdult).toBe(false); // non-primary, unknown age
+
+        // Primary with NO DoB → declared adult, and surfaced in the report.
+        const noDob = build(
+            [person({ Name: "Sam Roe", Email: "sam@roe.com", Primary_Contact_E_mail: "sam@roe.com", ID: "p1" })],
+            [family({ Primary_Contact_E_mail: "sam@roe.com", Primary_Contact_Name: "Sam Roe" })],
+            [input({ Primary_Contact_E_mail: "sam@roe.com" })],
+        );
+        expect(noDob.households[0].members[0].isDeclaredAdult).toBe(true);
+        expect(noDob.report.flags.some((f) => f.includes("declared adults"))).toBe(true);
+    });
+
+    it("falls back to the oldest member by DOB as primary when no name or email match the household key", () => {
+        const { households } = build(
+            [
+                person({ Name: "Child Y", Email: "childy@nowhere.com", Primary_Contact_E_mail: "house@x.com", Date_Of_Birth: "07/25/2015", ID: "p1" }),
+                person({ Name: "Adult X", Email: "adultx@nowhere.com", Primary_Contact_E_mail: "house@x.com", Date_Of_Birth: "05/24/1980", ID: "p2" }),
+            ],
+            [], // no family row -> no Primary_Contact_Name to match
+            [],
+        );
+        const members = households[0].members;
+        expect(members.find((m) => m.name === "Adult X")!.isPrimary).toBe(true);
+        expect(members.find((m) => m.name === "Child Y")!.isPrimary).toBe(false);
+    });
+
+    it("falls back to the first row as primary when nobody has a name, email, or DOB match", () => {
+        const { households } = build(
+            [
+                person({ Name: "First Row", Email: "first@nowhere.com", Primary_Contact_E_mail: "house2@x.com", ID: "p1" }),
+                person({ Name: "Second Row", Email: "second@nowhere.com", Primary_Contact_E_mail: "house2@x.com", ID: "p2" }),
+            ],
+            [],
+            [],
+        );
+        const members = households[0].members;
+        expect(members.find((m) => m.name === "First Row")!.isPrimary).toBe(true);
+        expect(members.find((m) => m.name === "Second Row")!.isPrimary).toBe(false);
+    });
+});
+
+describe("resolveEmailCollisions fallback keeper selection", () => {
+    function builtMember(p: Partial<BuiltMember> = {}): BuiltMember {
+        return {
+            name: "Member",
+            email: null,
+            dob: null,
+            lastBackgroundCheck: null,
+            isPrimary: false,
+            isDeclaredAdult: false,
+            source: { zohoId: "", rawEmail: "", bgStatus: "", bgApprovalDate: "", bgApprovers: "" },
+            ...p,
+        };
+    }
+    function builtHousehold(p: Partial<BuiltHousehold> = {}): BuiltHousehold {
+        return {
+            groupKey: "key@x.com",
+            name: "Household",
+            address: { line1: null, line2: null, city: null, state: null, postalCode: null },
+            members: [],
+            membershipActive: false,
+            source: { familyZohoId: null, inputZohoId: null, rawPrimaryEmail: "", rawAddress: null },
+            ...p,
+        };
+    }
+    function emptyReport(): ImportReport {
+        return {
+            households: 0,
+            participants: 0,
+            activeMemberships: 0,
+            blankNamesSkipped: [],
+            emailCollisions: [],
+            youthAsPrimary: [],
+            secondaryAdultsNotPromoted: 0,
+            flags: [],
+        };
+    }
+
+    it("prefers a primary contact even when their household key doesn't match the colliding email", () => {
+        // Household A's primary uses the colliding email but their household key is different
+        // (their own Email differs from the family's Primary_Contact_E_mail). Household B's
+        // holder of the same email is a non-primary member. No ref satisfies (primary && groupKey===email).
+        const householdA = builtHousehold({
+            groupKey: "keyA@x.com",
+            members: [builtMember({ name: "Prim A", email: "shared@x.com", isPrimary: true }), builtMember({ name: "Sec A2", email: null })],
+        });
+        const householdB = builtHousehold({
+            groupKey: "keyB@x.com",
+            members: [builtMember({ name: "Prim B", email: "keyB@x.com", isPrimary: true }), builtMember({ name: "Sec B2", email: "shared@x.com" })],
+        });
+        const report = emptyReport();
+        resolveEmailCollisions([householdA, householdB], report);
+        expect(report.emailCollisions).toHaveLength(1);
+        expect(report.emailCollisions[0].keptFor).toContain("Prim A");
+        expect(householdA.members.find((m) => m.name === "Prim A")!.email).toBe("shared@x.com");
+        expect(householdB.members.find((m) => m.name === "Sec B2")!.email).toBeNull();
+    });
+
+    it("falls back to the first ref when no colliding member is a primary contact", () => {
+        const householdC = builtHousehold({
+            groupKey: "keyC@x.com",
+            members: [builtMember({ name: "Prim C", email: "keyC@x.com", isPrimary: true }), builtMember({ name: "Sec C2", email: "shared2@x.com" })],
+        });
+        const householdD = builtHousehold({
+            groupKey: "keyD@x.com",
+            members: [builtMember({ name: "Prim D", email: "keyD@x.com", isPrimary: true }), builtMember({ name: "Sec D2", email: "shared2@x.com" })],
+        });
+        const report = emptyReport();
+        resolveEmailCollisions([householdC, householdD], report);
+        expect(report.emailCollisions).toHaveLength(1);
+        expect(report.emailCollisions[0].keptFor).toContain("Sec C2");
+        expect(householdC.members.find((m) => m.name === "Sec C2")!.email).toBe("shared2@x.com");
+        expect(householdD.members.find((m) => m.name === "Sec D2")!.email).toBeNull();
+    });
+});
+
+describe("applyImport", () => {
+    function makeFakeTx() {
+        let nextHouseholdId = 1;
+        let nextParticipantId = 1;
+        let nextMembershipId = 1;
+        type Addr = { line1: string | null; line2?: string | null; city?: string | null; state?: string | null; postalCode?: string | null };
+        const households = new Map<number, { id: number; name: string } & Addr>();
+        const participants = new Map<
+            number,
+            { id: number; name: string; email: string | null; householdId: number; dateOfBirth: Date | null; lastBackgroundCheck: Date | null; isDeclaredAdult: boolean }
+        >();
+        const membershipsByHousehold = new Map<number, { id: number; householdId: number; status: string }>();
+        const auditLogs: { action: string; tableName: string; affectedEntityId: number; newData: Record<string, unknown> }[] = [];
+
+        const tx = {
+            auditLog: {
+                create: jest.fn(async ({ data }: { data: typeof auditLogs[number] }) => {
+                    auditLogs.push(data);
+                    return { id: auditLogs.length, ...data };
+                }),
+            },
+            household: {
+                create: jest.fn(async ({ data }: { data: { name: string } & Addr }) => {
+                    const id = nextHouseholdId++;
+                    const h = { id, ...data };
+                    households.set(id, h);
+                    return h;
+                }),
+                update: jest.fn(async ({ where, data }: { where: { id: number }; data: { name: string } & Addr }) => {
+                    const h = { ...households.get(where.id)!, ...data };
+                    households.set(where.id, h);
+                    return h;
+                }),
+            },
+            person: {
+                findUnique: jest.fn(async ({ where }: { where: { email: string } }) => [...participants.values()].find((p) => p.email === where.email) ?? null),
+                findFirst: jest.fn(
+                    async ({ where }: { where: { householdId: number; name: string } }) =>
+                        [...participants.values()].find((p) => p.householdId === where.householdId && p.name === where.name) ?? null,
+                ),
+                create: jest.fn(async ({ data }: { data: Omit<ReturnType<typeof participants.get> & object, "id"> }) => {
+                    const id = nextParticipantId++;
+                    const p = { id, ...(data as object) } as { id: number; name: string; email: string | null; householdId: number; dateOfBirth: Date | null; lastBackgroundCheck: Date | null; isDeclaredAdult: boolean };
+                    participants.set(id, p);
+                    return p;
+                }),
+                update: jest.fn(async ({ where, data }: { where: { id: number }; data: object }) => {
+                    const p = { ...participants.get(where.id)!, ...data };
+                    participants.set(where.id, p);
+                    return p;
+                }),
+            },
+            orgMembership: {
+                findUnique: jest.fn(async ({ where }: { where: { householdId: number } }) => membershipsByHousehold.get(where.householdId) ?? null),
+                upsert: jest.fn(async ({ where, create }: { where: { householdId: number }; create: { status: string } }) => {
+                    const existing = membershipsByHousehold.get(where.householdId);
+                    if (existing) {
+                        existing.status = "ACTIVE";
+                        return existing;
+                    }
+                    const m = { id: nextMembershipId++, householdId: where.householdId, status: create.status };
+                    membershipsByHousehold.set(where.householdId, m);
+                    return m;
+                }),
+            },
+        };
+
+        return { tx: tx as unknown as Parameters<typeof applyImport>[0], households, participants, membershipsByHousehold, auditLogs };
+    }
+
+    function buildOne() {
+        return buildImport(
+            parseZoho({
+                list: {
+                    Full_Member_List: [
+                        person({
+                            Name: "Sam Lee",
+                            Email: "sam@lee.com",
+                            Primary_Contact_E_mail: "sam@lee.com",
+                            Date_Of_Birth: "01/01/1980",
+                            BG_Check_Status: "Approved",
+                            Background_Check_Approval_Date: "08/26/2024",
+                            ID: "p1",
+                        }),
+                        person({ Name: "Kid Lee", Email: "", Primary_Contact_E_mail: "sam@lee.com", Date_Of_Birth: "01/01/2015", ID: "p2" }),
+                    ],
+                },
+                families: { All_Member_Families: [family({ Primary_Contact_E_mail: "sam@lee.com", Primary_Contact_Name: "Sam Lee" })] },
+                inputs: {
+                    All_Member_Inputs: [input({ Primary_Contact_E_mail: "sam@lee.com", Payment_Status: "Completed", Membership_Agreement_Status: "Completed" })],
+                },
+            }),
+            NOW,
+        );
+    }
+
+    it("creates a new household, participants, and an active membership when nothing exists yet", async () => {
+        const { tx, auditLogs } = makeFakeTx();
+        const built = buildOne();
+        const res = await applyImport(tx, built, 1);
+        expect(res.householdsCreated).toBe(1);
+        expect(res.householdsUpdated).toBe(0);
+        expect(res.participantsCreated).toBe(2);
+        expect(res.membershipsActivated).toBe(1);
+        // The approved member gets a backgroundCheck note; the child (no approval) doesn't.
+        const samAudit = auditLogs.find((a) => a.tableName === "Participant" && (a.newData as { name?: string }).name === "Sam Lee");
+        const kidAudit = auditLogs.find((a) => a.tableName === "Participant" && (a.newData as { name?: string }).name === "Kid Lee");
+        expect(samAudit!.newData).toHaveProperty("backgroundCheck");
+        expect(kidAudit!.newData).not.toHaveProperty("backgroundCheck");
+    });
+
+    it("updates an existing household/participants by email and name, and doesn't double-count an already-ACTIVE membership", async () => {
+        const { tx, households, participants, membershipsByHousehold } = makeFakeTx();
+        households.set(1, { id: 1, name: "Old Name", line1: null });
+        participants.set(1, { id: 1, name: "Sam Lee", email: "sam@lee.com", householdId: 1, dateOfBirth: null, lastBackgroundCheck: null, isDeclaredAdult: false });
+        participants.set(2, { id: 2, name: "Kid Lee", email: null, householdId: 1, dateOfBirth: null, lastBackgroundCheck: null, isDeclaredAdult: false });
+        membershipsByHousehold.set(1, { id: 1, householdId: 1, status: "ACTIVE" });
+
+        const res = await applyImport(tx, buildOne(), 1);
+        expect(res.householdsCreated).toBe(0);
+        expect(res.householdsUpdated).toBe(1);
+        expect(res.participantsCreated).toBe(0);
+        expect(res.participantsUpdated).toBe(2); // Sam matched by email, Kid matched by householdId+name
+        expect(res.membershipsActivated).toBe(0); // was already ACTIVE
+    });
+});
+
+describe("renderReport", () => {
+    it("renders every section, including both branches of the blank-name-row and primary-name fallbacks", () => {
+        const report: ImportReport = {
+            households: 2,
+            participants: 5,
+            activeMemberships: 1,
+            blankNamesSkipped: [
+                { zohoId: "z1", householdKey: "keyA", householdPrimaryName: "Primary A", rowEmail: "a@b.com", rowDob: "01/01/2000" },
+                { zohoId: "z2", householdKey: "keyB", householdPrimaryName: "", rowEmail: "", rowDob: "" },
+            ],
+            emailCollisions: [{ email: "dup@x.com", keptFor: "Keeper (keyA)", nulledFor: ["Loser (keyB)"] }],
+            youthAsPrimary: [{ name: "Kid", dob: "2015-01-01", householdKey: "keyA" }],
+            secondaryAdultsNotPromoted: 3,
+            flags: ["Some flag message"],
+        };
+        const text = renderReport(report);
+        expect(text).toContain("Households:          2");
+        expect(text).toContain("Participants:        5");
+        expect(text).toContain("Active memberships:  1");
+        expect(text).toContain('person ID z1 in household "keyA" (primary: Primary A) — email a@b.com, dob 01/01/2000');
+        expect(text).toContain('person ID z2 in household "keyB" (no family primary on file) — no name/email/dob on the row');
+        expect(text).toContain("dup@x.com: kept for Keeper (keyA); nulled for Loser (keyB)");
+        expect(text).toContain("Kid (DOB 2015-01-01, household keyA)");
+        expect(text).toContain("Secondary adults not promoted to lead: 3");
+        expect(text).toContain("! Some flag message");
     });
 });

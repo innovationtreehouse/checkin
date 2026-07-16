@@ -2,9 +2,17 @@ name: Deploy prod
 
 # Deploy the checkin app to the AWS prod environment when a release is
 # published in this repo. Mirrors deploy-dev.yml step-for-step (build an ARM64
-# image, run DB migrations, roll out the ECS service) with three differences:
+# image, run DB migrations, roll out the ECS service) with these differences:
 #   - trigger: a published GitHub release instead of a merge to main
-#   - guard:   the released commit must have a successful CI run
+#   - guard:   RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
+#              against the released tag — see the `validate` job. A release can
+#              be cut from ANY commit, and stale or partial check status on that
+#              commit is not trustworthy, so we revalidate from scratch rather
+#              than querying past check-runs. `deploy` needs `validate`.
+#   - gate:    `deploy` targets the `production` GitHub Environment, which holds
+#              the human-approval rule (required reviewers — one approval). The
+#              validate job runs first (no environment), so the reviewer approves
+#              a release that has already gone green on its own tag.
 #   - report:  a run step summary (releases have no comment thread to post to)
 #
 # Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-prod
@@ -20,9 +28,15 @@ on:
     types: [published]
 
 permissions:
-  id-token: write   # assume the deploy role via OIDC
-  contents: read    # checkout the released tag
-  checks: read      # verify the released commit has green CI
+  id-token: write   # assume the deploy role via OIDC (deploy job only)
+  contents: read    # checkout the released tag (validate + deploy)
+  packages: write   # push the image to ghcr.io (deploy job)
+  # checks: write is not used by THIS workflow — it's the ceiling for the
+  # reusable ci.yml call: its `test` job requests checks: write (dorny
+  # test-reporter), and a called job may never exceed the caller's grants.
+  # Without this line the run dies at startup_failure with zero jobs —
+  # which is exactly how v1.0.0's first deploy attempt failed (2026-07-14).
+  checks: write
 
 concurrency:
   group: checkin-deploy-prod
@@ -30,18 +44,61 @@ concurrency:
 
 env:
   AWS_REGION: us-east-2
-  ECR_REGISTRY: 639595353568.dkr.ecr.us-east-2.amazonaws.com
-  ECR_REPOSITORY: checkin-prod
-  ECS_CLUSTER: checkin-prod
+  # The fleet standardized on ghcr.io (dev, arbor, s-read, bootstrap all push
+  # there; the prod task defs pull via the shared ghcr-pull-credentials
+  # secret). The ECR registry this workflow originally targeted is vestigial.
+  IMAGE_REPO: ghcr.io/innovationtreehouse/checkin-prod
+  # Prod runs on the shared Managed-Instances cluster, not a dedicated
+  # checkin-prod cluster (infra #104 destroyed that one). Names below come from
+  # the infra repo — see the "prod infra" note in the PR description.
+  ECS_CLUSTER: treehouse-prod
   ECS_SERVICE: checkin-prod
+  # Migrations run on FARGATE_SPOT, not the prepaid c6g (a one-off 512-MiB task
+  # can't place there while the wiki is awake — the v1.0.1 wedge). awsvpc needs
+  # explicit networking: the default-VPC public subnets + the checkin-prod
+  # service SG (Aurora ingress: infra network module, database_from_checkin_prod;
+  # public IP for the ghcr pull — no NAT). Values come from the infra repo
+  # (live/mgmt + modules/network); update together if infra changes them.
+  MIGRATE_SUBNETS: subnet-0597513f1c0c3173e,subnet-0a67d72908bffbcd4,subnet-0c84ac2840be3a2bc
+  MIGRATE_SG: sg-0a37ac72f79b2fd5b # checkin-prod-service
   APP_TASK_FAMILY: checkin-prod
   MIGRATE_TASK_FAMILY: checkin-migrate-prod
   DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-prod
   APP_URL: https://ops.innovationtreehouse.org
 
 jobs:
+  # Re-run the FULL CI pipeline (lint, type-check, migration-drift, Jest, the
+  # security contract tests, AND the deploy build + boot/smoke) against the exact
+  # released tag. This is the H1 fix: a release tag can point at any commit, and
+  # we no longer trust whatever check status happened to exist there — we prove
+  # the released code green from scratch before a human is even asked to approve.
+  validate:
+    name: Revalidate CI on the released tag
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ github.event.release.tag_name }}
+    secrets: inherit
+
+  # Release gate: a release may apply AT MOST ONE new database migration.
+  # The rule lives in the callable migration-release-gate.yml — the same
+  # workflow runs advisory (allowed to fail) on every PR, so the "coalesce
+  # before preparing a release" signal shows up long before this blocking
+  # call. Passing exclude_tag makes the gate compare against the release's
+  # true predecessor; with no previous release, every migration counts.
+  #
+  # This is not a step inside `validate`: that job is a reusable-workflow
+  # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
+  # own to add to. Runs as its own job instead; `deploy` needs both.
+  migration-release-gate:
+    name: Release gate — at most 1 new migration
+    uses: ./.github/workflows/migration-release-gate.yml
+    with:
+      ref: ${{ github.event.release.tag_name }}
+      exclude_tag: ${{ github.event.release.tag_name }}
+
   deploy:
     name: Build, migrate, roll out
+    needs: [validate, migration-release-gate]   # do not build/migrate/roll out unless the tag re-passed all of CI and the release gate
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production
@@ -62,44 +119,35 @@ jobs:
           echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
           echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
 
-      - name: Require green CI on the released commit
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SHA: ${{ steps.vars.outputs.sha }}
-        run: |
-          set -euo pipefail
-          # A release can be cut from any commit; only ship ones CI has blessed.
-          CONCLUSION=$(gh api \
-            "repos/${{ github.repository }}/commits/$SHA/check-runs?check_name=Run%20Tests" \
-            --jq '[.check_runs[].conclusion] | first // "missing"')
-          echo "CI conclusion for $SHA: $CONCLUSION"
-          if [ "$CONCLUSION" != "success" ]; then
-            echo "::error::Released commit $SHA has no successful CI run (got: $CONCLUSION). Refusing to deploy."
-            exit 1
-          fi
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Log in to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push image
         id: build
         env:
-          IMAGE: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.sha }}
-          IMAGE_TAGGED: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.vars.outputs.tag }}
-          # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
-          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
+          IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
+          IMAGE_TAGGED: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.tag }}
         run: |
           set -euo pipefail
           # Native arm64 runner -> a plain build produces the arm64 image the
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
+          # -f: there is no root Dockerfile — the app image builds from
+          # checkin-app/Dockerfile with the repo root as context, exactly like
+          # deploy-dev.yml (the release-scrub found this job would die here).
           docker build \
-            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
+            --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_RELEASE_TAG="${{ steps.vars.outputs.tag }}" \
+            -f checkin-app/Dockerfile \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
           docker push "$IMAGE"
           docker push "$IMAGE_TAGGED"
@@ -127,12 +175,6 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered migrate task def: $MIGRATE_ARN"
 
-          # Reuse the service's own network config (subnets / SG / public IP) so
-          # the one-off task lands exactly where the service runs.
-          NETWORK_CONFIG=$(aws ecs describe-services \
-            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
-            --query 'services[0].networkConfiguration' --output json)
-
           # The shared Aurora cluster is Serverless v2 with min capacity 0 and
           # auto-pause: if it's idle at deploy time, the first connection races
           # the ~30s resume and Prisma fails fast with P1001. Override the
@@ -142,16 +184,23 @@ jobs:
             "containerOverrides": [{
               "name": "checkin-migrate",
               "command": ["sh", "-c",
-                "for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+                "cd checkin-app && for i in 1 2 3 4 5; do npx prisma migrate deploy && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
             }]
           }
           EOF
 
+          # treehouse-prod is ECS Managed Instances: the app + migrate task defs
+          # are host-networked/EC2-compatible here (modules/checkin/compute.tf),
+          # and the service itself has no networkConfiguration (its dynamic
+          # block is empty on Managed Instances) — unlike dev's Fargate/awsvpc
+          # path, there is no network config to copy and no FARGATE launch type
+          # to use. Launch via the cluster's capacity provider instead, with no
+          # --network-configuration at all.
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --launch-type FARGATE \
-            --network-configuration "$NETWORK_CONFIG" \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+            --network-configuration "awsvpcConfiguration={subnets=[$MIGRATE_SUBNETS],securityGroups=[$MIGRATE_SG],assignPublicIp=ENABLED}" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
           echo "Migration task: $TASK_ARN"
@@ -162,8 +211,22 @@ jobs:
             --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
             --query 'tasks[0].containers[0].exitCode' --output text)
           echo "Migration exit code: $EXIT_CODE"
+
+          # Surface the container's own output either way — without this, a failure
+          # only shows the exit code here and the real Prisma error (P3009 etc.)
+          # hides in CloudWatch, which is how the 2026-07-02 P3009 wedge went
+          # undiagnosed for a day (mirrors deploy-dev.yml).
+          TASK_ID="${TASK_ARN##*/}"
+          echo "--- migrate container logs (/ecs/checkin-migrate-prod) ---"
+          aws logs get-log-events \
+            --log-group-name /ecs/checkin-migrate-prod \
+            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
+            --start-from-head --limit 200 \
+            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          echo "--- end migrate container logs ---"
+
           if [ "$EXIT_CODE" != "0" ]; then
-            echo "::error::Database migration failed (exit $EXIT_CODE)"
+            echo "::error::Database migration failed (exit $EXIT_CODE) — see migrate container logs above"
             exit 1
           fi
 
@@ -188,13 +251,36 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered app task def: $APP_ARN"
 
+          # --desired-count 1: the service is STAGED at 0 until the first
+          # release (infra sets desired_count = 0 with ignore_changes on it —
+          # "the deploy pipeline scales this up when it ships a real image").
+          # Without this, update-service keeps 0, a 0/0 service is instantly
+          # "stable", and the run goes green while serving nothing.
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
-            --task-definition "$APP_ARN" >/dev/null
+            --task-definition "$APP_ARN" \
+            --desired-count 1 >/dev/null
 
           echo "Waiting for the service to reach steady state..."
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
           echo "Service is stable."
+
+      - name: Smoke test the live app
+        run: |
+          set -euo pipefail
+          # A real probe of the DEPLOYED service (CI's boot/smoke checks the
+          # image, not production). The app answers 200 or an auth redirect;
+          # retries cover target registration + first boot after scale-up.
+          for i in $(seq 1 12); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
+            echo "attempt $i: $APP_URL -> HTTP $CODE"
+            case "$CODE" in
+              200|301|302|307|308) echo "Smoke OK."; exit 0 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
+          exit 1
 
       - name: Report result
         if: always()
@@ -210,7 +296,7 @@ jobs:
             {
               echo "### ✅ Released $TAG to prod"
               echo "Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL)."
-              echo "- Image: \`$ECR_REPOSITORY:$TAG\`"
+              echo "- Image: \`$IMAGE_REPO:$TAG\`"
               echo "- Migrations: applied · Service: stable"
               echo "- [Release]($RELEASE_URL) · [Deploy run]($RUN_URL)"
             } >> "$GITHUB_STEP_SUMMARY"

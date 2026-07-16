@@ -48,7 +48,8 @@ Copy `.env.example` to `.env` (git-ignored) and fill it in:
 | --- | --- |
 | `SHOPIFY_READ_DATABASE_URL` | Connection string for a **local Postgres**. |
 | `SHOPIFY_SHOP` | `your-store.myshopify.com`. |
-| `SHOPIFY_ADMIN_TOKEN` | Admin API access token (`shpat_...`). |
+| `SHOPIFY_ADMIN_TOKEN` | Static Admin API access token (`shpat_...`). Local/legacy shortcut — see below. |
+| `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` | Dev Dashboard app credentials. Set these **instead of** `SHOPIFY_ADMIN_TOKEN` to have the process mint its own token (required for the deployed Lambda, since nobody is around to hand-paste a fresh one every ~24h). |
 | `SHOPIFY_API_VERSION` | API version to pin, e.g. `2025-07`. |
 | `STORE_ID` | Seed used **only** by offline `inject` (defaults to `SHOPIFY_SHOP`). Real syncs ignore it and derive `store_id` from the live store's `myshopifyDomain` (recorded in the `store` registry table); a mismatch is logged as a warning. |
 | `CUTOVER_DATE` | ISO date — backfill starts here and moves forward. |
@@ -76,21 +77,34 @@ curl -X POST "https://<shop>.myshopify.com/admin/oauth/access_token" \
   -d "grant_type=client_credentials&client_id=<id>&client_secret=<secret>"
 ```
 
-The response's `access_token` (an `shpat_…` value) goes into `SHOPIFY_ADMIN_TOKEN`.
-Because it expires in ~24h, it's fine for local testing but for the deployed Lambda
-you'll want to fetch it programmatically each run from the client id/secret (a small
-addition to `shopify/client.ts`) rather than storing a static token. The client id
-and secret live in the app's Settings in the Dev Dashboard — never commit them or
-`.env`.
+The response's `access_token` (an `shpat_…` value) goes into `SHOPIFY_ADMIN_TOKEN` for
+**local testing** — quick, but it expires in ~24h so it's a dead end for anything
+unattended.
 
 > Legacy custom apps (stores that still offer "Develop apps" in the admin) instead
 > show a static Admin API access token you can reveal once and paste into `.env`.
 
-### Production (Lambda — wiring deferred)
-The same variable names are read from `process.env`. In Lambda, inject them from
-**AWS Secrets Manager / SSM Parameter Store** (e.g. via the Secrets Manager Lambda
-extension or environment mapping) — the code does not read AWS APIs directly, it
-only reads `process.env`. Route `SHOPIFY_READ_DATABASE_URL` through **RDS Proxy / pgBouncer**
+**For the deployed Lambda**, skip the static token: set `SHOPIFY_CLIENT_ID` +
+`SHOPIFY_CLIENT_SECRET` instead and leave `SHOPIFY_ADMIN_TOKEN` unset. `shopify/client.ts`
+then mints its own token via the client-credentials grant on first use, caches it
+in-memory (refreshing a few minutes before its ~24h expiry so a warm container never
+serves a request on an about-to-expire token), and on an unexpected `401` mid-run
+(a warm container holding a token that's since expired or been rotated) invalidates the
+cache and re-mints once before retrying. Precedence is static-token-first: if
+`SHOPIFY_ADMIN_TOKEN` is set, it's always used verbatim and the client-credentials path
+never runs — so a `.env` with a static token keeps working unchanged. The client id and
+secret live in the app's Settings in the Dev Dashboard — never commit them or `.env`.
+
+*(No refresh token or encrypted token DB — Shopify's client-credentials grant doesn't
+issue one; renewing is just re-running the same client_id/client_secret exchange, so an
+in-memory cache is the whole mechanism. #237)*
+
+### Production (Lambda — deploy infra wiring deferred, see #234/#235)
+The same variable names are read from `process.env`. In Lambda, inject `SHOPIFY_CLIENT_ID`
+/ `SHOPIFY_CLIENT_SECRET` (not a static `SHOPIFY_ADMIN_TOKEN`) from **AWS Secrets
+Manager / SSM Parameter Store** (e.g. via the Secrets Manager Lambda extension or
+environment mapping) — the code does not read AWS APIs directly, it only reads
+`process.env`. Route `SHOPIFY_READ_DATABASE_URL` through **RDS Proxy / pgBouncer**
 with `?pgbouncer=true&connection_limit=1` for connection pooling across warm
 invocations. No secret is ever committed to the repo.
 
@@ -162,6 +176,11 @@ order status transitions (cancellation/refund), and watermark advancement.
 
 ## Deployment (Terraform)
 
+> **Ops runbook: [DEPLOY.md](DEPLOY.md)** — the ordered go-live checklist (Shopify app
+> scopes, init.sql, secrets, first deploy via the `deploy-s-read` workflow, one-time
+> backfill, verification). The shipped architecture is a **scheduled ECS task**
+> (infra#112) built from [`Dockerfile`](Dockerfile), not the Lambda sketch below.
+
 When this is deployed, **Terraform provisions the infrastructure** — it does **not** run
 schema migrations (those are a separate deploy-time step; see
 [FUTUREWORK.md](FUTUREWORK.md)). What Terraform owns:
@@ -188,12 +207,15 @@ schema migrations (those are a separate deploy-time step; see
 
 ## Status / future work
 
-See [FUTUREWORK.md](FUTUREWORK.md) for deferred items: poison-record skip-and-flag DLQ and
-programmatic token acquisition. (Replay / reset-watermark / reingest-bulk admin operations
-and the stale-run reaper are **built** — see [`s-replay-function`](../s-replay-function) and
-the stale-run reaper above.)
+See [FUTUREWORK.md](FUTUREWORK.md) for deferred items: poison-record skip-and-flag DLQ.
+(Replay / reset-watermark / reingest-bulk admin operations, the stale-run reaper, and
+programmatic token acquisition (#237) are **built** — see
+[`s-replay-function`](../s-replay-function), the stale-run reaper above, and "Getting the
+token" above.)
 
-- Deployment infra (EventBridge schedule, RDS Proxy, packaging) is **not** wired yet.
+- Deployment: packaging ([`Dockerfile`](Dockerfile)), the manual deploy workflow
+  (`.github/workflows/deploy-s-read.yml`), and the ops runbook ([DEPLOY.md](DEPLOY.md))
+  are in this repo; the AWS resources (ECR/ECS/EventBridge/secrets) are infra#112.
 - Cross-database de-duplication against `income-app` is **future work**; this
   function persists the identifiers income-app records (legacy order id, order name,
   payout id) so that reconciliation can be deterministic later.
