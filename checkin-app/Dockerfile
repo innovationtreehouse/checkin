@@ -30,6 +30,10 @@ RUN npm -w checkin-app exec -- prisma generate
 # build-time). Empty in local/ad-hoc builds -> the footer shows "dev".
 ARG NEXT_PUBLIC_GIT_SHA
 ENV NEXT_PUBLIC_GIT_SHA=${NEXT_PUBLIC_GIT_SHA}
+# Release tag, passed by the prod deploy workflow only -> footer shows
+# "<tag> <sha>" on prod. Empty on dev/local builds -> footer shows the hash alone.
+ARG NEXT_PUBLIC_RELEASE_TAG
+ENV NEXT_PUBLIC_RELEASE_TAG=${NEXT_PUBLIC_RELEASE_TAG}
 # Needed for GitHub to build the image, overwritten by secrets in AWS at run time.
 # (next build imports auth-options.ts, which requires these to exist; the values
 # are never used — every route is dynamic — and never reach the runner stage.)
