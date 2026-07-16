@@ -194,9 +194,14 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered app task def: $APP_ARN"
 
+          # --desired-count 1: with scale-to-zero (infra#107) dev normally sits at
+          # desired 0, where services-stable is vacuously true and a crash-looping
+          # image would deploy "green". Booting one task makes the wait real; the
+          # scaler tears it back down after the idle window.
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
-            --task-definition "$APP_ARN" >/dev/null
+            --task-definition "$APP_ARN" \
+            --desired-count 1 >/dev/null
 
           echo "Waiting for the service to reach steady state..."
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
