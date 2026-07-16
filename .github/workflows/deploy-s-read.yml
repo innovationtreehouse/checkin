@@ -198,10 +198,14 @@ jobs:
               "for i in 1 2 3 4 5; do npm run db:deploy -w @inventory/s-ingest-core && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"
             ]}]}' > "$RUNNER_TEMP/migrate-overrides.json"
 
+          # FARGATE_SPOT strategy (associated on the cluster — infra#131), not
+          # on-demand --launch-type: matches the checkin migrate tasks. A Spot
+          # reclaim mid-migration fails the step loudly and a rerun is clean —
+          # one small migration per release, gated per database.
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --launch-type FARGATE \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
             --network-configuration "$NETWORK_CONFIG" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
