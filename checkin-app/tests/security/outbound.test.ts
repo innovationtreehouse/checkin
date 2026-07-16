@@ -127,7 +127,7 @@ describe('outboundCall — secret is unconditionally stripped', () => {
 
 describe('outboundCall — nested relations', () => {
     it('strips a nested relation by ITS model tiers, not the parent key', async () => {
-        // pii surface: Household.line1 is 'personal' → must be stripped even
+        // pii surface: Household.line1 is 'internal' → must be stripped even
         // though the parent Person carries pii the surface allows.
         const out = (await capture('email.admin-notify', {
             Person: {
@@ -137,7 +137,7 @@ describe('outboundCall — nested relations', () => {
                 household: {
                     id: 2,
                     name: 'Home',        // public → kept
-                    line1: 'private st', // personal → stripped
+                    line1: 'private st', // internal → stripped
                 },
             },
         })) as { Person: Record<string, unknown> };

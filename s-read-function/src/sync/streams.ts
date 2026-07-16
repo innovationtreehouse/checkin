@@ -53,7 +53,11 @@ export async function syncOrders(
   syncRunId?: bigint,
 ): Promise<StreamSummary> {
   const since = await readSinceIso(prisma, storeId, ObjectType.ORDER, cfg.cutoverDate);
-  const filter = `updated_at:>=${since} status:any`;
+  // Datetimes in Shopify search filters MUST be quoted: ':' is the syntax's
+  // own separator, so an unquoted ISO value truncates at 'T00' — the payments
+  // API rejects it (first real-store backfill, 2026-07-14); the orders parser
+  // silently tolerates the truncation, which is worse.
+  const filter = `updated_at:>='${since}' status:any`;
   logger.info("sync orders", { since, source });
   const summary = await ingestStream(prisma, storeId, ObjectType.ORDER, source, fetchOrders(client, filter), syncRunId);
   await advanceWatermark(prisma, storeId, ObjectType.ORDER, summary.maxOccurredAt);
@@ -69,7 +73,7 @@ export async function syncPayouts(
   syncRunId?: bigint,
 ): Promise<StreamSummary> {
   const since = await readSinceIso(prisma, storeId, ObjectType.PAYOUT, cfg.cutoverDate);
-  const filter = `issued_at:>=${since}`;
+  const filter = `issued_at:>='${since}'`;
   logger.info("sync payouts", { since, source });
   const summary = await ingestStream(prisma, storeId, ObjectType.PAYOUT, source, fetchPayouts(client, filter), syncRunId);
   await advanceWatermark(prisma, storeId, ObjectType.PAYOUT, summary.maxOccurredAt);
@@ -88,7 +92,7 @@ export async function syncBalanceTransactions(
   // `processed_at` (the search field) is the same instant as the node's `transactionDate`,
   // which is what occurredAt/the watermark tracks — filter axis == watermark axis. See
   // BALANCE_TRANSACTIONS_QUERY for the schema verification.
-  const filter = `processed_at:>=${since}`;
+  const filter = `processed_at:>='${since}'`;
   logger.info("sync balance transactions", { since, source });
   const summary = await ingestStream(
     prisma,

@@ -93,7 +93,7 @@ describe("syncOrders", () => {
 
     const summary = await syncOrders(prismaSentinel, client, "store-1", cfg, EventSource.INCREMENTAL, 7n);
 
-    expect(vi.mocked(fetchOrders).mock.calls[0][1]).toBe("updated_at:>=2026-02-01T00:00:00.000Z status:any");
+    expect(vi.mocked(fetchOrders).mock.calls[0][1]).toBe("updated_at:>='2026-02-01T00:00:00.000Z' status:any");
     expect(advanceWatermark).toHaveBeenCalledWith(prismaSentinel, "store-1", ObjectType.ORDER, occurredAt);
     expect(summary.count).toBe(1);
   });
@@ -106,7 +106,7 @@ describe("syncPayouts", () => {
 
     await syncPayouts(prismaSentinel, client, "store-1", cfg, EventSource.BACKFILL);
 
-    expect(vi.mocked(fetchPayouts).mock.calls[0][1]).toBe("issued_at:>=2026-02-01T00:00:00.000Z");
+    expect(vi.mocked(fetchPayouts).mock.calls[0][1]).toBe("issued_at:>='2026-02-01T00:00:00.000Z'");
     expect(advanceWatermark).toHaveBeenCalledWith(prismaSentinel, "store-1", ObjectType.PAYOUT, expect.anything());
   });
 });
@@ -118,7 +118,7 @@ describe("syncBalanceTransactions", () => {
 
     await syncBalanceTransactions(prismaSentinel, client, "store-1", cfg, EventSource.INCREMENTAL);
 
-    expect(vi.mocked(fetchBalanceTransactions).mock.calls[0][1]).toBe("processed_at:>=2026-02-01T00:00:00.000Z");
+    expect(vi.mocked(fetchBalanceTransactions).mock.calls[0][1]).toBe("processed_at:>='2026-02-01T00:00:00.000Z'");
     expect(advanceWatermark).toHaveBeenCalledWith(prismaSentinel, "store-1", ObjectType.BALANCE_TXN, expect.anything());
   });
 

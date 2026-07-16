@@ -1,0 +1,148 @@
+# One-off, human-triggered ledger reconcile for the DEV database after a
+# migration-coalesce PR merges — the manual step MIGRATION_COALESCE_FLOW.md
+# documents (reactive path): deploy-dev's migrate step fails loudly once
+# (P3018/P3009), this workflow applies the baseline's reconcile.sql to the
+# _prisma_migrations ledger, then the failed deploy job gets re-run.
+#
+# Runs the same one-off ECS task pattern as deploy-dev.yml's migrate step,
+# against the LATEST checkin-migrate-dev task-definition revision — the failed
+# deploy already registered a revision pointing at the image built from the
+# coalesce merge commit, so reconcile.sql exists inside that image.
+#
+# DEV-ONLY, enforced in layers (reconcile.sql wipes the _prisma_migrations
+# ledger, so pointing this at the wrong database would wedge that env):
+#   1. IAM: the workflow can only assume checkin-deploy-dev, whose iam:PassRole
+#      is scoped to the dev task/execution roles — RunTask on a prod task
+#      definition fails at PassRole even though ecs:RunTask itself is "*".
+#   2. Preflight step: asserts the assumed identity, the task definition's
+#      family/roles, and that its DATABASE_URL secret is checkin-dev's.
+#   3. In-container guard: refuses to execute unless current_database() is
+#      checkin_dev (the DB name itself, from inside the task's own network
+#      and credentials — the closest possible check to the blast radius).
+name: Reconcile dev DB ledger
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: "Coalesce baseline migration name (directory under prisma/migrations)"
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+  ECS_CLUSTER: checkin-dev
+  ECS_SERVICE: checkin-dev
+  MIGRATE_TASK_FAMILY: checkin-migrate-dev
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
+  DEV_DB_SECRET_SUFFIX: "secret:checkin-dev/database-url"
+  DEV_DB_NAME: checkin_dev
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Validate baseline input
+        env:
+          BASELINE: ${{ inputs.baseline }}
+        run: |
+          set -euo pipefail
+          # Strict shape (exactly what coalesce-migrations.ts produces). Also the
+          # injection guard: $BASELINE lands inside the container's sh -c command.
+          if ! printf '%s' "$BASELINE" | grep -Eq '^[0-9]{14}_[a-z0-9_]+$'; then
+            echo "::error::baseline '$BASELINE' does not look like a migration directory name (expected <14-digit timestamp>_<snake_case>)"
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: "Preflight: verify everything points at DEV"
+        run: |
+          set -euo pipefail
+
+          IDENTITY_ARN=$(aws sts get-caller-identity --query Arn --output text)
+          echo "Assumed identity: $IDENTITY_ARN"
+          case "$IDENTITY_ARN" in
+            *"assumed-role/checkin-deploy-dev/"*) ;;
+            *) echo "::error::identity is not the checkin-deploy-dev role"; exit 1 ;;
+          esac
+
+          TASKDEF=$(aws ecs describe-task-definition \
+            --task-definition "$MIGRATE_TASK_FAMILY" \
+            --query taskDefinition --output json)
+
+          FAMILY=$(jq -r '.family' <<<"$TASKDEF")
+          TASK_ROLE=$(jq -r '.taskRoleArn' <<<"$TASKDEF")
+          EXEC_ROLE=$(jq -r '.executionRoleArn' <<<"$TASKDEF")
+          DB_SECRET=$(jq -r '.containerDefinitions[0].secrets[] | select(.name=="DATABASE_URL") | .valueFrom' <<<"$TASKDEF")
+          PLAINTEXT_DB=$(jq -r '[.containerDefinitions[0].environment[]? | select(.name=="DATABASE_URL")] | length' <<<"$TASKDEF")
+
+          echo "family=$FAMILY taskRole=$TASK_ROLE execRole=$EXEC_ROLE dbSecret=$DB_SECRET"
+
+          [ "$FAMILY" = "checkin-migrate-dev" ] || { echo "::error::task definition family is not checkin-migrate-dev"; exit 1; }
+          case "$TASK_ROLE" in *"checkin-ecs-task-role-dev"*) ;; *) echo "::error::taskRoleArn is not the dev task role: $TASK_ROLE"; exit 1 ;; esac
+          case "$EXEC_ROLE" in *"checkin-ecs-execution-role-dev"*) ;; *) echo "::error::executionRoleArn is not the dev execution role: $EXEC_ROLE"; exit 1 ;; esac
+          case "$DB_SECRET" in *"$DEV_DB_SECRET_SUFFIX"*) ;; *) echo "::error::DATABASE_URL secret is not checkin-dev/database-url: $DB_SECRET"; exit 1 ;; esac
+          [ "$PLAINTEXT_DB" = "0" ] || { echo "::error::task definition has a plaintext DATABASE_URL env override"; exit 1; }
+
+      - name: Run reconcile task
+        env:
+          BASELINE: ${{ inputs.baseline }}
+        run: |
+          set -euo pipefail
+
+          # Reuse the service's own network config (subnets / SG / public IP) so
+          # the one-off task lands exactly where the service runs.
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          # In-container guard first: the task's own DATABASE_URL must name the
+          # dev database — checked with the exact URL the reconcile would use.
+          # Then the same Aurora auto-pause retry loop as deploy-dev's migrate
+          # step (the first connection races the ~30s resume).
+          GUARD="case \"\$DATABASE_URL\" in *\"/$DEV_DB_NAME\"*) echo \"guard ok: database is $DEV_DB_NAME\";; *) echo \"REFUSING: DATABASE_URL does not point at $DEV_DB_NAME\"; exit 1;; esac"
+          RECONCILE="cd checkin-app && for i in 1 2 3 4 5; do npx prisma db execute --file prisma/migrations/$BASELINE/reconcile.sql && exit 0; echo \"attempt \$i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"
+
+          jq -n --arg cmd "$GUARD; $RECONCILE" \
+            '{containerOverrides: [{name: "checkin-migrate", command: ["sh", "-c", $cmd]}]}' \
+            > "$RUNNER_TEMP/reconcile-overrides.json"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$MIGRATE_TASK_FAMILY" \
+            --launch-type FARGATE \
+            --network-configuration "$NETWORK_CONFIG" \
+            --overrides "file://$RUNNER_TEMP/reconcile-overrides.json" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Reconcile task: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          EXIT_CODE=$(aws ecs describe-tasks \
+            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "Reconcile exit code: $EXIT_CODE"
+
+          # Surface the container's own output either way, same as deploy-dev.
+          TASK_ID="${TASK_ARN##*/}"
+          echo "--- reconcile container logs (/ecs/checkin-migrate-dev) ---"
+          aws logs get-log-events \
+            --log-group-name /ecs/checkin-migrate-dev \
+            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
+            --start-from-head --limit 200 \
+            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          echo "--- end reconcile container logs ---"
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Ledger reconcile failed (exit $EXIT_CODE) — see container logs above"
+            exit 1
+          fi

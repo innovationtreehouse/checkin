@@ -1,8 +1,8 @@
 import { getConfigHealth, openConfigIssues, type ConfigCheck } from "@/lib/configHealth";
 
 // config.ts reads process.env live through getters, so these tests just set/clear
-// env vars — no module mocking needed. NODE_ENV is "test" under jest, so the Zoho
-// mock's NODE_ENV !== "production" fuse is always satisfied; CHECKIN_ENV drives prod.
+// env vars — no module mocking needed. CHECKIN_ENV is the single fuse for the
+// mocks (NODE_ENV was eliminated as a fuse, #951); CHECKIN_ENV drives prod.
 
 const ZOHO_KEYS = ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"];
 const ALL_KEYS = [...ZOHO_KEYS, "ZOHO_WEBHOOK_SECRET", "AGREEMENT_PDF_S3_BUCKET", "RESEND_API_KEY", "CHECKIN_ENV"];

@@ -62,8 +62,7 @@ That callback is the **only** URL Shopify calls into. Checkout is async (cart pe
 Prod/dev run on **AWS ECS** (`us-east-2`), deployed via GitHub OIDC ([`deploy-dev.yml`](/.github/workflows/deploy-dev.yml)). Secrets are **not** in `.env`, compose, or the workflow — they're injected at runtime by the **ECS task-def `secrets:` block → AWS Secrets Manager / SSM**, defined in Terraform at `~/projects/treehouse/aws/infra/modules/checkin/` (external repo).
 
 So "env wiring" = an **infra-repo change**, not an edit here:
-- The three server-side secrets (`SHOPIFY_CLIENT_ID/SECRET`, `SHOPIFY_WEBHOOK_SECRET`) + server-side `SHOPIFY_STORE_DOMAIN` → **AWS Secrets Manager** (dev env secret) → mapped in the task-def `secrets:` block.
-- Client-bundle `NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN` → GitHub repo `vars` build-arg (public, like prod).
+- The three server-side secrets (`SHOPIFY_CLIENT_ID/SECRET`, `SHOPIFY_WEBHOOK_SECRET`) + `SHOPIFY_STORE_DOMAIN` → **AWS Secrets Manager** (dev env secret) → mapped in the task-def `secrets:` block. `SHOPIFY_STORE_DOMAIN` is the single store-domain var; the client checkout link reads it via the server (`EnvProvider` → `useShopifyStoreDomain`), so there is no separate build-arg.
 - Redeploy cloud-dev → ECS pulls new values → `shopifyConfiguredEnv()` true → real store on, mock off.
 
 **This repo needs zero change for secret wiring** — getters already read `process.env`.

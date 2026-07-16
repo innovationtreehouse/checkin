@@ -1,6 +1,7 @@
 /**
- * Store identity resolution (store.ts): the API → identity field mapping (including
- * the legacyResourceId → legacyIdFromGid fallback), the registry upsert, and the
+ * Store identity resolution (store.ts): the API → identity field mapping (the
+ * numeric id always derives from the gid — the Shop type has no legacyResourceId
+ * field, which the live API taught us the hard way), the registry upsert, and the
  * non-fatal warning when a configured STORE_ID disagrees with the live store.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -23,26 +24,25 @@ const shopResp = (shop: Record<string, unknown>) => ({ shop });
 beforeEach(() => vi.clearAllMocks());
 
 describe("resolveStoreIdentity", () => {
-  it("maps the API shop onto the canonical identity (storeId = myshopifyDomain)", async () => {
+  it("maps the API shop onto the canonical identity (storeId = myshopifyDomain, numericId from the gid)", async () => {
     const client = fakeClient(
-      shopResp({ id: "gid://shopify/Shop/123", legacyResourceId: 123, myshopifyDomain: "acme.myshopify.com", name: "Acme" }),
+      shopResp({ id: "gid://shopify/Shop/123", myshopifyDomain: "acme.myshopify.com", name: "Acme" }),
     );
     const id = await resolveStoreIdentity(client);
 
     expect(id).toEqual({ storeId: "acme.myshopify.com", shopGid: "gid://shopify/Shop/123", numericId: "123", name: "Acme" });
-    expect(legacyIdFromGid).not.toHaveBeenCalled(); // legacyResourceId was present
+    expect(legacyIdFromGid).toHaveBeenCalledWith("gid://shopify/Shop/123");
   });
 
-  it("derives numericId from the gid when legacyResourceId is absent", async () => {
+  it("maps an absent name to null", async () => {
     const client = fakeClient(shopResp({ id: "gid://shopify/Shop/777", myshopifyDomain: "x.myshopify.com" }));
     const id = await resolveStoreIdentity(client);
 
     expect(id.numericId).toBe("777");
-    expect(legacyIdFromGid).toHaveBeenCalledWith("gid://shopify/Shop/777");
-    expect(id.name).toBeNull(); // absent name → null
+    expect(id.name).toBeNull();
   });
 
-  it("falls back to an empty numericId when neither source yields one", async () => {
+  it("falls back to an empty numericId when the gid has no numeric segment", async () => {
     const client = fakeClient(shopResp({ id: "gid://shopify/Shop/abc", myshopifyDomain: "x.myshopify.com" }));
     const id = await resolveStoreIdentity(client);
     expect(id.numericId).toBe("");
@@ -51,7 +51,7 @@ describe("resolveStoreIdentity", () => {
 
 describe("ensureStore", () => {
   const client = fakeClient(
-    shopResp({ id: "gid://shopify/Shop/123", legacyResourceId: 123, myshopifyDomain: "acme.myshopify.com", name: "Acme" }),
+    shopResp({ id: "gid://shopify/Shop/123", myshopifyDomain: "acme.myshopify.com", name: "Acme" }),
   );
 
   it("upserts the registry row keyed on myshopifyDomain and returns the identity", async () => {

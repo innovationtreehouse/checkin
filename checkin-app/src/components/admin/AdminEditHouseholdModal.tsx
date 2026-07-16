@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
@@ -14,7 +14,7 @@ export type AdminHousehold = {
   emergencyContactPhone: string | null;
   householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
   householdLeads?: Array<{ personId: number }>;
-  orgMembership?: { memberSince: string | null } | null;
+  orgMembership?: { memberSince: string | null; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -27,9 +27,10 @@ type FormState = {
   emergencyContactName: string;
   emergencyContactPhone: string;
   memberSince: string;
+  isVolunteer: boolean;
 };
 
-const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: "" };
+const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: "", isVolunteer: false };
 
 /** Deep-compares flat string form state. Exported for unit test. */
 export function isFormDirty(a: FormState, b: FormState): boolean {
@@ -85,6 +86,7 @@ export function AdminEditHouseholdModal({
           emergencyContactPhone: h.emergencyContactPhone || "",
           // date-only slice of the membership's join date (ISO → YYYY-MM-DD)
           memberSince: h.orgMembership?.memberSince ? h.orgMembership.memberSince.slice(0, 10) : "",
+          isVolunteer: !!h.orgMembership?.isVolunteer,
         };
         setForm(loaded);
         setInitial(loaded);
@@ -259,14 +261,22 @@ export function AdminEditHouseholdModal({
               />
             </SimpleGrid>
             {hasMembership ? (
-              <TextInput
-                type="date"
-                label="Member since"
-                description="Household's membership start date. Editing this is recorded in the audit log."
-                value={form.memberSince}
-                onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
-                error={fieldErrors.memberSince}
-              />
+              <>
+                <TextInput
+                  type="date"
+                  label="Member since"
+                  description="Household's membership start date. Editing this is recorded in the audit log."
+                  value={form.memberSince}
+                  onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
+                  error={fieldErrors.memberSince}
+                />
+                <Switch
+                  label="Volunteer-only household"
+                  description="Reduced-fee volunteer family (no youth enrolled). Editing this is recorded in the audit log."
+                  checked={form.isVolunteer}
+                  onChange={(e) => update({ isVolunteer: e.currentTarget.checked })}
+                />
+              </>
             ) : (
               <Text size="sm" c="dimmed">This household isn&apos;t an org member — no membership date.</Text>
             )}

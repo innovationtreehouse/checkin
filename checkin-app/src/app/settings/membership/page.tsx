@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Radio, Stack, Text, TextInput, Title } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
+import { useIsDevInstance } from "@/components/EnvProvider";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Settings {
@@ -13,8 +14,10 @@ interface Settings {
   volunteerDuesCents: number;
   orgMembershipYearBoundary: string | null;
   orgMembershipVariantId: string | null;
+  orgMembershipProductUrl: string | null;
   volunteerDiscountCode: string | null;
   bgRecheckMonths: number;
+  devSigningTarget: string | null;
   scholarshipDenialGraceDays: number | null;
 }
 
@@ -39,7 +42,12 @@ export default function MembershipSettingsPage() {
   const [boundary, setBoundary] = useState("");
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
   const [variantId, setVariantId] = useState("");
+  const [productUrl, setProductUrl] = useState("");
+  const [extracting, setExtracting] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
+  // Dev-instance-only: where contract signing requests go ('zoho' | 'debug').
+  const isDev = useIsDevInstance();
+  const [signingTarget, setSigningTarget] = useState("zoho");
 
   // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to
   // current state to drive the unsaved-changes guard.
@@ -69,7 +77,9 @@ export default function MembershipSettingsPage() {
           scholarshipGraceDays: settings.scholarshipDenialGraceDays != null ? String(settings.scholarshipDenialGraceDays) : "",
           boundary: settings.orgMembershipYearBoundary ? settings.orgMembershipYearBoundary.slice(0, 10) : "",
           variantId: settings.orgMembershipVariantId ?? "",
+          productUrl: settings.orgMembershipProductUrl ?? "",
           discountCode: settings.volunteerDiscountCode ?? "",
+          signingTarget: settings.devSigningTarget ?? "zoho",
         };
         setNormalDues(snap.normalDues);
         setVolunteerDues(snap.volunteerDues);
@@ -77,7 +87,9 @@ export default function MembershipSettingsPage() {
         setScholarshipGraceDays(snap.scholarshipGraceDays);
         setBoundary(snap.boundary);
         setVariantId(snap.variantId);
+        setProductUrl(snap.productUrl);
         setDiscountCode(snap.discountCode);
+        setSigningTarget(snap.signingTarget);
         setInitial(snap);
       }
     } finally {
@@ -112,9 +124,12 @@ export default function MembershipSettingsPage() {
           normalDuesCents: Math.round(parseFloat(normalDues || "0") * 100),
           volunteerDuesCents: Math.round(parseFloat(volunteerDues || "0") * 100),
           orgMembershipVariantId: variantId.trim() || null,
+          orgMembershipProductUrl: productUrl.trim() || null,
           volunteerDiscountCode: discountCode.trim() || null,
           bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
           scholarshipDenialGraceDays: scholarshipGraceDays.trim() === "" ? null : parseInt(scholarshipGraceDays.trim(), 10),
+          // Dev instances only — the API rejects it elsewhere.
+          ...(isDev ? { devSigningTarget: signingTarget } : {}),
           // Send the boundary when the unlock is checked, or when it was never set (no
           // unlock shown then — nothing to protect from an accidental shift).
           ...(boundaryUnlocked || !boundaryWasSet ? { orgMembershipYearBoundary: boundary || null } : {}),
@@ -124,6 +139,31 @@ export default function MembershipSettingsPage() {
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
+  };
+
+  // Ask the server to pull the variant ID out of the pasted product URL (the
+  // Shopify admin UI hides the lone variant of a single-variant product, so
+  // there is nowhere to copy it from). Fills the variant-ID field only —
+  // nothing is persisted until the admin presses Save settings.
+  const extractVariant = async () => {
+    setSaveNotice(null);
+    setExtracting(true);
+    try {
+      const res = await fetch("/api/settings/membership/extract-variant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productUrl: productUrl.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setVariantId(data.variantId);
+        setFieldErrors((f) => ({ ...f, variantId: undefined }));
+        notifications.show({ color: "green", message: `Variant ${data.variantId} filled in — press Save settings to keep it.` });
+      } else {
+        setSaveNotice({ text: data.error || "Could not extract the variant.", err: true });
+      }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
+    finally { setExtracting(false); }
   };
 
   const bulkOpenRenewals = async () => {
@@ -145,7 +185,7 @@ export default function MembershipSettingsPage() {
 
   const isDirty =
     !!initial &&
-    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, scholarshipGraceDays, boundary, variantId, discountCode });
+    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, scholarshipGraceDays, boundary, variantId, productUrl, discountCode, signingTarget });
   useUnsavedGuard(isDirty);
 
   return (
@@ -217,6 +257,19 @@ export default function MembershipSettingsPage() {
 
             <Title order={4} mt="lg" mb="sm">Shopify checkout</Title>
             <Stack gap="md">
+              <Group align="flex-end" gap="sm" wrap="wrap">
+                <TextInput
+                  label="Membership product URL"
+                  description="Paste the product's storefront page URL; “Extract variant from URL” fills the variant ID below from it."
+                  placeholder="https://your-store.myshopify.com/products/membership"
+                  w={420}
+                  value={productUrl}
+                  onChange={(e) => setProductUrl(e.currentTarget.value)}
+                />
+                <Button variant="light" loading={extracting} disabled={extracting || !productUrl.trim()} onClick={extractVariant}>
+                  Extract variant from URL
+                </Button>
+              </Group>
               <TextInput
                 label="Membership product variant ID"
                 description="The Shopify variant ID of the membership product. We build the “Pay with Shopify” link from it as https://<store>/cart/<variantId>:1."
@@ -269,6 +322,29 @@ export default function MembershipSettingsPage() {
                 disabled={boundaryWasSet && !boundaryUnlocked}
               />
             </Alert>
+
+            {isDev && (
+              <Alert color="grape" variant="light" mt="md" title="Contract signing target (dev instance only)">
+                <Text size="sm" mb="sm">
+                  🧪 Where membership contract signing requests go on <strong>this dev instance</strong>.
+                  Prod always uses Zoho; this switch never exists there.
+                </Text>
+                <Radio.Group value={signingTarget} onChange={setSigningTarget}>
+                  <Stack gap="xs">
+                    <Radio
+                      value="zoho"
+                      label="Real Zoho Sign"
+                      description="Requests go to Zoho (requires Zoho credentials on this instance; dev requests are watermarked NOT BINDING)."
+                    />
+                    <Radio
+                      value="debug"
+                      label="Debug signing"
+                      description="Requests go to the in-app /dev/zoho-sign interstitial — no Zoho account or credentials involved."
+                    />
+                  </Stack>
+                </Radio.Group>
+              </Alert>
+            )}
 
             {saveNotice && (
               <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">
