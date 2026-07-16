@@ -31,6 +31,19 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             updateData.phone = body.phone === "" || body.phone === null ? null : formatPhone(body.phone);
         }
         if (body.isDeclaredAdult !== undefined) updateData.isDeclaredAdult = Boolean(body.isDeclaredAdult);
+        if (body.lastBackgroundCheck !== undefined) {
+            // "" or null clears the date; otherwise expect a YYYY-MM-DD string
+            const raw = body.lastBackgroundCheck;
+            if (raw === "" || raw === null) {
+                updateData.lastBackgroundCheck = null;
+            } else {
+                const d = new Date(raw);
+                if (isNaN(d.getTime())) {
+                    return apiError("Invalid background check review date", 400);
+                }
+                updateData.lastBackgroundCheck = d;
+            }
+        }
 
         if (Object.keys(updateData).length === 0) {
             return apiError("No fields to update provided", 400);
@@ -38,7 +51,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
 
         const prior = await prisma.person.findUnique({
             where: { id },
-            select: { name: true, email: true, phone: true, isDeclaredAdult: true },
+            select: { name: true, email: true, phone: true, isDeclaredAdult: true, lastBackgroundCheck: true },
         });
 
         const updatedParticipant = await prisma.person.update({
@@ -67,6 +80,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             phone: updatedParticipant.phone,
             dateOfBirth: updatedParticipant.dateOfBirth,
             isDeclaredAdult: updatedParticipant.isDeclaredAdult,
+            lastBackgroundCheck: updatedParticipant.lastBackgroundCheck,
             isBoardMember: updatedParticipant.isBoardMember,
             isKeyholder: updatedParticipant.isKeyholder,
             household: updatedParticipant.household,
