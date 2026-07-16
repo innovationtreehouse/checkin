@@ -53,7 +53,14 @@ env:
   # the infra repo — see the "prod infra" note in the PR description.
   ECS_CLUSTER: treehouse-prod
   ECS_SERVICE: checkin-prod
-  ECS_CAPACITY_PROVIDER: treehouse-prod-c6g
+  # Migrations run on FARGATE_SPOT, not the prepaid c6g (a one-off 512-MiB task
+  # can't place there while the wiki is awake — the v1.0.1 wedge). awsvpc needs
+  # explicit networking: the default-VPC public subnets + the checkin-prod
+  # service SG (Aurora ingress: infra network module, database_from_checkin_prod;
+  # public IP for the ghcr pull — no NAT). Values come from the infra repo
+  # (live/mgmt + modules/network); update together if infra changes them.
+  MIGRATE_SUBNETS: subnet-0597513f1c0c3173e,subnet-0a67d72908bffbcd4,subnet-0c84ac2840be3a2bc
+  MIGRATE_SG: sg-0a37ac72f79b2fd5b # checkin-prod-service
   APP_TASK_FAMILY: checkin-prod
   MIGRATE_TASK_FAMILY: checkin-migrate-prod
   DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-prod
@@ -235,7 +242,8 @@ jobs:
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --capacity-provider-strategy capacityProvider=$ECS_CAPACITY_PROVIDER,weight=1 \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+            --network-configuration "awsvpcConfiguration={subnets=[$MIGRATE_SUBNETS],securityGroups=[$MIGRATE_SG],assignPublicIp=ENABLED}" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
           echo "Migration task: $TASK_ARN"
