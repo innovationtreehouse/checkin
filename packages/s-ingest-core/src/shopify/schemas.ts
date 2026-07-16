@@ -87,6 +87,8 @@ export const orderNodeSchema = z
     test: z.boolean().nullish(),
     displayFinancialStatus: z.string().nullish(),
     displayFulfillmentStatus: z.string().nullish(),
+    // Cart attributes (Membership_Process_ID / CheckMeIn_Account_ID + Program_ID) carried on the order.
+    customAttributes: z.array(z.object({ key: z.string(), value: z.string().nullish() }).passthrough()).nullish(),
     currentSubtotalPriceSet: moneyBag.nullish(),
     totalShippingPriceSet: moneyBag.nullish(),
     currentTotalTaxSet: moneyBag.nullish(),
@@ -135,6 +137,8 @@ export interface NormalizedOrder {
   totalCents: number;
   totalRefundedCents: number;
   test: boolean;
+  /** Raw order cart attributes ([{key, value}]), stored as JSON. undefined when absent. */
+  noteAttributes?: { key: string; value: string | null }[];
   lines: NormalizedOrderLine[];
   refunds: NormalizedRefund[];
 }
@@ -175,6 +179,9 @@ export function normalizeOrder(node: OrderNode): NormalizedOrder {
     totalCents: bagCents(node.currentTotalPriceSet),
     totalRefundedCents: bagCents(node.totalRefundedSet),
     test: node.test ?? false,
+    noteAttributes: node.customAttributes
+      ? node.customAttributes.map((a) => ({ key: a.key, value: a.value ?? null }))
+      : undefined,
     lines,
     refunds,
   };

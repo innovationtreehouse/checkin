@@ -39,6 +39,25 @@ describe("normalizeOrder", () => {
     expect(n.refunds[0].orderGid).toBe("gid://shopify/Order/1001");
   });
 
+  it("captures cart attributes as noteAttributes; undefined when absent", () => {
+    const withAttrs = normalizeOrder(
+      orderNodeSchema.parse({
+        id: "gid://shopify/Order/1001",
+        customAttributes: [
+          { key: "Membership_Process_ID", value: "mp_123" },
+          { key: "CheckMeIn_Account_ID", value: "acct_9" },
+          { key: "Program_ID", value: null },
+        ],
+      }),
+    );
+    expect(withAttrs.noteAttributes).toEqual([
+      { key: "Membership_Process_ID", value: "mp_123" },
+      { key: "CheckMeIn_Account_ID", value: "acct_9" },
+      { key: "Program_ID", value: null },
+    ]);
+    expect(n.noteAttributes).toBeUndefined();
+  });
+
   it("captures a cancellation when present", () => {
     const cancelled = normalizeOrder(
       orderNodeSchema.parse({
