@@ -61,6 +61,9 @@ export default function HouseholdPage() {
 
   const [loading, setLoading] = useState(true);
   const [household, setHousehold] = useState<HouseholdData>(null);
+  // Open renewal for this household (lead-only, from /api/membership/renewal-status).
+  // Drives the "Renew now" copy for a still-ACTIVE member whose renewal has opened.
+  const [renewalDue, setRenewalDue] = useState(false);
   const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
   // Explicit tone per outcome so a real error can never render green (was
   // decided by `message.includes('success')`).
@@ -134,6 +137,10 @@ export default function HouseholdPage() {
     if (ready) {
       fetchHousehold();
       fetchContacts();
+      fetch('/api/membership/renewal-status')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setRenewalDue(!!d?.renewalDue))
+        .catch(() => {});
     }
   }, [ready, fetchHousehold, fetchContacts]);
 
@@ -354,7 +361,18 @@ export default function HouseholdPage() {
           <Title order={1} mb="md">{household?.name || 'My Household'}</Title>
 
           {household && (
-            household.orgMembership?.status === 'ACTIVE' ? (
+            // An existing member — still ACTIVE with an open renewal, or already
+            // REVOKED/lapsed — gets the "Renew now" nudge; a household that never
+            // joined gets the join prompt; an ACTIVE member with nothing due gets
+            // the plain member badge.
+            (renewalDue || household.orgMembership?.status === 'REVOKED') ? (
+              <Alert color="blue" mb="lg">
+                <Group justify="space-between" align="center" wrap="wrap">
+                  <Text c="dimmed">Renew your membership now!</Text>
+                  {viewerIsLead && <Button size="xs" fz={15} onClick={() => router.push('/membership')}>Renew!</Button>}
+                </Group>
+              </Alert>
+            ) : household.orgMembership?.status === 'ACTIVE' ? (
               <Alert color="green" mb="lg">
                 <Group gap="xs" wrap="wrap">
                   <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getFullYear()}` : ''}</Text>
