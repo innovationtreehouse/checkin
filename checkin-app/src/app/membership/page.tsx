@@ -24,6 +24,10 @@ import { useIsLocalInstance } from "@/components/EnvProvider";
 import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
+// Payment holdoff (below): sessionStorage key for the awaiting-payment record
+// set by a real Shopify checkout click.
+const awaitingPaymentKey = (processId: number) => `membership_awaiting_payment_${processId}`;
+
 interface PersonPrefill {
   id: number;
   name: string | null;
@@ -135,6 +139,13 @@ export default function MembershipPage() {
   const [children, setChildren] = useState<ChildForm[]>([]);
   const [notes, setNotes] = useState("");
   const [payment, setPayment] = useState<{ amountCents: number; checkoutUrl: string | null } | null>(null);
+  // Set when the applicant clicks the real Shopify checkout link (not the local
+  // mock, which settles synchronously and never needs a holdoff). Persisted to
+  // sessionStorage keyed by process id, so a tab refresh mid-checkout keeps the
+  // message. Cleared implicitly whenever a server-side path — the orders/paid
+  // webhook today, an s-read reconciliation possibly in the future — moves the
+  // process out of PENDING_PAYMENT, or explicitly via the escape-hatch link.
+  const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number } | null>(null);
   // Flips true once the household asks the finance committee for a payment plan.
   const [planRequested, setPlanRequested] = useState(false);
   // Self-attest gate for the background-check task (#875): the confirm checkbox
@@ -144,6 +155,15 @@ export default function MembershipPage() {
   const [bgAttesting, setBgAttesting] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
+
+  // Drop the holdoff and its sessionStorage record — the "Show the payment
+  // button again" escape hatch for an abandoned checkout.
+  const clearAwaitingPayment = useCallback(() => {
+    setAwaitingPayment((cur) => {
+      if (cur) sessionStorage.removeItem(awaitingPaymentKey(cur.processId));
+      return null;
+    });
+  }, []);
 
   const hydrate = useCallback((s: IntakeState) => {
     setState(s);
@@ -265,6 +285,26 @@ export default function MembershipPage() {
     return () => { cancelled = true; };
   }, [state?.process?.status]);
 
+  // Restore an in-flight payment holdoff after a tab refresh mid-Shopify-checkout.
+  useEffect(() => {
+    const processId = state?.process?.id;
+    if (!processId || state?.process?.status !== "PENDING_PAYMENT") return;
+    if (sessionStorage.getItem(awaitingPaymentKey(processId))) setAwaitingPayment({ processId });
+  }, [state?.process?.id, state?.process?.status]);
+
+  // Implicit clearing, at page-load time: if the process has moved out of
+  // PENDING_PAYMENT — the orders/paid webhook settled it, or (possibly, in the
+  // future) an s-read reconciliation did — drop the holdoff and its
+  // sessionStorage record. Deliberately no background polling or focus
+  // listeners: the dev instance scales to zero, and an idle tab must not keep
+  // it (and the database) awake. The message resolves on the next page load.
+  useEffect(() => {
+    const processId = state?.process?.id;
+    if (!processId || state?.process?.status === "PENDING_PAYMENT") return;
+    sessionStorage.removeItem(awaitingPaymentKey(processId));
+    setAwaitingPayment(null);
+  }, [state?.process?.id, state?.process?.status]);
+
   const flash = (msg: string, error = false) => {
     setMessage(msg ? { text: msg, tone: error ? "error" : "success" } : undefined);
     // Clear stale warnings when starting an action (msg === "") or on a hard
@@ -275,6 +315,14 @@ export default function MembershipPage() {
   // Prefer the API's user-facing error string; fall back to a friendly default.
   const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
     data?.error || fallback;
+
+  // Real Shopify checkout only (opens a new tab) — starts the payment holdoff.
+  // The local mock below settles synchronously and never needs one.
+  const handlePayClick = () => {
+    if (!state?.process) return;
+    sessionStorage.setItem(awaitingPaymentKey(state.process.id), "1");
+    setAwaitingPayment({ processId: state.process.id });
+  };
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
@@ -609,8 +657,8 @@ export default function MembershipPage() {
           <Title order={2}>Time to renew</Title>
           <Text c="dimmed" my="md">
             Your household membership is up for renewal. You&apos;re still an active member — confirm
-            below to continue for another year. No contract to re-sign; we&apos;ll only re-check a
-            background if it has expired.
+            below to continue for another year. You&apos;ll sign a fresh membership agreement; a new
+            background check is only needed if your previous one has expired.
           </Text>
           <Text c="dimmed" mb="md">
             Did anything change — new members, address, phone, or email?{" "}
@@ -629,11 +677,11 @@ export default function MembershipPage() {
         </Card>
       ) : (
         <Group align="flex-start" gap="xl" wrap="wrap">
-          {!isRenewal && (
-            <Box style={{ flex: "0 0 auto" }}>
-              <MembershipFlowStepper currentStatus={inStatus} />
-            </Box>
-          )}
+          {/* Renewals ride the same stepper as new applications — same phases, same
+              progress, whether the background check is valid, expired, or first-time. */}
+          <Box style={{ flex: "0 0 auto" }}>
+            <MembershipFlowStepper currentStatus={inStatus} />
+          </Box>
 
           <Box style={{ flex: "1 1 420px", minWidth: 320 }}>
             {isIntake ? (
@@ -738,9 +786,9 @@ export default function MembershipPage() {
                   <div>
                     <Title order={2}>Sign &amp; start your background check</Title>
                     <Text c="dimmed">
-                      Once your agreement is signed and your background check is underway, we&apos;ll
-                      move you straight to payment — you won&apos;t have to wait for the check to come
-                      back.
+                      {isRenewal
+                        ? "Renewing means signing a fresh membership agreement for the year, and a new background check if your previous one has expired. Once both are underway, we'll move you straight to payment — your membership stays active in the meantime."
+                        : "Once your agreement is signed and your background check is underway, we'll move you straight to payment — you won't have to wait for the background check to come back."}
                     </Text>
                   </div>
 
@@ -806,8 +854,18 @@ export default function MembershipPage() {
                     <Text c="dimmed">
                       Your annual household dues are <strong>${(payment.amountCents / 100).toFixed(2)}</strong>.
                     </Text>
-                    {payment.checkoutUrl ? (
-                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md">
+                    {awaitingPayment ? (
+                      <Stack gap="xs" mt="md" align="flex-start">
+                        <Text>
+                          We&apos;ll update your status here when we receive your payment — refresh
+                          this page after you finish checkout.
+                        </Text>
+                        <Anchor component="button" type="button" size="sm" c="dimmed" onClick={clearAwaitingPayment}>
+                          Show the payment button again
+                        </Anchor>
+                      </Stack>
+                    ) : payment.checkoutUrl ? (
+                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md" onClick={handlePayClick}>
                         Pay here with Shopify →
                       </Button>
                     ) : isLocalInstance ? (

@@ -86,8 +86,7 @@ Shopify shows the **webhook signing secret** once per store → env `SHOPIFY_WEB
 
 | Value | Home | Why |
 |-------|------|-----|
-| `SHOPIFY_CLIENT_ID`, `_CLIENT_SECRET`, `_WEBHOOK_SECRET` (+ server-side `SHOPIFY_STORE_DOMAIN`) | **AWS Secrets Manager → ECS task-def `secrets:`** (see §4) | prod/dev run on ECS; `config.ts` reads them from `process.env` at runtime — this app repo stores nothing |
-| `NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN` (client bundle only) | **GitHub repo `vars` → build-arg** | public, baked into the client bundle at build time (non-secret); how prod already sets it ([`deploy-dev.yml`](/.github/workflows/deploy-dev.yml)) |
+| `SHOPIFY_CLIENT_ID`, `_CLIENT_SECRET`, `_WEBHOOK_SECRET`, `SHOPIFY_STORE_DOMAIN` | **AWS Secrets Manager → ECS task-def `secrets:`** (see §4) | prod/dev run on ECS; `config.ts` reads them from `process.env` at runtime — this app repo stores nothing. `SHOPIFY_STORE_DOMAIN` is the **single** store-domain var: the client-side checkout link reads it too, via the server (root layout → `EnvProvider` → `useShopifyStoreDomain`), so there is no build-time `NEXT_PUBLIC_` copy to keep in sync |
 | `orgMembershipVariantId`, `volunteerDiscountCode`, `normalDuesCents`, `volunteerDuesCents` | **`BoardSettings`** (row id 1) | admin-editable via [`settings/membership`](../../src/app/settings/membership/page.tsx). (`shopifyNormalVariantId` / `shopifyVolunteerVariantId` are also matched by the webhook's H2 check but have **no UI writer** — DB-only legacy fields) |
 | dev defaults for those `BoardSettings` | **none — deliberately not seeded** (O4, §6) | a placeholder id seeded into the shared `BoardSettings` would land on cloud-dev via the dev-dashboard reset and silently fail the real store's H2 variant check; set once per environment via `settings/membership` |
 
@@ -132,7 +131,7 @@ A **real dev store is different**: Shopify signs with a secret **we don't choose
 This gives a clean rule: *fixed secret ⇔ self-fired mock; real secret ⇔ real store.*
 
 ### Where the real secret is actually stored (AWS, not this repo)
-`config.ts` only ever reads `process.env.SHOPIFY_WEBHOOK_SECRET` — it neither knows nor cares where that came from. In prod/dev the value is **injected at runtime by the ECS task definition's `secrets:` block from AWS Secrets Manager / SSM**, defined in Terraform at `~/projects/treehouse/aws/infra/modules/checkin/` (external infra repo; the deploy workflows assume the `checkin-deploy-{dev,prod}` roles there). It is **not** in `.env`, `docker-compose*.yml`, or the GitHub workflow — only `NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN` appears there, as a public build-arg.
+`config.ts` only ever reads `process.env.SHOPIFY_WEBHOOK_SECRET` — it neither knows nor cares where that came from. In prod/dev the value is **injected at runtime by the ECS task definition's `secrets:` block from AWS Secrets Manager / SSM**, defined in Terraform at `~/projects/treehouse/aws/infra/modules/checkin/` (external infra repo; the deploy workflows assume the `checkin-deploy-{dev,prod}` roles there). It is **not** in `.env`, `docker-compose*.yml`, or the GitHub workflow. The store domain follows the same runtime path: `SHOPIFY_STORE_DOMAIN` is the one var, injected by the task-def `secrets:` block, and the client reads it via the server (`EnvProvider` → `useShopifyStoreDomain`) rather than a build-time `NEXT_PUBLIC_` copy.
 
 So wiring the dev store's secrets = **an infra-repo change** (add the dev-store values to Secrets Manager + map them in the task-def `secrets:`), then redeploy cloud-dev so `shopifyConfiguredEnv()` flips true. **This app repo needs no change for secret wiring** — the getters already read `process.env`. (Exact Secrets Manager keys / task-def entry names live in that external repo, not visible from this checkout.)
 
@@ -189,7 +188,7 @@ Because both environments read the id from `BoardSettings` (not from code), ther
 ## 7. Prod safety
 
 Same posture as Zoho:
-- **Every dev-only surface is env-gated.** `/api/dev/shopify/*` 404s unless `config.shopifyMockActive()` (which is `false` in prod by construction: `readCheckinEnv() !== 'prod' && NODE_ENV !== 'production'`, both fail-safe to prod).
+- **Every dev-only surface is env-gated.** `/api/dev/shopify/*` 404s unless `config.shopifyMockActive()` (which is `false` in prod by construction: `readCheckinEnv() === 'local'`, failing safe to prod when unset — the `NODE_ENV` fuse was eliminated in the #951 review).
 - **No dev store domain hardcoded.** `SHOPIFY_STORE_DOMAIN` stays env-only; the dev store's `*.myshopify.com` never appears in source or seed defaults.
 - **Fixed dev webhook secret is unreachable in prod** — only returned by `shopifyWebhookSecret()` when the mock is active, never in prod (same guard as `DEV_MOCK_WEBHOOK_SECRET`).
 - **Prod webhook path is byte-for-byte unchanged** — real secret, real HMAC, real store. This proposal adds env values and a gated dev route; it touches no prod branch.

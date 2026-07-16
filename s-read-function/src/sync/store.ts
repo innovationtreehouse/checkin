@@ -17,13 +17,15 @@ export interface StoreIdentity {
 
 export async function resolveStoreIdentity(client: ShopifyClient): Promise<StoreIdentity> {
   const data = await client.request<{
-    shop: { id: string; legacyResourceId?: string | number | null; myshopifyDomain: string; name?: string | null };
+    shop: { id: string; myshopifyDomain: string; name?: string | null };
   }>(SHOP_IDENTITY_QUERY);
   const shop = data.shop;
   return {
     storeId: shop.myshopifyDomain,
     shopGid: shop.id,
-    numericId: shop.legacyResourceId != null ? String(shop.legacyResourceId) : (legacyIdFromGid(shop.id) ?? ""),
+    // Shop has no legacyResourceId field (see SHOP_IDENTITY_QUERY) — the
+    // numeric id comes from the gid's last path segment.
+    numericId: legacyIdFromGid(shop.id) ?? "",
     name: shop.name ?? null,
   };
 }

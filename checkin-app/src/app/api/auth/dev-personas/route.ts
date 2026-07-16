@@ -104,7 +104,9 @@ export async function GET(request: Request) {
  * a caller-supplied email, so it cannot target or collide with a real person.
  */
 export async function POST() {
-    if (process.env.NODE_ENV === 'production' || config.checkinEnv() !== 'local') {
+    // CHECKIN_ENV is the single fuse (NODE_ENV eliminated repo-wide, #951 review):
+    // 'local' can only be true when explicitly set — unset/unknown fails safe to prod.
+    if (config.checkinEnv() !== 'local') {
         return apiError("Not available", 404);
     }
 

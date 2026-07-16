@@ -112,6 +112,7 @@ describe('Full Program Signup Integration Flow', () => {
                 memberPrice: 50,
                 nonMemberPrice: 100,
                 leadMentorId: sysAdminId,
+                maxParticipants: 50,
             }),
         });
         const createProgramRes = await CreateProgram(createProgramReq as unknown as import("next/server").NextRequest);

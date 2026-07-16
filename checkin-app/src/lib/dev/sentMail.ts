@@ -7,8 +7,8 @@ import { config } from "@/lib/config";
  * When there is no RESEND_API_KEY, sendEmail persists what it would have sent here instead of
  * dropping it, so link/token-bearing flows can be completed and verified in dev/local without a
  * real key. Retrievable at /dev/sent-mail. Dead in prod by construction — the only caller
- * (sendEmail) gates this on `isDevInstance() && NODE_ENV !== 'production'`, and these helpers
- * additionally no-op in prod.
+ * (sendEmail) gates this on `config.devToolsActive()` (CHECKIN_ENV, fails safe to prod),
+ * and these helpers additionally no-op in prod.
  */
 
 export interface SentEmail {
