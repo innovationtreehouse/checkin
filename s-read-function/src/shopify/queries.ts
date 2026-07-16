@@ -52,6 +52,7 @@ const ORDER_FIELDS = `
   test
   displayFinancialStatus
   displayFulfillmentStatus
+  customAttributes { key value }
   currentSubtotalPriceSet ${MONEY_BAG}
   totalShippingPriceSet ${MONEY_BAG}
   currentTotalTaxSet ${MONEY_BAG}
@@ -267,6 +268,7 @@ export function buildOrdersBulkQuery(updatedAtFloorIso: string): string {
             test
             displayFinancialStatus
             displayFulfillmentStatus
+            customAttributes { key value }
             currentSubtotalPriceSet ${MONEY_BAG}
             totalShippingPriceSet ${MONEY_BAG}
             currentTotalTaxSet ${MONEY_BAG}

@@ -163,6 +163,7 @@ model ShopOrder {
   totalCents         Int       @default(0) @map("total_cents")
   totalRefundedCents Int       @default(0) @map("total_refunded_cents")
   test               Boolean   @default(false)
+  noteAttributes     Json?     @map("note_attributes")
   lastSyncedAt       DateTime  @default(now()) @map("last_synced_at")
 
   @@id([storeId, shopifyGid])

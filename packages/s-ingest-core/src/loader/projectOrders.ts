@@ -29,6 +29,7 @@ export async function projectOrder(db: DbClient, storeId: string, order: Normali
     totalCents: order.totalCents,
     totalRefundedCents: order.totalRefundedCents,
     test: order.test,
+    noteAttributes: order.noteAttributes ?? undefined,
     lastSyncedAt: new Date(),
   };
 
