@@ -62,6 +62,30 @@ function monthsBefore(date: Date, months: number): Date {
 }
 
 /**
+ * From a configured boundary date, the next boundary occurrence and whether `now`
+ * sits inside the renewal lead window before it. Pure; the single source of the
+ * "are we in renewal season" calc shared by runRenewalSweep and isRenewalSeason.
+ */
+export function renewalWindow(configuredBoundary: Date, now: Date): { boundary: Date; inSeason: boolean } {
+    const boundary = nextBoundary(configuredBoundary, now);
+    return { boundary, inSeason: now.getTime() >= monthsBefore(boundary, RENEWAL_LEAD_MONTHS).getTime() };
+}
+
+/**
+ * True when `now` sits inside the renewal lead window before the configured
+ * boundary — the same window runRenewalSweep opens/reminds on. No boundary set
+ * ⇒ not renewal season. Drives the admin "Grant for coming year" button.
+ */
+export async function isRenewalSeason(now: Date): Promise<boolean> {
+    const settings = await prisma.boardSettings.findUnique({
+        where: { id: 1 },
+        select: { orgMembershipYearBoundary: true },
+    });
+    if (!settings?.orgMembershipYearBoundary) return false;
+    return renewalWindow(settings.orgMembershipYearBoundary, now).inSeason;
+}
+
+/**
  * Open renewal processes for every ACTIVE membership due within the lead window,
  * unless one was already opened this cycle. Returns a summary.
  */
@@ -71,9 +95,8 @@ export async function runRenewalSweep(now: Date) {
         return { opened: 0, skipped: 0, reason: "no membership-year boundary configured" };
     }
 
-    const boundary = nextBoundary(settings.orgMembershipYearBoundary, now);
-    const windowStart = monthsBefore(boundary, RENEWAL_LEAD_MONTHS);
-    if (now.getTime() < windowStart.getTime()) {
+    const { boundary, inSeason } = renewalWindow(settings.orgMembershipYearBoundary, now);
+    if (!inSeason) {
         return { opened: 0, skipped: 0, reason: "not yet within renewal window" };
     }
 

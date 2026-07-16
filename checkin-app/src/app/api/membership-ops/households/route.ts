@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { isRenewalSeason } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
 
@@ -84,7 +85,10 @@ export const GET = withAuth(
                 ...(q && { take: 20 })
             });
 
-            return NextResponse.json({ households: households.map(withFlatContact) });
+            return NextResponse.json({
+                households: households.map(withFlatContact),
+                renewalSeason: await isRenewalSeason(new Date()),
+            });
         } catch (error) {
             logger.error("Failed to fetch households:", error);
             return apiError("Failed to fetch households", 500);
@@ -97,7 +101,7 @@ export const POST = withAuth(
     async (req, auth) => {
         try {
             const body = await req.json();
-            const { householdId, active, deny } = body;
+            const { householdId, active, deny, comingYear } = body;
 
             if (!householdId) {
                 return apiError("Household ID is required", 400);
@@ -145,6 +149,54 @@ export const POST = withAuth(
                 }
 
                 return NextResponse.json({ success: true, membership });
+            }
+
+            // Renewal-season admin override: grant the household for the COMING year in
+            // one click, skipping the sign/pay/background-check flow. Produces the same
+            // end-state a completed renewal would — membership ACTIVE plus a terminal
+            // RENEWAL process (INITIAL for a household with no prior membership) with the
+            // three gates stamped satisfied and the acting admin recorded. The COI guard
+            // matches the grant path: this bypasses payment + BG, so a board member may
+            // not do it for their own household (sysadmin may).
+            if (comingYear) {
+                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId, { isSysadmin: auth.user.isSysadmin === true })) {
+                    return apiError("You cannot grant your own household's membership — a sysadmin must.", 403);
+                }
+                const actorId = auth.type === 'session' ? auth.user.id : null;
+                const now = new Date();
+                const result = await prisma.$transaction(async (tx) => {
+                    const membership = await tx.orgMembership.upsert({
+                        where: { householdId },
+                        create: { householdId, status: "ACTIVE" },
+                        update: { status: "ACTIVE" },
+                    });
+                    const process = await tx.orgMembershipProcess.create({
+                        data: {
+                            orgMembershipId: membership.id,
+                            kind: existingMembership ? "RENEWAL" : "INITIAL",
+                            status: "ACTIVE",
+                            contractSignedAt: now,
+                            bgClearedAt: now,
+                            paidAt: now,
+                            certifiedById: actorId,
+                        },
+                    });
+                    if (actorId !== null) {
+                        await tx.auditLog.create({
+                            data: {
+                                actorId,
+                                action: "CREATE",
+                                tableName: "OrgMembershipProcess",
+                                affectedEntityId: process.id,
+                                secondaryAffectedEntity: householdId,
+                                oldData: { status: existingMembership?.status ?? "NONE" },
+                                newData: { kind: process.kind, status: "ACTIVE", comingYearOverride: true },
+                            },
+                        });
+                    }
+                    return { membership, process };
+                });
+                return NextResponse.json({ success: true, ...result });
             }
 
             if (active) {

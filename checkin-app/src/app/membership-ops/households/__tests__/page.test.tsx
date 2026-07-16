@@ -126,4 +126,58 @@ describe("membership-ops/households page", () => {
 
     expect(router.push).toHaveBeenCalledWith("/membership-ops/participants/new?householdId=1");
   });
+
+  describe("Grant for coming year (renewal season)", () => {
+    const inSeason = { ...households, renewalSeason: true };
+
+    it("is hidden outside renewal season", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({ "/api/membership-ops/households": households }); // no renewalSeason flag
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      expect(screen.queryByRole("button", { name: "Grant for coming year" })).not.toBeInTheDocument();
+    });
+
+    it("shows for both an existing member and a non-member in renewal season", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({ "/api/membership-ops/households": inSeason });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      // The Smiths (ACTIVE) and The Joneses (non-member) both get the button.
+      expect(screen.getAllByRole("button", { name: "Grant for coming year" })).toHaveLength(2);
+    });
+
+    it("posts comingYear when clicked", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      const fetchMock = mockFetchJson({ "/api/membership-ops/households": inSeason });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      fireEvent.click(screen.getAllByRole("button", { name: "Grant for coming year" })[0]);
+
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/membership-ops/households",
+          expect.objectContaining({
+            method: "POST",
+            body: JSON.stringify({ householdId: 1, comingYear: true }),
+          }),
+        ),
+      );
+    });
+
+    it("disables it for a board member's OWN household (conflict of interest)", async () => {
+      setSession({ id: 99, isBoardMember: true, householdId: 2 }); // same household as The Joneses (id 2)
+      mockFetchJson({ "/api/membership-ops/households": inSeason });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Joneses");
+
+      // Two buttons: the Smiths' is enabled, the Joneses' (own household) disabled.
+      const buttons = screen.getAllByRole("button", { name: "Grant for coming year" });
+      expect(buttons.some((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+      expect(buttons.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true);
+    });
+  });
 });
