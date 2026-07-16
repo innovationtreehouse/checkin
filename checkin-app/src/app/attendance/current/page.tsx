@@ -10,6 +10,7 @@ import {
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
 import { formatTime, isYouth } from "@/lib/time";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -338,13 +339,9 @@ function KioskDisplayInner() {
 
   const userId = (session?.user as SessionUser)?.id;
 
-  return (
-    <Box style={isKioskMode ? { cursor: "none", marginTop: -25, paddingLeft: 8, display: "flow-root" } : { maxWidth: 1200, margin: "0 auto", marginTop: 0, paddingLeft: 8, display: "flow-root" }}>
-      {!isKioskMode && (
-        <Box style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <AttendanceTabs />
-        </Box>
-      )}
+  const pageBody = (
+    <>
+      {!isKioskMode && <AttendanceTabs />}
       <Card withBorder radius="md" padding="lg" style={{ width: "100%", maxWidth: 1200, margin: "0 auto" }}>
         {/* Check-in button — hidden in kiosk mode */}
         {!isKioskMode && (
@@ -549,7 +546,18 @@ function KioskDisplayInner() {
           <Button color="red" onClick={confirmForceCheckout}>Force Checkout</Button>
         </Group>
       </Modal>
-    </Box>
+    </>
+  );
+
+  // Kiosk mode is a fullscreen board surface with its own chrome (cursor
+  // hidden, content pulled up under the header); the member-facing page rides
+  // the canonical PageContainer like every other page — no hand-rolled copy of
+  // its margins (PR #1026 review). A plain conditional (not a per-render
+  // wrapper component) so the subtree never remounts when state changes.
+  return isKioskMode ? (
+    <Box style={{ cursor: "none", marginTop: -25, paddingLeft: 8, display: "flow-root" }}>{pageBody}</Box>
+  ) : (
+    <PageContainer>{pageBody}</PageContainer>
   );
 }
 
