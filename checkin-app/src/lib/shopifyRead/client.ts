@@ -14,6 +14,10 @@ import { logger } from "@/lib/logger";
  * a second generate step, schema-version coupling). The mirror's own DDL owner
  * migrates it; we only ever read.
  *
+ * Note `shopify_read_<env>` lives on the SAME Aurora cluster as `checkin_<env>`
+ * (isolated by database + role, not by cluster), so this pool is bound by the same
+ * scale-to-zero invariant as lib/prisma.ts — see getPool below.
+ *
  * The connection string SHOULD point at a read-only role. Null env → isConfigured()
  * is false and the reconciler no-ops, so an env without the mirror runs no
  * reconciliation rather than crashing.
@@ -33,7 +37,17 @@ function getPool(): Pool | null {
             connectionString: url,
             max: 3,
             connectionTimeoutMillis: 10_000,
-            keepAlive: true,
+            // Scale-to-zero invariant (same rule as lib/prisma.ts, see PR #1030):
+            // idle connections MUST be reaped and `min` MUST stay 0, or this pool
+            // alone keeps the shared Aurora cluster from ever auto-pausing — it
+            // pauses only after ~5 minutes with zero connections and zero queries.
+            // Reaped fast (10s) rather than prisma.ts's 60s: that 60s buys warmth
+            // across a USER's click-to-click gaps, and this pool has no user — it
+            // serves one daily batch (api/cron/reconcile-shopify) and should let go
+            // as soon as the run ends. No keepAlive: it exists to detect dead peers
+            // on long-held connections, and nothing here holds one.
+            idleTimeoutMillis: 10_000,
+            min: 0,
         });
         pool.on("error", (e) => logger.error("shopify_read pool error:", e));
     }

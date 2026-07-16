@@ -499,7 +499,7 @@ model BoardSettings {
   shopifyVolunteerVariantId  String?
   /// @sensitivity:internal
   shopifyPriceSyncedAt       DateTime?
-  /// High-water mark for the hourly Shopify reconciler (lib/finance/reconcile.ts):
+  /// High-water mark for the daily Shopify reconciler (lib/finance/reconcile.ts):
   /// the mirror `updatedAt` of the newest order it has already processed. Only
   /// orders changed after this are re-scanned each run. Null = scan from the start.
   /// @sensitivity:internal
@@ -1122,7 +1122,7 @@ model DevSentEmail {
 }
 
 // ── Payment reconciliation ───────────────────────────────────────────────────
-// The hourly reconciler (lib/finance/reconcile.ts) reads the s-read `shopify_read`
+// The daily reconciler (lib/finance/reconcile.ts) reads the s-read `shopify_read`
 // mirror and reconciles Shopify order truth against membership/program truth.
 // Clean recoveries (a missed orders/paid webhook) advance the family and are
 // recorded to AuditLog only. Everything a human must decide — refunds, chargebacks,
@@ -1183,8 +1183,8 @@ model PaymentException {
   /// @sensitivity:internal
   detectedAt           DateTime                 @default(now())
 
-  // Idempotent re-detection: one open row per (kind, order) across hourly runs —
-  // the reconciler upserts on this key instead of duplicating every hour.
+  // Idempotent re-detection: one open row per (kind, order) across daily runs —
+  // the reconciler upserts on this key instead of duplicating each run.
   @@unique([kind, shopifyOrderId])
   @@index([status, severity])
 }

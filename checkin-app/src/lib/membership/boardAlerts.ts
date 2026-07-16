@@ -40,9 +40,10 @@ const EXCEPTION_BLURB: Record<string, string> = {
 /**
  * Escalate a payment reconciliation problem to the board. CRITICAL (a chargeback)
  * emails immediately; WARN-level problems are surfaced on the finance-ops payments
- * dashboard + the red-dot count only, so the board isn't emailed every hour for
- * routine refunds. (A daily WARN digest can be added later — see
- * notifyBoardPaymentExceptionDigest.) Never throws — email failures are swallowed.
+ * dashboard + the red-dot count only, so a routine refund doesn't put mail in five
+ * inboxes. The reconciler that raises these runs once daily, so the dashboard is
+ * itself effectively a daily digest — a separate WARN digest email would just be
+ * the same list, pushed. Never throws — email failures are swallowed.
  */
 export async function notifyBoardPaymentException(
     kind: string,

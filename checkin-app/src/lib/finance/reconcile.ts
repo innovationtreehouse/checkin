@@ -16,9 +16,11 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  *              back, or cancelled: raise a PaymentException for the board. We never
  *              auto-revert access (a chargeback can be a bank error).
  *
- * Runs hourly from api/cron/reconcile-shopify. Idempotent: forward recovery is a
- * no-op once activate() has recorded the order (activate stores shopifyOrderId and
- * short-circuits on paidAt), and every exception upserts on (kind, order).
+ * Runs once daily from api/cron/reconcile-shopify (09:15 UTC, just behind s-read's
+ * 09:00 sync — the cadence is a scale-to-zero constraint, see that route).
+ * Idempotent: forward recovery is a no-op once activate() has recorded the order
+ * (activate stores shopifyOrderId and short-circuits on paidAt), and every
+ * exception upserts on (kind, order).
  *
  * Matching key is the order's customer EMAIL → household lead → the family's single
  * PENDING_PAYMENT process (the mirror carries no cart note-attributes and no line
@@ -55,7 +57,7 @@ interface ExceptionRef {
 }
 
 /**
- * Upsert a PaymentException, idempotent across hourly runs. One open row per
+ * Upsert a PaymentException, idempotent across daily runs. One open row per
  * (kind, order); a resolved row that re-detects reopens (the problem came back). A
  * newly-opened or reopened row escalates to the board (CRITICAL emails immediately;
  * WARN is surfaced on the dashboard + red-dot only — see notifyBoardPaymentException).
@@ -248,7 +250,7 @@ function classifyReversal(o: MirrorOrder, disputed: boolean): PaymentExceptionKi
  * Fast-path entry for the reversal webhooks (refunds/create, orders/cancelled,
  * disputes/*): map a Shopify order id to the membership process and/or program
  * enrollment it activated and raise the given problem. Returns true if anything
- * matched. Shares the same idempotent raise as the hourly reconciler.
+ * matched. Shares the same idempotent raise as the daily reconciler.
  */
 export async function raiseReversalByOrderId(orderLegacyId: string, kind: PaymentExceptionKind): Promise<boolean> {
     let matched = false;

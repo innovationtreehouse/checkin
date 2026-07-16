@@ -7,7 +7,7 @@ import { raiseReversalByOrderId, type PaymentExceptionKind } from "@/lib/finance
 import { recordShopifyWebhookReceipt } from "@/lib/shopifyWebhookReceipt";
 
 /**
- * Fast-path Shopify reversal webhooks — the low-latency complement to the hourly
+ * Fast-path Shopify reversal webhooks — the low-latency complement to the daily
  * reconciler. Subscribed topics (register-shopify-webhook.ts):
  *   refunds/create        → REFUND
  *   orders/cancelled      → CANCELLED
@@ -16,7 +16,7 @@ import { recordShopifyWebhookReceipt } from "@/lib/shopifyWebhookReceipt";
  *
  * Each maps the affected Shopify order id to the membership process / program
  * enrollment it activated and raises a PaymentException (board decides — we never
- * auto-revert access). Whatever this drops, the hourly reconciler still catches.
+ * auto-revert access). Whatever this drops, the daily reconciler still catches (within ~24h).
  * Same HMAC verify as the orders/paid route; the topic rides the x-shopify-topic
  * header.
  */
