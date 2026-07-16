@@ -244,3 +244,14 @@ jobs:
 
           gh pr comment "$PR" --body "$BODY"
           echo "Posted result on PR #$PR"
+
+  # s-read rides every dev deploy (issue #235's decision: the checkin pipeline
+  # owns s-read deploys; deploy-s-read.yml's manual dispatch remains for ad-hoc
+  # runs). Runs after the app is out; same commit; migrate-and-code mode.
+  s-read:
+    name: Deploy s-read (dev)
+    needs: deploy
+    uses: ./.github/workflows/deploy-s-read.yml
+    with:
+      environment: dev
+      ref: ${{ github.event.workflow_run.head_sha }}

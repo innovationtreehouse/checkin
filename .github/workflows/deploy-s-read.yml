@@ -56,6 +56,23 @@ on:
           - migrate-and-code
           - code-only
         default: migrate-and-code
+  # Called by deploy-dev.yml (environment: dev) and deploy-prod.yml
+  # (environment: prod) so every app deploy migrates + deploys its s-read
+  # counterpart; the dispatch trigger above remains for ad-hoc runs.
+  workflow_call:
+    inputs:
+      environment:
+        description: "s-read environment (dev | prod)"
+        type: string
+        required: true
+      mode:
+        description: "Deploy mode (migrate-and-code | code-only)"
+        type: string
+        default: migrate-and-code
+      ref:
+        description: "Commit/tag to build; empty = the triggering commit"
+        type: string
+        default: ""
 
 permissions:
   id-token: write   # assume the deploy role via OIDC
@@ -73,15 +90,28 @@ env:
   SYNC_TASK_FAMILY: s-read-${{ inputs.environment }}-sync
   MIGRATE_TASK_FAMILY: s-read-${{ inputs.environment }}-migrate
   MIGRATE_LOG_GROUP: /ecs/s-read-${{ inputs.environment }}-migrate
-  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
+  # Per-env deploy role: the prod role's OIDC trust requires the job to carry
+  # `environment: production` (sub repo:...:environment:production); the dev
+  # role's trust is the bare main-ref sub, so the dev path must carry NO
+  # environment — hence the conditional `environment:` on the job below (an
+  # empty name means none).
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-${{ inputs.environment == 'prod' && 'prod' || 'dev' }}
 
 jobs:
   deploy:
     name: Build, push, migrate, register (${{ inputs.environment }})
     runs-on: ubuntu-24.04-arm  # native ARM64 — the task defs are arm64 (runtime_platform)
+    # prod: rides the production environment gate (human approval + the OIDC
+    # sub the prod role trusts). dev: no environment — see DEPLOY_ROLE comment.
+    environment: ${{ inputs.environment == 'prod' && 'production' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          # Empty on dispatch = the triggering commit, exactly as before; the
+          # pipelines pass the deployed app commit/tag so app and s-read ship
+          # the same tree.
+          ref: ${{ inputs.ref || '' }}
 
       - name: Resolve commit
         id: vars
