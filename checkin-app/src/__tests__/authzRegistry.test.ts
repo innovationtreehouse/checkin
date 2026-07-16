@@ -99,6 +99,9 @@ const AUTHZ_TESTED = new Set<string>([
     'settings/membership',
     'settings/membership/bulk-open-renewals',
     'settings/membership/volunteer-designations',
+    // GET deny-path (401 anon / 403 non-board) unit-tested through the real
+    // withAuth in api/settings/shopify-webhook/__tests__/route.test.ts.
+    'settings/shopify-webhook',
     'shop/tools/[id]',
     'system-status/audit-log',
     'system-status/errors',
