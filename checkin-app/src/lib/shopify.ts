@@ -94,6 +94,108 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+/** Thrown by fetchStorefrontProductVariants; status maps straight onto the API response. */
+export class ProductUrlError extends Error {
+    constructor(message: string, public readonly status: number) {
+        super(message);
+        this.name = "ProductUrlError";
+    }
+}
+
+export interface StorefrontVariant {
+    id: string;
+    title: string;
+    /** The public product JSON reports prices in cents; null when the shape is unexpected. */
+    priceCents: number | null;
+}
+
+/**
+ * Resolve the variants of a membership product from its storefront URL via
+ * Shopify's public product JSON (`https://<store>/products/<handle>.js`).
+ * Backs the "Extract variant from URL" action in membership settings: for a
+ * single-variant product the Shopify admin UI hides the lone "Default Title"
+ * variant entirely, so the product ID is the only number an admin can see —
+ * and pasting THAT into the variant-ID field 410s the cart permalink checkout
+ * (lib/membership/payment.ts builds https://<store>/cart/<variantId>:1).
+ *
+ * SSRF pinning — this is a server-side fetch of an admin-supplied URL, so the
+ * URL is pinned hard before any request goes out: https only, host must
+ * EXACTLY equal the configured SHOPIFY_STORE_DOMAIN, path must match
+ * /products/<handle> after normalization (query, hash, and trailing slash
+ * stripped), and redirects are refused rather than followed. Everything else
+ * is a 400 before fetch.
+ *
+ * Shopify bot-throttles the .js endpoint for non-browser callers (429s
+ * observed from server IPs), so the request carries a browser User-Agent and
+ * retries twice with a short backoff; a still-throttled request surfaces as
+ * "try again in a minute", not a generic failure. The Admin API would be the
+ * throttle-proof alternative if this keeps biting.
+ */
+export async function fetchStorefrontProductVariants(productUrl: string): Promise<StorefrontVariant[]> {
+    const storeDomain = config.shopifyStoreDomain();
+    if (!storeDomain) throw new ProductUrlError("SHOPIFY_STORE_DOMAIN is not configured on this instance, so the URL cannot be verified.", 400);
+
+    let parsed: URL;
+    try {
+        parsed = new URL(productUrl.trim());
+    } catch {
+        throw new ProductUrlError("That is not a valid URL.", 400);
+    }
+    if (parsed.protocol !== "https:") throw new ProductUrlError("The product URL must start with https://.", 400);
+    // URL lowercases the hostname and drops a default :443, so an exact host
+    // comparison also rejects any explicit non-default port.
+    if (parsed.host !== storeDomain.toLowerCase()) {
+        throw new ProductUrlError(`The product URL must be on the store domain ${storeDomain}.`, 400);
+    }
+    const productPath = parsed.pathname.replace(/\/+$/, "");
+    if (!/^\/products\/[a-z0-9-]+$/.test(productPath)) {
+        throw new ProductUrlError(`The URL must be a product page: https://${storeDomain}/products/<product-handle>.`, 400);
+    }
+
+    let res: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        try {
+            res = await fetch(`https://${storeDomain}${productPath}.js`, {
+                headers: {
+                    // Browser User-Agent: see the throttling note in the doc comment.
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    Accept: "application/json",
+                },
+                redirect: "error", // any redirect could leave the pinned host — refuse it
+                signal: AbortSignal.timeout(10_000),
+            });
+        } catch (err) {
+            if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+                throw new ProductUrlError("Shopify did not answer within 10 seconds — try again.", 504);
+            }
+            // undici surfaces a refused redirect (and any network failure) as a TypeError.
+            throw new ProductUrlError("Could not fetch the product from Shopify — the request failed or was redirected.", 502);
+        }
+        if (res.status !== 429) break;
+    }
+    if (!res || res.status === 429) throw new ProductUrlError("Shopify throttled the request — try again in a minute.", 429);
+    if (res.status === 404) throw new ProductUrlError("Shopify has no product at that URL — check the link.", 404);
+    if (!res.ok) throw new ProductUrlError(`Shopify returned ${res.status} for the product URL — check the link and try again.`, 502);
+
+    let product: { variants?: Array<{ id?: number | string; title?: string; price?: unknown }> };
+    try {
+        product = await res.json();
+    } catch {
+        throw new ProductUrlError("Shopify's response was not product JSON — check that the URL is the product page.", 502);
+    }
+    if (!Array.isArray(product?.variants)) {
+        throw new ProductUrlError("Shopify's response has no variant list — check that the URL is the product page.", 502);
+    }
+    return product.variants
+        .filter((v) => v?.id !== undefined && v?.id !== null)
+        .map((v) => ({
+            id: String(v.id),
+            title: v.title || "Default Title",
+            priceCents: typeof v.price === "number" ? v.price : null,
+        }));
+}
+
 /**
  * Shared failure path for Shopify write operations: log to IntegrationErrorLog
  * (System Status > Link Status) and best-effort email admins/board. Never
