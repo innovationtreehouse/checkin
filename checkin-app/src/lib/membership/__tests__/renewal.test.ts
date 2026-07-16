@@ -11,7 +11,7 @@
  *     each cycle) and only a still-valid background check with no household
  *     note pre-stamps bgClearedAt.
  */
-import { householdBgIsFresh, beginRenewal, RenewalError } from '@/lib/membership/renewal';
+import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError } from '@/lib/membership/renewal';
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -76,6 +76,28 @@ describe('householdBgIsFresh', () => {
     it('no lead with a fresh-enough background check → not fresh', async () => {
         prisma.person.findFirst.mockResolvedValue(null);
         expect(await householdBgIsFresh(42, boundary, 12)).toBe(false);
+    });
+});
+
+describe('isRenewalSeason', () => {
+    // Boundary month/day = Sep 1; lead window is 2 months → season opens Jul 1.
+    const boundaryConfig = new Date(Date.UTC(2020, 8, 1)); // year is ignored (month/day only)
+
+    it('no boundary configured → not renewal season', async () => {
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: null });
+        expect(await isRenewalSeason(new Date(Date.UTC(2026, 7, 15)))).toBe(false);
+    });
+
+    it('inside the 2-month lead window → renewal season', async () => {
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: boundaryConfig });
+        // 2026-08-01 is within [2026-07-01, 2026-09-01).
+        expect(await isRenewalSeason(new Date(Date.UTC(2026, 7, 1)))).toBe(true);
+    });
+
+    it('before the lead window opens → not renewal season', async () => {
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: boundaryConfig });
+        // 2026-06-30 is one day before the window opens.
+        expect(await isRenewalSeason(new Date(Date.UTC(2026, 5, 30)))).toBe(false);
     });
 });
 

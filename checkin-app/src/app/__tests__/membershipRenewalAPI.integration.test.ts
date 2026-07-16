@@ -127,6 +127,27 @@ describe('Membership renewal', () => {
         expect(second).toBeDefined();
     });
 
+    it('does not re-open for a household already renewed this cycle (terminal RENEWAL in-window)', async () => {
+        await setBoundary(new Date(Date.UTC(2000, 7, 1))); // Aug 1
+        const now = new Date(Date.UTC(2026, 6, 1)); // Jul 1 — within the window
+        const m = await makeActiveMembership('Renewed', null, `renewed-lead-${TAG}@example.com`);
+        // A completed renewal this cycle (early finisher, or the admin coming-year
+        // override): terminal ACTIVE RENEWAL with stageEnteredAt inside the window.
+        await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'ACTIVE', stageEnteredAt: now },
+        });
+
+        await runRenewalSweep(now);
+
+        // No fresh PENDING_RENEWAL opened — the terminal row counts as handled.
+        const opened = await prisma.orgMembershipProcess.findFirst({
+            where: { orgMembershipId: m.orgMembershipId, status: 'PENDING_RENEWAL' },
+        });
+        expect(opened).toBeNull();
+        const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
+        expect(count).toBe(1);
+    });
+
     it('beginRenewal with a valid parent background check: re-sign only — bgClearedAt stamped, signature opens payment', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1)));
         const m = await makeActiveMembership('Fresh', new Date()); // recent background check

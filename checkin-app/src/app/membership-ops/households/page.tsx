@@ -23,6 +23,7 @@ export default function AdminHouseholdsPage() {
   const router = useRouter();
 
   const [households, setHouseholds] = useState<Household[]>([]);
+  const [renewalSeason, setRenewalSeason] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
@@ -36,6 +37,7 @@ export default function AdminHouseholdsPage() {
       if (res.ok) {
         const data = await res.json();
         setHouseholds(data.households);
+        setRenewalSeason(data.renewalSeason ?? false);
       } else {
         setError("Failed to fetch households.");
       }
@@ -63,6 +65,29 @@ export default function AdminHouseholdsPage() {
         notifications.show({ color: 'green', message: currentActive ? 'Membership revoked.' : 'Membership granted.' });
       } else {
         notifications.show({ color: 'red', message: 'Failed to update membership.', autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
+    }
+  };
+
+  // Renewal-season only: admin override that grants the household for the coming year
+  // in one click (server creates a completed RENEWAL/INITIAL process). Same COI rules
+  // as Grant Membership — the server rejects a board member's own household.
+  const grantForComingYear = async (householdId: number) => {
+    try {
+      const res = await fetch('/api/membership-ops/households', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ householdId, comingYear: true })
+      });
+
+      if (res.ok) {
+        fetchHouseholds();
+        notifications.show({ color: 'green', message: 'Granted for the coming year.' });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: 'red', message: data.error || 'Failed to grant for the coming year.', autoClose: false });
       }
     } catch {
       notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
@@ -163,8 +188,11 @@ export default function AdminHouseholdsPage() {
               // Conflict of interest: a board member may not GRANT their own household
               // membership (bypasses payment + background check). Sysadmin keeps the button.
               // Mirrors the server guard; disabled state is UX only. Revoke stays allowed.
-              const ownGrantBlocked =
-                !hasActiveMembership && me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
+              // A board member may not grant their own household (bypasses payment + BG).
+              // Grant Membership only offers on non-members; the coming-year override applies
+              // to existing members too, so it needs the conflict regardless of current status.
+              const ownHouseholdConflict = me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
+              const ownGrantBlocked = !hasActiveMembership && ownHouseholdConflict;
               const hasBrokenEmail = household.householdMembers?.some((p) => p.emailUndeliverableAt) ?? false;
               // Staff households (@innovationtreehouse.org) aren't program families: block
               // adding participants and granting membership. Revoke stays allowed.
@@ -221,6 +249,7 @@ export default function AdminHouseholdsPage() {
                     )}
                   </Table.Td>
                   <Table.Td>
+                    <Stack gap="xs" align="flex-start">
                     <Group gap="xs" wrap="nowrap">
                       <Button
                         size="xs" fz={15}
@@ -278,6 +307,25 @@ export default function AdminHouseholdsPage() {
                         </>
                       )}
                     </Group>
+                    {renewalSeason && !isDenied && (
+                      <Button
+                        size="xs" fz={15}
+                        variant="light"
+                        color="green"
+                        disabled={ownHouseholdConflict || isStaffHousehold}
+                        title={
+                          isStaffHousehold
+                            ? "Staff households can't be granted membership."
+                            : ownHouseholdConflict
+                              ? "You can't grant your own household's membership — a sysadmin must."
+                              : undefined
+                        }
+                        onClick={() => grantForComingYear(household.id)}
+                      >
+                        Grant for coming year
+                      </Button>
+                    )}
+                    </Stack>
                   </Table.Td>
                 </Table.Tr>
               );
