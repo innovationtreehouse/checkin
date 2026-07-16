@@ -11,6 +11,7 @@ const ALL_KEYS = [
     "AGREEMENT_PDF_S3_BUCKET",
     "RESEND_API_KEY",
     "S_READ_TRIGGER_FUNCTION",
+    "SHOPIFY_READ_DATABASE_URL",
     "CHECKIN_ENV",
 ];
 
@@ -45,7 +46,9 @@ describe("getConfigHealth — prod, nothing configured", () => {
         expect(c["resend-email"].detail).toContain("RESEND_API_KEY");
         expect(c["s-read-trigger"].ok).toBe(false);
         expect(c["s-read-trigger"].detail).toContain("S_READ_TRIGGER_FUNCTION");
-        expect(openConfigIssues(checks)).toBe(5);
+        expect(c["s-read-mirror"].ok).toBe(false);
+        expect(c["s-read-mirror"].detail).toContain("SHOPIFY_READ_DATABASE_URL");
+        expect(openConfigIssues(checks)).toBe(6);
     });
 });
 
@@ -59,6 +62,7 @@ describe("getConfigHealth — prod, all configured", () => {
         process.env.AGREEMENT_PDF_S3_BUCKET = "bucket";
         process.env.RESEND_API_KEY = "re_key";
         process.env.S_READ_TRIGGER_FUNCTION = "s-read-prod-trigger";
+        process.env.SHOPIFY_READ_DATABASE_URL = "postgresql://s_read_prod_ro:pw@host:5432/shopify_read_prod";
         expect(openConfigIssues(getConfigHealth())).toBe(0);
     });
 });

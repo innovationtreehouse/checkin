@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { formatDateTime } from '@/lib/time';
+import { formatDateTime, relTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -34,6 +34,37 @@ type PaymentException = {
   } | null;
 };
 
+// Mirrors GET /api/finance-ops/s-read/sync. `status` is s-read's enum, read verbatim
+// — treat anything outside the known set as "no longer running" (see isTerminal).
+type SyncRun = {
+  status: string;
+  kind: string;
+  startedAt: string;
+  finishedAt: string | null;
+  error: string | null;
+};
+
+// Polling budget after a manual sync: 20 × 6s ≈ 2 minutes. Bounded on purpose —
+// every poll queries the mirror and keeps the scale-to-zero Aurora cluster awake,
+// which is the cost that makes the automatic sync daily rather than continuous
+// (infra#129). A sync still running at the cap is not lost, just no longer watched;
+// the status line picks it up on the next page load.
+const POLL_INTERVAL_MS = 6_000;
+const POLL_MAX_ATTEMPTS = 20;
+
+// RUNNING is the only non-terminal state. COMPLETED / FAILED / ABANDONED all mean
+// "stop watching" — ABANDONED being s-read's reaper relabelling a run whose process
+// was killed, which is exactly why polling must not treat "not COMPLETED" as "keep
+// waiting". An unrecognised status also stops: s-read owns this enum, and a value we
+// do not know is not grounds to poll forever.
+const isTerminal = (status: string) => status !== 'RUNNING';
+
+/** "12 min ago · completed", or "· running" while in flight. */
+function describeSync(run: SyncRun): string {
+  const when = isTerminal(run.status) && run.finishedAt ? run.finishedAt : run.startedAt;
+  return `${relTime(when)} · ${run.status.toLowerCase()}`;
+}
+
 export default function PaymentProblemsPage() {
   const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
@@ -44,6 +75,23 @@ export default function PaymentProblemsPage() {
   const [pendingResolve, setPendingResolve] = useState<PaymentException | null>(null);
   const [note, setNote] = useState("");
   const [syncing, setSyncing] = useState(false);
+  // null = no run yet or the mirror isn't wired in this env (the GET 503s) — either
+  // way there is nothing to say, so the status line just doesn't render.
+  const [syncRun, setSyncRun] = useState<SyncRun | null>(null);
+
+  const fetchSyncRun = useCallback(async (): Promise<SyncRun | null> => {
+    try {
+      const res = await fetch('/api/finance-ops/s-read/sync');
+      if (!res.ok) return null;
+      const run: SyncRun | null = (await res.json()).run;
+      setSyncRun(run);
+      return run;
+    } catch {
+      // Freshness is decoration on this page; a failed status read must never
+      // surface as an error over the queue itself.
+      return null;
+    }
+  }, []);
 
   const fetchRows = useCallback(async () => {
     try {
@@ -61,8 +109,11 @@ export default function PaymentProblemsPage() {
   }, []);
 
   useEffect(() => {
-    if (ready) fetchRows();
-  }, [ready, fetchRows]);
+    if (ready) {
+      fetchRows();
+      fetchSyncRun();
+    }
+  }, [ready, fetchRows, fetchSyncRun]);
 
   const patch = async (id: number, action: 'acknowledge' | 'resolve', noteText?: string) => {
     try {
@@ -87,22 +138,49 @@ export default function PaymentProblemsPage() {
 
   // Force an s-read incremental sync. The mirror behind "Live payment" refreshes once
   // a day, so a problem fixed in Shopify this morning still reads stale here until
-  // tomorrow. The sync runs in the background (this returns as soon as it is started),
-  // and the reconciler picks the fresh data up on its next run — so this does NOT
-  // refetch the table: there would be nothing new to see yet.
+  // tomorrow. The POST only STARTS the sync, so we then poll the run's status and
+  // refetch the table once it lands — "Live payment" reads straight from the mirror,
+  // so those amounts can differ the moment the sync finishes.
+  //
+  // Note the queue ROWS themselves are the reconciler's output, not the sync's, and
+  // the reconciler runs on its own daily tick — so a finished sync refreshes the live
+  // amounts, but a problem it resolves stays listed until the next reconcile.
   const triggerSync = async () => {
     setSyncing(true);
     try {
       const res = await fetch('/api/finance-ops/s-read/sync', { method: 'POST' });
-      if (res.ok) {
-        notifications.show({
-          color: 'green',
-          message: 'Shopify sync started. Live payment amounts refresh once it finishes — check back in a few minutes.',
-        });
-      } else {
+      if (!res.ok) {
         const data = await res.json();
         notifications.show({ color: 'red', message: data.error || "Failed to start the Shopify sync.", autoClose: false });
+        return;
       }
+      notifications.show({ color: 'green', message: 'Shopify sync started…' });
+
+      for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
+        await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        const run = await fetchSyncRun();
+        // A null run means the status read failed or the mirror isn't wired — there is
+        // nothing to watch, so stop rather than burn the whole budget on empty polls.
+        if (!run) break;
+        if (!isTerminal(run.status)) continue;
+
+        await fetchRows();
+        if (run.status === 'COMPLETED') {
+          notifications.show({ color: 'green', message: 'Shopify sync finished. Live payment amounts are up to date.' });
+        } else {
+          notifications.show({
+            color: 'red',
+            message: `Shopify sync ${run.status.toLowerCase()}. Live payment amounts may still be stale.`,
+            autoClose: false,
+          });
+        }
+        return;
+      }
+      // Ran out of budget with the sync still going — it is still running server-side.
+      notifications.show({
+        color: 'yellow',
+        message: 'Shopify sync is still running. Reload the page in a few minutes to see the result.',
+      });
     } catch {
       notifications.show({ color: 'red', message: "Network error starting the Shopify sync.", autoClose: false });
     } finally {
@@ -220,6 +298,7 @@ export default function PaymentProblemsPage() {
       <Text size="sm" c="dimmed">
         Shopify data syncs automatically once a day. If you&apos;ve just changed something in Shopify
         and want it reflected here sooner, sync now.
+        {syncRun && ` Last Shopify sync: ${describeSync(syncRun)}.`}
       </Text>
 
       <AlertBanner message={message} tone="error" />

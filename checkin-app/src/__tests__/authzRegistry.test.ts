@@ -68,8 +68,8 @@ const AUTHZ_TESTED = new Set<string>([
     'facility/visits',
     'finance-ops/payments',
     'finance-ops/payments/[id]',
-    // POST deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,
-    // which also assert the Lambda is never invoked on a denied request.
+    // POST + GET deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,
+    // which also assert a denied request never invokes the Lambda or reads the mirror.
     'finance-ops/s-read/sync',
     'kioskdisplay/certifications',
     'membership-audit/compliance',

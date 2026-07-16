@@ -18,9 +18,11 @@ import { logger } from "@/lib/logger";
  * (isolated by database + role, not by cluster), so this pool is bound by the same
  * scale-to-zero invariant as lib/prisma.ts — see getPool below.
  *
- * The connection string SHOULD point at a read-only role. Null env → isConfigured()
- * is false and the reconciler no-ops, so an env without the mirror runs no
- * reconciliation rather than crashing.
+ * The connection string SHOULD point at a read-only role — in a deployed env it is
+ * s_read_<env>_ro, a SELECT-only role provisioned by the checkin-bootstrap task
+ * (infra modules/s-read/init.sql). Null env → isConfigured() is false and the
+ * reconciler no-ops, so an env without the mirror runs no reconciliation rather
+ * than crashing.
  *
  * ponytail: no store_id filter — each env has its own `shopify_read_<env>` DB with
  * exactly one store, so filtering would only risk a myshopify-vs-storefront domain
@@ -121,6 +123,54 @@ export async function ordersByLegacyIds(legacyIds: string[]): Promise<MirrorOrde
         [legacyIds],
     );
     return rows.rows;
+}
+
+/** The `sync_run` columns the board needs to judge how fresh the mirror is. */
+export interface MirrorSyncRun {
+    /**
+     * RUNNING | COMPLETED | FAILED | ABANDONED. ABANDONED is s-read's stale-run
+     * reaper relabelling a run whose process was killed (timeout/OOM) — so a dead
+     * run never sits as RUNNING forever. Read verbatim; not narrowed to a union,
+     * since the mirror's enum is s-read's to extend and an unknown value must
+     * surface rather than break the read.
+     */
+    status: string;
+    /** BACKFILL | INCREMENTAL | ADMIN. */
+    kind: string;
+    startedAt: Date;
+    finishedAt: Date | null;
+    /** s-read's per-object row counts. Shape is s-read's; passed through untouched. */
+    counts: unknown;
+    error: string | null;
+}
+
+/**
+ * The most recent sync run, or null when the mirror has never run one (or is
+ * unconfigured). Ordered by started_at — s-read stamps it on insert, so it is
+ * non-null for every row, unlike finished_at.
+ *
+ * ⚠ AT TIME ZONE 'UTC' is load-bearing, not decoration. s-read's timestamps are
+ * `timestamp WITHOUT time zone` holding UTC (Prisma's default mapping for DateTime),
+ * and node-pg resolves a naive timestamp against the NODE PROCESS's zone — so a
+ * container running anything but UTC reads every run at an offset and reports
+ * nonsense freshness ("just now" for an hours-old sync, since a future instant makes
+ * the difference negative). The cast pins the interpretation to UTC and hands the
+ * driver a timestamptz, which is unambiguous everywhere. Deployed tasks happen to
+ * run TZ=UTC today; this makes that a non-issue rather than a dependency.
+ */
+export async function latestSyncRun(): Promise<MirrorSyncRun | null> {
+    const p = getPool();
+    if (!p) return null;
+    const rows = await p.query<MirrorSyncRun>(
+        `SELECT status::text AS status, kind::text AS kind,
+                started_at  AT TIME ZONE 'UTC' AS "startedAt",
+                finished_at AT TIME ZONE 'UTC' AS "finishedAt",
+                counts, error
+         FROM sync_run
+         ORDER BY started_at DESC
+         LIMIT 1`,
+    );
+    return rows.rows[0] ?? null;
 }
 
 /**

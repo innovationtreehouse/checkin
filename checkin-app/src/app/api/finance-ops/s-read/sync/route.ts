@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { config } from "@/lib/config";
+import { isConfigured, latestSyncRun } from "@/lib/shopifyRead/client";
 
 /**
  * POST /api/finance-ops/s-read/sync — the board forces an s-read incremental sync
@@ -34,6 +35,8 @@ import { config } from "@/lib/config";
  *
  * No AuditLog row: it takes a non-null tableName + affectedEntityId and this touches
  * no checkin entity. The actor is logged here, and s-read stamps its own `sync_run`.
+ *
+ * GET on the same path reports the latest run's status — see below.
  */
 export const POST = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -66,6 +69,44 @@ export const POST = withAuth(
         } catch (error) {
             logger.error("Failed to trigger s-read sync:", error);
             return apiError("Failed to start the Shopify sync", 500);
+        }
+    },
+);
+
+/**
+ * GET /api/finance-ops/s-read/sync — the latest s-read run, so the payments page can
+ * say how fresh "Live payment" is and tell whether a sync it just started has landed.
+ *
+ * Gated on the MIRROR, not on the trigger the POST gates on: the two are separate
+ * wiring (SHOPIFY_READ_DATABASE_URL vs S_READ_TRIGGER_FUNCTION), and an env can
+ * legitimately have one without the other. Unwired → 503, matching the POST, so the
+ * page can just hide the status line rather than special-case a success body that
+ * means "no answer".
+ *
+ * Same board/sysadmin gate as the POST. `sync_run` is operational metadata (status,
+ * kind, timings, row counts) about the store as a whole — no per-person or
+ * per-order data — but it rides the same queue-level boundary as the rest of
+ * finance-ops rather than being widened for no caller.
+ *
+ * The status is read verbatim from the mirror; the caller decides what to do with a
+ * value it does not recognise (s-read owns that enum and may extend it).
+ */
+export const GET = withAuth(
+    { roles: ['isSysadmin', 'isBoardMember'] },
+    async (_req, auth) => {
+        if (auth.type !== 'session') {
+            return apiError("Unauthorized", 401);
+        }
+
+        if (!isConfigured()) {
+            return apiError("The Shopify mirror is not wired in this environment", 503);
+        }
+
+        try {
+            return NextResponse.json({ run: await latestSyncRun() });
+        } catch (error) {
+            logger.error("Failed to read the s-read sync status:", error);
+            return apiError("Failed to read the Shopify sync status", 500);
         }
     },
 );
