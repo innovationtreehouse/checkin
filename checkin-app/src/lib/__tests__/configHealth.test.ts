@@ -5,7 +5,14 @@ import { getConfigHealth, openConfigIssues, type ConfigCheck } from "@/lib/confi
 // mocks (NODE_ENV was eliminated as a fuse, #951); CHECKIN_ENV drives prod.
 
 const ZOHO_KEYS = ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"];
-const ALL_KEYS = [...ZOHO_KEYS, "ZOHO_WEBHOOK_SECRET", "AGREEMENT_PDF_S3_BUCKET", "RESEND_API_KEY", "CHECKIN_ENV"];
+const ALL_KEYS = [
+    ...ZOHO_KEYS,
+    "ZOHO_WEBHOOK_SECRET",
+    "AGREEMENT_PDF_S3_BUCKET",
+    "RESEND_API_KEY",
+    "S_READ_TRIGGER_FUNCTION",
+    "CHECKIN_ENV",
+];
 
 const saved: Record<string, string | undefined> = {};
 beforeEach(() => {
@@ -36,7 +43,9 @@ describe("getConfigHealth — prod, nothing configured", () => {
         expect(c["zoho-webhook-secret"].detail).toContain("ZOHO_WEBHOOK_SECRET");
         expect(c["resend-email"].ok).toBe(false);
         expect(c["resend-email"].detail).toContain("RESEND_API_KEY");
-        expect(openConfigIssues(checks)).toBe(4);
+        expect(c["s-read-trigger"].ok).toBe(false);
+        expect(c["s-read-trigger"].detail).toContain("S_READ_TRIGGER_FUNCTION");
+        expect(openConfigIssues(checks)).toBe(5);
     });
 });
 
@@ -49,6 +58,7 @@ describe("getConfigHealth — prod, all configured", () => {
         process.env.ZOHO_WEBHOOK_SECRET = "whsecret";
         process.env.AGREEMENT_PDF_S3_BUCKET = "bucket";
         process.env.RESEND_API_KEY = "re_key";
+        process.env.S_READ_TRIGGER_FUNCTION = "s-read-prod-trigger";
         expect(openConfigIssues(getConfigHealth())).toBe(0);
     });
 });
