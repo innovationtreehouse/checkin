@@ -43,6 +43,7 @@ export const GET = withAuth(
                 phone: p.phone,
                 dateOfBirth: p.dateOfBirth,
                 isDeclaredAdult: p.isDeclaredAdult,
+                lastBackgroundCheck: p.lastBackgroundCheck,
                 isMember: personRecordIsActiveOrgMember(p),
                 isBoardMember: p.isBoardMember,
                 isKeyholder: p.isKeyholder,

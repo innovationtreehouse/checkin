@@ -21,6 +21,7 @@ type PersonRow = {
   phone: string | null;
   dateOfBirth?: string | null;
   isDeclaredAdult?: boolean;
+  lastBackgroundCheck?: string | null;
   household?: HouseholdRef | null;
 };
 
@@ -89,7 +90,7 @@ export default function AdminParticipantsIndex() {
   // Edit Participant State
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingParticipant, setEditingParticipant] = useState<PersonRow | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", isDeclaredAdult: false });
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", isDeclaredAdult: false, lastBackgroundCheck: "" });
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Admin edit of household's own info (name, address, emergency contact)
@@ -242,7 +243,7 @@ export default function AdminParticipantsIndex() {
                           )}
                           <Button size="xs" fz={15} variant="default" onClick={() => {
                             setEditingParticipant(p);
-                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "", isDeclaredAdult: !!p.isDeclaredAdult });
+                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "", isDeclaredAdult: !!p.isDeclaredAdult, lastBackgroundCheck: p.lastBackgroundCheck ? p.lastBackgroundCheck.slice(0, 10) : "" });
                             setEditModalOpen(true);
                           }}>
                             Details
@@ -341,6 +342,13 @@ export default function AdminParticipantsIndex() {
                 onChange={(e) => { const checked = e.currentTarget.checked; setEditForm(f => ({ ...f, isDeclaredAdult: checked })); }}
               />
             )}
+            <TextInput
+              type="date"
+              label="Last Background Check Review"
+              description="Date the board last reviewed this person's background check. Clear the field to remove it."
+              value={editForm.lastBackgroundCheck}
+              onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, lastBackgroundCheck: value })); }}
+            />
             {editingParticipant?.household && (
               <div>
                 <Text fw={500} size="sm" mb={4}>Household</Text>
