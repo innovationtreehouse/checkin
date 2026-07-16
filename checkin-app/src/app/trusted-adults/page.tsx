@@ -22,7 +22,7 @@ export default function TrustedAdultsPage() {
     if (!isLead) return null; // redirect in flight
 
     return (
-        <Stack p="md">
+        <Stack>
             <Title order={2}>Trusted Adults</Title>
             <TrustedAdultPanel />
         </Stack>
