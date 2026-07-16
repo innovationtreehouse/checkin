@@ -1,3 +1,15 @@
+-- Coalesce of the two migrations accumulated since v1.0.1 (#1021 + #1031),
+-- per MIGRATION_COALESCE_FLOW.md: a release applies at most one migration
+-- per database. Both parts additive; original order preserved.
+
+-- ── 20260715210000_org_membership_product_url ──────────────────────────────
+-- Board admins configure the membership dues product by pasting its storefront
+-- URL; the server extracts the Shopify variant ID from it. Stored so the board
+-- can see which product the variant ID came from and re-run the extraction.
+-- Additive only.
+ALTER TABLE "BoardSettings" ADD COLUMN "orgMembershipProductUrl" TEXT;
+
+-- ── 20260716120000_payment_reconciliation ──────────────────────────────────
 -- Shopify payment reconciliation (lib/finance/reconcile.ts). Additive only:
 -- new enums, a new PaymentException triage table, a reconciler high-water cursor
 -- on BoardSettings, and a Shopify order-id on ProgramParticipant so a later
