@@ -22,11 +22,17 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * (activate stores shopifyOrderId and short-circuits on paidAt), and every
  * exception upserts on (kind, order).
  *
- * Matching key is the order's customer EMAIL → household lead → the family's single
- * PENDING_PAYMENT process (the mirror carries no cart note-attributes and no line
- * variant id, so we cannot use the webhook's exact process-id / variant match). A
- * zero/ambiguous email match, or an amount that does not cover dues, raises a
- * problem instead of guessing.
+ * Matching uses the SAME cart attribute the webhook credits — Membership_Process_ID
+ * (or CheckMeIn_Account_ID + Program_ID), mirrored since #1029 — so attribution is
+ * exact. Orders synced before that carry no attributes and fall back to customer
+ * email → household lead → the family's single pending process.
+ *
+ * What still can't be replicated is the webhook's variant-id check that the order
+ * really contains the membership/program product: the mirror's order lines carry
+ * sku/title, not variant ids. Membership recovery therefore gates on the order
+ * covering the family's dues instead. Nothing is guessed: an attribute naming an
+ * unknown process, an ambiguous email match, or an amount short of dues raises a
+ * problem for the board rather than activating.
  */
 
 export type PaymentExceptionKind =
@@ -120,38 +126,73 @@ function isReversed(o: MirrorOrder): boolean {
 
 // ── forward pass (recover missed payments) ───────────────────────────────────
 
+type ResolvedProcess = { id: number; orgMembershipId: number | null } | "none" | "ambiguous";
+
 /**
- * Try to attribute one mirror order to a membership process by customer email and
- * act on it. Returns true if the order was claimed (recovered or raised), false if
- * it is not a membership order (so a program pass may still claim it).
+ * Which membership process (if any) is this order paying for?
+ *
+ * Preferred: the `Membership_Process_ID` cart attribute the checkout link itself
+ * set — mirrored since #1029, and the exact same key the orders/paid webhook
+ * credits. Exact, so no ambiguity.
+ *
+ * Fallback: customer email → household lead → the family's single PENDING_PAYMENT
+ * process. Only reached for orders synced before #1029 shipped (note_attributes is
+ * null on those). Fuzzier, so it refuses to guess: zero or several pending
+ * processes resolve to "none"/"ambiguous" rather than picking one.
+ *
+ * Either way the caller amount-gates before activating, and only a PENDING_PAYMENT
+ * process is ever a recovery candidate.
+ */
+async function resolveMembershipProcess(order: MirrorOrder): Promise<ResolvedProcess> {
+    const raw = mirror.orderAttr(order, "Membership_Process_ID");
+    if (raw) {
+        const id = parseInt(raw, 10);
+        if (isNaN(id)) return "ambiguous"; // tagged as a membership order, but unusably
+        const p = await prisma.orgMembershipProcess.findUnique({
+            where: { id },
+            select: { id: true, status: true, orgMembershipId: true },
+        });
+        // Attribute names a process that doesn't exist — forged/replayed/stale. Never guess.
+        if (!p) return "ambiguous";
+        // It IS a membership order; it just isn't awaiting payment (already settled,
+        // still in review, archived...). activate() would no-op — nothing to recover.
+        if (p.status !== "PENDING_PAYMENT") return "none";
+        return { id: p.id, orgMembershipId: p.orgMembershipId };
+    }
+
+    const email = order.customerEmail?.toLowerCase().trim();
+    if (!email) return "none";
+    const leads = await prisma.person.findMany({ where: { email, isHouseholdLead: true }, select: { householdId: true } });
+    const householdIds = [...new Set(leads.map((l) => l.householdId))];
+    if (householdIds.length === 0) return "none";
+
+    const pending = await prisma.orgMembershipProcess.findMany({
+        where: { orgMembership: { householdId: { in: householdIds } }, status: "PENDING_PAYMENT" },
+        select: { id: true, orgMembershipId: true },
+    });
+    if (pending.length === 0) return "none"; // family has no membership awaiting payment.
+    if (pending.length > 1) return "ambiguous"; // can't safely pick which one this paid for.
+    return pending[0];
+}
+
+/**
+ * Try to attribute one mirror order to a membership process and act on it. Returns
+ * true if the order was claimed (recovered or raised), false if it is not a
+ * membership order (so a program pass may still claim it).
  */
 async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> {
-    const email = order.customerEmail?.toLowerCase().trim();
-    if (!email) return false;
-
     // Already recorded on a process? Then it is not a missed payment.
     if (order.legacyId) {
         const known = await prisma.orgMembershipProcess.findFirst({ where: { shopifyOrderId: order.legacyId }, select: { id: true } });
         if (known) return true;
     }
 
-    const leads = await prisma.person.findMany({ where: { email, isHouseholdLead: true }, select: { householdId: true } });
-    const householdIds = [...new Set(leads.map((l) => l.householdId))];
-    if (householdIds.length === 0) return false;
-
-    const pending = await prisma.orgMembershipProcess.findMany({
-        where: { orgMembership: { householdId: { in: householdIds } }, status: "PENDING_PAYMENT" },
-        select: { id: true, orgMembershipId: true },
-    });
-    if (pending.length === 0) return false; // family has no membership awaiting payment.
-
-    if (pending.length > 1) {
-        // Can't safely pick which pending membership this order paid for.
+    const proc = await resolveMembershipProcess(order);
+    if (proc === "none") return false; // not a membership order — a program pass may claim it.
+    if (proc === "ambiguous") {
         await raisePaymentException("UNMATCHED_ORDER", { shopifyOrderId: order.legacyId });
         return true;
     }
-
-    const proc = pending[0];
 
     // Paid then reversed before we ever activated — keep it PENDING, tell the board.
     if (isReversed(order)) {
@@ -191,8 +232,6 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
  * webhook). Returns true if claimed.
  */
 async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
-    const email = order.customerEmail?.toLowerCase().trim();
-    if (!email) return false;
     if (!isPaid(order)) return false;
 
     if (order.legacyId) {
@@ -200,8 +239,32 @@ async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
         if (known) return true;
     }
 
-    // The purchaser (household lead) and everyone in their household — enrollment is
-    // per person, but the order pays under the lead's email.
+    // Preferred: the cart attributes the enroll flow's checkout link set — the same
+    // keys the orders/paid webhook credits (mirrored since #1029). CheckMeIn_Account_ID
+    // is a comma-separated person list, matching the webhook's own parse.
+    const programRaw = mirror.orderAttr(order, "Program_ID");
+    const accountRaw = mirror.orderAttr(order, "CheckMeIn_Account_ID");
+    if (programRaw && accountRaw) {
+        const programId = parseInt(programRaw, 10);
+        const ids = accountRaw.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+        if (isNaN(programId) || ids.length === 0) {
+            await raisePaymentException("UNMATCHED_ORDER", { shopifyOrderId: order.legacyId });
+            return true;
+        }
+        // Only those actually awaiting payment; a redelivery/re-run finds none and no-ops.
+        const pending = await prisma.programParticipant.findMany({
+            where: { programId, personId: { in: ids }, status: "PENDING" },
+            select: { programId: true, personId: true },
+        });
+        if (pending.length === 0) return true; // it IS this program's order, nothing to recover.
+        return activateProgramFromOrder(order, programId, pending.map((p) => p.personId));
+    }
+
+    // Fallback for pre-#1029 orders (no attributes mirrored): the purchaser
+    // (household lead) and everyone in their household — enrollment is per person,
+    // but the order pays under the lead's email.
+    const email = order.customerEmail?.toLowerCase().trim();
+    if (!email) return false;
     const leads = await prisma.person.findMany({ where: { email, isHouseholdLead: true }, select: { householdId: true } });
     const householdIds = [...new Set(leads.map((l) => l.householdId))];
     if (householdIds.length === 0) return false;
@@ -215,25 +278,31 @@ async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
     if (pending.length === 0) return false;
 
     // A single order can enroll a whole household in one program; more than one
-    // distinct program among the pending set is unattributable from the mirror.
+    // distinct program among the pending set is unattributable without attributes.
     const programs = [...new Set(pending.map((p) => p.programId))];
     if (programs.length > 1) {
         await raisePaymentException("UNMATCHED_ORDER", { shopifyOrderId: order.legacyId });
         return true;
     }
 
+    return activateProgramFromOrder(order, programs[0], pending.map((p) => p.personId));
+}
+
+/** Shared tail for both program-matching paths: activate through the one choke point. */
+async function activateProgramFromOrder(order: MirrorOrder, programId: number, personIds: number[]): Promise<boolean> {
     const { activateProgramEnrollment } = await import("@/lib/programs/activateEnrollment");
     const res = await activateProgramEnrollment({
-        programId: programs[0],
-        personIds: pending.map((p) => p.personId),
+        programId,
+        personIds,
         shopifyOrderId: order.legacyId ?? "",
-        // No line variant id in the mirror — trust the email+pending match for the
-        // recovery path (see the membership amount-gate note). Tier unknown → no
-        // legacy sibling-inventory mirror.
+        // The mirror carries no line variant id, so the webhook's variant check can't
+        // be replicated — the order is matched to THIS program's pending enrollments
+        // (by cart attribute, or by household for pre-#1029 orders). Tier unknown →
+        // no legacy sibling-inventory mirror.
         hasProgramItem: true,
         purchasedOrgMember: null,
     });
-    logger.info(`[reconcile] recovered program payment: program ${programs[0]} ← order ${order.legacyId} (${res.activatedCount} activated)`);
+    logger.info(`[reconcile] recovered program payment: program ${programId} ← order ${order.legacyId} (${res.activatedCount} activated)`);
     return true;
 }
 

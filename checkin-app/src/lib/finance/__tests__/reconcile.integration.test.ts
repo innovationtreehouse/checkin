@@ -14,8 +14,11 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
 
 jest.mock("@/lib/email", () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
 
-// Mocked mirror — each test sets what the four read helpers return.
+// Mocked mirror — each test sets what the read helpers return. Only the DB-backed
+// reads are stubbed; orderAttr stays REAL (it's a pure parse of the mirrored
+// note_attributes, and the tests should exercise the real thing).
 jest.mock("@/lib/shopifyRead/client", () => ({
+    ...jest.requireActual("@/lib/shopifyRead/client"),
     isConfigured: () => true,
     ordersChangedSince: jest.fn(async () => [] as MirrorOrder[]),
     ordersByLegacyIds: jest.fn(async () => [] as MirrorOrder[]),
@@ -38,9 +41,15 @@ function order(overrides: Partial<MirrorOrder> & { legacyId: string }): MirrorOr
         totalRefundedCents: 0,
         cancelledAt: null,
         updatedAt: new Date(),
+        // Default null = an order synced before #1029, i.e. the email-fallback path.
+        // Tests of the preferred path pass noteAttributes explicitly.
+        noteAttributes: null,
         ...overrides,
     };
 }
+
+/** Cart attributes as the mirror stores them (#1029). */
+const attrs = (o: Record<string, string>) => Object.entries(o).map(([key, value]) => ({ key, value }));
 
 /** A household whose lead has `email`, an OrgMembership, and one process. */
 async function makeApplicant(opts: {
@@ -141,6 +150,47 @@ describe("forward recovery", () => {
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe("PENDING_PAYMENT");
         expect(await prisma.paymentException.findFirst({ where: { kind: "AMOUNT_MISMATCH", shopifyOrderId: oid } })).toBeTruthy();
+    });
+
+    it("prefers the Membership_Process_ID cart attribute over the email heuristic", async () => {
+        const email = `attr-${TAG}@ex.com`;
+        const oid = `${TAG}-110`;
+        const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true });
+        // No customer email on the order at all — the attribute alone must carry it.
+        ordersChangedSince.mockResolvedValue([
+            order({ legacyId: oid, customerEmail: null, noteAttributes: attrs({ Membership_Process_ID: String(processId) }) }),
+        ]);
+        await runReconcile();
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe("ACTIVE");
+        expect(proc?.shopifyOrderId).toBe(oid);
+    });
+
+    it("attribute disambiguates what email alone could not (two pending processes)", async () => {
+        const email = `attrambig-${TAG}@ex.com`;
+        const oid = `${TAG}-111`;
+        const a = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true });
+        const second = await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: a.membershipId, kind: "RENEWAL", status: "PENDING_PAYMENT", bgClearedAt: new Date() },
+        });
+        // Email-only would raise UNMATCHED_ORDER here; the attribute names the process.
+        ordersChangedSince.mockResolvedValue([
+            order({ legacyId: oid, customerEmail: email, noteAttributes: attrs({ Membership_Process_ID: String(second.id) }) }),
+        ]);
+        await runReconcile();
+        expect(await prisma.paymentException.findFirst({ where: { kind: "UNMATCHED_ORDER", shopifyOrderId: oid } })).toBeNull();
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: second.id } }))?.status).toBe("ACTIVE");
+        // The sibling is untouched — the money was credited to exactly one process.
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: a.processId } }))?.status).toBe("PENDING_PAYMENT");
+    });
+
+    it("raises UNMATCHED_ORDER when the attribute names a process that does not exist", async () => {
+        const oid = `${TAG}-112`;
+        ordersChangedSince.mockResolvedValue([
+            order({ legacyId: oid, noteAttributes: attrs({ Membership_Process_ID: "99999999" }) }),
+        ]);
+        await runReconcile();
+        expect(await prisma.paymentException.findFirst({ where: { kind: "UNMATCHED_ORDER", shopifyOrderId: oid } })).toBeTruthy();
     });
 
     it("raises UNMATCHED_ORDER when the family has more than one pending process", async () => {

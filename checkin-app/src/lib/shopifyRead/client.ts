@@ -72,11 +72,23 @@ export interface MirrorOrder {
     totalRefundedCents: number;
     cancelledAt: Date | null;
     updatedAt: Date | null;
+    /**
+     * The cart attributes we set on the checkout link (Membership_Process_ID,
+     * CheckMeIn_Account_ID, Program_ID), mirrored since #1029. Null for orders
+     * synced before that shipped — callers must handle absence.
+     */
+    noteAttributes: { key: string; value: string | null }[] | null;
 }
 
 const ORDER_COLS = `shopify_gid AS "orderGid", legacy_id AS "legacyId", customer_email AS "customerEmail",
     financial_status AS "financialStatus", total_cents AS "totalCents", subtotal_cents AS "subtotalCents",
-    total_refunded_cents AS "totalRefundedCents", cancelled_at AS "cancelledAt", updated_at AS "updatedAt"`;
+    total_refunded_cents AS "totalRefundedCents", cancelled_at AS "cancelledAt", updated_at AS "updatedAt",
+    note_attributes AS "noteAttributes"`;
+
+/** Read one cart attribute off a mirrored order. Null when absent (or pre-#1029). */
+export function orderAttr(o: MirrorOrder, key: string): string | null {
+    return o.noteAttributes?.find((a) => a.key === key)?.value ?? null;
+}
 
 /**
  * Orders whose mirror row changed after `since` (the reconciler's high-water mark),
