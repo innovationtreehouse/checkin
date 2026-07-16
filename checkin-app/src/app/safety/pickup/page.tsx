@@ -46,7 +46,7 @@ export default function TrustedAdultPickupPage() {
     }
 
     return (
-        <Stack p="md">
+        <Stack>
             <div>
                 <Title order={2}>Trusted Adults — Pickup List</Title>
                 <Text c="dimmed" size="sm">
