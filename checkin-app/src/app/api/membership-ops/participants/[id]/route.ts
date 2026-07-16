@@ -30,6 +30,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             }
             updateData.phone = body.phone === "" || body.phone === null ? null : formatPhone(body.phone);
         }
+        if (body.isDeclaredAdult !== undefined) updateData.isDeclaredAdult = Boolean(body.isDeclaredAdult);
 
         if (Object.keys(updateData).length === 0) {
             return apiError("No fields to update provided", 400);
@@ -37,7 +38,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
 
         const prior = await prisma.person.findUnique({
             where: { id },
-            select: { name: true, email: true, phone: true },
+            select: { name: true, email: true, phone: true, isDeclaredAdult: true },
         });
 
         const updatedParticipant = await prisma.person.update({
@@ -64,6 +65,8 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             name: updatedParticipant.name,
             email: updatedParticipant.email,
             phone: updatedParticipant.phone,
+            dateOfBirth: updatedParticipant.dateOfBirth,
+            isDeclaredAdult: updatedParticipant.isDeclaredAdult,
             isBoardMember: updatedParticipant.isBoardMember,
             isKeyholder: updatedParticipant.isKeyholder,
             household: updatedParticipant.household,

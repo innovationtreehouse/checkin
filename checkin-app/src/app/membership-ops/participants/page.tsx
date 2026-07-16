@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
@@ -19,6 +19,8 @@ type PersonRow = {
   name: string | null;
   email: string | null;
   phone: string | null;
+  dateOfBirth?: string | null;
+  isDeclaredAdult?: boolean;
   household?: HouseholdRef | null;
 };
 
@@ -87,7 +89,7 @@ export default function AdminParticipantsIndex() {
   // Edit Participant State
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingParticipant, setEditingParticipant] = useState<PersonRow | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", isDeclaredAdult: false });
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Admin edit of household's own info (name, address, emergency contact)
@@ -240,7 +242,7 @@ export default function AdminParticipantsIndex() {
                           )}
                           <Button size="xs" fz={15} variant="default" onClick={() => {
                             setEditingParticipant(p);
-                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
+                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "", isDeclaredAdult: !!p.isDeclaredAdult });
                             setEditModalOpen(true);
                           }}>
                             Details
@@ -329,6 +331,16 @@ export default function AdminParticipantsIndex() {
             <TextInput label="Name" required value={editForm.name} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, name: value })); }} />
             <TextInput type="email" label="Email Address" value={editForm.email} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, email: value })); }} />
             <TextInput type="tel" label="Phone Number" value={editForm.phone} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, phone: value })); }} placeholder="(555) 123-4567" />
+            {editingParticipant?.dateOfBirth ? (
+              <Text size="sm" c="dimmed">Age is derived from date of birth on file; the adult declaration doesn&apos;t apply.</Text>
+            ) : (
+              <Switch
+                label="Adult (25 or older)"
+                description="Set this when there's no date of birth on file so the person shows as 'Adult' instead of 'Age Unavailable'."
+                checked={editForm.isDeclaredAdult}
+                onChange={(e) => { const checked = e.currentTarget.checked; setEditForm(f => ({ ...f, isDeclaredAdult: checked })); }}
+              />
+            )}
             {editingParticipant?.household && (
               <div>
                 <Text fw={500} size="sm" mb={4}>Household</Text>
