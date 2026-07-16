@@ -151,6 +151,12 @@ export const OPT_OUT_PENDING_ROUTE = new Set<string>([
     'BackgroundCheckAttestation', // bind their_own at migration, keep notes `internal`
     'Corporation', // has leads→participantId; a corp-lead view is plausible
     'VolunteerDesignation', // has createdById; confirm whether a self view is warranted
+    // Lands ahead of the model itself (#1031, the Shopify payment reconciler), so the
+    // boundary change ships alone and reviewable — inert until that PR adds the model
+    // (an entry here is only ever read as `pendingRoute.has(model)`). Board/admin only,
+    // served via withAuth on finance-ops/payments; a household-facing "your payment
+    // problem" route is plausible later, and that is when this earns a real binding.
+    'PaymentException',
 ]);
 
 /**
