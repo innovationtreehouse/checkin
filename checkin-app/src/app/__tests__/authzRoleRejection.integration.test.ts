@@ -31,6 +31,8 @@ import { GET as TRENDS_GET } from '@/app/api/facility/trends/route';
 import { GET as ADMIN_TA_GET } from '@/app/api/safety/trusted-adults/route';
 import { POST as TA_OVERRIDE_POST } from '@/app/api/safety/trusted-adults/override/route';
 import { PATCH as SHOP_TOOL_PATCH } from '@/app/api/shop/tools/[id]/route';
+import { GET as FIN_PAYMENTS_GET } from '@/app/api/finance-ops/payments/route';
+import { PATCH as FIN_PAYMENTS_PATCH } from '@/app/api/finance-ops/payments/[id]/route';
 import { GET as EVENT_GET, PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
 import { GET as EVENTS_LIST_GET } from '@/app/api/events/route';
 import { POST as PROGRAMS_POST } from '@/app/api/programs/route';
@@ -177,6 +179,10 @@ describe('Protected-route role rejection', () => {
         { name: 'GET /api/admin/settings/localization', invoke: () => LOCALIZATION_GET(nreq('http://localhost/api/admin/settings/localization')) },
         { name: 'PUT /api/admin/settings/localization (sysadmin-only)', invoke: () => LOCALIZATION_PUT(nreq('http://localhost/api/admin/settings/localization', 'PUT', {})) },
         { name: 'GET /api/facility/badges', invoke: () => BADGES_GET(nreq('http://localhost/api/facility/badges')) },
+        // Payment problems queue (the Shopify reconciler's triage rows): family +
+        // order + what went wrong, board/sysadmin only.
+        { name: 'GET /api/finance-ops/payments', invoke: () => FIN_PAYMENTS_GET(nreq('http://localhost/api/finance-ops/payments')) },
+        { name: 'PATCH /api/finance-ops/payments/[id]', invoke: () => FIN_PAYMENTS_PATCH(nreq('http://localhost/api/finance-ops/payments/1', 'PATCH', {}), idCtx(1)) },
         { name: 'GET /api/facility/visits', invoke: () => FAC_VISITS_GET(nreq('http://localhost/api/facility/visits')) },
         { name: 'PATCH /api/facility/visits', invoke: () => FAC_VISITS_PATCH(nreq('http://localhost/api/facility/visits', 'PATCH', {})) },
         { name: 'GET /api/membership-audit/households-missing-contact', invoke: () => MISSING_CONTACT_GET(nreq('http://localhost/api/membership-audit/households-missing-contact')) },
