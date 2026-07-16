@@ -7,17 +7,27 @@
  *   - getOrCreateContractSigningUrl: the guard chain (not_configured/not_found/
  *     no_household/not_lead/wrong_phase), the mock-mode PDF short-circuit, and
  *     the already-claimed-ids short-circuit.
+ *   - advanceExternalIfComplete: the volunteer-designation allowlist is matched
+ *     at the PENDING_PAYMENT transition (#874) — and only by the race winner.
  */
-import { setZohoEnvelope, findProcessByEnvelope, getOrCreateContractSigningUrl, selfAttestBgConsent, ExternalError } from '@/lib/membership/external';
+import { setZohoEnvelope, findProcessByEnvelope, getOrCreateContractSigningUrl, selfAttestBgConsent, advanceExternalIfComplete, ExternalError } from '@/lib/membership/external';
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         person: { findUnique: jest.fn() },
+        orgMembership: { findUnique: jest.fn() },
         orgMembershipProcess: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
         auditLog: { create: jest.fn() },
+        // signingMockActive reads the dev signing-target radio; null = default ('zoho').
+        boardSettings: { findUnique: jest.fn().mockResolvedValue(null) },
         $transaction: jest.fn(),
     },
+}));
+
+jest.mock('@/lib/membership/review', () => ({
+    notifyReviewers: jest.fn().mockResolvedValue(undefined),
+    applyVolunteerStatus: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('@/lib/config', () => {
@@ -57,6 +67,8 @@ const { config } = require('@/lib/config');
 const { zohoSign } = require('@/lib/membership/contract/zohoProvider');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { loadAgreementPdf, stampWatermark, AgreementUnavailableError } = require('@/lib/membership/contract/agreementDocument');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { notifyReviewers, applyVolunteerStatus } = require('@/lib/membership/review');
 
 beforeEach(() => {
     jest.clearAllMocks();
@@ -150,6 +162,122 @@ describe('selfAttestBgConsent', () => {
         expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ actorId: 1 }) });
         expect(status.bgConsented).toBe(true);
         expect(status.contractSigned).toBe(false);
+    });
+});
+
+describe('advanceExternalIfComplete', () => {
+    const readyProcess = {
+        id: 20,
+        orgMembershipId: 42,
+        status: 'PENDING_EXTERNAL_ACTION',
+        contractSignedAt: new Date(),
+        bgConsentAt: new Date(),
+        bgClearedAt: null,
+    };
+
+    beforeEach(() => {
+        prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
+        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: null } });
+    });
+
+    it('winner: applies the volunteer allowlist at the PENDING_PAYMENT transition (#874) and pings reviewers', async () => {
+        const advanced = { ...readyProcess, status: 'PENDING_PAYMENT' };
+        prisma.orgMembershipProcess.findUnique
+            .mockResolvedValueOnce(readyProcess) // pre-tx eligibility read
+            .mockResolvedValueOnce(advanced); // re-read inside the tx
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        const result = await advanceExternalIfComplete(20);
+
+        // Allowlist matched now — dues are read at PENDING_PAYMENT, before clearance.
+        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
+        expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
+        expect(notifyReviewers).toHaveBeenCalledTimes(1); // check not yet cleared → review still needed
+        expect(result).toEqual(advanced);
+    });
+
+    it('winner with a prior valid check (bgClearedAt) still applies the allowlist but does not ping reviewers', async () => {
+        const cleared = { ...readyProcess, bgConsentAt: null, bgClearedAt: new Date() };
+        prisma.orgMembershipProcess.findUnique
+            .mockResolvedValueOnce(cleared)
+            .mockResolvedValueOnce({ ...cleared, status: 'PENDING_PAYMENT' });
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        await advanceExternalIfComplete(20);
+
+        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
+        expect(notifyReviewers).not.toHaveBeenCalled();
+    });
+
+    it('household intake note → holds at PENDING_BG_REVIEW instead of PENDING_PAYMENT (#907)', async () => {
+        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'treat us as a volunteer household' } });
+        const held = { ...readyProcess, status: 'PENDING_BG_REVIEW' };
+        prisma.orgMembershipProcess.findUnique
+            .mockResolvedValueOnce(readyProcess)
+            .mockResolvedValueOnce(held);
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        const result = await advanceExternalIfComplete(20);
+
+        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_BG_REVIEW' }) }),
+        );
+        // Allowlist still applied (sticky/idempotent); reviewers pinged to read the note.
+        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
+        expect(notifyReviewers).toHaveBeenCalledTimes(1);
+        expect(result).toEqual(held);
+    });
+
+    it('note + already-cleared check (legacy in-flight row) keeps the direct PENDING_PAYMENT path', async () => {
+        // PENDING_BG_REVIEW would be invisible to the review queue once bgClearedAt is
+        // set, so such rows must not be held — they advance as before.
+        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'a note' } });
+        const cleared = { ...readyProcess, bgConsentAt: null, bgClearedAt: new Date() };
+        prisma.orgMembershipProcess.findUnique
+            .mockResolvedValueOnce(cleared)
+            .mockResolvedValueOnce({ ...cleared, status: 'PENDING_PAYMENT' });
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        await advanceExternalIfComplete(20);
+
+        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_PAYMENT' }) }),
+        );
+        expect(notifyReviewers).not.toHaveBeenCalled();
+    });
+
+    it('loser of the race (count 0): no allowlist match, no audit, no ping', async () => {
+        prisma.orgMembershipProcess.findUnique
+            .mockResolvedValueOnce(readyProcess)
+            .mockResolvedValueOnce({ ...readyProcess, status: 'PENDING_PAYMENT' }); // post-tx re-read
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 0 });
+
+        await advanceExternalIfComplete(20);
+
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
+        expect(prisma.auditLog.create).not.toHaveBeenCalled();
+        expect(notifyReviewers).not.toHaveBeenCalled();
+    });
+
+    it('not yet eligible (contract unsigned): returns early without touching anything', async () => {
+        prisma.orgMembershipProcess.findUnique.mockResolvedValueOnce({ ...readyProcess, contractSignedAt: null });
+
+        await advanceExternalIfComplete(20);
+
+        expect(prisma.orgMembershipProcess.updateMany).not.toHaveBeenCalled();
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
+    });
+
+    it('RENEWAL: the contract gate applies too — an unsigned renewal does not advance on consent alone', async () => {
+        // A fresh agreement is signed every cycle (beginRenewal), so a renewal
+        // with consent but no signature must stay at PENDING_EXTERNAL_ACTION.
+        prisma.orgMembershipProcess.findUnique.mockResolvedValueOnce({ ...readyProcess, kind: 'RENEWAL', contractSignedAt: null });
+
+        await advanceExternalIfComplete(20);
+
+        expect(prisma.orgMembershipProcess.updateMany).not.toHaveBeenCalled();
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
+        expect(notifyReviewers).not.toHaveBeenCalled();
     });
 });
 

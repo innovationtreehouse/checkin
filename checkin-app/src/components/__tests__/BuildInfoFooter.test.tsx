@@ -28,6 +28,16 @@ describe("buildLabel", () => {
     expect(buildLabel(null)).toBe("dev");
     expect(buildLabel("")).toBe("dev");
   });
+
+  it("prefixes the release tag when both sha and tag are set", () => {
+    expect(buildLabel("0123456789abcdef0123456789abcdef01234567", "v1.0.0")).toBe(
+      "v1.0.0 0123456",
+    );
+  });
+
+  it("ignores the tag when there is no sha", () => {
+    expect(buildLabel(undefined, "v1.0.0")).toBe("dev");
+  });
 });
 
 describe("BuildInfoFooter", () => {

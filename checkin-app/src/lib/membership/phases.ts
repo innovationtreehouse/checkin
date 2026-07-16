@@ -34,6 +34,9 @@ export function stepperActiveIndex(status: OrgMembershipProcessStatus | null): n
     switch (status) {
         case "INTAKE": return 0;
         case "PENDING_EXTERNAL_ACTION": return 1;
+        // Held for review (household intake note): external actions are done and
+        // Payment is the pending step — it just won't open until the review clears.
+        case "PENDING_BG_REVIEW": return 2;
         case "PENDING_PAYMENT": return 2;
         case "PENDING_BG_CLEARANCE": return 3;
         case "ACTIVE": return 4;
@@ -44,8 +47,9 @@ export function stepperActiveIndex(status: OrgMembershipProcessStatus | null): n
 /**
  * Statuses where an application is still open (work remains). Excludes the
  * terminal ACTIVE and the off-track BLOCKED. Renewal-specific statuses are not
- * part of the INITIAL flow. PENDING_BG_REVIEW is retained for any legacy rows;
- * the live flow uses PENDING_BG_CLEARANCE for the paid-awaiting-check state.
+ * part of the INITIAL flow. PENDING_BG_REVIEW is the held-for-review state (a
+ * household intake note gates payment on the review, #907) and also covers any
+ * legacy pre-parallel rows; PENDING_BG_CLEARANCE is the paid-awaiting-check state.
  */
 export const IN_FLIGHT_INITIAL_STATUSES: OrgMembershipProcessStatus[] = [
     "INTAKE",

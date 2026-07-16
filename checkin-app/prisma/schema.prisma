@@ -77,7 +77,10 @@ model Person {
   accounts      Account[]
   sessions      Session[]
 
-  /// @sensitivity:pii
+  /// DOB is intimate data, not contact data: 'personal' is the strict tier
+  /// (self/household/board + explicit per-program grants), while 'pii' is the
+  /// contact-identity band (email/phone) that program leads etc. may hold.
+  /// @sensitivity:personal
   dateOfBirth          DateTime?
   /// Set when a lead marks a member as 25+ without recording a DoB, so the
   /// member shows as "Adult" instead of "Age Unavailable". @sensitivity:internal
@@ -173,20 +176,31 @@ model Household {
   id      Int     @id @default(autoincrement())
   /// @sensitivity:public
   name    String
-  /// @sensitivity:personal
+  /// Home address is strict-band intimate data. 'internal' (not 'personal')
+  /// so it sits ABOVE the *:personal grants that deliver emergency contacts to
+  /// program leads (their_program_households:personal) and keyholders
+  /// (keyholders:personal): they get EC, never the family's address. Only
+  /// board/sysadmin (everyones:internal) see it on registered routes; the
+  /// household's own view is hand-shaped by the self-household routes.
+  /// @sensitivity:internal
   line1      String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   line2      String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   city       String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   state      String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   postalCode String?
 
   /// Freeform "Anything else we should know?" captured at intake. Where a
   /// volunteer-only household types the note that tells a background-check
-  /// reviewer to mark them volunteer. pii (not personal): reviewers must read it.
+  /// reviewer to mark them volunteer. Stays 'pii' (NOT internal like the other
+  /// narrative fields) because reviewers hold exactly everyones:pii on
+  /// GET /api/membership/reviews and must read it. GUARD: no household-scoped
+  /// pii token may ever be granted to a lead/keyholder-facing view that
+  /// returns Household rows, or this narrative leaks — leads/keyholders get
+  /// household data via *:personal (EC) only.
   /// @sensitivity:pii
   intakeNotes String?
 
@@ -443,6 +457,14 @@ model BoardSettings {
   /// public (contrast Program.shopify*VariantId, which the browser builds from).
   /// @sensitivity:internal
   orgMembershipVariantId     String?
+  /// Storefront URL of the membership product ("https://<store>/products/<handle>"),
+  /// pasted by the board in membership settings. "Extract variant from URL" resolves
+  /// orgMembershipVariantId from it server-side (lib/shopify.ts) — the Shopify admin
+  /// UI hides the lone variant of a single-variant product, so the variant ID is not
+  /// visible anywhere an admin could copy it from. The checkout link is always built
+  /// from the variant ID above, never from this URL.
+  /// @sensitivity:internal
+  orgMembershipProductUrl    String?
   /// Discount code (created in Shopify by the board) appended to the checkout
   /// link for volunteer households so Shopify applies their discount.
   /// @sensitivity:internal
@@ -451,6 +473,14 @@ model BoardSettings {
   /// (the board must set the real Treehouse policy value before renewals re-check).
   /// @sensitivity:public
   bgRecheckMonths            Int       @default(0)
+  /// DEV-INSTANCE-ONLY override for where contract signing requests go:
+  /// 'debug' routes them to the in-app mock interstitial (/dev/zoho-sign) even
+  /// when real Zoho creds are set; 'zoho' or NULL uses whatever the env
+  /// dictates (real client when creds are set). Only ever read when
+  /// CHECKIN_ENV=dev — hard fuse in lib/membership/contract/signingTarget.ts;
+  /// prod and local never consult it.
+  /// @sensitivity:internal
+  devSigningTarget           String?
   /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
   /// email when set. Must be on a Resend-verified domain or all mail bounces —
   /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.
@@ -547,7 +577,11 @@ model TrustedAdult {
   /// restrictions, safeguarding context. Board + the household's own leads only
   /// (pii tier is the board/family band here; program leads & keyholders never
   /// receive it).
-  /// @sensitivity:pii
+  /// Narrative safeguarding content. 'internal': board/sysadmin plus an
+  /// explicit their_households:internal grant on GET /api/trusted-adults/mine
+  /// (the family authored it and the renew form prefills it). Never reaches
+  /// the operational keyholder/lead view.
+  /// @sensitivity:internal
   familyContext             String
   /// @sensitivity:internal
   origin                    TrustedAdultOrigin @default(SELF_DISCLOSED)
@@ -618,7 +652,8 @@ model TrustedAdultReview {
   proposedPhone        String?
   /// @sensitivity:personal
   proposedEmail        String?
-  /// @sensitivity:pii
+  /// Narrative safeguarding content — same band as TrustedAdult.familyContext.
+  /// @sensitivity:internal
   proposedContext      String?
   /// @sensitivity:public
   createdAt            DateTime               @default(now())
@@ -635,15 +670,21 @@ model Corporation {
   id           Int     @id @default(autoincrement())
   /// @sensitivity:pii
   primaryEmail String?
-  /// @sensitivity:personal
+  /// Home address is strict-band intimate data. 'internal' (not 'personal')
+  /// so it sits ABOVE the *:personal grants that deliver emergency contacts to
+  /// program leads (their_program_households:personal) and keyholders
+  /// (keyholders:personal): they get EC, never the family's address. Only
+  /// board/sysadmin (everyones:internal) see it on registered routes; the
+  /// household's own view is hand-shaped by the self-household routes.
+  /// @sensitivity:internal
   line1      String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   line2      String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   city       String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   state      String?
-  /// @sensitivity:personal
+  /// @sensitivity:internal
   postalCode String?
 
   leads   CorporationLead[]

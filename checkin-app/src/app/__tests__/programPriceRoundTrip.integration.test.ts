@@ -71,7 +71,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             const name = `${PROGRAM_NAME_TAG} decimal`;
             const req = new Request('http://localhost:4000/api/programs', {
                 method: 'POST',
-                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '25.99', nonMemberPrice: '100' }),
+                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '25.99', nonMemberPrice: '100', maxParticipants: 50 }),
             });
             const res = await POST(req as unknown as import('next/server').NextRequest);
             expect(res.status).toBe(200);
@@ -87,7 +87,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             const name = `${PROGRAM_NAME_TAG} wholedollar`;
             const req = new Request('http://localhost:4000/api/programs', {
                 method: 'POST',
-                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '30', nonMemberPrice: '' }),
+                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '30', nonMemberPrice: '', maxParticipants: 50 }),
             });
             const res = await POST(req as unknown as import('next/server').NextRequest);
             expect(res.status).toBe(200);
@@ -103,7 +103,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             const name = `${PROGRAM_NAME_TAG} null`;
             const req = new Request('http://localhost:4000/api/programs', {
                 method: 'POST',
-                body: JSON.stringify({ name, leadMentorId: leadId }),
+                body: JSON.stringify({ name, leadMentorId: leadId, maxParticipants: 50 }),
             });
             const res = await POST(req as unknown as import('next/server').NextRequest);
             expect(res.status).toBe(200);
