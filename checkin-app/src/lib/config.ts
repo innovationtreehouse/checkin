@@ -199,6 +199,18 @@ export const config = {
     // instead of throwing, so an env without the mirror simply runs no reconciliation.
     shopifyReadDatabaseUrl: (): string | null => process.env.SHOPIFY_READ_DATABASE_URL || null,
 
+    // s-read sync trigger — name of the `s-read-<env>-trigger` Lambda that RunTasks
+    // the sync family (s-read-function/DEPLOY.md). Null when unset → the board's
+    // manual-sync route reports "not wired" (503) rather than throwing, matching the
+    // mirror accessor above.
+    //
+    // Named EXPLICITLY per env rather than derived from checkinEnv(): that predicate
+    // fails safe to 'prod' for any unset/unrecognized value, which is right for the
+    // Zoho/Shopify mocks (a misconfigured box must not get the mock) but exactly
+    // backwards here — it would point an unconfigured box at PROD's sync trigger. An
+    // explicit name fails to null, i.e. to doing nothing.
+    sReadTriggerFunction: (): string | null => process.env.S_READ_TRIGGER_FUNCTION || null,
+
     // Shopify — Client Credentials Grant integration (see shopify.ts). All three
     // null when unset (integration "off").
     shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,

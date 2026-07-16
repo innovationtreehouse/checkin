@@ -43,6 +43,7 @@ export default function PaymentProblemsPage() {
   const [resolveOpened, { open: openResolve, close: closeResolve }] = useDisclosure(false);
   const [pendingResolve, setPendingResolve] = useState<PaymentException | null>(null);
   const [note, setNote] = useState("");
+  const [syncing, setSyncing] = useState(false);
 
   const fetchRows = useCallback(async () => {
     try {
@@ -81,6 +82,31 @@ export default function PaymentProblemsPage() {
       }
     } catch {
       notifications.show({ color: 'red', message: "Network error updating the payment problem.", autoClose: false });
+    }
+  };
+
+  // Force an s-read incremental sync. The mirror behind "Live payment" refreshes once
+  // a day, so a problem fixed in Shopify this morning still reads stale here until
+  // tomorrow. The sync runs in the background (this returns as soon as it is started),
+  // and the reconciler picks the fresh data up on its next run — so this does NOT
+  // refetch the table: there would be nothing new to see yet.
+  const triggerSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/finance-ops/s-read/sync', { method: 'POST' });
+      if (res.ok) {
+        notifications.show({
+          color: 'green',
+          message: 'Shopify sync started. Live payment amounts refresh once it finishes — check back in a few minutes.',
+        });
+      } else {
+        const data = await res.json();
+        notifications.show({ color: 'red', message: data.error || "Failed to start the Shopify sync.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: 'red', message: "Network error starting the Shopify sync.", autoClose: false });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -175,10 +201,25 @@ export default function PaymentProblemsPage() {
 
   return (
     <Stack>
-      <Text c="dimmed">
-        Reconciler-detected Shopify payment problems awaiting board review. Nothing here is changed
-        automatically — acknowledge to mark a problem as seen, or resolve once you&apos;ve handled it
-        (e.g. in Shopify or on the membership record).
+      <Group justify="space-between" align="flex-start" wrap="nowrap">
+        <Text c="dimmed">
+          Reconciler-detected Shopify payment problems awaiting board review. Nothing here is changed
+          automatically — acknowledge to mark a problem as seen, or resolve once you&apos;ve handled it
+          (e.g. in Shopify or on the membership record).
+        </Text>
+        <Button
+          variant="light"
+          onClick={triggerSync}
+          loading={syncing}
+          style={{ flexShrink: 0 }}
+        >
+          Sync Shopify now
+        </Button>
+      </Group>
+
+      <Text size="sm" c="dimmed">
+        Shopify data syncs automatically once a day. If you&apos;ve just changed something in Shopify
+        and want it reflected here sooner, sync now.
       </Text>
 
       <AlertBanner message={message} tone="error" />
