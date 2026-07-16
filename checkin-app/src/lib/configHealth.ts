@@ -62,6 +62,18 @@ export function getConfigHealth(): ConfigCheck[] {
                   ? "NOT configured — set RESEND_API_KEY (outbound email disabled)."
                   : "Not set (fine outside prod; outbound email disabled).",
         },
+        {
+            id: "s-read-trigger",
+            label: "Shopify sync trigger",
+            // A laptop has no AWS to invoke, so this is only a gap on a deployed instance
+            // (dev included — dev has its own s-read-dev-trigger). Same shape as Resend above.
+            ok: config.isLocal() || !!config.sReadTriggerFunction(),
+            detail: config.sReadTriggerFunction()
+                ? "Trigger function configured."
+                : config.isLocal()
+                  ? "Not set (fine on local; no AWS to invoke)."
+                  : "NOT configured — set S_READ_TRIGGER_FUNCTION (the board's 'Sync Shopify now' button 503s without it).",
+        },
     ];
 }
 
