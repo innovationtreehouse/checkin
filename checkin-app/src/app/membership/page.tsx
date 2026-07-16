@@ -609,8 +609,8 @@ export default function MembershipPage() {
           <Title order={2}>Time to renew</Title>
           <Text c="dimmed" my="md">
             Your household membership is up for renewal. You&apos;re still an active member — confirm
-            below to continue for another year. No contract to re-sign; we&apos;ll only re-check a
-            background if it has expired.
+            below to continue for another year. You&apos;ll sign a fresh membership agreement; a new
+            background check is only needed if your previous one has expired.
           </Text>
           <Text c="dimmed" mb="md">
             Did anything change — new members, address, phone, or email?{" "}
@@ -629,11 +629,11 @@ export default function MembershipPage() {
         </Card>
       ) : (
         <Group align="flex-start" gap="xl" wrap="wrap">
-          {!isRenewal && (
-            <Box style={{ flex: "0 0 auto" }}>
-              <MembershipFlowStepper currentStatus={inStatus} />
-            </Box>
-          )}
+          {/* Renewals ride the same stepper as new applications — same phases, same
+              progress, whether the background check is valid, expired, or first-time. */}
+          <Box style={{ flex: "0 0 auto" }}>
+            <MembershipFlowStepper currentStatus={inStatus} />
+          </Box>
 
           <Box style={{ flex: "1 1 420px", minWidth: 320 }}>
             {isIntake ? (
@@ -738,9 +738,9 @@ export default function MembershipPage() {
                   <div>
                     <Title order={2}>Sign &amp; start your background check</Title>
                     <Text c="dimmed">
-                      Once your agreement is signed and your background check is underway, we&apos;ll
-                      move you straight to payment — you won&apos;t have to wait for the check to come
-                      back.
+                      {isRenewal
+                        ? "Renewing means signing a fresh membership agreement for the year, and a new background check if your previous one has expired. Once both are underway, we'll move you straight to payment — your membership stays active in the meantime."
+                        : "Once your agreement is signed and your background check is underway, we'll move you straight to payment — you won't have to wait for the background check to come back."}
                     </Text>
                   </div>
 
