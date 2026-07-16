@@ -241,13 +241,17 @@ describe('background check is non-blocking', () => {
         expect(await isVolunteerOf(orgMembershipId)).toBe(true);
     });
 
-    it('fresh-check renewal matches a designation added since the last cycle (#874)', async () => {
+    it('renewal with a still-valid background check matches a designation added since the last cycle (#874)', async () => {
         await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
         const { orgMembershipId, processId, leadEmail } = await makeFreshRenewal();
         await prisma.volunteerDesignation.create({ data: { email: leadEmail } });
 
         await beginRenewal(processId);
+        expect(await statusOf(processId)).toBe('PENDING_EXTERNAL_ACTION');
 
+        // The advance's PENDING_PAYMENT transition applies the allowlist — dues
+        // are read at payment, which opens once the fresh agreement is signed.
+        await markContractSigned(processId);
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
         expect(await isVolunteerOf(orgMembershipId)).toBe(true);
     });
@@ -345,13 +349,15 @@ describe('background check is non-blocking', () => {
         expect(await statusOf(processId)).not.toBe('BLOCKED');
     });
 
-    it('renewal with a still-valid check → PENDING_PAYMENT + bgClearedAt, then paying activates (not stuck)', async () => {
+    it('renewal with a still-valid background check: bgClearedAt stamped, signature opens payment, paying activates (not stuck)', async () => {
         await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
         const { orgMembershipId, processId } = await makeFreshRenewal();
         await beginRenewal(processId);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        expect(proc?.status).toBe('PENDING_PAYMENT');
+        expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
         expect(proc?.bgClearedAt).not.toBeNull(); // the bug: was null → paid renewal stuck forever
+        await markContractSigned(processId);
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
         await activate(processId, { via: 'payment', shopifyOrderId: 'renew-pay' });
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(orgMembershipId)).toBe('ACTIVE');
