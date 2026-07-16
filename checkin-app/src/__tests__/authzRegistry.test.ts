@@ -98,7 +98,14 @@ const AUTHZ_TESTED = new Set<string>([
     'settings/email',
     'settings/membership',
     'settings/membership/bulk-open-renewals',
+    // POST deny-path (401 anon / 403 non-board) in its colocated unit test,
+    // api/settings/membership/extract-variant/__tests__/route.test.ts (no DB —
+    // the route never touches Prisma, only the pinned Shopify fetch).
+    'settings/membership/extract-variant',
     'settings/membership/volunteer-designations',
+    // GET deny-path (401 anon / 403 non-board) unit-tested through the real
+    // withAuth in api/settings/shopify-webhook/__tests__/route.test.ts.
+    'settings/shopify-webhook',
     'shop/tools/[id]',
     'system-status/audit-log',
     'system-status/errors',

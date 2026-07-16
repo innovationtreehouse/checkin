@@ -27,6 +27,10 @@ jest.mock("@/components/RenewalBanner", () => ({
   __esModule: true,
   default: () => null,
 }));
+jest.mock("@/components/DbWakeNotice", () => ({
+  __esModule: true,
+  default: () => null,
+}));
 jest.mock("@/components/AppFrame", () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => <>{children}</>,

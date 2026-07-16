@@ -166,6 +166,11 @@ export default function AdminHouseholdsPage() {
               const ownGrantBlocked =
                 !hasActiveMembership && me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
               const hasBrokenEmail = household.householdMembers?.some((p) => p.emailUndeliverableAt) ?? false;
+              // Staff households (@innovationtreehouse.org) aren't program families: block
+              // adding participants and granting membership. Revoke stays allowed.
+              const isStaffHousehold = household.householdMembers?.some(
+                (p) => p.email?.toLowerCase().endsWith('@innovationtreehouse.org')
+              ) ?? false;
 
               return (
                 <Table.Tr key={household.id}>
@@ -227,6 +232,8 @@ export default function AdminHouseholdsPage() {
                       <Button
                         size="xs" fz={15}
                         variant="light"
+                        disabled={isStaffHousehold}
+                        title={isStaffHousehold ? "Staff households can't add participants." : undefined}
                         onClick={() => router.push(`/membership-ops/participants/new?householdId=${household.id}`)}
                       >
                         + Add Participant
@@ -246,8 +253,14 @@ export default function AdminHouseholdsPage() {
                             size="xs" fz={15}
                             variant="light"
                             color={hasActiveMembership ? 'red' : 'green'}
-                            disabled={ownGrantBlocked}
-                            title={ownGrantBlocked ? "You can't grant your own household's membership — a sysadmin must." : undefined}
+                            disabled={ownGrantBlocked || (!hasActiveMembership && isStaffHousehold)}
+                            title={
+                              !hasActiveMembership && isStaffHousehold
+                                ? "Staff households can't be granted membership."
+                                : ownGrantBlocked
+                                  ? "You can't grant your own household's membership — a sysadmin must."
+                                  : undefined
+                            }
                             onClick={() => toggleMembership(household.id, hasActiveMembership)}
                           >
                             {hasActiveMembership ? "Revoke Membership" : "Grant Membership"}

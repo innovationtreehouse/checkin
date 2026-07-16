@@ -14,15 +14,18 @@ export const metadata = {
     title: "Dev — Sent Mail",
 };
 
+// devToolsActive, NOT a NODE_ENV check: cloud-dev runs the same production
+// image as prod, so a NODE_ENV fuse 404'd this page on the dev instance itself
+// (the Debug nav item's landing tab). See config.devToolsActive.
 function devOnlyOrNotFound() {
-    if (process.env.NODE_ENV === "production" || !config.isDevInstance()) notFound();
+    if (!config.devToolsActive()) notFound();
 }
 
 async function clearAction() {
     "use server";
     // Re-guard: a server action is an independently-callable POST endpoint, not covered by the
     // page render's guard.
-    if (process.env.NODE_ENV === "production" || !config.isDevInstance()) return;
+    if (!config.devToolsActive()) return;
     await clearSentEmails();
     revalidatePath("/dev/sent-mail");
 }

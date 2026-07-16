@@ -400,9 +400,9 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 <Checkbox checked={isFree} disabled label="This is a free program (Pricing cannot be changed)" />
 
                 {!isFree && (
-                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <SimpleGrid cols={{ base: 1, sm: orgMemberOnly ? 1 : 2 }}>
                     <NumberInput label="Treehouse Member Price ($)" value={memberPrice} disabled />
-                    <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} disabled />
+                    {!orgMemberOnly && <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} disabled />}
                   </SimpleGrid>
                 )}
 

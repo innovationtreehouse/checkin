@@ -12,7 +12,7 @@ import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
 import FirstTimeIntakePanel from './FirstTimeIntakePanel';
-import { useIsLocalInstance } from '@/components/EnvProvider';
+import { useIsLocalInstance, useShopifyStoreDomain } from '@/components/EnvProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type ProgramDetail = {
@@ -54,6 +54,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const { data: session, status } = useSession();
   const router = useRouter();
   const isLocalInstance = useIsLocalInstance();
+  const shopifyStoreDomain = useShopifyStoreDomain();
 
   const [program, setProgram] = useState<ProgramDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -97,11 +98,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // Why a member can't be enrolled. Shared by the default selection and the row
   // render so an ineligible member is never auto-selected and then POSTed (which
   // returned a confusing "Date of Birth is missing" for over-25 adults).
-  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'age' | 'dob' | null; label: string } => {
+  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'pending' | 'age' | 'dob' | null; label: string } => {
     const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
-    // ACTIVE = paid/free/override (truly done). PENDING = payment still owed,
-    // including a requested-but-incomplete payment plan — don't imply completion.
-    if (enrolledRow) return { reason: 'enrolled', label: enrolledRow.status === 'ACTIVE' ? 'Enrolled' : 'Enrolled — Payment Pending' };
+    // ACTIVE = paid/free/override (truly done) — locked. PENDING = payment still
+    // owed: SELECTABLE, so the household can re-run checkout to finish paying
+    // (the participants POST 409s and aggregateEnrollOutcomes folds a 409 back
+    // into the checkout set — the same idempotent path as a double-click).
+    if (enrolledRow) {
+        return enrolledRow.status === 'ACTIVE'
+            ? { reason: 'enrolled', label: 'Enrolled' }
+            : { reason: 'pending', label: 'Payment pending — select to finish payment' };
+    }
     if (!program) return { reason: null, label: '' };
     // Same eligibility rule as the enroll route: a declared over-25 adult clears
     // a youth minimum like "16 and up" without a DOB on file.
@@ -130,9 +137,15 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       const def = me && enrollBlock(me).reason === null
         ? me.id
         : members.find((m) => enrollBlock(m).reason === null)?.id;
-      setSelectedParticipantIds(def != null ? [def] : []);
+      if (def != null) {
+        setSelectedParticipantIds([def]);
+      } else {
+        // Nobody new to enroll — preselect everyone with a payment still owed,
+        // so the page loads ready to finish that checkout in one click.
+        setSelectedParticipantIds(members.filter((m) => enrollBlock(m).reason === 'pending').map((m) => m.id));
+      }
 
-      const hasEnrollable = members.some((m) => enrollBlock(m).reason === null);
+      const hasEnrollable = members.some((m) => { const r = enrollBlock(m).reason; return r === null || r === 'pending'; });
       // Emergency contact isn't in /api/household; probe the process-free intake
       // state for it. Fail open (treat as present) if the probe can't answer, so
       // a household with an enrollable member is never blocked by an EC hiccup.
@@ -258,7 +271,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         // Single-pool programs sell the SAME variant to everyone — the discount
         // code (below, at redirect time) does the member pricing, not a variant pick.
         variantId = program.shopifyVariantId || (isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
-        storeDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN;
+        storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
@@ -498,7 +511,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             <Group justify="center" wrap="wrap">
               {session ? (
                 <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed}>
-                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : "Enroll"}
+                  {/* A payment-pending household reads "Continue enrollment" — the
+                      button resumes their checkout (see the pending picker state),
+                      it doesn't start a new one. */}
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : myEnrolled.some((m) => !m.active) ? "Continue enrollment" : "Enroll"}
                 </Button>
               ) : (
                 // Auth-first: route through /signin (which picks Google vs. the
@@ -533,7 +549,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   <Stack>
                     {householdMembers.map((member) => {
                       const { reason, label } = enrollBlock(member);
-                      const disabled = reason !== null;
+                      const disabled = reason !== null && reason !== 'pending';
 
                       return (
                         <Card key={member.id} withBorder radius="md" padding="sm" opacity={disabled ? 0.5 : 1}>
@@ -543,7 +559,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               disabled={disabled}
                               label={member.name || 'Unnamed Participant'}
                             />
-                            {reason === 'enrolled' && <Text size="sm" c={label.includes('Pending') ? 'yellow' : 'green'}>({label})</Text>}
+                            {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
+                            {reason === 'pending' && <Text size="sm" c="yellow">({label})</Text>}
                             {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>

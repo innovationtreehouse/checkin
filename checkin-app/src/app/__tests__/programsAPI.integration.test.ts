@@ -160,22 +160,36 @@ describe('Programs API Integration Tests', () => {
              expect(res.status).toBe(400);
         });
 
+        it('should require max participants', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request('http://localhost:4000/api/programs', {
+                 method: 'POST',
+                 body: JSON.stringify({ name: 'New API Test Program', leadMentorId: leadId })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest);
+             expect(res.status).toBe(400);
+             const data = await res.json();
+             expect(data.error).toMatch(/Max participants/);
+        });
+
         it('should allow admins to create a program', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
-                 body: JSON.stringify({ name: 'Created API Test Program', leadMentorId: leadId, minAge: 12, maxAge: 17 })
+                 body: JSON.stringify({ name: 'Created API Test Program', leadMentorId: leadId, minAge: 12, maxAge: 17, maxParticipants: 50 })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.program.name).toBe('Created API Test Program');
              expect(data.program.leadMentorId).toBe(leadId);
              expect(data.program.minAge).toBe(12);
              expect(data.program.maxAge).toBe(17);
+             expect(data.program.maxParticipants).toBe(50);
         });
     });
 });

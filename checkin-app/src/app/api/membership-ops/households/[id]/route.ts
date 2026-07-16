@@ -49,6 +49,11 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
         // "Member since" lives on the household's Membership (1:1). Treat the date
         // as date-only: parse at UTC midnight and only act on a real change, so an
         // unchanged field re-sent by the form never writes a spurious audit row.
+        // Both "member since" and the volunteer-only flag live on the household's
+        // Membership (1:1); fetch it once if either is being edited.
+        const editsMembership = (typeof body.memberSince === "string" && body.memberSince !== "") || typeof body.isVolunteer === "boolean";
+        const membership = editsMembership ? await prisma.orgMembership.findUnique({ where: { householdId: id } }) : null;
+
         let memberSinceChange: { orgMembershipId: number; oldValue: Date; newValue: Date } | null = null;
         if (typeof body.memberSince === "string" && body.memberSince !== "") {
             const parsed = new Date(`${body.memberSince}T00:00:00.000Z`);
@@ -59,7 +64,6 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
             if (parsed.getTime() < Date.UTC(2023, 10, 1)) {
                 return apiError("Member-since cannot be before Nov 1, 2023", 400);
             }
-            const membership = await prisma.orgMembership.findUnique({ where: { householdId: id } });
             if (!membership) {
                 return apiError("Household has no membership record", 400);
             }
@@ -68,7 +72,18 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
             }
         }
 
-        if (!editsHousehold && !memberSinceChange) {
+        // Volunteer-only household: reduced-fee volunteer family, flagged on the membership.
+        let isVolunteerChange: { orgMembershipId: number; oldValue: boolean; newValue: boolean } | null = null;
+        if (typeof body.isVolunteer === "boolean") {
+            if (!membership) {
+                return apiError("Household has no membership record", 400);
+            }
+            if (membership.isVolunteer !== body.isVolunteer) {
+                isVolunteerChange = { orgMembershipId: membership.id, oldValue: membership.isVolunteer, newValue: body.isVolunteer };
+            }
+        }
+
+        if (!editsHousehold && !memberSinceChange && !isVolunteerChange) {
             return apiError("No fields to update provided", 400);
         }
 
@@ -119,6 +134,24 @@ export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
                     secondaryAffectedEntity: id,
                     oldData: { memberSince: memberSinceChange.oldValue },
                     newData: { memberSince: memberSinceChange.newValue },
+                }
+            });
+        }
+
+        if (isVolunteerChange) {
+            await prisma.orgMembership.update({
+                where: { id: isVolunteerChange.orgMembershipId },
+                data: { isVolunteer: isVolunteerChange.newValue },
+            });
+            await prisma.auditLog.create({
+                data: {
+                    actorId: auth.user.id,
+                    action: "EDIT",
+                    tableName: "OrgMembership",
+                    affectedEntityId: isVolunteerChange.orgMembershipId,
+                    secondaryAffectedEntity: id,
+                    oldData: { isVolunteer: isVolunteerChange.oldValue },
+                    newData: { isVolunteer: isVolunteerChange.newValue },
                 }
             });
         }
