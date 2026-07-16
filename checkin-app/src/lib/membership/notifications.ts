@@ -6,6 +6,8 @@ export interface MembershipNotifications {
     pendingReviews: number;
     /** Applications stuck at BLOCKED (board/isSysadmin). */
     blocked: number;
+    /** Open payment-reconciliation problems needing board action (board/isSysadmin). */
+    openPaymentExceptions: number;
 }
 
 /**
@@ -20,9 +22,10 @@ export async function getMembershipNotifications(user: {
     isBoardMember?: boolean;
 }): Promise<MembershipNotifications> {
     const pendingReviews = canReviewBackgroundChecks(user) ? (await eligibleReviewProcessIds(user.id)).length : 0;
-    const blocked =
-        user.isSysadmin || user.isBoardMember
-            ? await prisma.orgMembershipProcess.count({ where: { status: "BLOCKED" } })
-            : 0;
-    return { pendingReviews, blocked };
+    const forBoard = !!(user.isSysadmin || user.isBoardMember);
+    const blocked = forBoard ? await prisma.orgMembershipProcess.count({ where: { status: "BLOCKED" } }) : 0;
+    const openPaymentExceptions = forBoard
+        ? await prisma.paymentException.count({ where: { status: { in: ["OPEN", "ACKNOWLEDGED"] } } })
+        : 0;
+    return { pendingReviews, blocked, openPaymentExceptions };
 }

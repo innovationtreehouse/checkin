@@ -118,6 +118,7 @@ export const classifications = {
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',
         shopifyPriceSyncedAt: 'internal',
+        shopifyReconcileCursorAt: 'internal',
         scholarshipDenialGraceDays: 'public',
         updatedAt: 'internal',
     },
@@ -212,6 +213,7 @@ export const classifications = {
         wasOrgMemberAtApproval: 'internal',
         inventoryHeldAt: 'internal',
         paymentPlanDeniedAt: 'personal',
+        shopifyOrderId: 'internal',
     },
     Fee: {
         id: 'public',
@@ -333,6 +335,20 @@ export const classifications = {
         subject: 'internal',
         html: 'internal',
         createdAt: 'internal',
+    },
+    PaymentException: {
+        id: 'public',
+        kind: 'internal',
+        severity: 'internal',
+        status: 'internal',
+        shopifyOrderId: 'internal',
+        processId: 'internal',
+        programId: 'internal',
+        personId: 'internal',
+        resolvedById: 'internal',
+        resolvedAt: 'internal',
+        resolutionNote: 'personal',
+        detectedAt: 'internal',
     },
 } as const;
 
@@ -474,6 +490,8 @@ export const relations = {
     DevLedger: {
     },
     DevSentEmail: {
+    },
+    PaymentException: {
     },
 } as const;
 

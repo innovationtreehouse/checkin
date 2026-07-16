@@ -66,6 +66,8 @@ const AUTHZ_TESTED = new Set<string>([
     'facility/badges',
     'facility/trends',
     'facility/visits',
+    'finance-ops/payments',
+    'finance-ops/payments/[id]',
     'kioskdisplay/certifications',
     'membership-audit/compliance',
     // POST deny-path (403 non-board) in personBgManualSubmit.integration.test.ts.
