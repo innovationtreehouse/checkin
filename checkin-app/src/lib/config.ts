@@ -193,6 +193,12 @@ export const config = {
     // Cron — shared secret gating the session-less cron routes (see cronAuth.ts).
     cronSecret: (): string | null => process.env.CRON_SECRET || null,
 
+    // s-read mirror — read-only connection string to the `shopify_read` Postgres
+    // (the s-read-function's Shopify order/refund/payout mirror). Null when unset →
+    // the hourly reconciler (lib/finance/reconcile.ts) short-circuits as "not wired"
+    // instead of throwing, so an env without the mirror simply runs no reconciliation.
+    shopifyReadDatabaseUrl: (): string | null => process.env.SHOPIFY_READ_DATABASE_URL || null,
+
     // Shopify — Client Credentials Grant integration (see shopify.ts). All three
     // null when unset (integration "off").
     shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,

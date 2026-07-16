@@ -499,6 +499,11 @@ model BoardSettings {
   shopifyVolunteerVariantId  String?
   /// @sensitivity:internal
   shopifyPriceSyncedAt       DateTime?
+  /// High-water mark for the daily Shopify reconciler (lib/finance/reconcile.ts):
+  /// the mirror `updatedAt` of the newest order it has already processed. Only
+  /// orders changed after this are re-scanned each run. Null = scan from the start.
+  /// @sensitivity:internal
+  shopifyReconcileCursorAt   DateTime?
   /// Grace period (days) a denied scholarship applicant keeps their held seat
   /// before the grace-period expiry cron auto-withdraws them and releases it.
   /// NULL = the expiry feature is OFF (a denied hold is only ever released by
@@ -815,6 +820,11 @@ model ProgramParticipant {
   /// BoardSettings.scholarshipDenialGraceDays.
   /// @sensitivity:personal
   paymentPlanDeniedAt  DateTime?
+  /// Shopify order id (numeric, from the orders/paid webhook) this enrollment was
+  /// activated by. Stored so the reconciler can join a later refund/chargeback/cancel
+  /// on that order back to the enrollment (mirror shop_order.legacyId ↔ this).
+  /// @sensitivity:internal
+  shopifyOrderId       String?
 
   program Program     @relation(fields: [programId], references: [id])
   person  Person @relation(fields: [personId], references: [id])
@@ -1109,4 +1119,72 @@ model DevSentEmail {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// ── Payment reconciliation ───────────────────────────────────────────────────
+// The daily reconciler (lib/finance/reconcile.ts) reads the s-read `shopify_read`
+// mirror and reconciles Shopify order truth against membership/program truth.
+// Clean recoveries (a missed orders/paid webhook) advance the family and are
+// recorded to AuditLog only. Everything a human must decide — refunds, chargebacks,
+// cancellations, unattributable payments — becomes a PaymentException row: a thin
+// TRIAGE record, deliberately NOT a copy of the mirror (amounts/status are re-read
+// live from shopify_read by shopifyOrderId at view time).
+
+enum PaymentExceptionKind {
+  PAID_WHILE_BLOCKED
+  NO_ITEM
+  UNMATCHED_ORDER
+  REFUND
+  CHARGEBACK
+  CANCELLED
+  REVERSED_BEFORE_ACTIVATION
+  AMOUNT_MISMATCH
+  ACTIVE_WITHOUT_PAYMENT
+}
+
+enum PaymentExceptionSeverity {
+  WARN
+  CRITICAL
+}
+
+enum PaymentExceptionStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model PaymentException {
+  /// @sensitivity:public
+  id                   Int                      @id @default(autoincrement())
+  /// @sensitivity:internal
+  kind                 PaymentExceptionKind
+  /// @sensitivity:internal
+  severity             PaymentExceptionSeverity @default(WARN)
+  /// @sensitivity:internal
+  status               PaymentExceptionStatus   @default(OPEN)
+  /// Numeric Shopify order id (mirror shop_order.legacyId) — the pointer back INTO
+  /// the mirror. The dashboard re-reads live amounts/financialStatus from here.
+  /// @sensitivity:internal
+  shopifyOrderId       String?
+  /// The membership process this problem is about, when matched.
+  /// @sensitivity:internal
+  processId            Int?
+  /// The program enrollment this problem is about, when matched (composite key).
+  /// @sensitivity:internal
+  programId            Int?
+  /// @sensitivity:internal
+  personId             Int?
+  /// @sensitivity:internal
+  resolvedById         Int?
+  /// @sensitivity:internal
+  resolvedAt           DateTime?
+  /// @sensitivity:personal
+  resolutionNote       String?
+  /// @sensitivity:internal
+  detectedAt           DateTime                 @default(now())
+
+  // Idempotent re-detection: one open row per (kind, order) across daily runs —
+  // the reconciler upserts on this key instead of duplicating each run.
+  @@unique([kind, shopifyOrderId])
+  @@index([status, severity])
 }

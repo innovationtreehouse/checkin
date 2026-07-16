@@ -245,6 +245,8 @@ export function tabBadgeFor(href: string, counts: TodoCounts | null): NavBadge |
       return green(admin.paymentPlanPending, `${admin.paymentPlanPending} program payment-plan approval${plural(admin.paymentPlanPending, '', 's')}`);
     case '/finance-ops/membership-payment-plan':
       return green(admin.membershipPaymentPlanPending, `${admin.membershipPaymentPlanPending} membership payment-plan approval${plural(admin.membershipPaymentPlanPending, '', 's')}`);
+    case '/finance-ops/payments':
+      return green(admin.openPaymentExceptions, `${admin.openPaymentExceptions} payment problem${plural(admin.openPaymentExceptions, '', 's')} to review`);
     // Safety — same count as the /safety section badge.
     case '/safety/trusted-adults':
       return green(admin.trustedAdults, `${admin.trustedAdults} trusted-adult disclosure${plural(admin.trustedAdults, '', 's')} to review`);
