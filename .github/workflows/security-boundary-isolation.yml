@@ -74,8 +74,12 @@ jobs:
           CLS=checkin-app/src/security/generated/classifications.ts
           if printf '%s\n' "${CHANGED[@]}" | grep -qx "$CLS"; then
             DIFF=$(git diff "$BASE_SHA"...HEAD -- "$CLS")
-            REMOVED=$(echo "$DIFF" | grep -E "^-\s+\w+: '" | sed -E "s/^-\s+(\w+): '(\w+)'.*/\1 \2/" | sort -u)
-            ADDED=$(echo "$DIFF"   | grep -E "^\+\s+\w+: '" | sed -E "s/^\+\s+(\w+): '(\w+)'.*/\1 \2/" | sort -u)
+            # `|| true`: under set -euo pipefail, grep's exit 1 on zero matches
+            # would kill the script mid-step with no verdict — which failed every
+            # PR whose classifications diff was PURELY ADDITIVE (the exact case
+            # the comment above exempts; first hit by checkin#1021).
+            REMOVED=$(echo "$DIFF" | grep -E "^-\s+\w+: '" | sed -E "s/^-\s+(\w+): '(\w+)'.*/\1 \2/" | sort -u || true)
+            ADDED=$(echo "$DIFF"   | grep -E "^\+\s+\w+: '" | sed -E "s/^\+\s+(\w+): '(\w+)'.*/\1 \2/" | sort -u || true)
             while read -r field oldtier; do
               [ -z "$field" ] && continue
               newtier=$(echo "$ADDED" | awk -v f="$field" '$1 == f { print $2 }' | head -1)
