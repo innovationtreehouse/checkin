@@ -41,6 +41,15 @@ ENV GOOGLE_CLIENT_ID=build-placeholder \
     GOOGLE_CLIENT_SECRET=build-placeholder \
     NEXTAUTH_SECRET=build-placeholder
 RUN npm -w checkin-app run build
+# Self-contained prisma CLI tree for the runner stage (see the COPY there):
+# copying node_modules/prisma + @prisma alone is NOT enough — @prisma/config
+# requires hoisted transitive deps (e.g. `effect`), which the deploy-build
+# smoke caught. An isolated install pulls the full closure; the version is
+# read from the workspace install, so the CLI can never drift from the
+# lockfile's.
+RUN mkdir /prisma-cli && cd /prisma-cli && npm init -y >/dev/null \
+ && npm install --no-audit --no-fund --save-exact \
+      prisma@"$(node -p "require('/app/node_modules/prisma/package.json').version")"
 
 # Stage 3: Production image
 FROM node:24-alpine AS runner
@@ -70,6 +79,16 @@ COPY --from=builder /app/checkin-app/prisma ./checkin-app/prisma
 # shipped: its dotenv / prisma/config imports don't resolve here. The deploy
 # variant has no imports.
 COPY --from=builder /app/checkin-app/prisma.config.deploy.ts ./checkin-app/prisma.config.ts
+# The prisma CLI is a devDependency, so Next's standalone file-trace never
+# includes it — `npx prisma migrate deploy` in the migrate ECS task was
+# fetching LATEST prisma from the npm registry at deploy time ("npm warn exec
+# ... will be installed: prisma@X"): version drift vs the lockfile plus a
+# registry dependency in the middle of a deploy. Ship the builder's isolated,
+# lockfile-versioned CLI tree (full transitive closure — same alpine base, so
+# engine binaries match) under checkin-app/node_modules, where the migrate
+# command's cwd resolves it without touching the standalone /app/node_modules.
+# CI's deploy-build smoke asserts it with `npx --no-install prisma --version`.
+COPY --from=builder /prisma-cli/node_modules ./checkin-app/node_modules
 
 EXPOSE 4000
 ENV PORT=4000
