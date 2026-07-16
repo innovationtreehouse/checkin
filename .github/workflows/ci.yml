@@ -353,3 +353,11 @@ jobs:
           docker logs checkin-smoke 2>&1 | tail -50 || true
           docker rm -f checkin-smoke >/dev/null 2>&1 || true
           [ -n "$ok" ] || { echo "::error::checkin app failed to boot / serve \"/\" within ~60s"; exit 1; }
+
+          # The migrate ECS task runs `npx prisma migrate deploy` in this same
+          # image; --no-install proves the lockfile-exact CLI is IN the image
+          # (a bare npx would silently download from the registry and mask a
+          # broken COPY closure — the exact regression this guards).
+          docker run --rm --entrypoint sh checkin-deploy-build:${{ github.sha }} \
+            -c 'cd checkin-app && npx --no-install prisma --version' \
+            || { echo "::error::prisma CLI is not resolvable inside the image — the migrate task would fall back to a registry download"; exit 1; }

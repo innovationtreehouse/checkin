@@ -70,6 +70,17 @@ COPY --from=builder /app/checkin-app/prisma ./checkin-app/prisma
 # shipped: its dotenv / prisma/config imports don't resolve here. The deploy
 # variant has no imports.
 COPY --from=builder /app/checkin-app/prisma.config.deploy.ts ./checkin-app/prisma.config.ts
+# The prisma CLI is a devDependency, so Next's standalone file-trace never
+# includes it — `npx prisma migrate deploy` in the migrate ECS task was
+# fetching LATEST prisma from the npm registry at deploy time ("npm warn exec
+# ... will be installed: prisma@X"): version drift vs the lockfile plus a
+# registry dependency in the middle of a deploy. Ship the lockfile-exact CLI
+# (and its @prisma/* closure — same install, same alpine base, engine
+# binaries match) so npx resolves locally. CI's deploy-build smoke asserts
+# this with `npx --no-install prisma --version`.
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/.bin ./node_modules/.bin
 
 EXPOSE 4000
 ENV PORT=4000
