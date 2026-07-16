@@ -41,6 +41,8 @@ export const GET = withAuth(
                 name: p.name,
                 email: p.email,
                 phone: p.phone,
+                dateOfBirth: p.dateOfBirth,
+                isDeclaredAdult: p.isDeclaredAdult,
                 isMember: personRecordIsActiveOrgMember(p),
                 isBoardMember: p.isBoardMember,
                 isKeyholder: p.isKeyholder,
