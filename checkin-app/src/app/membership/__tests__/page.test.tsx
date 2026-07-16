@@ -402,58 +402,6 @@ describe("membership page", () => {
     }
   });
 
-  it("restores the pay button and shows a soft note after the 10-minute holdoff times out", async () => {
-    setSession({ id: 1 });
-    jest.useFakeTimers();
-    try {
-      mockFetchJson({
-        "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
-        "/api/membership": state({
-          process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
-          external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
-        }),
-      });
-      renderWithProviders(<MembershipPage />);
-      fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
-      await screen.findByText("We'll update your status here when we receive your payment.");
-
-      await act(async () => {
-        await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
-      });
-
-      expect(await screen.findByRole("link", { name: /Pay here with Shopify/ })).toBeInTheDocument();
-      expect(screen.getByText("We haven't seen your payment yet", { exact: false })).toBeInTheDocument();
-      expect(sessionStorage.getItem("membership_awaiting_payment_1")).toBeNull();
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
-  it("dismissing the soft timeout note hides it", async () => {
-    setSession({ id: 1 });
-    jest.useFakeTimers();
-    try {
-      mockFetchJson({
-        "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
-        "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" } }),
-      });
-      renderWithProviders(<MembershipPage />);
-      fireEvent.click(await screen.findByRole("link", { name: /Pay here with Shopify/ }));
-      await screen.findByText("We'll update your status here when we receive your payment.");
-
-      await act(async () => {
-        await jest.advanceTimersByTimeAsync(10 * 60 * 1000);
-      });
-      const note = await screen.findByText("We haven't seen your payment yet", { exact: false });
-
-      fireEvent.click(note.closest(".mantine-Alert-root")!.querySelector(".mantine-Alert-closeButton")!);
-
-      expect(screen.queryByText("We haven't seen your payment yet", { exact: false })).not.toBeInTheDocument();
-    } finally {
-      jest.useRealTimers();
-    }
-  });
-
   it("the 'Show the payment button again' escape hatch restores the pay button without waiting", async () => {
     setSession({ id: 1 });
     mockFetchJson({

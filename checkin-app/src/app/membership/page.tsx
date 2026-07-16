@@ -24,10 +24,8 @@ import { useIsLocalInstance } from "@/components/EnvProvider";
 import { PageLoader } from "@/components/ui/PageLoader";
 const blankAddress: StructuredAddress = { line1: "", line2: "", city: "", state: "", postalCode: "" };
 
-// Payment holdoff (below): how long we wait after a real Shopify checkout click
-// before giving up and restoring the pay button, and how often we poll for a
-// status change in the meantime.
-const AWAITING_PAYMENT_TIMEOUT_MS = 10 * 60 * 1000;
+// Payment holdoff (below): how often we poll for a status change after a real
+// Shopify checkout click.
 const AWAITING_PAYMENT_POLL_MS = 10 * 1000;
 const awaitingPaymentKey = (processId: number) => `membership_awaiting_payment_${processId}`;
 
@@ -147,11 +145,8 @@ export default function MembershipPage() {
   // sessionStorage keyed by process id, so a tab refresh mid-checkout keeps the
   // message. Cleared implicitly whenever a server-side path — the orders/paid
   // webhook today, an s-read reconciliation possibly in the future — moves the
-  // process out of PENDING_PAYMENT, or after a 10-minute timeout.
-  const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number; startedAt: number } | null>(null);
-  // Soft note shown once the holdoff times out with no status change. Distinct
-  // from a payment-received message — a timeout isn't a confirmation.
-  const [paymentTimedOut, setPaymentTimedOut] = useState(false);
+  // process out of PENDING_PAYMENT, or explicitly via the escape-hatch link.
+  const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number } | null>(null);
   // Flips true once the household asks the finance committee for a payment plan.
   const [planRequested, setPlanRequested] = useState(false);
   // Self-attest gate for the background-check task (#875): the confirm checkbox
@@ -291,16 +286,11 @@ export default function MembershipPage() {
     return () => { cancelled = true; };
   }, [state?.process?.status]);
 
-  // Restore an in-flight payment holdoff after a tab refresh mid-Shopify-checkout
-  // — same process, still inside the 10-minute window.
+  // Restore an in-flight payment holdoff after a tab refresh mid-Shopify-checkout.
   useEffect(() => {
     const processId = state?.process?.id;
     if (!processId || state?.process?.status !== "PENDING_PAYMENT") return;
-    const raw = sessionStorage.getItem(awaitingPaymentKey(processId));
-    if (!raw) return;
-    const startedAt = Number(raw);
-    if (Date.now() - startedAt < AWAITING_PAYMENT_TIMEOUT_MS) setAwaitingPayment({ processId, startedAt });
-    else sessionStorage.removeItem(awaitingPaymentKey(processId));
+    if (sessionStorage.getItem(awaitingPaymentKey(processId))) setAwaitingPayment({ processId });
   }, [state?.process?.id, state?.process?.status]);
 
   // Implicit clearing: once the process is no longer PENDING_PAYMENT — the
@@ -309,27 +299,17 @@ export default function MembershipPage() {
   useEffect(() => {
     if (state?.process?.status === "PENDING_PAYMENT") return;
     clearAwaitingPayment();
-    setPaymentTimedOut(false);
   }, [state?.process?.status, clearAwaitingPayment]);
 
   // While awaiting payment, poll the existing load() every ~10s: a status
   // change re-renders the card out of PENDING_PAYMENT (handled above) — no
-  // separate "clear" path needed for that. One interval also carries the
-  // 10-minute deadline check.
+  // separate "clear" path needed for that. Polling runs as long as the message
+  // shows; the escape-hatch link is the way out of an abandoned checkout.
   useEffect(() => {
     if (!awaitingPayment) return;
-    const { startedAt } = awaitingPayment;
-    const timer = setInterval(() => {
-      if (Date.now() - startedAt >= AWAITING_PAYMENT_TIMEOUT_MS) {
-        clearInterval(timer);
-        clearAwaitingPayment();
-        setPaymentTimedOut(true);
-        return;
-      }
-      load();
-    }, AWAITING_PAYMENT_POLL_MS);
+    const timer = setInterval(load, AWAITING_PAYMENT_POLL_MS);
     return () => clearInterval(timer);
-  }, [awaitingPayment, load, clearAwaitingPayment]);
+  }, [awaitingPayment, load]);
 
   const flash = (msg: string, error = false) => {
     setMessage(msg ? { text: msg, tone: error ? "error" : "success" } : undefined);
@@ -346,10 +326,8 @@ export default function MembershipPage() {
   // The local mock below settles synchronously and never needs one.
   const handlePayClick = () => {
     if (!state?.process) return;
-    const startedAt = Date.now();
-    sessionStorage.setItem(awaitingPaymentKey(state.process.id), String(startedAt));
-    setPaymentTimedOut(false);
-    setAwaitingPayment({ processId: state.process.id, startedAt });
+    sessionStorage.setItem(awaitingPaymentKey(state.process.id), "1");
+    setAwaitingPayment({ processId: state.process.id });
   };
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
@@ -902,13 +880,6 @@ export default function MembershipPage() {
                       </Button>
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
-                    )}
-                    {paymentTimedOut && (
-                      <Alert color="yellow" variant="light" mt="md" withCloseButton onClose={() => setPaymentTimedOut(false)}>
-                        We haven&apos;t seen your payment yet — payments can take a few minutes to
-                        confirm. If you completed checkout, check back shortly; otherwise you can pay
-                        again below.
-                      </Alert>
                     )}
                     {planRequested ? (
                       <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
