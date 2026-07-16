@@ -151,6 +151,7 @@ export const OPT_OUT_PENDING_ROUTE = new Set<string>([
     'BackgroundCheckAttestation', // bind their_own at migration, keep notes `internal`
     'Corporation', // has leads→participantId; a corp-lead view is plausible
     'VolunteerDesignation', // has createdById; confirm whether a self view is warranted
+    'PaymentException', // board/admin only (finance-ops/payments via withAuth); a household-facing "your payment problem" route is plausible later
 ]);
 
 /**

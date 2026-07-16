@@ -111,6 +111,7 @@ const admin = (over: Partial<NonNullable<TodoCounts['admin']>> = {}): TodoCounts
     brokenEmails: 0,
     settingsMisconfig: 0,
     programsMisconfig: 0,
+    openPaymentExceptions: 0,
     ...over,
   },
 });
@@ -272,8 +273,11 @@ describe('tabBadgeFor', () => {
       .toEqual({ count: 2, color: 'treehouseGreen', label: '2 program payment-plan approvals' });
     expect(tabBadgeFor('/finance-ops/membership-payment-plan', admin({ membershipPaymentPlanPending: 1 })))
       .toEqual({ count: 1, color: 'treehouseGreen', label: '1 membership payment-plan approval' });
+    expect(tabBadgeFor('/finance-ops/payments', admin({ openPaymentExceptions: 4 })))
+      .toEqual({ count: 4, color: 'treehouseGreen', label: '4 payment problems to review' });
     expect(tabBadgeFor('/finance-ops/payment-plan', admin())).toBeNull();
     expect(tabBadgeFor('/finance-ops/membership-payment-plan', admin())).toBeNull();
+    expect(tabBadgeFor('/finance-ops/payments', admin())).toBeNull();
   });
 });
 
