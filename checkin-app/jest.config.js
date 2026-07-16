@@ -35,18 +35,27 @@ const customJestConfig = {
     // so babel-plugin-istanbul never instruments — v8 reads Node's own coverage.
     coverageProvider: 'v8',
     coverageDirectory: 'coverage',
-    coverageReporters: ['text-summary', 'lcov', 'json-summary'],
-    // Hard gate: `npm run test:coverage` (the full unit+integration run, the only
-    // one that meaningfully measures this — see collectCoverageFrom below) fails
-    // if the repo drops under these floors. Only enforced when a run passes
-    // --coverage; unit-only test:ci is unaffected.
-    coverageThreshold: {
-        global: {
-            lines: 85,
-            branches: 75,
-            functions: 75,
+    // 'json' (coverage-final.json) is consumed by `nyc merge` in ci.yml's
+    // coverage-gate job, which merges the unit + integration tiers before
+    // checking coverageThreshold below.
+    coverageReporters: ['text-summary', 'lcov', 'json-summary', 'json'],
+    // Explicit path (not the OS tmp default) so ci.yml can cache it across runs.
+    cacheDirectory: '<rootDir>/.jest-cache',
+    // Hard gate, but only meaningful against the FULL suite's coverage (unit ∪
+    // integration — see collectCoverageFrom below). ci.yml now runs those tiers
+    // as separate jobs, each a partial suite that would trip these floors on its
+    // own, so each sets SKIP_COVERAGE_THRESHOLD and the merged coverage-gate job
+    // enforces this same threshold against the merged report instead. Local
+    // `npm run test:coverage` leaves the env unset, so it still enforces here.
+    ...(process.env.SKIP_COVERAGE_THRESHOLD ? {} : {
+        coverageThreshold: {
+            global: {
+                lines: 85,
+                branches: 75,
+                functions: 75,
+            },
         },
-    },
+    }),
     // Count every source file, so untested files show as 0% rather than vanishing.
     collectCoverageFrom: [
         'src/**/*.{ts,tsx}',
