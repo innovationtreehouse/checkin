@@ -91,6 +91,10 @@ export const GET = withAuth(
                 ]
             } : {};
 
+            // Renewal-season probe input: the settled arm of the process include below
+            // matches inside this window; out of season it matches nothing.
+            const window = await renewalSeasonWindow(new Date());
+
             const households = await prisma.household.findMany({
                 where: whereClause,
                 include: {
