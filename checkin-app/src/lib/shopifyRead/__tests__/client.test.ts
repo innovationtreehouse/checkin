@@ -131,6 +131,35 @@ describe('latestSyncRun', () => {
 /** The SQL of the Nth query, whitespace-collapsed so indentation doesn't matter. */
 const sqlOf = (call: number) => (queryMock.mock.calls[call][0] as string).replace(/\s+/g, ' ');
 
+describe('match-audit reads', () => {
+    it('ordersForVariants filters to non-test orders with a live line in the requested variant set', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersForVariants(['111', '222']);
+
+        const sql = sqlOf(0);
+        expect(sql).toContain('test = false');
+        expect(sql).toContain('removed = false');
+        expect(sql).toContain(`variant_legacy_id = ANY($1::text[])`);
+        expect(queryMock.mock.calls[0][1]).toEqual([['111', '222']]);
+    });
+
+    it('ordersForVariants short-circuits on an empty variant set without querying', async () => {
+        expect(await freshClient().ordersForVariants([])).toEqual([]);
+        expect(queryMock).not.toHaveBeenCalled();
+    });
+
+    it('lineVariantStats counts only live lines', async () => {
+        queryMock.mockResolvedValue({ rows: [{ lines: 5, withVariant: 2 }] });
+        expect(await freshClient().lineVariantStats()).toEqual({ lines: 5, withVariant: 2 });
+        expect(sqlOf(0)).toContain('removed = false');
+    });
+
+    it('orderLegacyIdsPresent returns the found ids as a set', async () => {
+        queryMock.mockResolvedValue({ rows: [{ legacyId: '900' }] });
+        expect(await freshClient().orderLegacyIdsPresent(['900', '901'])).toEqual(new Set(['900']));
+    });
+});
+
 describe('countSyncRuns (the diagnose route\'s probe)', () => {
     it('returns the run count', async () => {
         queryMock.mockResolvedValue({ rows: [{ runs: 3 }] });

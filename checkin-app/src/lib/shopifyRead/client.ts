@@ -234,6 +234,76 @@ export async function countSyncRuns(): Promise<number> {
     return rows.rows[0].runs;
 }
 
+// ── match-audit reads (lib/finance/matchAudit.ts) ────────────────────────────
+
+/**
+ * How much of the mirror's line data carries a variant id. Rows synced before
+ * s-read's variant columns shipped are null until a BACKFILL run repopulates
+ * them — the audit reports that state explicitly instead of concluding "no
+ * membership orders exist" from a mirror that simply predates the column.
+ */
+export async function lineVariantStats(): Promise<{ lines: number; withVariant: number }> {
+    const p = getPool();
+    if (!p) throw new Error("shopify_read mirror is not configured");
+    const rows = await p.query<{ lines: number; withVariant: number }>(
+        `SELECT count(*)::int AS "lines", count(variant_legacy_id)::int AS "withVariant"
+         FROM shop_order_line WHERE removed = false`,
+    );
+    return rows.rows[0];
+}
+
+/** An order holding at least one line whose variant is one checkin knows about. */
+export interface MirrorAuditOrder {
+    legacyId: string | null;
+    /** Shopify order name, e.g. "#1042" — what the board sees in Shopify admin. */
+    name: string | null;
+    customerEmail: string | null;
+    financialStatus: string | null;
+    totalCents: number;
+    totalRefundedCents: number;
+    cancelledAt: Date | null;
+    /** Which of the requested variant ids this order's lines matched. */
+    matchedVariantIds: string[];
+}
+
+/**
+ * Every non-test order with a non-removed line whose variant_legacy_id is one of
+ * `variantIds` — i.e. the orders that SHOULD reconcile to a membership or program.
+ * Donations/t-shirts/etc. never match and are deliberately absent.
+ */
+export async function ordersForVariants(variantIds: string[]): Promise<MirrorAuditOrder[]> {
+    const p = getPool();
+    if (!p || variantIds.length === 0) return [];
+    const rows = await p.query<MirrorAuditOrder>(
+        `SELECT legacy_id AS "legacyId", name, customer_email AS "customerEmail",
+                financial_status AS "financialStatus", total_cents AS "totalCents",
+                total_refunded_cents AS "totalRefundedCents",
+                cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt",
+                (SELECT array_agg(DISTINCT l.variant_legacy_id)
+                   FROM shop_order_line l
+                  WHERE l.order_gid = shop_order.shopify_gid AND l.removed = false
+                    AND l.variant_legacy_id = ANY($1::text[])) AS "matchedVariantIds"
+         FROM shop_order
+         WHERE test = false
+           AND EXISTS (SELECT 1 FROM shop_order_line l
+                        WHERE l.order_gid = shop_order.shopify_gid AND l.removed = false
+                          AND l.variant_legacy_id = ANY($1::text[]))`,
+        [variantIds],
+    );
+    return rows.rows;
+}
+
+/** Which of the given numeric order ids exist in the mirror at all. */
+export async function orderLegacyIdsPresent(legacyIds: string[]): Promise<Set<string>> {
+    const p = getPool();
+    if (!p || legacyIds.length === 0) return new Set();
+    const rows = await p.query<{ legacyId: string }>(
+        `SELECT legacy_id AS "legacyId" FROM shop_order WHERE legacy_id = ANY($1::text[])`,
+        [legacyIds],
+    );
+    return new Set(rows.rows.map((r) => r.legacyId));
+}
+
 /**
  * Order GIDs that have a chargeback/dispute balance transaction, among the given
  * GIDs. Shopify Payments surfaces a dispute as a signed balance transaction whose

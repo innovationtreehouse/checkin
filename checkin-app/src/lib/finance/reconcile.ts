@@ -464,14 +464,20 @@ export async function runReconcile(): Promise<ReconcileResult> {
 
     const orders = await mirror.ordersChangedSince(cursor);
     let newCursor = cursor;
+    // Stop advancing the cursor at the first order whose pass throws: advancing past
+    // it would skip that order FOREVER (the forward pass is cursor-once). Later
+    // orders in this batch still get processed (idempotent, so re-scanning them
+    // tomorrow is harmless); only the watermark holds back until the bad order heals.
+    let cursorFrozen = false;
     for (const order of orders) {
         try {
             const claimed = await reconcileForwardMembership(order);
             if (!claimed) await reconcileForwardProgram(order);
         } catch (e) {
             logger.error(`[reconcile] forward pass failed for order ${order.legacyId ?? order.orderGid}:`, e);
+            cursorFrozen = true;
         }
-        if (order.updatedAt && (!newCursor || order.updatedAt > newCursor)) newCursor = order.updatedAt;
+        if (!cursorFrozen && order.updatedAt && (!newCursor || order.updatedAt > newCursor)) newCursor = order.updatedAt;
     }
 
     const reversalsRaised = await reconcileReversals();
