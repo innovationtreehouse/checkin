@@ -16,13 +16,18 @@ type Member = {
   name?: string | null;
   email?: string | null;
   programParticipants?: Enrollment[] | null;
+  bgValidUntil?: string | null;
 };
 type Household = {
   id: number;
   name?: string | null;
-  orgMembership?: { status: string } | null;
+  orgMembership?: { status: string; memberSince?: string | null } | null;
   householdMembers?: Member[] | null;
+  bgValidUntil?: string | null;
 };
+
+const fmtDate = (s?: string | null) =>
+  s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 // A household detail view for the board — its members and each member's program
 // enrollments in one focused screen, off the noisy households list.
@@ -33,6 +38,7 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
 
   const [household, setHousehold] = useState<Household | null>(null);
   const [loading, setLoading] = useState(true);
+  const [validUntil, setValidUntil] = useState<string | null>(null);
 
   const fetchHousehold = useCallback(async () => {
     try {
@@ -40,6 +46,7 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
+        setValidUntil(data.validUntil ?? null);
       } else {
         notifications.show({ color: "red", message: "Failed to load household.", autoClose: false });
       }
@@ -88,6 +95,12 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
         )}
       </Group>
 
+      <Group gap="lg">
+        <Text size="sm" c="dimmed">Member since: {fmtDate(household.orgMembership?.memberSince)}</Text>
+        <Text size="sm" c="dimmed">Valid until: {fmtDate(validUntil)}</Text>
+        <Text size="sm" c="dimmed">BG valid until: {fmtDate(household.bgValidUntil)}</Text>
+      </Group>
+
       {members.length === 0 ? (
         <Text c="dimmed" fs="italic">No people in this household.</Text>
       ) : (
@@ -97,6 +110,9 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
             return (
               <Card key={m.id} withBorder padding="md">
                 <Text fw={600}>{m.name || m.email}</Text>
+                {m.bgValidUntil && (
+                  <Text size="sm" c="dimmed">BG valid until: {fmtDate(m.bgValidUntil)}</Text>
+                )}
                 {enrollments.length === 0 ? (
                   <Text size="sm" c="dimmed" fs="italic" mt={4}>Not enrolled in any program.</Text>
                 ) : (

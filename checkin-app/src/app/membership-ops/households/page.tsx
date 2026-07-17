@@ -14,12 +14,18 @@ import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
   id: number;
   name?: string | null;
-  orgMembership?: { status: string } | null;
+  orgMembership?: { status: string; memberSince?: string | null } | null;
   // Renewal season only: the coming cycle is already settled — the member finished
   // renewal, or an admin already used the override.
   settledForComingYear?: boolean;
+  validUntil?: string | null;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
+  renewalGrantable?: boolean;
+  bgValidUntil?: string | null;
 };
+
+const fmtDate = (s?: string | null) =>
+  s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 export default function AdminHouseholdsPage() {
   const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
@@ -179,6 +185,9 @@ export default function AdminHouseholdsPage() {
               <Table.Th>Household</Table.Th>
               <Table.Th>Participants</Table.Th>
               <Table.Th>Is Member?</Table.Th>
+              <Table.Th>Member since</Table.Th>
+              <Table.Th>Valid until</Table.Th>
+              <Table.Th>BG valid until</Table.Th>
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -252,6 +261,9 @@ export default function AdminHouseholdsPage() {
                       <Text c="dimmed">No</Text>
                     )}
                   </Table.Td>
+                  <Table.Td>{fmtDate(household.orgMembership?.memberSince)}</Table.Td>
+                  <Table.Td>{fmtDate(household.validUntil)}</Table.Td>
+                  <Table.Td>{fmtDate(household.bgValidUntil)}</Table.Td>
                   <Table.Td>
                     <Stack gap="xs" align="flex-start">
                     <Group gap="xs" wrap="nowrap">
@@ -311,21 +323,17 @@ export default function AdminHouseholdsPage() {
                         </>
                       )}
                     </Group>
-                    {renewalSeason && !isDenied && (
+                    {/* Three states: hidden unless actionable-or-settled (not started, mid-flow,
+                        stale BG, staff, COI, out of season all hide); a settled cycle shows a
+                        disabled "Granted for coming year" as positive confirmation (#1047); a
+                        grantable renewal (PENDING_PAYMENT + cleared, fresh BG) shows it live. */}
+                    {renewalSeason && !isDenied && !isStaffHousehold && !ownHouseholdConflict && (household.renewalGrantable || settledForComingYear) && (
                       <Button
                         size="xs" fz={15}
                         variant="light"
                         color="green"
-                        disabled={settledForComingYear || ownHouseholdConflict || isStaffHousehold}
-                        title={
-                          settledForComingYear
-                            ? "This household is already set for the coming year."
-                            : isStaffHousehold
-                              ? "Staff households can't be granted membership."
-                              : ownHouseholdConflict
-                                ? "You can't grant your own household's membership — a sysadmin must."
-                                : undefined
-                        }
+                        disabled={settledForComingYear}
+                        title={settledForComingYear ? "This household is already set for the coming year." : undefined}
                         onClick={() => grantForComingYear(household.id)}
                       >
                         {settledForComingYear ? "Granted for coming year" : "Grant for coming year"}
@@ -339,7 +347,7 @@ export default function AdminHouseholdsPage() {
 
             {filtered.length === 0 && (
               <Table.Tr>
-                <Table.Td colSpan={4} ta="center">
+                <Table.Td colSpan={7} ta="center">
                   <Text c="dimmed" py="md">No households found.</Text>
                 </Table.Td>
               </Table.Tr>
