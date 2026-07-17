@@ -26,15 +26,25 @@ type OrderStateName = 'draft' | 'awaiting_activation' | 'active' | 'cancelled';
 type FakeWhere = {
     status?: OrderStatus | { in: readonly OrderStatus[] };
     paidAt?: null | { not: null };
+    rush?: boolean; // genuine boolean column (Boolean @default(false)) → value-equality
 };
 
 // Row shape the client-safe predicate sees: presence as a boolean, not Date|null.
-type OrderRow = { status: OrderStatus; paidAt: boolean };
+type OrderRow = { status: OrderStatus; paidAt: boolean; rush: boolean };
 
 const activeSet = defineStateSet<FakeWhere>()({ statuses: ['ACTIVE'] as const });
 const paidPendingSet = defineStateSet<FakeWhere>()({
     statuses: ['PAID'] as const,
     flags: { paidAt: true },
+});
+// A boolean-column set (like enrollment's isPaymentPlanRequested): equals, not presence.
+const rushSet = defineStateSet<FakeWhere>()({
+    statuses: ['PAID'] as const,
+    equals: { rush: true },
+});
+const nonRushSet = defineStateSet<FakeWhere>()({
+    statuses: ['PAID'] as const,
+    equals: { rush: false },
 });
 
 function classify(row: OrderRow): OrderStateName | null {
@@ -72,18 +82,30 @@ const ALL_STATES: OrderStatus[] = ['DRAFT', 'PAID', 'ACTIVE', 'CANCELLED', 'ORPH
 // ---- StateSet: has/where derive from one spec -------------------------------
 
 describe('defineStateSet', () => {
-    test('has() agrees with the spec across a status × flags matrix', () => {
+    test('has() agrees with the spec across a status × flags × equals matrix', () => {
         for (const status of ALL_STATES) {
             for (const paidAt of [true, false]) {
-                const row: OrderRow = { status, paidAt };
-                expect(paidPendingSet.has(row)).toBe(status === 'PAID' && paidAt);
-                expect(activeSet.has(row)).toBe(status === 'ACTIVE');
+                for (const rush of [true, false]) {
+                    const row: OrderRow = { status, paidAt, rush };
+                    expect(paidPendingSet.has(row)).toBe(status === 'PAID' && paidAt);
+                    expect(activeSet.has(row)).toBe(status === 'ACTIVE');
+                    // equals matches the boolean VALUE, independent of presence.
+                    expect(rushSet.has(row)).toBe(status === 'PAID' && rush === true);
+                    expect(nonRushSet.has(row)).toBe(status === 'PAID' && rush === false);
+                }
             }
         }
     });
 
     test('where mirrors has for the flagged set', () => {
         expect(paidPendingSet.where).toEqual({ status: { in: ['PAID'] }, paidAt: { not: null } });
+    });
+
+    test('equals emits value-equality where, not presence', () => {
+        // A boolean column: where is { rush: true/false } — NOT { not: null },
+        // which would match both true and false and diverge from has.
+        expect(rushSet.where).toEqual({ status: { in: ['PAID'] }, rush: true });
+        expect(nonRushSet.where).toEqual({ status: { in: ['PAID'] }, rush: false });
     });
 
     test('where for a flagless set is status-only', () => {
@@ -100,6 +122,18 @@ describe('defineStateSet', () => {
         expect(unpaidDraft.where).toEqual({ status: { in: ['DRAFT'] }, paidAt: null });
     });
 
+    test('flags and equals combine in one set', () => {
+        const both = defineStateSet<FakeWhere>()({
+            statuses: ['PAID'] as const,
+            flags: { paidAt: true },
+            equals: { rush: false },
+        });
+        expect(both.has({ status: 'PAID', paidAt: true, rush: false })).toBe(true);
+        expect(both.has({ status: 'PAID', paidAt: true, rush: true })).toBe(false);
+        expect(both.has({ status: 'PAID', paidAt: false, rush: false })).toBe(false);
+        expect(both.where).toEqual({ status: { in: ['PAID'] }, paidAt: { not: null }, rush: false });
+    });
+
     test('statuses are exposed', () => {
         expect(paidPendingSet.statuses).toEqual(['PAID']);
     });
@@ -109,15 +143,15 @@ describe('defineStateSet', () => {
 
 describe('classify (exhaustive switch)', () => {
     test('maps on-diagram rows to their state', () => {
-        expect(classify({ status: 'DRAFT', paidAt: false })).toBe('draft');
-        expect(classify({ status: 'PAID', paidAt: true })).toBe('awaiting_activation');
-        expect(classify({ status: 'ACTIVE', paidAt: true })).toBe('active');
-        expect(classify({ status: 'CANCELLED', paidAt: false })).toBe('cancelled');
+        expect(classify({ status: 'DRAFT', paidAt: false, rush: false })).toBe('draft');
+        expect(classify({ status: 'PAID', paidAt: true, rush: false })).toBe('awaiting_activation');
+        expect(classify({ status: 'ACTIVE', paidAt: true, rush: false })).toBe('active');
+        expect(classify({ status: 'CANCELLED', paidAt: false, rush: false })).toBe('cancelled');
     });
 
     test('returns null for off-diagram combinations', () => {
-        expect(classify({ status: 'PAID', paidAt: false })).toBeNull();
-        expect(classify({ status: 'ORPHAN', paidAt: false })).toBeNull();
+        expect(classify({ status: 'PAID', paidAt: false, rush: false })).toBeNull();
+        expect(classify({ status: 'ORPHAN', paidAt: false, rush: false })).toBeNull();
     });
 });
 
@@ -129,13 +163,13 @@ describe('assertNever', () => {
 
 describe('validate', () => {
     test('returns null when every invariant holds', () => {
-        expect(validate({ status: 'PAID', paidAt: true })).toBeNull();
-        expect(validate({ status: 'ACTIVE', paidAt: true })).toBeNull();
+        expect(validate({ status: 'PAID', paidAt: true, rush: false })).toBeNull();
+        expect(validate({ status: 'ACTIVE', paidAt: true, rush: false })).toBeNull();
     });
 
     test('returns the first violated invariant, in list order', () => {
-        expect(validate({ status: 'PAID', paidAt: false })).toEqual({ invariant: 'paid-has-timestamp' });
-        expect(validate({ status: 'CANCELLED', paidAt: true })).toEqual({ invariant: 'cancelled-is-unpaid' });
+        expect(validate({ status: 'PAID', paidAt: false, rush: false })).toEqual({ invariant: 'paid-has-timestamp' });
+        expect(validate({ status: 'CANCELLED', paidAt: true, rush: false })).toEqual({ invariant: 'cancelled-is-unpaid' });
     });
 });
 

@@ -19,15 +19,9 @@ export type StateSet<Row, Where> = {
 };
 
 /**
- * A presence-flag rule: field name → required presence.
- *
- * `true`  ⟺ the (nullable) column must be present  → `has`: `row.field === true`,
- *                                                     `where`: `{ field: { not: null } }`
- * `false` ⟺ the column must be absent              → `has`: `row.field === false`,
- *                                                     `where`: `{ field: null }`
- *
- * Callers pass the column's presence as a boolean into `has` (e.g. `!!row.paidAt`),
- * keeping `Date | null` out of the client-safe predicate.
+ * A field-rule map: field name → required boolean. Reused for both `flags`
+ * (presence of a nullable column) and `equals` (value of a boolean column) —
+ * see `defineStateSet`. The two differ only in how the boolean maps to `where`.
  */
 export type FlagRule = Readonly<Record<string, boolean>>;
 
@@ -37,37 +31,63 @@ export type FlagRule = Readonly<Record<string, boolean>>;
  *
  *   defineStateSet<Prisma.ProgramParticipantWhereInput>()({
  *       statuses: ['ACTIVE'],
- *       flags: { paidAt: true },
+ *       flags: { paidAt: true },              // nullable-timestamp PRESENCE
+ *       equals: { isPaymentPlanRequested: true }, // boolean-column VALUE
  *   })
  *
- * `has` and `where` are derived from the same `statuses`/`flags`, so adding a flag
- * updates both sides at once — they cannot diverge.
+ * Two rule kinds, because a nullable timestamp and a real boolean column need
+ * different `where`:
+ *
+ * - `flags` — PRESENCE of a nullable column (timestamps like `paidAt`):
+ *     `true`  → `has`: `row.field === true`,  `where`: `{ field: { not: null } }`
+ *     `false` → `has`: `row.field === false`, `where`: `{ field: null }`
+ *   Callers pass presence as a boolean (`!!row.paidAt`), keeping `Date | null`
+ *   out of the client-safe predicate.
+ *
+ * - `equals` — VALUE of a genuine boolean column (`Boolean @default(false)`):
+ *     `req`   → `has`: `row.field === req`,   `where`: `{ field: req }`
+ *   `{ not: null }` would match BOTH true and false, so presence is wrong here.
+ *
+ * `has` and `where` derive from the same `flags`/`equals`, so they can't diverge.
  */
 export function defineStateSet<Where>() {
-    return function <S extends string, Flags extends FlagRule = Record<never, boolean>>(spec: {
+    return function <
+        S extends string,
+        Flags extends FlagRule = Record<never, boolean>,
+        Equals extends FlagRule = Record<never, boolean>,
+    >(spec: {
         statuses: readonly S[];
         flags?: Flags;
-    }): StateSet<{ status: string } & Record<keyof Flags, boolean>, Where> {
-        const { statuses, flags } = spec;
+        equals?: Equals;
+    }): StateSet<{ status: string } & Record<keyof Flags | keyof Equals, boolean>, Where> {
+        const { statuses, flags, equals } = spec;
         const flagEntries = flags ? Object.entries(flags) : [];
+        const equalEntries = equals ? Object.entries(equals) : [];
         const statusSet = new Set<string>(statuses);
 
         // `status: string` (not the set's own literal): callers pass a full row
         // typed with the entity's whole status union, not one narrowed to this set.
-        const has = (row: { status: string } & Record<keyof Flags, boolean>): boolean => {
+        const has = (row: { status: string } & Record<keyof Flags | keyof Equals, boolean>): boolean => {
             if (!statusSet.has(row.status)) return false;
+            const r = row as Record<string, unknown>;
             for (const [field, required] of flagEntries) {
-                if (Boolean((row as Record<string, unknown>)[field]) !== required) return false;
+                if (Boolean(r[field]) !== required) return false;
+            }
+            for (const [field, required] of equalEntries) {
+                if (Boolean(r[field]) !== required) return false;
             }
             return true;
         };
 
         // Plain object literal → no Prisma runtime dependency. Cast once: the shape
-        // is built dynamically from `flags`, so TS can't check it against an
-        // arbitrary caller `Where`; the caller's type arg is the contract.
+        // is built dynamically, so TS can't check it against an arbitrary caller
+        // `Where`; the caller's type arg is the contract.
         const where = {
             status: { in: statuses },
+            // presence: nullable column not-null / null
             ...Object.fromEntries(flagEntries.map(([f, req]) => [f, req ? { not: null } : null])),
+            // value-equality: boolean column === req
+            ...Object.fromEntries(equalEntries.map(([f, req]) => [f, req])),
         } as Where;
 
         return { statuses, has, where };
