@@ -79,6 +79,8 @@ export default function AdminVisitsPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
   const [confirmEditOpened, { open: openConfirmEdit, close: closeConfirmEdit }] = useDisclosure(false);
   const [pendingEditVisit, setPendingEditVisit] = useState<Visit | null>(null);
+  const [confirmDeleteOpened, { open: openConfirmDelete, close: closeConfirmDelete }] = useDisclosure(false);
+  const [pendingDeleteVisit, setPendingDeleteVisit] = useState<Visit | null>(null);
 
   const sortedVisits = useMemo(() => {
     return [...visits].sort((a, b) => {
@@ -181,6 +183,34 @@ export default function AdminVisitsPage() {
     }
   };
 
+  const handleDeleteClick = (visit: Visit) => {
+    setPendingDeleteVisit(visit);
+    openConfirmDelete();
+  };
+
+  const confirmDeleteClick = async () => {
+    if (!pendingDeleteVisit) return;
+    const id = pendingDeleteVisit.id;
+    closeConfirmDelete();
+    setPendingDeleteVisit(null);
+    try {
+      const res = await fetch(`/api/facility/visits`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitId: id })
+      });
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Visit deleted." });
+        fetchVisits();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Failed to delete visit.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error deleting visit.", autoClose: false });
+    }
+  };
+
   if (authLoading || loading) {
     return <PageLoader />;
   }
@@ -255,7 +285,10 @@ export default function AdminVisitsPage() {
                       ) : <Text component="span" c="yellow">Active</Text>}
                     </Table.Td>
                     <Table.Td>
-                      <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                      <Group gap="xs" wrap="nowrap">
+                        <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                        <Button size="xs" fz={15} variant="light" color="red" onClick={() => handleDeleteClick(v)}>Delete</Button>
+                      </Group>
                     </Table.Td>
                   </>
                 )}
@@ -277,6 +310,21 @@ export default function AdminVisitsPage() {
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmEdit}>Cancel</Button>
           <Button color="red" onClick={confirmEditClick}>Continue</Button>
+        </Group>
+      </Modal>
+
+      <Modal
+        opened={confirmDeleteOpened}
+        onClose={closeConfirmDelete}
+        title={<Text span fw={700} fz="lg">Delete Visit Record</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Warning: You are permanently deleting a visit record using Admin overrides. This will be permanently logged.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmDelete}>Cancel</Button>
+          <Button color="red" onClick={confirmDeleteClick}>Delete</Button>
         </Group>
       </Modal>
     </Stack>

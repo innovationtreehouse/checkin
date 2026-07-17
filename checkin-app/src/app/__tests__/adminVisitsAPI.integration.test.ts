@@ -6,7 +6,7 @@
  * Tests GET and PATCH /api/facility/visits for viewing and editing check-in records
  */
 
-import { GET, PATCH } from '@/app/api/facility/visits/route';
+import { GET, PATCH, DELETE } from '@/app/api/facility/visits/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -276,6 +276,96 @@ describe('Admin Visits API Integration Tests', () => {
                 where: { actorId: testAdminId, action: 'EDIT', tableName: 'Visit' }
             });
             expect(currentAuditLogs).toBe(previousAuditLogs + 1);
+        });
+    });
+
+    describe('DELETE /api/facility/visits', () => {
+        it('should return 401 Unauthorized without session', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'DELETE',
+                body: JSON.stringify({ visitId: testVisitId })
+            });
+
+            const res = await DELETE(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(401);
+        });
+
+        it('should return 403 Forbidden for non-admin users', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'DELETE',
+                body: JSON.stringify({ visitId: testVisitId })
+            });
+
+            const res = await DELETE(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(403);
+        });
+
+        it('should return 400 Bad Request if visitId is missing', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'DELETE',
+                body: JSON.stringify({})
+            });
+
+            const res = await DELETE(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('visitId is required.');
+        });
+
+        it('should return 404 for a non-existent visit', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'DELETE',
+                body: JSON.stringify({ visitId: 999999999 })
+            });
+
+            const res = await DELETE(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(404);
+            const data = await res.json();
+            expect(data.error).toBe('Visit not found.');
+        });
+
+        it('should delete the visit and log to audit with oldData when an admin requests it', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            // Own throwaway visit so the shared testVisitId stays available for other runs.
+            const doomed = await prisma.visit.create({
+                data: { personId: testUserId, arrivedAt: new Date(Date.now() - 3600000) }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'DELETE',
+                body: JSON.stringify({ visitId: doomed.id })
+            });
+
+            const res = await DELETE(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.success).toBe(true);
+
+            const gone = await prisma.visit.findUnique({ where: { id: doomed.id } });
+            expect(gone).toBeNull();
+
+            const auditLog = await prisma.auditLog.findFirst({
+                where: { actorId: testAdminId, action: 'DELETE', tableName: 'Visit', affectedEntityId: doomed.id }
+            });
+            expect(auditLog).not.toBeNull();
+            expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
         });
     });
 });

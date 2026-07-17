@@ -96,3 +96,42 @@ export const PATCH = withAuth(
         }
     }
 );
+
+export const DELETE = withAuth(
+    { roles: ['isSysadmin', 'isBoardMember'] },
+    async (req, auth) => {
+        try {
+            const { visitId } = await req.json();
+
+            if (!visitId) {
+                return apiError("visitId is required.", 400);
+            }
+
+            const existing = await prisma.visit.findUnique({ where: { id: visitId } });
+            if (!existing) {
+                return apiError("Visit not found.", 404);
+            }
+
+            await prisma.visit.delete({ where: { id: visitId } });
+
+            // Log the manual deletion in the audit trail — keep the deleted row in oldData
+            // since it no longer exists anywhere else.
+            if (auth.type === 'session') {
+                await prisma.auditLog.create({
+                    data: {
+                        actorId: auth.user.id,
+                        action: "DELETE",
+                        tableName: "Visit",
+                        affectedEntityId: visitId,
+                        oldData: JSON.parse(JSON.stringify(existing)),
+                    },
+                });
+            }
+
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            logger.error("Delete visit error:", error);
+            return apiError("Internal Server Error", 500);
+        }
+    }
+);
