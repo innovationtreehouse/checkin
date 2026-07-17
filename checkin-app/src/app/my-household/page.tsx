@@ -25,11 +25,12 @@ const DOB_ERROR = "Date of birth is required for anyone under 25.";
 
 // Shared client validation for the member add/edit forms. Returns red-ring +
 // subtext errors keyed by field; empty object means valid.
-function validateHouseholdMemberFields(f: { name: string; email: string; dob: string; over25: boolean }) {
-  const e: { name?: string; email?: string; dob?: string } = {};
+function validateHouseholdMemberFields(f: { name: string; email: string; dob: string; over25: boolean; phone?: string }) {
+  const e: { name?: string; email?: string; dob?: string; phone?: string } = {};
   if (!f.name.trim()) e.name = "Name is required.";
   if (f.email && !isValidEmail(f.email)) e.email = EMAIL_ERROR;
   if (!f.over25 && !f.dob) e.dob = DOB_ERROR;
+  if (f.phone && !isValidPhone(f.phone)) e.phone = PHONE_ERROR;
   return e;
 }
 
@@ -74,8 +75,8 @@ export default function HouseholdPage() {
   const warn = (text: string) => setMessage({ text, tone: "warning" });
   const [addingHouseholdMember, setAddingHouseholdMember] = useState(false);
 
-  const [householdMemberForm, setHouseholdMemberForm] = useState({ name: "", email: "", dob: "", over25: false, allergies: "" });
-  const [householdMemberErrors, setHouseholdMemberErrors] = useState<{ name?: string; email?: string; dob?: string }>({});
+  const [householdMemberForm, setHouseholdMemberForm] = useState({ name: "", email: "", dob: "", phone: "", over25: false, allergies: "" });
+  const [householdMemberErrors, setHouseholdMemberErrors] = useState<{ name?: string; email?: string; dob?: string; phone?: string }>({});
 
   const [editingHouseholdMemberId, setEditingHouseholdMemberId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ name: "", email: "", dob: "", phone: "", isLead: false, over25: false, allergies: "" });
@@ -255,11 +256,11 @@ export default function HouseholdPage() {
       const res = await fetch('/api/household', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberOver25: householdMemberForm.over25, memberAllergies: householdMemberForm.allergies })
+        body: JSON.stringify({ memberName: householdMemberForm.name, memberEmail: householdMemberForm.email, memberDob: householdMemberForm.over25 ? "" : householdMemberForm.dob, memberPhone: householdMemberForm.phone, memberOver25: householdMemberForm.over25, memberAllergies: householdMemberForm.allergies })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setHouseholdMemberForm({ name: "", email: "", dob: "", over25: false, allergies: "" });
+        setHouseholdMemberForm({ name: "", email: "", dob: "", phone: "", over25: false, allergies: "" });
         setHouseholdMemberErrors({});
         setAddingHouseholdMember(false);
         fetchHousehold();
@@ -275,8 +276,7 @@ export default function HouseholdPage() {
   const handleEditHouseholdMember = async (e: React.FormEvent, participantId: number) => {
     e.preventDefault();
     setMessage(null);
-    const errs: { name?: string; email?: string; dob?: string; phone?: string } = validateHouseholdMemberFields(editForm);
-    if (editForm.phone && !isValidPhone(editForm.phone)) errs.phone = PHONE_ERROR;
+    const errs = validateHouseholdMemberFields(editForm);
     setEditErrors(errs);
     if (Object.keys(errs).length > 0) return;
     try {
@@ -477,6 +477,7 @@ export default function HouseholdPage() {
                       {!householdMemberForm.over25 && (
                         <TextInput type="date" label="Date of Birth" value={householdMemberForm.dob} error={householdMemberErrors.dob} onChange={(e) => { setHouseholdMemberForm({ ...householdMemberForm, dob: e.currentTarget.value }); setHouseholdMemberErrors({ ...householdMemberErrors, dob: undefined }); }} />
                       )}
+                      <TextInput type="tel" label="Phone (optional)" value={householdMemberForm.phone} error={householdMemberErrors.phone} onChange={(e) => { setHouseholdMemberForm({ ...householdMemberForm, phone: e.currentTarget.value }); setHouseholdMemberErrors({ ...householdMemberErrors, phone: undefined }); }} />
                       <TextInput label="Allergies (optional)" value={householdMemberForm.allergies} onChange={(e) => setHouseholdMemberForm({ ...householdMemberForm, allergies: e.currentTarget.value })} />
                       <Group grow>
                         <Button type="submit" color="green">Save / Invite</Button>
