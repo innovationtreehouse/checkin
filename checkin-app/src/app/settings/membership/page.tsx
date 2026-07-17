@@ -13,7 +13,6 @@ interface Settings {
   normalDuesCents: number;
   volunteerDuesCents: number;
   orgMembershipYearBoundary: string | null;
-  currentMembershipValidUntil: string | null;
   orgMembershipVariantId: string | null;
   orgMembershipProductUrl: string | null;
   volunteerDiscountCode: string | null;
@@ -42,7 +41,6 @@ export default function MembershipSettingsPage() {
   const [scholarshipGraceDays, setScholarshipGraceDays] = useState("");
   const [boundary, setBoundary] = useState("");
   const [boundaryUnlocked, setBoundaryUnlocked] = useState(false);
-  const [validUntil, setValidUntil] = useState("");
   const [variantId, setVariantId] = useState("");
   const [productUrl, setProductUrl] = useState("");
   const [extracting, setExtracting] = useState(false);
@@ -78,7 +76,6 @@ export default function MembershipSettingsPage() {
           bgRecheckMonths: String(settings.bgRecheckMonths ?? 0),
           scholarshipGraceDays: settings.scholarshipDenialGraceDays != null ? String(settings.scholarshipDenialGraceDays) : "",
           boundary: settings.orgMembershipYearBoundary ? settings.orgMembershipYearBoundary.slice(0, 10) : "",
-          validUntil: settings.currentMembershipValidUntil ? settings.currentMembershipValidUntil.slice(0, 10) : "",
           variantId: settings.orgMembershipVariantId ?? "",
           productUrl: settings.orgMembershipProductUrl ?? "",
           discountCode: settings.volunteerDiscountCode ?? "",
@@ -89,7 +86,6 @@ export default function MembershipSettingsPage() {
         setBgRecheckMonths(snap.bgRecheckMonths);
         setScholarshipGraceDays(snap.scholarshipGraceDays);
         setBoundary(snap.boundary);
-        setValidUntil(snap.validUntil);
         setVariantId(snap.variantId);
         setProductUrl(snap.productUrl);
         setDiscountCode(snap.discountCode);
@@ -132,7 +128,6 @@ export default function MembershipSettingsPage() {
           volunteerDiscountCode: discountCode.trim() || null,
           bgRecheckMonths: Math.round(parseInt(bgRecheckMonths || "0", 10)),
           scholarshipDenialGraceDays: scholarshipGraceDays.trim() === "" ? null : parseInt(scholarshipGraceDays.trim(), 10),
-          currentMembershipValidUntil: validUntil || null,
           // Dev instances only — the API rejects it elsewhere.
           ...(isDev ? { devSigningTarget: signingTarget } : {}),
           // Send the boundary when the unlock is checked, or when it was never set (no
@@ -190,7 +185,7 @@ export default function MembershipSettingsPage() {
 
   const isDirty =
     !!initial &&
-    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, scholarshipGraceDays, boundary, validUntil, variantId, productUrl, discountCode, signingTarget });
+    !shallowEqual(initial, { normalDues, volunteerDues, bgRecheckMonths, scholarshipGraceDays, boundary, variantId, productUrl, discountCode, signingTarget });
   useUnsavedGuard(isDirty);
 
   return (
@@ -327,15 +322,6 @@ export default function MembershipSettingsPage() {
                 disabled={boundaryWasSet && !boundaryUnlocked}
               />
             </Alert>
-
-            <TextInput
-              type="date"
-              mt="md"
-              w={260}
-              label="Current membership applications are valid until"
-              value={validUntil}
-              onChange={(e) => setValidUntil(e.currentTarget.value)}
-            />
 
             {isDev && (
               <Alert color="grape" variant="light" mt="md" title="Contract signing target (dev instance only)">
