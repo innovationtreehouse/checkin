@@ -28,6 +28,7 @@ export default function ManualAttendance() {
       const dep = new Date(departedAt);
       if (isNaN(dep.getTime())) fe.departedAt = "Invalid departure time";
       else if (dep.getTime() <= arr.getTime()) fe.departedAt = "Departure time must be after arrival time";
+      else if (dep.getTime() - arr.getTime() > 24 * 60 * 60 * 1000) fe.departedAt = "A visit cannot be longer than 24 hours.";
     } else if (arrivedAt && !fe.arrivedAt) {
       const withinSixHours = now - arr.getTime() <= 6 * 60 * 60 * 1000;
       const sameDay = arr.toDateString() === new Date(now).toDateString();

@@ -181,6 +181,11 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       setManualNotice({ ok: false, msg: "Departure time must be after arrival time" });
       return;
     }
+    if (manualStatus === 'Present' && manualArrived && manualDeparted &&
+        Date.parse(manualDeparted) - Date.parse(manualArrived) > 24 * 60 * 60 * 1000) {
+      setManualNotice({ ok: false, msg: "A visit cannot be longer than 24 hours." });
+      return;
+    }
     setActionLoading(true);
     setManualNotice(null);
     try {

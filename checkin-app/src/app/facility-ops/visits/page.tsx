@@ -153,6 +153,10 @@ export default function AdminVisitsPage() {
       setRowNotice({ id, text: "Departure time must be after arrival time", tone: "error" });
       return;
     }
+    if (editForm.arrivedAt && Date.parse(editForm.departedAt) - Date.parse(editForm.arrivedAt) > 24 * 60 * 60 * 1000) {
+      setRowNotice({ id, text: "A visit cannot be longer than 24 hours.", tone: "error" });
+      return;
+    }
     try {
       const res = await fetch(`/api/facility/visits`, {
         method: 'PATCH',

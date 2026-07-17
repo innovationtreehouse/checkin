@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
-import { parseVisitTime, departureAfterArrival } from "@/lib/visitTimes";
+import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -63,6 +63,9 @@ export const PATCH = withAuth(
             }
             if (!departureAfterArrival(nextArrived, nextDeparted)) {
                 return apiError("Departure time must be after arrival time", 400);
+            }
+            if (!withinMaxDuration(nextArrived, nextDeparted)) {
+                return apiError("A visit cannot be longer than 24 hours.", 400);
             }
 
             const updatedVisit = await prisma.visit.update({
