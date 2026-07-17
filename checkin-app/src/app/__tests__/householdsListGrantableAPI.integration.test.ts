@@ -33,6 +33,7 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
     let notStartedHouseholdId: number;
     let grantableHouseholdId: number;
     let staleBgHouseholdId: number;
+    let parallelTrackHouseholdId: number;
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -80,14 +81,25 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
         const grantableMembership = await prisma.orgMembership.create({ data: { householdId: grantableHouseholdId, status: 'ACTIVE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: grantableMembership.id, kind: 'RENEWAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });
 
-        // Gate-parity case: PENDING_PAYMENT + bgClearedAt set, but the lead's background
-        // check is stale (older than the recheck window) — householdBgIsFresh must reject it.
+        // Stale-BG case: PENDING_PAYMENT + bgClearedAt set, lead's own check is stale.
+        // Grant comps PAYMENT only and BG still gates ACTIVE, so this IS grantable —
+        // lead BG freshness no longer gates the button (behavior (a)).
         const staleBg = await prisma.person.create({
             data: { email: `stalebg-${TAG}@example.com`, name: 'Stale Lead', isHouseholdLead: true, lastBackgroundCheck: new Date(Date.UTC(2015, 0, 1)), household: { create: { name: `Stale HH ${TAG}` } } },
         });
         staleBgHouseholdId = staleBg.householdId;
         const staleBgMembership = await prisma.orgMembership.create({ data: { householdId: staleBgHouseholdId, status: 'ACTIVE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: staleBgMembership.id, kind: 'RENEWAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() } });
+
+        // Parallel-track case: PENDING_PAYMENT with bgClearedAt NULL (BG still in review,
+        // consent recorded). Under (a) the button shows — grant comps payment and the row
+        // settles to PENDING_BG_CLEARANCE, staying INACTIVE until reviewers clear it.
+        const parallel = await prisma.person.create({
+            data: { email: `parallel-${TAG}@example.com`, name: 'Parallel Lead', isHouseholdLead: true, lastBackgroundCheck: daysAgo(30), household: { create: { name: `Parallel HH ${TAG}` } } },
+        });
+        parallelTrackHouseholdId = parallel.householdId;
+        const parallelMembership = await prisma.orgMembership.create({ data: { householdId: parallelTrackHouseholdId, status: 'ACTIVE' } });
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: parallelMembership.id, kind: 'RENEWAL', status: 'PENDING_PAYMENT', bgClearedAt: null, bgConsentAt: new Date() } });
     });
 
     afterAll(async () => {
@@ -115,13 +127,22 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
         expect(h.renewalGrantable).toBe(true);
     });
 
-    it('renewalGrantable is false for PENDING_PAYMENT + bgClearedAt but a stale lead background check (gate parity)', async () => {
+    it('renewalGrantable is true for PENDING_PAYMENT even when the lead background check is stale (grant comps payment; BG still gates ACTIVE)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
         const res = await get();
         const data = await res.json();
         const h = data.households.find((x: { id: number }) => x.id === staleBgHouseholdId);
         expect(h).toBeDefined();
-        expect(h.renewalGrantable).toBe(false);
+        expect(h.renewalGrantable).toBe(true);
+    });
+
+    it('renewalGrantable is true for a parallel-track renewal (PENDING_PAYMENT, bgClearedAt null, BG in review)', async () => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+        const res = await get();
+        const data = await res.json();
+        const h = data.households.find((x: { id: number }) => x.id === parallelTrackHouseholdId);
+        expect(h).toBeDefined();
+        expect(h.renewalGrantable).toBe(true);
     });
 
     it('derives per-household validUntil from the boundary and includes orgMembership.memberSince', async () => {
