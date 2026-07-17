@@ -89,6 +89,8 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
+    // Phone must be capturable on ADD, not only on a later edit.
+    fireEvent.change(screen.getByLabelText("Phone (optional)"), { target: { value: "5125551234" } });
     // Allergies (safety data) must be capturable on ADD, not only on a later edit.
     fireEvent.change(screen.getByLabelText("Allergies (optional)"), { target: { value: "Bees" } });
     fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
@@ -98,7 +100,7 @@ describe("HouseholdPage", () => {
         "/api/household",
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberOver25: true, memberAllergies: "Bees" }),
+          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberPhone: "5125551234", memberOver25: true, memberAllergies: "Bees" }),
         }),
       ),
     );
