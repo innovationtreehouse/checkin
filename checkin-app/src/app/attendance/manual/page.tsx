@@ -53,7 +53,12 @@ export default function ManualAttendance() {
       const res = await fetch("/api/attendance/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arrivedAt, departedAt }),
+        // datetime-local gives a naive "YYYY-MM-DDTHH:mm" (no offset). Send a real
+        // instant so the server doesn't reparse it in ITS timezone (UTC in prod).
+        body: JSON.stringify({
+          arrivedAt: new Date(arrivedAt).toISOString(),
+          departedAt: departedAt ? new Date(departedAt).toISOString() : "",
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
