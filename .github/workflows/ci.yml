@@ -157,7 +157,7 @@ jobs:
       # duplicate save with a warning, not a failure).
       - name: Restore Jest cache
         if: needs.changes.outputs.app == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: checkin-app/.jest-cache
           key: jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
@@ -224,7 +224,7 @@ jobs:
       # even when the test step above fails the job.
       - name: Publish test results
         if: always() && needs.changes.outputs.app == 'true'
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Jest Tests (unit)
           path: checkin-app/test-results/junit.xml
@@ -238,7 +238,7 @@ jobs:
       # ran leaves nothing to upload, which is fine, this job is already red.
       - name: Upload unit coverage artifact
         if: always() && needs.changes.outputs.app == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-unit
           path: checkin-app/coverage/coverage-final.json
@@ -295,7 +295,7 @@ jobs:
       # Same cache, same key scheme as unit-tests above.
       - name: Restore Jest cache
         if: needs.changes.outputs.app == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: checkin-app/.jest-cache
           key: jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
@@ -348,7 +348,7 @@ jobs:
 
       - name: Publish test results
         if: always() && needs.changes.outputs.app == 'true'
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Jest Tests (integration)
           path: checkin-app/test-results/junit.xml
@@ -357,7 +357,7 @@ jobs:
 
       - name: Upload integration coverage artifact
         if: always() && needs.changes.outputs.app == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-integration
           path: checkin-app/coverage/coverage-final.json
@@ -404,7 +404,7 @@ jobs:
       - name: Download unit coverage artifact
         if: needs.changes.outputs.app == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: coverage-unit
           path: coverage-artifacts/unit
@@ -412,7 +412,7 @@ jobs:
       - name: Download integration coverage artifact
         if: needs.changes.outputs.app == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: coverage-integration
           path: coverage-artifacts/integration
