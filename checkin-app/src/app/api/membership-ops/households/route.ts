@@ -4,7 +4,8 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { renewalSeasonWindow } from "@/lib/membership/renewal";
+import { renewalSeasonWindow, grantRenewalPayment } from "@/lib/membership/renewal";
+import { PaymentError } from "@/lib/membership/payment";
 
 export const dynamic = 'force-dynamic';
 
@@ -174,84 +175,26 @@ export const POST = withAuth(
                 return NextResponse.json({ success: true, membership });
             }
 
-            // Renewal-season admin override: grant the household for the COMING year in
-            // one click, skipping the sign/pay/background-check flow. Produces the same
-            // end-state a completed renewal would — membership ACTIVE plus a terminal
-            // RENEWAL process (INITIAL for a household with no prior membership) with the
-            // three gates stamped satisfied and the acting admin recorded. The COI guard
-            // matches the grant path: this bypasses payment + BG, so a board member may
-            // not do it for their own household (sysadmin may).
+            // Renewal-season admin override: complete the payment gate on a household's
+            // in-flight RENEWAL that's already at PENDING_PAYMENT (contract signed) with
+            // a valid, cleared background check — by delegating to the same settlement
+            // path a real payment takes. No archive, no second process, no stamped gates.
             if (comingYear) {
-                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId, { isSysadmin: auth.user.isSysadmin === true })) {
-                    return apiError("You cannot grant your own household's membership — a sysadmin must.", 403);
+                // Certify requires a real actor; mirror the settings PUT convention.
+                if (auth.type !== "session") return apiError("Unauthorized", 401);
+                try {
+                    const process = await grantRenewalPayment(householdId, {
+                        actorId: auth.user.id,
+                        isSysadmin: auth.user.isSysadmin === true,
+                    });
+                    return NextResponse.json({ success: true, process });
+                } catch (e) {
+                    if (e instanceof PaymentError) {
+                        const status = e.code === "forbidden" ? 403 : e.code === "not_found" ? 404 : 409;
+                        return apiError(e.message, status);
+                    }
+                    throw e; // unexpected → outer catch → 500
                 }
-                const actorId = auth.type === 'session' ? auth.user.id : null;
-                const now = new Date();
-                const result = await prisma.$transaction(async (tx) => {
-                    const membership = await tx.orgMembership.upsert({
-                        where: { householdId },
-                        create: { householdId, status: "ACTIVE" },
-                        update: { status: "ACTIVE" },
-                    });
-                    // Supersede any in-flight process so the override doesn't coexist with a
-                    // stale flow: a payable PENDING_PAYMENT that activate() would later settle
-                    // (double process + a charge for an already-granted household), a review
-                    // still sitting in the queue, or the member's /membership page showing the
-                    // old cards. Board disposal = the terminal ARCHIVED status (same as
-                    // archiveApplication); it drops off every live read with one status check.
-                    // Anything already terminal (a prior cycle's ACTIVE, an earlier ARCHIVED)
-                    // is left alone. Archiving the in-flight RENEWAL also clears the
-                    // one-inflight-renewal partial index before the new terminal row is written.
-                    const superseded = await tx.orgMembershipProcess.findMany({
-                        where: { orgMembershipId: membership.id, status: { notIn: ["ACTIVE", "ARCHIVED"] } },
-                        select: { id: true, status: true },
-                    });
-                    for (const p of superseded) {
-                        await tx.orgMembershipProcess.update({
-                            where: { id: p.id },
-                            data: { status: "ARCHIVED", stageEnteredAt: now },
-                        });
-                        if (actorId !== null) {
-                            await tx.auditLog.create({
-                                data: {
-                                    actorId,
-                                    action: "EDIT",
-                                    tableName: "OrgMembershipProcess",
-                                    affectedEntityId: p.id,
-                                    secondaryAffectedEntity: householdId,
-                                    oldData: { status: p.status },
-                                    newData: { status: "ARCHIVED", supersededByOverride: true },
-                                },
-                            });
-                        }
-                    }
-                    const process = await tx.orgMembershipProcess.create({
-                        data: {
-                            orgMembershipId: membership.id,
-                            kind: existingMembership ? "RENEWAL" : "INITIAL",
-                            status: "ACTIVE",
-                            contractSignedAt: now,
-                            bgClearedAt: now,
-                            paidAt: now,
-                            certifiedById: actorId,
-                        },
-                    });
-                    if (actorId !== null) {
-                        await tx.auditLog.create({
-                            data: {
-                                actorId,
-                                action: "CREATE",
-                                tableName: "OrgMembershipProcess",
-                                affectedEntityId: process.id,
-                                secondaryAffectedEntity: householdId,
-                                oldData: { status: existingMembership?.status ?? "NONE" },
-                                newData: { kind: process.kind, status: "ACTIVE", comingYearOverride: true },
-                            },
-                        });
-                    }
-                    return { membership, process };
-                });
-                return NextResponse.json({ success: true, ...result });
             }
 
             if (active) {
