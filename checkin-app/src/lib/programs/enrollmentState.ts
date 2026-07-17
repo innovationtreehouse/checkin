@@ -30,6 +30,7 @@ export type ProgramParticipantStatus = 'PENDING' | 'ACTIVE';
 
 // Parity: fails to compile if the schema enum and this union diverge (§3.4).
 // The runtime twin (assertEnumParity) lives in the unit test.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _Parity = Expect<Equal<ProgramParticipantStatus, PrismaStatus>>;
 
 type Where = Prisma.ProgramParticipantWhereInput;
