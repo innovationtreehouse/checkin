@@ -479,7 +479,7 @@ export default function HouseholdPage() {
                       )}
                       <TextInput label="Allergies (optional)" value={householdMemberForm.allergies} onChange={(e) => setHouseholdMemberForm({ ...householdMemberForm, allergies: e.currentTarget.value })} />
                       <Group grow>
-                        <Button type="submit" color="green">Save / Invite Household Member</Button>
+                        <Button type="submit" color="green">Save / Invite</Button>
                         <Button type="button" variant="default" onClick={() => { setAddingHouseholdMember(false); setHouseholdMemberErrors({}); }}>Cancel</Button>
                       </Group>
                     </Stack>

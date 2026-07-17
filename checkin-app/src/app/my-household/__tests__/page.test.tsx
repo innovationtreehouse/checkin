@@ -91,7 +91,7 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
     // Allergies (safety data) must be capturable on ADD, not only on a later edit.
     fireEvent.change(screen.getByLabelText("Allergies (optional)"), { target: { value: "Bees" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -218,19 +218,19 @@ describe("HouseholdPage", () => {
     expect(screen.queryByLabelText("Full Name")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     expect(await screen.findByText("Name is required.")).toBeInTheDocument();
     expect(screen.getByText("Date of birth is required for anyone under 25.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.change(screen.getByLabelText("Email (Optional)"), { target: { value: "not-an-email" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     expect(await screen.findByText("Enter a valid email address.")).toBeInTheDocument();
     expect(screen.getByText("Date of birth is required for anyone under 25.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Email (Optional)"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Date of Birth"), { target: { value: "2000-01-01" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/household", expect.objectContaining({ method: "PATCH" })),
@@ -257,10 +257,10 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     expect(await screen.findByText("Household is full.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     await waitFor(() => expectToast("Network error adding household member."));
   });
 

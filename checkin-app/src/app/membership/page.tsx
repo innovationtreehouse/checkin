@@ -89,7 +89,7 @@ export const serializeMembershipForm = (v: FormValues) =>
     v.notes,
   ]);
 
-function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
+function ExternalTask({ done, title, doneText, doneExtra, children }: { done: boolean; title: string; doneText: string; doneExtra?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Card withBorder radius="md" padding="md" bg={done ? "var(--mantine-color-green-light)" : undefined}>
       <Group align="flex-start" wrap="nowrap">
@@ -98,7 +98,12 @@ function ExternalTask({ done, title, doneText, children }: { done: boolean; titl
         </ThemeIcon>
         <Box style={{ flex: 1 }}>
           <Text fw={600} mb="xs">{title}</Text>
-          {done ? <Text c="green">{doneText}</Text> : children}
+          {done ? (
+            <>
+              <Text c="green">{doneText}</Text>
+              {doneExtra}
+            </>
+          ) : children}
         </Box>
       </Group>
     </Card>
@@ -679,11 +684,11 @@ export default function MembershipPage() {
         <Group align="flex-start" gap="xl" wrap="wrap">
           {/* Renewals ride the same stepper as new applications — same phases, same
               progress, whether the background check is valid, expired, or first-time. */}
-          <Box style={{ flex: "0 0 auto" }}>
+          <Box style={{ flex: "0 1 auto", maxWidth: "100%", overflowX: "auto" }}>
             <MembershipFlowStepper currentStatus={inStatus} />
           </Box>
 
-          <Box style={{ flex: "1 1 420px", minWidth: 320 }}>
+          <Box style={{ flex: "1 1 420px", minWidth: "min(320px, 100%)" }}>
             {isIntake ? (
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="lg">
@@ -695,6 +700,9 @@ export default function MembershipPage() {
                       errors={{ line1: fieldErrors.address, city: fieldErrors.addrCity, state: fieldErrors.addrState, postalCode: fieldErrors.addrZip }}
                       onErrorClear={(f) => clearErr(f === "line1" ? "address" : f === "city" ? "addrCity" : f === "state" ? "addrState" : "addrZip")}
                     />
+                    <Text c="dimmed" size="sm" mt="md" mb="xs">
+                      Someone we can call in an emergency — must be an adult outside your household.
+                    </Text>
                     <EmergencyContactForm
                       emName={emName} setEmName={setEmName}
                       emPhone={emPhone} setEmPhone={setEmPhone}
@@ -796,7 +804,8 @@ export default function MembershipPage() {
                     <Stack gap="xs" align="flex-start">
                       <Text c="dimmed">
                         Sign your personalized membership agreement online. This page updates
-                        automatically once it&apos;s signed.
+                        automatically once it&apos;s signed. Have your insurance details handy — the
+                        agreement asks for your provider and policy number.
                       </Text>
                       <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
                         {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
@@ -809,7 +818,19 @@ export default function MembershipPage() {
                       <Text c="dimmed" />
                     </ExternalTask>
                   ) : (
-                    <ExternalTask done={!!state.external?.bgConsented} title="Start your background check" doneText="Background check started — we&apos;ll finish it in the background.">
+                    <ExternalTask
+                      done={!!state.external?.bgConsented}
+                      title="Start your background check"
+                      doneText="Background check started — we&apos;ll finish it in the background."
+                      doneExtra={state.external?.deepLinkUrl ? (
+                        <Text size="sm" c="dimmed" mt="xs">
+                          Checked it by mistake, or still need to finish the form?{" "}
+                          <Anchor href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                            Reopen the Averity consent form →
+                          </Anchor>
+                        </Text>
+                      ) : undefined}
+                    >
                       <Stack gap="xs" align="flex-start">
                         <Text c="dimmed">
                           Consent to your background check on Averity. It runs in the background — you
