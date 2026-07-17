@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isOrgAccount } from "@/lib/orgAccount";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
@@ -53,7 +54,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { memberName, memberEmail, memberDob, memberOver25, memberAllergies } = body;
+            const { memberName, memberEmail, memberDob, memberPhone, memberOver25, memberAllergies } = body;
 
             const hh = await householdLeadship(userId);
 
@@ -67,6 +68,10 @@ export const PATCH = withAuth(
 
             if (memberEmail && !isValidEmail(memberEmail)) {
                 return apiError("Invalid email format", 400);
+            }
+
+            if (memberPhone && !isValidPhone(memberPhone)) {
+                return apiError(PHONE_ERROR, 400);
             }
 
             if (!memberDob && !memberOver25) {
@@ -87,6 +92,7 @@ export const PATCH = withAuth(
                         name: memberName,
                         ...(memberEmail && { email: memberEmail.toLowerCase() }),
                         dateOfBirth: memberDob ? new Date(memberDob) : null,
+                        ...(memberPhone && { phone: formatPhone(memberPhone) }),
                         isDeclaredAdult: !memberDob && !!memberOver25,
                         allergies: memberAllergies || null,
                         householdId,
