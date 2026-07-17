@@ -18,11 +18,13 @@ import { logger } from "@/lib/logger";
  * (isolated by database + role, not by cluster), so this pool is bound by the same
  * scale-to-zero invariant as lib/prisma.ts — see getPool below.
  *
- * The connection string SHOULD point at a read-only role — in a deployed env it is
- * s_read_<env>_ro, a SELECT-only role provisioned by the checkin-bootstrap task
- * (infra modules/s-read/init.sql). Null env → isConfigured() is false and the
- * reconciler no-ops, so an env without the mirror runs no reconciliation rather
- * than crashing.
+ * Reads are SELECT-only by GRANT, not by convention: in a deployed env the app
+ * connects with its OWN database-url credential, whose DML role is a member of the
+ * mirror's SELECT-only NOLOGIN grant-holder (infra modules/s-read/init.sql) — there
+ * is no separate mirror credential to hold or rotate. See config.shopifyReadDatabaseUrl()
+ * for how the URL is derived (DATABASE_URL + SHOPIFY_READ_DB). Not wired →
+ * isConfigured() is false and the reconciler no-ops, so an env without the mirror
+ * runs no reconciliation rather than crashing.
  *
  * ponytail: no store_id filter — each env has its own `shopify_read_<env>` DB with
  * exactly one store, so filtering would only risk a myshopify-vs-storefront domain

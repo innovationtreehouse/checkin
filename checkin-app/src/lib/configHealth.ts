@@ -78,14 +78,20 @@ export function getConfigHealth(): ConfigCheck[] {
             id: "s-read-mirror",
             label: "Shopify mirror (read)",
             // Distinct from the trigger above: that one ASKS s-read to sync, this one READS
-            // what s-read wrote. Separate env vars pointing at different things, and an env
-            // can have either without the other — so they are two checks, not one.
+            // what s-read wrote. Different wiring, and an env can have either without the
+            // other — so they are two checks, not one.
+            //
+            // Deliberately checks the RESOLVED url, not a raw env var: in AWS there is no
+            // mirror connection string — it's derived from DATABASE_URL + SHOPIFY_READ_DB
+            // (config.shopifyReadDatabaseUrl()), and SHOPIFY_READ_DATABASE_URL is only a
+            // local-dev override. Naming one var would report a false gap on whichever of
+            // the two paths the env doesn't use.
             ok: config.isLocal() || !!config.shopifyReadDatabaseUrl(),
             detail: config.shopifyReadDatabaseUrl()
                 ? "Mirror connection configured."
                 : config.isLocal()
                   ? "Not set (fine on local; no mirror to read)."
-                  : "NOT configured — set SHOPIFY_READ_DATABASE_URL ('Live payment' stays blank and the reconciler backstop no-ops).",
+                  : "NOT configured — set SHOPIFY_READ_DB ('Live payment' stays blank and the reconciler backstop no-ops).",
         },
     ];
 }

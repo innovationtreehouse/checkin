@@ -78,7 +78,7 @@ export const POST = withAuth(
  * say how fresh "Live payment" is and tell whether a sync it just started has landed.
  *
  * Gated on the MIRROR, not on the trigger the POST gates on: the two are separate
- * wiring (SHOPIFY_READ_DATABASE_URL vs S_READ_TRIGGER_FUNCTION), and an env can
+ * wiring (the mirror connection vs S_READ_TRIGGER_FUNCTION), and an env can
  * legitimately have one without the other. Unwired → 503, matching the POST, so the
  * page can just hide the status line rather than special-case a success body that
  * means "no answer".

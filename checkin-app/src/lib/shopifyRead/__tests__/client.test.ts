@@ -31,17 +31,30 @@ function freshClient(): Client {
     return mod;
 }
 
-const MIRROR_URL = 'postgresql://s_read_dev_ro:pw@host:5432/shopify_read_dev';
-const prevUrl = process.env.SHOPIFY_READ_DATABASE_URL;
+// The app's OWN credential pointed at the mirror's database — there is no mirror
+// credential (its SELECT grant reaches checkin's DML role via NOLOGIN-grant-holder
+// membership). Set through the SHOPIFY_READ_DATABASE_URL override rather than the
+// DATABASE_URL + SHOPIFY_READ_DB derivation: this file tests the client, and
+// config.shopifyReadDatabaseUrl()'s derivation has its own tests in config.test.ts.
+const MIRROR_URL = 'postgresql://checkin_dev_dml:pw@host:5432/shopify_read_dev';
+
+// Both inputs of the resolved url. SHOPIFY_READ_DB must be cleared too, or an ambient
+// value derives a url and the "unwired" case below can never actually be unwired.
+const MIRROR_KEYS = ['SHOPIFY_READ_DATABASE_URL', 'SHOPIFY_READ_DB'] as const;
+const prev: Record<string, string | undefined> = {};
+for (const k of MIRROR_KEYS) prev[k] = process.env[k];
 
 beforeEach(() => {
     jest.clearAllMocks();
+    for (const k of MIRROR_KEYS) delete process.env[k];
     process.env.SHOPIFY_READ_DATABASE_URL = MIRROR_URL;
 });
 
 afterAll(() => {
-    if (prevUrl === undefined) delete process.env.SHOPIFY_READ_DATABASE_URL;
-    else process.env.SHOPIFY_READ_DATABASE_URL = prevUrl;
+    for (const k of MIRROR_KEYS) {
+        if (prev[k] === undefined) delete process.env[k];
+        else process.env[k] = prev[k];
+    }
 });
 
 describe('latestSyncRun', () => {
