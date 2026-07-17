@@ -400,6 +400,8 @@ model OrgMembershipProcess {
   /// @sensitivity:internal
   certifiedById         Int?
   /// @sensitivity:internal
+  certificationNote     String?
+  /// @sensitivity:internal
   renewalReminderSentAt DateTime?
   /// @sensitivity:internal
   isPaymentPlanRequested Boolean @default(false)
@@ -421,6 +423,8 @@ model BackgroundCheckAttestation {
   reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
   /// @sensitivity:internal
   result          AttestationResult
+  /// @sensitivity:internal
+  note            String?
   /// @sensitivity:internal
   isMarkedVolunteer Boolean           @default(false)
   /// @sensitivity:public

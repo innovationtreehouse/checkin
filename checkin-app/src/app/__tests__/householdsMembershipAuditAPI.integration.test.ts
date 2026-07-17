@@ -197,7 +197,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     it('coming-year grant: no in-flight renewal → 409, no mutation', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-        const res = await post({ householdId: noRenewalHouseholdId, comingYear: true });
+        const res = await post({ householdId: noRenewalHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(409);
 
         const membership = await prisma.orgMembership.findUnique({ where: { householdId: noRenewalHouseholdId } });
@@ -209,7 +209,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     it('coming-year grant: renewal at PENDING_RENEWAL (not started) → 409, unchanged', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-        const res = await post({ householdId: pendingRenewalHouseholdId, comingYear: true });
+        const res = await post({ householdId: pendingRenewalHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(409);
 
         const membership = await prisma.orgMembership.findUnique({ where: { householdId: pendingRenewalHouseholdId } });
@@ -220,7 +220,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     it('coming-year grant: renewal at PENDING_EXTERNAL_ACTION → 409, unchanged', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-        const res = await post({ householdId: pendingExternalHouseholdId, comingYear: true });
+        const res = await post({ householdId: pendingExternalHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(409);
 
         const membership = await prisma.orgMembership.findUnique({ where: { householdId: pendingExternalHouseholdId } });
@@ -231,7 +231,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     it('coming-year grant: PENDING_PAYMENT but bgClearedAt not stamped → 403, unchanged', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-        const res = await post({ householdId: midFlowHouseholdId, comingYear: true });
+        const res = await post({ householdId: midFlowHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(403);
 
         const process = await prisma.orgMembershipProcess.findUnique({ where: { id: midFlowProcessId } });
@@ -242,7 +242,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
     it("coming-year grant: bgClearedAt set but no household lead has a fresh check → 403, unchanged", async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
-        const res = await post({ householdId: bgNotFreshHouseholdId, comingYear: true });
+        const res = await post({ householdId: bgNotFreshHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(403);
 
         const process = await prisma.orgMembershipProcess.findUnique({ where: { id: bgNotFreshProcessId } });
@@ -252,23 +252,38 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
 
     it("refuses coming-year grant for the actor's OWN household (conflict of interest); sysadmin overrides", async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
-        const res = await post({ householdId: boardHouseholdId, comingYear: true });
+        const res = await post({ householdId: boardHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(403);
         const stillPending = await prisma.orgMembershipProcess.findUnique({ where: { id: boardProcessId } });
         expect(stillPending?.status).toBe('PENDING_PAYMENT');
 
         // Sysadmin is the deliberate remedy — same renewal, now grantable.
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
-        const ok = await post({ householdId: boardHouseholdId, comingYear: true });
+        const ok = await post({ householdId: boardHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(ok.status).toBe(200);
         const settled = await prisma.orgMembershipProcess.findUnique({ where: { id: boardProcessId } });
         expect(settled?.status).toBe('ACTIVE');
     });
 
-    it('coming-year grant: PENDING_PAYMENT + bgClearedAt + fresh lead BG → 200, completes payment (no archive, no 2nd process)', async () => {
+    it('coming-year grant: missing reason → 400, no mutation', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: grantableHouseholdId, comingYear: true });
+        expect(res.status).toBe(400);
+
+        const process = await prisma.orgMembershipProcess.findUnique({ where: { id: grantableProcessId } });
+        expect(process?.status).toBe('PENDING_PAYMENT');
+        expect(process?.paidAt).toBeNull();
+
+        // Whitespace-only reason is treated the same as missing.
+        const res2 = await post({ householdId: grantableHouseholdId, comingYear: true, reason: '   ' });
+        expect(res2.status).toBe(400);
+    });
+
+    it('coming-year grant: PENDING_PAYMENT + bgClearedAt + fresh lead BG → 200, completes payment (no archive, no 2nd process)', async () => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+        const res = await post({ householdId: grantableHouseholdId, comingYear: true, reason: 'Family confirmed dues in person at the board meeting.' });
         expect(res.status).toBe(200);
 
         const membership = await prisma.orgMembership.findUnique({ where: { householdId: grantableHouseholdId } });
@@ -279,6 +294,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         expect(process?.status).toBe('ACTIVE');
         expect(process?.paidAt).not.toBeNull();
         expect(process?.certifiedById).toBe(boardId);
+        expect(process?.certificationNote).toBe('Family confirmed dues in person at the board meeting.');
         const processCount = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: grantableMembershipId } });
         expect(processCount).toBe(1);
 
@@ -292,8 +308,10 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         const activateAudit = audits.find(a => (a.newData as { status?: string })?.status === 'ACTIVE');
         expect(activateAudit).toBeTruthy();
         expect((activateAudit!.newData as { via: string }).via).toBe('certified');
+        expect((activateAudit!.newData as { certificationNote?: string }).certificationNote).toBe('Family confirmed dues in person at the board meeting.');
         const grantAudit = audits.find(a => (a.newData as { comingYearGrant?: boolean })?.comingYearGrant === true);
         expect(grantAudit).toBeTruthy();
+        expect((grantAudit!.newData as { reason?: string }).reason).toBe('Family confirmed dues in person at the board meeting.');
     });
 
     it('revokes an active household, sets REVOKED, and writes an audit row', async () => {

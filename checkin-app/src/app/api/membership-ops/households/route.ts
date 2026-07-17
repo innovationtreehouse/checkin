@@ -165,7 +165,7 @@ export const POST = withAuth(
     async (req, auth) => {
         try {
             const body = await req.json();
-            const { householdId, active, deny, comingYear } = body;
+            const { householdId, active, deny, comingYear, reason } = body;
 
             if (!householdId) {
                 return apiError("Household ID is required", 400);
@@ -222,10 +222,13 @@ export const POST = withAuth(
             if (comingYear) {
                 // Certify requires a real actor; mirror the settings PUT convention.
                 if (auth.type !== "session") return apiError("Unauthorized", 401);
+                const trimmedReason = typeof reason === "string" ? reason.trim() : "";
+                if (!trimmedReason) return apiError("A reason is required to certify a payment", 400);
                 try {
                     const process = await grantRenewalPayment(householdId, {
                         actorId: auth.user.id,
                         isSysadmin: auth.user.isSysadmin === true,
+                        reason: trimmedReason,
                     });
                     return NextResponse.json({ success: true, process });
                 } catch (e) {

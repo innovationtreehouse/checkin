@@ -29,9 +29,13 @@ export const POST = withAuth(
         try {
             const body = await req.json();
             const processId = parseInt(body.processId, 10);
+            const reason = typeof body.reason === "string" ? body.reason.trim() : "";
 
             if (Number.isNaN(processId)) {
                 return apiError("processId is required", 400);
+            }
+            if (!reason) {
+                return apiError("A reason is required to certify a payment", 400);
             }
             if (auth.type !== 'session') {
                 return apiError("Unauthorized", 401);
@@ -51,7 +55,7 @@ export const POST = withAuth(
             // Reuse the membership activation path: certifies the plan and activates
             // without a Shopify payment (holding for background clearance if not yet
             // cleared). Then clear the request flag so it drops off the queue.
-            await certifyPaymentPlan(processId, auth.user.id, { isSysadmin: auth.user.isSysadmin === true });
+            await certifyPaymentPlan(processId, auth.user.id, { isSysadmin: auth.user.isSysadmin === true, reason });
             await prisma.orgMembershipProcess.update({
                 where: { id: processId },
                 data: { isPaymentPlanRequested: false },

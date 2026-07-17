@@ -118,7 +118,7 @@ export async function ensurePaymentLinkForUser(userId: number) {
  */
 export async function activate(
     processId: number,
-    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean },
+    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean; reason?: string },
 ) {
     const result = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
@@ -134,9 +134,13 @@ export async function activate(
         if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
         const now = new Date();
+        // Recorded atomically with paidAt — the lib stays permissive (a certify with
+        // no reason still goes through); the API boundary is where it's required.
+        const certificationNote = opts.via === "certified" && opts.reason && opts.reason.trim() !== "" ? opts.reason : undefined;
         const payMeta = {
             ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
             ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
+            ...(certificationNote ? { certificationNote } : {}),
         };
 
         // Reject landed before the payment: record the payment but stay BLOCKED
@@ -216,7 +220,9 @@ export async function activate(
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
                 oldData: { status: process.status },
-                newData: activating ? { status: "ACTIVE", via: opts.via } : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true },
+                newData: activating
+                    ? { status: "ACTIVE", via: opts.via, ...(certificationNote ? { certificationNote } : {}) }
+                    : { status: "PENDING_BG_CLEARANCE", via: opts.via, paid: true, ...(certificationNote ? { certificationNote } : {}) },
             },
         });
         return activating
@@ -237,7 +243,7 @@ export async function activate(
 }
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
-export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { isSysadmin?: boolean }) {
+export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { isSysadmin?: boolean; reason?: string }) {
     // Unlike the webhook path, a board certify is a deliberate action — reject
     // (not silently no-op) when the process isn't actually awaiting payment, so
     // certifying an already-ACTIVE or still-in-review grant surfaces a 409
@@ -253,7 +259,7 @@ export async function certifyPaymentPlan(processId: number, actorId: number, opt
     if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId, { isSysadmin: opts?.isSysadmin })) {
         throw new PaymentError("forbidden", "You cannot certify your own household's membership — a sysadmin must.");
     }
-    return activate(processId, { via: "certified", actorId });
+    return activate(processId, { via: "certified", actorId, reason: opts?.reason });
 }
 
 /** Webhook path: activate the process tied to a paid Shopify draft order. */

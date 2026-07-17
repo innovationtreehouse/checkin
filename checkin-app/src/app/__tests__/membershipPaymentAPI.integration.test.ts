@@ -155,16 +155,30 @@ describe('Membership payment API', () => {
 
     it('board certify-payment activates without a Shopify payment', async () => {
         asBoard(leadId); // leadId is fine as an actor id; role mocked as board
-        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: certProc }) }) as never);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: certProc, reason: 'Paid by check, deposited manually' }) }) as never);
         expect(res.status).toBe(200);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: certProc } });
         expect(proc?.status).toBe('ACTIVE');
         expect(proc?.certifiedById).toBe(leadId);
+        expect(proc?.certificationNote).toBe('Paid by check, deposited manually');
 
         // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(leadId);
-        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'ACTIVE' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'ACTIVE', certificationNote: 'Paid by check, deposited manually' });
+    });
+
+    it('certify without a reason is rejected (400), no state change', async () => {
+        asBoard(leadId);
+        const fresh = await makeProc('CertNoReason', false);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: fresh.processId }) }) as never);
+        expect(res.status).toBe(400);
+
+        const res2 = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: fresh.processId, reason: '   ' }) }) as never);
+        expect(res2.status).toBe(400);
+
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: fresh.processId } });
+        expect(proc?.status).toBe('PENDING_PAYMENT');
     });
 
     it('certify on a non-PENDING_PAYMENT process is rejected (409 wrong_phase, no state change)', async () => {
@@ -172,7 +186,7 @@ describe('Membership payment API', () => {
         const bg = await makeProc('Bg', false);
         await prisma.orgMembershipProcess.update({ where: { id: bg.processId }, data: { status: 'PENDING_BG_REVIEW' } });
 
-        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: bg.processId }) }) as never);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: bg.processId, reason: 'Board approved' }) }) as never);
         expect(res.status).toBe(409);
         expect((await res.json()).code).toBe('wrong_phase');
 
@@ -186,7 +200,7 @@ describe('Membership payment API', () => {
 
     it('certify on a non-existent process returns 404', async () => {
         asBoard(leadId);
-        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 999999999 }) }) as never);
+        const res = await CERTIFY(new Request('http://localhost:4000/x', { method: 'POST', body: JSON.stringify({ processId: 999999999, reason: 'Board approved' }) }) as never);
         expect(res.status).toBe(404);
         expect((await res.json()).code).toBe('not_found');
     });

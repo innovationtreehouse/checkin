@@ -142,31 +142,51 @@ describe('Membership payment-plan routes', () => {
             expect(res.status).toBe(403);
         });
 
+        it('400 when reason is missing', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId }) }));
+            expect(res.status).toBe(400);
+
+            const res2 = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: '   ' }) }));
+            expect(res2.status).toBe(400);
+
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
+            expect(proc?.status).toBe('PENDING_PAYMENT');
+        });
+
         it('409 when there is no pending request for the process', async () => {
             const cleared = await makeProc('Cleared', { requested: false });
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
-            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: cleared.processId }) }));
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: cleared.processId, reason: 'Board approved scholarship' }) }));
             expect(res.status).toBe(409);
         });
 
         it('board approval activates the membership, clears the flag, and writes an audit row', async () => {
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
-            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId }) }));
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: 'Board approved scholarship' }) }));
             expect(res.status).toBe(200);
 
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
             expect(proc?.status).toBe('ACTIVE'); // bgClearedAt was set, so certify -> ACTIVE
             expect(proc?.isPaymentPlanRequested).toBe(false);
             expect(proc?.certifiedById).toBe(boardId);
+            expect(proc?.certificationNote).toBe('Board approved scholarship');
 
             const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
             expect(membership?.status).toBe('ACTIVE');
 
-            const audit = await prisma.auditLog.findFirst({
+            const audits = await prisma.auditLog.findMany({
                 where: { tableName: 'OrgMembershipProcess', affectedEntityId: leadProcessId, actorId: boardId },
-                orderBy: { id: 'desc' },
+                orderBy: { id: 'asc' },
             });
-            expect(audit).not.toBeNull();
+            expect(audits.length).toBeGreaterThan(0);
+            // Written inside activate() (via certifyPaymentPlan) — carries the reason.
+            const certifyAudit = audits.find(a => (a.newData as { via?: string })?.via === 'certified');
+            expect(certifyAudit).toBeTruthy();
+            expect((certifyAudit!.newData as { certificationNote?: string }).certificationNote).toBe('Board approved scholarship');
+            // Supplementary marker written by the route itself.
+            const approvedAudit = audits.find(a => (a.newData as { paymentPlanApproved?: boolean })?.paymentPlanApproved === true);
+            expect(approvedAudit).toBeTruthy();
         });
     });
 

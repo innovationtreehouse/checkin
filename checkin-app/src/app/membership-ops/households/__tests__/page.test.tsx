@@ -151,7 +151,7 @@ describe("membership-ops/households page", () => {
       expect(screen.getAllByRole("button", { name: "Grant for coming year" })).toHaveLength(2);
     });
 
-    it("posts comingYear when clicked", async () => {
+    it("opens a modal requiring a reason, then posts comingYear + reason when confirmed", async () => {
       setSession({ id: 1, isSysadmin: true });
       const fetchMock = mockFetchJson({ "/api/membership-ops/households": inSeason });
       renderWithProviders(<AdminHouseholdsPage />);
@@ -159,12 +159,21 @@ describe("membership-ops/households page", () => {
 
       fireEvent.click(screen.getAllByRole("button", { name: "Grant for coming year" })[0]);
 
+      // Mantine's `required` prop appends a visible " *" to the label text.
+      const reasonInput = await screen.findByLabelText(/^Reason/);
+      // The confirm button is disabled until a reason is entered.
+      expect(screen.getByRole("button", { name: "Grant" })).toBeDisabled();
+
+      fireEvent.change(reasonInput, { target: { value: "Family paid cash at the front desk" } });
+      expect(screen.getByRole("button", { name: "Grant" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+
       await waitFor(() =>
         expect(fetchMock).toHaveBeenCalledWith(
           "/api/membership-ops/households",
           expect.objectContaining({
             method: "POST",
-            body: JSON.stringify({ householdId: 1, comingYear: true }),
+            body: JSON.stringify({ householdId: 1, comingYear: true, reason: "Family paid cash at the front desk" }),
           }),
         ),
       );
