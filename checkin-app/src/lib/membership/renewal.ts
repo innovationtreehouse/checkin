@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { config } from "@/lib/config";
+import { certifyPaymentPlan, PaymentError } from "./payment";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -327,6 +328,58 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
         select: { id: true },
     });
     return fresh !== null;
+}
+
+/**
+ * Admin "Grant for coming year": complete the payment gate on a household's
+ * in-flight RENEWAL that's already at PENDING_PAYMENT (contract signed) with a
+ * valid, cleared background check — via the same settlement path a real
+ * payment takes. Never archives, never stamps a gate, never creates a process.
+ */
+export async function grantRenewalPayment(
+    householdId: number,
+    actor: { actorId: number; isSysadmin: boolean },
+): Promise<import("@/generated/prisma/client").OrgMembershipProcess> {
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    const boundary = settings?.orgMembershipYearBoundary
+        ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
+        : null;
+
+    const process = await prisma.orgMembershipProcess.findFirst({
+        where: { orgMembership: { householdId }, kind: "RENEWAL", status: "PENDING_PAYMENT" },
+        orderBy: { id: "desc" },
+    });
+    if (!process) throw new PaymentError("wrong_phase", "No renewal is awaiting payment.");
+
+    // Belt-and-suspenders BG gate: the process's own bgClearedAt (cleared this
+    // cycle) AND a household lead's check still fresh at the boundary. A
+    // note-held renewal never reaches PENDING_PAYMENT, so fresh-but-unstamped
+    // can't occur here — both checks agree once either is true.
+    const bgFresh = boundary
+        ? await householdBgIsFresh(householdId, boundary, settings?.bgRecheckMonths ?? 0)
+        : false;
+    if (!process.bgClearedAt || !bgFresh) {
+        throw new PaymentError("forbidden", "This renewal's background check is not valid — grant blocked.");
+    }
+
+    // COI is enforced INSIDE certifyPaymentPlan (single source): a board member
+    // certifying their own household throws PaymentError('forbidden'); sysadmin bypasses.
+    await certifyPaymentPlan(process.id, actor.actorId, { isSysadmin: actor.isSysadmin });
+
+    // Supplementary audit marker (traceability) — the PENDING_PAYMENT→ACTIVE
+    // transition itself is already audited inside activate().
+    await prisma.auditLog.create({
+        data: {
+            actorId: actor.actorId,
+            action: "EDIT",
+            tableName: "OrgMembershipProcess",
+            affectedEntityId: process.id,
+            secondaryAffectedEntity: householdId,
+            newData: { comingYearGrant: true },
+        },
+    });
+
+    return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: process.id } });
 }
 
 async function remindHousehold(householdId: number, boundary: Date) {
