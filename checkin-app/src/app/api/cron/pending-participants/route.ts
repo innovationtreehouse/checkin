@@ -3,18 +3,19 @@ import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { withdrawAndReleaseHold } from "@/lib/program/capacity";
+import { STATES } from "@/lib/programs/enrollmentState";
 
 export const GET = withCron(async () => {
         const now = new Date();
         const pendingParticipants = await prisma.programParticipant.findMany({
             where: {
-                status: 'PENDING',
-                isPaymentPlanRequested: false,
-                // Denied scholarship applicants are governed by the
-                // scholarship-grace-expiry cron (scholarshipDenialGraceDays),
-                // not this 7-day clock — a denial never resets pendingSince, so
-                // without this exclusion they'd be kicked the night after denial.
-                paymentPlanDeniedAt: null,
+                // The 7-day non-payment clock owns exactly PENDING_UNPAID
+                // (enrollmentState §3). Its `where` carries isPaymentPlanRequested:false,
+                // which is what keeps HOLD_FAILED (req=true) and denied applicants
+                // (den≠null, governed by the grace-expiry cron) out of this sweep —
+                // a denial never resets pendingSince, so without that they'd be
+                // kicked the night after denial.
+                ...STATES.PENDING_UNPAID.where,
                 pendingSince: { not: null }
             },
             include: {
