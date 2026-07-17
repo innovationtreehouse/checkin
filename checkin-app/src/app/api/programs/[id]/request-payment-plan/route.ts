@@ -104,15 +104,23 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             if (!ok) {
                 // The seat was never taken out of Shopify — leaving inventoryHeldAt
                 // set would be a phantom hold whose later release (+1) credits a
-                // seat that was never removed (oversell). Roll the stamp back so
-                // the ledger stays true; a re-submit retries the -1 via the
-                // inventoryHeldAt:null branch above. (adjustProgramInventory has
-                // already emailed sysadmins/board via reportShopifyFailure.)
+                // seat that was never removed (oversell). Roll the stamp back to
+                // null. The row now sits at PENDING_HOLD_FAILED { status: PENDING,
+                // inventoryHeldAt: null, isPaymentPlanRequested: true,
+                // paymentPlanDeniedAt: null } — a legitimate state, NOT a bug: the
+                // applicant's request STANDS and it is the board's job to finish
+                // placing the hold (Shopify Hold Reconciliation queue → Confirm
+                // manual hold). isPaymentPlanRequested stays true, so the 7-day
+                // non-payment sweep (which filters isPaymentPlanRequested:false)
+                // never auto-kicks it. adjustProgramInventory has already emailed
+                // sysadmins/board via reportShopifyFailure.
                 await prisma.programParticipant.updateMany({
                     where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
                     data: { inventoryHeldAt: null },
                 });
-                warning = "Payment plan requested and finance notified, but the Shopify seat hold failed and was rolled back. Re-submit to retry, or check System Status > Link Status.";
+                // Applicant-facing: never tell them to retry — the request is
+                // recorded and the board finalizes it. Nothing is required of them.
+                warning = "Your scholarship / payment-plan request has been recorded and the board notified. A seat-reservation step needs a board member to finish it — nothing more is required from you.";
             }
         }
 
