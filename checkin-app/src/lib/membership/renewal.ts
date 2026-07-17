@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { config } from "@/lib/config";
 import { certifyPaymentPlan, PaymentError } from "./payment";
+import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -24,23 +25,10 @@ import { certifyPaymentPlan, PaymentError } from "./payment";
 const SYSTEM_ACTOR = 0;
 const RENEWAL_LEAD_MONTHS = 2;
 
-/**
- * A renewal cycle counts as open while its process sits in any of these — the
- * request-flow states (PENDING_EXTERNAL_ACTION onward) included, or the sweep
- * would open a duplicate renewal for a household mid-flow. Must stay in step
- * with the partial unique index `membership_one_inflight_renewal` (raw SQL,
- * see the 20260715 renewal_bg_request_flow migration). BLOCKED is deliberately
- * out (pre-existing semantics: a blocked renewal is the board's to resolve).
- * RENEWAL_PENDING_BG is legacy — unwritten since that migration, still guarded.
- */
-const IN_FLIGHT_RENEWAL_STATUSES = [
-    "PENDING_RENEWAL",
-    "PENDING_EXTERNAL_ACTION",
-    "PENDING_BG_REVIEW",
-    "PENDING_PAYMENT",
-    "PENDING_BG_CLEARANCE",
-    "RENEWAL_PENDING_BG",
-] as const;
+// The in-flight-renewal status list now lives ONCE in lib/membership/lifecycle
+// (`IN_FLIGHT_RENEWAL`, fix #2) — the single source the
+// `membership_one_inflight_renewal` partial index is verified against (index-parity
+// integration test), replacing the hand-sync comment that used to live here.
 
 export class RenewalError extends Error {
     constructor(public readonly code: "not_found" | "wrong_phase", message: string) {
@@ -160,8 +148,9 @@ export async function runRenewalSweep(now: Date) {
                 where: {
                     kind: "RENEWAL",
                     OR: [
-                        { status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } },
-                        { status: { in: ["ACTIVE", "ARCHIVED"] }, stageEnteredAt: { gte: windowStart } },
+                        { status: { in: [...IN_FLIGHT_RENEWAL] } },
+                        // "resolved this cycle" — shared with the households route (fix #4).
+                        settledThisCycleWhere(windowStart),
                     ],
                 },
                 select: { id: true },
@@ -247,7 +236,7 @@ export async function createRenewalProcess(orgMembershipId: number, householdId:
             // Lock the membership row so overlapping opens serialize here, not at the INSERT.
             await tx.$queryRaw`SELECT id FROM "OrgMembership" WHERE id = ${orgMembershipId} FOR UPDATE`;
             const existing = await tx.orgMembershipProcess.findFirst({
-                where: { orgMembershipId, kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } },
+                where: { orgMembershipId, kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL] } },
                 select: { id: true },
             });
             if (existing) return null; // someone else already opened the renewal
@@ -289,7 +278,7 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
         select: {
             id: true,
             householdId: true,
-            processes: { where: { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL_STATUSES] } }, select: { id: true } },
+            processes: { where: { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL] } }, select: { id: true } },
         },
     });
 
@@ -345,8 +334,23 @@ export async function grantRenewalPayment(
         ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
         : null;
 
+    // Same "payable renewal" status/flag set the list route's renewalGrantable
+    // probe uses (fix #3, grantableRenewalWhere): kind=RENEWAL, PENDING_PAYMENT,
+    // bgClearedAt set — so route and guard can't disagree on which rows qualify.
+    // This lookup is a BEHAVIOR CHANGE, not a pure refactor: it adds
+    // `bgClearedAt: { not: null }` to the old `status: "PENDING_PAYMENT"` query, so
+    // the grant now REFUSES (throws "wrong_phase" at lookup) a PENDING_PAYMENT
+    // renewal whose check hasn't cleared, rather than matching the row and leaning
+    // on the runtime guard below. Intended and correct: the grant must never bypass
+    // a BG gate (doc §7.3; "grant never bypasses gates / corrupted prod data"
+    // history, 3fe4eb92, #1052/#1053). No reachable clean row differs — a note-held
+    // renewal holds at PENDING_BG_REVIEW and never reaches PENDING_PAYMENT, so a
+    // PENDING_PAYMENT renewal always carries bgClearedAt — but the gate is now
+    // explicit at the query and holds even for a corrupted/legacy row.
+    // The extra runtime guards below (householdBgIsFresh at the boundary; COI inside
+    // certifyPaymentPlan) stay on top.
     const process = await prisma.orgMembershipProcess.findFirst({
-        where: { orgMembership: { householdId }, kind: "RENEWAL", status: "PENDING_PAYMENT" },
+        where: { orgMembership: { householdId }, ...grantableRenewalWhere },
         orderBy: { id: "desc" },
     });
     if (!process) throw new PaymentError("wrong_phase", "No renewal is awaiting payment.");

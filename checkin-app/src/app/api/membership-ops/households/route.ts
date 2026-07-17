@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { renewalSeasonWindow, nextBoundary, householdBgIsFresh, bgValidUntilBoundary, grantRenewalPayment } from "@/lib/membership/renewal";
+import { grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 import { PaymentError } from "@/lib/membership/payment";
 
 export const dynamic = 'force-dynamic';
@@ -74,12 +75,16 @@ export const GET = withAuth(
                 const detailBoundary = settings?.orgMembershipYearBoundary
                     ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
                     : null;
+                // "Settled this cycle" = a RENEWAL resolved (ACTIVE/ARCHIVED) inside the
+                // window (fix #4, settledThisCycleWhere) — same test the list branch and
+                // runRenewalSweep use, so a stray INITIAL activation no longer flips
+                // derivedValidUntil a year forward. Out of season the window start is
+                // "never" (matches nothing).
                 const detailSettled = household.orgMembership
                     ? (await prisma.orgMembershipProcess.findFirst({
                           where: {
                               orgMembershipId: household.orgMembership.id,
-                              status: "ACTIVE",
-                              stageEnteredAt: { gte: detailWindow?.windowStart ?? new Date(8.64e15) },
+                              ...settledThisCycleWhere(detailWindow?.windowStart ?? new Date(8.64e15)),
                           },
                           select: { id: true },
                       })) !== null
@@ -128,20 +133,21 @@ export const GET = withAuth(
                         // JSON at the same trust level as the rest of the row.
                         select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true, isHouseholdLead: true, lastBackgroundCheck: true }
                     },
-                    // ONE probe serves both flags computed below: the payable-renewal rows
-                    // (PENDING_PAYMENT + bgClearedAt) decide grantability, and a terminal
-                    // ACTIVE process stamped inside the renewal window — the same "handled
-                    // this cycle" test runRenewalSweep uses — marks the coming year settled.
-                    // Out of season the window start is "never" (matches no row), keeping one
-                    // query shape and one inferred type. orgMembership's own scalars (status,
-                    // memberSince) still ride along via this include.
+                    // ONE probe serves both flags computed below, from the shared lifecycle
+                    // definitions: grantableRenewalWhere (payable renewal → grantability,
+                    // fix #3) and settledThisCycleWhere (a RENEWAL resolved ACTIVE/ARCHIVED
+                    // inside the renewal window → coming year settled, the same "handled this
+                    // cycle" test runRenewalSweep uses, fix #4). Out of season the window
+                    // start is "never" (matches no row), keeping one query shape and one
+                    // inferred type. orgMembership's own scalars (status, memberSince) still
+                    // ride along via this include.
                     orgMembership: {
                         include: {
                             processes: {
                                 where: {
                                     OR: [
-                                        { kind: "RENEWAL", status: "PENDING_PAYMENT", bgClearedAt: { not: null } },
-                                        { status: "ACTIVE", stageEnteredAt: { gte: window?.windowStart ?? new Date(8.64e15) } },
+                                        grantableRenewalWhere,
+                                        settledThisCycleWhere(window?.windowStart ?? new Date(8.64e15)),
                                     ],
                                 },
                                 select: { id: true, status: true },
@@ -170,12 +176,13 @@ export const GET = withAuth(
 
             const withGrantable = await Promise.all(
                 households.map(async (h) => {
-                    // Split the single OR probe: PENDING_PAYMENT rows = payable renewal
-                    // (grantability); an ACTIVE row = the coming cycle is already settled
-                    // (member finished renewal, or an admin used the override).
+                    // Split the single OR probe by status: PENDING_PAYMENT = payable renewal
+                    // (grantability, grantableRenewalWhere); a terminal ACTIVE/ARCHIVED
+                    // renewal = the coming cycle is already settled (settledThisCycleWhere:
+                    // member finished renewal, admin override, or board-archived this cycle).
                     const { processes = [], ...orgMembership } = h.orgMembership ?? {};
                     const hasPayableRenewal = processes.some((p) => p.status === "PENDING_PAYMENT");
-                    const settledForComingYear = processes.some((p) => p.status === "ACTIVE");
+                    const settledForComingYear = processes.some((p) => p.status === "ACTIVE" || p.status === "ARCHIVED");
                     const renewalGrantable =
                         hasPayableRenewal && boundary
                             ? await householdBgIsFresh(h.id, boundary, recheckMonths)
