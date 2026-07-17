@@ -30,6 +30,7 @@ export async function projectOrder(db: DbClient, storeId: string, order: Normali
     totalRefundedCents: order.totalRefundedCents,
     test: order.test,
     noteAttributes: order.noteAttributes ?? undefined,
+    discountCodes: order.discountCodes,
     lastSyncedAt: new Date(),
   };
 
@@ -48,6 +49,8 @@ export async function projectOrder(db: DbClient, storeId: string, order: Normali
       sku: line.sku ?? null,
       title: line.title ?? null,
       quantity: line.quantity,
+      variantGid: line.variantGid ?? null,
+      variantLegacyId: line.variantLegacyId ?? null,
       priceCents: line.priceCents,
       discountCents: line.discountCents,
       removed: false,
