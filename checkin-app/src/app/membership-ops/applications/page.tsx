@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Text, Textarea } from "@mantine/core";
+import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
@@ -89,11 +89,12 @@ function ApplicationsBoard() {
   const [certifyOpened, { open: openCertify, close: closeCertify }] = useDisclosure(false);
   const [pendingCertify, setPendingCertify] = useState<number | null>(null);
   const [certifyReason, setCertifyReason] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (archived: boolean) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/membership-ops/applications");
+      const res = await fetch(`/api/membership-ops/applications${archived ? "?archived=1" : ""}`);
       if (res.ok) {
         const data = await res.json();
         setRows(data.processes || []);
@@ -103,7 +104,7 @@ function ApplicationsBoard() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(showArchived); }, [load, showArchived]);
 
   const act = async (processId: number, action: string, extra?: Record<string, unknown>) => {
     setBusyId(processId);
@@ -118,7 +119,7 @@ function ApplicationsBoard() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Updated." });
-        await load();
+        await load(showArchived);
         notifyNavRefresh();
       } else {
         setMessage(data.error || "Action failed.");
@@ -143,11 +144,11 @@ function ApplicationsBoard() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
-        await load();
+        await load(showArchived);
         notifyNavRefresh();
       } else if (data.code === "wrong_phase") {
         notifications.show({ color: "red", message: data.error || "This application is no longer blocked.", autoClose: 4000 });
-        await load();
+        await load(showArchived);
       } else {
         setMessage(data.error || "Override failed.");
       }
@@ -171,7 +172,7 @@ function ApplicationsBoard() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Application archived." });
-        await load();
+        await load(showArchived);
         notifyNavRefresh();
       } else {
         setMessage(data.error || "Archive failed.");
@@ -200,6 +201,33 @@ function ApplicationsBoard() {
     });
   };
 
+  // Board recovery of a wrongly-archived application — restores it to whatever
+  // in-flight status it was archived from (server-determined from the audit trail).
+  const unarchive = async (processId: number) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/unarchive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ color: "green", message: "Application unarchived." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Unarchive failed.", autoClose: 4000 });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const certify = async (processId: number, reason: string) => {
     setBusyId(processId);
     setMessageId(processId);
@@ -213,11 +241,11 @@ function ApplicationsBoard() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ color: "green", message: "Certified — membership activated." });
-        await load();
+        await load(showArchived);
         notifyNavRefresh();
       } else if (data.code === "wrong_phase") {
         notifications.show({ color: "red", message: data.error || "This application is no longer awaiting payment.", autoClose: 4000 });
-        await load();
+        await load(showArchived);
       } else {
         setMessage(data.error || "Certification failed.");
       }
@@ -251,7 +279,9 @@ function ApplicationsBoard() {
   };
 
   const statusCounts = rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
-  const visibleRows = rows.filter((r) => !active || r.status === active);
+  // The status-filter badges/notice are meaningless on the archived view (every
+  // row is ARCHIVED) — the filter itself is ignored there too.
+  const visibleRows = rows.filter((r) => showArchived || !active || r.status === active);
 
   return (
     <Stack>
@@ -261,7 +291,13 @@ function ApplicationsBoard() {
         automatically once the Zoho webhook is configured.)
       </Text>
 
-      {!loading && rows.length > 0 && (
+      <Switch
+        label="Show archived"
+        checked={showArchived}
+        onChange={(e) => setShowArchived(e.currentTarget.checked)}
+      />
+
+      {!loading && rows.length > 0 && !showArchived && (
         <>
           {rows.some((r) => r.status === "BLOCKED") && (
             <Alert
@@ -286,13 +322,13 @@ function ApplicationsBoard() {
         </>
       )}
 
-      <ActiveFilterNotice active={active} label={statusLabel} onClear={clear} />
+      {!showArchived && <ActiveFilterNotice active={active} label={statusLabel} onClear={clear} />}
 
       {loading ? (
         <Center py="xl"><Loader /></Center>
       ) : rows.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
-          <Text c="dimmed">No in-flight membership applications.</Text>
+          <Text c="dimmed">{showArchived ? "No archived applications." : "No in-flight membership applications."}</Text>
         </Card>
       ) : visibleRows.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
@@ -395,9 +431,15 @@ function ApplicationsBoard() {
               )}
 
               <Group justify="flex-end" mt="md">
-                <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
-                  Archive
-                </Button>
+                {showArchived ? (
+                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => unarchive(r.id)}>
+                    Unarchive
+                  </Button>
+                ) : (
+                  <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
+                    Archive
+                  </Button>
+                )}
               </Group>
             </Card>
           ))}
