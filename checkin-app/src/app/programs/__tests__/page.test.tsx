@@ -23,7 +23,7 @@ describe("PublicProgramsDirectory", () => {
     renderWithProviders(<PublicProgramsDirectory />);
 
     expect(await screen.findByText("Robotics Club")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View Details" })).toHaveAttribute("href", "/programs/1");
+    expect(screen.getByRole("link", { name: "View details and enroll" })).toHaveAttribute("href", "/programs/1");
     // Anonymous visitors get no manage/admin controls.
     expect(screen.queryByRole("checkbox", { name: "Show active only" })).not.toBeInTheDocument();
   });

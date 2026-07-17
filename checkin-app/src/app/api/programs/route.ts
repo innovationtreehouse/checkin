@@ -7,6 +7,7 @@ import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
@@ -71,7 +72,7 @@ export async function GET(req: Request) {
             }
         }
 
-        const programs = await prisma.program.findMany({
+        const fetchPrograms = () => prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
             orderBy: { startAt: 'asc' },
             include: {
@@ -85,7 +86,17 @@ export async function GET(req: Request) {
             }
         });
 
-        return NextResponse.json(programs);
+        // ANONYMOUS-ONLY cache (lib/staleCache): the where-clause is identical for
+        // every signed-out caller, so one entry serves them all — and a session
+        // (draft/mentor visibility varies the payload) never touches it, which is
+        // what makes the cache leak-proof by construction. During an Aurora resume
+        // the public directory renders instantly from the last-good copy instead
+        // of spinning into a 500; counts are at most one refresh stale.
+        if (!userId && !canSeeDrafts) {
+            const { value } = await staleWhileRevalidate("programs:public", 60_000, fetchPrograms);
+            return NextResponse.json(value);
+        }
+        return NextResponse.json(await fetchPrograms());
     } catch (error) {
         await logBackendError(error, "GET /api/programs");
         return apiError("Failed to fetch programs", 500);

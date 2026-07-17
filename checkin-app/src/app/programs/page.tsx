@@ -133,7 +133,7 @@ export default function PublicProgramsDirectory() {
 
                 <Group grow>
                   <Button component={Link} href={`/programs/${program.id}`} variant="light">
-                    View Details
+                    View details and enroll
                   </Button>
                   {canManage && (
                     <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">
