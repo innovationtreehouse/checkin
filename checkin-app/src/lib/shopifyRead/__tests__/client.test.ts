@@ -131,6 +131,26 @@ describe('latestSyncRun', () => {
 /** The SQL of the Nth query, whitespace-collapsed so indentation doesn't matter. */
 const sqlOf = (call: number) => (queryMock.mock.calls[call][0] as string).replace(/\s+/g, ' ');
 
+describe('countSyncRuns (the diagnose route\'s probe)', () => {
+    it('returns the run count', async () => {
+        queryMock.mockResolvedValue({ rows: [{ runs: 3 }] });
+        expect(await freshClient().countSyncRuns()).toBe(3);
+        expect(sqlOf(0)).toContain('FROM sync_run');
+    });
+
+    it('throws when unconfigured rather than opening a pool', async () => {
+        delete process.env.SHOPIFY_READ_DATABASE_URL;
+        await expect(freshClient().countSyncRuns()).rejects.toThrow(/not configured/);
+        expect(poolCtor).not.toHaveBeenCalled();
+    });
+
+    it('lets pg errors escape untouched — the caller owns the code→verdict mapping', async () => {
+        const err = Object.assign(new Error('permission denied for table sync_run'), { code: '42501' });
+        queryMock.mockRejectedValue(err);
+        await expect(freshClient().countSyncRuns()).rejects.toBe(err);
+    });
+});
+
 describe('order reads', () => {
     // s-read's columns are `timestamp WITHOUT time zone` holding UTC, and node-pg
     // resolves those against the Node process's zone — drop these casts and a non-UTC

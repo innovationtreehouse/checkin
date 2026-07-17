@@ -112,12 +112,22 @@ export function renewalWindow(configuredBoundary: Date, now: Date): { boundary: 
  * ⇒ not renewal season. Drives the admin "Grant for coming year" button.
  */
 export async function isRenewalSeason(now: Date): Promise<boolean> {
+    return (await renewalSeasonWindow(now)) !== null;
+}
+
+/**
+ * The live renewal window when `now` is inside it, else null. Callers that need
+ * the window bounds (e.g. "was this cycle already resolved?") use this instead of
+ * re-reading BoardSettings themselves.
+ */
+export async function renewalSeasonWindow(now: Date): Promise<{ boundary: Date; windowStart: Date } | null> {
     const settings = await prisma.boardSettings.findUnique({
         where: { id: 1 },
         select: { orgMembershipYearBoundary: true },
     });
-    if (!settings?.orgMembershipYearBoundary) return false;
-    return renewalWindow(settings.orgMembershipYearBoundary, now).inSeason;
+    if (!settings?.orgMembershipYearBoundary) return null;
+    const { boundary, windowStart, inSeason } = renewalWindow(settings.orgMembershipYearBoundary, now);
+    return inSeason ? { boundary, windowStart } : null;
 }
 
 /**

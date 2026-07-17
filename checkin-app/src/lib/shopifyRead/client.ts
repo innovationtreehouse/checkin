@@ -189,6 +189,21 @@ export async function latestSyncRun(): Promise<MirrorSyncRun | null> {
 }
 
 /**
+ * Diagnostic probe: how many sync runs the mirror holds. One round trip whose
+ * FAILURE is as informative as its success — the thrown pg error's `code`
+ * discriminates every layer between here and the data (network, auth, database
+ * missing, table missing, SELECT grant missing), which is why the diagnose route
+ * calls this instead of six separate checks. Errors are deliberately NOT caught
+ * here: the caller owns the code→verdict mapping.
+ */
+export async function countSyncRuns(): Promise<number> {
+    const p = getPool();
+    if (!p) throw new Error("shopify_read mirror is not configured");
+    const rows = await p.query<{ runs: number }>(`SELECT count(*)::int AS runs FROM sync_run`);
+    return rows.rows[0].runs;
+}
+
+/**
  * Order GIDs that have a chargeback/dispute balance transaction, among the given
  * GIDs. Shopify Payments surfaces a dispute as a signed balance transaction whose
  * `type` names the dispute — this distinguishes a chargeback (CRITICAL) from an
