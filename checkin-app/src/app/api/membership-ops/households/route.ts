@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { isRenewalSeason } from "@/lib/membership/renewal";
+import { renewalSeasonWindow } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
 
@@ -65,13 +65,29 @@ export const GET = withAuth(
                 ]
             } : {};
 
+            // Renewal-season only: a household whose membership process for the coming
+            // cycle is already settled (member finished renewal, or an admin used the
+            // override) has a terminal ACTIVE process stamped inside this window. Same
+            // "handled this cycle" test runRenewalSweep uses to skip re-opening.
+            const window = await renewalSeasonWindow(new Date());
+
             const households = await prisma.household.findMany({
                 where: whereClause,
                 include: {
                     householdMembers: {
                         select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true }
                     },
-                    orgMembership: true,
+                    orgMembership: {
+                        include: {
+                            // Out of season the button is hidden anyway, so a window start of
+                            // "never" (matches no row) keeps one query shape and one type.
+                            processes: {
+                                where: { status: "ACTIVE", stageEnteredAt: { gte: window?.windowStart ?? new Date(8.64e15) } },
+                                select: { id: true },
+                                take: 1,
+                            },
+                        },
+                    },
                     emergencyContacts: {
                         where: PRIMARY_CONTACT_WHERE,
                         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -86,8 +102,15 @@ export const GET = withAuth(
             });
 
             return NextResponse.json({
-                households: households.map(withFlatContact),
-                renewalSeason: await isRenewalSeason(new Date()),
+                households: households.map((h) => {
+                    const { processes, ...orgMembership } = h.orgMembership ?? { processes: [] };
+                    return {
+                        ...withFlatContact(h),
+                        orgMembership: h.orgMembership ? orgMembership : null,
+                        settledForComingYear: processes.length > 0,
+                    };
+                }),
+                renewalSeason: window !== null,
             });
         } catch (error) {
             logger.error("Failed to fetch households:", error);

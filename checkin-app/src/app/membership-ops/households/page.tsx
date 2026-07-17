@@ -15,6 +15,9 @@ type Household = {
   id: number;
   name?: string | null;
   orgMembership?: { status: string } | null;
+  // Renewal season only: the coming cycle is already settled — the member finished
+  // renewal, or an admin already used the override.
+  settledForComingYear?: boolean;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
 };
 
@@ -199,6 +202,7 @@ export default function AdminHouseholdsPage() {
               const isStaffHousehold = household.householdMembers?.some(
                 (p) => p.email?.toLowerCase().endsWith('@innovationtreehouse.org')
               ) ?? false;
+              const settledForComingYear = household.settledForComingYear === true;
 
               return (
                 <Table.Tr key={household.id}>
@@ -312,17 +316,19 @@ export default function AdminHouseholdsPage() {
                         size="xs" fz={15}
                         variant="light"
                         color="green"
-                        disabled={ownHouseholdConflict || isStaffHousehold}
+                        disabled={settledForComingYear || ownHouseholdConflict || isStaffHousehold}
                         title={
-                          isStaffHousehold
-                            ? "Staff households can't be granted membership."
-                            : ownHouseholdConflict
-                              ? "You can't grant your own household's membership — a sysadmin must."
-                              : undefined
+                          settledForComingYear
+                            ? "This household is already set for the coming year."
+                            : isStaffHousehold
+                              ? "Staff households can't be granted membership."
+                              : ownHouseholdConflict
+                                ? "You can't grant your own household's membership — a sysadmin must."
+                                : undefined
                         }
                         onClick={() => grantForComingYear(household.id)}
                       >
-                        Grant for coming year
+                        {settledForComingYear ? "Granted for coming year" : "Grant for coming year"}
                       </Button>
                     )}
                     </Stack>
