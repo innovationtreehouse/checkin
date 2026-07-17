@@ -4,11 +4,12 @@
 /**
  * Integration tests for GET /api/membership-ops/households (list branch):
  * per-household `renewalGrantable` (the coming-year-button gate) and the
- * top-level `currentMembershipValidUntil` / per-household `orgMembership.memberSince`
+ * per-household derived `validUntil` (upcoming boundary; +1y when settled) / `orgMembership.memberSince`
  * date fields introduced alongside it.
  */
 import { GET } from '@/app/api/membership-ops/households/route';
 import prisma from '@/lib/prisma';
+import { nextBoundary } from '@/lib/membership/renewal';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
@@ -27,7 +28,7 @@ async function get(url = 'http://localhost:4000/api/membership-ops/households') 
 
 describe('GET /api/membership-ops/households — renewalGrantable + dates', () => {
     let adminId: number;
-    let prevBoardSettings: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number; currentMembershipValidUntil: Date | null } | null = null;
+    let prevBoardSettings: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number } | null = null;
 
     let notStartedHouseholdId: number;
     let grantableHouseholdId: number;
@@ -49,15 +50,14 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
     beforeAll(async () => {
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
         prevBoardSettings = existing
-            ? { orgMembershipYearBoundary: existing.orgMembershipYearBoundary, bgRecheckMonths: existing.bgRecheckMonths, currentMembershipValidUntil: existing.currentMembershipValidUntil }
+            ? { orgMembershipYearBoundary: existing.orgMembershipYearBoundary, bgRecheckMonths: existing.bgRecheckMonths }
             : null;
         await wipe();
 
-        const validUntil = new Date(Date.UTC(2028, 0, 1));
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, orgMembershipYearBoundary: new Date(Date.UTC(2000, 11, 25)), bgRecheckMonths: 12, currentMembershipValidUntil: validUntil },
-            update: { orgMembershipYearBoundary: new Date(Date.UTC(2000, 11, 25)), bgRecheckMonths: 12, currentMembershipValidUntil: validUntil },
+            create: { id: 1, orgMembershipYearBoundary: new Date(Date.UTC(2000, 11, 25)), bgRecheckMonths: 12 },
+            update: { orgMembershipYearBoundary: new Date(Date.UTC(2000, 11, 25)), bgRecheckMonths: 12 },
         });
 
         adminId = (await prisma.person.create({
@@ -124,12 +124,15 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
         expect(h.renewalGrantable).toBe(false);
     });
 
-    it('response includes top-level currentMembershipValidUntil and per-household orgMembership.memberSince', async () => {
+    it('derives per-household validUntil from the boundary and includes orgMembership.memberSince', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
         const res = await get();
         const data = await res.json();
-        expect(data.currentMembershipValidUntil).toEqual(expect.stringMatching(/^2028-01-01/));
         const h = data.households.find((x: { id: number }) => x.id === grantableHouseholdId);
+        // Not settled for the coming year ⇒ valid until the UPCOMING Dec 25 boundary
+        // occurrence (membership is exactly one year; nothing stored, nothing to update).
+        const expected = nextBoundary(new Date(Date.UTC(2000, 11, 25)), new Date());
+        expect(h.validUntil).toEqual(expect.stringMatching(new RegExp(`^${expected.toISOString().slice(0, 10)}`)));
         expect(h.orgMembership.memberSince).toBeTruthy();
     });
 });

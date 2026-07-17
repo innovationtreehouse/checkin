@@ -18,6 +18,7 @@ type Household = {
   // Renewal season only: the coming cycle is already settled — the member finished
   // renewal, or an admin already used the override.
   settledForComingYear?: boolean;
+  validUntil?: string | null;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
   renewalGrantable?: boolean;
   bgValidUntil?: string | null;
@@ -32,7 +33,6 @@ export default function AdminHouseholdsPage() {
 
   const [households, setHouseholds] = useState<Household[]>([]);
   const [renewalSeason, setRenewalSeason] = useState(false);
-  const [validUntil, setValidUntil] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
@@ -47,7 +47,6 @@ export default function AdminHouseholdsPage() {
         const data = await res.json();
         setHouseholds(data.households);
         setRenewalSeason(data.renewalSeason ?? false);
-        setValidUntil(data.currentMembershipValidUntil ?? null);
       } else {
         setError("Failed to fetch households.");
       }
@@ -263,7 +262,7 @@ export default function AdminHouseholdsPage() {
                     )}
                   </Table.Td>
                   <Table.Td>{fmtDate(household.orgMembership?.memberSince)}</Table.Td>
-                  <Table.Td>{fmtDate(validUntil)}</Table.Td>
+                  <Table.Td>{fmtDate(household.validUntil)}</Table.Td>
                   <Table.Td>{fmtDate(household.bgValidUntil)}</Table.Td>
                   <Table.Td>
                     <Stack gap="xs" align="flex-start">

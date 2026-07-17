@@ -46,7 +46,7 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
       if (res.ok) {
         const data = await res.json();
         setHousehold(data.household);
-        setValidUntil(data.currentMembershipValidUntil ?? null);
+        setValidUntil(data.validUntil ?? null);
       } else {
         notifications.show({ color: "red", message: "Failed to load household.", autoClose: false });
       }

@@ -13,6 +13,16 @@ export const dynamic = 'force-dynamic';
 // back onto the flat emergencyContactName/Phone shape the client expects. Include
 // it inline (below) with this where/order so Prisma infers the result type.
 const PRIMARY_CONTACT_WHERE = { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } };
+
+// "Valid until" is DERIVED, never stored (thpr's #1053 review): a membership is
+// exactly one year, so an active membership is valid until the UPCOMING year
+// boundary, and a household already settled for the coming cycle is valid until
+// the boundary after that. Deriving keeps it consistent with everything else the
+// boundary drives (renewal sweep, 60-day warnings) with nothing to hand-update.
+function derivedValidUntil(boundary: Date | null, settled: boolean): Date | null {
+    if (!boundary) return null;
+    return settled ? new Date(Date.UTC(boundary.getUTCFullYear() + 1, boundary.getUTCMonth(), boundary.getUTCDate())) : boundary;
+}
 function withFlatContact<T extends { emergencyContacts: { name: string; phone: string }[] }>(h: T) {
     const primary = h.emergencyContacts[0] ?? null;
     const { emergencyContacts: _drop, ...rest } = h;
@@ -55,10 +65,24 @@ export const GET = withAuth(
                 if (!household) return NextResponse.json({ household: null });
                 const householdLeads = household.householdMembers.filter(p => p.isHouseholdLead).map(p => ({ personId: p.id }));
 
-                // ONE settings read serves membership-valid-until and the BG "valid until" calc below.
+                // ONE settings read serves the derived valid-until and the BG "valid until" calc below.
                 const settings = await prisma.boardSettings.findUnique({
-                    where: { id: 1 }, select: { currentMembershipValidUntil: true, orgMembershipYearBoundary: true, bgRecheckMonths: true },
+                    where: { id: 1 }, select: { orgMembershipYearBoundary: true, bgRecheckMonths: true },
                 });
+                const detailWindow = await renewalSeasonWindow(new Date());
+                const detailBoundary = settings?.orgMembershipYearBoundary
+                    ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
+                    : null;
+                const detailSettled = household.orgMembership
+                    ? (await prisma.orgMembershipProcess.findFirst({
+                          where: {
+                              orgMembershipId: household.orgMembership.id,
+                              status: "ACTIVE",
+                              stageEnteredAt: { gte: detailWindow?.windowStart ?? new Date(8.64e15) },
+                          },
+                          select: { id: true },
+                      })) !== null
+                    : false;
                 const bgSettings = {
                     orgMembershipYearBoundary: settings?.orgMembershipYearBoundary ?? null,
                     bgRecheckMonths: settings?.bgRecheckMonths ?? 0,
@@ -78,7 +102,7 @@ export const GET = withAuth(
 
                 return NextResponse.json({
                     household: { ...withFlatContact(household), householdMembers: membersWithBg, householdLeads, bgValidUntil: householdBgValidUntil },
-                    currentMembershipValidUntil: settings?.currentMembershipValidUntil ?? null,
+                    validUntil: household.orgMembership?.status === "ACTIVE" ? derivedValidUntil(detailBoundary, detailSettled) : null,
                 });
             }
 
@@ -169,6 +193,7 @@ export const GET = withAuth(
                         renewalGrantable,
                         settledForComingYear,
                         bgValidUntil,
+                        validUntil: h.orgMembership?.status === "ACTIVE" ? derivedValidUntil(boundary, settledForComingYear) : null,
                     };
                 }),
             );
@@ -176,7 +201,6 @@ export const GET = withAuth(
             return NextResponse.json({
                 households: withGrantable,
                 renewalSeason: window !== null,
-                currentMembershipValidUntil: settings?.currentMembershipValidUntil ?? null,
             });
         } catch (error) {
             logger.error("Failed to fetch households:", error);
