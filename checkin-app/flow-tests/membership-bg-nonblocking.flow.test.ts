@@ -58,7 +58,7 @@ describe("flow: membership background check is non-blocking (PR #428)", () => {
         expect(afterExternal.json.process?.status).toBe("PENDING_PAYMENT"); // ← #428: payment unblocked
 
         // Pay before the check clears (board certify stands in for the Shopify webhook).
-        const certify = await api(board, "/api/membership-ops/applications/certify-payment", { method: "POST", body: JSON.stringify({ processId }) });
+        const certify = await api(board, "/api/membership-ops/applications/certify-payment", { method: "POST", body: JSON.stringify({ processId, reason: "flow test: payment plan certified" }) });
         expect(certify.status).toBe(200);
 
         const afterPay = await api<State>(applicant, "/api/membership");
