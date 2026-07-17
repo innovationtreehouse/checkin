@@ -6,9 +6,11 @@
  * actions in POST /api/membership-ops/households — granting (ACTIVE) and revoking
  * (REVOKED) must each write an AuditLog row recording who acted and what changed.
  *
- * Also covers the "Grant for coming year" override: it completes the payment
- * gate on a household's in-flight RENEWAL already at PENDING_PAYMENT with a
- * valid, cleared background check — never archives, never bypasses BG.
+ * Also covers the "Grant for coming year" override: it comps the PAYMENT gate on
+ * a household's in-flight RENEWAL at PENDING_PAYMENT — never archives, never
+ * bypasses BG. A bgClearedAt row settles to ACTIVE; a parallel-track row
+ * (bgClearedAt null, BG still in review) settles to PENDING_BG_CLEARANCE and
+ * stays INACTIVE until reviewers clear it.
  */
 
 import { POST } from '@/app/api/membership-ops/households/route';
@@ -118,16 +120,17 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         const peMembership = await prisma.orgMembership.create({ data: { householdId: pendingExternalHouseholdId, status: 'ACTIVE' } });
         await prisma.orgMembershipProcess.create({ data: { orgMembershipId: peMembership.id, kind: 'RENEWAL', status: 'PENDING_EXTERNAL_ACTION' } });
 
-        // PENDING_PAYMENT but bgClearedAt not yet stamped, lead BG otherwise fresh
-        // (isolates the bgClearedAt-null reject from a bg-freshness reject) → 403.
+        // Parallel-track: PENDING_PAYMENT with bgClearedAt null, BG consent recorded
+        // (review runs in parallel). Grant comps payment → PENDING_BG_CLEARANCE (200).
         midFlowHouseholdId = await makeHousehold('midflow');
         const midMembership = await prisma.orgMembership.create({ data: { householdId: midFlowHouseholdId, status: 'ACTIVE' } });
         midFlowProcessId = (await prisma.orgMembershipProcess.create({
-            data: { orgMembershipId: midMembership.id, kind: 'RENEWAL', status: 'PENDING_PAYMENT' },
+            data: { orgMembershipId: midMembership.id, kind: 'RENEWAL', status: 'PENDING_PAYMENT', bgConsentAt: new Date() },
         })).id;
         await setLead(midFlowHouseholdId, new Date());
 
-        // PENDING_PAYMENT with bgClearedAt set, but no lead has a fresh check → 403.
+        // PENDING_PAYMENT with bgClearedAt set, no lead has a fresh check. Grant comps
+        // payment; BG is already cleared on the process → settles to ACTIVE (200).
         bgNotFreshHouseholdId = await makeHousehold('bgnotfresh');
         const bnfMembership = await prisma.orgMembership.create({ data: { householdId: bgNotFreshHouseholdId, status: 'ACTIVE' } });
         bgNotFreshProcessId = (await prisma.orgMembershipProcess.create({
@@ -228,26 +231,28 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         expect(process?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
 
-    it('coming-year grant: PENDING_PAYMENT but bgClearedAt not stamped → 403, unchanged', async () => {
+    it('coming-year grant: parallel-track (PENDING_PAYMENT, bgClearedAt null) → 200, settles to PENDING_BG_CLEARANCE (payment comped, BG still gating)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: midFlowHouseholdId, comingYear: true, reason: 'Renewal grant test' });
-        expect(res.status).toBe(403);
+        expect(res.status).toBe(200);
 
+        // BG gate NOT bypassed: process parks at PENDING_BG_CLEARANCE (paid, awaiting
+        // the check), NOT ACTIVE — reviewers must still clear it.
         const process = await prisma.orgMembershipProcess.findUnique({ where: { id: midFlowProcessId } });
-        expect(process?.status).toBe('PENDING_PAYMENT');
-        expect(process?.paidAt).toBeNull();
+        expect(process?.status).toBe('PENDING_BG_CLEARANCE');
+        expect(process?.paidAt).not.toBeNull();
     });
 
-    it("coming-year grant: bgClearedAt set but no household lead has a fresh check → 403, unchanged", async () => {
+    it("coming-year grant: bgClearedAt set but no household lead has a fresh check → 200, settles to ACTIVE (BG already cleared on the process)", async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
         const res = await post({ householdId: bgNotFreshHouseholdId, comingYear: true, reason: 'Renewal grant test' });
-        expect(res.status).toBe(403);
+        expect(res.status).toBe(200);
 
         const process = await prisma.orgMembershipProcess.findUnique({ where: { id: bgNotFreshProcessId } });
-        expect(process?.status).toBe('PENDING_PAYMENT');
-        expect(process?.paidAt).toBeNull();
+        expect(process?.status).toBe('ACTIVE');
+        expect(process?.paidAt).not.toBeNull();
     });
 
     it("refuses coming-year grant for the actor's OWN household (conflict of interest); sysadmin overrides", async () => {
