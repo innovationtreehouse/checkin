@@ -127,7 +127,7 @@ stateDiagram-v2
 
     PENDING_PAYMENT --> ACTIVE: activate, bgClearedAt set (FOR UPDATE)
     PENDING_PAYMENT --> PENDING_BG_CLEARANCE: activate, not cleared (FOR UPDATE)
-    PENDING_PAYMENT --> ACTIVE: grantRenewalPayment→certify→activate<br/>(RENEWAL: bgClearedAt & householdBgIsFresh & COI)
+    PENDING_PAYMENT --> ACTIVE: grantRenewalPayment→certify→activate<br/>(RENEWAL: comps payment, COI; BG gate stays downstream at activate — #1068)
 
     PENDING_BG_REVIEW --> PENDING_PAYMENT: 2nd APPROVE, clearBackgroundCheck, unpaid
     PENDING_BG_REVIEW --> ACTIVE: 2nd APPROVE, clearBackgroundCheck, paid
@@ -276,7 +276,7 @@ export const LEGACY_STATUSES: readonly ProcessStatus[] = ["RENEWAL_PENDING_BG"];
 export const awaitingBgReview: StateSet;   // .has(row) for client, .where for queue queries
 
 // ── renewal grantability (fix #3) & settled-this-cycle (fix #4): where builders ──
-export const grantableRenewalWhere: Prisma.OrgMembershipProcessWhereInput;      // PENDING_PAYMENT + bgClearedAt, kind RENEWAL
+export const grantableRenewalWhere: Prisma.OrgMembershipProcessWhereInput;      // kind RENEWAL + PENDING_PAYMENT (no bgClearedAt — #1068: BG gate is downstream at activate)
 export const settledThisCycleWhere: (windowStart: Date) => Prisma.OrgMembershipProcessWhereInput; // kind RENEWAL, status in (ACTIVE,ARCHIVED), stageEnteredAt>=windowStart
 
 // ── the transition table: documentation + test oracle (NOT executed at runtime) ──
@@ -327,13 +327,20 @@ index's `WHERE status IN (…)` equals the constant. `RENEWAL_PENDING_BG` stays 
 
 ### 7.3 Grant guard duplication (fix #3)
 Reconcile the two "payable renewal" predicates onto `grantableRenewalWhere`
-(`kind=RENEWAL, status=PENDING_PAYMENT, bgClearedAt≠null`). Route uses it for the probe
-that produces `renewalGrantable`; `grantRenewalPayment` uses the same set for its row
-lookup, keeping its extra runtime guards (`householdBgIsFresh` at boundary — needs a
-live settings read; **COI inside `certifyPaymentPlan`** — needs the actor). Client
-`disabled` keeps deriving from server `renewalGrantable` (correct: the client cannot
-know BG-freshness or COI without a DB round-trip; the server flag is the shared
-derivation). Net: one status/flag definition, guards unchanged.
+(`kind=RENEWAL, status=PENDING_PAYMENT`). Route uses it for the probe that produces
+`renewalGrantable`; `grantRenewalPayment` uses the same set for its row lookup, keeping
+its **COI inside `certifyPaymentPlan`** guard (needs the actor). Client `disabled` keeps
+deriving from server `renewalGrantable`. Net: one status/flag definition, guards
+unchanged.
+
+> **Updated for #1068 (merged after this design).** `grantableRenewalWhere` does **not**
+> carry `bgClearedAt≠null` and the grant no longer requires a fresh/cleared BG at the
+> lookup: "grant for coming year" **comps the payment gate for any in-flight RENEWAL**, and
+> the BG gate is preserved *downstream* at `activate()` (`activating = !!bgClearedAt`) — a
+> BG-cleared row settles straight to `ACTIVE`, a parallel-track row (BG still in review)
+> settles to `PENDING_BG_CLEARANCE`. So `#1068` dropped the earlier `bgClearedAt`/`bgFresh`
+> forbidden-guard from `renewal.ts` and the `bgClearedAt` filter from the households probe;
+> this doc's fix #3 reconciles onto that shipped shape, not the pre-#1068 one.
 
 ### 7.4 `settledForComingYear` (fix #4 — real bug)
 Both the route probe and `runRenewalSweep`'s skip-test consume
