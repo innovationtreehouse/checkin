@@ -180,7 +180,7 @@ export default function PaymentProblemsPage() {
           // it must survive long enough to be read and acted on.
           notifications.show({
             color: 'red',
-            message: "Shopify sync started, but its status can't be read in this environment.",
+            message: "Shopify sync started, but its status can't be read in this environment. Run diagnostics on the System Status page to see why.",
             autoClose: false,
           });
           return;

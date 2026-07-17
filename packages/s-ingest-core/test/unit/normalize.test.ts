@@ -58,6 +58,39 @@ describe("normalizeOrder", () => {
     expect(n.noteAttributes).toBeUndefined();
   });
 
+  it("captures the line's variant identity; undefined for custom/deleted-product lines", () => {
+    const withVariants = normalizeOrder(
+      orderNodeSchema.parse({
+        id: "gid://shopify/Order/1001",
+        lineItems: {
+          nodes: [
+            // The usual REST-adjacent shape: legacyResourceId arrives as a number.
+            { id: "gid://shopify/LineItem/1", variant: { id: "gid://shopify/ProductVariant/42", legacyResourceId: 42 } },
+            // Bulk output can omit legacyResourceId — derived from the gid tail.
+            { id: "gid://shopify/LineItem/2", variant: { id: "gid://shopify/ProductVariant/77" } },
+            // Custom item / deleted product: variant is null.
+            { id: "gid://shopify/LineItem/3", variant: null },
+          ],
+        },
+      }),
+    );
+    expect(withVariants.lines[0]).toMatchObject({ variantGid: "gid://shopify/ProductVariant/42", variantLegacyId: "42" });
+    expect(withVariants.lines[1]).toMatchObject({ variantGid: "gid://shopify/ProductVariant/77", variantLegacyId: "77" });
+    expect(withVariants.lines[2].variantGid).toBeUndefined();
+    expect(withVariants.lines[2].variantLegacyId).toBeUndefined();
+  });
+
+  it("captures discount codes verbatim; [] when absent", () => {
+    const discounted = normalizeOrder(
+      orderNodeSchema.parse({
+        id: "gid://shopify/Order/1001",
+        discountCodes: ["VOLUNTEER2026", "EARLYBIRD"],
+      }),
+    );
+    expect(discounted.discountCodes).toEqual(["VOLUNTEER2026", "EARLYBIRD"]);
+    expect(n.discountCodes).toEqual([]);
+  });
+
   it("captures a cancellation when present", () => {
     const cancelled = normalizeOrder(
       orderNodeSchema.parse({

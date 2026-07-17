@@ -282,6 +282,18 @@ jobs:
           echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
           exit 1
 
+      # s-read rides every prod release, in THIS job — after the app is live, on
+      # the same released tag (still checked out) and the same already-assumed
+      # checkin-deploy-prod credentials. Folded in (rather than a separate job
+      # carrying its own `environment: production`) so the release takes ONE
+      # approval instead of two: only this job enters the production environment.
+      # The composite writes its own step-summary section.
+      - name: Deploy s-read (prod)
+        uses: ./.github/actions/deploy-s-read
+        with:
+          environment: prod
+          network-config: ${{ vars.S_READ_NETWORK_CONFIG }}
+
       - name: Report result
         if: always()
         env:
@@ -294,28 +306,16 @@ jobs:
           set -euo pipefail
           if [ "$STATUS" = "success" ]; then
             {
-              echo "### ✅ Released $TAG to prod"
+              echo "### ✅ Released $TAG to prod (app + s-read)"
               echo "Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL)."
               echo "- Image: \`$IMAGE_REPO:$TAG\`"
-              echo "- Migrations: applied · Service: stable"
+              echo "- Migrations: applied · Service: stable · s-read: deployed"
               echo "- [Release]($RELEASE_URL) · [Deploy run]($RUN_URL)"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
               echo "### ❌ Prod deploy of $TAG failed (status: \`$STATUS\`)"
-              echo "- [Deploy run]($RUN_URL) — check the logs."
-              echo "- Prod still runs the previous image."
+              echo "- [Deploy run]($RUN_URL) — check the logs (app and/or s-read)."
+              echo "- The app rolls out before s-read: if the app step passed, prod runs the new image and only s-read needs a rerun; otherwise prod still runs the previous image."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  # s-read rides every prod release, after the human-approved app deploy. The
-  # called job carries `environment: production` (required by the prod deploy
-  # role's OIDC trust), so the release gets a SECOND approval prompt for the
-  # s-read half — a deliberate gate, not an accident. Same released tag.
-  s-read:
-    name: Deploy s-read (prod)
-    needs: deploy
-    uses: ./.github/workflows/deploy-s-read.yml
-    with:
-      environment: prod
-      ref: ${{ github.event.release.tag_name }}
