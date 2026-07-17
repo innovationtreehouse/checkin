@@ -58,7 +58,8 @@ async function syncAndPoll(polls: number) {
     });
 }
 
-const lastMessage = () => shown.mock.calls[shown.mock.calls.length - 1][0].message as string;
+const lastShown = () => shown.mock.calls[shown.mock.calls.length - 1][0];
+const lastMessage = () => lastShown().message as string;
 
 beforeEach(() => {
     resetRtl();
@@ -95,6 +96,9 @@ describe("finance-ops/payments — sync status", () => {
 
             expect(lastMessage()).toMatch(/status can't be read/i);
             expect(lastMessage()).not.toMatch(/still running/i);
+            // House shape for a real error: red, and it does not auto-dismiss. This one
+            // stands in for a broken mirror — it must not scroll past unread.
+            expect(lastShown()).toMatchObject({ color: "red", autoClose: false });
         } finally {
             jest.useRealTimers();
         }
@@ -140,6 +144,7 @@ describe("finance-ops/payments — sync status", () => {
             await syncAndPoll(1);
 
             expect(lastMessage()).toMatch(/abandoned/i);
+            expect(lastShown()).toMatchObject({ color: "red", autoClose: false });
 
             const after = fetchMock.mock.calls.length;
             await act(async () => {
@@ -174,6 +179,29 @@ describe("finance-ops/payments — sync status", () => {
             await syncAndPoll(21); // past the 20-attempt cap
 
             expect(lastMessage()).toMatch(/still running/i);
+            // Nothing went wrong — the sync started and is proceeding, we just stopped
+            // watching. Plain success shape; the sentence carries "check back later".
+            expect(lastShown()).toMatchObject({ color: "green" });
+            expect(lastShown().autoClose).not.toBe(false);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    it("only ever speaks the app's red/green notification vocabulary", async () => {
+        // The app has no warning tier: every notifications.show() in checkin-app is red
+        // (error) or green (success). This page briefly invented `yellow` for the two
+        // ambiguous outcomes, which read as a new severity that nothing else uses — and
+        // the two disagreed with each other on whether they persisted.
+        jest.useFakeTimers();
+        try {
+            mockSync([{ status: 500, body: {} }]);
+            renderWithProviders(<PaymentProblemsPage />);
+            await syncAndPoll(1);
+
+            const colors = shown.mock.calls.map(([c]) => c.color);
+            expect(colors.length).toBeGreaterThan(0);
+            expect(colors.every((c) => c === "red" || c === "green")).toBe(true);
         } finally {
             jest.useRealTimers();
         }

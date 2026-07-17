@@ -175,8 +175,11 @@ export default function PaymentProblemsPage() {
         // watch it. Reporting "still running" here would be inventing a status, and it
         // would hide the actual fault behind a plausible sentence.
         if (!res.ok) {
+          // red + autoClose:false — the house shape for "something is actually wrong,
+          // don't let this scroll past". This message stands in for a broken mirror, so
+          // it must survive long enough to be read and acted on.
           notifications.show({
-            color: 'yellow',
+            color: 'red',
             message: "Shopify sync started, but its status can't be read in this environment.",
             autoClose: false,
           });
@@ -201,9 +204,13 @@ export default function PaymentProblemsPage() {
         return;
       }
       // Budget exhausted with the run still RUNNING — the only path that has actually
-      // seen it running, and so the only one entitled to say so.
+      // seen it running, and so the only one entitled to say so. Nothing has gone
+      // wrong: the sync started and is proceeding, we just stopped watching. So it
+      // takes the plain success shape (green, auto-closing) like "started…" above —
+      // the sentence carries the "check back later", not a colour the app never uses
+      // for anything else.
       notifications.show({
-        color: 'yellow',
+        color: 'green',
         message: 'Shopify sync is still running. Reload the page in a few minutes to see the result.',
       });
     } catch {
