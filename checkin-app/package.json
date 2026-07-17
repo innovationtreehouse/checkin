@@ -19,7 +19,8 @@
     "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
     "import:zoho": "tsx scripts/import-zoho.ts",
     "shopify:webhook": "tsx scripts/register-shopify-webhook.ts",
-    "coalesce-migrations": "tsx scripts/coalesce-migrations.ts"
+    "coalesce-migrations": "tsx scripts/coalesce-migrations.ts",
+    "generate:lifecycle-artifacts": "tsx src/lib/lifecycle/generate.ts"
   },
   "engines": {
     "node": ">=24"
