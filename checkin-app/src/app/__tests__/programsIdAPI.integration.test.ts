@@ -274,6 +274,65 @@ describe('Individual Program API Integration Tests', () => {
         });
     });
 
+    // viewerIsMember / viewerMemberPricingEligible: additive, session-only fields
+    // computed AFTER the registry response (see route.ts) — membership pricing
+    // applies only when the buyer's membership covers the program's whole run.
+    describe('GET /api/programs/[id] — viewer membership-pricing fields', () => {
+        let prevBoardSettings: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number } | null = null;
+        let pastBoundaryProgramId: number;
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        // Inside the 2-month renewal lead window relative to "now" — irrelevant
+        // here (memberId's household has no renewal process, so it's never
+        // "settled"), but kept consistent with the other duration tests.
+        const boundary = new Date(Date.now() + 45 * DAY_MS);
+
+        beforeAll(async () => {
+            const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+            prevBoardSettings = existing
+                ? { orgMembershipYearBoundary: existing.orgMembershipYearBoundary, bgRecheckMonths: existing.bgRecheckMonths }
+                : null;
+            await prisma.boardSettings.upsert({
+                where: { id: 1 },
+                create: { id: 1, orgMembershipYearBoundary: boundary, bgRecheckMonths: existing?.bgRecheckMonths ?? 12 },
+                update: { orgMembershipYearBoundary: boundary },
+            });
+
+            const pastBoundaryProgram = await prisma.program.create({
+                data: { name: 'Past Boundary Prog ID API Test', phase: 'UPCOMING', endAt: new Date(boundary.getTime() + 10 * DAY_MS) },
+            });
+            pastBoundaryProgramId = pastBoundaryProgram.id;
+        });
+
+        afterAll(async () => {
+            await prisma.program.delete({ where: { id: pastBoundaryProgramId } });
+            if (prevBoardSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: prevBoardSettings });
+        });
+
+        it('an unrenewed member sees viewerIsMember: true and viewerMemberPricingEligible: false for a program past their boundary', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pastBoundaryProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(pastBoundaryProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.viewerIsMember).toBe(true);
+            expect(data.viewerMemberPricingEligible).toBe(false);
+        });
+
+        it('omits both fields for an anonymous caller', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${pastBoundaryProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(pastBoundaryProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.viewerIsMember).toBeUndefined();
+            expect(data.viewerMemberPricingEligible).toBeUndefined();
+        });
+    });
+
     describe('PATCH /api/programs/[id]', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);

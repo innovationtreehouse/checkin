@@ -41,6 +41,13 @@ type ProgramDetail = {
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
+  // Server-computed, session callers only (route.ts) — undefined for an
+  // anonymous caller or an older cached response. viewerMemberPricingEligible
+  // is the pricing-relevant flag: a current member whose membership ends
+  // before this program's coverage date (endAt, else startAt) is NOT eligible
+  // for member pricing even though viewerIsMember is true.
+  viewerIsMember?: boolean;
+  viewerMemberPricingEligible?: boolean;
 };
 
 type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
@@ -258,15 +265,20 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       // one is a real config gap in every env.
       let mockPay = false;
       let isMember = false;
+      // Pricing goes by the server-computed duration-aware flag when present (a
+      // member not covered through this program's end must pay full price);
+      // ?? isMember is the fallback for an older cached response missing it.
+      let pricingEligible = false;
       if (isPayingOnShopify && program) {
         const householdRes = await fetch('/api/household');
         if (householdRes.ok) {
           const householdData = await householdRes.json();
           isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
         }
+        pricingEligible = program.viewerMemberPricingEligible ?? isMember;
         // Single-pool programs sell the SAME variant to everyone — the discount
         // code (below, at redirect time) does the member pricing, not a variant pick.
-        variantId = program.shopifyVariantId || (isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
+        variantId = program.shopifyVariantId || (pricingEligible ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
         storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
@@ -321,7 +333,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           // safe fallback (never blocks checkout), per lib/shopify.ts's
           // mintMemberDiscountCode contract.
           let discountCode: string | null = null;
-          if (program.shopifyVariantId && isMember) {
+          if (program.shopifyVariantId && pricingEligible) {
             try {
               const discRes = await fetch(`/api/programs/${id}/discount-code`, { method: 'POST' });
               if (discRes.ok) discountCode = (await discRes.json()).code ?? null;
@@ -455,6 +467,15 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             )}
           </Stack>
         </Card>
+
+        {/* A current member whose membership doesn't cover this program's whole
+            run doesn't get member pricing on it — the discount-code fetch's
+            `reason` reinforces this at checkout time, so it isn't repeated here. */}
+        {program.viewerIsMember === true && program.viewerMemberPricingEligible === false && (
+          <Alert color="yellow" variant="light" mb="lg">
+            Your membership ends before this program finishes, so member pricing doesn&apos;t apply — renew your membership first to enroll at the member price.
+          </Alert>
+        )}
 
         {message && <Alert color="red" mb="lg">{message}</Alert>}
         {successMessage && <Alert color="green" mb="lg">{successMessage}</Alert>}

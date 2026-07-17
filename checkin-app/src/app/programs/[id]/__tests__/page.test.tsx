@@ -544,6 +544,66 @@ describe("ProgramEnrollmentPage", () => {
         expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/discount-code"))).toBe(false);
     });
 
+    // Membership-duration guard: pricing decisions use the server-computed
+    // viewerMemberPricingEligible flag over the household-status-derived isMember,
+    // so a current member not covered through the program's end doesn't get the
+    // discount even though /api/household still reports an ACTIVE membership.
+    it("does NOT fetch a member discount code when the server flag says pricing-ineligible, despite an ACTIVE household membership", async () => {
+        setSession({ id: 101 });
+        setShopifyStoreDomain("shop.example.com");
+        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
+        const fetchMock = mockFetchJson({
+            "/api/household": memberHousehold,
+            "/api/programs/10": baseProgram({
+                orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
+                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                viewerIsMember: true, viewerMemberPricingEligible: false,
+            }),
+            "/api/programs/10/participants": { ok: true },
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+        await screen.findByText("Which of your household wants to enroll?");
+        // The household/EC probes that gate the button's disabled state are still
+        // in flight right after the panel appears — wait for it to actually enable
+        // before clicking (avoids a race with populateHousehold's fetches).
+        await waitFor(() => expect(screen.getByRole("button", { name: "Pay on Shopify" })).toBeEnabled());
+        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
+
+        await screen.findByText("Redirecting to Shopify for secure payment...");
+        expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/discount-code"))).toBe(false);
+    });
+
+    it("shows the renew notice when the viewer is a member but not eligible for member pricing on this program", async () => {
+        setSession({ id: 101 });
+        mockFetchJson({
+            "/api/household": household,
+            "/api/programs/10": baseProgram({ viewerIsMember: true, viewerMemberPricingEligible: false }),
+        });
+        renderPage();
+        expect(await screen.findByText(/renew your membership first to enroll at the member price/)).toBeInTheDocument();
+    });
+
+    it("does not show the renew notice when the member is pricing-eligible or the fields are absent", async () => {
+        setSession({ id: 101 });
+        mockFetchJson({
+            "/api/household": household,
+            "/api/programs/10": baseProgram({ viewerIsMember: true, viewerMemberPricingEligible: true }),
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        expect(screen.queryByText(/renew your membership first/)).not.toBeInTheDocument();
+    });
+
+    it("does not show the renew notice for an anonymous caller (fields absent)", async () => {
+        setSession(null, "unauthenticated");
+        mockFetchJson({ "/api/programs/10": baseProgram() });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        expect(screen.queryByText(/renew your membership first/)).not.toBeInTheDocument();
+    });
+
     it("shows different closed-enrollment reasons depending on fullness, phase, and count source", async () => {
         setSession({ id: 101 });
         const cases: [string, Record<string, unknown>][] = [
