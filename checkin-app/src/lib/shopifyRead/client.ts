@@ -88,9 +88,17 @@ export interface MirrorOrder {
     noteAttributes: { key: string; value: string | null }[] | null;
 }
 
+/**
+ * AT TIME ZONE 'UTC' on the timestamps for the reason spelled out on latestSyncRun
+ * below: the mirror's columns are naive `timestamp` holding UTC, and node-pg resolves
+ * those against the node process's zone. The rule is the whole file's — EVERY
+ * timestamp read from this mirror carries the cast.
+ */
 const ORDER_COLS = `shopify_gid AS "orderGid", legacy_id AS "legacyId", customer_email AS "customerEmail",
     financial_status AS "financialStatus", total_cents AS "totalCents", subtotal_cents AS "subtotalCents",
-    total_refunded_cents AS "totalRefundedCents", cancelled_at AS "cancelledAt", updated_at AS "updatedAt",
+    total_refunded_cents AS "totalRefundedCents",
+    cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt",
+    updated_at AT TIME ZONE 'UTC' AS "updatedAt",
     note_attributes AS "noteAttributes"`;
 
 /** Read one cart attribute off a mirrored order. Null when absent (or pre-#1029). */
@@ -107,8 +115,13 @@ export async function ordersChangedSince(since: Date | null, limit = 1000): Prom
     const p = getPool();
     if (!p) return [];
     const rows = await p.query<MirrorOrder>(
+        // `$1 AT TIME ZONE 'UTC'` on the PARAM side, not the column: it turns the
+        // JS Date into the naive-UTC value the column stores, so the comparison is
+        // naive-vs-naive and stays sargable. Casting the column instead would work
+        // but would rule out any future index on updated_at. Both sides must move
+        // together — casting only one direction shifts the cursor by the offset.
         `SELECT ${ORDER_COLS} FROM shop_order
-         WHERE test = false AND ($1::timestamptz IS NULL OR updated_at > $1)
+         WHERE test = false AND ($1::timestamptz IS NULL OR updated_at > ($1::timestamptz AT TIME ZONE 'UTC'))
          ORDER BY updated_at ASC NULLS FIRST
          LIMIT $2`,
         [since, limit],

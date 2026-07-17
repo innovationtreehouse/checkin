@@ -6,6 +6,10 @@
  * the wiring the reconciler's integration tests don't: that an unconfigured env never
  * opens a pool at all, and that the read is a single newest-first row.
  *
+ * The order reads below are guarded the same way, and for the same reason: both pin
+ * the shape of the SQL rather than a round-tripped Date, because the round trip
+ * passes either way under TZ=UTC (which is what CI and the deployed tasks both run).
+ *
  * The client caches its Pool in a module-level singleton, so each case re-imports the
  * module under jest.isolateModules to get a fresh one.
  */
@@ -39,7 +43,7 @@ function freshClient(): Client {
 const MIRROR_URL = 'postgresql://checkin_dev_dml:pw@host:5432/shopify_read_dev';
 
 // Both inputs of the resolved url. SHOPIFY_READ_DB must be cleared too, or an ambient
-// value derives a url and the "unwired" case below can never actually be unwired.
+// value derives a url and the "unwired" cases below can never actually be unwired.
 const MIRROR_KEYS = ['SHOPIFY_READ_DATABASE_URL', 'SHOPIFY_READ_DB'] as const;
 const prev: Record<string, string | undefined> = {};
 for (const k of MIRROR_KEYS) prev[k] = process.env[k];
@@ -121,5 +125,58 @@ describe('latestSyncRun', () => {
         const opts = poolCtor.mock.calls[0][0];
         expect(opts.min).toBe(0);
         expect(opts.idleTimeoutMillis).toBeGreaterThan(0);
+    });
+});
+
+/** The SQL of the Nth query, whitespace-collapsed so indentation doesn't matter. */
+const sqlOf = (call: number) => (queryMock.mock.calls[call][0] as string).replace(/\s+/g, ' ');
+
+describe('order reads', () => {
+    // s-read's columns are `timestamp WITHOUT time zone` holding UTC, and node-pg
+    // resolves those against the Node process's zone — drop these casts and a non-UTC
+    // container reads every mirror timestamp at an offset. Deployed tasks set no TZ
+    // (so the container is UTC and the naive read is accidentally right), which is
+    // exactly why nothing else fails if this regresses.
+    it('ordersChangedSince pins both timestamps to UTC', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersChangedSince(new Date('2026-07-01T00:00:00Z'));
+        const sql = sqlOf(0);
+
+        expect(sql).toContain(`cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt"`);
+        expect(sql).toContain(`updated_at AT TIME ZONE 'UTC' AS "updatedAt"`);
+    });
+
+    it('ordersChangedSince casts the cursor param, not the column', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersChangedSince(new Date('2026-07-01T00:00:00Z'));
+        const sql = sqlOf(0);
+
+        // The WHERE must move with the projection: this is the reconciler's high-water
+        // cursor (reconcile.ts reads updatedAt, stores it, feeds it back as `since`),
+        // so casting one side only would shift it by the offset. Naive column vs a
+        // timestamptz param would ALSO resolve against the session TimeZone — a second
+        // offset, unrelated to node's.
+        expect(sql).toContain(`updated_at > ($1::timestamptz AT TIME ZONE 'UTC')`);
+        // Param-side cast keeps the comparison sargable for any future index.
+        expect(sql).not.toMatch(/updated_at AT TIME ZONE 'UTC'\s*>/);
+    });
+
+    it('ordersByLegacyIds pins both timestamps to UTC', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersByLegacyIds(['123']);
+        const sql = sqlOf(0);
+
+        expect(sql).toContain(`cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt"`);
+        expect(sql).toContain(`updated_at AT TIME ZONE 'UTC' AS "updatedAt"`);
+    });
+
+    it('neither read opens a pool when the mirror is unwired', async () => {
+        delete process.env.SHOPIFY_READ_DATABASE_URL;
+        const client = freshClient();
+
+        expect(await client.ordersChangedSince(null)).toEqual([]);
+        expect(await client.ordersByLegacyIds(['123'])).toEqual([]);
+        expect(poolCtor).not.toHaveBeenCalled();
+        expect(queryMock).not.toHaveBeenCalled();
     });
 });
