@@ -1,6 +1,6 @@
-import { screen } from "@testing-library/react";
+import { screen, fireEvent } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
-import { SystemVersionBox, BadgeScanChart } from "../SystemHealthPanels";
+import { SystemVersionBox, BadgeScanChart, SReadDiagnosticsBox } from "../SystemHealthPanels";
 
 beforeEach(() => resetRtl());
 
@@ -47,5 +47,37 @@ describe("BadgeScanChart", () => {
     mockFetchJson({});
     renderWithProviders(<BadgeScanChart />);
     expect(await screen.findByText("Failed to load metrics.")).toBeInTheDocument();
+  });
+});
+
+describe("SReadDiagnosticsBox", () => {
+  it("does not probe until clicked, then renders each step's verdict and code", async () => {
+    mockFetchJson({
+      "/api/finance-ops/s-read/diagnose": {
+        steps: [
+          { id: "env", ok: true, detail: 'Resolved via DATABASE_URL + SHOPIFY_READ_DB: database "shopify_read_dev" on db.internal.' },
+          { id: "mirror-read", ok: false, code: "42501", detail: "Table exists, but SELECT is denied — grant-holder membership missing." },
+          { id: "latest-run", ok: null, detail: "Skipped — an earlier step already failed." },
+        ],
+      },
+    });
+    renderWithProviders(<SReadDiagnosticsBox />);
+
+    // On-load the box must be inert — probing wakes the Aurora cluster.
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Run diagnostics/ }));
+    expect(await screen.findByText(/SELECT is denied/)).toBeInTheDocument();
+    expect(screen.getByText("42501")).toBeInTheDocument();
+    expect(screen.getByText("● OK")).toBeInTheDocument();
+    expect(screen.getByText("● FAIL")).toBeInTheDocument();
+    expect(screen.getByText("● Skipped")).toBeInTheDocument();
+  });
+
+  it("shows a failure line when the endpoint itself is unreachable", async () => {
+    mockFetchJson({});
+    renderWithProviders(<SReadDiagnosticsBox />);
+    fireEvent.click(screen.getByRole("button", { name: /Run diagnostics/ }));
+    expect(await screen.findByText(/Diagnostics failed to run/)).toBeInTheDocument();
   });
 });
