@@ -10,6 +10,7 @@ import { canonicalizeEmail } from "@/lib/emailNormalize";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
 import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest";
 import { type DbClient, type TxClient } from "@/lib/db-client";
+import { awaitingBgReview } from "@/lib/membership/lifecycle";
 
 /**
  * Background-check review — now a PARALLEL track, not a blocking phase.
@@ -65,41 +66,23 @@ export class ReviewError extends Error {
 }
 
 /**
- * Whether a process is currently awaiting background-check review. The check is
- * a parallel track keyed off bgClearedAt (not status): a process needs review
- * when it hasn't cleared and is past consent —
- *   - PENDING_BG_REVIEW / RENEWAL_PENDING_BG: the (legacy/renewal) review states.
- *   - PENDING_PAYMENT / PENDING_BG_CLEARANCE: the INITIAL parallel states, once
- *     consent has been recorded (bgConsentAt set).
- */
-function isAwaitingBgReview(p: { status: OrgMembershipProcessStatus; bgConsentAt: Date | null; bgClearedAt: Date | null }): boolean {
-    if (p.bgClearedAt) return false;
-    if (p.status === "PENDING_BG_REVIEW" || p.status === "RENEWAL_PENDING_BG") return true;
-    if ((p.status === "PENDING_PAYMENT" || p.status === "PENDING_BG_CLEARANCE") && p.bgConsentAt) return true;
-    return false;
-}
-
-/**
+ * "Awaiting background-check review" now lives as ONE definition — the
+ * `awaitingBgReview` StateSet in lib/membership/lifecycle (fix #1). `.has(row)` is
+ * the in-tx / client predicate, `.where` the reviewer-queue Prisma fragment; both
+ * derive from the same status lists so they can't drift. Formerly three hand-kept
+ * encodings (this function, AWAITING_BG_WHERE, applications/page.tsx).
+ *
  * A PERSON_BG surfaces in the reviewer queue only once it's been SUBMITTED — i.e.
  * bgConsentAt is set (the board recorded that an external check exists via
  * submitPersonBgForReview). This mirrors how the household parallel track gates on
- * bgConsentAt in AWAITING_BG_WHERE. An unsubmitted PERSON_BG (bgConsentAt == null)
- * stays out: not listed, not counted, no reviewer ping — its subject isn't ready to
- * approve yet, and the queue GET now renders the subject once it is. A single `NOT`
- * key so it spreads cleanly alongside AWAITING_BG_WHERE's own `OR` (two spread
- * objects sharing an `OR` key would clobber it).
+ * bgConsentAt in awaitingBgReview.where. An unsubmitted PERSON_BG (bgConsentAt ==
+ * null) stays out: not listed, not counted, no reviewer ping — its subject isn't
+ * ready to approve yet, and the queue GET now renders the subject once it is. A
+ * single `NOT` key so it spreads cleanly alongside awaitingBgReview.where's own
+ * `OR` (two spread objects sharing an `OR` key would clobber it).
  */
 const QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG: Prisma.OrgMembershipProcessWhereInput = {
     NOT: { kind: "PERSON_BG", bgConsentAt: null },
-};
-
-/** Prisma `where` matching the same predicate as isAwaitingBgReview, for queue queries. */
-export const AWAITING_BG_WHERE: Prisma.OrgMembershipProcessWhereInput = {
-    bgClearedAt: null,
-    OR: [
-        { status: { in: ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG"] } },
-        { status: { in: ["PENDING_PAYMENT", "PENDING_BG_CLEARANCE"] }, bgConsentAt: { not: null } },
-    ],
 };
 
 /** Email every background-check reviewer that an application awaits review. */
@@ -164,7 +147,7 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return [];
 
     const processes = await prisma.orgMembershipProcess.findMany({
-        where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG },
+        where: { ...awaitingBgReview.where, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG },
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
@@ -199,7 +182,7 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return { canActOn: 0, approvedAwaitingSecond: 0 };
     const [canActOnIds, approvedAwaitingSecond] = await Promise.all([
         eligibleReviewProcessIds(reviewerId),
-        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } } } }),
+        prisma.orgMembershipProcess.count({ where: { ...awaitingBgReview.where, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } } } }),
     ]);
     return { canActOn: canActOnIds.length, approvedAwaitingSecond };
 }
@@ -234,7 +217,7 @@ export async function attest(
             include: { attestations: { include: { reviewer: { select: { householdId: true } } } } },
         });
         if (!process) throw new ReviewError("not_found", "Application not found.");
-        if (!isAwaitingBgReview(process)) throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
+        if (!awaitingBgReview.has({ status: process.status, bgConsentAt: !!process.bgConsentAt, bgClearedAt: !!process.bgClearedAt })) throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
         const applicantHouseholdId = await applicantHousehold(tx, process);
         if (sharesHousehold(reviewer.householdId, applicantHouseholdId)) throw new ReviewError("same_household_applicant", "You cannot review an applicant in your own household.");
         if (process.attestations.some((a) => a.reviewerId === reviewerId)) throw new ReviewError("already_attested", "You have already reviewed this application.");
