@@ -453,11 +453,6 @@ model BoardSettings {
   volunteerDuesCents         Int       @default(0)
   /// @sensitivity:public
   orgMembershipYearBoundary  DateTime?
-  /// Org-wide date the current membership applications remain valid until, shown as
-  /// "valid until" in the membership-ops views. Admin-set — NOT derived, NOT
-  /// per-membership. Nullable = not configured.
-  /// @sensitivity:public
-  currentMembershipValidUntil DateTime?
   /// Shopify variant ID of the membership product everyone checks out through.
   /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
   /// in lib/membership/payment.ts) as

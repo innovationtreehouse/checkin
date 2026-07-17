@@ -90,22 +90,6 @@ describe('Membership settings + volunteer designations API', () => {
         expect((await cleared.json()).settings.orgMembershipProductUrl).toBeNull();
     });
 
-    it('saves and clears the membership valid-until date', async () => {
-        asBoard(boardId);
-        const putRes = await SETTINGS_PUT(jsonReq('PUT', { currentMembershipValidUntil: '2027-08-01' }));
-        expect(putRes.status).toBe(200);
-        expect((await putRes.json()).settings.currentMembershipValidUntil).toEqual(expect.stringMatching(/^2027-08-01/));
-
-        const getRes = await SETTINGS_GET(jsonReq('GET'));
-        expect((await getRes.json()).settings.currentMembershipValidUntil).toEqual(expect.stringMatching(/^2027-08-01/));
-
-        const cleared = await SETTINGS_PUT(jsonReq('PUT', { currentMembershipValidUntil: null }));
-        expect(cleared.status).toBe(200);
-        expect((await cleared.json()).settings.currentMembershipValidUntil).toBeNull();
-
-        const clearedGet = await SETTINGS_GET(jsonReq('GET'));
-        expect((await clearedGet.json()).settings.currentMembershipValidUntil).toBeNull();
-    });
 
     it('rejects negative dues and keeps the previous value', async () => {
         asBoard(boardId);
