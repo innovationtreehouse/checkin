@@ -1,16 +1,16 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import { withAuth } from "@/lib/auth";
+import { withAuth, authenticateRequest } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
-import { isActiveOrgMember } from "@/lib/orgMembership";
+import { isActiveOrgMember, isActiveOrgMemberThrough, programCoverageDate } from "@/lib/orgMembership";
 import { notifyNewProgramAnnounced } from "@/lib/notifications";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
-export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
+const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
     if (isNaN(programId)) throw badRequest('Invalid program ID');
 
@@ -91,6 +91,36 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
 
     return { Program: program };
 });
+
+// The registry stripper (security/stripper.ts) is a strict allowlist over each
+// model's CLASSIFIED schema fields (see security/generated/classifications.ts,
+// generated from /// @sensitivity comments) — it has no channel for a
+// viewer-computed scalar that isn't a real Program column, and adding one
+// would mean a schema change this feature doesn't get. So viewerIsMember /
+// viewerMemberPricingEligible are computed AFTER the registry response comes
+// back and merged on top, session callers only — the registry envelope above
+// (association gate, per-tier stripping) runs completely untouched first.
+// startAt/endAt are 'public' tier, so they always ride in `body` regardless of
+// caller privilege; re-authenticating here is the same cheap session read
+// authenticateRequest always does, just called a second time.
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+    const res = await getProgram(req, ctx);
+    if (res.status !== 200) return res;
+
+    const auth = await authenticateRequest(req);
+    if (auth.type !== 'session') return res;
+
+    const body = (await res.json()) as { startAt: string | null; endAt: string | null };
+    const coverageDate = programCoverageDate({
+        startAt: body.startAt ? new Date(body.startAt) : null,
+        endAt: body.endAt ? new Date(body.endAt) : null,
+    });
+    const [viewerIsMember, viewerMemberPricingEligible] = await Promise.all([
+        isActiveOrgMember(auth.user.id),
+        isActiveOrgMemberThrough(auth.user.id, coverageDate),
+    ]);
+    return NextResponse.json({ ...body, viewerIsMember, viewerMemberPricingEligible });
+}
 
 // withAuth rejects unauthenticated AND denied households at admission (closes
 // GAP-1: this PATCH previously had no denied check), so a denied lead mentor can
