@@ -71,3 +71,17 @@ describe("retryP1001UntilDeadline", () => {
         expect(calls).toBe(1);
     });
 });
+
+describe("isDbResumeError — acquisition-phase signatures only", () => {
+    const { isDbResumeError } = jest.requireActual("@/lib/auroraResumeRetry");
+    it("matches P1001, P2024, and the pg pool connect-timeout message", () => {
+        expect(isDbResumeError({ code: "P1001" })).toBe(true);
+        expect(isDbResumeError({ code: "P2024" })).toBe(true);
+        expect(isDbResumeError(new Error("timeout exceeded when trying to connect"))).toBe(true);
+    });
+    it("rejects mid-query drops and unrelated errors (write-safety)", () => {
+        expect(isDbResumeError(new Error("Connection terminated unexpectedly"))).toBe(false);
+        expect(isDbResumeError({ code: "P2002" })).toBe(false);
+        expect(isDbResumeError(null)).toBe(false);
+    });
+});

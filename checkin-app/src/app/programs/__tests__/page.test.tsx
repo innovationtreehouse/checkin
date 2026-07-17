@@ -3,7 +3,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import PublicProgramsDirectory from "../page";
 
@@ -23,7 +23,7 @@ describe("PublicProgramsDirectory", () => {
     renderWithProviders(<PublicProgramsDirectory />);
 
     expect(await screen.findByText("Robotics Club")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View Details" })).toHaveAttribute("href", "/programs/1");
+    expect(screen.getByRole("link", { name: "View details and enroll" })).toHaveAttribute("href", "/programs/1");
     // Anonymous visitors get no manage/admin controls.
     expect(screen.queryByRole("checkbox", { name: "Show active only" })).not.toBeInTheDocument();
   });
@@ -45,5 +45,18 @@ describe("PublicProgramsDirectory", () => {
     mockFetchJson({ "/api/programs?active=true": [] });
     renderWithProviders(<PublicProgramsDirectory />);
     expect(await screen.findByText(/No active programs currently available/)).toBeInTheDocument();
+  });
+});
+
+describe("slow-load wait message", () => {
+  it("shows the generic getting-ready message only after the load runs long", () => {
+    jest.useFakeTimers();
+    // A fetch that never settles = the waking case from the user's perspective.
+    (global.fetch as jest.Mock) = jest.fn(() => new Promise(() => {}));
+    renderWithProviders(<PublicProgramsDirectory />);
+    expect(screen.queryByText(/Getting the system ready/i)).not.toBeInTheDocument();
+    act(() => { jest.advanceTimersByTime(4500); });
+    expect(screen.getByText(/Getting the system ready/i)).toBeInTheDocument();
+    jest.useRealTimers();
   });
 });

@@ -926,3 +926,25 @@ describe("membership page", () => {
     expect(body.children[0].allergies).toBeNull();
   });
 });
+
+describe("payment holdoff visibility refetch", () => {
+  it("refetches state when the tab becomes visible while awaiting payment", async () => {
+    setSession({ id: 1 });
+    sessionStorage.setItem("membership_awaiting_payment_1", String(Date.now()));
+    const fetchMock = mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+    expect(await screen.findByText(/update your status here when we receive your payment/i)).toBeInTheDocument();
+
+    const stateCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/membership").length;
+    const before = stateCalls();
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(stateCalls()).toBeGreaterThan(before));
+  });
+});
