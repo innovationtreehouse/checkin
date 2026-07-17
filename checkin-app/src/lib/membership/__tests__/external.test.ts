@@ -84,15 +84,17 @@ describe('setZohoEnvelope', () => {
         await expect(setZohoEnvelope(1, 'req-1', 5)).rejects.toBeInstanceOf(ExternalError);
     });
 
-    it('updates the envelope id and writes an audit row', async () => {
+    it('updates the envelope id, clears any stale action id, and writes an audit row', async () => {
         prisma.orgMembershipProcess.findUnique.mockResolvedValue({ id: 1 });
-        prisma.orgMembershipProcess.update.mockResolvedValue({ id: 1, zohoEnvelopeId: 'req-1' });
+        prisma.orgMembershipProcess.update.mockResolvedValue({ id: 1, zohoEnvelopeId: 'req-1', zohoActionId: null });
 
         const result = await setZohoEnvelope(1, 'req-1', 5);
 
-        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { zohoEnvelopeId: 'req-1' } });
+        // zohoActionId is nulled so re-pointing the envelope can't leave the old
+        // action paired with the new request — restores the claimable state (#877).
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { zohoEnvelopeId: 'req-1', zohoActionId: null } });
         expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
-        expect(result).toEqual({ id: 1, zohoEnvelopeId: 'req-1' });
+        expect(result).toEqual({ id: 1, zohoEnvelopeId: 'req-1', zohoActionId: null });
     });
 });
 

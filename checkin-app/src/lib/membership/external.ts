@@ -211,13 +211,20 @@ export async function selfAttestBgConsent(userId: number): Promise<ExternalStatu
     return getExternalStatus(updated);
 }
 
-/** Associate a Zoho signing request id with a process so its webhook can match. */
+/**
+ * Associate a Zoho signing request id with a process so its webhook can match.
+ * Clears zohoActionId: re-pointing the envelope would otherwise leave the old
+ * action id paired with the new request, an unsignable mismatch that
+ * getOrCreateContractSigningUrl's null-claim repair can't fix (both ids non-null).
+ * Nulling the action id restores the claimable envelope-without-action state its
+ * claim already handles — the same recovery clearDeadSigningRequest relies on.
+ */
 export async function setZohoEnvelope(processId: number, requestId: string, actorId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
-    const updated = await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId } });
+    const updated = await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId, zohoActionId: null } });
     await prisma.auditLog.create({
-        data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId } },
+        data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId, zohoActionId: null } },
     });
     return updated;
 }
