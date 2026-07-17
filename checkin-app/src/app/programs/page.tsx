@@ -29,6 +29,16 @@ export default function PublicProgramsDirectory() {
   const { data: session } = useSession();
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  // A load that outlives a normal round trip is almost always the system waking
+  // (the retry extension rides it out server-side, up to ~45s) — tell the user
+  // something generic is happening rather than leaving a bare spinner. Same
+  // tone as the global DbWakeNotice banner.
+  const [slowLoad, setSlowLoad] = useState(false);
+  useEffect(() => {
+    if (!loading) { setSlowLoad(false); return; }
+    const t = setTimeout(() => setSlowLoad(true), 4000);
+    return () => clearTimeout(t);
+  }, [loading]);
   const [message, setMessage] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
 
@@ -57,7 +67,16 @@ export default function PublicProgramsDirectory() {
   }, [activeOnly, isAuthorized]);
 
   if (loading) {
-    return <PageLoader />;
+    return (
+      <Stack align="center" gap="sm" mt="xl">
+        <PageLoader />
+        {slowLoad && (
+          <Text size="sm" c="dimmed" ta="center">
+            Getting the system ready for you — this usually takes under a minute.
+          </Text>
+        )}
+      </Stack>
+    );
   }
 
   return (
@@ -137,7 +156,7 @@ export default function PublicProgramsDirectory() {
 
                 <Group grow>
                   <Button component={Link} href={`/programs/${program.id}`} variant="light">
-                    View Details
+                    View details and enroll
                   </Button>
                   {canManage && (
                     <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">

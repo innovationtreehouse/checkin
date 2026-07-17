@@ -8,9 +8,15 @@
  * Also the applicant side: a disposed process is terminal — a returning applicant
  * sees a clean slate, can file a fresh application (past the partial unique index),
  * and cannot resume or submit the archived one.
+ *
+ * Also covers board recovery (unarchive): round-trips back to the status recorded
+ * in the archive audit row, refuses when there's nothing to restore or the target
+ * is no longer restorable, and refuses when a fresh in-flight process now occupies
+ * the one-in-flight slot for the same membership (P2002 → wrong_phase).
  */
 
 import { POST as ARCHIVE } from '@/app/api/membership-ops/applications/archive/route';
+import { POST as UNARCHIVE } from '@/app/api/membership-ops/applications/unarchive/route';
 import { GET as ADMIN_LIST } from '@/app/api/membership-ops/applications/route';
 import { getIntakeState, startIntake, submitIntake } from '@/lib/membership/intake';
 import prisma from '@/lib/prisma';
@@ -32,8 +38,17 @@ function req(body: unknown) {
         body: JSON.stringify(body),
     }) as unknown as Parameters<typeof ARCHIVE>[0];
 }
+function unarchiveReq(body: unknown) {
+    return new Request('http://localhost:4000/api/membership-ops/applications/unarchive', {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }) as unknown as Parameters<typeof UNARCHIVE>[0];
+}
 function listReq() {
     return new Request('http://localhost:4000/api/membership-ops/applications') as unknown as Parameters<typeof ADMIN_LIST>[0];
+}
+function archivedListReq() {
+    return new Request('http://localhost:4000/api/membership-ops/applications?archived=1') as unknown as Parameters<typeof ADMIN_LIST>[0];
 }
 
 async function makeProcess(label: string, status: 'INTAKE' | 'PENDING_EXTERNAL_ACTION' | 'PENDING_PAYMENT' | 'ACTIVE') {
@@ -181,5 +196,83 @@ describe('Membership application archive API', () => {
         // and confirm submit finds no process to act on.
         await prisma.orgMembershipProcess.update({ where: { id: started.id }, data: { status: 'ARCHIVED' } });
         await expect(submitIntake(userId)).rejects.toMatchObject({ code: 'no_process' });
+    });
+
+    // --- board recovery: unarchive ---
+
+    it('archive→unarchive round-trip restores the audit-recorded prior status', async () => {
+        const { processId } = await makeProcess('RoundTrip', 'PENDING_PAYMENT');
+        asBoard(boardId);
+        await ARCHIVE(req({ processId }) as never);
+        const archived = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(archived?.status).toBe('ARCHIVED');
+        await new Promise((r) => setTimeout(r, 5)); // ensure stageEnteredAt strictly advances
+
+        const res = await UNARCHIVE(unarchiveReq({ processId }) as never);
+        expect(res.status).toBe(200);
+        expect((await res.json()).outcome).toEqual({ status: 'PENDING_PAYMENT' });
+
+        const after = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(after?.status).toBe('PENDING_PAYMENT');
+        expect(after!.stageEnteredAt!.getTime()).toBeGreaterThan(archived!.stageEnteredAt!.getTime());
+
+        const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, orderBy: { id: 'desc' } });
+        expect(audit?.actorId).toBe(boardId);
+        expect(audit?.oldData).toMatchObject({ status: 'ARCHIVED' });
+        expect(audit?.newData).toMatchObject({ status: 'PENDING_PAYMENT', unarchived: true });
+    });
+
+    it('refuses to unarchive a non-archived process (409 wrong_phase)', async () => {
+        const { processId } = await makeProcess('NotArchived', 'PENDING_PAYMENT');
+        asBoard(boardId);
+        const res = await UNARCHIVE(unarchiveReq({ processId }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+    });
+
+    it('refuses to unarchive when a second in-flight process of the same kind now exists (409 wrong_phase)', async () => {
+        const hh = await prisma.household.create({ data: { name: `Conflict ${TAG}` } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        const p1 = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'PENDING_PAYMENT' } });
+        asBoard(boardId);
+        await ARCHIVE(req({ processId: p1.id }) as never);
+
+        // A second in-flight INITIAL process opens for the same membership while p1 sits archived.
+        await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'INITIAL', status: 'INTAKE' } });
+
+        const res = await UNARCHIVE(unarchiveReq({ processId: p1.id }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+
+        // p1 remains ARCHIVED — the failed transaction rolled back.
+        const after = await prisma.orgMembershipProcess.findUnique({ where: { id: p1.id } });
+        expect(after?.status).toBe('ARCHIVED');
+    });
+
+    it('refuses to unarchive when there is no ARCHIVED audit row to restore from (409 wrong_phase)', async () => {
+        const { processId } = await makeProcess('NoAudit', 'PENDING_PAYMENT');
+        // Hand-set to ARCHIVED without going through archiveApplication — no audit row records it.
+        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'ARCHIVED' } });
+        asBoard(boardId);
+        const res = await UNARCHIVE(unarchiveReq({ processId }) as never);
+        expect(res.status).toBe(409);
+        expect((await res.json()).code).toBe('wrong_phase');
+    });
+
+    it('GET ?archived=1 returns only ARCHIVED rows; default GET excludes them', async () => {
+        const { processId: liveId } = await makeProcess('LiveForArchivedList', 'PENDING_PAYMENT');
+        const { processId: archivedId } = await makeProcess('ArchivedForList', 'PENDING_PAYMENT');
+        asBoard(boardId);
+        await ARCHIVE(req({ processId: archivedId }) as never);
+
+        const defaultRes = await ADMIN_LIST(listReq() as never);
+        const defaultIds = (await defaultRes.json()).processes.map((p: { id: number }) => p.id);
+        expect(defaultIds).toContain(liveId);
+        expect(defaultIds).not.toContain(archivedId);
+
+        const archivedRes = await ADMIN_LIST(archivedListReq() as never);
+        const archivedBody = await archivedRes.json();
+        expect(archivedBody.processes.map((p: { id: number }) => p.id)).toContain(archivedId);
+        expect(archivedBody.processes.every((p: { status: string }) => p.status === 'ARCHIVED')).toBe(true);
     });
 });

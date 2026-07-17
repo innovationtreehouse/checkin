@@ -300,15 +300,30 @@ export default function MembershipPage() {
   // Implicit clearing, at page-load time: if the process has moved out of
   // PENDING_PAYMENT — the orders/paid webhook settled it, or (possibly, in the
   // future) an s-read reconciliation did — drop the holdoff and its
-  // sessionStorage record. Deliberately no background polling or focus
-  // listeners: the dev instance scales to zero, and an idle tab must not keep
-  // it (and the database) awake. The message resolves on the next page load.
+  // sessionStorage record. Deliberately no background polling: the dev
+  // instance scales to zero, and an idle tab must not keep it (and the
+  // database) awake. The one exception is below — a visibility refetch while
+  // a payment holdoff is active — which is user-driven (a hidden tab fires
+  // nothing) and saves the "pay on Shopify, come back, refresh by hand" step.
   useEffect(() => {
     const processId = state?.process?.id;
     if (!processId || state?.process?.status === "PENDING_PAYMENT") return;
     sessionStorage.removeItem(awaitingPaymentKey(processId));
     setAwaitingPayment(null);
   }, [state?.process?.id, state?.process?.status]);
+
+  // Returning from the Shopify checkout tab: refetch once when this tab becomes
+  // visible again, ONLY while a payment holdoff is active — so the paid state
+  // appears without a manual refresh. Event-driven, not polling: a hidden or
+  // idle tab triggers nothing (see the no-polling note above).
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [awaitingPayment, load]);
 
   const flash = (msg: string, error = false) => {
     setMessage(msg ? { text: msg, tone: error ? "error" : "success" } : undefined);
