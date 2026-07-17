@@ -194,10 +194,31 @@ export const config = {
     cronSecret: (): string | null => process.env.CRON_SECRET || null,
 
     // s-read mirror — read-only connection string to the `shopify_read` Postgres
-    // (the s-read-function's Shopify order/refund/payout mirror). Null when unset →
-    // the hourly reconciler (lib/finance/reconcile.ts) short-circuits as "not wired"
-    // instead of throwing, so an env without the mirror simply runs no reconciliation.
-    shopifyReadDatabaseUrl: (): string | null => process.env.SHOPIFY_READ_DATABASE_URL || null,
+    // (the s-read-function's Shopify order/refund/payout mirror). Null when not
+    // wired → the reconciler (lib/finance/reconcile.ts) short-circuits as "not
+    // wired" instead of throwing, so an env without the mirror simply runs no
+    // reconciliation.
+    //
+    // In AWS there is NO mirror connection string of its own: the app's DML role
+    // is a member of the mirror's SELECT-only NOLOGIN grant-holder (infra
+    // modules/checkin-bootstrap/bootstrap.sh), so the URL is DATABASE_URL with the
+    // database name swapped to SHOPIFY_READ_DB ("shopify_read_<env>", a plain task
+    // env — see infra modules/checkin/overview.tf, incl. why it is explicit per
+    // env rather than derived from checkinEnv()). SHOPIFY_READ_DATABASE_URL stays
+    // as a full-URL override for local dev, where the mirror may live anywhere.
+    shopifyReadDatabaseUrl: (): string | null => {
+        if (process.env.SHOPIFY_READ_DATABASE_URL) return process.env.SHOPIFY_READ_DATABASE_URL;
+        const db = process.env.SHOPIFY_READ_DB;
+        const base = process.env.DATABASE_URL;
+        if (!db || !base) return null;
+        try {
+            const url = new URL(base);
+            url.pathname = `/${db}`;
+            return url.toString();
+        } catch {
+            return null;
+        }
+    },
 
     // s-read sync trigger — name of the `s-read-<env>-trigger` Lambda that RunTasks
     // the sync family (s-read-function/DEPLOY.md). Null when unset → the board's

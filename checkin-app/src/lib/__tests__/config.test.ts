@@ -6,6 +6,7 @@ const ENV_KEYS = [
     "AWS_REGION", "AGREEMENT_PDF_S3_BUCKET", "AGREEMENT_PDF_S3_KEY", "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET",
     "ZOHO_REFRESH_TOKEN", "ZOHO_ACCOUNTS_URL", "ZOHO_SIGN_API", "CHECKIN_ENV", "VERCEL_URL", "NODE_ENV",
     "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_WEBHOOK_SECRET",
+    "SHOPIFY_READ_DATABASE_URL", "SHOPIFY_READ_DB",
 ];
 
 let saved: Record<string, string | undefined>;
@@ -310,5 +311,33 @@ describe("baseUrl / nextAuthUrl", () => {
         expect(config.nextAuthUrl()).toBe("http://localhost:4000");
         process.env.NEXTAUTH_URL = "https://checkin.example";
         expect(config.nextAuthUrl()).toBe("https://checkin.example");
+    });
+});
+
+describe("shopifyReadDatabaseUrl", () => {
+    it("derives the mirror URL from DATABASE_URL + SHOPIFY_READ_DB, keeping credentials and params", () => {
+        delete process.env.SHOPIFY_READ_DATABASE_URL;
+        process.env.DATABASE_URL = "postgresql://checkin_dev_dml:p%40ss@host.example:5432/checkin_dev?sslmode=verify-full";
+        process.env.SHOPIFY_READ_DB = "shopify_read_dev";
+        expect(config.shopifyReadDatabaseUrl()).toBe(
+            "postgresql://checkin_dev_dml:p%40ss@host.example:5432/shopify_read_dev?sslmode=verify-full",
+        );
+    });
+    it("prefers the explicit SHOPIFY_READ_DATABASE_URL override", () => {
+        process.env.SHOPIFY_READ_DATABASE_URL = "postgresql://ro:x@elsewhere:5432/mirror";
+        process.env.DATABASE_URL = "postgresql://a:b@host:5432/checkin_dev";
+        process.env.SHOPIFY_READ_DB = "shopify_read_dev";
+        expect(config.shopifyReadDatabaseUrl()).toBe("postgresql://ro:x@elsewhere:5432/mirror");
+    });
+    it("is null (mirror off) when SHOPIFY_READ_DB or DATABASE_URL is missing or unparsable", () => {
+        delete process.env.SHOPIFY_READ_DATABASE_URL;
+        delete process.env.SHOPIFY_READ_DB;
+        process.env.DATABASE_URL = "postgresql://a:b@host:5432/checkin_dev";
+        expect(config.shopifyReadDatabaseUrl()).toBeNull();
+        process.env.SHOPIFY_READ_DB = "shopify_read_dev";
+        delete process.env.DATABASE_URL;
+        expect(config.shopifyReadDatabaseUrl()).toBeNull();
+        process.env.DATABASE_URL = "not a url";
+        expect(config.shopifyReadDatabaseUrl()).toBeNull();
     });
 });

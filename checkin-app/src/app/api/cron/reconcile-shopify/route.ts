@@ -24,7 +24,7 @@ import { runReconcile } from "@/lib/finance/reconcile";
  * Recovers missed orders/paid webhooks (advancing families past the paid
  * checkpoint) and raises refund/chargeback/cancel problems for the board. See
  * lib/finance/reconcile.ts. No-op when the mirror isn't wired
- * (SHOPIFY_READ_DATABASE_URL unset).
+ * (config.shopifyReadDatabaseUrl() null — no SHOPIFY_READ_DB / override set).
  */
 export const GET = withCron(async () => {
     const result = await runReconcile();
