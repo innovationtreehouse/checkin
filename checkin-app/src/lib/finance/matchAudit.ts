@@ -136,7 +136,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         prisma.programParticipant.findMany({ where: { shopifyOrderId: { in: orderIds } }, select: { shopifyOrderId: true, programId: true } }),
         prisma.paymentException.findMany({
             where: { shopifyOrderId: { in: orderIds }, status: { not: "RESOLVED" } },
-            select: { shopifyOrderId: true },
+            select: { shopifyOrderId: true, processId: true, programId: true },
         }),
     ]);
     const membershipClaimed = new Set(claimedProcs.map((r) => r.shopifyOrderId));
@@ -147,17 +147,40 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         set.add(r.programId);
         programsClaimed.set(r.shopifyOrderId, set);
     }
-    const tracked = new Set(trackedExceptions.map((r) => r.shopifyOrderId));
+    // Tracking is per-kind too: an exception carrying processId covers the
+    // MEMBERSHIP half, programId covers THAT program, and an order-level
+    // exception (neither set, e.g. UNMATCHED_ORDER) covers the whole order.
+    // Without this, one tracked half hides the other half's untracked gap.
+    const trackedOrderLevel = new Set<string>();
+    const trackedMembership = new Set<string>();
+    const trackedPrograms = new Map<string, Set<number>>();
+    for (const r of trackedExceptions) {
+        if (!r.shopifyOrderId) continue;
+        if (r.processId == null && r.programId == null) trackedOrderLevel.add(r.shopifyOrderId);
+        if (r.processId != null) trackedMembership.add(r.shopifyOrderId);
+        if (r.programId != null) {
+            const set = trackedPrograms.get(r.shopifyOrderId) ?? new Set<number>();
+            set.add(r.programId);
+            trackedPrograms.set(r.shopifyOrderId, set);
+        }
+    }
 
     const orderRows: AuditOrderRow[] = orders.map((o) => {
         // What each matched variant should have produced, and whether it did.
+        // A kind is ACCOUNTED when claimed or covered by an unresolved exception;
+        // UNACCOUNTED kinds are the real gap.
         const unclaimed: string[] = [];
+        const unaccounted: string[] = [];
         const expected: string[] = [];
+        const orderTracked = !!o.legacyId && trackedOrderLevel.has(o.legacyId);
         for (const v of new Set(o.matchedVariantIds ?? [])) {
             if (membershipVariants.has(v)) {
                 if (!expected.includes("membership")) {
                     expected.push("membership");
-                    if (!(o.legacyId && membershipClaimed.has(o.legacyId))) unclaimed.push("membership");
+                    if (!(o.legacyId && membershipClaimed.has(o.legacyId))) {
+                        unclaimed.push("membership");
+                        if (!orderTracked && !(o.legacyId && trackedMembership.has(o.legacyId))) unaccounted.push("membership");
+                    }
                 }
             } else {
                 const program = programByVariant.get(v);
@@ -165,14 +188,18 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
                 if (!expected.includes(label)) {
                     expected.push(label);
                     const claimedSet = o.legacyId ? programsClaimed.get(o.legacyId) : undefined;
-                    if (!(program && claimedSet?.has(program.id))) unclaimed.push(label);
+                    if (!(program && claimedSet?.has(program.id))) {
+                        unclaimed.push(label);
+                        const trackedSet = o.legacyId ? trackedPrograms.get(o.legacyId) : undefined;
+                        if (!orderTracked && !(program && trackedSet?.has(program.id))) unaccounted.push(label);
+                    }
                 }
             }
         }
         const bucket: OrderBucket =
             unclaimed.length === 0
                 ? "MATCHED"
-                : o.legacyId && tracked.has(o.legacyId)
+                : unaccounted.length === 0
                   ? "TRACKED_EXCEPTION"
                   : isPaid(o)
                     ? "UNCLAIMED_PAID"
@@ -185,8 +212,9 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
             financialStatus: o.financialStatus,
             totalCents: o.totalCents,
             // MATCHED rows list everything the order bought; gap rows list only
-            // what is still missing, so a half-claimed checkout names its gap.
-            expected: unclaimed.length > 0 ? unclaimed : expected,
+            // the UNACCOUNTED half (a tracked half is the exception queue's
+            // problem, not this row's), so a half-claimed checkout names its gap.
+            expected: unaccounted.length > 0 ? unaccounted : unclaimed.length > 0 ? unclaimed : expected,
         };
     });
 

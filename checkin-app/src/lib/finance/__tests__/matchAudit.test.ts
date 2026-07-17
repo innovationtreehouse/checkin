@@ -148,6 +148,21 @@ describe('order buckets (Shopify → activation)', () => {
         expect(claimWhere.status).toEqual({ not: 'ARCHIVED' });
     });
 
+    it('a kind-attributed exception covers only ITS half: tracked membership + untracked program → UNCLAIMED_PAID naming the program', async () => {
+        mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('908', { matchedVariantIds: ['111', '222'] })]);
+        prismaMock.paymentException.findMany.mockResolvedValue([{ shopifyOrderId: '908', processId: 55, programId: null }]);
+        const r = await runMatchAudit();
+        expect(r.orders[0].bucket).toBe('UNCLAIMED_PAID');
+        expect(r.orders[0].expected).toEqual(['program: Robotics']);
+    });
+
+    it('an order-level exception (no process/program attribution) covers the whole order → TRACKED_EXCEPTION', async () => {
+        mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('909', { matchedVariantIds: ['111', '222'] })]);
+        prismaMock.paymentException.findMany.mockResolvedValue([{ shopifyOrderId: '909', processId: null, programId: null }]);
+        const r = await runMatchAudit();
+        expect(r.orders[0].bucket).toBe('TRACKED_EXCEPTION');
+    });
+
     it('a fully-claimed order stays MATCHED even when refunded (claim precedence — reversal-pass territory)', async () => {
         mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('907', { totalRefundedCents: 5000, financialStatus: 'REFUNDED' })]);
         prismaMock.orgMembershipProcess.findMany
