@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
-  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
+  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group, Modal,
   SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -152,7 +153,10 @@ export default function MembershipPage() {
   // process out of PENDING_PAYMENT, or explicitly via the escape-hatch link.
   const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number } | null>(null);
   // Flips true once the household asks the finance committee for a payment plan.
+  // Seeded from the server flag so a reload (or another device) still shows the
+  // request as received rather than resurrecting the button.
   const [planRequested, setPlanRequested] = useState(false);
+  const [confirmPlanOpened, { open: openConfirmPlan, close: closeConfirmPlan }] = useDisclosure(false);
   // Self-attest gate for the background-check task (#875): the confirm checkbox
   // unlocks only after the applicant has opened the Averity consent link this
   // visit, so they can't attest to a form they never saw.
@@ -533,7 +537,12 @@ export default function MembershipPage() {
   // Ask the board's finance committee for a payment plan on membership dues.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
+  useEffect(() => {
+    if (state?.process?.isPaymentPlanRequested) setPlanRequested(true);
+  }, [state?.process?.isPaymentPlanRequested]);
+
   const requestPaymentPlan = async () => {
+    closeConfirmPlan();
     if (!state?.process) return;
     try {
       const res = await fetch("/api/membership/request-payment-plan", {
@@ -911,6 +920,17 @@ export default function MembershipPage() {
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
                     )}
+                    <Modal opened={confirmPlanOpened} onClose={closeConfirmPlan} title="Request a scholarship or payment plan?" centered>
+                      <Text size="sm">
+                        This sends your request to the board&apos;s Finance Committee, who will review
+                        your household&apos;s dues and follow up with you. You won&apos;t be charged
+                        anything now, and you can still pay online at any time.
+                      </Text>
+                      <Group justify="flex-end" mt="md">
+                        <Button variant="default" onClick={closeConfirmPlan}>Cancel</Button>
+                        <Button color="green" onClick={requestPaymentPlan}>Send request</Button>
+                      </Group>
+                    </Modal>
                     {planRequested ? (
                       <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
                     ) : (
@@ -918,7 +938,7 @@ export default function MembershipPage() {
                         variant="light"
                         type="button"
                         mt="md"
-                        onClick={requestPaymentPlan}
+                        onClick={openConfirmPlan}
                         styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                       >
                         Request a scholarship or payment plan from the Finance Committee of the Board
