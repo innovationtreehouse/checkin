@@ -5,8 +5,14 @@ import { getConfigHealth, openConfigIssues, type ConfigCheck } from "@/lib/confi
 // mocks (NODE_ENV was eliminated as a fuse, #951); CHECKIN_ENV drives prod.
 
 const ZOHO_KEYS = ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"];
+// The mirror check reads a RESOLVED url, so BOTH of its inputs have to be cleared:
+// SHOPIFY_READ_DB (+ DATABASE_URL) feed the derived path and SHOPIFY_READ_DATABASE_URL
+// the override. Miss one and an ambient value silently turns the "nothing configured"
+// case green — the check would then never be able to fail here.
+const MIRROR_KEYS = ["SHOPIFY_READ_DATABASE_URL", "SHOPIFY_READ_DB", "DATABASE_URL"];
 const ALL_KEYS = [
     ...ZOHO_KEYS,
+    ...MIRROR_KEYS,
     "ZOHO_WEBHOOK_SECRET",
     "AGREEMENT_PDF_S3_BUCKET",
     "RESEND_API_KEY",
@@ -45,7 +51,9 @@ describe("getConfigHealth — prod, nothing configured", () => {
         expect(c["resend-email"].detail).toContain("RESEND_API_KEY");
         expect(c["s-read-trigger"].ok).toBe(false);
         expect(c["s-read-trigger"].detail).toContain("S_READ_TRIGGER_FUNCTION");
-        expect(openConfigIssues(checks)).toBe(5);
+        expect(c["s-read-mirror"].ok).toBe(false);
+        expect(c["s-read-mirror"].detail).toContain("SHOPIFY_READ_DB");
+        expect(openConfigIssues(checks)).toBe(6);
     });
 });
 
@@ -59,6 +67,10 @@ describe("getConfigHealth — prod, all configured", () => {
         process.env.AGREEMENT_PDF_S3_BUCKET = "bucket";
         process.env.RESEND_API_KEY = "re_key";
         process.env.S_READ_TRIGGER_FUNCTION = "s-read-prod-trigger";
+        // The mirror the way AWS actually wires it: no connection string of its own,
+        // just the app's own credential pointed at the mirror's database name.
+        process.env.DATABASE_URL = "postgresql://checkin_prod_dml:pw@host:5432/checkin_prod?sslmode=verify-full";
+        process.env.SHOPIFY_READ_DB = "shopify_read_prod";
         expect(openConfigIssues(getConfigHealth())).toBe(0);
     });
 });
