@@ -50,7 +50,7 @@ interface IntakeState {
   hasHousehold: boolean;
   isLead: boolean;
   membershipStatus: OrgMembershipStatus | null;
-  process: { id: number; kind: string; status: OrgMembershipProcessStatus } | null;
+  process: { id: number; kind: string; status: OrgMembershipProcessStatus; isPaymentPlanRequested?: boolean } | null;
   external: ExternalStatus | null;
   prefill: {
     household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
