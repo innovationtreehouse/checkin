@@ -181,7 +181,9 @@ export function AdminEditHouseholdModal({
       const res = await fetch(`/api/membership-ops/households/${householdId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        // Membership fields are hidden without a membership; don't submit them
+        // either, or the server rejects the whole edit as membership-less.
+        body: JSON.stringify(hasMembership ? form : { ...form, memberSince: undefined, isVolunteer: undefined }),
       });
       if (res.ok) {
         const data = await res.json();

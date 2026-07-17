@@ -15,6 +15,9 @@ type Household = {
   id: number;
   name?: string | null;
   orgMembership?: { status: string; memberSince?: string | null } | null;
+  // Renewal season only: the coming cycle is already settled — the member finished
+  // renewal, or an admin already used the override.
+  settledForComingYear?: boolean;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
   renewalGrantable?: boolean;
   bgValidUntil?: string | null;
@@ -227,6 +230,7 @@ export default function AdminHouseholdsPage() {
               const isStaffHousehold = household.householdMembers?.some(
                 (p) => p.email?.toLowerCase().endsWith('@innovationtreehouse.org')
               ) ?? false;
+              const settledForComingYear = household.settledForComingYear === true;
 
               return (
                 <Table.Tr key={household.id}>
@@ -338,14 +342,20 @@ export default function AdminHouseholdsPage() {
                         </>
                       )}
                     </Group>
-                    {renewalSeason && !isDenied && !isStaffHousehold && !ownHouseholdConflict && household.renewalGrantable && (
+                    {/* Three states: hidden unless actionable-or-settled (not started, mid-flow,
+                        stale BG, staff, COI, out of season all hide); a settled cycle shows a
+                        disabled "Granted for coming year" as positive confirmation (#1047); a
+                        grantable renewal (PENDING_PAYMENT + cleared, fresh BG) shows it live. */}
+                    {renewalSeason && !isDenied && !isStaffHousehold && !ownHouseholdConflict && (household.renewalGrantable || settledForComingYear) && (
                       <Button
                         size="xs" fz={15}
                         variant="light"
                         color="green"
+                        disabled={settledForComingYear}
+                        title={settledForComingYear ? "This household is already set for the coming year." : undefined}
                         onClick={() => handleGrantForComingYear(household.id)}
                       >
-                        Grant for coming year
+                        {settledForComingYear ? "Granted for coming year" : "Grant for coming year"}
                       </Button>
                     )}
                     </Stack>

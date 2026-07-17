@@ -45,6 +45,12 @@ const orderLineSchema = z
     title: z.string().nullish(),
     name: z.string().nullish(),
     quantity: z.number().nullish(),
+    // Null for custom/deleted-product lines — Shopify's LineItem.variant is nullable.
+    // legacyResourceId may arrive as number or string depending on the API surface.
+    variant: z
+      .object({ id: z.string().nullish(), legacyResourceId: z.union([z.string(), z.number()]).nullish() })
+      .passthrough()
+      .nullish(),
     originalUnitPriceSet: moneyBag.nullish(),
     discountedTotalSet: moneyBag.nullish(),
     totalDiscountSet: moneyBag.nullish(),
@@ -89,6 +95,9 @@ export const orderNodeSchema = z
     displayFulfillmentStatus: z.string().nullish(),
     // Cart attributes (Membership_Process_ID / CheckMeIn_Account_ID + Program_ID) carried on the order.
     customAttributes: z.array(z.object({ key: z.string(), value: z.string().nullish() }).passthrough()).nullish(),
+    // The coupon codes applied at checkout, verbatim. What lets checkin tell a
+    // board-created discount (volunteer rate, time-boxed promo) from a shortfall.
+    discountCodes: z.array(z.string()).nullish(),
     currentSubtotalPriceSet: moneyBag.nullish(),
     totalShippingPriceSet: moneyBag.nullish(),
     currentTotalTaxSet: moneyBag.nullish(),
@@ -107,6 +116,10 @@ export interface NormalizedOrderLine {
   sku?: string;
   title?: string;
   quantity: number;
+  /** Shopify ProductVariant GID (gid://shopify/ProductVariant/N). Absent for custom/deleted-product lines. */
+  variantGid?: string;
+  /** Numeric variant id — what checkin stores in BoardSettings/Program shopify*VariantId, so this is the reconciliation join key. */
+  variantLegacyId?: string;
   priceCents: number;
   discountCents: number;
 }
@@ -139,6 +152,8 @@ export interface NormalizedOrder {
   test: boolean;
   /** Raw order cart attributes ([{key, value}]), stored as JSON. undefined when absent. */
   noteAttributes?: { key: string; value: string | null }[];
+  /** Coupon codes applied at checkout, verbatim. Empty for undiscounted orders. */
+  discountCodes: string[];
   lines: NormalizedOrderLine[];
   refunds: NormalizedRefund[];
 }
@@ -149,6 +164,13 @@ export function normalizeOrder(node: OrderNode): NormalizedOrder {
     sku: l.sku ?? undefined,
     title: l.title ?? l.name ?? undefined,
     quantity: l.quantity ?? 1,
+    variantGid: l.variant?.id ?? undefined,
+    variantLegacyId:
+      l.variant?.legacyResourceId != null
+        ? String(l.variant.legacyResourceId)
+        : l.variant?.id
+          ? legacyIdFromGid(l.variant.id)
+          : undefined,
     priceCents: bagCents(l.originalUnitPriceSet),
     discountCents: bagCents(l.totalDiscountSet),
   }));
@@ -182,6 +204,7 @@ export function normalizeOrder(node: OrderNode): NormalizedOrder {
     noteAttributes: node.customAttributes
       ? node.customAttributes.map((a) => ({ key: a.key, value: a.value ?? null }))
       : undefined,
+    discountCodes: node.discountCodes ?? [],
     lines,
     refunds,
   };
