@@ -89,12 +89,30 @@ export async function GET(req: Request) {
         // ANONYMOUS-ONLY cache (lib/staleCache): the where-clause is identical for
         // every signed-out caller, so one entry serves them all — and a session
         // (draft/mentor visibility varies the payload) never touches it, which is
-        // what makes the cache leak-proof by construction. During an Aurora resume
-        // the public directory renders instantly from the last-good copy instead
-        // of spinning into a 500; counts are at most one refresh stale.
+        // what makes the cache leak-proof by construction.
+        //
+        // ONLY the static rows are cached — never enrollment figures. The counts
+        // come from a separate LIVE query raced against a short timeout: merged in
+        // when the database answers, omitted entirely when it doesn't (resume).
+        // Stale program names are fine; stale "spots taken" numbers are not.
         if (!userId && !canSeeDrafts) {
-            const { value } = await staleWhileRevalidate("programs:public", 60_000, fetchPrograms);
-            return NextResponse.json(value);
+            const { value: staticRows } = await staleWhileRevalidate(
+                "programs:public:static",
+                60_000,
+                () => prisma.program.findMany({
+                    where: andClauses.length > 0 ? { AND: andClauses } : undefined,
+                    orderBy: { startAt: 'asc' },
+                }),
+            );
+            const counts = await Promise.race([
+                prisma.program.findMany({
+                    where: { id: { in: staticRows.map((prg) => prg.id) } },
+                    select: { id: true, _count: { select: { participants: true, volunteers: true, events: true } } },
+                }).catch(() => null),
+                new Promise<null>((resolve) => { const t = setTimeout(() => resolve(null), 2_500); t.unref?.(); }),
+            ]);
+            const countById = new Map((counts ?? []).map((c) => [c.id, c._count]));
+            return NextResponse.json(staticRows.map((prg) => ({ ...prg, _count: countById.get(prg.id) })));
         }
         return NextResponse.json(await fetchPrograms());
     } catch (error) {

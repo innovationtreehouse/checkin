@@ -18,7 +18,7 @@ type ProgramSummary = {
   phase: string;
   enrollmentStatus: string;
   leadMentorId: number | null;
-  _count: {
+  _count?: {
     participants: number;
     volunteers: number;
     events: number;
@@ -112,24 +112,28 @@ export default function PublicProgramsDirectory() {
                   {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
                 </Text>
 
-                <Card withBorder radius="sm" padding="xs" mb="md">
-                  <Group justify="space-around">
-                    <Stack gap={0} align="center">
-                      <Text fw={700}>{program._count.participants}</Text>
-                      <Text size="xs" c="dimmed">Enrolled</Text>
-                    </Stack>
-                    <Divider orientation="vertical" />
-                    <Stack gap={0} align="center">
-                      <Text fw={700}>{program._count.volunteers}</Text>
-                      <Text size="xs" c="dimmed">Volunteers</Text>
-                    </Stack>
-                    <Divider orientation="vertical" />
-                    <Stack gap={0} align="center">
-                      <Text fw={700}>{program._count.events}</Text>
-                      <Text size="xs" c="dimmed">Sessions</Text>
-                    </Stack>
-                  </Group>
-                </Card>
+                {/* Counts come live-only (never cached): while the system wakes,
+                    the API omits them and the card simply skips this block. */}
+                {program._count && (
+                  <Card withBorder radius="sm" padding="xs" mb="md">
+                    <Group justify="space-around">
+                      <Stack gap={0} align="center">
+                        <Text fw={700}>{program._count.participants}</Text>
+                        <Text size="xs" c="dimmed">Enrolled</Text>
+                      </Stack>
+                      <Divider orientation="vertical" />
+                      <Stack gap={0} align="center">
+                        <Text fw={700}>{program._count.volunteers}</Text>
+                        <Text size="xs" c="dimmed">Volunteers</Text>
+                      </Stack>
+                      <Divider orientation="vertical" />
+                      <Stack gap={0} align="center">
+                        <Text fw={700}>{program._count.events}</Text>
+                        <Text size="xs" c="dimmed">Sessions</Text>
+                      </Stack>
+                    </Group>
+                  </Card>
+                )}
 
                 <Group grow>
                   <Button component={Link} href={`/programs/${program.id}`} variant="light">

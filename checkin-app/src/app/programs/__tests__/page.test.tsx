@@ -47,3 +47,18 @@ describe("PublicProgramsDirectory", () => {
     expect(await screen.findByText(/No active programs currently available/)).toBeInTheDocument();
   });
 });
+
+describe("counts omitted (system waking)", () => {
+  it("renders program cards without the enrollment figures block when _count is absent", async () => {
+    setSession(null);
+    mockFetchJson({
+      "/api/programs?": [
+        { id: 1, name: "Robotics", description: "Bots", phase: "ACTIVE", enrollmentStatus: "OPEN", startAt: "2026-08-01T00:00:00Z", endAt: null },
+      ],
+    });
+    renderWithProviders(<PublicProgramsDirectory />);
+    expect(await screen.findByText("Robotics")).toBeInTheDocument();
+    expect(screen.queryByText("Enrolled")).not.toBeInTheDocument();
+    expect(screen.queryByText("Volunteers")).not.toBeInTheDocument();
+  });
+});
