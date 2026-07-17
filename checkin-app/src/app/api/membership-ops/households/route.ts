@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { isRenewalSeason } from "@/lib/membership/renewal";
+import { isRenewalSeason, nextBoundary, householdBgIsFresh, bgValidUntilBoundary } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
 
@@ -34,7 +34,7 @@ export const GET = withAuth(
                     include: {
                         householdMembers: {
                             select: {
-                                id: true, name: true, email: true, isHouseholdLead: true,
+                                id: true, name: true, email: true, isHouseholdLead: true, lastBackgroundCheck: true,
                                 // Program enrollments for the household detail view. Extra field the
                                 // Edit Info modal (same endpoint) simply ignores.
                                 programParticipants: {
@@ -54,7 +54,32 @@ export const GET = withAuth(
                 });
                 if (!household) return NextResponse.json({ household: null });
                 const householdLeads = household.householdMembers.filter(p => p.isHouseholdLead).map(p => ({ personId: p.id }));
-                return NextResponse.json({ household: { ...withFlatContact(household), householdLeads } });
+
+                // ONE settings read serves membership-valid-until and the BG "valid until" calc below.
+                const settings = await prisma.boardSettings.findUnique({
+                    where: { id: 1 }, select: { currentMembershipValidUntil: true, orgMembershipYearBoundary: true, bgRecheckMonths: true },
+                });
+                const bgSettings = {
+                    orgMembershipYearBoundary: settings?.orgMembershipYearBoundary ?? null,
+                    bgRecheckMonths: settings?.bgRecheckMonths ?? 0,
+                };
+                // Per member — every member with a passed check (leads AND non-lead PERSON_BG
+                // subjects alike); null when no check on file / policy unset.
+                const membersWithBg = household.householdMembers.map((m) => ({
+                    ...m,
+                    bgValidUntil: bgValidUntilBoundary(m.lastBackgroundCheck, bgSettings),
+                }));
+                // Household level — the LATER lastBackgroundCheck among household leads who
+                // passed (either lead's valid check covers the household).
+                const latestLeadBg = household.householdMembers
+                    .filter((m) => m.isHouseholdLead && m.lastBackgroundCheck)
+                    .reduce<Date | null>((acc, m) => (!acc || m.lastBackgroundCheck! > acc ? m.lastBackgroundCheck! : acc), null);
+                const householdBgValidUntil = bgValidUntilBoundary(latestLeadBg, bgSettings);
+
+                return NextResponse.json({
+                    household: { ...withFlatContact(household), householdMembers: membersWithBg, householdLeads, bgValidUntil: householdBgValidUntil },
+                    currentMembershipValidUntil: settings?.currentMembershipValidUntil ?? null,
+                });
             }
 
             const whereClause = q ? {
@@ -69,9 +94,22 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     householdMembers: {
-                        select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true }
+                        // isHouseholdLead + lastBackgroundCheck drive the household-level "BG valid
+                        // until" below. Board-only endpoint; lastBackgroundCheck rides along in the
+                        // JSON at the same trust level as the rest of the row.
+                        select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true, isHouseholdLead: true, lastBackgroundCheck: true }
                     },
-                    orgMembership: true,
+                    // Only the payable-renewal processes — enough to decide grantability without
+                    // an extra per-household query. orgMembership's own scalars (status,
+                    // memberSince) still ride along via this include.
+                    orgMembership: {
+                        include: {
+                            processes: {
+                                where: { kind: "RENEWAL", status: "PENDING_PAYMENT", bgClearedAt: { not: null } },
+                                select: { id: true },
+                            },
+                        },
+                    },
                     emergencyContacts: {
                         where: PRIMARY_CONTACT_WHERE,
                         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -85,9 +123,34 @@ export const GET = withAuth(
                 ...(q && { take: 20 })
             });
 
+            const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+            const boundary = settings?.orgMembershipYearBoundary
+                ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
+                : null;
+            const recheckMonths = settings?.bgRecheckMonths ?? 0;
+            const bgSettings = { orgMembershipYearBoundary: settings?.orgMembershipYearBoundary ?? null, bgRecheckMonths: recheckMonths };
+
+            const withGrantable = await Promise.all(
+                households.map(async (h) => {
+                    const hasPayableRenewal = (h.orgMembership?.processes?.length ?? 0) > 0;
+                    const renewalGrantable =
+                        hasPayableRenewal && boundary
+                            ? await householdBgIsFresh(h.id, boundary, recheckMonths)
+                            : false;
+                    // Household-level BG "valid until" — later lastBackgroundCheck among leads
+                    // who passed; no per-member values in the list response.
+                    const latestLeadBg = h.householdMembers
+                        .filter((m) => m.isHouseholdLead && m.lastBackgroundCheck)
+                        .reduce<Date | null>((acc, m) => (!acc || m.lastBackgroundCheck! > acc ? m.lastBackgroundCheck! : acc), null);
+                    const bgValidUntil = bgValidUntilBoundary(latestLeadBg, bgSettings);
+                    return { ...withFlatContact(h), renewalGrantable, bgValidUntil };
+                }),
+            );
+
             return NextResponse.json({
-                households: households.map(withFlatContact),
+                households: withGrantable,
                 renewalSeason: await isRenewalSeason(new Date()),
+                currentMembershipValidUntil: settings?.currentMembershipValidUntil ?? null,
             });
         } catch (error) {
             logger.error("Failed to fetch households:", error);

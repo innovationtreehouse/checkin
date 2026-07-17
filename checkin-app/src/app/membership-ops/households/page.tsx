@@ -14,9 +14,14 @@ import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
   id: number;
   name?: string | null;
-  orgMembership?: { status: string } | null;
+  orgMembership?: { status: string; memberSince?: string | null } | null;
   householdMembers?: { id: number; name?: string | null; email?: string | null; isBoardMember?: boolean; emailUndeliverableAt?: string | null }[] | null;
+  renewalGrantable?: boolean;
+  bgValidUntil?: string | null;
 };
+
+const fmtDate = (s?: string | null) =>
+  s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 export default function AdminHouseholdsPage() {
   const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
@@ -24,6 +29,7 @@ export default function AdminHouseholdsPage() {
 
   const [households, setHouseholds] = useState<Household[]>([]);
   const [renewalSeason, setRenewalSeason] = useState(false);
+  const [validUntil, setValidUntil] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
@@ -38,6 +44,7 @@ export default function AdminHouseholdsPage() {
         const data = await res.json();
         setHouseholds(data.households);
         setRenewalSeason(data.renewalSeason ?? false);
+        setValidUntil(data.currentMembershipValidUntil ?? null);
       } else {
         setError("Failed to fetch households.");
       }
@@ -176,6 +183,9 @@ export default function AdminHouseholdsPage() {
               <Table.Th>Household</Table.Th>
               <Table.Th>Participants</Table.Th>
               <Table.Th>Is Member?</Table.Th>
+              <Table.Th>Member since</Table.Th>
+              <Table.Th>Valid until</Table.Th>
+              <Table.Th>BG valid until</Table.Th>
               <Table.Th>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -248,6 +258,9 @@ export default function AdminHouseholdsPage() {
                       <Text c="dimmed">No</Text>
                     )}
                   </Table.Td>
+                  <Table.Td>{fmtDate(household.orgMembership?.memberSince)}</Table.Td>
+                  <Table.Td>{fmtDate(validUntil)}</Table.Td>
+                  <Table.Td>{fmtDate(household.bgValidUntil)}</Table.Td>
                   <Table.Td>
                     <Stack gap="xs" align="flex-start">
                     <Group gap="xs" wrap="nowrap">
@@ -307,19 +320,11 @@ export default function AdminHouseholdsPage() {
                         </>
                       )}
                     </Group>
-                    {renewalSeason && !isDenied && (
+                    {renewalSeason && !isDenied && !isStaffHousehold && !ownHouseholdConflict && household.renewalGrantable && (
                       <Button
                         size="xs" fz={15}
                         variant="light"
                         color="green"
-                        disabled={ownHouseholdConflict || isStaffHousehold}
-                        title={
-                          isStaffHousehold
-                            ? "Staff households can't be granted membership."
-                            : ownHouseholdConflict
-                              ? "You can't grant your own household's membership — a sysadmin must."
-                              : undefined
-                        }
                         onClick={() => grantForComingYear(household.id)}
                       >
                         Grant for coming year
@@ -333,7 +338,7 @@ export default function AdminHouseholdsPage() {
 
             {filtered.length === 0 && (
               <Table.Tr>
-                <Table.Td colSpan={4} ta="center">
+                <Table.Td colSpan={7} ta="center">
                   <Text c="dimmed" py="md">No households found.</Text>
                 </Table.Td>
               </Table.Tr>

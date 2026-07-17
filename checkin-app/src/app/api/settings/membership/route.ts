@@ -17,8 +17,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 /**
  * PUT /api/settings/membership — update board settings.
  * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
- * orgMembershipVariantId (string|null), orgMembershipProductUrl (string|null),
- * volunteerDiscountCode (string|null),
+ * currentMembershipValidUntil (ISO|null), orgMembershipVariantId (string|null),
+ * orgMembershipProductUrl (string|null), volunteerDiscountCode (string|null),
  * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron).
  * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
@@ -30,6 +30,7 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         normalDuesCents?: number;
         volunteerDuesCents?: number;
         orgMembershipYearBoundary?: string | null;
+        currentMembershipValidUntil?: string | null;
         orgMembershipVariantId?: string | null;
         orgMembershipProductUrl?: string | null;
         volunteerDiscountCode?: string | null;
@@ -55,6 +56,11 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     }
     if (body.orgMembershipYearBoundary !== undefined) {
         data.orgMembershipYearBoundary = body.orgMembershipYearBoundary ? new Date(body.orgMembershipYearBoundary) : null;
+    }
+    if (body.currentMembershipValidUntil !== undefined) {
+        data.currentMembershipValidUntil = body.currentMembershipValidUntil
+            ? new Date(body.currentMembershipValidUntil)
+            : null;
     }
     if (body.orgMembershipVariantId !== undefined) {
         const variantId = body.orgMembershipVariantId?.trim();

@@ -11,7 +11,7 @@
  *     each cycle) and only a still-valid background check with no household
  *     note pre-stamps bgClearedAt.
  */
-import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError } from '@/lib/membership/renewal';
+import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary } from '@/lib/membership/renewal';
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -76,6 +76,40 @@ describe('householdBgIsFresh', () => {
     it('no lead with a fresh-enough background check → not fresh', async () => {
         prisma.person.findFirst.mockResolvedValue(null);
         expect(await householdBgIsFresh(42, boundary, 12)).toBe(false);
+    });
+});
+
+describe('bgValidUntilBoundary', () => {
+    const boundary = new Date(Date.UTC(2000, 7, 1)); // Aug 1 (year ignored — month/day only)
+    const settings = { orgMembershipYearBoundary: boundary, bgRecheckMonths: 12 };
+
+    it('mid-cycle check: raw expiry a year later, well before Aug 1 → that Aug 1 occurrence', () => {
+        const last = new Date(Date.UTC(2026, 0, 15, 10, 0)); // 2026-01-15T10:00Z
+        expect(bgValidUntilBoundary(last, settings)).toEqual(new Date(Date.UTC(2027, 7, 1)));
+    });
+
+    it('expiry exactly on the boundary day (>= edge, time-of-day truncated) → same day, not next year', () => {
+        const last = new Date(Date.UTC(2026, 7, 1, 14, 32)); // 2026-08-01T14:32Z -> raw expiry 2027-08-01T14:32Z
+        expect(bgValidUntilBoundary(last, settings)).toEqual(new Date(Date.UTC(2027, 7, 1)));
+    });
+
+    it('late-in-year check whose raw expiry crosses the boundary → next year\'s boundary', () => {
+        const last = new Date(Date.UTC(2026, 10, 20)); // 2026-11-20 -> raw expiry 2027-11-20, past Aug 1 2027
+        expect(bgValidUntilBoundary(last, settings)).toEqual(new Date(Date.UTC(2028, 7, 1)));
+    });
+
+    it('bgRecheckMonths = 0 → null (policy unset)', () => {
+        const last = new Date(Date.UTC(2026, 0, 15));
+        expect(bgValidUntilBoundary(last, { ...settings, bgRecheckMonths: 0 })).toBeNull();
+    });
+
+    it('lastBackgroundCheck = null → null', () => {
+        expect(bgValidUntilBoundary(null, settings)).toBeNull();
+    });
+
+    it('orgMembershipYearBoundary = null → null', () => {
+        const last = new Date(Date.UTC(2026, 0, 15));
+        expect(bgValidUntilBoundary(last, { ...settings, orgMembershipYearBoundary: null })).toBeNull();
     });
 });
 

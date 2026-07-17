@@ -61,6 +61,40 @@ function monthsBefore(date: Date, months: number): Date {
     return d;
 }
 
+// Mirrors monthsBefore exactly — raw JS month arithmetic, UTC, no end-of-month
+// clamping (JS rolls over: Jan 31 + 1mo -> Mar 2/3). Consistency with
+// householdBgIsFresh's threshold math matters more than calendar prettiness, and
+// the boundary is an admin-set day (e.g. Aug 1) in practice.
+function monthsAfter(date: Date, months: number): Date {
+    const d = new Date(date);
+    d.setUTCMonth(d.getUTCMonth() + months);
+    return d;
+}
+
+/**
+ * Background-check "valid until": the boundary occurrence that follows raw expiry
+ * (lastBackgroundCheck + bgRecheckMonths months). Null when there's no check on
+ * file, the recheck policy isn't set, or no boundary is configured. Pure — no
+ * prisma — so it composes over both a single member and a household's later lead.
+ */
+export function bgValidUntilBoundary(
+    lastBackgroundCheck: Date | null,
+    settings: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number },
+): Date | null {
+    if (!lastBackgroundCheck || settings.bgRecheckMonths <= 0 || !settings.orgMembershipYearBoundary) {
+        return null;
+    }
+    const rawExpiry = monthsAfter(lastBackgroundCheck, settings.bgRecheckMonths);
+    // Truncate to the raw expiry's UTC day before asking nextBoundary. nextBoundary
+    // compares full timestamps with a strict `<`; lastBackgroundCheck carries a
+    // time-of-day, so without truncation a raw expiry landing ON the boundary day
+    // (e.g. Aug 1 14:32) would skip to NEXT year's boundary. Policy (matches
+    // householdBgIsFresh's `gte` threshold): a check expiring on the boundary day
+    // still covers that boundary → return that same occurrence.
+    const rawExpiryDay = new Date(Date.UTC(rawExpiry.getUTCFullYear(), rawExpiry.getUTCMonth(), rawExpiry.getUTCDate()));
+    return nextBoundary(settings.orgMembershipYearBoundary, rawExpiryDay);
+}
+
 /**
  * From a configured boundary date, the next boundary occurrence and whether `now`
  * sits inside the renewal lead window before it. Pure; the single source of the
