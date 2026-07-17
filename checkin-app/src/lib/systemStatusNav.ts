@@ -12,6 +12,7 @@ export interface SystemStatusNavLink extends NavLink {
 export const SYSTEM_STATUS_NAV_LINKS: SystemStatusNavLink[] = [
   { name: "System Status", href: "/system-status/health", icon: "💚" },
   { name: "Link Status", href: "/system-status/links", icon: "🔗" },
+  { name: "Lifecycle", href: "/system-status/lifecycle", icon: "🔄" },
   { name: "Errors", href: "/system-status/errors", icon: "🚨" },
   { name: "Audit Log", href: "/system-status/audit-log", icon: "📜", sysadminOnly: true },
 ];
