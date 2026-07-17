@@ -44,6 +44,11 @@ type SyncRun = {
   error: string | null;
 };
 
+// The outcome of one status read. `ok: false` means the read itself failed (the mirror
+// is unwired or unreadable); `{ ok: true, run: null }` means it succeeded and the mirror
+// simply has no runs. Keeping them apart is the whole point — see fetchSyncRun.
+type SyncFetch = { ok: true; run: SyncRun | null } | { ok: false };
+
 // Polling budget after a manual sync: 20 × 6s ≈ 2 minutes. Bounded on purpose —
 // every poll queries the mirror and keeps the scale-to-zero Aurora cluster awake,
 // which is the cost that makes the automatic sync daily rather than continuous
@@ -75,21 +80,26 @@ export default function PaymentProblemsPage() {
   const [pendingResolve, setPendingResolve] = useState<PaymentException | null>(null);
   const [note, setNote] = useState("");
   const [syncing, setSyncing] = useState(false);
-  // null = no run yet or the mirror isn't wired in this env (the GET 503s) — either
-  // way there is nothing to say, so the status line just doesn't render.
+  // null = the mirror has never synced, or we can't read it — either way there is
+  // nothing to say, so the status line just doesn't render.
   const [syncRun, setSyncRun] = useState<SyncRun | null>(null);
 
-  const fetchSyncRun = useCallback(async (): Promise<SyncRun | null> => {
+  // Read the status, keeping "couldn't read it" distinct from "read it; no runs yet".
+  // Collapsing those into a bare null is what let the poll below report a failed read
+  // as "still running" — a claim it had no basis for.
+  const fetchSyncRun = useCallback(async (): Promise<SyncFetch> => {
     try {
       const res = await fetch('/api/finance-ops/s-read/sync');
-      if (!res.ok) return null;
+      // 503 (mirror not wired here) or 500 (mirror unreadable — e.g. the SELECT grant
+      // isn't in place yet). Both mean: no status, and don't pretend otherwise.
+      if (!res.ok) return { ok: false };
       const run: SyncRun | null = (await res.json()).run;
       setSyncRun(run);
-      return run;
+      return { ok: true, run };
     } catch {
       // Freshness is decoration on this page; a failed status read must never
       // surface as an error over the queue itself.
-      return null;
+      return { ok: false };
     }
   }, []);
 
@@ -158,25 +168,40 @@ export default function PaymentProblemsPage() {
 
       for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-        const run = await fetchSyncRun();
-        // A null run means the status read failed or the mirror isn't wired — there is
-        // nothing to watch, so stop rather than burn the whole budget on empty polls.
-        if (!run) break;
-        if (!isTerminal(run.status)) continue;
+        const res = await fetchSyncRun();
 
+        // The read failed — the mirror is unwired or unreadable. The sync itself was
+        // started regardless (s-read is off doing it), so say exactly that: we cannot
+        // watch it. Reporting "still running" here would be inventing a status, and it
+        // would hide the actual fault behind a plausible sentence.
+        if (!res.ok) {
+          notifications.show({
+            color: 'yellow',
+            message: "Shopify sync started, but its status can't be read in this environment.",
+            autoClose: false,
+          });
+          return;
+        }
+
+        // Read fine, but no run row yet — s-read stamps one at start, so keep waiting
+        // rather than treating an empty mirror as a failure.
+        if (!res.run || !isTerminal(res.run.status)) continue;
+
+        const { status } = res.run;
         await fetchRows();
-        if (run.status === 'COMPLETED') {
+        if (status === 'COMPLETED') {
           notifications.show({ color: 'green', message: 'Shopify sync finished. Live payment amounts are up to date.' });
         } else {
           notifications.show({
             color: 'red',
-            message: `Shopify sync ${run.status.toLowerCase()}. Live payment amounts may still be stale.`,
+            message: `Shopify sync ${status.toLowerCase()}. Live payment amounts may still be stale.`,
             autoClose: false,
           });
         }
         return;
       }
-      // Ran out of budget with the sync still going — it is still running server-side.
+      // Budget exhausted with the run still RUNNING — the only path that has actually
+      // seen it running, and so the only one entitled to say so.
       notifications.show({
         color: 'yellow',
         message: 'Shopify sync is still running. Reload the page in a few minutes to see the result.',
