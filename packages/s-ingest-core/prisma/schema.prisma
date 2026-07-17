@@ -164,6 +164,11 @@ model ShopOrder {
   totalRefundedCents Int       @default(0) @map("total_refunded_cents")
   test               Boolean   @default(false)
   noteAttributes     Json?     @map("note_attributes")
+  /// Coupon codes applied at checkout, verbatim. Empty [] means "no codes" for rows
+  /// written after this shipped AND for pre-existing rows until a backfill re-pulls
+  /// them (scalar lists can't be null in Prisma, so absence isn't distinguishable —
+  /// the same backfill that fills variant ids fixes these).
+  discountCodes      String[]  @default([]) @map("discount_codes")
   lastSyncedAt       DateTime  @default(now()) @map("last_synced_at")
 
   @@id([storeId, shopifyGid])
@@ -179,6 +184,12 @@ model ShopOrderLine {
   sku               String?
   title             String?
   quantity          Int     @default(1)
+  /// ProductVariant GID. Null for custom/deleted-product lines, and for rows synced
+  /// before the variant columns shipped — a backfill run repopulates those.
+  variantGid        String? @map("variant_gid")
+  /// Numeric variant id — checkin's BoardSettings/Program shopify*VariantId join key,
+  /// which is what makes an order line attributable to a membership or program.
+  variantLegacyId   String? @map("variant_legacy_id")
   priceCents        Int     @default(0) @map("price_cents")
   discountCents     Int     @default(0) @map("discount_cents")
   fulfillmentStatus String? @map("fulfillment_status")
@@ -186,6 +197,7 @@ model ShopOrderLine {
 
   @@id([storeId, lineGid])
   @@index([storeId, orderGid])
+  @@index([storeId, variantLegacyId])
   @@map("shop_order_line")
 }
 
