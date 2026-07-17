@@ -48,6 +48,10 @@ function getPool(): Pool | null {
             // on long-held connections, and nothing here holds one.
             idleTimeoutMillis: 10_000,
             min: 0,
+            // Mirror reads run under checkin's OWN role (membership in the mirror's
+            // NOLOGIN grant-holder — no separate credential), so name the session:
+            // it's what tells these apart from app queries in pg_stat_activity.
+            application_name: "checkin-shopify-read",
         });
         pool.on("error", (e) => logger.error("shopify_read pool error:", e));
     }
