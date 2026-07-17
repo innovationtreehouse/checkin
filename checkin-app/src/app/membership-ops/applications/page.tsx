@@ -11,6 +11,7 @@ import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { sharesHousehold } from "@/lib/conflictOfInterest";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { StatusFilterBadge, ActiveFilterNotice, useStatusFilter } from "@/components/StatusFilter";
+import { awaitingBgReview, type ProcessStatus } from "@/lib/membership/lifecycle";
 
 interface Person {
   id: number;
@@ -56,12 +57,10 @@ const statusColor = (status: string) => STATUS_COLORS[status] || "gray";
 const statusLabel = (status: string) => status.replace(/_/g, " ");
 
 // The background check is a parallel track: an application still needs review
-// when it hasn't cleared and is past consent (mirrors review.ts isAwaitingBgReview).
+// when it hasn't cleared and is past consent. ONE definition, shared with the
+// server (fix #1): awaitingBgReview.has — client-safe (booleans in, no Prisma).
 const awaitingBg = (r: ProcessRow) =>
-  !r.bgClearedAt &&
-  (r.status === "PENDING_BG_REVIEW" ||
-    r.status === "RENEWAL_PENDING_BG" ||
-    ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
+  awaitingBgReview.has({ status: r.status as ProcessStatus, bgConsentAt: !!r.bgConsentAt, bgClearedAt: !!r.bgClearedAt });
 
 export default function AdminMembershipPage() {
   return (
