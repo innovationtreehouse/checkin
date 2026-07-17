@@ -372,8 +372,13 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.orgMembershipProcess.count({
                 where: { status: { not: "ACTIVE" } },
             }),
+            // Scholarship-queue count: mirror GET /api/finance-ops/payment-plans'
+            // default filter exactly so the nav badge can't over-count. Excludes
+            // PENDING_HOLD_FAILED rows (inventoryHeldAt null) — those live in the
+            // Shopify reconciliation queue, and the board is already emailed when a
+            // hold fails, so they don't need a green "approval pending" pill.
             prisma.programParticipant.count({
-                where: { status: "PENDING", isPaymentPlanRequested: true },
+                where: { status: "PENDING", isPaymentPlanRequested: true, inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null },
             }),
             // Households awaiting board approval of a membership-dues payment plan.
             prisma.orgMembershipProcess.count({

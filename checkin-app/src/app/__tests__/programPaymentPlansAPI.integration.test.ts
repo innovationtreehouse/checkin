@@ -13,6 +13,7 @@
  */
 import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/payment-plans/route';
 import { POST as RefusePost } from '@/app/api/finance-ops/payment-plans/refuse/route';
+import { POST as ManualHoldPost } from '@/app/api/finance-ops/payment-plans/manual-hold/route';
 import { POST as RequestPost } from '@/app/api/programs/[id]/request-payment-plan/route';
 import { POST as ParticipantsPost, DELETE as ParticipantsDelete } from '@/app/api/programs/[id]/participants/route';
 import prisma from '@/lib/prisma';
@@ -110,11 +111,16 @@ describe('Program payment-plan routes', () => {
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
-    async function enroll(participantId: number, opts: { requested: boolean }) {
+    // A genuine held request stamps inventoryHeldAt (that's what the apply-time -1
+    // does): by default `held` follows `requested`, so enroll({requested:true}) is a
+    // real PENDING_HELD row (scholarship queue). Pass held:false explicitly to seed a
+    // PENDING_HOLD_FAILED row (the failed-apply state — reconciliation queue).
+    async function enroll(participantId: number, opts: { requested: boolean; held?: boolean }) {
+        const held = (opts.held ?? opts.requested) ? new Date() : null;
         await prisma.programParticipant.upsert({
             where: { programId_personId: { programId, personId: participantId } },
-            update: { status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
-            create: { programId, personId: participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date() },
+            update: { status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date(), inventoryHeldAt: held, paymentPlanDeniedAt: null },
+            create: { programId, personId: participantId, status: 'PENDING', isPaymentPlanRequested: opts.requested, pendingSince: new Date(), inventoryHeldAt: held },
         });
     }
 
@@ -739,7 +745,7 @@ describe('Program payment-plan routes', () => {
             expect(delBody.enrollment).toBeUndefined();
         });
 
-        it('rolls the hold back when the Shopify -1 fails (no phantom hold)', async () => {
+        it('a failed Shopify -1 leaves a clean PENDING_HOLD_FAILED row and reassures the applicant', async () => {
             // Default env: shopifyMockActive() is false and no credentials are
             // configured, so adjustProgramInventory returns false without throwing.
             const p = await prisma.program.create({
@@ -759,17 +765,130 @@ describe('Program payment-plan routes', () => {
                     params(p.id),
                 );
                 expect(res.status).toBe(200);
-                expect((await res.json()).warning).toMatch(/rolled back/);
+                // No "re-submit to retry": the request stands, the board finalizes it.
+                const body = await res.json();
+                expect(body.warning).toMatch(/board/i);
+                expect(body.warning).not.toMatch(/re-submit|retry|rolled back/i);
 
+                // The exact PENDING_HOLD_FAILED tuple: PENDING, held=null, req=true, den=null.
                 const row = await prisma.programParticipant.findUniqueOrThrow({
                     where: { programId_personId: { programId: p.id, personId: selfId } },
                 });
+                expect(row.status).toBe('PENDING');
                 expect(row.inventoryHeldAt).toBeNull(); // no phantom hold
-                expect(row.isPaymentPlanRequested).toBe(true); // finance request still stands
+                expect(row.isPaymentPlanRequested).toBe(true); // request still stands
+                expect(row.paymentPlanDeniedAt).toBeNull();
             } finally {
                 await prisma.programParticipant.deleteMany({ where: { programId: p.id } });
                 await prisma.program.delete({ where: { id: p.id } });
             }
+        });
+    });
+
+    // The PENDING_HOLD_FAILED model: hold-failed rows (req=true, held=null) are a
+    // distinct state served by a SEPARATE board queue, resolved by manual-hold, and
+    // approvable/deniable only as a deliberate override.
+    describe('PENDING_HOLD_FAILED — two queues, manual-hold, override', () => {
+        const holdReq = (body: unknown) => new Request('http://localhost/api/finance-ops/payment-plans/manual-hold', {
+            method: 'POST',
+            headers: { cookie: 'session=test' },
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        it('the two queues return DISJOINT sets: scholarship = held, reconciliation = hold-failed', async () => {
+            await enroll(selfId, { requested: true, held: true });    // PENDING_HELD → scholarship queue
+            await enroll(otherId, { requested: true, held: false });  // PENDING_HOLD_FAILED → reconciliation queue
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const scholarship = await (await PlansGet(nextReq())).json();
+            const holds = await (await PlansGet(nextReq('http://localhost/api/finance-ops/payment-plans?queue=holds'))).json();
+            const sIds = scholarship.ProgramParticipant.map((r: { personId: number }) => r.personId);
+            const hIds = holds.ProgramParticipant.map((r: { personId: number }) => r.personId);
+
+            expect(sIds).toContain(selfId);
+            expect(sIds).not.toContain(otherId);
+            expect(hIds).toContain(otherId);
+            expect(hIds).not.toContain(selfId);
+        });
+
+        it('manual-hold stamps inventoryHeldAt, moving PENDING_HOLD_FAILED → PENDING_HELD (no Shopify call)', async () => {
+            const fetchSpy = jest.spyOn(global, 'fetch');
+            try {
+                await enroll(selfId, { requested: true, held: false }); // PENDING_HOLD_FAILED
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+                const res = await ManualHoldPost(holdReq({ programId, participantId: selfId }));
+                expect(res.status).toBe(200);
+                expect(fetchSpy).not.toHaveBeenCalled(); // human removed the seat by hand; route touches no Shopify
+
+                const row = await prisma.programParticipant.findUniqueOrThrow({
+                    where: { programId_personId: { programId, personId: selfId } },
+                });
+                expect(row.inventoryHeldAt).not.toBeNull(); // now PENDING_HELD
+                expect(row.isPaymentPlanRequested).toBe(true);
+                expect(row.status).toBe('PENDING');
+
+                // The row now appears in the scholarship queue and no longer in the reconciliation queue.
+                const scholarship = await (await PlansGet(nextReq())).json();
+                expect(scholarship.ProgramParticipant.map((r: { personId: number }) => r.personId)).toContain(selfId);
+
+                // Second manual-hold is a no-op 409 (already held).
+                const second = await ManualHoldPost(holdReq({ programId, participantId: selfId }));
+                expect(second.status).toBe(409);
+            } finally {
+                fetchSpy.mockRestore();
+            }
+        });
+
+        it('manual-hold 409s on a genuine held request (nothing to reconcile)', async () => {
+            await enroll(selfId, { requested: true, held: true }); // already PENDING_HELD
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await ManualHoldPost(holdReq({ programId, participantId: selfId }));
+            expect(res.status).toBe(409);
+        });
+
+        it('401 without a session calling manual-hold', async () => {
+            mockSession.mockResolvedValue(null);
+            const res = await ManualHoldPost(holdReq({ programId, participantId: selfId }));
+            expect(res.status).toBe(401);
+        });
+
+        it('403 for a non-board user calling manual-hold', async () => {
+            mockSession.mockResolvedValue({ user: { id: selfId } });
+            const res = await ManualHoldPost(holdReq({ programId, participantId: selfId }));
+            expect(res.status).toBe(403);
+        });
+
+        it('approve override works on a hold-failed row (phantom comp — the gated path)', async () => {
+            await enroll(selfId, { requested: true, held: false }); // PENDING_HOLD_FAILED
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: selfId }),
+            }));
+            expect(res.status).toBe(200);
+            const row = await prisma.programParticipant.findUniqueOrThrow({
+                where: { programId_personId: { programId, personId: selfId } },
+            });
+            expect(row.status).toBe('ACTIVE');
+            expect(row.isPaymentPlanRequested).toBe(false);
+        });
+
+        it('deny override works on a hold-failed row', async () => {
+            await enroll(selfId, { requested: true, held: false }); // PENDING_HOLD_FAILED
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await RefusePost(new Request('http://localhost/api/finance-ops/payment-plans/refuse', {
+                method: 'POST',
+                headers: { cookie: 'session=test' },
+                body: JSON.stringify({ programId, participantId: selfId }),
+            }) as unknown as import('next/server').NextRequest);
+            expect(res.status).toBe(200);
+            const row = await prisma.programParticipant.findUniqueOrThrow({
+                where: { programId_personId: { programId, personId: selfId } },
+            });
+            expect(row.status).toBe('PENDING');
+            expect(row.isPaymentPlanRequested).toBe(false);
+            expect(row.paymentPlanDeniedAt).not.toBeNull();
         });
     });
 });

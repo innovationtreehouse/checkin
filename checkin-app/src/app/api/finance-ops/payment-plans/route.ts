@@ -7,12 +7,27 @@ import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 
-export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
+// Two DISJOINT board queues over PENDING + isPaymentPlanRequested rows, split on
+// whether a Shopify seat is actually held (inventoryHeldAt):
+//   default            → the scholarship queue: genuine held-and-awaiting requests
+//                        (inventoryHeldAt set, paymentPlanDeniedAt null). Approve/deny act here.
+//   ?queue=holds       → the Shopify reconciliation queue: PENDING_HOLD_FAILED rows
+//                        (inventoryHeldAt null) — the apply-time -1 failed, so no seat
+//                        was ever removed. The board resolves these via manual-hold.
+// One endpoint (one security-boundary entry, one stripper policy) returning two
+// non-overlapping sets — NOT one list with both mixed in.
+export const GET = handler('GET /api/finance-ops/payment-plans', async ({ req }) => {
+    const holdsQueue = new URL(req.url).searchParams.get('queue') === 'holds';
     const [requests, boardSettings] = await Promise.all([
         prisma.programParticipant.findMany({
             where: {
                 isPaymentPlanRequested: true,
-                status: 'PENDING'
+                status: 'PENDING',
+                // held=null is PENDING_HOLD_FAILED (reconciliation queue); held!=null +
+                // den=null is a genuine pending request (scholarship queue).
+                ...(holdsQueue
+                    ? { inventoryHeldAt: null }
+                    : { inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null }),
             },
             include: {
                 // Nests household->orgMembership (same shape as ACTIVE_ORG_MEMBER_INCLUDE)

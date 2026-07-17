@@ -112,7 +112,9 @@ describe('Nav todo-counts API', () => {
         program1Id = program1.id;
         program2Id = program2.id;
         await prisma.programParticipant.create({ data: { programId: program1Id, personId: leadId, status: 'PENDING' } });
-        await prisma.programParticipant.create({ data: { programId: program2Id, personId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true } });
+        // A genuine held scholarship request (held seat) — the paymentPlanPending badge
+        // counts only these, mirroring the scholarship-queue filter (held != null).
+        await prisma.programParticipant.create({ data: { programId: program2Id, personId: secondMemberId, status: 'PENDING', isPaymentPlanRequested: true, inventoryHeldAt: new Date() } });
 
         // The lead also *runs* a program (leadMentorId). Three events: one ended
         // and unconfirmed (the inbox item), one ended but already confirmed, one

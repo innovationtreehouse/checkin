@@ -54,7 +54,8 @@ describe('Cron Pending-Participants API Integration Tests', () => {
         await mkParticipant('day3');
         await mkParticipant('day6');
         await mkParticipant('day7');
-        await mkParticipant('plan'); // isPaymentPlanRequested -> never swept
+        await mkParticipant('plan'); // PENDING_HELD (req=true, seat held) -> never swept
+        await mkParticipant('holdFailed'); // PENDING_HOLD_FAILED (req=true, held=null) -> also never swept
         await mkParticipant('denied'); // denied applicant -> grace-expiry cron's job, never this sweep's
 
         await prisma.programParticipant.createMany({
@@ -63,7 +64,12 @@ describe('Cron Pending-Participants API Integration Tests', () => {
                 { programId, personId: ids.day3, status: 'PENDING', pendingSince: daysAgo(now, 3) },
                 { programId, personId: ids.day6, status: 'PENDING', pendingSince: daysAgo(now, 6) },
                 { programId, personId: ids.day7, status: 'PENDING', pendingSince: daysAgo(now, 7) },
-                { programId, personId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), isPaymentPlanRequested: true },
+                // A genuine held request stamps inventoryHeldAt (that's what the apply-time -1 does).
+                { programId, personId: ids.plan, status: 'PENDING', pendingSince: daysAgo(now, 8), isPaymentPlanRequested: true, inventoryHeldAt: daysAgo(now, 8) },
+                // PENDING_HOLD_FAILED: the apply-time -1 failed, so req=true but no seat is held.
+                // isPaymentPlanRequested=true still excludes it from the sweep — it is the board's
+                // problem (Shopify reconciliation queue), NEVER the applicant's, so it must survive.
+                { programId, personId: ids.holdFailed, status: 'PENDING', pendingSince: daysAgo(now, 9), isPaymentPlanRequested: true, inventoryHeldAt: null },
                 // Denied 10 days after enrolling: pendingSince is way past the 7-day
                 // kick, but paymentPlanDeniedAt hands the timeline to scholarship-grace-expiry.
                 { programId, personId: ids.denied, status: 'PENDING', pendingSince: daysAgo(now, 10), isPaymentPlanRequested: false, paymentPlanDeniedAt: daysAgo(now, 0), inventoryHeldAt: daysAgo(now, 10) },
@@ -111,11 +117,12 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             expect(data.warned).toBe(3);
             expect(data.kicked).toBe(1);
 
-            // DB reality: only day7 deleted; the warned rows, the payment-plan row,
-            // and the denied-applicant row (grace-expiry cron's responsibility) survive.
+            // DB reality: only day7 deleted; the warned rows, both payment-plan rows
+            // (held AND hold-failed), and the denied-applicant row (grace-expiry cron's
+            // responsibility) survive.
             const survivors = await prisma.programParticipant.findMany({ where: { programId } });
             const survivorPids = survivors.map(s => s.personId).sort((a, b) => a - b);
-            expect(survivorPids).toEqual([ids.day1, ids.day3, ids.day6, ids.plan, ids.denied].sort((a, b) => a - b));
+            expect(survivorPids).toEqual([ids.day1, ids.day3, ids.day6, ids.plan, ids.holdFailed, ids.denied].sort((a, b) => a - b));
 
             const day7 = await prisma.programParticipant.findUnique({
                 where: { programId_personId: { programId, personId: ids.day7 } }
