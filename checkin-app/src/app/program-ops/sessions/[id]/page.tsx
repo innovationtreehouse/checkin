@@ -8,6 +8,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { MAX_VISIT_MS } from '@/lib/visitTimes';
 import type { RSVPStatus } from '@/types/rsvp';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -182,7 +183,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
       return;
     }
     if (manualStatus === 'Present' && manualArrived && manualDeparted &&
-        Date.parse(manualDeparted) - Date.parse(manualArrived) > 24 * 60 * 60 * 1000) {
+        Date.parse(manualDeparted) - Date.parse(manualArrived) > MAX_VISIT_MS) {
       setManualNotice({ ok: false, msg: "A visit cannot be longer than 24 hours." });
       return;
     }

@@ -8,6 +8,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { MAX_VISIT_MS } from '@/lib/visitTimes';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
@@ -153,7 +154,7 @@ export default function AdminVisitsPage() {
       setRowNotice({ id, text: "Departure time must be after arrival time", tone: "error" });
       return;
     }
-    if (editForm.arrivedAt && Date.parse(editForm.departedAt) - Date.parse(editForm.arrivedAt) > 24 * 60 * 60 * 1000) {
+    if (editForm.arrivedAt && Date.parse(editForm.departedAt) - Date.parse(editForm.arrivedAt) > MAX_VISIT_MS) {
       setRowNotice({ id, text: "A visit cannot be longer than 24 hours.", tone: "error" });
       return;
     }
