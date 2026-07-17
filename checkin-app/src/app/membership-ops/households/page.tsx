@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Badge, Button, Group, List, Modal, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core';
+import { Badge, Button, Group, List, Modal, Stack, Table, Text, Textarea, TextInput, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -39,6 +39,9 @@ export default function AdminHouseholdsPage() {
   const [filter, setFilter] = useState("");
   const [confirmDenyOpened, { open: openConfirmDeny, close: closeConfirmDeny }] = useDisclosure(false);
   const [pendingDenyHouseholdId, setPendingDenyHouseholdId] = useState<number | null>(null);
+  const [grantComingYearOpened, { open: openGrantComingYear, close: closeGrantComingYear }] = useDisclosure(false);
+  const [pendingGrantHouseholdId, setPendingGrantHouseholdId] = useState<number | null>(null);
+  const [grantReason, setGrantReason] = useState("");
 
   const fetchHouseholds = useCallback(async () => {
     try {
@@ -83,12 +86,12 @@ export default function AdminHouseholdsPage() {
   // Renewal-season only: admin override that grants the household for the coming year
   // in one click (server creates a completed RENEWAL/INITIAL process). Same COI rules
   // as Grant Membership — the server rejects a board member's own household.
-  const grantForComingYear = async (householdId: number) => {
+  const grantForComingYear = async (householdId: number, reason: string) => {
     try {
       const res = await fetch('/api/membership-ops/households', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ householdId, comingYear: true })
+        body: JSON.stringify({ householdId, comingYear: true, reason })
       });
 
       if (res.ok) {
@@ -101,6 +104,21 @@ export default function AdminHouseholdsPage() {
     } catch {
       notifications.show({ color: 'red', message: 'Network error.', autoClose: false });
     }
+  };
+
+  const handleGrantForComingYear = (householdId: number) => {
+    setPendingGrantHouseholdId(householdId);
+    setGrantReason("");
+    openGrantComingYear();
+  };
+
+  const confirmGrantForComingYear = async () => {
+    if (pendingGrantHouseholdId === null || !grantReason.trim()) return;
+    closeGrantComingYear();
+    const householdId = pendingGrantHouseholdId;
+    const reason = grantReason.trim();
+    setPendingGrantHouseholdId(null);
+    await grantForComingYear(householdId, reason);
   };
 
   // Deny blocks login for every member of the household; restore (deny=false) returns it
@@ -334,7 +352,7 @@ export default function AdminHouseholdsPage() {
                         color="green"
                         disabled={settledForComingYear}
                         title={settledForComingYear ? "This household is already set for the coming year." : undefined}
-                        onClick={() => grantForComingYear(household.id)}
+                        onClick={() => handleGrantForComingYear(household.id)}
                       >
                         {settledForComingYear ? "Granted for coming year" : "Grant for coming year"}
                       </Button>
@@ -373,6 +391,32 @@ export default function AdminHouseholdsPage() {
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmDeny}>Cancel</Button>
           <Button color="red" onClick={confirmDeny}>Deny Membership</Button>
+        </Group>
+      </Modal>
+
+      <Modal
+        opened={grantComingYearOpened}
+        onClose={closeGrantComingYear}
+        title={<Text span fw={700} fz="lg">Grant for Coming Year</Text>}
+        centered
+      >
+        <Text mb="sm">
+          Grant this household&apos;s membership for the coming year, completing its payment gate
+          without a Shopify payment.
+        </Text>
+        <Textarea
+          value={grantReason}
+          onChange={(e) => setGrantReason(e.currentTarget.value)}
+          label="Reason"
+          placeholder="Why is this being granted?"
+          autosize
+          minRows={3}
+          mb="lg"
+          required
+        />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeGrantComingYear}>Cancel</Button>
+          <Button color="green" onClick={confirmGrantForComingYear} disabled={!grantReason.trim()}>Grant</Button>
         </Group>
       </Modal>
     </Stack>

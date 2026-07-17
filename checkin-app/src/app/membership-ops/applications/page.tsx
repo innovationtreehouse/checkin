@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { Alert, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
+import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Text, Textarea } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
@@ -85,6 +86,9 @@ function ApplicationsBoard() {
   const [message, setMessage] = useState("");
   const [messageId, setMessageId] = useState<number | null>(null);
   const { active, toggle, clear } = useStatusFilter();
+  const [certifyOpened, { open: openCertify, close: closeCertify }] = useDisclosure(false);
+  const [pendingCertify, setPendingCertify] = useState<number | null>(null);
+  const [certifyReason, setCertifyReason] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -196,7 +200,7 @@ function ApplicationsBoard() {
     });
   };
 
-  const certify = async (processId: number) => {
+  const certify = async (processId: number, reason: string) => {
     setBusyId(processId);
     setMessageId(processId);
     setMessage("");
@@ -204,7 +208,7 @@ function ApplicationsBoard() {
       const res = await fetch("/api/membership-ops/applications/certify-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId }),
+        body: JSON.stringify({ processId, reason }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -222,6 +226,21 @@ function ApplicationsBoard() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const handleCertify = (processId: number) => {
+    setPendingCertify(processId);
+    setCertifyReason("");
+    openCertify();
+  };
+
+  const confirmCertify = async () => {
+    if (pendingCertify === null || !certifyReason.trim()) return;
+    closeCertify();
+    const processId = pendingCertify;
+    const reason = certifyReason.trim();
+    setPendingCertify(null);
+    await certify(processId, reason);
   };
 
   const householdLabel = (r: ProcessRow) => {
@@ -335,7 +354,7 @@ function ApplicationsBoard() {
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => certify(r.id)}>
+                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => handleCertify(r.id)}>
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                   {ownHousehold(r) && (
@@ -384,6 +403,32 @@ function ApplicationsBoard() {
           ))}
         </Stack>
       )}
+
+      <Modal
+        opened={certifyOpened}
+        onClose={closeCertify}
+        title={<Text span fw={700} fz="lg">Certify Payment Plan</Text>}
+        centered
+      >
+        <Text mb="sm">
+          Certify this payment plan? This activates the household&apos;s membership without a
+          Shopify payment (holding for background clearance if it isn&apos;t done yet).
+        </Text>
+        <Textarea
+          value={certifyReason}
+          onChange={(e) => setCertifyReason(e.currentTarget.value)}
+          label="Reason"
+          placeholder="Why is this being certified?"
+          autosize
+          minRows={3}
+          mb="lg"
+          required
+        />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeCertify}>Cancel</Button>
+          <Button color="green" onClick={confirmCertify} disabled={!certifyReason.trim()}>Certify</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

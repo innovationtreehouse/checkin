@@ -120,6 +120,12 @@ describe("AdminMembershipPage", () => {
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Updated." })));
 
         fireEvent.click(screen.getByRole("button", { name: /Certify payment plan/ }));
+        // Mantine's `required` prop appends a visible " *" to the label text.
+        const certifyReasonInput = await screen.findByLabelText(/^Reason/);
+        // The confirm button is disabled until a reason is entered.
+        expect(screen.getByRole("button", { name: "Certify" })).toBeDisabled();
+        fireEvent.change(certifyReasonInput, { target: { value: "Paid by check outside Shopify" } });
+        fireEvent.click(screen.getByRole("button", { name: "Certify" }));
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Certified — membership activated." })));
 
         fireEvent.click(screen.getByRole("button", { name: "Reset for re-review" }));

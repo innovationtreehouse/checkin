@@ -115,10 +115,8 @@ export const GET = withAuth(
                 ]
             } : {};
 
-            // Renewal-season only: a household whose membership process for the coming
-            // cycle is already settled (member finished renewal, or an admin used the
-            // override) has a terminal ACTIVE process stamped inside this window. Same
-            // "handled this cycle" test runRenewalSweep uses to skip re-opening.
+            // Renewal-season probe input: the settled arm of the process include below
+            // matches inside this window; out of season it matches nothing.
             const window = await renewalSeasonWindow(new Date());
 
             const households = await prisma.household.findMany({
@@ -215,7 +213,7 @@ export const POST = withAuth(
     async (req, auth) => {
         try {
             const body = await req.json();
-            const { householdId, active, deny, comingYear } = body;
+            const { householdId, active, deny, comingYear, reason } = body;
 
             if (!householdId) {
                 return apiError("Household ID is required", 400);
@@ -272,10 +270,13 @@ export const POST = withAuth(
             if (comingYear) {
                 // Certify requires a real actor; mirror the settings PUT convention.
                 if (auth.type !== "session") return apiError("Unauthorized", 401);
+                const trimmedReason = typeof reason === "string" ? reason.trim() : "";
+                if (!trimmedReason) return apiError("A reason is required to certify a payment", 400);
                 try {
                     const process = await grantRenewalPayment(householdId, {
                         actorId: auth.user.id,
                         isSysadmin: auth.user.isSysadmin === true,
+                        reason: trimmedReason,
                     });
                     return NextResponse.json({ success: true, process });
                 } catch (e) {

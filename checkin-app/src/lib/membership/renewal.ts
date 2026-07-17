@@ -338,7 +338,7 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
  */
 export async function grantRenewalPayment(
     householdId: number,
-    actor: { actorId: number; isSysadmin: boolean },
+    actor: { actorId: number; isSysadmin: boolean; reason: string },
 ): Promise<import("@/generated/prisma/client").OrgMembershipProcess> {
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.orgMembershipYearBoundary
@@ -364,7 +364,7 @@ export async function grantRenewalPayment(
 
     // COI is enforced INSIDE certifyPaymentPlan (single source): a board member
     // certifying their own household throws PaymentError('forbidden'); sysadmin bypasses.
-    await certifyPaymentPlan(process.id, actor.actorId, { isSysadmin: actor.isSysadmin });
+    await certifyPaymentPlan(process.id, actor.actorId, { isSysadmin: actor.isSysadmin, reason: actor.reason });
 
     // Supplementary audit marker (traceability) — the PENDING_PAYMENT→ACTIVE
     // transition itself is already audited inside activate().
@@ -375,7 +375,7 @@ export async function grantRenewalPayment(
             tableName: "OrgMembershipProcess",
             affectedEntityId: process.id,
             secondaryAffectedEntity: householdId,
-            newData: { comingYearGrant: true },
+            newData: { comingYearGrant: true, reason: actor.reason },
         },
     });
 

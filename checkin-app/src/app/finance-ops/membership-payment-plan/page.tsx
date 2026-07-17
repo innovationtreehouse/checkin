@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Group, Modal, Stack, Text } from '@mantine/core';
+import { Button, Group, Modal, Stack, Text, Textarea } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
@@ -32,6 +32,7 @@ export default function MembershipPaymentPlansPage() {
   const [message, setMessage] = useState("");
   const [confirmApproveOpened, { open: openConfirmApprove, close: closeConfirmApprove }] = useDisclosure(false);
   const [pendingApproval, setPendingApproval] = useState<number | null>(null);
+  const [reason, setReason] = useState("");
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -55,15 +56,16 @@ export default function MembershipPaymentPlansPage() {
 
   const handleApprove = (processId: number) => {
     setPendingApproval(processId);
+    setReason("");
     openConfirmApprove();
   };
 
-  const doApprove = async (processId: number) => {
+  const doApprove = async (processId: number, reason: string) => {
     try {
       const res = await fetch('/api/finance-ops/membership-payment-plans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ processId })
+        body: JSON.stringify({ processId, reason })
       });
 
       if (res.ok) {
@@ -84,11 +86,12 @@ export default function MembershipPaymentPlansPage() {
   };
 
   const confirmApprove = async () => {
-    if (pendingApproval === null) return;
+    if (pendingApproval === null || !reason.trim()) return;
     closeConfirmApprove();
     const processId = pendingApproval;
+    const reasonToSend = reason.trim();
     setPendingApproval(null);
-    await doApprove(processId);
+    await doApprove(processId, reasonToSend);
   };
 
   if (authLoading || loading) {
@@ -147,13 +150,23 @@ export default function MembershipPaymentPlansPage() {
         title={<Text span fw={700} fz="lg">Approve Scholarship / Payment Plan</Text>}
         centered
       >
-        <Text mb="lg">
+        <Text mb="sm">
           Approve this scholarship or payment plan? This activates the household&apos;s membership without a
           Shopify payment (holding for background clearance if it isn&apos;t done yet).
         </Text>
+        <Textarea
+          value={reason}
+          onChange={(e) => setReason(e.currentTarget.value)}
+          label="Reason"
+          placeholder="Why is this being certified?"
+          autosize
+          minRows={3}
+          mb="lg"
+          required
+        />
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmApprove}>Cancel</Button>
-          <Button color="green" onClick={confirmApprove}>Approve &amp; Activate</Button>
+          <Button color="green" onClick={confirmApprove} disabled={!reason.trim()}>Approve &amp; Activate</Button>
         </Group>
       </Modal>
     </Stack>
