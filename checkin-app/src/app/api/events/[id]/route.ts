@@ -5,7 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
-import { parseVisitTime, departureAfterArrival } from "@/lib/visitTimes";
+import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -242,6 +242,9 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     if (!dr.ok) return apiError(dr.error, 400);
                     if (!departureAfterArrival(ar.value, dr.value)) {
                         return apiError("Departure time must be after arrival time", 400);
+                    }
+                    if (!withinMaxDuration(ar.value, dr.value)) {
+                        return apiError("A visit cannot be longer than 24 hours.", 400);
                     }
                     dep = dr.value;
                 }

@@ -380,9 +380,10 @@ describe('AuditLog Integration Tests', () => {
         createdVisitIds.push(visit.id);
 
         const newArrived = new Date('2020-01-01T10:00:00.000Z');
+        const newDeparted = new Date('2020-01-01T12:00:00.000Z');
         const req = new Request('http://localhost:4000/api/facility/visits', {
             method: 'PATCH',
-            body: JSON.stringify({ visitId: visit.id, arrivedAt: newArrived.toISOString() }),
+            body: JSON.stringify({ visitId: visit.id, arrivedAt: newArrived.toISOString(), departedAt: newDeparted.toISOString() }),
         });
 
         const res = await updateVisit(req as never);

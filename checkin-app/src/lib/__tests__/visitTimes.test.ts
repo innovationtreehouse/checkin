@@ -1,4 +1,4 @@
-import { parseVisitTime, departureAfterArrival } from "../visitTimes";
+import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "../visitTimes";
 
 const now = new Date("2026-07-04T12:00:00Z");
 
@@ -45,5 +45,18 @@ describe("departureAfterArrival", () => {
   });
   it("false when before", () => {
     expect(departureAfterArrival(arrived, new Date("2026-07-04T09:00:00Z"))).toBe(false);
+  });
+});
+
+describe("withinMaxDuration", () => {
+  const arrived = new Date("2026-07-04T10:00:00Z");
+  it("true under 24h", () => {
+    expect(withinMaxDuration(arrived, new Date("2026-07-05T09:00:00Z"))).toBe(true);
+  });
+  it("true at exactly 24h", () => {
+    expect(withinMaxDuration(arrived, new Date("2026-07-05T10:00:00Z"))).toBe(true);
+  });
+  it("false past 24h", () => {
+    expect(withinMaxDuration(arrived, new Date("2026-07-05T10:00:01Z"))).toBe(false);
   });
 });
