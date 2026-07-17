@@ -116,7 +116,7 @@ export async function getIntakeState(userId: number) {
         hasHousehold: !!household,
         isLead: leadIds.has(userId),
         membershipStatus: membership?.status ?? null,
-        process: process ? { id: process.id, kind: process.kind, status: process.status } : null,
+        process: process ? { id: process.id, kind: process.kind, status: process.status, isPaymentPlanRequested: process.isPaymentPlanRequested } : null,
         external,
         prefill: {
             household: household
