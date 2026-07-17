@@ -178,7 +178,9 @@ the first cut.
 
 Invariant-driven reconcile strategy → umbrella §4.2. Entity-specific heal: for an **I1** row
 (ACTIVE + held) the safe auto-fix is clear `held` → null and fire the compensating `+1` the
-webhook missed. Generalizes `lib/finance/reconcile.ts` from order-driven to invariant-driven.
+webhook missed. Generalizes `lib/finance/reconcile.ts` (now variant-id / webhook-parity
+matched, #1074; `activateProgramEnrollment` reused unchanged) from order-driven to
+invariant-driven.
 
 Related history: `4cb5d1d2` (#930 single-pool supersedes two-pool mirror), `a86f3727` (#926
 request guarded to PENDING), `34a92fb7` (#931 org-member snapshot at approval).

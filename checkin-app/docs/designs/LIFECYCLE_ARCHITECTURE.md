@@ -48,8 +48,10 @@ amount of careful app code closes that window.
 - membership's missed `orders/paid` webhook is this — activation that never happened.
 
 This is the harder, more valuable problem. `lib/finance/reconcile.ts` already sweeps one
-direction of it (recovering a missed activation by matching paid orders to pending rows).
-It is a start, not the answer.
+direction of it (recovering a missed activation by matching paid orders to pending rows —
+matching on **membership-variant presence, parity with the orders/paid webhook**, per
+#1074, not on order amount, which false-raised `AMOUNT_MISMATCH` on couponed orders). It is
+a start, not the answer.
 
 **This is not a state-machine-*library* problem.** An in-memory interpreter holds current
 state and acts as the authority while it runs — but our authority is Postgres, mutated by
@@ -174,8 +176,9 @@ detecting a mess the outbox would stop creating.
 A cron (`withCron`, same auth as the others) scans each entity for `validate` violations,
 reports them to the existing sysadmin/board channel, and for the safe, unambiguous ones
 (enrollment I1: `ACTIVE` + held → clear `held`, fire the missed `+1`) auto-heals. This
-generalizes `lib/finance/reconcile.ts` from "order-driven recovery" to "invariant-driven
-sweep." Build this right after the definitions; it's the payoff for having `validate`.
+generalizes `lib/finance/reconcile.ts` from "order-driven recovery" (now variant-id /
+webhook-parity matched, #1074) to "invariant-driven sweep." Build this on the post-#1074
+reconciler; it's the payoff for having `validate`.
 
 ### 4.3 DB `CHECK` constraints (hardening, gated on a write refactor)
 Encode the invariants as Postgres `CHECK`s so illegal tuples are *unwritable* — the
