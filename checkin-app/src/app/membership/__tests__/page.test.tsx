@@ -170,13 +170,16 @@ describe("membership page", () => {
     mockFetchJson({
       "/api/membership": state({
         process: { id: 1, kind: "INITIAL", status: "PENDING_EXTERNAL_ACTION" },
-        external: { contractSigned: true, contractStarted: true, bgConsented: false, bgCleared: true, deepLinkUrl: null },
+        // deepLinkUrl still set (the server keeps returning it) to prove the reopen
+        // link is hidden because the household is cleared, not because it's absent.
+        external: { contractSigned: true, contractStarted: true, bgConsented: false, bgCleared: true, deepLinkUrl: "https://averity.example/consent" },
       }),
     });
     renderWithProviders(<MembershipPage />);
 
     expect(await screen.findByText("Agreement signed — thank you!")).toBeInTheDocument();
     expect(screen.getByText("Background check")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Reopen the Averity consent form/ })).not.toBeInTheDocument();
   });
 
   it("renders PENDING_PAYMENT with a checkout link", async () => {
@@ -455,6 +458,9 @@ describe("membership page", () => {
 
     expect(await screen.findByRole("button", { name: "Resume signing →" })).toBeInTheDocument();
     expect(screen.getByText("Background check started", { exact: false })).toBeInTheDocument();
+    // Consented (honor-system) but not yet reviewer-cleared: the Averity link stays
+    // reachable so a mis-click or an unfinished form isn't a dead end.
+    expect(screen.getByRole("link", { name: /Reopen the Averity consent form/ })).toHaveAttribute("href", "https://averity.example/consent");
   });
 
   it("shows a not-yet-available background-check link and refreshes status on demand", async () => {

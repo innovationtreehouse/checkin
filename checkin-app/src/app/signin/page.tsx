@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { ORG_DOMAIN } from "@/lib/config";
 import { useCheckinEnv, useIsDevInstance, useIsLocalInstance } from "@/components/EnvProvider";
@@ -33,12 +33,17 @@ const heroStyle: React.CSSProperties = {
  * Styled to match the real homepage hero.
  */
 function SignInInner() {
+    const router = useRouter();
     const params = useSearchParams();
     const { data: session, status } = useSession();
     const isDevInstance = useIsDevInstance();
     const isLocalInstance = useIsLocalInstance();
     const checkinEnv = useCheckinEnv();
-    const callbackUrl = params.get("callbackUrl") || "/";
+    // Same-origin relative paths only: this value comes off the query string and
+    // feeds a client-side redirect, so an absolute (or protocol-relative) URL here
+    // would be an open redirect for any authenticated visitor.
+    const rawCallback = params.get("callbackUrl") || "/";
+    const callbackUrl = rawCallback.startsWith("/") && !rawCallback.startsWith("//") ? rawCallback : "/";
     const error = params.get("error");
 
     const signedIn = status === "authenticated" && !!session?.user;
@@ -49,6 +54,15 @@ function SignInInner() {
     // the cloud dev instance; local sessions never carry the hd claim.
     const orgVerified = session?.user?.hd === ORG_DOMAIN && session?.user?.emailVerified === true;
     const wrongAccount = signedIn && checkinEnv === "dev" && !orgVerified;
+
+    // An authenticated, org-OK visitor lands here after an OAuth bounce (e.g. the
+    // dev middleware's hd gate, or a stale /signin link) — send them straight on
+    // instead of stranding them behind a redundant "Sign in with Google" button.
+    useEffect(() => {
+        if (status === "authenticated" && !wrongAccount) {
+            router.replace(callbackUrl);
+        }
+    }, [status, wrongAccount, callbackUrl, router]);
 
     return (
         <main style={mainStyle}>
@@ -140,7 +154,7 @@ function SignInInner() {
                             Continue as {session.user?.name || session.user?.email}
                         </a>
                     </div>
-                ) : (
+                ) : status === "loading" ? null : (
                     <div
                         style={{
                             width: "100%",
