@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { notifyBoardPaymentException } from "@/lib/membership/boardAlerts";
 import * as mirror from "@/lib/shopifyRead/client";
@@ -27,12 +28,15 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * exact. Orders synced before that carry no attributes and fall back to customer
  * email → household lead → the family's single pending process.
  *
- * What still can't be replicated is the webhook's variant-id check that the order
- * really contains the membership/program product: the mirror's order lines carry
- * sku/title, not variant ids. Membership recovery therefore gates on the order
- * covering the family's dues instead. Nothing is guessed: an attribute naming an
- * unknown process, an ambiguous email match, or an amount short of dues raises a
- * problem for the board rather than activating.
+ * Membership recovery replicates the webhook's variant-id check that the order
+ * really contains the membership product: the mirror's order lines carry variant
+ * ids since #1048, so recovery gates on the order containing one of checkin's known
+ * membership variants — the exact set the webhook builds — not on order total.
+ * (Orders synced before #1048 and not yet backfilled carry no line variant ids;
+ * those fall back to a discount-aware dues amount gate — see reconcileForwardMembership.)
+ * Nothing is guessed: an attribute naming an unknown process, an ambiguous email
+ * match, or an order with no membership item raises a problem for the board rather
+ * than activating.
  */
 
 export type PaymentExceptionKind =
@@ -140,7 +144,8 @@ type ResolvedProcess = { id: number; orgMembershipId: number | null } | "none" |
  * null on those). Fuzzier, so it refuses to guess: zero or several pending
  * processes resolve to "none"/"ambiguous" rather than picking one.
  *
- * Either way the caller amount-gates before activating, and only a PENDING_PAYMENT
+ * Either way the caller checks the order contains a membership variant before
+ * activating (amount-gating only pre-#1048 orders), and only a PENDING_PAYMENT
  * process is ever a recovery candidate.
  */
 async function resolveMembershipProcess(order: MirrorOrder): Promise<ResolvedProcess> {
@@ -201,21 +206,60 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
     }
     if (!isPaid(order)) return true; // pending/authorized/etc — nothing to do yet, but it IS this family's order.
 
-    // Amount gate: the mirror has no line variant id, so we cannot replicate the
-    // webhook's variant-id membership-item check — gate on the order covering dues
-    // instead (matched to THIS pending process). Short → mismatch, not activation.
-    const membership = proc.orgMembershipId
-        ? await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId }, select: { isVolunteer: true } })
-        : null;
-    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 }, select: { normalDuesCents: true, volunteerDuesCents: true } });
-    const expected = membership?.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
-    if (expected > 0 && order.totalCents + AMOUNT_TOLERANCE_CENTS < expected) {
-        await raisePaymentException("AMOUNT_MISMATCH", { shopifyOrderId: order.legacyId, processId: proc.id });
-        return true;
+    // Membership-item gate, parity with the orders/paid webhook: recover only if the
+    // order actually CONTAINS a membership product (its variant id), the same
+    // {orgMembership, normal, volunteer} variant set the webhook builds — mirrored
+    // onto order lines since #1048. A variant id is stable and can't drift; the old
+    // total-price gate false-raised AMOUNT_MISMATCH on every couponed order (volunteer
+    // rate, promo), whose sub-dues total is indistinguishable from an underpayment by
+    // amount alone. See the H2 note in payment.ts and the webhook route.
+    const settings = await prisma.boardSettings.findUnique({
+        where: { id: 1 },
+        select: {
+            orgMembershipVariantId: true,
+            shopifyNormalVariantId: true,
+            shopifyVolunteerVariantId: true,
+            normalDuesCents: true,
+            volunteerDuesCents: true,
+        },
+    });
+    const membershipVariantIds = new Set(
+        [
+            settings?.orgMembershipVariantId,
+            settings?.shopifyNormalVariantId,
+            settings?.shopifyVolunteerVariantId,
+            config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
+        ].filter((v): v is string => !!v),
+    );
+    const lineVariantIds = await mirror.orderLineVariantIds(order.orderGid);
+
+    if (lineVariantIds.length > 0) {
+        // Post-#1048 order: variant ids are mirrored, so the item check is authoritative.
+        if (!lineVariantIds.some((v) => membershipVariantIds.has(v))) {
+            // Attributed to a pending process, paid, but no membership product on it —
+            // the webhook's NO_ITEM case (activate() fails closed there).
+            await raisePaymentException("NO_ITEM", { shopifyOrderId: order.legacyId, processId: proc.id });
+            return true;
+        }
+    } else {
+        // TRANSITIONAL (remove once the #1048 backfill re-pull is universal): rows
+        // synced before #1048 carry no line variant ids, so the item check is
+        // impossible — fall back to the old dues amount gate, made discount-aware by
+        // adding the coupon back so a couponed pre-backfill order compares its GROSS
+        // figure to gross dues and no longer false-raises AMOUNT_MISMATCH.
+        const membership = proc.orgMembershipId
+            ? await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId }, select: { isVolunteer: true } })
+            : null;
+        const expected = membership?.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
+        if (expected > 0 && order.totalCents + order.discountCents + AMOUNT_TOLERANCE_CENTS < expected) {
+            await raisePaymentException("AMOUNT_MISMATCH", { shopifyOrderId: order.legacyId, processId: proc.id });
+            return true;
+        }
     }
 
-    // Recover: advance past the paid checkpoint. hasMembershipItem=true — matched to
-    // this specific pending process and the amount covers dues (honest missed-webhook
+    // Recover: advance past the paid checkpoint. hasMembershipItem=true — the order
+    // contains a known membership variant (or, for a pre-backfill order, covers dues)
+    // and is matched to this specific pending process (honest missed-webhook
     // assumption; the reconciler is not the attack surface the public webhook is, and
     // it leaves a full AuditLog trail via activate()).
     const result = await activateByProcessId(proc.id, order.legacyId ?? "", true);
@@ -295,10 +339,13 @@ async function activateProgramFromOrder(order: MirrorOrder, programId: number, p
         programId,
         personIds,
         shopifyOrderId: order.legacyId ?? "",
-        // The mirror carries no line variant id, so the webhook's variant check can't
-        // be replicated — the order is matched to THIS program's pending enrollments
-        // (by cart attribute, or by household for pre-#1029 orders). Tier unknown →
-        // no legacy sibling-inventory mirror.
+        // Line variant ids are mirrored since #1048, but this program path still
+        // matches by cart attribute / household rather than the program's variant id —
+        // program recovery has no amount gate, so it never had the coupon false-positive
+        // the membership path did, and widening it to a variant check is deferred (the
+        // membership fix was the scoped concern). So hasProgramItem stays true here: the
+        // order is matched to THIS program's pending enrollments. Tier unknown → no
+        // legacy sibling-inventory mirror.
         hasProgramItem: true,
         purchasedOrgMember: null,
     });
@@ -373,8 +420,11 @@ async function reconcileReversals(): Promise<number> {
         let kind = classifyReversal(o, disputed.has(o.orderGid));
         if (!kind) {
             // Not reversed — but was the order edited down below dues after activation?
+            // Discount-aware: add the coupon back so an ordinary couponed order (volunteer
+            // rate, promo) isn't mistaken for a post-activation edit-down — only a real
+            // shortfall below GROSS dues counts. Keeps the "edited down" purpose intact.
             const expected = isVolunteerById.get(proc.orgMembershipId ?? -1) ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
-            if (expected > 0 && o.totalCents + AMOUNT_TOLERANCE_CENTS < expected) kind = "AMOUNT_MISMATCH";
+            if (expected > 0 && o.totalCents + o.discountCents + AMOUNT_TOLERANCE_CENTS < expected) kind = "AMOUNT_MISMATCH";
         }
         if (kind) {
             await raisePaymentException(kind, { shopifyOrderId: proc.shopifyOrderId, processId: proc.id });

@@ -78,6 +78,16 @@ export interface MirrorOrder {
     totalCents: number;
     subtotalCents: number;
     totalRefundedCents: number;
+    /** Coupon amount Shopify took off the order (pre-existing column). Added back to
+     * reconstruct the gross figure when amount-gating a couponed order. */
+    discountCents: number;
+    /**
+     * Coupon codes applied at checkout, mirrored since #1048. Empty [] for orders
+     * synced before that shipped (until a backfill re-pull) AND for genuinely
+     * un-couponed orders — absence is not distinguishable, so treat non-empty as
+     * "a coupon explains a sub-dues total", never empty as "definitely no coupon".
+     */
+    discountCodes: string[];
     cancelledAt: Date | null;
     updatedAt: Date | null;
     /**
@@ -97,6 +107,7 @@ export interface MirrorOrder {
 const ORDER_COLS = `shopify_gid AS "orderGid", legacy_id AS "legacyId", customer_email AS "customerEmail",
     financial_status AS "financialStatus", total_cents AS "totalCents", subtotal_cents AS "subtotalCents",
     total_refunded_cents AS "totalRefundedCents",
+    discount_cents AS "discountCents", discount_codes AS "discountCodes",
     cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt",
     updated_at AT TIME ZONE 'UTC' AS "updatedAt",
     note_attributes AS "noteAttributes"`;
@@ -138,6 +149,26 @@ export async function ordersByLegacyIds(legacyIds: string[]): Promise<MirrorOrde
         [legacyIds],
     );
     return rows.rows;
+}
+
+/**
+ * Distinct variant legacy ids on one order's lines — the join key checkin owns
+ * (BoardSettings/Program shopify*VariantId), mirrored onto shop_order_line since
+ * #1048. This is the reconciler's replica of the webhook's membership/program-item
+ * check ("lines whose variant is one of checkin's known ids"). Lines with a null
+ * variant_legacy_id (custom/deleted product, or a row synced before #1048 and not
+ * yet backfilled) are dropped, so an EMPTY result means "no attributable variant
+ * ids" — the reconciler reads that as pre-backfill and falls back to its amount gate.
+ */
+export async function orderLineVariantIds(orderGid: string): Promise<string[]> {
+    const p = getPool();
+    if (!p) return [];
+    const rows = await p.query<{ variantLegacyId: string }>(
+        `SELECT DISTINCT variant_legacy_id AS "variantLegacyId" FROM shop_order_line
+         WHERE order_gid = $1 AND variant_legacy_id IS NOT NULL`,
+        [orderGid],
+    );
+    return rows.rows.map((r) => r.variantLegacyId);
 }
 
 /** The `sync_run` columns the board needs to judge how fresh the mirror is. */
