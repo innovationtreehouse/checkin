@@ -242,6 +242,27 @@ describe("AdminEditHouseholdModal", () => {
     expect(JSON.parse(patchOpts!.body as string)).toEqual(expect.objectContaining({ isVolunteer: true }));
   });
 
+  it("omits the membership fields from the PATCH body for a membership-less household", async () => {
+    const fetchMock = mockFetchJson({
+      "/api/membership-ops/households?id=55": { household },
+      "/api/membership-ops/households/55": { household },
+    });
+    renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByDisplayValue("Smith Family");
+
+    fireEvent.change(screen.getByLabelText("Household Name"), { target: { value: "Smith Fam" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/membership-ops/households/55", expect.objectContaining({ method: "PATCH" })),
+    );
+    const [, patchOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PATCH")!;
+    const body = JSON.parse(patchOpts!.body as string);
+    expect(body).toEqual(expect.objectContaining({ name: "Smith Fam" }));
+    expect(body).not.toHaveProperty("isVolunteer");
+    expect(body).not.toHaveProperty("memberSince");
+  });
+
   it("shows the no-leads state for a household with no household leads", async () => {
     const noLeads = { ...household, householdLeads: undefined, name: null };
     mockFetchJson({ "/api/membership-ops/households?id=55": { household: noLeads } });
