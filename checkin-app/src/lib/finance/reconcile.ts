@@ -36,7 +36,9 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * those fall back to a discount-aware dues amount gate — see reconcileForwardMembership.)
  * Nothing is guessed: an attribute naming an unknown process, an ambiguous email
  * match, or an order with no membership item raises a problem for the board rather
- * than activating.
+ * than activating. One policy check rides on top of the variant gate: a
+ * non-volunteer family redeeming the board's volunteer discount code raises
+ * DISCOUNT_UNAUTHORIZED instead of activating (see usesVolunteerCodeUnentitled).
  */
 
 export type PaymentExceptionKind =
@@ -48,7 +50,8 @@ export type PaymentExceptionKind =
     | "CANCELLED"
     | "REVERSED_BEFORE_ACTIVATION"
     | "AMOUNT_MISMATCH"
-    | "ACTIVE_WITHOUT_PAYMENT";
+    | "ACTIVE_WITHOUT_PAYMENT"
+    | "DISCOUNT_UNAUTHORIZED";
 
 type Severity = "WARN" | "CRITICAL";
 
@@ -126,6 +129,27 @@ function isPaid(o: MirrorOrder): boolean {
 function isReversed(o: MirrorOrder): boolean {
     const s = (o.financialStatus ?? "").toUpperCase();
     return !!o.cancelledAt || o.totalRefundedCents > 0 || s === "REFUNDED" || s === "PARTIALLY_REFUNDED" || s === "VOIDED";
+}
+
+/**
+ * Volunteer-coupon entitlement check. Shopify owns the discount ARITHMETIC
+ * (variant-backed orders are never amount-gated); checkin owns the POLICY that
+ * only volunteer households may use the volunteer-rate code — the #1074 variant
+ * gate correctly stopped flagging couponed orders by amount, which also meant a
+ * non-volunteer family redeeming the volunteer code activated cleanly with no flag.
+ *
+ * True iff the order's mirrored coupon list carries the board-configured volunteer
+ * code (BoardSettings.volunteerDiscountCode — the same code the checkout link
+ * appends for volunteer households) while the membership is NOT volunteer. Compared
+ * case-insensitively (Shopify codes are). An EMPTY discountCodes list is never
+ * evidence of anything — rows synced before #1048 mirror no codes — so only a
+ * non-empty list can flag. Other codes (promos) are Shopify's business, not ours.
+ */
+export function usesVolunteerCodeUnentitled(order: MirrorOrder, volunteerCode: string | null | undefined, isVolunteer: boolean): boolean {
+    if (isVolunteer || !volunteerCode) return false;
+    const vc = volunteerCode.trim().toUpperCase();
+    if (!vc) return false;
+    return order.discountCodes.some((c) => c.trim().toUpperCase() === vc);
 }
 
 // ── forward pass (recover missed payments) ───────────────────────────────────
@@ -221,6 +245,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
             shopifyVolunteerVariantId: true,
             normalDuesCents: true,
             volunteerDuesCents: true,
+            volunteerDiscountCode: true,
         },
     });
     const membershipVariantIds = new Set(
@@ -232,6 +257,11 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         ].filter((v): v is string => !!v),
     );
     const lineVariantIds = await mirror.orderLineVariantIds(order.orderGid);
+    // Both branches below need the membership's volunteer flag: the amount-gate
+    // fallback for expected dues, the coupon entitlement check for volunteerOnly.
+    const membership = proc.orgMembershipId
+        ? await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId }, select: { isVolunteer: true } })
+        : null;
 
     if (lineVariantIds.length > 0) {
         // Post-#1048 order: variant ids are mirrored, so the item check is authoritative.
@@ -247,14 +277,22 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         // impossible — fall back to the old dues amount gate, made discount-aware by
         // adding the coupon back so a couponed pre-backfill order compares its GROSS
         // figure to gross dues and no longer false-raises AMOUNT_MISMATCH.
-        const membership = proc.orgMembershipId
-            ? await prisma.orgMembership.findUnique({ where: { id: proc.orgMembershipId }, select: { isVolunteer: true } })
-            : null;
         const expected = membership?.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
         if (expected > 0 && order.totalCents + order.discountCents + AMOUNT_TOLERANCE_CENTS < expected) {
             await raisePaymentException("AMOUNT_MISMATCH", { shopifyOrderId: order.legacyId, processId: proc.id });
             return true;
         }
+    }
+
+    // Coupon entitlement: the item gates above prove the order carries the membership
+    // product, but not that the family was ALLOWED the code that priced it. Volunteer
+    // code on a non-volunteer membership → tell the board, do NOT activate (parity
+    // with the NO_ITEM branch). Sits after both gates so a backfilled pre-#1048 row
+    // with codes is covered too; pre-backfill rows mirror [] and pass through unjudged.
+    if (usesVolunteerCodeUnentitled(order, settings?.volunteerDiscountCode, membership?.isVolunteer ?? false)) {
+        logger.warn(`[reconcile] volunteer discount code on non-volunteer order ${order.legacyId} (process ${proc.id})`);
+        await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, processId: proc.id });
+        return true;
     }
 
     // Recover: advance past the paid checkpoint. hasMembershipItem=true — the order
@@ -406,7 +444,10 @@ async function reconcileReversals(): Promise<number> {
     const disputed = await mirror.disputedOrderGids(orders.map((o) => o.orderGid));
 
     // Expected dues per membership (for the "order edited down below dues" case).
-    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 }, select: { normalDuesCents: true, volunteerDuesCents: true } });
+    const settings = await prisma.boardSettings.findUnique({
+        where: { id: 1 },
+        select: { normalDuesCents: true, volunteerDuesCents: true, volunteerDiscountCode: true },
+    });
     const memberIds = procs.map((p) => p.orgMembershipId).filter((v): v is number => v != null);
     const members = memberIds.length
         ? await prisma.orgMembership.findMany({ where: { id: { in: memberIds } }, select: { id: true, isVolunteer: true } })
@@ -425,6 +466,15 @@ async function reconcileReversals(): Promise<number> {
             // shortfall below GROSS dues counts. Keeps the "edited down" purpose intact.
             const expected = isVolunteerById.get(proc.orgMembershipId ?? -1) ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
             if (expected > 0 && o.totalCents + o.discountCents + AMOUNT_TOLERANCE_CENTS < expected) kind = "AMOUNT_MISMATCH";
+        }
+        if (!kind && usesVolunteerCodeUnentitled(o, settings?.volunteerDiscountCode, isVolunteerById.get(proc.orgMembershipId ?? -1) ?? false)) {
+            // Coupon entitlement, shared with the forward pass — and load-bearing here:
+            // orders the webhook activated in real time never reach the forward pass
+            // (already recorded on the process → early return), so this loop over
+            // activated memberships is the daily audit that catches a volunteer code
+            // a non-volunteer family redeemed. Order + volunteer flag already in hand.
+            logger.warn(`[reconcile] volunteer discount code on non-volunteer activated order ${proc.shopifyOrderId} (process ${proc.id})`);
+            kind = "DISCOUNT_UNAUTHORIZED";
         }
         if (kind) {
             await raisePaymentException(kind, { shopifyOrderId: proc.shopifyOrderId, processId: proc.id });

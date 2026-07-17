@@ -1144,6 +1144,7 @@ enum PaymentExceptionKind {
   REVERSED_BEFORE_ACTIVATION
   AMOUNT_MISMATCH
   ACTIVE_WITHOUT_PAYMENT
+  DISCOUNT_UNAUTHORIZED
 }
 
 enum PaymentExceptionSeverity {
