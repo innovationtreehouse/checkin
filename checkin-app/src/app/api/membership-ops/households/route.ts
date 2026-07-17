@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { isRenewalSeason, nextBoundary, householdBgIsFresh, bgValidUntilBoundary, grantRenewalPayment } from "@/lib/membership/renewal";
+import { renewalSeasonWindow, nextBoundary, householdBgIsFresh, bgValidUntilBoundary, grantRenewalPayment } from "@/lib/membership/renewal";
 import { PaymentError } from "@/lib/membership/payment";
 
 export const dynamic = 'force-dynamic';
@@ -100,14 +100,23 @@ export const GET = withAuth(
                         // JSON at the same trust level as the rest of the row.
                         select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true, isHouseholdLead: true, lastBackgroundCheck: true }
                     },
-                    // Only the payable-renewal processes — enough to decide grantability without
-                    // an extra per-household query. orgMembership's own scalars (status,
+                    // ONE probe serves both flags computed below: the payable-renewal rows
+                    // (PENDING_PAYMENT + bgClearedAt) decide grantability, and a terminal
+                    // ACTIVE process stamped inside the renewal window — the same "handled
+                    // this cycle" test runRenewalSweep uses — marks the coming year settled.
+                    // Out of season the window start is "never" (matches no row), keeping one
+                    // query shape and one inferred type. orgMembership's own scalars (status,
                     // memberSince) still ride along via this include.
                     orgMembership: {
                         include: {
                             processes: {
-                                where: { kind: "RENEWAL", status: "PENDING_PAYMENT", bgClearedAt: { not: null } },
-                                select: { id: true },
+                                where: {
+                                    OR: [
+                                        { kind: "RENEWAL", status: "PENDING_PAYMENT", bgClearedAt: { not: null } },
+                                        { status: "ACTIVE", stageEnteredAt: { gte: window?.windowStart ?? new Date(8.64e15) } },
+                                    ],
+                                },
+                                select: { id: true, status: true },
                             },
                         },
                     },
@@ -133,7 +142,12 @@ export const GET = withAuth(
 
             const withGrantable = await Promise.all(
                 households.map(async (h) => {
-                    const hasPayableRenewal = (h.orgMembership?.processes?.length ?? 0) > 0;
+                    // Split the single OR probe: PENDING_PAYMENT rows = payable renewal
+                    // (grantability); an ACTIVE row = the coming cycle is already settled
+                    // (member finished renewal, or an admin used the override).
+                    const { processes = [], ...orgMembership } = h.orgMembership ?? {};
+                    const hasPayableRenewal = processes.some((p) => p.status === "PENDING_PAYMENT");
+                    const settledForComingYear = processes.some((p) => p.status === "ACTIVE");
                     const renewalGrantable =
                         hasPayableRenewal && boundary
                             ? await householdBgIsFresh(h.id, boundary, recheckMonths)
@@ -144,13 +158,19 @@ export const GET = withAuth(
                         .filter((m) => m.isHouseholdLead && m.lastBackgroundCheck)
                         .reduce<Date | null>((acc, m) => (!acc || m.lastBackgroundCheck! > acc ? m.lastBackgroundCheck! : acc), null);
                     const bgValidUntil = bgValidUntilBoundary(latestLeadBg, bgSettings);
-                    return { ...withFlatContact(h), renewalGrantable, bgValidUntil };
+                    return {
+                        ...withFlatContact(h),
+                        orgMembership: h.orgMembership ? orgMembership : null,
+                        renewalGrantable,
+                        settledForComingYear,
+                        bgValidUntil,
+                    };
                 }),
             );
 
             return NextResponse.json({
                 households: withGrantable,
-                renewalSeason: await isRenewalSeason(new Date()),
+                renewalSeason: window !== null,
                 currentMembershipValidUntil: settings?.currentMembershipValidUntil ?? null,
             });
         } catch (error) {

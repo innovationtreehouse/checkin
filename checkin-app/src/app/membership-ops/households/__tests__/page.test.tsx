@@ -179,6 +179,22 @@ describe("membership-ops/households page", () => {
       );
     });
 
+    it("disables it once the coming year is settled", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({
+        "/api/membership-ops/households": {
+          ...inSeason,
+          households: [{ ...inSeason.households[0], settledForComingYear: true }, inSeason.households[1]],
+        },
+      });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      expect(screen.getByRole("button", { name: "Granted for coming year" })).toBeDisabled();
+      // The un-settled household keeps a live button.
+      expect(screen.getByRole("button", { name: "Grant for coming year" })).toBeEnabled();
+    });
+
     it("hides it for a board member's OWN household (conflict of interest)", async () => {
       setSession({ id: 99, isBoardMember: true, householdId: 2 }); // same household as The Joneses (id 2)
       mockFetchJson({ "/api/membership-ops/households": inSeason });
