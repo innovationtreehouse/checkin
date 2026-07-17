@@ -23,13 +23,20 @@ jest.mock("@/lib/shopifyRead/client", () => ({
     ordersChangedSince: jest.fn(async () => [] as MirrorOrder[]),
     ordersByLegacyIds: jest.fn(async () => [] as MirrorOrder[]),
     disputedOrderGids: jest.fn(async () => new Set<string>()),
+    // Default [] = a pre-#1048 order with no mirrored line variant ids, which drives
+    // the reconciler's transitional amount-gate fallback. Tests of the variant path
+    // set this explicitly.
+    orderLineVariantIds: jest.fn(async () => [] as string[]),
 }));
 import * as mirror from "@/lib/shopifyRead/client";
 
 const TAG = "reconcile-matrix-test";
+// A membership variant id the board has configured; #1048 mirrors it onto order lines.
+const MEMBERSHIP_VARIANT = "variant-normal-1";
 const ordersChangedSince = mirror.ordersChangedSince as jest.Mock;
 const ordersByLegacyIds = mirror.ordersByLegacyIds as jest.Mock;
 const disputedOrderGids = mirror.disputedOrderGids as jest.Mock;
+const orderLineVariantIds = mirror.orderLineVariantIds as jest.Mock;
 
 function order(overrides: Partial<MirrorOrder> & { legacyId: string }): MirrorOrder {
     return {
@@ -39,6 +46,8 @@ function order(overrides: Partial<MirrorOrder> & { legacyId: string }): MirrorOr
         totalCents: 5000,
         subtotalCents: 5000,
         totalRefundedCents: 0,
+        discountCents: 0,
+        discountCodes: [],
         cancelledAt: null,
         updatedAt: new Date(),
         // Default null = an order synced before #1029, i.e. the email-fallback path.
@@ -83,8 +92,8 @@ async function makeApplicant(opts: {
 beforeAll(async () => {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
-        create: { id: 1, normalDuesCents: 5000, volunteerDuesCents: 2000 },
-        update: { normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyReconcileCursorAt: null },
+        create: { id: 1, normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT },
+        update: { normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT, shopifyReconcileCursorAt: null },
     });
 });
 
@@ -92,6 +101,7 @@ afterEach(async () => {
     ordersChangedSince.mockResolvedValue([]);
     ordersByLegacyIds.mockResolvedValue([]);
     disputedOrderGids.mockResolvedValue(new Set());
+    orderLineVariantIds.mockResolvedValue([]);
     // Reset cursor so each test scans its own fixtures from scratch.
     await prisma.boardSettings.update({ where: { id: 1 }, data: { shopifyReconcileCursorAt: null } });
 });
@@ -149,6 +159,46 @@ describe("forward recovery", () => {
         await runReconcile();
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe("PENDING_PAYMENT");
+        expect(await prisma.paymentException.findFirst({ where: { kind: "AMOUNT_MISMATCH", shopifyOrderId: oid } })).toBeTruthy();
+    });
+
+    it("recovers a couponed order below gross dues (variant match), no AMOUNT_MISMATCH", async () => {
+        // #1048: the volunteer rate / promos are Shopify coupons, so a valid order's
+        // total is below gross dues. It carries a known membership variant line → recover.
+        const email = `coupon-${TAG}@ex.com`;
+        const oid = `${TAG}-120`;
+        const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true });
+        orderLineVariantIds.mockResolvedValue([MEMBERSHIP_VARIANT]);
+        ordersChangedSince.mockResolvedValue([
+            order({ legacyId: oid, customerEmail: email, totalCents: 2000, discountCents: 3000, discountCodes: ["VOLUNTEER50"] }),
+        ]);
+        await runReconcile();
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(proc?.status).toBe("ACTIVE");
+        expect(proc?.shopifyOrderId).toBe(oid);
+        expect(await prisma.paymentException.count({ where: { kind: "AMOUNT_MISMATCH", processId } })).toBe(0);
+    });
+
+    it("raises NO_ITEM when a variant-mirrored order contains no membership product", async () => {
+        const email = `noitem-${TAG}@ex.com`;
+        const oid = `${TAG}-121`;
+        const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true });
+        // Order lines are mirrored, but none is a membership variant (e.g. a t-shirt).
+        orderLineVariantIds.mockResolvedValue(["variant-tshirt-99"]);
+        ordersChangedSince.mockResolvedValue([order({ legacyId: oid, customerEmail: email, totalCents: 5000 })]);
+        await runReconcile();
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("PENDING_PAYMENT");
+        expect(await prisma.paymentException.findFirst({ where: { kind: "NO_ITEM", shopifyOrderId: oid } })).toBeTruthy();
+    });
+
+    it("pre-backfill order (no variant ids) genuinely short of dues still raises AMOUNT_MISMATCH", async () => {
+        // orderLineVariantIds default [] = pre-#1048, no discount codes → amount fallback.
+        const email = `prebackfill-${TAG}@ex.com`;
+        const oid = `${TAG}-122`;
+        const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true });
+        ordersChangedSince.mockResolvedValue([order({ legacyId: oid, customerEmail: email, totalCents: 1000, discountCents: 0, discountCodes: [] })]);
+        await runReconcile();
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("PENDING_PAYMENT");
         expect(await prisma.paymentException.findFirst({ where: { kind: "AMOUNT_MISMATCH", shopifyOrderId: oid } })).toBeTruthy();
     });
 
@@ -254,6 +304,17 @@ describe("reversal detection", () => {
         await runReconcile();
         const ex = await prisma.paymentException.findFirst({ where: { kind: "CHARGEBACK", processId } });
         expect(ex?.severity).toBe("CRITICAL");
+    });
+
+    it("does not raise AMOUNT_MISMATCH on a couponed order below gross dues (post-activation)", async () => {
+        // ACTIVE membership paid with a coupon: total is below gross dues but the
+        // discount explains the gap — not a post-activation edit-down. No exception.
+        const oid = `${TAG}-203`;
+        const { processId } = await makeApplicant({ email: `revcoupon-${TAG}@ex.com`, status: "ACTIVE", paid: true, shopifyOrderId: oid });
+        ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, financialStatus: "PAID", totalCents: 2000, discountCents: 3000, discountCodes: ["VOLUNTEER50"] })]);
+        await runReconcile();
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("ACTIVE");
+        expect(await prisma.paymentException.count({ where: { kind: "AMOUNT_MISMATCH", processId } })).toBe(0);
     });
 
     it("raises CANCELLED for a cancelled order", async () => {
