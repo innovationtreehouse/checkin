@@ -89,11 +89,16 @@ async function makeApplicant(opts: {
     return { householdId: hh.id, processId: proc.id, membershipId: m.id };
 }
 
+// The board-configured volunteer-rate coupon (BoardSettings.volunteerDiscountCode).
+// Distinct from the "VOLUNTEER50" promo-style code other cases use, which must stay
+// unregistered-as-volunteer so they exercise the codes-are-Shopify's-business path.
+const VOLUNTEER_CODE = "VOLFAM";
+
 beforeAll(async () => {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
-        create: { id: 1, normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT },
-        update: { normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT, shopifyReconcileCursorAt: null },
+        create: { id: 1, normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT, volunteerDiscountCode: VOLUNTEER_CODE },
+        update: { normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT, volunteerDiscountCode: VOLUNTEER_CODE, shopifyReconcileCursorAt: null },
     });
 });
 
@@ -177,6 +182,39 @@ describe("forward recovery", () => {
         expect(proc?.status).toBe("ACTIVE");
         expect(proc?.shopifyOrderId).toBe(oid);
         expect(await prisma.paymentException.count({ where: { kind: "AMOUNT_MISMATCH", processId } })).toBe(0);
+    });
+
+    it("raises DISCOUNT_UNAUTHORIZED and does not activate when a NON-volunteer family used the volunteer code", async () => {
+        // The #1074 regression: variant gate passes (real membership product), amounts
+        // are Shopify's business — but the family isn't entitled to the volunteer rate.
+        const email = `volcode-${TAG}@ex.com`;
+        const oid = `${TAG}-123`;
+        const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true, isVolunteer: false });
+        orderLineVariantIds.mockResolvedValue([MEMBERSHIP_VARIANT]);
+        ordersChangedSince.mockResolvedValue([
+            // Lowercase on the order — Shopify codes are case-insensitive.
+            order({ legacyId: oid, customerEmail: email, totalCents: 2000, discountCents: 3000, discountCodes: ["volfam"] }),
+        ]);
+        await runReconcile();
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("PENDING_PAYMENT");
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
+
+        // Idempotent: a second run does not duplicate the exception.
+        await runReconcile();
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
+    });
+
+    it("activates a volunteer family using the volunteer code, no exception", async () => {
+        const email = `volok-${TAG}@ex.com`;
+        const oid = `${TAG}-124`;
+        const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true, isVolunteer: true });
+        orderLineVariantIds.mockResolvedValue([MEMBERSHIP_VARIANT]);
+        ordersChangedSince.mockResolvedValue([
+            order({ legacyId: oid, customerEmail: email, totalCents: 2000, discountCents: 3000, discountCodes: [VOLUNTEER_CODE] }),
+        ]);
+        await runReconcile();
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("ACTIVE");
+        expect(await prisma.paymentException.count({ where: { processId } })).toBe(0);
     });
 
     it("raises NO_ITEM when a variant-mirrored order contains no membership product", async () => {
@@ -315,6 +353,18 @@ describe("reversal detection", () => {
         await runReconcile();
         expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("ACTIVE");
         expect(await prisma.paymentException.count({ where: { kind: "AMOUNT_MISMATCH", processId } })).toBe(0);
+    });
+
+    it("raises DISCOUNT_UNAUTHORIZED on an already-ACTIVATED non-volunteer order that used the volunteer code", async () => {
+        // The webhook activated this in real time (order recorded on the process), so
+        // the forward pass never re-examines it — the reversal loop is the daily audit.
+        const oid = `${TAG}-204`;
+        const { processId } = await makeApplicant({ email: `revvol-${TAG}@ex.com`, status: "ACTIVE", paid: true, shopifyOrderId: oid, isVolunteer: false });
+        ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, financialStatus: "PAID", totalCents: 2000, discountCents: 3000, discountCodes: [VOLUNTEER_CODE] })]);
+        await runReconcile();
+        // Never auto-reverted — flagged for the board.
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: processId } }))?.status).toBe("ACTIVE");
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", processId } })).toBe(1);
     });
 
     it("raises CANCELLED for a cancelled order", async () => {
