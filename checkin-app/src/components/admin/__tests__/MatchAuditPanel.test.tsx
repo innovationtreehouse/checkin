@@ -10,6 +10,8 @@ describe("MatchAuditPanel", () => {
   it("does not run until clicked, then separates gaps from legitimate manual rows", async () => {
     mockFetchJson({
       [AUDIT_URL]: {
+        configured: true,
+        configuredVariants: 3,
         variantCoverage: { lines: 6, withVariant: 6 },
         orders: [
           { bucket: "MATCHED", orderLegacyId: "1", name: "#1", customerEmail: "a@x.com", financialStatus: "PAID", totalCents: 5000, expected: ["membership"] },
@@ -45,7 +47,7 @@ describe("MatchAuditPanel", () => {
 
   it("shows a clean badge when nothing is wrong", async () => {
     mockFetchJson({
-      [AUDIT_URL]: { variantCoverage: { lines: 6, withVariant: 6 }, orders: [], memberships: [], enrollments: [] },
+      [AUDIT_URL]: { configured: true, configuredVariants: 3, variantCoverage: { lines: 6, withVariant: 6 }, orders: [], memberships: [], enrollments: [] },
     });
     renderWithProviders(<MatchAuditPanel />);
     fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
@@ -54,15 +56,45 @@ describe("MatchAuditPanel", () => {
 
   it("calls out a variant-blind mirror instead of reporting a falsely clean audit", async () => {
     mockFetchJson({
-      [AUDIT_URL]: { variantCoverage: { lines: 9, withVariant: 0 }, orders: [], memberships: [], enrollments: [] },
+      [AUDIT_URL]: { configured: true, configuredVariants: 3, variantCoverage: { lines: 9, withVariant: 0 }, orders: [], memberships: [], enrollments: [] },
     });
     renderWithProviders(<MatchAuditPanel />);
     fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
     expect(await screen.findByText(/predates variant mirroring/)).toBeInTheDocument();
   });
 
-  it("explains an unwired mirror on 503", async () => {
-    mockFetchJson({}); // unmatched URL → non-ok
+  it("calls out partially-backfilled variant coverage — absent orders, not gaps", async () => {
+    mockFetchJson({
+      [AUDIT_URL]: { configured: true, configuredVariants: 3, variantCoverage: { lines: 10, withVariant: 4 }, orders: [], memberships: [], enrollments: [] },
+    });
+    renderWithProviders(<MatchAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
+    expect(await screen.findByText(/6 of 10 mirror order lines still have no variant id/)).toBeInTheDocument();
+  });
+
+  it("calls out an unconfigured variant set instead of reporting a falsely clean audit", async () => {
+    mockFetchJson({
+      [AUDIT_URL]: { configured: true, configuredVariants: 0, variantCoverage: { lines: 6, withVariant: 6 }, orders: [], memberships: [], enrollments: [] },
+    });
+    renderWithProviders(<MatchAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
+    expect(await screen.findByText(/No membership or program variant ids are configured/)).toBeInTheDocument();
+  });
+
+  it("explains an unwired mirror on a real 503", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+      text: async () => "",
+    })) as unknown as typeof fetch;
+    renderWithProviders(<MatchAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
+    expect(await screen.findByText(/not wired in this environment/)).toBeInTheDocument();
+  });
+
+  it("shows the generic failure message on any other error", async () => {
+    mockFetchJson({}); // unmatched URL → 404, the generic catch path
     renderWithProviders(<MatchAuditPanel />);
     fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
     expect(await screen.findByText(/failed to run/)).toBeInTheDocument();

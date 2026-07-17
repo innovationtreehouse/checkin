@@ -96,6 +96,8 @@ const ALLOWLIST: Record<string, string> = {
         'Board application list: archived (ARCHIVED) vs live (notIn ACTIVE,ARCHIVED).',
     'app/api/membership/renewal-status/route.ts': 'Member probe: this household’s RENEWAL at PENDING_RENEWAL.',
     'app/api/nav/todo-counts/route.ts': 'Dashboard counts: PENDING enrollments + member-actionable membership statuses.',
+    'lib/finance/matchAudit.ts':
+        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) and the claim lookup excluding ARCHIVED — report-only, mirrors the reconcile.ts entry.',
     'lib/finance/reconcile.ts': 'Reconciler lookups: pending/active order-to-row matching on both models.',
     'lib/membership/notifications.ts': 'Read query: board BLOCKED-process count for the notifications badge.',
     'lib/membership/payment.ts': 'Read query: this household’s PENDING_PAYMENT process before activate.',

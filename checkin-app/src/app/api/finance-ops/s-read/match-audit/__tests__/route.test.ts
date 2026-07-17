@@ -24,6 +24,7 @@ const req = () => new Request('http://localhost/api/finance-ops/s-read/match-aud
 const HEALTHY = {
     configured: true,
     variantCoverage: { lines: 4, withVariant: 4 },
+    configuredVariants: 3,
     orders: [],
     memberships: [],
     enrollments: [],

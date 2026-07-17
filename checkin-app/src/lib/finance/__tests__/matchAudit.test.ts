@@ -122,6 +122,40 @@ describe('order buckets (Shopify → activation)', () => {
         const r = await runMatchAudit();
         expect(r.orders.map((o) => o.bucket)).toEqual(['UNCLAIMED_UNPAID', 'UNCLAIMED_UNPAID']);
     });
+
+    it('splits a multi-item checkout per kind: membership claimed, program half not → UNCLAIMED_PAID naming only the gap', async () => {
+        mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('905', { matchedVariantIds: ['111', '222'] })]);
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([{ shopifyOrderId: '905' }]) // claims the MEMBERSHIP half only
+            .mockResolvedValueOnce([]);
+        const r = await runMatchAudit();
+        expect(r.orders[0].bucket).toBe('UNCLAIMED_PAID');
+        expect(r.orders[0].expected).toEqual(['program: Robotics']);
+    });
+
+    it('a program enrollment claims its own program half → MATCHED', async () => {
+        mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('906', { matchedVariantIds: ['222'] })]);
+        prismaMock.programParticipant.findMany
+            .mockResolvedValueOnce([{ shopifyOrderId: '906', programId: 7 }]) // claim lookup
+            .mockResolvedValueOnce([]); // activation sweep
+        const r = await runMatchAudit();
+        expect(r.orders[0].bucket).toBe('MATCHED');
+    });
+
+    it('an ARCHIVED process is not a claim — the lookup excludes it in the where', async () => {
+        await runMatchAudit();
+        const claimWhere = (prismaMock.orgMembershipProcess.findMany.mock.calls[0][0] as { where: { status: unknown } }).where;
+        expect(claimWhere.status).toEqual({ not: 'ARCHIVED' });
+    });
+
+    it('a fully-claimed order stays MATCHED even when refunded (claim precedence — reversal-pass territory)', async () => {
+        mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('907', { totalRefundedCents: 5000, financialStatus: 'REFUNDED' })]);
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([{ shopifyOrderId: '907' }])
+            .mockResolvedValueOnce([]);
+        const r = await runMatchAudit();
+        expect(r.orders[0].bucket).toBe('MATCHED');
+    });
 });
 
 describe('membership buckets (activation → Shopify)', () => {

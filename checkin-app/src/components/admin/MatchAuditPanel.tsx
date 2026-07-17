@@ -1,7 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert, Badge, Button, Card, Group, Table, Text, Title } from "@mantine/core";
+import { formatCents } from "@inventory/money";
+// Type-only import: erased at compile time, so the server module's prisma
+// imports never reach the client bundle — and a server-side reshape is a
+// compile error here instead of a silent drift.
+import type { MatchAuditResult } from "@/lib/finance/matchAudit";
 
 /**
  * Board-facing Shopify ↔ activation match audit (lib/finance/matchAudit.ts via
@@ -15,40 +20,6 @@ import { Alert, Badge, Button, Card, Group, Table, Text, Title } from "@mantine/
  * listed too — they are legitimate, but "who certified what" is exactly what an
  * auditor is here to see.
  */
-
-// Mirror of lib/finance/matchAudit.ts result types (client copy, house pattern).
-type AuditOrderRow = {
-  bucket: 'MATCHED' | 'TRACKED_EXCEPTION' | 'UNCLAIMED_PAID' | 'UNCLAIMED_UNPAID';
-  orderLegacyId: string | null;
-  name: string | null;
-  customerEmail: string | null;
-  financialStatus: string | null;
-  totalCents: number;
-  expected: string[];
-};
-type AuditMembershipRow = {
-  bucket: 'ORDER_MATCHED' | 'MANUAL_CERTIFIED' | 'ORDER_NOT_IN_MIRROR' | 'NO_PAYMENT_BASIS';
-  processId: number;
-  householdName: string | null;
-  shopifyOrderId: string | null;
-  certifiedByName: string | null;
-};
-type AuditEnrollmentRow = {
-  bucket: 'ORDER_MATCHED' | 'SCHOLARSHIP_APPROVED' | 'ORDER_NOT_IN_MIRROR' | 'NO_PAYMENT_BASIS';
-  programId: number;
-  programName: string;
-  personId: number;
-  personName: string | null;
-  shopifyOrderId: string | null;
-};
-type MatchAuditResult = {
-  variantCoverage: { lines: number; withVariant: number };
-  orders: AuditOrderRow[];
-  memberships: AuditMembershipRow[];
-  enrollments: AuditEnrollmentRow[];
-};
-
-const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
 export function MatchAuditPanel() {
   const [result, setResult] = useState<MatchAuditResult | null>(null);
@@ -75,11 +46,35 @@ export function MatchAuditPanel() {
     }
   };
 
-  const unclaimedPaid = result?.orders.filter((o) => o.bucket === 'UNCLAIMED_PAID') ?? [];
-  const membershipGaps = result?.memberships.filter((m) => m.bucket === 'NO_PAYMENT_BASIS' || m.bucket === 'ORDER_NOT_IN_MIRROR') ?? [];
-  const enrollmentGaps = result?.enrollments.filter((e) => e.bucket === 'NO_PAYMENT_BASIS' || e.bucket === 'ORDER_NOT_IN_MIRROR') ?? [];
-  const manual = result?.memberships.filter((m) => m.bucket === 'MANUAL_CERTIFIED') ?? [];
-  const scholarships = result?.enrollments.filter((e) => e.bucket === 'SCHOLARSHIP_APPROVED') ?? [];
+  // One memoized pass per result: this panel re-renders on every keystroke in
+  // the page's resolve-exception modal, and the audit arrays can be large.
+  const { unclaimedPaid, membershipGaps, enrollmentGaps, manual, scholarships, matched } = useMemo(() => {
+    const matchedCounts = { orders: 0, tracked: 0, memberships: 0, enrollments: 0 };
+    const groups = {
+      unclaimedPaid: [] as NonNullable<typeof result>['orders'],
+      membershipGaps: [] as NonNullable<typeof result>['memberships'],
+      enrollmentGaps: [] as NonNullable<typeof result>['enrollments'],
+      manual: [] as NonNullable<typeof result>['memberships'],
+      scholarships: [] as NonNullable<typeof result>['enrollments'],
+      matched: matchedCounts,
+    };
+    for (const o of result?.orders ?? []) {
+      if (o.bucket === 'UNCLAIMED_PAID') groups.unclaimedPaid.push(o);
+      else if (o.bucket === 'MATCHED') matchedCounts.orders++;
+      else if (o.bucket === 'TRACKED_EXCEPTION') matchedCounts.tracked++;
+    }
+    for (const m of result?.memberships ?? []) {
+      if (m.bucket === 'NO_PAYMENT_BASIS' || m.bucket === 'ORDER_NOT_IN_MIRROR') groups.membershipGaps.push(m);
+      else if (m.bucket === 'MANUAL_CERTIFIED') groups.manual.push(m);
+      else matchedCounts.memberships++;
+    }
+    for (const e of result?.enrollments ?? []) {
+      if (e.bucket === 'NO_PAYMENT_BASIS' || e.bucket === 'ORDER_NOT_IN_MIRROR') groups.enrollmentGaps.push(e);
+      else if (e.bucket === 'SCHOLARSHIP_APPROVED') groups.scholarships.push(e);
+      else matchedCounts.enrollments++;
+    }
+    return groups;
+  }, [result]);
   const gapCount = unclaimedPaid.length + membershipGaps.length + enrollmentGaps.length;
 
   const count = (label: string, n: number) => (
@@ -102,10 +97,24 @@ export function MatchAuditPanel() {
 
       {result && (
         <>
+          {result.configuredVariants === 0 && (
+            <Alert color="red" mt="md">
+              No membership or program variant ids are configured in checkin, so nothing tells this audit
+              which orders should reconcile — the order side below is empty because it is <b>blind</b>, not
+              because it is clean. Set the variant ids in Board Settings / on the programs first.
+            </Alert>
+          )}
           {result.variantCoverage.withVariant === 0 && result.variantCoverage.lines > 0 && (
             <Alert color="red" mt="md">
               The mirror has {result.variantCoverage.lines} order lines but none carry a variant id — it predates
               variant mirroring. The order side of this audit is blind until an s-read <b>backfill</b> sync runs.
+            </Alert>
+          )}
+          {result.variantCoverage.withVariant > 0 && result.variantCoverage.withVariant < result.variantCoverage.lines && (
+            <Alert color="yellow" mt="md">
+              {result.variantCoverage.lines - result.variantCoverage.withVariant} of {result.variantCoverage.lines} mirror
+              order lines still have no variant id (a backfill is incomplete or predates variant mirroring for part of
+              history). Orders made of only those lines are <b>absent</b> from this report, not shown as gaps.
             </Alert>
           )}
 
@@ -113,10 +122,10 @@ export function MatchAuditPanel() {
             {gapCount === 0
               ? <Badge color="green">No gaps</Badge>
               : <Badge color="red">{gapCount} gap(s)</Badge>}
-            {count('Orders matched', result.orders.filter((o) => o.bucket === 'MATCHED').length)}
-            {count('Tracked as exceptions', result.orders.filter((o) => o.bucket === 'TRACKED_EXCEPTION').length)}
-            {count('Memberships matched', result.memberships.filter((m) => m.bucket === 'ORDER_MATCHED').length)}
-            {count('Enrollments matched', result.enrollments.filter((e) => e.bucket === 'ORDER_MATCHED').length)}
+            {count('Orders matched', matched.orders)}
+            {count('Tracked as exceptions', matched.tracked)}
+            {count('Memberships matched', matched.memberships)}
+            {count('Enrollments matched', matched.enrollments)}
             {count('Board-certified', manual.length)}
             {count('Scholarships', scholarships.length)}
           </Group>
@@ -135,7 +144,7 @@ export function MatchAuditPanel() {
                     <Table.Tr key={o.orderLegacyId ?? `row-${i}`}>
                       <Table.Td>{o.name ?? o.orderLegacyId}</Table.Td>
                       <Table.Td>{o.customerEmail}</Table.Td>
-                      <Table.Td>{dollars(o.totalCents)}</Table.Td>
+                      <Table.Td>{formatCents(o.totalCents)}</Table.Td>
                       <Table.Td>{o.expected.join(', ')}</Table.Td>
                     </Table.Tr>
                   ))}

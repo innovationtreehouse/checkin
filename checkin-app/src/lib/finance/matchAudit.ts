@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
+import { isPaid, membershipVariantIdSet } from "@/lib/finance/reconcile";
 import * as mirror from "@/lib/shopifyRead/client";
 
 /**
@@ -80,41 +80,38 @@ export interface MatchAuditResult {
      * of an empty (falsely clean) report.
      */
     variantCoverage: { lines: number; withVariant: number };
+    /**
+     * How many membership/program variant ids the app is configured with. 0 means
+     * the order side of the audit is vacuous for a DIFFERENT reason than backfill:
+     * nothing tells us which orders should reconcile. The UI must distinguish this
+     * from a genuinely clean report.
+     */
+    configuredVariants: number;
     orders: AuditOrderRow[];
     memberships: AuditMembershipRow[];
     enrollments: AuditEnrollmentRow[];
 }
 
-/** Same money-in predicate the reconciler uses (reconcile.ts isPaid). */
-function isPaid(o: { financialStatus: string | null; cancelledAt: Date | null; totalRefundedCents: number }): boolean {
-    const s = (o.financialStatus ?? "").toUpperCase();
-    return (s === "PAID" || s === "PARTIALLY_PAID") && !o.cancelledAt && o.totalRefundedCents === 0;
-}
-
 export async function runMatchAudit(): Promise<MatchAuditResult> {
     if (!mirror.isConfigured()) {
-        return { configured: false, variantCoverage: { lines: 0, withVariant: 0 }, orders: [], memberships: [], enrollments: [] };
+        return { configured: false, variantCoverage: { lines: 0, withVariant: 0 }, configuredVariants: 0, orders: [], memberships: [], enrollments: [] };
     }
 
     // ── the "should reconcile" variant set ────────────────────────────────────
-    const settings = await prisma.boardSettings.findUnique({
-        where: { id: 1 },
-        select: { orgMembershipVariantId: true, shopifyNormalVariantId: true, shopifyVolunteerVariantId: true },
-    });
-    const programs = await prisma.program.findMany({
-        select: { id: true, name: true, shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
-    });
+    const [settings, programs, variantCoverage] = await Promise.all([
+        prisma.boardSettings.findUnique({
+            where: { id: 1 },
+            select: { orgMembershipVariantId: true, shopifyNormalVariantId: true, shopifyVolunteerVariantId: true },
+        }),
+        prisma.program.findMany({
+            select: { id: true, name: true, shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+        }),
+        mirror.lineVariantStats(),
+    ]);
 
-    // Same set the reconciler's item gate builds (reconcile.ts, #1074), dev-mock
-    // variant included so a mock-active local env audits its own test orders.
-    const membershipVariants = new Set(
-        [
-            settings?.orgMembershipVariantId,
-            settings?.shopifyNormalVariantId,
-            settings?.shopifyVolunteerVariantId,
-            config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
-        ].filter((v): v is string => !!v),
-    );
+    // The same set the reconciler's item gate uses — shared, not copied, so the
+    // two can't drift (#1074 was exactly that drift).
+    const membershipVariants = membershipVariantIdSet(settings ?? null);
     const programByVariant = new Map<string, { id: number; name: string }>();
     for (const p of programs) {
         for (const v of [p.shopifyVariantId, p.shopifyOrgMemberVariantId, p.shopifyNonOrgMemberVariantId]) {
@@ -123,29 +120,57 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     }
     const allVariants = [...membershipVariants, ...programByVariant.keys()];
 
-    const variantCoverage = await mirror.lineVariantStats();
-
     // ── Shopify → activation: every reconcilable order accounted for ──────────
     const orders = await mirror.ordersForVariants(allVariants);
     const orderIds = orders.map((o) => o.legacyId).filter((v): v is string => !!v);
 
+    // Claims are per-KIND, not per-order: a single checkout can carry membership
+    // AND program lines, and "the membership process claimed this order" says
+    // nothing about the program half. An ARCHIVED process is not a claim — the
+    // application was abandoned, so its money is exactly the unclaimed kind.
     const [claimedProcs, claimedEnrolls, trackedExceptions] = await Promise.all([
-        prisma.orgMembershipProcess.findMany({ where: { shopifyOrderId: { in: orderIds } }, select: { shopifyOrderId: true } }),
-        prisma.programParticipant.findMany({ where: { shopifyOrderId: { in: orderIds } }, select: { shopifyOrderId: true } }),
+        prisma.orgMembershipProcess.findMany({
+            where: { shopifyOrderId: { in: orderIds }, status: { not: "ARCHIVED" } },
+            select: { shopifyOrderId: true },
+        }),
+        prisma.programParticipant.findMany({ where: { shopifyOrderId: { in: orderIds } }, select: { shopifyOrderId: true, programId: true } }),
         prisma.paymentException.findMany({
             where: { shopifyOrderId: { in: orderIds }, status: { not: "RESOLVED" } },
             select: { shopifyOrderId: true },
         }),
     ]);
-    const claimed = new Set([...claimedProcs, ...claimedEnrolls].map((r) => r.shopifyOrderId));
+    const membershipClaimed = new Set(claimedProcs.map((r) => r.shopifyOrderId));
+    const programsClaimed = new Map<string, Set<number>>();
+    for (const r of claimedEnrolls) {
+        if (!r.shopifyOrderId) continue;
+        const set = programsClaimed.get(r.shopifyOrderId) ?? new Set<number>();
+        set.add(r.programId);
+        programsClaimed.set(r.shopifyOrderId, set);
+    }
     const tracked = new Set(trackedExceptions.map((r) => r.shopifyOrderId));
 
     const orderRows: AuditOrderRow[] = orders.map((o) => {
-        const expected = (o.matchedVariantIds ?? []).map((v) =>
-            membershipVariants.has(v) ? "membership" : `program: ${programByVariant.get(v)?.name ?? v}`,
-        );
+        // What each matched variant should have produced, and whether it did.
+        const unclaimed: string[] = [];
+        const expected: string[] = [];
+        for (const v of new Set(o.matchedVariantIds ?? [])) {
+            if (membershipVariants.has(v)) {
+                if (!expected.includes("membership")) {
+                    expected.push("membership");
+                    if (!(o.legacyId && membershipClaimed.has(o.legacyId))) unclaimed.push("membership");
+                }
+            } else {
+                const program = programByVariant.get(v);
+                const label = `program: ${program?.name ?? v}`;
+                if (!expected.includes(label)) {
+                    expected.push(label);
+                    const claimedSet = o.legacyId ? programsClaimed.get(o.legacyId) : undefined;
+                    if (!(program && claimedSet?.has(program.id))) unclaimed.push(label);
+                }
+            }
+        }
         const bucket: OrderBucket =
-            o.legacyId && claimed.has(o.legacyId)
+            unclaimed.length === 0
                 ? "MATCHED"
                 : o.legacyId && tracked.has(o.legacyId)
                   ? "TRACKED_EXCEPTION"
@@ -159,39 +184,43 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
             customerEmail: o.customerEmail,
             financialStatus: o.financialStatus,
             totalCents: o.totalCents,
-            expected: [...new Set(expected)],
+            // MATCHED rows list everything the order bought; gap rows list only
+            // what is still missing, so a half-claimed checkout names its gap.
+            expected: unclaimed.length > 0 ? unclaimed : expected,
         };
     });
 
     // ── activation → Shopify: every activation has a payment basis ────────────
     // INITIAL/RENEWAL only: PERSON_BG processes carry no payment by design, so
     // including them would flood NO_PAYMENT_BASIS with false positives.
-    const procs = await prisma.orgMembershipProcess.findMany({
-        where: { status: { in: ["ACTIVE", "PENDING_BG_CLEARANCE"] }, kind: { in: ["INITIAL", "RENEWAL"] } },
-        select: {
-            id: true,
-            shopifyOrderId: true,
-            certifiedById: true,
-            orgMembership: { select: { household: { select: { name: true } } } },
-        },
-    });
+    const [procs, enrolls] = await Promise.all([
+        prisma.orgMembershipProcess.findMany({
+            where: { status: { in: ["ACTIVE", "PENDING_BG_CLEARANCE"] }, kind: { in: ["INITIAL", "RENEWAL"] } },
+            select: {
+                id: true,
+                shopifyOrderId: true,
+                certifiedById: true,
+                orgMembership: { select: { household: { select: { name: true } } } },
+            },
+        }),
+        prisma.programParticipant.findMany({
+            where: { status: "ACTIVE" },
+            select: {
+                programId: true,
+                personId: true,
+                shopifyOrderId: true,
+                wasOrgMemberAtApproval: true,
+                program: { select: { name: true } },
+                person: { select: { name: true } },
+            },
+        }),
+    ]);
     // certifiedById has no Prisma relation — resolve the names in one batch.
     const certifierIds = [...new Set(procs.map((p) => p.certifiedById).filter((v): v is number => v != null))];
     const certifiers = certifierIds.length
         ? await prisma.person.findMany({ where: { id: { in: certifierIds } }, select: { id: true, name: true } })
         : [];
     const certifierName = new Map(certifiers.map((c) => [c.id, c.name]));
-    const enrolls = await prisma.programParticipant.findMany({
-        where: { status: "ACTIVE" },
-        select: {
-            programId: true,
-            personId: true,
-            shopifyOrderId: true,
-            wasOrgMemberAtApproval: true,
-            program: { select: { name: true } },
-            person: { select: { name: true } },
-        },
-    });
 
     const activationOrderIds = [
         ...procs.map((p) => p.shopifyOrderId),
@@ -204,7 +233,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
             ? inMirror.has(p.shopifyOrderId)
                 ? "ORDER_MATCHED"
                 : "ORDER_NOT_IN_MIRROR"
-            : p.certifiedById
+            : p.certifiedById != null
               ? "MANUAL_CERTIFIED"
               : "NO_PAYMENT_BASIS",
         processId: p.id,
@@ -228,5 +257,5 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         shopifyOrderId: e.shopifyOrderId,
     }));
 
-    return { configured: true, variantCoverage, orders: orderRows, memberships: membershipRows, enrollments: enrollmentRows };
+    return { configured: true, variantCoverage, configuredVariants: allVariants.length, orders: orderRows, memberships: membershipRows, enrollments: enrollmentRows };
 }
