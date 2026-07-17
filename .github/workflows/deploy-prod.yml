@@ -79,18 +79,17 @@ jobs:
       ref: ${{ github.event.release.tag_name }}
     secrets: inherit
 
-  # Release gate: a release may apply AT MOST ONE new database migration.
-  # The rule lives in the callable migration-release-gate.yml — the same
-  # workflow runs advisory (allowed to fail) on every PR, so the "coalesce
-  # before preparing a release" signal shows up long before this blocking
-  # call. Passing exclude_tag makes the gate compare against the release's
-  # true predecessor; with no previous release, every migration counts.
+  # Migration count report: releases may apply ANY number of migrations
+  # (sequential apply; per-migration failed-row recovery). This surfaces the
+  # per-database count in the run the approver reads, before approval — same
+  # callable workflow that reports on every PR. Passing exclude_tag compares
+  # against the release's true predecessor.
   #
   # This is not a step inside `validate`: that job is a reusable-workflow
   # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
   # own to add to. Runs as its own job instead; `deploy` needs both.
   migration-release-gate:
-    name: Release gate — at most 1 new migration
+    name: Migration count report
     uses: ./.github/workflows/migration-release-gate.yml
     with:
       ref: ${{ github.event.release.tag_name }}

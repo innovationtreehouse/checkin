@@ -4,10 +4,17 @@
 
 Migrations accumulate on `main` between releases — every PR that needs a
 schema change adds its own migration, same as always. **Before a release**,
-the accumulated migrations are coalesced into a single migration via a
-manual PR produced by `scripts/coalesce-migrations.ts`. **A release may apply
-at most one new database migration**, enforced by a release-gate step in
-`deploy-prod.yml`.
+the accumulated migrations MAY be coalesced into a single migration via a
+manual PR produced by `scripts/coalesce-migrations.ts`. **Coalescing is
+optional hygiene, not a requirement** (policy change 2026-07-18): a release
+may apply any number of migrations — `prisma migrate deploy` applies them
+sequentially and stops at the first failure with a failed ledger row, so
+recovery (`prisma migrate resolve --rolled-back <name>` + rerun) is
+per-migration regardless of batch size. `deploy-prod.yml` reports the
+per-database count to the release approver; `migration-safety.yml` warns when
+the unreleased pile grows past 5. Coalescing remains available for taming a
+large pile — but note it is exactly what forces the dev ledger reconcile
+ceremony below, so weigh the pile against the surgery.
 
 ```
  PR merges to main            a coalesce PR                  a release

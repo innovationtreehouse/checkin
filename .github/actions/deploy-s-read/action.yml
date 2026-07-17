@@ -126,7 +126,8 @@ runs:
         # FARGATE_SPOT strategy (associated on the cluster — infra#131), not
         # on-demand --launch-type: matches the checkin migrate tasks. A Spot
         # reclaim mid-migration fails the step loudly and a rerun is clean —
-        # one small migration per release, gated per database.
+        # migrations apply sequentially; a failed one stops the batch with a
+        # failed ledger row (recovery: migrate resolve --rolled-back + rerun).
         TASK_ARN=$(aws ecs run-task \
           --cluster "$ECS_CLUSTER" \
           --task-definition "$MIGRATE_ARN" \

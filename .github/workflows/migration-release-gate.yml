@@ -1,21 +1,20 @@
 name: Migration release gate
 
-# A release may apply AT MOST ONE new migration PER DATABASE: `prisma migrate
-# deploy` is not transactional ACROSS migrations, so a multi-migration release
-# that fails mid-batch leaves prod partially migrated behind a P3009 (the
-# 2026-07-02 incident). Migrations may accumulate freely on main/dev between
-# releases — the rule is they get COALESCED into a single migration
-# (checkin-app/scripts/coalesce-migrations.ts, a manual PR) before a release
-# ships them. Policy and flow: checkin-app/docs/MIGRATION_COALESCE_FLOW.md.
+# REPORT, not a gate (policy change 2026-07-18): a release may apply ANY number
+# of new migrations per database. Coalescing is OPTIONAL hygiene, never
+# required — requiring it bought a bounded release batch at the price of dev
+# ledger surgery (P3009 + reconcile + image race) on every coalesce, a
+# one-step-forward-two-steps-back trade. `prisma migrate deploy` applies
+# migrations SEQUENTIALLY and stops at the first failure with a failed ledger
+# row; recovery is `prisma migrate resolve --rolled-back <name>` + rerun,
+# and is per-migration regardless of how many a release carries.
 #
-# One rule, two call sites:
-#   - pull_request (this file's own trigger): ADVISORY. Over-budget produces a
-#     GREEN check with a ::warning:: annotation + step summary — early notice
-#     that the next release needs a coalesce, with no red X while work
-#     accumulates on dev (accumulation on main is unbounded by design).
-#   - deploy-prod.yml (workflow_call, exclude_tag = the tag being released):
-#     BLOCKING. A release carrying 2+ new migrations fails before the human
-#     approval gate is ever asked.
+# What remains automated: this report counts + lists what a release will apply
+# (a ::warning:: past one per database keeps the count visible to reviewers and
+# release approvers), and migration-safety.yml still warns when the unreleased
+# pile grows large (>5) and keeps released migrations immutable. Voluntary
+# coalesces keep their schema-identity validation there too.
+# Flow doc: checkin-app/docs/MIGRATION_COALESCE_FLOW.md.
 
 on:
   pull_request:
@@ -35,7 +34,7 @@ on:
 
 jobs:
   count:
-    name: At most 1 new migration per database per release
+    name: Migration count report (per database)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout (full history + tags)
@@ -49,9 +48,6 @@ jobs:
       - name: Count migrations added since the previous v* release (per database)
         env:
           EXCLUDE_TAG: ${{ inputs.exclude_tag || '' }}
-          # Advisory on PRs (warn, exit 0); blocking when called from
-          # deploy-prod (a called workflow inherits the caller's event: release).
-          ADVISORY: ${{ github.event_name == 'pull_request' }}
           # One entry per DATABASE the repo migrates — each chain gets its own
           # at-most-one budget (a release may carry one checkin migration AND
           # one mirror migration; the limits are independent because each
@@ -70,7 +66,6 @@ jobs:
           # so the release compares against its true predecessor.
           PREV_RELEASE=$(git tag --list 'v*' --merged HEAD | grep -vxF -- "$EXCLUDE_TAG" | sort -V | tail -n1 || true)
 
-          FAILED=0
           for DIR in $MIGRATION_DIRS; do
             [ -z "$DIR" ] && continue
             HEAD_DIRS=$(git ls-tree --name-only "HEAD:$DIR" 2>/dev/null | grep -v '^migration_lock\.toml$' | sort || true)
@@ -84,19 +79,12 @@ jobs:
             echo "[$DIR] migrations added since ${PREV_RELEASE:-the beginning (no previous v* release reachable)}: $COUNT"
             [ -z "$NEW_DIRS" ] || printf '%s\n' "$NEW_DIRS"
             if [ "$COUNT" -gt 1 ]; then
-              MSG="$DIR carries $COUNT new migrations (listed above) — a release may apply at most 1 PER DATABASE. Coalesce that chain's unreleased migrations into one before preparing a release (checkin-app/docs/MIGRATION_COALESCE_FLOW.md): prisma migrate deploy is not transactional across migrations, so a multi-migration release risks a partial apply (P3009)."
-              if [ "$ADVISORY" = "true" ]; then
-                echo "::warning::$MSG (Advisory on PRs — deploy-prod's release gate enforces it.)"
-                {
-                  echo "### ⚠ Migration budget advisory"
-                  echo "\`$DIR\` carries **$COUNT** unreleased migrations; the next release needs them coalesced to one (MIGRATION_COALESCE_FLOW.md). This check stays green on PRs — deploy-prod blocks."
-                } >> "$GITHUB_STEP_SUMMARY"
-              else
-                echo "::error::$MSG"
-                FAILED=1
-              fi
+              echo "::warning::$DIR carries $COUNT new migrations (listed above) — they apply SEQUENTIALLY at the next release. That's allowed; coalescing (checkin-app/docs/MIGRATION_COALESCE_FLOW.md) is optional hygiene if the pile feels large. A mid-batch failure stops at the failing migration with a failed ledger row; recovery: prisma migrate resolve --rolled-back <name> + rerun."
+              {
+                echo "### Migration count: \`$DIR\` → **$COUNT** unreleased"
+                echo "Applied sequentially at the next release. Coalescing is optional (MIGRATION_COALESCE_FLOW.md); migration-safety warns past 5."
+              } >> "$GITHUB_STEP_SUMMARY"
             fi
           done
-          [ "$FAILED" -eq 0 ]
-          echo "OK — at most 1 new migration per database."
+          echo "Report complete — counts are informational; releases may carry any number of migrations."
 
