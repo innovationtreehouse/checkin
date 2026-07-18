@@ -148,8 +148,9 @@ export function membershipVariantIdSet(settings: {
     );
 }
 
-/** Any sign the money came back out. */
-function isReversed(o: MirrorOrder): boolean {
+/** Any sign the money came back out. Exported so matchAudit.ts marks reversed activations
+ *  with the SAME predicate the reversal pass raises exceptions on. */
+export function isReversed(o: Pick<MirrorOrder, "financialStatus" | "cancelledAt" | "totalRefundedCents">): boolean {
     const s = (o.financialStatus ?? "").toUpperCase();
     return !!o.cancelledAt || o.totalRefundedCents > 0 || s === "REFUNDED" || s === "PARTIALLY_REFUNDED" || s === "VOIDED";
 }
