@@ -9,6 +9,7 @@ export type ClaimSourceParticipant = {
     isKeyholder: boolean;
     isBoardMember: boolean;
     isBackgroundCheckReviewer: boolean;
+    isOperations: boolean;
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
     // Leadership of their own household. Single source of truth (a1) — supersedes
@@ -37,6 +38,7 @@ export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): 
     token.isKeyholder = denied ? false : p.isKeyholder;
     token.isBoardMember = denied ? false : p.isBoardMember;
     token.isBackgroundCheckReviewer = denied ? false : p.isBackgroundCheckReviewer;
+    token.isOperations = denied ? false : p.isOperations;
     token.householdId = p.householdId;
     token.householdLead = denied ? false : p.isHouseholdLead;
     token.toolStatuses = denied ? [] : p.toolStatuses;

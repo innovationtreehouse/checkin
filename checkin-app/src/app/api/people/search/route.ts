@@ -45,8 +45,11 @@ export const GET = withAuth(
                 isDeclaredAdult: p.isDeclaredAdult,
                 lastBackgroundCheck: p.lastBackgroundCheck,
                 isMember: personRecordIsActiveOrgMember(p),
+                isSysadmin: p.isSysadmin,
                 isBoardMember: p.isBoardMember,
                 isKeyholder: p.isKeyholder,
+                isBackgroundCheckReviewer: p.isBackgroundCheckReviewer,
+                isOperations: p.isOperations,
                 household: p.household,
             }));
 

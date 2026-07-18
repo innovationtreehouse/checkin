@@ -121,6 +121,8 @@ model Person {
   isKeyholder               Boolean @default(false)
   /// @sensitivity:internal
   isBackgroundCheckReviewer Boolean @default(false)
+  /// @sensitivity:internal
+  isOperations              Boolean @default(false)
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")

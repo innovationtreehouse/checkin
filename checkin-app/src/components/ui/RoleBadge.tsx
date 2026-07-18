@@ -14,6 +14,7 @@ const ROLE_META: Record<string, RoleMeta> = {
   isBoardMember: { label: 'Board', color: 'grape' },
   isKeyholder: { label: 'Keyholder', color: 'blue' },
   isBackgroundCheckReviewer: { label: 'BG Reviewer', color: 'indigo' },
+  isOperations: { label: 'Operations', color: 'teal' },
   coreVolunteer: { label: 'Core Volunteer', color: 'pink' },
   // Tool certification levels
   BASIC: { label: 'Basic', color: 'gray' },
@@ -22,6 +23,11 @@ const ROLE_META: Record<string, RoleMeta> = {
   INSTRUCTOR: { label: 'Instructor', color: 'green' },
   MAY_CERTIFY_OTHERS: { label: 'Certifier', color: 'green' },
 };
+
+/** The display label for a role/certification key — same lookup RoleBadge renders, for callers that need plain text (e.g. a confirm-modal delta summary). */
+export function roleLabel(role: string): string {
+  return ROLE_META[role]?.label ?? role;
+}
 
 export function RoleBadge({
   role,
