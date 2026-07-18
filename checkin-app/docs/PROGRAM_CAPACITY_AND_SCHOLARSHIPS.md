@@ -193,7 +193,7 @@ pending-participants cron (rows below) calls `resolveHouseholdRecipients` direct
 | Program approve | `POST /api/finance-ops/payment-plans` | — | **no automatic email** |
 | Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | **no automatic email** |
 | Membership approve (certify) | `POST /api/finance-ops/membership-payment-plans` | — | **no automatic email** |
-| Membership deny | — | **does not exist** | — |
+| Membership deny | `POST /api/finance-ops/membership-payment-plans/refuse` | — | **no automatic email** |
 | Manual-hold | `…/payment-plans/manual-hold` | — | **no email** |
 | Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (non-payer household: leads ∪ participant), ungated |
 | Leadership digest (board) | `GET /api/cron/pending-participants` | ✅ all board (`emailBoardMembers`) — one digest per run, day-3 + day-7+ tiers | — |
@@ -213,10 +213,7 @@ sends nothing when it fires — both silences are deliberate, not gaps.
 **all board members** (the board *is* the review team until configured). Set on
 **Settings → Email** (distinct from `scholarshipDenialGraceDays`, set on Settings → Membership).
 
-**4. Membership-deny asymmetry.** The program side has approve **and** deny; the membership
-side has **only approve** — there is no membership-deny route. Now that neither approve nor
-deny sends automatic email either way, this asymmetry only matters for the manual process:
-the board has no dedicated membership-deny action to hang a manual communication step off of.
+**4. Membership deny — parity closed, still silent.** The membership side now has both approve and deny (`POST /api/finance-ops/membership-payment-plans/refuse`). Denial clears `isPaymentPlanRequested` back to `false`; the process stays `PENDING_PAYMENT` and the household returns to normal pay-to-activate (membership holds no seat and has no grace cron, so denial state is the cleared flag plus the audit row). Like every other board decision it sends **no automatic email** — the board communicates the denial manually.
 
 **5. The pending-participants cron never removes anyone — reviewer decision (this is core
 customer service and a computer isn't enough here).** Day-1/3/6 household warnings send to
