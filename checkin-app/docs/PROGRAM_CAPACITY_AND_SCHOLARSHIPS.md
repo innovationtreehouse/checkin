@@ -185,7 +185,7 @@ actually transitioned (no duplicate mail on a no-op re-POST).
 | Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | ✅ status + grace deadline | ✅ per-recipient |
 | Membership request | `POST /api/membership/request-payment-plan` | ✅ | ✅ ack (leads only) | ack ungated |
 | Membership approve | `POST /api/finance-ops/membership-payment-plans` | — | ✅ status | ✅ per-recipient |
-| Membership deny | — | **does not exist** | — | — |
+| Membership deny | `POST /api/finance-ops/membership-payment-plans/refuse` | — | ✅ status (no grace line) | ✅ per-recipient |
 | Manual-hold | `…/payment-plans/manual-hold` | — | **no email** | — |
 
 **2. Preference + default-ON rationale.** `Person.notificationSettings.emailScholarshipUpdates`,
@@ -199,9 +199,20 @@ the Communication page.
 **all board members** (the board *is* the review team until configured). Set on
 **Settings → Email** (distinct from `scholarshipDenialGraceDays`, set on Settings → Membership).
 
-**4. Membership-deny asymmetry.** The program side has approve **and** deny; the membership
-side has **only approve** — there is no membership-deny route, so no membership denial
-email exists. This mirrors the code and is intentional, not an omission to "fix" here.
+**4. Membership deny — parity with the program side (asymmetry closed).** The membership
+side now has both approve **and** deny (`POST /api/finance-ops/membership-payment-plans/refuse`),
+matching the program side. Denial clears `isPaymentPlanRequested` back to `false`; the
+process **stays `PENDING_PAYMENT`** and the household returns to normal "pay your dues to
+activate". It differs from the program deny in two ways, both because membership has no
+held seat and no grace-expiry cron (grace is program-only):
+- **No Shopify operation and no grace deadline** — membership reserves no seat on request,
+  so there is nothing to release and no `paymentPlanDeniedAt + graceDays` release date to
+  promise. `OrgMembershipProcess` has no `paymentPlanDeniedAt` column and needs none — the
+  cleared flag is the whole of denial state (no re-apply-clears-denial step to model).
+- **Status email minus the seat/grace lines** — same gated `sendScholarshipStatus`
+  (default-ON), copy states the plan was declined and that dues can still be paid normally.
+The transactional `isPaymentPlanRequested: true → false` guard (mirroring the approve
+probe) makes a no-op re-deny a 409 that sends no email.
 
 **5. Two flagged-NOT-built holes:**
 - The **grace-expiry cron** (`scholarship-grace-expiry/route.ts`) auto-withdraws a denied

@@ -3,9 +3,10 @@
  */
 /**
  * Integration tests for the membership payment-plan routes:
- *   GET  /api/finance-ops/membership-payment-plans     (board-only queue)
- *   POST /api/finance-ops/membership-payment-plans      (board approves -> certify/activate)
- *   POST /api/membership/request-payment-plan           (request, with IDOR guard)
+ *   GET  /api/finance-ops/membership-payment-plans        (board-only queue)
+ *   POST /api/finance-ops/membership-payment-plans         (board approves -> certify/activate)
+ *   POST /api/finance-ops/membership-payment-plans/refuse  (board denies -> clear flag, stay PENDING_PAYMENT)
+ *   POST /api/membership/request-payment-plan              (request, with IDOR guard)
  *
  * Covers auth rejections (401/403), validation (400/404), the wrong-phase gate
  * (409 off PENDING_PAYMENT), the IDOR path (an unrelated authenticated user
@@ -13,6 +14,7 @@
  * (flag set on request; certify -> ACTIVE + flag cleared + audit on approve).
  */
 import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/membership-payment-plans/route';
+import { POST as DenyPost } from '@/app/api/finance-ops/membership-payment-plans/refuse/route';
 import { POST as RequestPost } from '@/app/api/membership/request-payment-plan/route';
 import prisma from '@/lib/prisma';
 
@@ -197,6 +199,59 @@ describe('Membership payment-plan routes', () => {
         });
     });
 
+    describe('POST /api/finance-ops/membership-payment-plans/refuse (deny)', () => {
+        const denyReq = (body: unknown) => new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        it('401 without a session', async () => {
+            mockSession.mockResolvedValue(null);
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(401);
+        });
+
+        it('403 for a non-board user', async () => {
+            mockSession.mockResolvedValue({ user: { id: otherId } });
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(403);
+        });
+
+        it('400 when processId is missing', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({}))).status).toBe(400);
+        });
+
+        it('409 when there is no pending request for the process', async () => {
+            const cleared = await makeProc('DenyCleared', { requested: false });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: cleared.processId }))).status).toBe(409);
+        });
+
+        it('board denial clears the flag, keeps the process PENDING_PAYMENT, and writes an audit row', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await DenyPost(denyReq({ processId: leadProcessId }));
+            expect(res.status).toBe(200);
+
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
+            expect(proc?.isPaymentPlanRequested).toBe(false);
+            expect(proc?.status).toBe('PENDING_PAYMENT'); // stays awaiting payment — no seat, no grace, pay-to-activate
+            expect(proc?.certifiedById).toBeNull(); // denial never certifies/activates
+
+            const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
+            expect(membership?.status).toBe('NONE'); // untouched by denial
+
+            const audits = await prisma.auditLog.findMany({
+                where: { tableName: 'OrgMembershipProcess', affectedEntityId: leadProcessId, actorId: boardId },
+            });
+            expect(audits.some(a => (a.newData as { paymentPlanDenied?: boolean })?.paymentPlanDenied === true)).toBe(true);
+        });
+
+        it('a re-deny of an already-denied (flag false) process is a 409 no-op', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(200);
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(409);
+        });
+    });
+
     describe('POST /api/membership/request-payment-plan', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
@@ -288,6 +343,54 @@ describe('Membership payment-plan routes', () => {
                 to: lead.email,
                 subject: 'Your membership scholarship / payment plan was approved',
             }));
+        });
+
+        const denyReq = (body: unknown) => new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        it('deny sends the household a status email (no grace line), once', async () => {
+            const lead = await prisma.person.findUniqueOrThrow({ where: { id: leadId } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await DenyPost(denyReq({ processId: leadProcessId }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            const status = sent.filter((e) => e.subject === 'Update on your membership scholarship / payment-plan request');
+            expect(status).toEqual([expect.objectContaining({ to: lead.email })]);
+            expect(status[0].html).not.toMatch(/grace|deadline|released/i); // membership deny has no seat/grace lines
+        });
+
+        it('a no-op re-deny (flag already false) sends zero emails', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(200);
+            __clearSentEmails();
+            const res = await DenyPost(denyReq({ processId: leadProcessId }));
+            expect(res.status).toBe(409);
+            expect(__getSentEmails()).toHaveLength(0);
+        });
+
+        it('deny status email is gated per-recipient: an opted-out lead is excluded, the other lead receives it', async () => {
+            const fresh = await makeProc('DenyGate', { requested: true, withLead: true });
+            const defaultOn = await prisma.person.findUniqueOrThrow({ where: { id: fresh.personId! } });
+            const optedOut = await prisma.person.create({
+                data: {
+                    email: `deny-gate-out-${TAG}@example.com`, name: 'OptOut', householdId: fresh.householdId,
+                    isHouseholdLead: true, notificationSettings: { emailScholarshipUpdates: false },
+                },
+            });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await DenyPost(denyReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const to = __getSentEmails()
+                .filter((e) => e.subject === 'Update on your membership scholarship / payment-plan request')
+                .map((e) => e.to);
+            expect(to).toContain(defaultOn.email);
+            expect(to).not.toContain(optedOut.email);
         });
     });
 });
