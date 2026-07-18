@@ -59,8 +59,11 @@ describe('Cron Pending-Participants API Integration Tests', () => {
         const ids: Record<string, number> = {};
 
         const mkParticipant = async (key: string) => {
+            // Person.email is lowercased at write time by the emailNormalize Prisma
+            // extension (src/lib/prismaEmailNormalize.ts), so every seed/assertion in
+            // this file uses lowercase email strings throughout.
             const p = await prisma.person.create({
-                data: { email: `${key}-pending-cron-test@example.com`, name: `${key} Pending Cron`, household: { create: { name: "Test HH" } } }
+                data: { email: `${key.toLowerCase()}-pending-cron-test@example.com`, name: `${key} Pending Cron`, household: { create: { name: "Test HH" } } }
             });
             ids[key] = p.id;
             return p.id;
@@ -238,7 +241,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             const householdB = await prisma.household.create({ data: { name: 'Email Test HH B' } });
             householdBId = householdB.id;
             const leadB = await prisma.person.create({
-                data: { email: 'leadB-pending-cron-email-test@example.com', name: 'Lead B', householdId: householdBId, isHouseholdLead: true }
+                data: { email: 'leadb-pending-cron-email-test@example.com', name: 'Lead B', householdId: householdBId, isHouseholdLead: true }
             });
             const noEmailChild = await prisma.person.create({
                 data: { email: null, name: 'No Email Child', householdId: householdBId }
@@ -299,7 +302,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
 
             // day-3 reminder for the null-email child -> only the lead is resolved; no throw.
             const day3Warning = sent.filter((e) => e.subject === 'Please pay for Pending Cron Email Test Program within 4 days');
-            expect(day3Warning.map((e) => e.to)).toEqual(['leadB-pending-cron-email-test@example.com']);
+            expect(day3Warning.map((e) => e.to)).toEqual(['leadb-pending-cron-email-test@example.com']);
 
             // No removal email exists anymore, for anyone, at any age.
             const removalEmails = sent.filter((e) => e.subject.includes('Removed from'));
