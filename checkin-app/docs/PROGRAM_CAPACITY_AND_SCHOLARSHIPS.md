@@ -94,10 +94,8 @@ Performs **no Shopify operation**. The seat stays held exactly as the applicatio
 is untouched. The applicant may still pay normally; a board member did not "give away"
 their held seat by saying no to a payment plan. (This supersedes an earlier design where
 denial fired a `+1` — that let the seat resell out from under a denied-but-not-withdrawn
-applicant, silently drifting DB capacity and Shopify's count apart.) Now also sends the
-applicant household a status email stating the grace deadline (see §5) — the same
-`paymentPlanDeniedAt + scholarshipDenialGraceDays days` formula the cron in §4 uses, so
-the promised date matches the actual release.
+applicant, silently drifting DB capacity and Shopify's count apart.) Sends no automatic
+email — see §5.
 
 ### Approval (`POST /api/finance-ops/payment-plans`)
 
@@ -105,8 +103,8 @@ No Shopify operation either (the seat was already taken out of the pool at appli
 time) — approval only stops billing the applicant. It additionally clears
 `inventoryHeldAt` to `null` **without** a `+1`: the hold is **consumed**, not released. An
 approved participant is a permanent comped enrollment; if they're later removed from the
-program, that removal must not credit a seat back that was never returned to Shopify. Now
-also sends the applicant household a status email (see §5).
+program, that removal must not credit a seat back that was never returned to Shopify. Sends
+no automatic email — see §5.
 
 ### Release, exactly once — three paths
 
@@ -170,58 +168,57 @@ to `null`.
 
 ## 5. Notifications
 
-Requests and their board resolutions (program side and membership side) send email —
-`src/lib/scholarshipEmails.ts` resolves recipients / gates / fans out; callers build their
-own subject/html and pass them in. Sends fire *after* the state transition commits,
-fire-and-forget (a failed send never fails the request), and only when the request
-actually transitioned (no duplicate mail on a no-op re-POST). Recipient resolution itself
-lives in `src/lib/emailRecipients.ts` (`resolveHouseholdRecipients`) — a household-generic
-helper, not scholarship-specific — with `scholarshipEmails.ts` re-exporting it as
-`resolveScholarshipRecipients` for its existing call sites. The pending-participants cron
-(row below) calls `resolveHouseholdRecipients` directly.
+**User decision: an applicant receives exactly one automatic email — the request
+acknowledgement.** `src/lib/scholarshipEmails.ts` resolves recipients / fans out; callers
+build their own subject/html and pass them in. Sends fire *after* the state transition
+commits, fire-and-forget (a failed send never fails the request), and only when the
+request actually transitioned (no duplicate mail on a no-op re-POST). Recipient
+resolution itself lives in `src/lib/emailRecipients.ts` (`resolveHouseholdRecipients`) — a
+household-generic helper, not scholarship-specific — with `scholarshipEmails.ts`
+re-exporting it as `resolveScholarshipRecipients` for its existing call sites. The
+pending-participants cron (rows below) calls `resolveHouseholdRecipients` directly.
 
 **1. Who is emailed when:**
 
-| Event | Route | Review Team (request only) | Applicant household | Gated? |
-|---|---|---|---|---|
-| Program request (fresh hold or re-request-after-denial) | `POST /api/programs/[id]/request-payment-plan` | ✅ `scholarshipNotifyEmail` → else all board | ✅ ack (leads ∪ participant) | ack ungated |
-| Program approve | `POST /api/finance-ops/payment-plans` | — | ✅ status | ✅ per-recipient |
-| Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | ✅ status + grace deadline | ✅ per-recipient |
-| Membership request | `POST /api/membership/request-payment-plan` | ✅ | ✅ ack (leads only) | ack ungated |
-| Membership approve | `POST /api/finance-ops/membership-payment-plans` | — | ✅ status | ✅ per-recipient |
-| Membership deny | — | **does not exist** | — | — |
-| Manual-hold | `…/payment-plans/manual-hold` | — | **no email** | — |
-| Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (leads ∪ participant) | ungated |
-| Non-payment removal (day 7+, after removal confirmed) | `GET /api/cron/pending-participants` | — | ✅ removal notice (leads ∪ participant) | ungated |
+| Event | Route | Review Team | Household |
+|---|---|---|---|
+| Program request (fresh hold or re-request-after-denial) | `POST /api/programs/[id]/request-payment-plan` | ✅ `scholarshipNotifyEmail` → else all board | ✅ ack (leads ∪ participant), ungated |
+| Membership request | `POST /api/membership/request-payment-plan` | ✅ | ✅ ack (leads only), ungated |
+| Program approve | `POST /api/finance-ops/payment-plans` | — | **no automatic email** |
+| Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | **no automatic email** |
+| Membership approve (certify) | `POST /api/finance-ops/membership-payment-plans` | — | **no automatic email** |
+| Membership deny | — | **does not exist** | — |
+| Manual-hold | `…/payment-plans/manual-hold` | — | **no email** |
+| Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (non-payer household: leads ∪ participant), ungated |
+| Non-payment removal (day 7+, after removal confirmed) | `GET /api/cron/pending-participants` | — | ✅ removal notice (leads ∪ participant), ungated |
 
-**2. Preference + default-ON rationale.** `Person.notificationSettings.emailScholarshipUpdates`,
-read `!== false` (default ON). The acknowledgement is **transactional/ungated**; only the
-approve/deny **status** emails are gated. Default-ON is deliberate: a **denial** email that
-was silently suppressed would let the grace-expiry cron (§4) auto-withdraw the applicant and
-release the seat **with no warning** — a silent seat loss. Opt-out is a conscious choice on
-the Communication page.
+(The cron rows are not scholarship-applicant emails — the sweep excludes requested and
+denied rows by design; they are ordinary non-payment notices and do not count against the
+one-automatic-email rule.)
+
+**2. Approve/deny are silent by design.** Board decisions — program approve, program deny,
+membership approve — send **no** automatic applicant email; the Scholarship Review Team
+communicates its decision **manually**. A consequence: a **denial** starts the
+`scholarshipDenialGraceDays` clock (§4) with no automatic notice, so the board's manual
+denial message should state the deadline itself; the grace-expiry auto-withdraw (§4) also
+sends nothing when it fires — both silences are deliberate, not gaps.
 
 **3. Fallback rule.** `BoardSettings.scholarshipNotifyEmail` unset (or unparseable) → email
 **all board members** (the board *is* the review team until configured). Set on
 **Settings → Email** (distinct from `scholarshipDenialGraceDays`, set on Settings → Membership).
 
 **4. Membership-deny asymmetry.** The program side has approve **and** deny; the membership
-side has **only approve** — there is no membership-deny route, so no membership denial
-email exists. This mirrors the code and is intentional, not an omission to "fix" here.
+side has **only approve** — there is no membership-deny route. Now that neither approve nor
+deny sends automatic email either way, this asymmetry only matters for the manual process:
+the board has no dedicated membership-deny action to hang a manual communication step off of.
 
-**5. One remaining flagged-NOT-built hole (one closed):**
-- The **grace-expiry cron** (`scholarship-grace-expiry/route.ts`) auto-withdraws a denied
-  applicant and releases the seat but **sends no email** — the person learns of the loss
-  only by noticing. Out of scope here; flagged for follow-up.
-- ~~The **pending-participants cron** kick / 4-day / final-warning emails are still
-  `[EMAIL DISPATCH]` log stubs~~ **CLOSED**: the day-1/3/6 warnings and the day-7+ removal
-  notice are real sends now (leads ∪ participant, ungated — see table above; recipients
-  resolved via `resolveHouseholdRecipients` in `src/lib/emailRecipients.ts`, the same
-  helper `scholarshipEmails.ts` re-exports as `resolveScholarshipRecipients`). The removal
-  notice is ordered deliberately: it sends **only after `withdrawAndReleaseHold` returns
-  without throwing** — not from the classification pass that decides a row is 7+ days old.
-  A benign `P2025` (already removed by another path) or any other delete failure sends
-  **no** email; the row survives to retry (or was already gone) on the next run.
+**5. The pending-participants cron's warning/removal emails are real** (previously
+`[EMAIL DISPATCH]` log stubs while the kick itself really fired): day-1/3/6 warnings and
+the day-7+ removal notice send to leads ∪ participant, ungated (see table above). The
+removal notice is ordered deliberately: it sends **only after `withdrawAndReleaseHold`
+returns without throwing** — not from the classification pass that decides a row is 7+
+days old. A benign `P2025` (already removed by another path) or any other delete failure
+sends **no** email; the row survives to retry (or was already gone) on the next run.
 
 ## 6. Related
 

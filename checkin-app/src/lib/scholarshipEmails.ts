@@ -11,6 +11,12 @@ import prisma from "@/lib/prisma";
  * the contract of emailRecipients.ts: callers build their own subject/html;
  * these helpers only resolve recipients / gate / fan out and swallow
  * send/query errors.
+ *
+ * An applicant receives exactly ONE automatic email: the request
+ * acknowledgement (`sendScholarshipAck`, ungated). Board decisions (program
+ * approve/deny, membership approve) are communicated manually by the
+ * Scholarship Review Team, not by an automated status email — see
+ * docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md §5.
  */
 
 export type { HouseholdRecipient as ScholarshipRecipient } from "@/lib/emailRecipients";
@@ -31,16 +37,7 @@ export async function notifyReviewTeam(subject: string, html: string, errorLabel
     }
 }
 
-/** ACK — transactional, UNGATED: every resolved recipient. */
+/** ACK — transactional, UNGATED: every resolved recipient. The applicant's only automatic email. */
 export async function sendScholarshipAck(recipients: ScholarshipRecipient[], subject: string, html: string): Promise<void> {
     await Promise.all(recipients.map((r) => sendEmail(r.email, subject, html)));
-}
-
-/** STATUS — GATED per-recipient by emailScholarshipUpdates (default ON: only explicit false opts out). */
-export async function sendScholarshipStatus(recipients: ScholarshipRecipient[], subject: string, html: string): Promise<void> {
-    await Promise.all(
-        recipients
-            .filter((r) => r.settings?.emailScholarshipUpdates !== false) // matches notifications.ts:55 "Active by default"
-            .map((r) => sendEmail(r.email, subject, html)),
-    );
 }

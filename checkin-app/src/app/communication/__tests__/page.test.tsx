@@ -30,22 +30,4 @@ describe("CommunicationPage", () => {
 
         expect(await screen.findByLabelText("Email me when I check in or out")).toBeDisabled();
     });
-
-    it("emailScholarshipUpdates: checked by default, unchecking PATCHes it false", async () => {
-        setSession({ id: 1, email: "a@example.com" });
-        const fetchMock = mockFetchJson({
-            "/api/profile": { profile: { notificationSettings: {} } },
-        });
-        renderWithProviders(<CommunicationPage />);
-
-        const scholarship = await screen.findByLabelText("Email me about my scholarship / payment-plan requests");
-        expect(scholarship).toBeChecked();
-
-        fireEvent.click(scholarship);
-        await waitFor(() => expect(scholarship).not.toBeChecked());
-        const [, patchOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PATCH")!;
-        expect(JSON.parse(patchOpts!.body as string).notificationSettings).toEqual(
-            expect.objectContaining({ emailScholarshipUpdates: false }),
-        );
-    });
 });

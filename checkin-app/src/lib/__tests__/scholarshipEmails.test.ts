@@ -3,7 +3,6 @@ import {
     resolveScholarshipRecipients,
     notifyReviewTeam,
     sendScholarshipAck,
-    sendScholarshipStatus,
 } from "../scholarshipEmails";
 
 jest.mock("@/lib/prisma", () => ({
@@ -60,7 +59,7 @@ describe("resolveScholarshipRecipients", () => {
     it("dedupes when the extra person is a lead (same email → one entry)", async () => {
         (prisma.person.findMany as jest.Mock).mockResolvedValue([
             { email: "Lead@X.org", notificationSettings: null },
-            { email: "lead@x.org", notificationSettings: { emailScholarshipUpdates: false } },
+            { email: "lead@x.org", notificationSettings: { someOtherPreference: false } },
         ]);
 
         const result = await resolveScholarshipRecipients(1, 42);
@@ -89,24 +88,10 @@ describe("resolveScholarshipRecipients", () => {
     });
 });
 
-describe("sendScholarshipStatus", () => {
-    const recipients = [
-        { email: "opted-out@x.org", settings: { emailScholarshipUpdates: false } },
-        { email: "default-on@x.org", settings: null },
-    ];
-
-    it("excludes emailScholarshipUpdates:false, sends to default/absent settings", async () => {
-        await sendScholarshipStatus(recipients, "Subject", "<p>Body</p>");
-
-        const sent = __getSentEmails().map((e) => e.to);
-        expect(sent).toEqual(["default-on@x.org"]);
-    });
-});
-
 describe("sendScholarshipAck", () => {
-    it("ungated — sends to every recipient regardless of emailScholarshipUpdates", async () => {
+    it("ungated — sends to every recipient regardless of their notificationSettings", async () => {
         const recipients = [
-            { email: "opted-out@x.org", settings: { emailScholarshipUpdates: false } },
+            { email: "opted-out@x.org", settings: { someOtherPreference: false } },
             { email: "default-on@x.org", settings: null },
         ];
 
