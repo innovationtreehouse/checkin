@@ -141,9 +141,18 @@ export const DELETE = withAuth({}, async (req, auth) => {
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
-        // Fallback (already-departed race): ship the bare Visit row, never the
-        // included person relation.
-        const { person: _person, ...visitBare } = visit;
+        // Fallback (already-departed race): ship the bare Visit row. Pick the
+        // Visit scalars explicitly (allowlist) so the included person relation —
+        // and any future field added to the query — can never leak here.
+        const visitBare = {
+            id: visit.id,
+            personId: visit.personId,
+            arrivedAt: visit.arrivedAt,
+            departedAt: visit.departedAt,
+            arrivedVia: visit.arrivedVia,
+            departedVia: visit.departedVia,
+            associatedEventId: visit.associatedEventId,
+        };
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visitBare;
 
         // Fire-and-forget: send check-out notifications (mirrors /api/scan)
