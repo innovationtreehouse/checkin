@@ -1,5 +1,5 @@
 /**
- * Generator CLI for the lifecycle review artifacts (LIFECYCLE_ARCHITECTURE §6.1).
+ * Generator CLI for the lifecycle review artifacts (docs/designs/LIFECYCLE.md).
  * Renders every machine in machineSpecs.ts and writes `<name>.md` under
  * docs/generated/lifecycle/. Run it after editing any machine's `TRANSITIONS`:
  *
