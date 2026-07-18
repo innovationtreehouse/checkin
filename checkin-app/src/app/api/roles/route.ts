@@ -3,7 +3,14 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
-import { ROLE_FLAGS, type RoleFlag, applyRoleFlag, rolesToFlags } from "@/lib/roles";
+import {
+    ROLE_FLAGS,
+    type RoleFlag,
+    rolesToFlags,
+    setRoleFlag,
+    RoleMatrixError,
+    LastBoardMemberError,
+} from "@/lib/roles";
 
 const PERSON_SELECT = {
     id: true,
@@ -12,12 +19,8 @@ const PERSON_SELECT = {
     roles: { select: { role: true } },
 } as const;
 
-/** Thrown inside the tx when the actor's authority matrix denies a requested flag change. */
-class RoleMatrixError extends Error {}
 /** Thrown inside the tx when `targetUserId` does not resolve to a Person. */
 class TargetNotFoundError extends Error {}
-/** Thrown inside the tx when a change would remove the last remaining board member. */
-class LastBoardMemberError extends Error {}
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -84,12 +87,6 @@ export const PATCH = withAuth(
             }
 
             const result = await prisma.$transaction(async (tx) => {
-                // ponytail: FOR UPDATE over the whole board set — tiny table (a handful of
-                // rows), so a coarse lock is fine; per-row locking buys nothing at this
-                // scale. This serializes concurrent board-removals so two txns can't each
-                // drop a different board member down to zero.
-                await tx.$queryRaw`SELECT "personId" FROM "PersonRole" WHERE "role" = 'BOARD' FOR UPDATE`;
-
                 const target = await tx.person.findUnique({
                     where: { id: targetUserId },
                     select: PERSON_SELECT,
@@ -108,39 +105,17 @@ export const PATCH = withAuth(
                     updateData[field] = val;
                 }
 
-                // Per-flag matrix (§4.3). Board is the superset: grants/revokes all five,
-                // including isSysadmin and removing isBoardMember (subject only to the
-                // last-board guard below). A sysadmin-only actor (not board) may grant any
-                // flag, including adding board, but may never remove board membership.
-                for (const field of Object.keys(updateData) as RoleFlag[]) {
-                    if (actor.isBoardMember) continue;
-                    if (actor.isSysadmin) {
-                        if (field === 'isBoardMember' && updateData[field] === false) {
-                            throw new RoleMatrixError("Only board members can remove board membership");
-                        }
-                        continue;
-                    }
-                    // Unreachable: the withAuth gate above already 403'd anyone who is
-                    // neither board nor sysadmin.
-                    throw new RoleMatrixError("Forbidden");
-                }
-
-                const removingBoard = updateData.isBoardMember === false && currentFlags.isBoardMember === true;
-                if (removingBoard) {
-                    const boardCount = await tx.personRole.count({ where: { role: 'BOARD' } });
-                    if (boardCount <= 1) {
-                        throw new LastBoardMemberError();
-                    }
-                }
-
                 if (Object.keys(updateData).length === 0) {
                     // Every requested flag was already at its current value — nothing to
                     // change, nothing to audit.
                     return { user: { id: target.id, email: target.email, name: target.name, ...currentFlags } };
                 }
 
+                // The authority matrix (§4.3), the last-board-member guard, and the FOR
+                // UPDATE lock they need all live in setRoleFlag now — this loop is pure
+                // parsing/dispatch, one call per changed flag.
                 for (const field of Object.keys(updateData) as RoleFlag[]) {
-                    await applyRoleFlag(tx, targetUserId, field, updateData[field]!, actor.id);
+                    await setRoleFlag(tx, target, field, updateData[field]!, actor);
                 }
 
                 const oldData: Partial<Record<RoleFlag, boolean>> = {};
@@ -152,7 +127,7 @@ export const PATCH = withAuth(
                     data: {
                         actorId: actor.id,
                         action: "EDIT",
-                        tableName: "Participant",
+                        tableName: "PersonRole",
                         affectedEntityId: targetUserId,
                         oldData,
                         newData: updateData,

@@ -265,7 +265,7 @@ describe('Admin Roles API Integration Tests', () => {
                 orderBy: { id: 'desc' },
             });
             expect(audit).not.toBeNull();
-            expect(audit?.tableName).toBe('Participant');
+            expect(audit?.tableName).toBe('PersonRole');
             expect(audit?.newData).toMatchObject({ isOperations: !before });
             expect(audit?.oldData).toMatchObject({ isOperations: before });
         });

@@ -11,7 +11,7 @@ import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
 import { assignParticipantClaims } from "@/lib/authClaims";
-import { applyRoleFlag } from "@/lib/roles";
+import { setRoleFlag } from "@/lib/roles";
 import { addHouseholdLead } from "@/lib/household/leads";
 import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
 import { normalizeEmail } from "@/lib/prismaEmailNormalize";
@@ -353,7 +353,10 @@ export const authOptions: NextAuthOptions = {
                         dbParticipant.email &&
                         BOOTSTRAP_SYSADMINS.includes(dbParticipant.email.toLowerCase())
                     ) {
-                        await applyRoleFlag(prisma, dbParticipant.id, "isSysadmin", true);
+                        // System bypass: bootstrap self-promotion off an env-configured
+                        // allowlist, not a user-initiated authority-matrix request — there is
+                        // no actor to check against, only a trusted source deciding its own grant.
+                        await setRoleFlag(prisma, { id: dbParticipant.id, roles: dbParticipant.roles }, "isSysadmin", true, "system");
                         dbParticipant.isSysadmin = true;
                         // Claims derive from `roles`, not the mirror column — push the grant
                         // into the in-memory list so this same-request sign-in gets it too.

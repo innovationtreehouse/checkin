@@ -314,7 +314,7 @@ describe('AuditLog Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const logs = await prisma.auditLog.findMany({
-            where: { action: 'EDIT', tableName: 'Participant', affectedEntityId: target.id },
+            where: { action: 'EDIT', tableName: 'PersonRole', affectedEntityId: target.id },
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);

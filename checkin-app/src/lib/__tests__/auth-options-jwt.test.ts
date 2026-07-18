@@ -49,12 +49,13 @@ jest.mock('@/lib/prisma', () => ({
 
 jest.mock('@/lib/household/leads', () => ({ addHouseholdLead: jest.fn() }));
 
-// applyRoleFlag's dual-write plumbing (PersonRole upsert + mirror column) has its own
-// integration coverage (adminRolesAPI.integration.test.ts); this file only drives the
-// jwt() callback WIRING around it, so it's mocked here like addHouseholdLead above.
+// setRoleFlag's write-choke-point plumbing (matrix + last-board guard + the PersonRole
+// upsert/mirror dual-write) has its own integration coverage (adminRolesAPI.integration.test.ts);
+// this file only drives the jwt() callback WIRING around it, so it's mocked here like
+// addHouseholdLead above.
 jest.mock('@/lib/roles', () => ({
     ...jest.requireActual('@/lib/roles'),
-    applyRoleFlag: jest.fn(),
+    setRoleFlag: jest.fn(),
 }));
 
 // jest.setup.js globally mocks @/lib/auth-options to `{}`; unmock to get the real callbacks.
@@ -222,7 +223,7 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
         process.env.BOOTSTRAP_SYSADMINS = 'Boss@Example.com';
         let freshJwt!: JwtCallback;
         let freshFindUnique!: jest.Mock;
-        let freshApplyRoleFlag!: jest.Mock;
+        let freshSetRoleFlag!: jest.Mock;
         try {
             jest.isolateModules(() => {
                 // Fresh module registry so BOOTSTRAP_SYSADMINS is re-read from the env just set above.
@@ -231,7 +232,7 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
                 freshFindUnique = freshPrisma.person.findUnique;
                 freshFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: false, email: 'boss@example.com' }));
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
-                freshApplyRoleFlag = (require('@/lib/roles') as { applyRoleFlag: jest.Mock }).applyRoleFlag;
+                freshSetRoleFlag = (require('@/lib/roles') as { setRoleFlag: jest.Mock }).setRoleFlag;
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
                 freshJwt = (require('@/lib/auth-options') as typeof import('@/lib/auth-options')).authOptions.callbacks!.jwt!;
             });
@@ -244,9 +245,19 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
             } as unknown as Parameters<JwtCallback>[0])) as Record<string, unknown>;
 
             // Env comparison is case-insensitive (BOOTSTRAP_SYSADMINS is lowercased on parse).
-            // The bootstrap promotion routes through the same dual-write helper every role
-            // grant uses (lib/roles.ts applyRoleFlag), not a direct person.update.
-            expect(freshApplyRoleFlag).toHaveBeenCalledWith(expect.anything(), 7, 'isSysadmin', true);
+            // The bootstrap promotion routes through the same write choke point every role
+            // grant uses (lib/roles.ts setRoleFlag), passing the "system" actor bypass — not
+            // a direct person.update, and not the matrix (there's no requesting user to check).
+            // `target.roles` is the same array reference auth-options pushes the granted
+            // SYSADMIN row onto right after this call (so the same-request sign-in sees it
+            // too) — jest records call args by reference, so that push is visible here too.
+            expect(freshSetRoleFlag).toHaveBeenCalledWith(
+                expect.anything(),
+                { id: 7, roles: [{ role: 'BOARD' }, { role: 'KEYHOLDER' }, { role: 'BG_REVIEWER' }, { role: 'SYSADMIN' }] },
+                'isSysadmin',
+                true,
+                'system',
+            );
             expect(result.isSysadmin).toBe(true);
         } finally {
             process.env.BOOTSTRAP_SYSADMINS = prevEnv;

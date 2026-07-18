@@ -34,6 +34,12 @@ export interface RolesEditModalProps {
   onSaved: (updatedUser: RolesEditTarget) => void;
 }
 
+/** Read the role-flags subset off a target, defaulting every ROLE_FLAGS key to false — the
+ * one place the flag list is enumerated, so adding a flag to ROLE_FLAGS is enough. */
+function flagsFromTarget(t: RolesEditTarget | null): Record<RoleFlag, boolean> {
+  return Object.fromEntries(ROLE_FLAGS.map((f) => [f, !!t?.[f]])) as Record<RoleFlag, boolean>;
+}
+
 /**
  * Extracted, verbatim (#1104 -> roles-foundation rework §6.1): the five-switch role editor +
  * its confirm-delta modal + PATCH /api/roles call. Shared by the holders-first
@@ -41,20 +47,12 @@ export interface RolesEditModalProps {
  * read-only and no longer opens this.
  */
 export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalProps) {
-  const [rolesForm, setRolesForm] = useState<Record<RoleFlag, boolean>>({
-    isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, isOperations: false,
-  });
+  const [rolesForm, setRolesForm] = useState<Record<RoleFlag, boolean>>(() => flagsFromTarget(null));
   const [savingRoles, setSavingRoles] = useState(false);
 
   useEffect(() => {
     if (!target) return;
-    setRolesForm({
-      isSysadmin: !!target.isSysadmin,
-      isBoardMember: !!target.isBoardMember,
-      isKeyholder: !!target.isKeyholder,
-      isBackgroundCheckReviewer: !!target.isBackgroundCheckReviewer,
-      isOperations: !!target.isOperations,
-    });
+    setRolesForm(flagsFromTarget(target));
   }, [target]);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -91,13 +89,7 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
       } else {
         const data = await res.json().catch(() => ({}));
         // Revert the form to the target's last-known-good state.
-        setRolesForm({
-          isSysadmin: !!t.isSysadmin,
-          isBoardMember: !!t.isBoardMember,
-          isKeyholder: !!t.isKeyholder,
-          isBackgroundCheckReviewer: !!t.isBackgroundCheckReviewer,
-          isOperations: !!t.isOperations,
-        });
+        setRolesForm(flagsFromTarget(t));
         showNotification(data.error || "Failed to update roles", "error");
       }
     } catch (err) {
@@ -110,13 +102,7 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
 
   const handleSaveRoles = () => {
     if (!target) return;
-    const current: Record<RoleFlag, boolean> = {
-      isSysadmin: !!target.isSysadmin,
-      isBoardMember: !!target.isBoardMember,
-      isKeyholder: !!target.isKeyholder,
-      isBackgroundCheckReviewer: !!target.isBackgroundCheckReviewer,
-      isOperations: !!target.isOperations,
-    };
+    const current = flagsFromTarget(target);
     const delta: Partial<Record<RoleFlag, boolean>> = {};
     for (const field of ROLE_FLAGS) {
       if (rolesForm[field] !== current[field]) delta[field] = rolesForm[field];
