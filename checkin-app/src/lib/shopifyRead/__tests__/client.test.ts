@@ -176,6 +176,9 @@ describe('match-audit reads', () => {
         expect(await freshClient().minRealOrderLegacyId()).toBe(BigInt(4200));
         expect(sqlOf(0)).toContain('min(legacy_id::bigint)');
         expect(sqlOf(0)).toContain('test = false');
+        // Guards the ::bigint cast against a non-numeric legacy_id, which would
+        // otherwise throw for the whole aggregate and 500 the audit.
+        expect(sqlOf(0)).toContain(`legacy_id ~ '^\\d+$'`);
     });
 
     it('minRealOrderLegacyId returns null for an empty mirror', async () => {

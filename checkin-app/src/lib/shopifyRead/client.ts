@@ -349,7 +349,11 @@ export async function minRealOrderLegacyId(): Promise<bigint | null> {
     const p = getPool();
     if (!p) return null;
     const rows = await p.query<{ minLegacyId: string | null }>(
-        `SELECT min(legacy_id::bigint)::text AS "minLegacyId" FROM shop_order WHERE test = false`,
+        // `~ '^\d+$'` guards the ::bigint cast: a single non-numeric legacy_id (a
+        // hand-loaded/test row) would otherwise throw for the WHOLE aggregate and
+        // 500 the audit. Shopify ids are always numeric, so this skips only junk.
+        `SELECT min(legacy_id::bigint)::text AS "minLegacyId"
+         FROM shop_order WHERE test = false AND legacy_id ~ '^\\d+$'`,
     );
     const v = rows.rows[0]?.minLegacyId;
     return v == null ? null : BigInt(v);
