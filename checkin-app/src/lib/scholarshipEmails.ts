@@ -1,8 +1,9 @@
-import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { emailBoardMembers } from "@/lib/emailRecipients";
+import type { HouseholdRecipient as ScholarshipRecipient } from "@/lib/emailRecipients";
 import { parseEmailHeaderList } from "@/lib/emailHeader";
 import { logger } from "@/lib/logger";
+import prisma from "@/lib/prisma";
 
 /**
  * Scholarship / payment-plan notification helpers. Small, dependency-light
@@ -12,40 +13,8 @@ import { logger } from "@/lib/logger";
  * send/query errors.
  */
 
-export interface ScholarshipRecipient { email: string; settings: Record<string, unknown> | null; }
-
-/**
- * Household leads (∪ one extra person, e.g. the participant/requester), deduped by
- * lowercased email, each carrying its own notificationSettings for per-recipient gating.
- * A child participant with no email simply drops out (filtered) and is covered by leads.
- */
-export async function resolveScholarshipRecipients(
-    householdId: number,
-    alsoPersonId?: number | null,
-): Promise<ScholarshipRecipient[]> {
-    try {
-        const people = await prisma.person.findMany({
-            where: {
-                householdId,
-                ...(alsoPersonId ? { OR: [{ isHouseholdLead: true }, { id: alsoPersonId }] } : { isHouseholdLead: true }),
-            },
-            select: { email: true, notificationSettings: true },
-        });
-        const seen = new Set<string>();
-        const out: ScholarshipRecipient[] = [];
-        for (const p of people) {
-            if (!p.email) continue;
-            const key = p.email.toLowerCase();
-            if (seen.has(key)) continue;
-            seen.add(key);
-            out.push({ email: p.email, settings: (p.notificationSettings as Record<string, unknown> | null) ?? null });
-        }
-        return out;
-    } catch (e) {
-        logger.error("resolveScholarshipRecipients failed:", e);
-        return [];
-    }
-}
+export type { HouseholdRecipient as ScholarshipRecipient } from "@/lib/emailRecipients";
+export { resolveHouseholdRecipients as resolveScholarshipRecipients } from "@/lib/emailRecipients";
 
 /** Announce a request to the Scholarship Review Team: configured address list, else all board members. */
 export async function notifyReviewTeam(subject: string, html: string, errorLabel: string): Promise<void> {

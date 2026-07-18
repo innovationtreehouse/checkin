@@ -17,6 +17,14 @@
 import { GET } from '@/app/api/cron/pending-participants/route';
 import prisma from '@/lib/prisma';
 
+jest.mock('@/lib/email');
+// `@/lib/email`'s real module has no __getSentEmails/__clearSentEmails — those
+// only exist on the manual mock (src/lib/__mocks__/email.ts) that jest.mock
+// above swaps in. jest.requireMock (not a direct import) fetches that swapped
+// instance so this typechecks against the mock's own shape.
+const { __getSentEmails, __clearSentEmails } =
+    jest.requireMock<typeof import('@/lib/__mocks__/email')>('@/lib/email');
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Half-day offset puts each row safely inside its target day so floor() is stable.
 const daysAgo = (now: number, d: number) => new Date(now - d * DAY_MS - DAY_MS / 2);
@@ -89,6 +97,8 @@ describe('Cron Pending-Participants API Integration Tests', () => {
         headers: auth ? { authorization: auth } : {}
     }) as unknown as Request;
 
+    beforeEach(() => __clearSentEmails());
+
     describe('auth', () => {
         it('returns 401 when the Authorization header is missing', async () => {
             process.env.CRON_SECRET = 'test-secret';
@@ -128,6 +138,127 @@ describe('Cron Pending-Participants API Integration Tests', () => {
                 where: { programId_personId: { programId, personId: ids.day7 } }
             });
             expect(day7).toBeNull();
+        });
+    });
+
+    describe('email dispatch', () => {
+        // Own program (distinct name -> distinct subject text) so assertions here
+        // can't be confused by the outer describe's day1/3/6 rows, which survive
+        // and get re-warned every time GET runs later in the file.
+        let emailProgramId: number;
+        let householdAId: number;
+        let householdBId: number;
+        const eids: Record<string, number> = {};
+
+        beforeAll(async () => {
+            const leaked = await prisma.person.findMany({
+                where: { email: { contains: 'pending-cron-email-test' } },
+                select: { id: true }
+            });
+            const leakedIds = leaked.map(u => u.id);
+            await prisma.programParticipant.deleteMany({ where: { personId: { in: leakedIds } } });
+            await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
+            await prisma.program.deleteMany({ where: { name: 'Pending Cron Email Test Program' } });
+
+            const program = await prisma.program.create({
+                data: { name: 'Pending Cron Email Test Program', phase: 'UPCOMING', enrollmentStatus: 'OPEN' }
+            });
+            emailProgramId = program.id;
+
+            // Household A: a lead + a child (both have email) -> day-6 FINAL WARNING
+            // must reach both the lead's address and the participant's own address.
+            const householdA = await prisma.household.create({ data: { name: 'Email Test HH A' } });
+            householdAId = householdA.id;
+            const leadA = await prisma.person.create({
+                data: { email: 'leadA-pending-cron-email-test@example.com', name: 'Lead A', householdId: householdAId, isHouseholdLead: true }
+            });
+            const day6Child = await prisma.person.create({
+                data: { email: 'day6child-pending-cron-email-test@example.com', name: 'Day6 Child', householdId: householdAId }
+            });
+            eids.leadA = leadA.id;
+            eids.day6Child = day6Child.id;
+
+            // Household B: a lead (has email) + a child with NO email -> only the lead
+            // should be resolved; the child drops out silently, nothing errors.
+            const householdB = await prisma.household.create({ data: { name: 'Email Test HH B' } });
+            householdBId = householdB.id;
+            const leadB = await prisma.person.create({
+                data: { email: 'leadB-pending-cron-email-test@example.com', name: 'Lead B', householdId: householdBId, isHouseholdLead: true }
+            });
+            const noEmailChild = await prisma.person.create({
+                data: { email: null, name: 'No Email Child', householdId: householdBId }
+            });
+            eids.leadB = leadB.id;
+            eids.noEmailChild = noEmailChild.id;
+
+            // Day-7 candidate that the sweep actually removes -> exactly one removal email.
+            const day7Valid = await prisma.person.create({
+                data: { email: 'day7valid-pending-cron-email-test@example.com', name: 'Day7 Valid', household: { create: { name: 'Email Test HH C' } } }
+            });
+            eids.day7Valid = day7Valid.id;
+
+            // Day-7 candidate standing in for "already removed by another path before
+            // this sweep runs". A genuine same-run P2025 race (delete landing between
+            // the sweep's read and its per-row delete) can't be triggered from outside
+            // without instrumenting the route's internals, so this covers the outcome
+            // that matters instead: a row that's already gone gets no removal email.
+            const day7Gone = await prisma.person.create({
+                data: { email: 'day7gone-pending-cron-email-test@example.com', name: 'Day7 Gone', household: { create: { name: 'Email Test HH D' } } }
+            });
+            eids.day7Gone = day7Gone.id;
+
+            const now = Date.now();
+            await prisma.programParticipant.createMany({
+                data: [
+                    { programId: emailProgramId, personId: eids.day6Child, status: 'PENDING', pendingSince: daysAgo(now, 6) },
+                    { programId: emailProgramId, personId: eids.noEmailChild, status: 'PENDING', pendingSince: daysAgo(now, 3) },
+                    { programId: emailProgramId, personId: eids.day7Valid, status: 'PENDING', pendingSince: daysAgo(now, 7) },
+                    { programId: emailProgramId, personId: eids.day7Gone, status: 'PENDING', pendingSince: daysAgo(now, 7) },
+                ]
+            });
+
+            await prisma.programParticipant.delete({
+                where: { programId_personId: { programId: emailProgramId, personId: eids.day7Gone } }
+            });
+        });
+
+        afterAll(async () => {
+            const idList = Object.values(eids);
+            await prisma.programParticipant.deleteMany({ where: { programId: emailProgramId } });
+            await prisma.person.deleteMany({ where: { id: { in: idList } } });
+            await prisma.program.deleteMany({ where: { id: emailProgramId } });
+            await prisma.household.deleteMany({ where: { id: { in: [householdAId, householdBId] } } });
+        });
+
+        it('sends real warning/removal emails, once per rule, only for live rows', async () => {
+            process.env.CRON_SECRET = 'test-secret';
+            const res = await GET(mkReq('Bearer test-secret'));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+
+            // day-6 FINAL WARNING -> household lead AND the participant, both have email.
+            const finalWarning = sent.filter((e) => e.subject === 'FINAL WARNING: 24 hours left to pay for Pending Cron Email Test Program');
+            expect(finalWarning.map((e) => e.to).sort()).toEqual([
+                'day6child-pending-cron-email-test@example.com',
+                'leadA-pending-cron-email-test@example.com',
+            ]);
+            expect(finalWarning[0].html).toContain('Pending Cron Email Test Program');
+
+            // day-3 reminder for the null-email child -> only the lead is resolved; no throw.
+            const day3Warning = sent.filter((e) => e.subject === 'Please pay for Pending Cron Email Test Program within 4 days');
+            expect(day3Warning.map((e) => e.to)).toEqual(['leadB-pending-cron-email-test@example.com']);
+
+            // day-7 removal -> exactly one email, and only for the row that was actually
+            // removed; the already-gone row (never entered the sweep) gets none.
+            const removalEmails = sent.filter((e) => e.subject === 'Removed from Pending Cron Email Test Program due to non-payment');
+            expect(removalEmails).toHaveLength(1);
+            expect(removalEmails[0].to).toBe('day7valid-pending-cron-email-test@example.com');
+
+            const day7ValidRow = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId: emailProgramId, personId: eids.day7Valid } }
+            });
+            expect(day7ValidRow).toBeNull();
         });
     });
 });

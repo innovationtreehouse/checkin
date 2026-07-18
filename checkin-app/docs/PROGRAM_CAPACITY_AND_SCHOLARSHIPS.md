@@ -174,7 +174,11 @@ Requests and their board resolutions (program side and membership side) send ema
 `src/lib/scholarshipEmails.ts` resolves recipients / gates / fans out; callers build their
 own subject/html and pass them in. Sends fire *after* the state transition commits,
 fire-and-forget (a failed send never fails the request), and only when the request
-actually transitioned (no duplicate mail on a no-op re-POST).
+actually transitioned (no duplicate mail on a no-op re-POST). Recipient resolution itself
+lives in `src/lib/emailRecipients.ts` (`resolveHouseholdRecipients`) — a household-generic
+helper, not scholarship-specific — with `scholarshipEmails.ts` re-exporting it as
+`resolveScholarshipRecipients` for its existing call sites. The pending-participants cron
+(row below) calls `resolveHouseholdRecipients` directly.
 
 **1. Who is emailed when:**
 
@@ -187,6 +191,8 @@ actually transitioned (no duplicate mail on a no-op re-POST).
 | Membership approve | `POST /api/finance-ops/membership-payment-plans` | — | ✅ status | ✅ per-recipient |
 | Membership deny | — | **does not exist** | — | — |
 | Manual-hold | `…/payment-plans/manual-hold` | — | **no email** | — |
+| Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (leads ∪ participant) | ungated |
+| Non-payment removal (day 7+, after removal confirmed) | `GET /api/cron/pending-participants` | — | ✅ removal notice (leads ∪ participant) | ungated |
 
 **2. Preference + default-ON rationale.** `Person.notificationSettings.emailScholarshipUpdates`,
 read `!== false` (default ON). The acknowledgement is **transactional/ungated**; only the
@@ -203,13 +209,19 @@ the Communication page.
 side has **only approve** — there is no membership-deny route, so no membership denial
 email exists. This mirrors the code and is intentional, not an omission to "fix" here.
 
-**5. Two flagged-NOT-built holes:**
+**5. One remaining flagged-NOT-built hole (one closed):**
 - The **grace-expiry cron** (`scholarship-grace-expiry/route.ts`) auto-withdraws a denied
   applicant and releases the seat but **sends no email** — the person learns of the loss
   only by noticing. Out of scope here; flagged for follow-up.
-- The **pending-participants cron** (`pending-participants/route.ts`) kick / 4-day /
-  final-warning emails are still `[EMAIL DISPATCH]` **log stubs**, not real sends. Out of
-  scope here; flagged for follow-up.
+- ~~The **pending-participants cron** kick / 4-day / final-warning emails are still
+  `[EMAIL DISPATCH]` log stubs~~ **CLOSED**: the day-1/3/6 warnings and the day-7+ removal
+  notice are real sends now (leads ∪ participant, ungated — see table above; recipients
+  resolved via `resolveHouseholdRecipients` in `src/lib/emailRecipients.ts`, the same
+  helper `scholarshipEmails.ts` re-exports as `resolveScholarshipRecipients`). The removal
+  notice is ordered deliberately: it sends **only after `withdrawAndReleaseHold` returns
+  without throwing** — not from the classification pass that decides a row is 7+ days old.
+  A benign `P2025` (already removed by another path) or any other delete failure sends
+  **no** email; the row survives to retry (or was already gone) on the next run.
 
 ## 6. Related
 
