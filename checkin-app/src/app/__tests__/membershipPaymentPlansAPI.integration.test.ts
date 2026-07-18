@@ -251,6 +251,43 @@ describe('Membership payment-plan routes', () => {
             expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(200);
             expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(409);
         });
+
+        it('404 when the process does not exist', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: 999999999 }))).status).toBe(404);
+        });
+
+        it('403 (conflict of interest) when a board member denies their OWN household; the request is untouched', async () => {
+            const own = await makeProc('DenyCOI', { requested: true });
+            const boardKin = await prisma.person.create({
+                data: { name: 'Board Kin', email: `board-kin-${own.processId}-${TAG}@example.com`, isBoardMember: true, householdId: own.householdId },
+            });
+            mockSession.mockResolvedValue({ user: { id: boardKin.id, isBoardMember: true } });
+
+            const res = await DenyPost(denyReq({ processId: own.processId }));
+            expect(res.status).toBe(403);
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: own.processId } });
+            expect(proc?.isPaymentPlanRequested).toBe(true); // flag NOT flipped by the refused deny
+
+            // Drop this extra board member so it doesn't inflate the "email all board
+            // members" review-team fallback that later count-based tests assert on.
+            await prisma.person.delete({ where: { id: boardKin.id } });
+        });
+
+        it('a sysadmin may deny their own household (COI bypass)', async () => {
+            const own = await makeProc('DenySysadmin', { requested: true });
+            const sysKin = await prisma.person.create({
+                data: { name: 'Sys Kin', email: `sys-kin-${own.processId}-${TAG}@example.com`, isBoardMember: true, householdId: own.householdId },
+            });
+            mockSession.mockResolvedValue({ user: { id: sysKin.id, isBoardMember: true, isSysadmin: true } });
+
+            const res = await DenyPost(denyReq({ processId: own.processId }));
+            expect(res.status).toBe(200);
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: own.processId } });
+            expect(proc?.isPaymentPlanRequested).toBe(false);
+
+            await prisma.person.delete({ where: { id: sysKin.id } }); // keep it out of the board-member fallback set
+        });
     });
 
     describe('POST /api/membership/request-payment-plan', () => {
