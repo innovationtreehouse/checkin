@@ -107,6 +107,9 @@ Rules:
 - **Manual payment** — payment landed **outside Shopify** (recorded in QuickBooks), so a membership activates without a Shopify order. `via: "manual"` / `manualPaymentById` *(rename pending from `"certified"` / `certifiedById` — which collided with tool certification)*. **Not** a comp.
 - **Payment Plan** — installments (`isPaymentPlanRequested`).
 - **Scholarship** — a board comp (fee waived). Unnamed in code today.
+- **Scholarship Review Team** — the board-designated recipients of scholarship / payment-plan
+  request notifications (`BoardSettings.scholarshipNotifyEmail`; falls back to all board members
+  when unset). The canonical UI/copy term — **retire "Finance Committee"** for this concept.
 
 ## Attendance / check-in
 

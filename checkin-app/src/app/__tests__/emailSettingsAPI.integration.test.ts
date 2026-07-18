@@ -25,7 +25,7 @@ const TAG = 'email-settings-test';
 
 describe('Email sender-identity settings API', () => {
     let boardId: number, plainId: number;
-    let prevSettings: { emailFromAddress: string | null; emailReplyToAddress: string | null } | null = null;
+    let prevSettings: { emailFromAddress: string | null; emailReplyToAddress: string | null; scholarshipNotifyEmail: string | null } | null = null;
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -41,7 +41,9 @@ describe('Email sender-identity settings API', () => {
         boardId = (await prisma.person.create({ data: { name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
         plainId = (await prisma.person.create({ data: { name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { emailFromAddress: existing.emailFromAddress, emailReplyToAddress: existing.emailReplyToAddress } : null;
+        prevSettings = existing
+            ? { emailFromAddress: existing.emailFromAddress, emailReplyToAddress: existing.emailReplyToAddress, scholarshipNotifyEmail: existing.scholarshipNotifyEmail }
+            : null;
     });
 
     afterAll(async () => {
@@ -102,5 +104,36 @@ describe('Email sender-identity settings API', () => {
         const s = (await cleared.json()).settings;
         expect(s.emailFromAddress).toBeNull();
         expect(s.emailReplyToAddress).toBeNull();
+    });
+
+    it('GET returns scholarshipNotifyEmail', async () => {
+        asBoard(boardId);
+        const res = await EMAIL_GET(jsonReq('GET'));
+        expect(res.status).toBe(200);
+        expect((await res.json()).settings).toHaveProperty('scholarshipNotifyEmail');
+    });
+
+    it('PUT round-trips a valid scholarshipNotifyEmail comma-list', async () => {
+        asBoard(boardId);
+        const put = await EMAIL_PUT(jsonReq('PUT', { scholarshipNotifyEmail: 'finance@example.org, board@example.org' }));
+        expect(put.status).toBe(200);
+        expect((await put.json()).settings.scholarshipNotifyEmail).toBe('finance@example.org, board@example.org');
+    });
+
+    it('rejects a malformed scholarshipNotifyEmail and keeps the previous value', async () => {
+        asBoard(boardId);
+        await EMAIL_PUT(jsonReq('PUT', { scholarshipNotifyEmail: 'finance@example.org' }));
+        const bad = await EMAIL_PUT(jsonReq('PUT', { scholarshipNotifyEmail: 'not-an-email' }));
+        expect(bad.status).toBe(400);
+        const after = (await (await EMAIL_GET(jsonReq('GET'))).json()).settings;
+        expect(after.scholarshipNotifyEmail).toBe('finance@example.org');
+    });
+
+    it('blank scholarshipNotifyEmail clears to null', async () => {
+        asBoard(boardId);
+        await EMAIL_PUT(jsonReq('PUT', { scholarshipNotifyEmail: 'finance@example.org' }));
+        const cleared = await EMAIL_PUT(jsonReq('PUT', { scholarshipNotifyEmail: '' }));
+        expect(cleared.status).toBe(200);
+        expect((await cleared.json()).settings.scholarshipNotifyEmail).toBeNull();
     });
 });

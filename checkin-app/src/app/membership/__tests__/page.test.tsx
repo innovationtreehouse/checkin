@@ -977,7 +977,7 @@ describe("scholarship / payment-plan request", () => {
     renderWithProviders(<MembershipPage />);
     fireEvent.click(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Send request" }));
-    expect(await screen.findByText(/requested — the finance committee will follow up/)).toBeInTheDocument();
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("request-payment-plan")).length).toBe(1);
     expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
   });
@@ -986,7 +986,7 @@ describe("scholarship / payment-plan request", () => {
     setSession({ id: 1 });
     mockFetchJson(pendingPayment({ isPaymentPlanRequested: true }));
     renderWithProviders(<MembershipPage />);
-    expect(await screen.findByText(/requested — the finance committee will follow up/)).toBeInTheDocument();
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
   });
 });

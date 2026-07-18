@@ -26,7 +26,11 @@ describe("EmailSettingsPage", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/email", expect.objectContaining({ method: "PUT" })));
     const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
-    expect(JSON.parse(putOpts!.body as string)).toEqual({ emailFromAddress: "Org <no-reply@org.test>", emailReplyToAddress: "board@org.test" });
+    expect(JSON.parse(putOpts!.body as string)).toEqual({
+      emailFromAddress: "Org <no-reply@org.test>",
+      emailReplyToAddress: "board@org.test",
+      scholarshipNotifyEmail: null,
+    });
   });
 
   it("already set: fields locked until the confirm checkbox unlocks them", async () => {
@@ -55,7 +59,11 @@ describe("EmailSettingsPage", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/email", expect.objectContaining({ method: "PUT" })));
     expect(screen.queryByText(/Enter one or more comma-separated addresses/i)).not.toBeInTheDocument();
     const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
-    expect(JSON.parse(putOpts!.body as string)).toEqual({ emailFromAddress: null, emailReplyToAddress: "info@org.test, ops@org.test" });
+    expect(JSON.parse(putOpts!.body as string)).toEqual({
+      emailFromAddress: null,
+      emailReplyToAddress: "info@org.test, ops@org.test",
+      scholarshipNotifyEmail: null,
+    });
   });
 
   it("validates client-side: a malformed From shows an inline error and never PUTs", async () => {
@@ -69,6 +77,41 @@ describe("EmailSettingsPage", () => {
 
     expect(await screen.findByText(/Enter an email address/i)).toBeInTheDocument();
     // Only the initial GET happened — no PUT was attempted.
+    expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === "PUT")).toBe(false);
+  });
+
+  it("Scholarship review notifications: renders, loads its value, and trims into the PUT body", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      "/api/settings/email": { settings: { emailFromAddress: null, emailReplyToAddress: null, scholarshipNotifyEmail: "finance@org.test" } },
+    });
+    renderWithProviders(<EmailSettingsPage />);
+
+    const notify = await screen.findByLabelText(/Scholarship review notifications/i);
+    expect(notify).toHaveValue("finance@org.test");
+
+    fireEvent.change(notify, { target: { value: " board@org.test, ops@org.test  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/email", expect.objectContaining({ method: "PUT" })));
+    const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
+    expect(JSON.parse(putOpts!.body as string)).toEqual({
+      emailFromAddress: null,
+      emailReplyToAddress: null,
+      scholarshipNotifyEmail: "board@org.test, ops@org.test",
+    });
+  });
+
+  it("Scholarship review notifications: a malformed value shows an inline error and blocks save", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/settings/email": { settings: { emailFromAddress: null, emailReplyToAddress: null, scholarshipNotifyEmail: null } } });
+    renderWithProviders(<EmailSettingsPage />);
+
+    const notify = await screen.findByLabelText(/Scholarship review notifications/i);
+    fireEvent.change(notify, { target: { value: "not-an-email" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    expect(await screen.findByText(/Enter one or more comma-separated addresses/i)).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([, opts]) => opts?.method === "PUT")).toBe(false);
   });
 

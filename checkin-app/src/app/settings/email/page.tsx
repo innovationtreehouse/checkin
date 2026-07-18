@@ -11,6 +11,7 @@ import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
 interface Settings {
   emailFromAddress: string | null;
   emailReplyToAddress: string | null;
+  scholarshipNotifyEmail: string | null;
 }
 
 const HEADER_ERROR = 'Enter an email address or "Name <addr@domain>".';
@@ -24,6 +25,7 @@ export default function EmailSettingsPage() {
 
   const [emailFrom, setEmailFrom] = useState("");
   const [emailReplyTo, setEmailReplyTo] = useState("");
+  const [scholarshipNotify, setScholarshipNotify] = useState("");
   // Once an identity exists, editing is high-stakes (a wrong From on an unverified
   // domain bounces all mail; a wrong Reply-To misroutes replies) — lock behind an
   // explicit unlock, mirroring the membership-year boundary. First-time set is free.
@@ -33,7 +35,7 @@ export default function EmailSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveNotice, setSaveNotice] = useState<{ text: string; err: boolean } | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ from?: string; replyTo?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ from?: string; replyTo?: string; scholarshipNotify?: string }>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,9 +43,14 @@ export default function EmailSettingsPage() {
       const res = await fetch("/api/settings/email");
       if (res.ok) {
         const { settings } = (await res.json()) as { settings: Settings };
-        const snap = { emailFrom: settings.emailFromAddress ?? "", emailReplyTo: settings.emailReplyToAddress ?? "" };
+        const snap = {
+          emailFrom: settings.emailFromAddress ?? "",
+          emailReplyTo: settings.emailReplyToAddress ?? "",
+          scholarshipNotify: settings.scholarshipNotifyEmail ?? "",
+        };
         setEmailFrom(snap.emailFrom);
         setEmailReplyTo(snap.emailReplyTo);
+        setScholarshipNotify(snap.scholarshipNotify);
         setInitial(snap);
       }
     } finally {
@@ -65,17 +72,23 @@ export default function EmailSettingsPage() {
     // duplicated) so a typo is caught inline instead of surfacing as a raw API error.
     const from = emailFrom.trim();
     const replyTo = emailReplyTo.trim();
-    const fe: { from?: string; replyTo?: string } = {};
+    const notify = scholarshipNotify.trim();
+    const fe: { from?: string; replyTo?: string; scholarshipNotify?: string } = {};
     if (from && !isValidEmailHeader(from)) fe.from = HEADER_ERROR;
     if (replyTo && !parseEmailHeaderList(replyTo)) fe.replyTo = REPLY_TO_ERROR;
-    if (fe.from || fe.replyTo) { setFieldErrors(fe); return; }
+    if (notify && !parseEmailHeaderList(notify)) fe.scholarshipNotify = REPLY_TO_ERROR;
+    if (fe.from || fe.replyTo || fe.scholarshipNotify) { setFieldErrors(fe); return; }
     setFieldErrors({});
     setSaving(true);
     try {
       const res = await fetch("/api/settings/email", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emailFromAddress: emailFrom.trim() || null, emailReplyToAddress: emailReplyTo.trim() || null }),
+        body: JSON.stringify({
+          emailFromAddress: emailFrom.trim() || null,
+          emailReplyToAddress: emailReplyTo.trim() || null,
+          scholarshipNotifyEmail: notify || null,
+        }),
       });
       if (res.ok) { notifications.show({ color: "green", message: "Email settings saved." }); setUnlocked(false); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
@@ -83,7 +96,7 @@ export default function EmailSettingsPage() {
     finally { setSaving(false); }
   };
 
-  const isDirty = !!initial && !shallowEqual(initial, { emailFrom, emailReplyTo });
+  const isDirty = !!initial && !shallowEqual(initial, { emailFrom, emailReplyTo, scholarshipNotify });
   useUnsavedGuard(isDirty);
 
   if (authLoading) return <Center mih="60vh"><Loader /></Center>;
@@ -146,6 +159,16 @@ export default function EmailSettingsPage() {
               value={emailReplyTo}
               error={fieldErrors.replyTo}
               onChange={(e) => { setEmailReplyTo(e.currentTarget.value); setFieldErrors((f) => ({ ...f, replyTo: undefined })); }}
+              disabled={locked}
+            />
+            <TextInput
+              label="Scholarship review notifications"
+              description="Comma-separated for multiple addresses. Blank = the whole board is notified of new scholarship / payment-plan requests."
+              placeholder="finance@innovationtreehouse.org"
+              w={440}
+              value={scholarshipNotify}
+              error={fieldErrors.scholarshipNotify}
+              onChange={(e) => { setScholarshipNotify(e.currentTarget.value); setFieldErrors((f) => ({ ...f, scholarshipNotify: undefined })); }}
               disabled={locked}
             />
           </Stack>

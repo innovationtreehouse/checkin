@@ -17,10 +17,16 @@ import { POST as RequestPost } from '@/app/api/membership/request-payment-plan/r
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockSession = require('next-auth/next').getServerSession;
+// `@/lib/email`'s real module has no __getSentEmails/__clearSentEmails — those
+// only exist on the manual mock (src/lib/__mocks__/email.ts) that jest.mock
+// above swaps in. jest.requireMock (not a direct import) fetches that swapped
+// instance so this typechecks against the mock's own shape.
+const { __getSentEmails, __clearSentEmails } =
+    jest.requireMock<typeof import('@/lib/__mocks__/email')>('@/lib/email');
 
 const TAG = 'membership-payment-plans-test';
 
@@ -92,6 +98,7 @@ describe('Membership payment-plan routes', () => {
 
     beforeEach(async () => {
         jest.clearAllMocks();
+        __clearSentEmails();
         // Fresh requested + PENDING_PAYMENT process owned by a household lead each
         // test (the approve test mutates it to ACTIVE, so it can't be shared).
         const proc = await makeProc('Lead', { requested: true, withLead: true });
@@ -244,6 +251,43 @@ describe('Membership payment-plan routes', () => {
 
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: fresh.processId } });
             expect(proc?.isPaymentPlanRequested).toBe(true);
+        });
+    });
+
+    describe('email behavior', () => {
+        it('a fresh request sends the review-team notify and the household ack, each once', async () => {
+            const fresh = await makeProc('EmailFreshReq', { requested: false, withLead: true });
+            mockSession.mockResolvedValue({ user: { id: fresh.personId } });
+
+            const res = await RequestPost(requestReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            expect(sent.filter((e) => e.subject.includes('New membership scholarship'))).toHaveLength(1);
+            expect(sent.filter((e) => e.subject === 'We received your scholarship / payment-plan request')).toHaveLength(1);
+        });
+
+        it('a no-op re-POST (already requested) sends zero emails', async () => {
+            // leadProcessId was seeded with requested:true in beforeEach.
+            mockSession.mockResolvedValue({ user: { id: leadId } });
+
+            const res = await RequestPost(requestReq({ processId: leadProcessId }));
+            expect(res.status).toBe(200);
+            expect(__getSentEmails()).toHaveLength(0);
+        });
+
+        it('approve sends a status email to the household lead', async () => {
+            const lead = await prisma.person.findUniqueOrThrow({ where: { id: leadId } });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: 'Board approved scholarship' }) }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            expect(sent).toContainEqual(expect.objectContaining({
+                to: lead.email,
+                subject: 'Your membership scholarship / payment plan was approved',
+            }));
         });
     });
 });

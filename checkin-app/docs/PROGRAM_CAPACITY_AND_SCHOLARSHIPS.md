@@ -83,7 +83,9 @@ Stamps `inventoryHeldAt = now()` and clears `paymentPlanDeniedAt`, guarded so th
 only fires the moment `inventoryHeldAt` transitions **null → set**. A denied re-applicant
 already has `inventoryHeldAt` set (denial never clears it — see below), so re-applying
 just flips `isPaymentPlanRequested` back to `true` and clears the denial stamp — it does
-**not** decrement a second time for a seat it's already holding.
+**not** decrement a second time for a seat it's already holding. On a genuine transition
+(fresh hold or re-request after denial) this now emails the Scholarship Review Team and
+sends the applicant household an acknowledgement — see §5.
 
 ### Denial (`POST /api/finance-ops/payment-plans/refuse`)
 
@@ -92,7 +94,10 @@ Performs **no Shopify operation**. The seat stays held exactly as the applicatio
 is untouched. The applicant may still pay normally; a board member did not "give away"
 their held seat by saying no to a payment plan. (This supersedes an earlier design where
 denial fired a `+1` — that let the seat resell out from under a denied-but-not-withdrawn
-applicant, silently drifting DB capacity and Shopify's count apart.)
+applicant, silently drifting DB capacity and Shopify's count apart.) Now also sends the
+applicant household a status email stating the grace deadline (see §5) — the same
+`paymentPlanDeniedAt + scholarshipDenialGraceDays days` formula the cron in §4 uses, so
+the promised date matches the actual release.
 
 ### Approval (`POST /api/finance-ops/payment-plans`)
 
@@ -100,7 +105,8 @@ No Shopify operation either (the seat was already taken out of the pool at appli
 time) — approval only stops billing the applicant. It additionally clears
 `inventoryHeldAt` to `null` **without** a `+1`: the hold is **consumed**, not released. An
 approved participant is a permanent comped enrollment; if they're later removed from the
-program, that removal must not credit a seat back that was never returned to Shopify.
+program, that removal must not credit a seat back that was never returned to Shopify. Now
+also sends the applicant household a status email (see §5).
 
 ### Release, exactly once — three paths
 
@@ -162,7 +168,50 @@ Configured on the membership settings surface (`/settings/membership` →
 (`bgRecheckMonths`, dues) — board/sysadmin only, audit-logged, blank input clears it back
 to `null`.
 
-## 5. Related
+## 5. Notifications
+
+Requests and their board resolutions (program side and membership side) send email —
+`src/lib/scholarshipEmails.ts` resolves recipients / gates / fans out; callers build their
+own subject/html and pass them in. Sends fire *after* the state transition commits,
+fire-and-forget (a failed send never fails the request), and only when the request
+actually transitioned (no duplicate mail on a no-op re-POST).
+
+**1. Who is emailed when:**
+
+| Event | Route | Review Team (request only) | Applicant household | Gated? |
+|---|---|---|---|---|
+| Program request (fresh hold or re-request-after-denial) | `POST /api/programs/[id]/request-payment-plan` | ✅ `scholarshipNotifyEmail` → else all board | ✅ ack (leads ∪ participant) | ack ungated |
+| Program approve | `POST /api/finance-ops/payment-plans` | — | ✅ status | ✅ per-recipient |
+| Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | ✅ status + grace deadline | ✅ per-recipient |
+| Membership request | `POST /api/membership/request-payment-plan` | ✅ | ✅ ack (leads only) | ack ungated |
+| Membership approve | `POST /api/finance-ops/membership-payment-plans` | — | ✅ status | ✅ per-recipient |
+| Membership deny | — | **does not exist** | — | — |
+| Manual-hold | `…/payment-plans/manual-hold` | — | **no email** | — |
+
+**2. Preference + default-ON rationale.** `Person.notificationSettings.emailScholarshipUpdates`,
+read `!== false` (default ON). The acknowledgement is **transactional/ungated**; only the
+approve/deny **status** emails are gated. Default-ON is deliberate: a **denial** email that
+was silently suppressed would let the grace-expiry cron (§4) auto-withdraw the applicant and
+release the seat **with no warning** — a silent seat loss. Opt-out is a conscious choice on
+the Communication page.
+
+**3. Fallback rule.** `BoardSettings.scholarshipNotifyEmail` unset (or unparseable) → email
+**all board members** (the board *is* the review team until configured). Set on
+**Settings → Email** (distinct from `scholarshipDenialGraceDays`, set on Settings → Membership).
+
+**4. Membership-deny asymmetry.** The program side has approve **and** deny; the membership
+side has **only approve** — there is no membership-deny route, so no membership denial
+email exists. This mirrors the code and is intentional, not an omission to "fix" here.
+
+**5. Two flagged-NOT-built holes:**
+- The **grace-expiry cron** (`scholarship-grace-expiry/route.ts`) auto-withdraws a denied
+  applicant and releases the seat but **sends no email** — the person learns of the loss
+  only by noticing. Out of scope here; flagged for follow-up.
+- The **pending-participants cron** (`pending-participants/route.ts`) kick / 4-day /
+  final-warning emails are still `[EMAIL DISPATCH]` **log stubs**, not real sends. Out of
+  scope here; flagged for follow-up.
+
+## 6. Related
 
 - `docs/designs/SHOPIFY_MEMBER_SEGMENT_PRICING.md` — the segment-gated pricing design
   that per-checkout discount codes stand in for until checkout identity is solved.

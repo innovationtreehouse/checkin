@@ -152,7 +152,7 @@ export default function MembershipPage() {
   // webhook today, an s-read reconciliation possibly in the future — moves the
   // process out of PENDING_PAYMENT, or explicitly via the escape-hatch link.
   const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number } | null>(null);
-  // Flips true once the household asks the finance committee for a payment plan.
+  // Flips true once the household asks the Scholarship Review Team for a payment plan.
   // Seeded from the server flag so a reload (or another device) still shows the
   // request as received rather than resurrecting the button.
   const [planRequested, setPlanRequested] = useState(false);
@@ -534,7 +534,7 @@ export default function MembershipPage() {
     // On success we navigate away, so we intentionally leave `saving` true.
   };
 
-  // Ask the board's finance committee for a payment plan on membership dues.
+  // Ask the board's Scholarship Review Team for a payment plan on membership dues.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
   useEffect(() => {
@@ -552,7 +552,7 @@ export default function MembershipPage() {
       });
       if (res.ok) {
         setPlanRequested(true);
-        notifications.show({ color: "green", message: "Requested! The finance committee of the board will follow up." });
+        notifications.show({ color: "green", message: "Requested! The Scholarship Review Team will follow up." });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: "red", message: data.error || "Could not request a payment plan.", autoClose: false });
@@ -922,7 +922,7 @@ export default function MembershipPage() {
                     )}
                     <Modal opened={confirmPlanOpened} onClose={closeConfirmPlan} title="Request a scholarship or payment plan?" centered>
                       <Text size="sm">
-                        This sends your request to the board&apos;s Finance Committee, who will review
+                        This sends your request to the board&apos;s Scholarship Review Team, who will review
                         your household&apos;s dues and follow up with you. You won&apos;t be charged
                         anything now, and you can still pay online at any time.
                       </Text>
@@ -932,7 +932,7 @@ export default function MembershipPage() {
                       </Group>
                     </Modal>
                     {planRequested ? (
-                      <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
+                      <Text c="green" mt="md">Scholarship or payment plan requested — the Scholarship Review Team will follow up.</Text>
                     ) : (
                       <Button
                         variant="light"
@@ -941,7 +941,7 @@ export default function MembershipPage() {
                         onClick={openConfirmPlan}
                         styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                       >
-                        Request a scholarship or payment plan from the Finance Committee of the Board
+                        Request a scholarship or payment plan from the Scholarship Review Team
                       </Button>
                     )}
                     {!state.external?.bgCleared && (

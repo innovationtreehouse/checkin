@@ -24,9 +24,16 @@ jest.mock('next-auth/next', () => ({
 jest.mock('@/lib/notifications', () => ({
     sendNotification: jest.fn(),
 }));
+jest.mock('@/lib/email');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockSession = require('next-auth/next').getServerSession;
+// `@/lib/email`'s real module has no __getSentEmails/__clearSentEmails — those
+// only exist on the manual mock (src/lib/__mocks__/email.ts) that jest.mock
+// above swaps in. jest.requireMock (not a direct import) fetches that swapped
+// instance so this typechecks against the mock's own shape.
+const { __getSentEmails, __clearSentEmails } =
+    jest.requireMock<typeof import('@/lib/__mocks__/email')>('@/lib/email');
 
 const TAG = 'payment-plans-test';
 
@@ -109,6 +116,7 @@ describe('Program payment-plan routes', () => {
 
     beforeEach(() => {
         jest.clearAllMocks();
+        __clearSentEmails();
     });
 
     afterAll(async () => {
@@ -793,6 +801,14 @@ describe('Program payment-plan routes', () => {
                 expect(body.warning).toMatch(/board/i);
                 expect(body.warning).not.toMatch(/re-submit|retry|rolled back/i);
 
+                // Shopify-failure branch: the ack still fires, carrying the warning
+                // copy instead of the normal ack body, and the review-team notify
+                // still fires (a request was still recorded, board still needs it).
+                const sent = __getSentEmails();
+                const ack = sent.find((e) => e.to === `self-${TAG}@example.com`);
+                expect(ack?.html).toContain(body.warning);
+                expect(sent.some((e) => e.subject.startsWith('New scholarship / payment-plan request'))).toBe(true);
+
                 // The exact PENDING_HOLD_FAILED tuple: PENDING, held=null, req=true, den=null.
                 const row = await prisma.programParticipant.findUniqueOrThrow({
                     where: { programId_personId: { programId: p.id, personId: selfId } },
@@ -912,6 +928,172 @@ describe('Program payment-plan routes', () => {
             expect(row.status).toBe('PENDING');
             expect(row.isPaymentPlanRequested).toBe(false);
             expect(row.paymentPlanDeniedAt).not.toBeNull();
+        });
+    });
+
+    // scholarshipNotifyEmail is unset throughout this file, so notifyReviewTeam
+    // always falls back to emailBoardMembers — which finds exactly {boardId,
+    // board2Id} (the only two isBoardMember:true rows this suite ever creates).
+    describe('email behavior', () => {
+        const REVIEW_TEAM_EMAILS = [`board-${TAG}@example.com`, `board2-${TAG}@example.com`].sort();
+        let emailProgramId: number;
+        const createdPersonIds: number[] = [];
+        const createdHouseholdIds: number[] = [];
+
+        const params = (id: string | number) => ({ params: Promise.resolve({ id: String(id) }) });
+        const refuseReq = (body: unknown) => new Request('http://localhost/api/finance-ops/payment-plans/refuse', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        async function makeHousehold(label: string): Promise<number> {
+            const hh = await prisma.household.create({ data: { name: `Email ${label} ${TAG}` } });
+            createdHouseholdIds.push(hh.id);
+            return hh.id;
+        }
+        async function makePerson(
+            label: string,
+            householdId: number,
+            opts: { isHouseholdLead?: boolean; notificationSettings?: { emailScholarshipUpdates: boolean } } = {},
+        ): Promise<{ id: number; email: string }> {
+            const email = `email-${label}-${TAG}@example.com`;
+            const p = await prisma.person.create({
+                data: {
+                    name: `Email ${label}`,
+                    email,
+                    householdId,
+                    isHouseholdLead: opts.isHouseholdLead ?? false,
+                    ...(opts.notificationSettings ? { notificationSettings: opts.notificationSettings } : {}),
+                },
+            });
+            createdPersonIds.push(p.id);
+            return { id: p.id, email };
+        }
+
+        beforeAll(async () => {
+            const p = await prisma.program.create({
+                data: { name: `PP Email Behavior Program ${TAG}`, enrollmentStatus: 'OPEN' },
+            });
+            emailProgramId = p.id;
+        });
+
+        afterAll(async () => {
+            await prisma.programParticipant.deleteMany({ where: { programId: emailProgramId } });
+            await prisma.person.deleteMany({ where: { id: { in: createdPersonIds } } });
+            await prisma.household.deleteMany({ where: { id: { in: createdHouseholdIds } } });
+            await prisma.program.delete({ where: { id: emailProgramId } });
+        });
+
+        it('a fresh request (PENDING_UNPAID → HELD) sends the review-team notify and the household ack, each once', async () => {
+            const householdId = await makeHousehold('fresh');
+            const participant = await makePerson('fresh-participant', householdId);
+            await prisma.programParticipant.create({
+                data: { programId: emailProgramId, personId: participant.id, status: 'PENDING', isPaymentPlanRequested: false, pendingSince: new Date() },
+            });
+            mockSession.mockResolvedValue({ user: { id: participant.id } });
+
+            const res = await RequestPost(requestReq({ participantId: participant.id }), params(emailProgramId));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            const review = sent.filter((e) => e.subject.startsWith('New scholarship / payment-plan request'));
+            expect(review.map((e) => e.to).sort()).toEqual(REVIEW_TEAM_EMAILS);
+            const ack = sent.filter((e) => e.subject === 'We received your scholarship / payment-plan request');
+            expect(ack).toEqual([expect.objectContaining({ to: participant.email })]);
+        });
+
+        it('a no-op re-POST (already PENDING_HELD) sends zero emails', async () => {
+            const householdId = await makeHousehold('noop');
+            const participant = await makePerson('noop-participant', householdId);
+            await prisma.programParticipant.create({
+                data: { programId: emailProgramId, personId: participant.id, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+            });
+            mockSession.mockResolvedValue({ user: { id: participant.id } });
+
+            const res = await RequestPost(requestReq({ participantId: participant.id }), params(emailProgramId));
+            expect(res.status).toBe(200);
+            expect(__getSentEmails()).toHaveLength(0);
+        });
+
+        it('a re-request after denial (PENDING_HELD_DENIED → HELD) sends the review-team notify and the household ack', async () => {
+            const householdId = await makeHousehold('redeny');
+            const participant = await makePerson('redeny-participant', householdId);
+            await prisma.programParticipant.create({
+                data: {
+                    programId: emailProgramId, personId: participant.id, status: 'PENDING',
+                    isPaymentPlanRequested: false, pendingSince: new Date(),
+                    inventoryHeldAt: new Date(), paymentPlanDeniedAt: new Date(),
+                },
+            });
+            mockSession.mockResolvedValue({ user: { id: participant.id } });
+
+            const res = await RequestPost(requestReq({ participantId: participant.id }), params(emailProgramId));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            expect(sent.filter((e) => e.subject.startsWith('New scholarship / payment-plan request'))).toHaveLength(REVIEW_TEAM_EMAILS.length);
+            expect(sent.filter((e) => e.subject === 'We received your scholarship / payment-plan request')).toHaveLength(1);
+        });
+
+        it('approve sends a gated status email: an opted-out lead is excluded, the other lead receives it', async () => {
+            const householdId = await makeHousehold('approve');
+            const optedOut = await makePerson('approve-lead-out', householdId, { isHouseholdLead: true, notificationSettings: { emailScholarshipUpdates: false } });
+            const defaultOn = await makePerson('approve-lead-default', householdId, { isHouseholdLead: true });
+            const participant = await makePerson('approve-participant', householdId);
+            await prisma.programParticipant.create({
+                data: { programId: emailProgramId, personId: participant.id, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+            });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            const res = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId: emailProgramId, participantId: participant.id }),
+            }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            const status = sent.filter((e) => e.subject.includes('was approved'));
+            // Recipients = leads ∪ participant (alsoPersonId is the approved
+            // participant themself — §3): defaultOn (lead) and the participant
+            // (default-ON, no notificationSettings) both receive; the opted-out
+            // lead is excluded by the per-recipient gate.
+            expect(status.map((e) => e.to).sort()).toEqual([defaultOn.email, participant.email].sort());
+            expect(status.map((e) => e.to)).not.toContain(optedOut.email);
+        });
+
+        it('deny states the grace deadline when scholarshipDenialGraceDays is set, and omits it when null', async () => {
+            const prevGraceDays = (await prisma.boardSettings.findUnique({ where: { id: 1 }, select: { scholarshipDenialGraceDays: true } }))?.scholarshipDenialGraceDays ?? null;
+            try {
+                await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipDenialGraceDays: 10 } });
+                const hh1 = await makeHousehold('deny-grace');
+                const lead1 = await makePerson('deny-grace-lead', hh1, { isHouseholdLead: true });
+                const participant1 = await makePerson('deny-grace-participant', hh1);
+                await prisma.programParticipant.create({
+                    data: { programId: emailProgramId, personId: participant1.id, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+                });
+                mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+                const res1 = await RefusePost(refuseReq({ programId: emailProgramId, participantId: participant1.id }));
+                expect(res1.status).toBe(200);
+                const denyWithGrace = __getSentEmails().find((e) => e.to === lead1.email);
+                expect(denyWithGrace?.html).toMatch(/still held.*until <strong>/);
+
+                __clearSentEmails();
+
+                await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipDenialGraceDays: null } });
+                const hh2 = await makeHousehold('deny-nograce');
+                const lead2 = await makePerson('deny-nograce-lead', hh2, { isHouseholdLead: true });
+                const participant2 = await makePerson('deny-nograce-participant', hh2);
+                await prisma.programParticipant.create({
+                    data: { programId: emailProgramId, personId: participant2.id, status: 'PENDING', isPaymentPlanRequested: true, pendingSince: new Date(), inventoryHeldAt: new Date() },
+                });
+                const res2 = await RefusePost(refuseReq({ programId: emailProgramId, participantId: participant2.id }));
+                expect(res2.status).toBe(200);
+                const denyNoGrace = __getSentEmails().find((e) => e.to === lead2.email);
+                expect(denyNoGrace?.html).not.toMatch(/until <strong>/);
+                expect(denyNoGrace?.html).toMatch(/still held and you can still pay to keep it\./);
+            } finally {
+                await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipDenialGraceDays: prevGraceDays } });
+            }
         });
     });
 });

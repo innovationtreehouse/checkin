@@ -6,6 +6,7 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { certifyPaymentPlan, PaymentError } from "@/lib/membership/payment";
 import { fromWhere } from "@/lib/membership/lifecycle";
+import { resolveScholarshipRecipients, sendScholarshipStatus } from "@/lib/scholarshipEmails";
 
 export const GET = handler('GET /api/finance-ops/membership-payment-plans', async () => {
     const requests = await prisma.orgMembershipProcess.findMany({
@@ -49,7 +50,7 @@ export const POST = withAuth(
             const process = await prisma.orgMembershipProcess.findFirst({
                 // Approve probe: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
                 where: { id: processId, isPaymentPlanRequested: true, ...fromWhere('PENDING_PAYMENT') },
-                select: { id: true },
+                select: { id: true, orgMembership: { select: { householdId: true } } },
             });
             if (!process) {
                 return apiError("No pending payment-plan request", 409);
@@ -73,6 +74,17 @@ export const POST = withAuth(
                     newData: { paymentPlanApproved: true, isPaymentPlanRequested: false },
                 },
             });
+
+            const householdId = process.orgMembership?.householdId;
+            if (householdId) {
+                const recipients = await resolveScholarshipRecipients(householdId); // no requester at approve time
+                await sendScholarshipStatus(
+                    recipients,
+                    "Your membership scholarship / payment plan was approved",
+                    `<p>Good news — the Scholarship Review Team approved your household's scholarship / payment plan for your `
+                    + `Treehouse membership. Your membership is being activated; nothing further is needed.</p>`,
+                );
+            }
 
             return NextResponse.json({ success: true });
         } catch (error) {

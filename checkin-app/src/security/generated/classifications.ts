@@ -116,6 +116,7 @@ export const classifications = {
         devSigningTarget: 'internal',
         emailFromAddress: 'public',
         emailReplyToAddress: 'public',
+        scholarshipNotifyEmail: 'internal',
         shopifyOrgMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',

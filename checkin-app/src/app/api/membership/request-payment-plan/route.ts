@@ -3,6 +3,8 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck } from "@/lib/scholarshipEmails";
+import { config } from "@/lib/config";
 
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -40,14 +42,31 @@ export const POST = withAuth({}, async (req, auth) => {
             return apiError("This application is not awaiting payment", 409);
         }
 
+        if (process.isPaymentPlanRequested) {
+            // Idempotent re-request: no transition, no emails, still success.
+            return NextResponse.json({ success: true, process });
+        }
+
         const updated = await prisma.orgMembershipProcess.update({
             where: { id: processId },
             data: { isPaymentPlanRequested: true },
         });
 
-        // Alert the finance committee. In a real implementation this would trigger an
-        // actual email via SendGrid, NodeMailer, etc.
-        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Membership Scholarship / Payment Plan Request for household ${process.orgMembership.householdId}`);
+        const base = config.baseUrl();
+        const householdId = process.orgMembership.householdId;
+        await notifyReviewTeam(
+            `New membership scholarship / payment-plan request (household ${householdId})`,
+            `<p>The Scholarship Review Team has a new membership scholarship / payment-plan request to review.</p>`
+            + `<p>Review it here: <a href="${base}/finance-ops/membership-payment-plan">${base}/finance-ops/membership-payment-plan</a></p>`,
+            "Scholarship review-team notify failed (membership request):",
+        );
+        const recipients = await resolveScholarshipRecipients(householdId);
+        await sendScholarshipAck(
+            recipients,
+            "We received your scholarship / payment-plan request",
+            `<p>Hi — we've received your household's scholarship / payment-plan request for your Treehouse membership dues. `
+            + `The Scholarship Review Team will review it and follow up.</p>`,
+        );
 
         return NextResponse.json({ success: true, process: updated });
     } catch (error) {

@@ -6,7 +6,7 @@ import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
 
 export const dynamic = "force-dynamic";
 
-const SELECT = { emailFromAddress: true, emailReplyToAddress: true } as const;
+const SELECT = { emailFromAddress: true, emailReplyToAddress: true, scholarshipNotifyEmail: true } as const;
 
 /** GET /api/settings/email — outbound-email sender identity (BoardSettings singleton). */
 export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
@@ -15,9 +15,10 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
 });
 
 /**
- * PUT /api/settings/email — set the Resend From override and Reply-To.
- * Body may include emailFromAddress and emailReplyToAddress (string|null). emailFromAddress
- * is a single address shape (bare or `Name <addr@domain>`). emailReplyToAddress may be a
+ * PUT /api/settings/email — set the Resend From override, Reply-To, and the
+ * Scholarship Review Team notify address. Body may include emailFromAddress,
+ * emailReplyToAddress, and scholarshipNotifyEmail (string|null). emailFromAddress
+ * is a single address shape (bare or `Name <addr@domain>`). The other two may be a
  * comma-separated list of one or more addresses, each in that same shape (e.g.
  * "info@x.org, ops@x.org") — replies can fan out to more than one inbox. A malformed value
  * rejects the whole update (400) so the previous value survives. Blank/empty clears back to
@@ -26,7 +27,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
  */
 export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
-    let body: { emailFromAddress?: string | null; emailReplyToAddress?: string | null };
+    let body: { emailFromAddress?: string | null; emailReplyToAddress?: string | null; scholarshipNotifyEmail?: string | null };
     try {
         body = await req.json();
     } catch {
@@ -45,6 +46,13 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             return apiError("emailReplyToAddress must be a comma-separated list of email addresses (each an address or \"Name <addr@domain>\")", 400);
         }
         data.emailReplyToAddress = replyTo || null;
+    }
+    if (body.scholarshipNotifyEmail !== undefined) {
+        const v = body.scholarshipNotifyEmail?.trim();
+        if (v && !parseEmailHeaderList(v)) {
+            return apiError("scholarshipNotifyEmail must be a comma-separated list of email addresses (each an address or \"Name <addr@domain>\")", 400);
+        }
+        data.scholarshipNotifyEmail = v || null; // blank clears to null
     }
 
     const settings = await prisma.boardSettings.upsert({
