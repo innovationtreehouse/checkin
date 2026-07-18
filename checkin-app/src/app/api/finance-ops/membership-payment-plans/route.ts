@@ -5,12 +5,14 @@ import { withAuth } from "@/lib/auth";
 import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { certifyPaymentPlan, PaymentError } from "@/lib/membership/payment";
+import { fromWhere } from "@/lib/membership/lifecycle";
 
 export const GET = handler('GET /api/finance-ops/membership-payment-plans', async () => {
     const requests = await prisma.orgMembershipProcess.findMany({
+        // Queue read = the PENDING_PAYMENT from-state the POST acts on; status from the definition (#1080).
         where: {
             isPaymentPlanRequested: true,
-            status: 'PENDING_PAYMENT',
+            ...fromWhere('PENDING_PAYMENT'),
         },
         include: {
             orgMembership: { include: { household: true } },
@@ -45,7 +47,8 @@ export const POST = withAuth(
             // approving a stale/nonexistent request is a no-op error, mirroring the
             // GET queue's filter.
             const process = await prisma.orgMembershipProcess.findFirst({
-                where: { id: processId, isPaymentPlanRequested: true, status: 'PENDING_PAYMENT' },
+                // Approve probe: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
+                where: { id: processId, isPaymentPlanRequested: true, ...fromWhere('PENDING_PAYMENT') },
                 select: { id: true },
             });
             if (!process) {

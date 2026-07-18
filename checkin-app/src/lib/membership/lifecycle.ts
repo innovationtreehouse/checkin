@@ -20,6 +20,7 @@
 import type { Prisma, OrgMembershipProcessStatus, OrgMembershipProcessKind } from "@/generated/prisma/client";
 import {
     type StateSet,
+    fromStatusWhere,
     assertNever,
     defineValidator,
     type Invariant,
@@ -172,6 +173,25 @@ export const settledThisCycleWhere = (windowStart: Date): Where => ({
     status: { in: ["ACTIVE", "ARCHIVED"] },
     stageEnteredAt: { gte: windowStart },
 });
+
+// ── fromWhere (§5 CAS from-state, #1080) ───────────────────────────────────────
+
+/**
+ * Emit the `status` clause a CAS transition guard names for its from-state. For this
+ * machine the from-state name IS the status, so the emit is direct — the value is what
+ * closes the drift gap (#1080): a status rename/split changes the enum (compile-caught
+ * by the union-parity line) and this one emitter, and every guard that spreads
+ * `...fromWhere(<status>)` moves with it, instead of ~6 hand-written `status:` literals
+ * desyncing silently from the TRANSITIONS table.
+ *
+ * Status only: the guard keeps its transition-specific clauses (`contractSignedAt`,
+ * the BG-consent `OR`, `isPaymentPlanRequested`) literal — not statuses, don't drift,
+ * and several guards check a strict subset of the from-state. The scalar shape matches
+ * the guards' hand-written `status: "X"`, so the migrated query is byte-for-byte identical.
+ */
+export function fromWhere(from: ProcessStatus): Where {
+    return fromStatusWhere<Where>([from]);
+}
 
 // ── classify / validate (LIFECYCLE_ARCHITECTURE §3.2) ──────────────────────────
 
