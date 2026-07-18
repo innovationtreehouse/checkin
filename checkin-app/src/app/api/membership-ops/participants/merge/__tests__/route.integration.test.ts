@@ -128,13 +128,61 @@ describe("Merge Participants API", () => {
         expect(res.status).toBe(200);
 
         const log = await prisma.auditLog.findFirst({
-            where: { tableName: "Participant", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId }
+            where: { tableName: "Person", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId }
         });
         expect(log).not.toBeNull();
         expect(log?.actorId).toBe(actorId);
         const newData = log?.newData as { keepId: number; moved: { visits: number } };
         expect(newData.keepId).toBe(pKeepId);
         expect(newData.moved.visits).toBe(1);
+
+        // Full pre-image of the merged-away Person: every field the merge
+        // rewrites (tombstone) or moves (backfill), captured before either update.
+        const oldData = log?.oldData as Record<string, unknown>;
+        expect(Object.keys(oldData).sort()).toEqual([
+            "dateOfBirth", "email", "googleId", "householdId", "id", "image",
+            "isHouseholdLead", "lastBackgroundCheck", "lastWaiverSign", "name", "phone",
+        ].sort());
+        expect(oldData.id).toBe(pMergeId);
+        expect(oldData.email).toBe("merge@example.com");
+        expect(oldData.phone).toBe("123-456-7890");
+    });
+
+    it("should succeed when the MERGED side holds googleId+email and the keeper holds neither (prod P2002 repro)", async () => {
+        // This is the exact prod failure: the keeper backfill used to copy
+        // googleId/email onto the keeper BEFORE the tombstone cleared them off
+        // the merge-side row, tripping the @unique constraint and surfacing as
+        // a generic 500. Reordering (tombstone first) fixes it.
+        // Keeper starts with no email/googleId of its own (beforeEach gives it one
+        // by default) so the backfill actually has something to copy.
+        await prisma.person.update({
+            where: { id: pKeepId },
+            data: { email: null, googleId: null }
+        });
+        await prisma.person.update({
+            where: { id: pMergeId },
+            data: { googleId: "google-conflict-id", email: "conflict@example.com" }
+        });
+
+        const req = new Request("http://localhost/api/membership-ops/participants/merge", {
+            method: "POST",
+            body: JSON.stringify({ keepId: pKeepId, mergeId: pMergeId })
+        }) as unknown as import('next/server').NextRequest;
+
+        const res = await POST(req);
+        const data = await res.json();
+        if (res.status !== 200) console.error('Merge error:', data);
+        expect(res.status).toBe(200);
+        expect(data.success).toBe(true);
+
+        const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
+        expect(kept?.googleId).toBe("google-conflict-id");
+        expect(kept?.email).toBe("conflict@example.com");
+
+        const merged = await prisma.person.findUnique({ where: { id: pMergeId } });
+        expect(merged?.googleId).toBeNull();
+        expect(merged?.email).toContain("merged-");
+        expect(merged?.email).toContain("@deleted.checkme.in");
     });
 
     it("relinks one row and deletes the loser when keep AND merge both have a conflicting programParticipant + feePayment", async () => {

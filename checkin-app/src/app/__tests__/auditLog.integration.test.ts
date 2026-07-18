@@ -338,7 +338,7 @@ describe('AuditLog Integration Tests', () => {
         const logs = await prisma.auditLog.findMany({
             where: {
                 action: 'DELETE',
-                tableName: 'Participant',
+                tableName: 'Person',
                 affectedEntityId: keep.id,
                 secondaryAffectedEntity: merge.id,
             },

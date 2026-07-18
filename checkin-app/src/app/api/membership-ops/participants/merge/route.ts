@@ -66,6 +66,29 @@ export const POST = withAuth(
                     }
                 }
 
+                // Clear the merged person's unique identity fields FIRST, before
+                // backfilling those same values onto the keeper below. Postgres
+                // checks non-deferrable unique constraints per-statement, so
+                // clearing mergeId's googleId/email in this statement means the
+                // keeper's backfill statement (same values, captured pre-tx) no
+                // longer collides with it. Reordering these two was the fix for
+                // the P2002 that produced the prod 500 (a1).
+                //
+                // householdId stays pointing at the old household: every
+                // participant must belong to a household, and merged-away
+                // records are tombstoned rather than deleted. Leadership is
+                // cleared (a1): the tombstone is no longer a lead of anything.
+                await tx.person.update({
+                    where: { id: mergeId },
+                    data: {
+                        googleId: null,
+                        email: `merged-${mergeId}@deleted.checkme.in`,
+                        phone: null,
+                        name: `${mergeParticipant.name || 'Unknown'} (Merged into ${keepId})`,
+                        isHouseholdLead: false,
+                    }
+                });
+
                 if (Object.keys(updates).length > 0) {
                     await tx.person.update({
                         where: { id: keepId },
@@ -163,34 +186,30 @@ export const POST = withAuth(
                     }
                 }
 
-                // householdId stays pointing at the old household: every
-                // participant must belong to a household, and merged-away
-                // records are tombstoned rather than deleted. Leadership is
-                // cleared (a1): the tombstone is no longer a lead of anything.
-                await tx.person.update({
-                    where: { id: mergeId },
-                    data: {
-                        googleId: null,
-                        email: `merged-${mergeId}@deleted.checkme.in`,
-                        phone: null,
-                        name: `${mergeParticipant.name || 'Unknown'} (Merged into ${keepId})`,
-                        isHouseholdLead: false,
-                    }
-                });
-
                 // ponytail: audit only — undo is unimplemented; merge is still irreversible.
                 if (auth.type === 'session') {
                     await tx.auditLog.create({
                         data: {
                             actorId: auth.user.id,
                             action: "DELETE",
-                            tableName: "Participant",
+                            tableName: "Person",
                             affectedEntityId: keepId,
                             secondaryAffectedEntity: mergeId,
+                            // Full pre-image of every field the merge rewrites (tombstone)
+                            // or moves (backfill) on the merged-away Person, captured
+                            // before either update ran.
                             oldData: {
                                 id: mergeParticipant.id,
-                                name: mergeParticipant.name,
+                                googleId: mergeParticipant.googleId,
                                 email: mergeParticipant.email,
+                                phone: mergeParticipant.phone,
+                                name: mergeParticipant.name,
+                                dateOfBirth: mergeParticipant.dateOfBirth,
+                                image: mergeParticipant.image,
+                                lastWaiverSign: mergeParticipant.lastWaiverSign,
+                                lastBackgroundCheck: mergeParticipant.lastBackgroundCheck,
+                                isHouseholdLead: mergeParticipant.isHouseholdLead,
+                                householdId: mergeParticipant.householdId,
                             },
                             newData: { keepId, moved },
                         }
@@ -200,8 +219,30 @@ export const POST = withAuth(
 
             return NextResponse.json({ success: true });
         } catch (error: unknown) {
+            const field = prismaUniqueConflictField(error);
+            if (field) {
+                const label = field === 'googleId' ? 'the Google identity'
+                    : field === 'email' ? 'the email address'
+                    : field === 'phone' ? 'the phone number'
+                    : `the ${field} field`;
+                return apiError(`Merge conflict: ${label} is already attached to another record.`, 409);
+            }
             await logBackendError(error, "POST /api/membership-ops/participants/merge");
-            return apiError("Failed to merge participants", 500);
+            return apiError("Failed to merge participants — check server logs for details.", 500);
         }
     }
 );
+
+// Prisma known-request errors carry a string `code` and, for P2002, a
+// `meta.target` naming the colliding column(s). Duck-typed so we don't pull
+// in the generated Prisma namespace just for one check. Returns the first
+// colliding field name, or undefined if this isn't a P2002.
+function prismaUniqueConflictField(error: unknown): string | undefined {
+    if (typeof error !== 'object' || error === null || (error as { code?: unknown }).code !== 'P2002') {
+        return undefined;
+    }
+    const target = (error as { meta?: { target?: string[] | string } }).meta?.target;
+    if (Array.isArray(target)) return target[0];
+    if (typeof target === 'string') return target;
+    return 'unique';
+}
