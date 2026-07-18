@@ -58,24 +58,23 @@ export async function activateProgramEnrollment(input: ActivateEnrollmentInput):
             continue;
         }
 
-        // Guarded PENDING → ACTIVE so a redelivery / re-run can't inflate the count.
+        // Guarded PENDING → ACTIVE in ONE atomic write: status flip AND hold release
+        // together, so the row is never committed as ACTIVE-with-held (invariant I1 —
+        // the crash window that stranded a −1 that never came back). The single
+        // status:'PENDING' guard makes this idempotent: a webhook redelivery / reconciler
+        // re-run finds the row already ACTIVE → matches 0 rows → no double-activate, and
+        // (since the flip and the release are the same write) no double-release either.
         const activated = await prisma.programParticipant.updateMany({
             // T4 activate CAS from-state (any PENDING; sourced from the definition, #1080).
             where: { programId, personId, ...fromWhere("PENDING_UNPAID") },
-            data: { status: "ACTIVE", pendingSince: null, shopifyOrderId },
+            data: { status: "ACTIVE", pendingSince: null, shopifyOrderId, inventoryHeldAt: null },
         });
         activatedCount += activated.count;
         if (activated.count > 0) logger.info(`[enroll] Marked participant ${personId} ACTIVE for program ${programId}`);
 
-        // Release a scholarship hold if one was set (compensates the sale's auto-decrement),
-        // guarded (NOT NULL → NULL) so a retry can't release twice.
-        if (existing.inventoryHeldAt) {
-            const release = await prisma.programParticipant.updateMany({
-                where: { programId, personId, inventoryHeldAt: { not: null } },
-                data: { inventoryHeldAt: null },
-            });
-            releasedHoldCount += release.count;
-        }
+        // A hold was released iff THIS activation flipped a row that had one set (the pre-read
+        // held stamp + a real 0→1 flip). The compensating Shopify +1 stays a separate call below.
+        if (existing.inventoryHeldAt && activated.count > 0) releasedHoldCount += 1;
     }
 
     // Compensating +1 for every hold released, in one call. Never fatal.
