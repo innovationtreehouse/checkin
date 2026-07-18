@@ -8,16 +8,18 @@ import { fromWhere } from "@/lib/membership/lifecycle";
 
 // Denies a pending membership scholarship / payment-plan request — the sibling
 // of POST /api/finance-ops/membership-payment-plans (approve) that membership
-// previously lacked, so a declined request sat PENDING_PAYMENT forever with no
-// follow-up email (the request ack promises one). Closes the program/membership
-// deny asymmetry (docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md §5 item 4).
+// previously lacked, so a declined request had no board action and sat
+// PENDING_PAYMENT on the queue indefinitely. This gives the board a dedicated
+// deny control (docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md §5 item 4).
 //
-// Unlike the program deny, membership has NO held Shopify seat (dues are paid to
-// activate, no seat is reserved on request) and NO grace-expiry cron, so denial
-// is purely clearing isPaymentPlanRequested back to false: the process stays
-// PENDING_PAYMENT and the household returns to normal "pay your dues to activate".
-// There is no paymentPlanDeniedAt column on OrgMembershipProcess and none is
-// needed — the cleared flag is the whole of denial state.
+// Silent by design, like every other board decision (approve on both sides,
+// program deny): sends NO automatic applicant email — the Scholarship Review
+// Team communicates the outcome manually. Denial is purely clearing
+// isPaymentPlanRequested back to false: the process stays PENDING_PAYMENT and
+// the household returns to normal "pay your dues to activate". Membership holds
+// no Shopify seat and has no grace-expiry cron (grace is program-only), so there
+// is no seat to release and no paymentPlanDeniedAt to stamp — OrgMembershipProcess
+// has no such column and needs none; the cleared flag is the whole of denial state.
 export const POST = withAuth(
     { roles: ['isBoardMember'] },
     async (req, auth) => {
