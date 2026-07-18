@@ -186,7 +186,9 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             expect(res.status).toBe(200);
 
             const sent = __getSentEmails();
-            const digest = sent.filter((e) => e.subject.startsWith('Non-payment digest:'));
+            const digest = sent.filter((e) => e.subject.startsWith('Non-payment digest:') && e.to === 'board-pending-cron-email-test@example.com');
+            // Scoped to this suite's board member: emailBoardMembers fans out to EVERY
+            // isBoardMember row, and other suites' board personas share the DB in CI.
             expect(digest).toHaveLength(0);
         });
     });
@@ -222,7 +224,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             const householdA = await prisma.household.create({ data: { name: 'Email Test HH A' } });
             householdAId = householdA.id;
             const leadA = await prisma.person.create({
-                data: { email: 'leadA-pending-cron-email-test@example.com', name: 'Lead A', householdId: householdAId, isHouseholdLead: true }
+                data: { email: 'leada-pending-cron-email-test@example.com', name: 'Lead A', householdId: householdAId, isHouseholdLead: true }
             });
             const day6Child = await prisma.person.create({
                 data: { email: 'day6child-pending-cron-email-test@example.com', name: 'Day6 Child', householdId: householdAId }
@@ -290,7 +292,7 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             const finalWarning = sent.filter((e) => e.subject === 'FINAL WARNING: 24 hours left to pay for Pending Cron Email Test Program');
             expect(finalWarning.map((e) => e.to).sort()).toEqual([
                 'day6child-pending-cron-email-test@example.com',
-                'leadA-pending-cron-email-test@example.com',
+                'leada-pending-cron-email-test@example.com',
             ]);
             expect(finalWarning[0].html).toContain('Pending Cron Email Test Program');
             expect(finalWarning[0].html).toContain('may be released by the board');
@@ -316,7 +318,9 @@ describe('Cron Pending-Participants API Integration Tests', () => {
             expect(res.status).toBe(200);
 
             const sent = __getSentEmails();
-            const digest = sent.filter((e) => e.subject.startsWith('Non-payment digest:'));
+            const digest = sent.filter((e) => e.subject.startsWith('Non-payment digest:') && e.to === 'board-pending-cron-email-test@example.com');
+            // Scoped to this suite's board member: emailBoardMembers fans out to EVERY
+            // isBoardMember row, and other suites' board personas share the DB in CI.
             expect(digest).toHaveLength(1);
             expect(digest[0].to).toBe('board-pending-cron-email-test@example.com');
             expect(digest[0].html).toContain('No Email Child — Pending Cron Email Test Program (day 3)');

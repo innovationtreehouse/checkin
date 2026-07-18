@@ -255,6 +255,19 @@ describe('Membership payment-plan routes', () => {
     });
 
     describe('email behavior', () => {
+        // Pin the review-team address so these counts are hermetic: unset, the
+        // fallback emails EVERY isBoardMember row, and other suites' board
+        // personas share the DB in a full CI run.
+        const REVIEW_TEAM = `review-team-${TAG}@example.com`;
+        let prevNotify: string | null = null;
+        beforeAll(async () => {
+            const s = await prisma.boardSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+            prevNotify = s.scholarshipNotifyEmail;
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: REVIEW_TEAM } });
+        });
+        afterAll(async () => {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: prevNotify } });
+        });
         it('a fresh request sends the review-team notify and the household ack, each once', async () => {
             const fresh = await makeProc('EmailFreshReq', { requested: false, withLead: true });
             mockSession.mockResolvedValue({ user: { id: fresh.personId } });
@@ -263,7 +276,7 @@ describe('Membership payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             const sent = __getSentEmails();
-            expect(sent.filter((e) => e.subject.includes('New membership scholarship'))).toHaveLength(1);
+            expect(sent.filter((e) => e.subject.includes('New membership scholarship') && e.to === REVIEW_TEAM)).toHaveLength(1);
             expect(sent.filter((e) => e.subject === 'We received your scholarship / payment-plan request')).toHaveLength(1);
         });
 
