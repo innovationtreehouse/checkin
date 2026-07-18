@@ -148,15 +148,21 @@ describe('match-audit reads', () => {
         expect(queryMock).not.toHaveBeenCalled();
     });
 
-    it('lineVariantStats counts only live lines', async () => {
+    it('lineVariantStats counts only live lines of real (non-test) orders', async () => {
         queryMock.mockResolvedValue({ rows: [{ lines: 5, withVariant: 2 }] });
         expect(await freshClient().lineVariantStats()).toEqual({ lines: 5, withVariant: 2 });
         expect(sqlOf(0)).toContain('removed = false');
+        // Same test-order rule as ordersForVariants: test lines must not count as
+        // variant coverage, or they'd mask an unbackfilled real mirror.
+        expect(sqlOf(0)).toContain('test = false');
+        expect(sqlOf(0)).toContain('JOIN shop_order');
     });
 
-    it('orderLegacyIdsPresent returns the found ids as a set', async () => {
+    it('orderLegacyIdsPresent returns the found ids as a set, ignoring test orders', async () => {
         queryMock.mockResolvedValue({ rows: [{ legacyId: '900' }] });
         expect(await freshClient().orderLegacyIdsPresent(['900', '901'])).toEqual(new Set(['900']));
+        // A test-mode order must not serve as an activation's payment basis.
+        expect(sqlOf(0)).toContain('test = false');
     });
 });
 

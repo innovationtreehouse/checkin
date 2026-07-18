@@ -246,8 +246,13 @@ export async function lineVariantStats(): Promise<{ lines: number; withVariant: 
     const p = getPool();
     if (!p) throw new Error("shopify_read mirror is not configured");
     const rows = await p.query<{ lines: number; withVariant: number }>(
-        `SELECT count(*)::int AS "lines", count(variant_legacy_id)::int AS "withVariant"
-         FROM shop_order_line WHERE removed = false`,
+        // Joined to shop_order for the same `test = false` rule as ordersForVariants:
+        // lines of test orders must not count as coverage, or a handful of test
+        // orders synced post-backfill would mask a still-unbackfilled real mirror.
+        `SELECT count(*)::int AS "lines", count(l.variant_legacy_id)::int AS "withVariant"
+         FROM shop_order_line l
+         JOIN shop_order o ON o.shopify_gid = l.order_gid
+         WHERE l.removed = false AND o.test = false`,
     );
     return rows.rows[0];
 }
@@ -287,18 +292,23 @@ export async function ordersForVariants(variantIds: string[]): Promise<MirrorAud
          WHERE test = false
            AND EXISTS (SELECT 1 FROM shop_order_line l
                         WHERE l.order_gid = shop_order.shopify_gid AND l.removed = false
-                          AND l.variant_legacy_id = ANY($1::text[]))`,
+                          AND l.variant_legacy_id = ANY($1::text[]))
+         ORDER BY legacy_id NULLS LAST`,
         [variantIds],
     );
     return rows.rows;
 }
 
-/** Which of the given numeric order ids exist in the mirror at all. */
+/**
+ * Which of the given numeric order ids exist in the mirror as REAL orders.
+ * `test = false` matches every other read here: a test-mode order must not
+ * serve as the payment basis that turns an activation "ORDER_MATCHED".
+ */
 export async function orderLegacyIdsPresent(legacyIds: string[]): Promise<Set<string>> {
     const p = getPool();
     if (!p || legacyIds.length === 0) return new Set();
     const rows = await p.query<{ legacyId: string }>(
-        `SELECT legacy_id AS "legacyId" FROM shop_order WHERE legacy_id = ANY($1::text[])`,
+        `SELECT legacy_id AS "legacyId" FROM shop_order WHERE test = false AND legacy_id = ANY($1::text[])`,
         [legacyIds],
     );
     return new Set(rows.rows.map((r) => r.legacyId));

@@ -116,10 +116,36 @@ export async function raisePaymentException(kind: PaymentExceptionKind, ref: Exc
 
 // ── predicates over a mirror order ───────────────────────────────────────────
 
-/** Shopify displayFinancialStatus that means "money is in" and not reversed. */
-function isPaid(o: MirrorOrder): boolean {
+/**
+ * Shopify displayFinancialStatus that means "money is in" and not reversed.
+ * Exported: matchAudit.ts must apply the SAME predicate, or the audit and the
+ * reconciler disagree about which orders count as paid.
+ */
+export function isPaid(o: Pick<MirrorOrder, "financialStatus" | "cancelledAt" | "totalRefundedCents">): boolean {
     const s = (o.financialStatus ?? "").toUpperCase();
     return (s === "PAID" || s === "PARTIALLY_PAID") && !o.cancelledAt && o.totalRefundedCents === 0;
+}
+
+/**
+ * The membership variant-id set (BoardSettings variants + the dev-mock variant
+ * when the Shopify mock is active) — the ONE "is this line a membership?" rule.
+ * Exported so matchAudit.ts consumes the same set as the #1074 item gate; a
+ * variant added here but missed in a private copy would silently VANISH from
+ * the audit (filtered out in SQL), not show as a gap.
+ */
+export function membershipVariantIdSet(settings: {
+    orgMembershipVariantId: string | null;
+    shopifyNormalVariantId: string | null;
+    shopifyVolunteerVariantId: string | null;
+} | null): Set<string> {
+    return new Set(
+        [
+            settings?.orgMembershipVariantId,
+            settings?.shopifyNormalVariantId,
+            settings?.shopifyVolunteerVariantId,
+            config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
+        ].filter((v): v is string => !!v),
+    );
 }
 
 /** Any sign the money came back out. */
@@ -223,14 +249,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
             volunteerDuesCents: true,
         },
     });
-    const membershipVariantIds = new Set(
-        [
-            settings?.orgMembershipVariantId,
-            settings?.shopifyNormalVariantId,
-            settings?.shopifyVolunteerVariantId,
-            config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
-        ].filter((v): v is string => !!v),
-    );
+    const membershipVariantIds = membershipVariantIdSet(settings ?? null);
     const lineVariantIds = await mirror.orderLineVariantIds(order.orderGid);
 
     if (lineVariantIds.length > 0) {
@@ -476,6 +495,14 @@ export async function runReconcile(): Promise<ReconcileResult> {
         } catch (e) {
             logger.error(`[reconcile] forward pass failed for order ${order.legacyId ?? order.orderGid}:`, e);
             cursorFrozen = true;
+            // The watermark may ALREADY sit at this order's updatedAt — an earlier
+            // order in the batch with the same timestamp succeeded and advanced it.
+            // ordersChangedSince compares with a strict `updated_at >`, so leaving
+            // the cursor there would skip this order forever. Pull it back below
+            // the failed order so the next run re-fetches it.
+            if (order.updatedAt && newCursor && newCursor >= order.updatedAt) {
+                newCursor = new Date(order.updatedAt.getTime() - 1);
+            }
         }
         if (!cursorFrozen && order.updatedAt && (!newCursor || order.updatedAt > newCursor)) newCursor = order.updatedAt;
     }
