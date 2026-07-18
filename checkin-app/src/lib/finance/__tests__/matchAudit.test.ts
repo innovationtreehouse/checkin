@@ -386,3 +386,88 @@ describe('enrollment buckets', () => {
         });
     });
 });
+
+describe('tracked-exception override (P3 gap → exception promotion)', () => {
+    const proc = (id: number, over: Partial<Record<string, unknown>> = {}) => ({
+        id,
+        shopifyOrderId: null,
+        certifiedById: null,
+        orgMembership: { household: { name: `House ${id}` } },
+        ...over,
+    });
+    const enroll = (personId: number, over: Partial<Record<string, unknown>> = {}) => ({
+        programId: 7,
+        personId,
+        shopifyOrderId: null,
+        wasOrgMemberAtApproval: null,
+        program: { name: 'Robotics' },
+        person: { name: `Kid ${personId}` },
+        ...over,
+    });
+    // Distinguishes the three paymentException.findMany call sites (order-side
+    // trackedExceptions, membership tracked lookup, enrollment tracked lookup) by
+    // their where-clause shape, since all three share one jest.fn().
+    const isMembershipLookup = (where: Record<string, unknown>) => 'processId' in where;
+    const isEnrollmentLookup = (where: Record<string, unknown>) => 'programId' in where && !('shopifyOrderId' in where);
+
+    it('a NO_PAYMENT_BASIS membership with an open exception on its processId → TRACKED_EXCEPTION, not a gap', async () => {
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([]) // claim lookup
+            .mockResolvedValueOnce([proc(1)]);
+        prismaMock.paymentException.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+            isMembershipLookup(where) ? [{ processId: 1 }] : [],
+        );
+        const r = await runMatchAudit();
+        expect(r.memberships[0].bucket).toBe('TRACKED_EXCEPTION');
+    });
+
+    it('a NO_PAYMENT_BASIS enrollment with an open exception on its (programId, personId) → TRACKED_EXCEPTION, not a gap', async () => {
+        prismaMock.programParticipant.findMany
+            .mockResolvedValueOnce([]) // claim lookup
+            .mockResolvedValueOnce([enroll(3)]);
+        prismaMock.paymentException.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+            isEnrollmentLookup(where) ? [{ programId: 7, personId: 3 }] : [],
+        );
+        const r = await runMatchAudit();
+        expect(r.enrollments[0].bucket).toBe('TRACKED_EXCEPTION');
+    });
+
+    it('the tracked lookups exclude RESOLVED exceptions by construction (a RESOLVED row must not flip the bucket)', async () => {
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([proc(1)]);
+        prismaMock.programParticipant.findMany
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([enroll(3)]);
+        await runMatchAudit();
+        const calls = prismaMock.paymentException.findMany.mock.calls as [{ where: Record<string, unknown> }][];
+        const membershipCall = calls.find(([{ where }]) => isMembershipLookup(where));
+        const enrollmentCall = calls.find(([{ where }]) => isEnrollmentLookup(where));
+        expect(membershipCall![0].where.status).toEqual({ not: 'RESOLVED' });
+        expect(enrollmentCall![0].where.status).toEqual({ not: 'RESOLVED' });
+    });
+
+    it('a stray open exception on a MANUAL_CERTIFIED row is not overridden — the override is gap-only', async () => {
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([proc(1, { certifiedById: 42 })]); // MANUAL_CERTIFIED, not a gap
+        prismaMock.person.findMany.mockResolvedValue([{ id: 42, name: 'Board Bob' }]);
+        prismaMock.paymentException.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+            isMembershipLookup(where) ? [{ processId: 1 }] : [],
+        );
+        const r = await runMatchAudit();
+        expect(r.memberships[0].bucket).toBe('MANUAL_CERTIFIED');
+    });
+
+    it('a stray open exception on an ORDER_MATCHED enrollment is not overridden — the override is gap-only', async () => {
+        prismaMock.programParticipant.findMany
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([enroll(3, { shopifyOrderId: '700' })]); // ORDER_MATCHED, not a gap
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set(['700']));
+        prismaMock.paymentException.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+            isEnrollmentLookup(where) ? [{ programId: 7, personId: 3 }] : [],
+        );
+        const r = await runMatchAudit();
+        expect(r.enrollments[0].bucket).toBe('ORDER_MATCHED');
+    });
+});

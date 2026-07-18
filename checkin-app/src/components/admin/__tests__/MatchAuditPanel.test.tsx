@@ -1,10 +1,11 @@
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
 import { MatchAuditPanel } from "../MatchAuditPanel";
 
 beforeEach(() => resetRtl());
 
 const AUDIT_URL = "/api/finance-ops/s-read/match-audit";
+const TRACK_URL = "/api/finance-ops/s-read/match-audit/track";
 
 describe("MatchAuditPanel", () => {
   it("does not run until clicked, then separates gaps from legitimate manual rows", async () => {
@@ -113,5 +114,75 @@ describe("MatchAuditPanel", () => {
     renderWithProviders(<MatchAuditPanel />);
     fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
     expect(await screen.findByText(/failed to run/)).toBeInTheDocument();
+  });
+
+  it("renders a Track button on each gap row; clicking one posts to the track endpoint, drops the row from the gap table, and lowers the gap count", async () => {
+    // TRACK_URL registered first: it is a substring superset of AUDIT_URL, and
+    // mockFetchJson matches the first key found in the request URL.
+    const fetchMock = mockFetchJson({
+      [TRACK_URL]: { tracked: true },
+      [AUDIT_URL]: {
+        configured: true,
+        configuredVariants: 3,
+        variantCoverage: { lines: 6, withVariant: 6 },
+        orders: [
+          { bucket: "UNCLAIMED_PAID", orderLegacyId: "2", name: "#2", customerEmail: "b@x.com", financialStatus: "PAID", totalCents: 7500, discountCodes: [], expected: ["membership"] },
+        ],
+        memberships: [
+          { bucket: "NO_PAYMENT_BASIS", processId: 4, membershipId: null, householdName: "The Wrens", shopifyOrderId: null, certifiedByName: null },
+        ],
+        enrollments: [],
+      },
+    });
+    renderWithProviders(<MatchAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
+    expect(await screen.findByText("2 gap(s)")).toBeInTheDocument();
+
+    const trackButtons = screen.getAllByRole("button", { name: "Track" });
+    expect(trackButtons).toHaveLength(2); // the order gap row + the membership gap row
+    fireEvent.click(trackButtons[0]); // the order row (#2)
+
+    expect(await screen.findByText("1 gap(s)")).toBeInTheDocument();
+    expect(screen.queryByText("#2")).not.toBeInTheDocument();
+
+    const trackCall = fetchMock.mock.calls.find(([url]) => url.toString().includes(TRACK_URL));
+    expect(trackCall).toBeDefined();
+    expect(trackCall![1]).toEqual(expect.objectContaining({ method: "POST" }));
+    expect(JSON.parse(trackCall![1]!.body as string)).toEqual({ kind: "order", shopifyOrderId: "2" });
+  });
+
+  it("keeps a gap row when the track request is rejected (stale row, 409)", async () => {
+    const auditResult = {
+      configured: true,
+      configuredVariants: 3,
+      variantCoverage: { lines: 6, withVariant: 6 },
+      orders: [
+        { bucket: "UNCLAIMED_PAID", orderLegacyId: "2", name: "#2", customerEmail: "b@x.com", financialStatus: "PAID", totalCents: 7500, discountCodes: [], expected: ["membership"] },
+      ],
+      memberships: [],
+      enrollments: [],
+    };
+    // Bespoke fetch stub (mockFetchJson always 200s a matched route): the audit GET
+    // succeeds, the track POST 409s — same shape as the "explains an unwired
+    // mirror" 503 test above.
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes(TRACK_URL)) {
+        return { ok: false, status: 409, json: async () => ({ error: "stale" }), text: async () => "" } as Response;
+      }
+      return { ok: true, status: 200, json: async () => auditResult, text: async () => "" } as Response;
+    }) as unknown as typeof fetch;
+
+    renderWithProviders(<MatchAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
+    expect(await screen.findByText("#2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Track" }));
+
+    // Row stays — RTL doesn't mount the Mantine notifications portal by default,
+    // so assert on the row surviving rather than the toast text.
+    await waitFor(() => expect((global.fetch as jest.Mock).mock.calls.length).toBe(2));
+    expect(screen.getByText("#2")).toBeInTheDocument();
+    expect(screen.getByText("1 gap(s)")).toBeInTheDocument();
   });
 });
