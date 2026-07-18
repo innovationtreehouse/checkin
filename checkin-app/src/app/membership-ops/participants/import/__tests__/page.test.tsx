@@ -72,4 +72,13 @@ describe("membership-ops/participants/import page", () => {
     );
     expect(await screen.findByText("Imported 1 participant.")).toBeInTheDocument();
   });
+
+  it("renders nothing for a background-check reviewer who navigates directly", () => {
+    setSession({ id: 9, isBackgroundCheckReviewer: true });
+    mockFetchJson({});
+    renderWithProviders(<BulkImportParticipants />);
+
+    expect(screen.queryByRole("button", { name: /Preview Import/ })).not.toBeInTheDocument();
+    expect(screen.queryByText("Bulk Import Participants")).not.toBeInTheDocument();
+  });
 });

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Alert, Badge, Box, Button, Card, FileInput, Group, List, Stack, Table, Text, Title } from "@mantine/core";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { PageLoader } from "@/components/ui/PageLoader";
 
 type RowStatus = "ready" | "update" | "warning" | "error";
 
@@ -40,6 +42,7 @@ const STATUS_META: Record<RowStatus | "all", { label: string; icon: string; colo
 };
 
 export default function BulkImportParticipants() {
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const [file, setFile] = useState<File | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -48,6 +51,14 @@ export default function BulkImportParticipants() {
   const [statusFilter, setStatusFilter] = useState<RowStatus | "all">("all");
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+
+  if (authLoading) {
+    return <PageLoader />;
+  }
+
+  if (!ready) {
+    return null;
+  }
 
   const handleFileChange = (f: File | null) => {
     setFile(f);
