@@ -6,7 +6,7 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { STATES } from "@/lib/programs/enrollmentState";
+import { STATES, fromWhere } from "@/lib/programs/enrollmentState";
 
 // Two DISJOINT board queues over PENDING + isPaymentPlanRequested rows, split on
 // whether a Shopify seat is actually held (inventoryHeldAt):
@@ -93,7 +93,8 @@ export const POST = withAuth(
             // Scope to the pending request so approving a non-pending/nonexistent
             // request is a no-op error, mirroring the GET queue's filter.
             const { count } = await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, isPaymentPlanRequested: true, status: 'PENDING' },
+                // T5 approve CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
+                where: { programId, personId: participantId, isPaymentPlanRequested: true, ...fromWhere('PENDING_HELD') },
                 data
             });
 

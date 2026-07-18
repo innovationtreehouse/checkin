@@ -2,6 +2,7 @@ import { Prisma, type OrgMembershipProcessStatus } from "@/generated/prisma/clie
 import prisma from "@/lib/prisma";
 import { ReviewError } from "@/lib/membership/review";
 import { normalizeAuditData } from "@/lib/auditPayload";
+import { fromWhere } from "@/lib/membership/lifecycle";
 
 /**
  * Board disposal of an abandoned application. Transitions the process to the
@@ -83,7 +84,8 @@ export async function unarchiveApplication(processId: number, actorId: number) {
             // pre-check, but only the winner's updateMany flips it (count === 1) — so
             // the audit row is written exactly once. Mirrors beginRenewal/markContractSigned.
             const { count } = await tx.orgMembershipProcess.updateMany({
-                where: { id: processId, status: "ARCHIVED" },
+                // #13 unarchive CAS from-state (ARCHIVED) from the definition (#1080).
+                where: { id: processId, ...fromWhere("ARCHIVED") },
                 data: { status: target, stageEnteredAt: new Date() },
             });
             if (count !== 1) return;

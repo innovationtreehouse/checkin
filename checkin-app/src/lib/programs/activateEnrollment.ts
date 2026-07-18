@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { fromWhere } from "@/lib/programs/enrollmentState";
 
 /**
  * Activate paid program enrollments — the single choke point the Shopify
@@ -59,7 +60,8 @@ export async function activateProgramEnrollment(input: ActivateEnrollmentInput):
 
         // Guarded PENDING → ACTIVE so a redelivery / re-run can't inflate the count.
         const activated = await prisma.programParticipant.updateMany({
-            where: { programId, personId, status: "PENDING" },
+            // T4 activate CAS from-state (any PENDING; sourced from the definition, #1080).
+            where: { programId, personId, ...fromWhere("PENDING_UNPAID") },
             data: { status: "ACTIVE", pendingSince: null, shopifyOrderId },
         });
         activatedCount += activated.count;

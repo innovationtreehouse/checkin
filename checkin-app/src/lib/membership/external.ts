@@ -7,6 +7,7 @@ import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
+import { fromWhere } from "@/lib/membership/lifecycle";
 
 /**
  * EXTERNAL-phase service — the actions an applicant completes after intake:
@@ -113,7 +114,8 @@ export async function advanceExternalIfComplete(processId: number) {
         const { count } = await tx.orgMembershipProcess.updateMany({
             where: {
                 id: processId,
-                status: "PENDING_EXTERNAL_ACTION",
+                // #7 advance CAS from-state from the definition (#1080); the contract/BG narrowing stays literal.
+                ...fromWhere("PENDING_EXTERNAL_ACTION"),
                 contractSignedAt: { not: null },
                 OR: [{ bgClearedAt: { not: null } }, { bgConsentAt: { not: null } }],
             },

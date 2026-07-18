@@ -46,6 +46,11 @@ export async function openPersonBg(personId: number, asOf: Date, threshold: Date
         });
         if (!person) return null;
         if (personBgVerdict(person, asOf, threshold) !== "NEEDED") return null; // (b)
+        // Left literal on purpose (#1080): this is NOT a transition from-state — the
+        // PERSON_BG edge is ∅→PENDING_BG_REVIEW (no from-row). This `{in:…}` is an
+        // idempotency EXISTENCE set ("a PERSON_BG is already open or blocked for this
+        // person → skip"), broader than any single from-state, so it can't be sourced
+        // from `fromWhere` without misrepresenting it.
         const existing = await tx.orgMembershipProcess.findFirst({
             where: { kind: "PERSON_BG", subjectPersonId: personId, status: { in: ["PENDING_BG_REVIEW", "BLOCKED"] } },
             select: { id: true },

@@ -4,7 +4,7 @@ import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { config } from "@/lib/config";
 import { certifyPaymentPlan, PaymentError } from "./payment";
-import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
+import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -206,7 +206,8 @@ export async function beginRenewal(processId: number) {
     // here, but only the winner's updateMany flips it (count === 1) — so the audit
     // row is written exactly once. Mirrors external.ts markContractSigned.
     const { count } = await prisma.orgMembershipProcess.updateMany({
-        where: { id: processId, status: "PENDING_RENEWAL" },
+        // #4 beginRenewal CAS from-state from the definition (#1080).
+        where: { id: processId, ...fromWhere("PENDING_RENEWAL") },
         data: { status: "PENDING_EXTERNAL_ACTION", stageEnteredAt: new Date(), ...(clearNow ? { bgClearedAt: new Date() } : {}) },
     });
     if (count === 1) {

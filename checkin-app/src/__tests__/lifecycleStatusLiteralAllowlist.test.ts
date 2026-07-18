@@ -109,21 +109,20 @@ function isDefinitionModule(rel: string): boolean {
  * literal and cannot drift).
  */
 const ALLOWLIST: Record<string, string> = {
-    // ── enrollment (ProgramParticipant) status+flag CAS transition guards ──
-    'app/api/programs/[id]/request-payment-plan/route.ts':
-        'T3/T3f apply CAS: where status=PENDING + inventoryHeldAt (null / not-null) — status+flag transition.',
-    'app/api/finance-ops/payment-plans/route.ts': 'T5 approve CAS: where isPaymentPlanRequested,status=PENDING.',
-    'app/api/finance-ops/payment-plans/refuse/route.ts': 'T6 deny CAS: where isPaymentPlanRequested,status=PENDING.',
-    'app/api/finance-ops/payment-plans/manual-hold/route.ts':
-        'T3m manual-hold CAS: where status=PENDING,inventoryHeldAt null,isPaymentPlanRequested.',
+    // ── CAS transition guards now source their from-state status from the definition (#1080) ──
+    // The enrollment guards (activateEnrollment, request-payment-plan, payment-plans
+    // approve/refuse/manual-hold) and the membership advanceExternal/beginRenewal/unarchive/
+    // membership-payment-plans guards spread `...fromWhere(<from>)` instead of a raw `status:`
+    // literal, so they carry NO bare status literal and no longer appear here — the guard↔table
+    // parity test (guardFromStateParity.test.ts) is what keeps them honest now. (renewal's
+    // beginRenewalForUser read is a LONE single-status literal, which the sharpened scanner no
+    // longer flags either, so it isn't listed.)
 
-    // ── membership (OrgMembershipProcess) status+flag CAS guards / sets ──
-    'app/api/finance-ops/membership-payment-plans/route.ts':
-        'Membership grant CAS: where status=PENDING_PAYMENT + isPaymentPlanRequested (payable-renewal guard).',
-    'lib/membership/external.ts':
-        'advanceExternalIfComplete CAS (#7): where status=PENDING_EXTERNAL_ACTION + contractSignedAt/bgClearedAt/bgConsentAt.',
+    // Not a transition from-state: the PERSON_BG edge is ∅→PENDING_BG_REVIEW (no from-row).
+    // An idempotency EXISTENCE SET (already open/blocked → skip), broader than any one
+    // from-state, so it stays a literal set rather than misrepresent it via fromWhere.
     'lib/membership/personBgTriggers.ts':
-        'PERSON_BG create idempotency guard: where status in {PENDING_BG_REVIEW,BLOCKED} (set).',
+        'PERSON_BG create idempotency existence set: where status in {PENDING_BG_REVIEW,BLOCKED}.',
 
     // ── invariant-driven reconciler (Phase 4) ──
     'lib/lifecycleDrift.ts':
