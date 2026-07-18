@@ -63,6 +63,8 @@ const AUTHZ_TESTED = new Set<string>([
     'finance-ops/payment-plans/manual-hold',
     // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
     'finance-ops/membership-payment-plans',
+    // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
+    'finance-ops/membership-payment-plans/refuse',
     'admin/settings/localization',
     'events',
     'facility/badges',

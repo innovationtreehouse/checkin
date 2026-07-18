@@ -187,7 +187,7 @@ request actually transitioned (no duplicate mail on a no-op re-POST).
 | Program approve | `POST /api/finance-ops/payment-plans` | — | **no automatic email** |
 | Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | **no automatic email** |
 | Membership approve (certify) | `POST /api/finance-ops/membership-payment-plans` | — | **no automatic email** |
-| Membership deny | — | **does not exist** | — |
+| Membership deny | `POST /api/finance-ops/membership-payment-plans/refuse` | — | **no automatic email** |
 | Manual-hold | `…/payment-plans/manual-hold` | — | **no email** |
 
 **2. Approve/deny are silent by design.** Board decisions — program approve, program deny,
@@ -201,10 +201,18 @@ sends nothing when it fires — both silences are deliberate, not gaps.
 **all board members** (the board *is* the review team until configured). Set on
 **Settings → Email** (distinct from `scholarshipDenialGraceDays`, set on Settings → Membership).
 
-**4. Membership-deny asymmetry.** The program side has approve **and** deny; the membership
-side has **only approve** — there is no membership-deny route. Now that neither approve nor
-deny sends automatic email either way, this asymmetry only matters for the manual process:
-the board has no dedicated membership-deny action to hang a manual communication step off of.
+**4. Membership deny — action parity, still silent.** The membership side now has both
+approve **and** deny (`POST /api/finance-ops/membership-payment-plans/refuse`), matching the
+program side's set of board actions. Denial clears `isPaymentPlanRequested` back to `false`;
+the process **stays `PENDING_PAYMENT`** and the household returns to normal "pay your dues to
+activate". Like every other board decision (item 2) it sends **no automatic email** — the
+Scholarship Review Team communicates the outcome manually; the deny action just gives them a
+dedicated control to drop the request off the queue. It differs from the program deny only in
+what it touches: membership reserves no Shopify seat on request and has no grace-expiry cron
+(grace is program-only), so there is no seat to release and no `paymentPlanDeniedAt` to stamp
+— `OrgMembershipProcess` has no such column and needs none, the cleared flag is the whole of
+denial state. The transactional `isPaymentPlanRequested: true → false` guard (mirroring the
+approve probe) makes a no-op re-deny a 409.
 
 ## 6. Related
 

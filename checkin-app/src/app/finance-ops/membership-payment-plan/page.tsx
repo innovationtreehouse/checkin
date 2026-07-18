@@ -33,6 +33,8 @@ export default function MembershipPaymentPlansPage() {
   const [confirmApproveOpened, { open: openConfirmApprove, close: closeConfirmApprove }] = useDisclosure(false);
   const [pendingApproval, setPendingApproval] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [confirmDenyOpened, { open: openConfirmDeny, close: closeConfirmDeny }] = useDisclosure(false);
+  const [pendingDenial, setPendingDenial] = useState<number | null>(null);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -94,6 +96,45 @@ export default function MembershipPaymentPlansPage() {
     await doApprove(processId, reasonToSend);
   };
 
+  const handleDeny = (processId: number) => {
+    setPendingDenial(processId);
+    openConfirmDeny();
+  };
+
+  const doDeny = async (processId: number) => {
+    try {
+      const res = await fetch('/api/finance-ops/membership-payment-plans/refuse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processId })
+      });
+
+      if (res.ok) {
+        setRequests(prev => prev.filter(r => r.id !== processId));
+        notifyNavRefresh();
+        notifications.show({ color: 'green', message: 'Scholarship / payment plan denied.' });
+      } else {
+        const data = await res.json();
+        if (data.error === "No pending payment-plan request") {
+          notifications.show({ color: 'red', message: data.error, autoClose: 4000 });
+          fetchRequests();
+        } else {
+          notifications.show({ color: 'red', message: data.error || "Failed to deny.", autoClose: false });
+        }
+      }
+    } catch {
+      notifications.show({ color: 'red', message: "Network error processing denial.", autoClose: false });
+    }
+  };
+
+  const confirmDeny = async () => {
+    if (pendingDenial === null) return;
+    closeConfirmDeny();
+    const processId = pendingDenial;
+    setPendingDenial(null);
+    await doDeny(processId);
+  };
+
   if (authLoading || loading) {
     return <PageLoader />;
   }
@@ -120,9 +161,14 @@ export default function MembershipPaymentPlansPage() {
       header: 'Actions',
       align: 'right',
       render: (req) => (
-        <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.id)}>
-          Approve &amp; Activate
-        </Button>
+        <Group justify="flex-end" gap="xs" wrap="nowrap">
+          <Button size="xs" fz={15} color="red" variant="light" onClick={() => handleDeny(req.id)}>
+            Deny
+          </Button>
+          <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.id)}>
+            Approve &amp; Activate
+          </Button>
+        </Group>
       ),
     },
   ];
@@ -167,6 +213,23 @@ export default function MembershipPaymentPlansPage() {
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmApprove}>Cancel</Button>
           <Button color="green" onClick={confirmApprove} disabled={!reason.trim()}>Approve &amp; Activate</Button>
+        </Group>
+      </Modal>
+
+      <Modal
+        opened={confirmDenyOpened}
+        onClose={closeConfirmDeny}
+        title={<Text span fw={700} fz="lg">Deny Scholarship / Payment Plan</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Deny this request? The household stays awaiting payment and can still pay their dues
+          normally to activate, or re-request later. No automatic email is sent — notify the
+          household of the decision yourself.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmDeny}>Cancel</Button>
+          <Button color="red" onClick={confirmDeny}>Deny</Button>
         </Group>
       </Modal>
     </Stack>
