@@ -51,7 +51,7 @@ describe("membership-ops/review page", () => {
         }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Attestation recorded — thank you." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Attestation recorded — thank you." })));
   });
 
   it("shows the forbidden card when the queue endpoint returns 403", async () => {

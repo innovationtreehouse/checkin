@@ -94,7 +94,7 @@ function ExternalTask({ done, title, doneText, doneExtra, children }: { done: bo
   return (
     <Card withBorder radius="md" padding="md" bg={done ? "var(--mantine-color-green-light)" : undefined}>
       <Group align="flex-start" wrap="nowrap">
-        <ThemeIcon color={done ? "green" : "gray"} radius="xl" size="md" variant={done ? "filled" : "light"}>
+        <ThemeIcon color={done ? "treehouseGreen" : "gray"} radius="xl" size="md" variant={done ? "filled" : "light"}>
           {done ? "✓" : "•"}
         </ThemeIcon>
         <Box style={{ flex: 1 }}>
@@ -275,7 +275,6 @@ export default function MembershipPage() {
       }
       await load();
       notifications.show({
-        color: "green",
         message: signedNow
           ? "Thanks — your signature was received."
           : "Signature received — finalizing. If it doesn't update shortly, use “Refresh status”.",
@@ -558,7 +557,7 @@ export default function MembershipPage() {
       });
       if (res.ok) {
         setPlanRequested(true);
-        notifications.show({ color: "green", message: "Requested! The Scholarship Review Team will follow up." });
+        notifications.show({ message: "Requested! The Scholarship Review Team will follow up." });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: "red", message: data.error || "Could not request a payment plan.", autoClose: false });
@@ -699,7 +698,7 @@ export default function MembershipPage() {
             Did anything change — new members, address, phone, or email?{" "}
             <Anchor component={Link} href="/my-household">Update your household details first</Anchor>.
           </Text>
-          <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
+          <Button disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
       ) : isRenewal && inStatus === "RENEWAL_PENDING_BG" ? (
         <Card withBorder radius="md" padding="xl" maw={640}>
@@ -807,14 +806,14 @@ export default function MembershipPage() {
                   {/* Local echo of the page-top banner: intake is a long card, so
                       the top AlertBanner posts off-screen next to these buttons. */}
                   {message && (
-                    <Alert color={message.tone === "error" ? "red" : "green"} variant="light">
+                    <Alert color={message.tone === "error" ? "red" : "treehouseGreen"} variant="light">
                       {message.text}
                     </Alert>
                   )}
 
                   <Group gap="md" wrap="wrap">
                     <Button variant="default" disabled={saving} loading={saving} onClick={save}>Save progress</Button>
-                    <Button color="green" disabled={saving} loading={saving} onClick={submit}>Submit &amp; continue</Button>
+                    <Button disabled={saving} loading={saving} onClick={submit}>Submit &amp; continue</Button>
                   </Group>
                 </Stack>
               </Card>
@@ -837,7 +836,7 @@ export default function MembershipPage() {
                         automatically once it&apos;s signed. Have your insurance details handy — the
                         agreement asks for your provider and policy number.
                       </Text>
-                      <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
+                      <Button disabled={saving} loading={saving} onClick={startSigning}>
                         {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
                       </Button>
                     </Stack>
@@ -916,11 +915,11 @@ export default function MembershipPage() {
                         </Anchor>
                       </Stack>
                     ) : payment.checkoutUrl ? (
-                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md" onClick={handlePayClick}>
+                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" mt="md" onClick={handlePayClick}>
                         Pay here with Shopify →
                       </Button>
                     ) : isLocalInstance ? (
-                      <Button color="green" mt="md" disabled={saving} onClick={settleMockPayment}>
+                      <Button mt="md" disabled={saving} onClick={settleMockPayment}>
                         Pay now (local mock) →
                       </Button>
                     ) : (
@@ -934,7 +933,7 @@ export default function MembershipPage() {
                       </Text>
                       <Group justify="flex-end" mt="md">
                         <Button variant="default" onClick={closeConfirmPlan}>Cancel</Button>
-                        <Button color="green" onClick={requestPaymentPlan}>Send request</Button>
+                        <Button onClick={requestPaymentPlan}>Send request</Button>
                       </Group>
                     </Modal>
                     {planRequested ? (
@@ -951,7 +950,7 @@ export default function MembershipPage() {
                       </Button>
                     )}
                     {!state.external?.bgCleared && (
-                      <Alert color="blue" variant="light" mt="md">
+                      <Alert color="treehousePurple" variant="light" mt="md">
                         Your background check is being reviewed in the background — you can pay now.
                         Your membership activates as soon as both the payment and the check are done.
                       </Alert>

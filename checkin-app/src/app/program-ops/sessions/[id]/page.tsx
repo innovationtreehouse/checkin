@@ -47,7 +47,7 @@ type EventData = {
 };
 
 const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
-  ATTENDING: { label: 'Attending', color: 'green' },
+  ATTENDING: { label: 'Attending', color: 'treehouseGreen' },
   MAYBE: { label: 'Maybe', color: 'yellow' },
   NOT_ATTENDING: { label: 'Not attending', color: 'red' },
   NO_RESPONSE: { label: 'No response', color: 'gray' },
@@ -128,7 +128,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
           router.push('/my-programs');
           return;
         }
-        notifications.show({ color: "green", message: "Attendance confirmed successfully!" });
+        notifications.show({ message: "Attendance confirmed successfully!" });
         fetchEvent();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -154,7 +154,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
         body: JSON.stringify({ action: 'editTime', startAt: startIso, endAt: endIso, applyToFuture })
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Event time updated successfully!" });
+        notifications.show({ message: "Event time updated successfully!" });
         setEditMode(false);
         fetchEvent();
       } else {
@@ -311,7 +311,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                     <Text size="xs" c="dimmed">{member.person.email}</Text>
                   </Table.Td>
                   <Table.Td>
-                    <Badge color={member.role === 'Participant' ? 'cyan' : 'yellow'} variant="light">{member.role}</Badge>
+                    <Badge color={member.role === 'Participant' ? 'treehousePurple' : 'yellow'} variant="light">{member.role}</Badge>
                   </Table.Td>
                   <Table.Td>
                     <Group justify="space-between" wrap="nowrap">
@@ -384,7 +384,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                       <Text size="xs" c="dimmed">{member.person.email}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={member.role === 'Participant' ? 'cyan' : 'yellow'} variant="light">{member.role}</Badge>
+                      <Badge color={member.role === 'Participant' ? 'treehousePurple' : 'yellow'} variant="light">{member.role}</Badge>
                     </Table.Td>
                     <Table.Td>
                       <Badge color={badge.color} variant="light">{badge.label}</Badge>
@@ -449,7 +449,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
               )}
             </Group>
             {attendanceNotice && (
-              <Alert color={attendanceNotice.ok ? 'green' : 'red'} variant="light" mt="md" withCloseButton onClose={() => setAttendanceNotice(null)}>
+              <Alert color={attendanceNotice.ok ? 'treehouseGreen' : 'red'} variant="light" mt="md" withCloseButton onClose={() => setAttendanceNotice(null)}>
                 {attendanceNotice.msg}
               </Alert>
             )}
@@ -466,7 +466,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             <Title order={4} mb="lg">Manage Event</Title>
 
             {timeNotice && (
-              <Alert color={timeNotice.ok ? 'green' : 'red'} variant="light" mb="lg" withCloseButton onClose={() => setTimeNotice(null)}>
+              <Alert color={timeNotice.ok ? 'treehouseGreen' : 'red'} variant="light" mb="lg" withCloseButton onClose={() => setTimeNotice(null)}>
                 {timeNotice.msg}
               </Alert>
             )}
@@ -494,7 +494,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
                 )}
 
                 <Group>
-                  <Button color="green" onClick={handleEditTime} disabled={actionLoading} loading={actionLoading}>Save Time Changes</Button>
+                  <Button onClick={handleEditTime} disabled={actionLoading} loading={actionLoading}>Save Time Changes</Button>
                   <Button color="red" variant="light" onClick={openConfirmCancel} disabled={actionLoading} loading={actionLoading}>Cancel Event(s)</Button>
                   <Button variant="default" onClick={() => setEditMode(false)} disabled={actionLoading} ml="auto">Nevermind</Button>
                 </Group>
@@ -547,7 +547,7 @@ export default function EventAdminPage({ params }: { params: Promise<{ id: strin
             </>
           )}
           {manualNotice && (
-            <Alert color={manualNotice.ok ? 'green' : 'red'} variant="light" withCloseButton onClose={() => setManualNotice(null)}>
+            <Alert color={manualNotice.ok ? 'treehouseGreen' : 'red'} variant="light" withCloseButton onClose={() => setManualNotice(null)}>
               {manualNotice.msg}
             </Alert>
           )}

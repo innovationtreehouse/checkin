@@ -74,7 +74,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
-        notifications.show({ color: 'green', message: currentActive ? 'Membership revoked.' : 'Membership granted.' });
+        notifications.show({ message: currentActive ? 'Membership revoked.' : 'Membership granted.' });
       } else {
         notifications.show({ color: 'red', message: 'Failed to update membership.', autoClose: false });
       }
@@ -96,7 +96,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
-        notifications.show({ color: 'green', message: 'Granted for the coming year.' });
+        notifications.show({ message: 'Granted for the coming year.' });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: 'red', message: data.error || 'Failed to grant for the coming year.', autoClose: false });
@@ -142,7 +142,7 @@ export default function AdminHouseholdsPage() {
 
       if (res.ok) {
         fetchHouseholds();
-        notifications.show({ color: 'green', message: deny ? 'Membership denied — members can no longer log in.' : 'Membership restored.' });
+        notifications.show({ message: deny ? 'Membership denied — members can no longer log in.' : 'Membership restored.' });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: 'red', message: data.error || 'Failed to update membership.', autoClose: false });
@@ -305,7 +305,7 @@ export default function AdminHouseholdsPage() {
                         <Button
                           size="xs" fz={15}
                           variant="light"
-                          color="blue"
+                          color="treehousePurple"
                           onClick={() => setDenied(household.id, false)}
                         >
                           Restore Access
@@ -315,7 +315,7 @@ export default function AdminHouseholdsPage() {
                           <Button
                             size="xs" fz={15}
                             variant="light"
-                            color={hasActiveMembership ? 'red' : 'green'}
+                            color={hasActiveMembership ? 'red' : 'treehouseGreen'}
                             disabled={ownGrantBlocked || (!hasActiveMembership && isStaffHousehold)}
                             title={
                               !hasActiveMembership && isStaffHousehold
@@ -349,7 +349,6 @@ export default function AdminHouseholdsPage() {
                       <Button
                         size="xs" fz={15}
                         variant="light"
-                        color="green"
                         disabled={settledForComingYear}
                         title={settledForComingYear ? "This household is already set for the coming year." : undefined}
                         onClick={() => handleGrantForComingYear(household.id)}
@@ -416,7 +415,7 @@ export default function AdminHouseholdsPage() {
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={closeGrantComingYear}>Cancel</Button>
-          <Button color="green" onClick={confirmGrantForComingYear} disabled={!grantReason.trim()}>Grant</Button>
+          <Button onClick={confirmGrantForComingYear} disabled={!grantReason.trim()}>Grant</Button>
         </Group>
       </Modal>
     </Stack>

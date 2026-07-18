@@ -130,7 +130,7 @@ export default function EmergencyContactsPage() {
               <div>
                 <Group gap="xs" mb="xs">
                   <Text fw={600} fz="lg">{h.name || `Household #${h.id}`}</Text>
-                  {h.isPresent && <Badge color="cyan" variant="light">Present Now</Badge>}
+                  {h.isPresent && <Badge color="treehousePurple" variant="light">Present Now</Badge>}
                 </Group>
                 <Text size="sm" c="dimmed">Household members:</Text>
                 {h.householdMembers.length > 0 ? (

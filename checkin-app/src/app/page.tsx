@@ -18,6 +18,7 @@ import {
 import {
   IconAlertTriangle,
   IconAddressBook,
+  IconScan,
   IconUrgent,
 } from '@tabler/icons-react';
 import { notifications } from "@mantine/notifications";
@@ -187,15 +188,15 @@ export default function Home() {
                   <Button
                     size="lg"
                     fullWidth
-                    color={isCheckedIn ? 'red' : 'green'}
+                    color={isCheckedIn ? 'red' : 'treehouseGreen'}
                     onClick={handleToggleCheckin}
                     loading={loading}
                   >
                     {isCheckedIn ? 'Check Out' : 'Check In'}
                   </Button>
                 ) : (
-                  <Alert color="gray" variant="light" ta="center">
-                    📛 Please use the kiosk badge scanner to check in and out.
+                  <Alert color="gray" variant="light" ta="center" icon={<IconScan size={18} />}>
+                    Please use the kiosk badge scanner to check in and out.
                   </Alert>
                 ))}
 
@@ -229,7 +230,6 @@ export default function Home() {
               </Text>
 
               <Button
-                color="green"
                 size="md"
                 onClick={() => router.push('/programs')}
                 style={{ maxWidth: 300, width: '100%' }}

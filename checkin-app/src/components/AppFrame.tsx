@@ -335,7 +335,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
                         // Green action + gray info badges go through the shared CountBadge
                         // (treehouseGreen/black and gray.2/gray-8 respectively). The gray solid
                         // fill is deliberate: on the dark purple sidebar a 'light' translucent
-                        // tint reads dark. The 'blue' household-in-building badge is a one-off
+                        // tint reads dark. The 'treehousePurple' household-in-building badge is a one-off
                         // info color CountBadge doesn't model, so it stays inline (filled + black
                         // text, same as before). NavLink forces section text white on the colored
                         // sidebar, so the dark label is pinned explicitly.

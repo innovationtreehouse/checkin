@@ -85,7 +85,7 @@ export function LinkStatusPanel() {
               <Group gap="xs">
                 <Badge color={e.resolvedAt ? "gray" : "red"}>{e.source}</Badge>
                 {e.resolvedAt && (
-                  <Badge color="green" variant="light">
+                  <Badge variant="light">
                     Resolved
                   </Badge>
                 )}

@@ -71,9 +71,9 @@ export default function DbWakeNotice() {
     // Deliberately generic copy (no infrastructure specifics for end users);
     // the actual cause is the DB auto-pause resume — see the module docblock.
     return (
-        <Alert color="blue" variant="light" radius={0} title="Getting the system ready…">
+        <Alert color="treehousePurple" variant="light" radius={0} title="Getting the system ready…">
             <Group align="center" gap="sm" wrap="nowrap">
-                <Loader size="sm" color="blue" />
+                <Loader size="sm" color="treehousePurple" />
                 <Text size="sm">
                     The system is getting ready for you — this usually takes under a
                     minute, and the page will refresh automatically.

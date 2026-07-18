@@ -52,8 +52,8 @@ export type ParticipantOption = { id: number; name: string | null; email: string
 const PHASE_BADGE: Record<string, { label: string; color: string }> = {
   PLANNING: { label: 'Planning', color: 'gray' },
   UPCOMING: { label: 'Upcoming', color: 'yellow' },
-  RUNNING: { label: 'Running', color: 'cyan' },
-  FINISHED: { label: 'Finished', color: 'teal' },
+  RUNNING: { label: 'Running', color: 'treehousePurple' },
+  FINISHED: { label: 'Finished', color: 'gray' },
 };
 
 export default function ProgramDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -160,7 +160,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         })
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Saved." });
+        notifications.show({ message: "Saved." });
         notifyNavRefresh();
         fetchProgram();
       } else {
@@ -188,7 +188,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Shopify identifiers saved." });
+        notifications.show({ message: "Shopify identifiers saved." });
         notifyNavRefresh();
         fetchProgram();
       } else {
@@ -207,7 +207,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       const res = await fetch(`/api/programs/${id}/sync-shopify`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Shopify checkout configured." });
+        notifications.show({ message: "Shopify checkout configured." });
         notifyNavRefresh();
         fetchProgram();
       } else {
@@ -323,7 +323,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     </Stack>
                   </Alert>
                 ) : program.shopifyProductId && (
-                  <Alert color="green" variant="light">✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})</Alert>
+                  <Alert variant="light">✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})</Alert>
                 )}
 
                 {isSysAdminOrBoard && (
@@ -425,7 +425,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
                 {saveError && <Alert color="red" variant="light">{saveError}</Alert>}
                 <Group gap="sm">
-                  <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving}>
+                  <Button type="submit" disabled={saving || !leadMentorIdInput} loading={saving}>
                     Save Settings
                   </Button>
                 </Group>

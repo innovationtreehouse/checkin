@@ -84,7 +84,7 @@ export default function ShopifyHoldsPage() {
       if (res.ok) {
         drop(programId, participantId);
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: successMsg });
+        notifications.show({ message: successMsg });
       } else {
         const data = await res.json();
         notifications.show({ color: 'red', message: data.error || "Action failed.", autoClose: 4000 });
@@ -145,7 +145,7 @@ export default function ShopifyHoldsPage() {
           >
             Approve (override)
           </Button>
-          <Button size="xs" fz={15} color="blue" onClick={() => openFor(r, 'hold')}>
+          <Button size="xs" fz={15} color="treehousePurple" onClick={() => openFor(r, 'hold')}>
             Confirm manual hold
           </Button>
         </Group>
@@ -188,7 +188,7 @@ export default function ShopifyHoldsPage() {
         </Text>
         <Group justify="flex-end">
           <Button variant="default" onClick={closeHold}>Cancel</Button>
-          <Button color="blue" onClick={() => { closeHold(); post('/api/finance-ops/payment-plans/manual-hold', 'Manual hold recorded — request moved to the payment-plan queue.'); }}>
+          <Button color="treehousePurple" onClick={() => { closeHold(); post('/api/finance-ops/payment-plans/manual-hold', 'Manual hold recorded — request moved to the payment-plan queue.'); }}>
             I&apos;ve removed the seat — confirm
           </Button>
         </Group>

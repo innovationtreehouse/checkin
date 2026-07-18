@@ -32,7 +32,7 @@ export default function ConflictsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Duplicate visit deleted." });
+        notifications.show({ message: "Duplicate visit deleted." });
         refresh();
         notifyNavRefresh();
       } else {

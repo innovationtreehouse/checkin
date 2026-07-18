@@ -13,7 +13,7 @@ import { useConfirmNav } from "@/components/UnsavedChangesProvider";
  *
  * Auth/loading gates stay in each layout (different hooks, different copy).
  */
-export type SectionTabLink = { name: string; href: string; icon?: string };
+export type SectionTabLink = { name: string; href: string; icon?: React.ReactNode };
 
 interface SectionTabsProps {
   links: readonly SectionTabLink[];
@@ -49,7 +49,7 @@ export function SectionTabs({ links, prefixMatch = false, badgeFor, mb }: Sectio
           <Tabs.Tab
             key={link.href}
             value={link.href}
-            leftSection={link.icon ? <span>{link.icon}</span> : undefined}
+            leftSection={link.icon}
             rightSection={badgeFor?.(link.href)}
           >
             {link.name}

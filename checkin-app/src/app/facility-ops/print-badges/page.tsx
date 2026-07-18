@@ -157,10 +157,10 @@ export default function PrintBadgesPage() {
       header: 'Roles',
       render: (p) => (
         <Group gap={4}>
-          {p.isBoardMember && <Badge size="xs" color="blue">BOARD</Badge>}
-          {p.isKeyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
+          {p.isBoardMember && <Badge size="xs" color="treehousePurple">BOARD</Badge>}
+          {p.isKeyholder && <Badge size="xs" color="treehousePurple">KEYHOLDER</Badge>}
           {!p.isBoardMember && !p.isKeyholder && p.isMember && (
-            <Badge size="xs" color="green">MEMBER</Badge>
+            <Badge size="xs">MEMBER</Badge>
           )}
         </Group>
       ),
@@ -183,7 +183,7 @@ export default function PrintBadgesPage() {
         <Button onClick={() => generate('badge')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
           Generate Badge ({selectedIds.size})
         </Button>
-        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
+        <Button color="treehousePurple" onClick={() => generate('sticker')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
           Generate Sticker ({selectedIds.size})
         </Button>
       </Group>

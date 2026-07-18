@@ -76,7 +76,7 @@ export default function LocalizationSettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timezone, locale }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); await load(); }
+      if (res.ok) { notifications.show({ message: "Settings saved." }); await load(); }
       else { const d = await res.json().catch(() => ({})); flash(d.error || "Save failed."); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
