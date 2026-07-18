@@ -15,7 +15,7 @@
  */
 import prisma from '@/lib/prisma';
 import type { AuthResult } from '@/types/auth';
-import type { Authorize, Role } from './core';
+import type { Authorize, CtxNeeds, Role } from './core';
 import { LIVE_PERSON } from '@/lib/person/filters';
 
 export interface CallerContext {
@@ -39,7 +39,15 @@ export interface CallerContext {
     activeVisitorIds: Set<number>;
 }
 
-export async function buildCallerContext(auth: AuthResult): Promise<CallerContext> {
+/**
+ * Build the per-request context, fetching ONLY what `needs` says this route's
+ * policy can consume (see deriveCtxNeeds in core.ts). An unfetched field stays
+ * an empty set — strictly fewer scopes than a full fetch, and provably
+ * output-identical for any scope the route's tokens don't grant (the
+ * ctxNeeds equivalence test asserts this per registered route). Session-derived
+ * fields (selfId/householdId/isKeyholder) are always populated.
+ */
+export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Promise<CallerContext> {
     const ctx: CallerContext = {
         selfId: undefined,
         householdId: undefined,
@@ -59,57 +67,69 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
     ctx.householdId = auth.user.householdId;
     ctx.isKeyholder = auth.user.isKeyholder;
 
-    const ledPrograms = await prisma.program.findMany({
-        where: { leadMentorId: auth.user.id },
-        select: { id: true, participants: { select: { personId: true } } },
-    });
+    const [ledPrograms, coreVols, visits] = await Promise.all([
+        needs.programs
+            ? prisma.program.findMany({
+                  where: { leadMentorId: auth.user.id },
+                  select: { id: true, participants: { select: { personId: true } } },
+              })
+            : [],
+        needs.programs
+            ? prisma.programVolunteer.findMany({
+                  where: { personId: auth.user.id, isCore: true, person: LIVE_PERSON },
+                  select: {
+                      programId: true,
+                      program: { select: { participants: { select: { personId: true } } } },
+                  },
+              })
+            : [],
+        needs.activeVisitors && ctx.isKeyholder
+            ? prisma.visit.findMany({
+                  where: { departedAt: null },
+                  select: { personId: true },
+              })
+            : [],
+    ]);
+
     for (const p of ledPrograms) {
         ctx.programsLed.add(p.id);
         for (const pp of p.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
-
-    const coreVols = await prisma.programVolunteer.findMany({
-        where: { personId: auth.user.id, isCore: true, person: LIVE_PERSON },
-        select: {
-            programId: true,
-            program: { select: { participants: { select: { personId: true } } } },
-        },
-    });
     for (const v of coreVols) {
         ctx.programsCoreVolIn.add(v.programId);
         for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
+    for (const v of visits) ctx.activeVisitorIds.add(v.personId);
 
-    // Households of the children in the caller's programs — for Trusted Adult
-    // pickup-note visibility (program leads see operational notes for the
-    // households whose kids they oversee).
-    if (ctx.participantIdsInScopePrograms.size) {
-        const members = await prisma.person.findMany({
-            where: { id: { in: [...ctx.participantIdsInScopePrograms] }, ...LIVE_PERSON },
-            select: { householdId: true },
-        });
-        for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
-    }
-
-    // Events belonging to the caller's programs — RSVP reaches a program only via
-    // eventId → Event.programId (RSVP has no programId column). Drives the
-    // 'their_program_participants' scope on RSVP rows.
     const scopePrograms = [...ctx.programsLed, ...ctx.programsCoreVolIn];
-    if (scopePrograms.length) {
-        const events = await prisma.event.findMany({
-            where: { programId: { in: scopePrograms } },
-            select: { id: true },
-        });
-        for (const e of events) ctx.eventIdsInScopePrograms.add(e.id);
-    }
-
-    if (ctx.isKeyholder) {
-        const visits = await prisma.visit.findMany({
-            where: { departedAt: null },
-            select: { personId: true },
-        });
-        for (const v of visits) ctx.activeVisitorIds.add(v.personId);
-    }
+    await Promise.all([
+        // Households of the children in the caller's programs — for Trusted Adult
+        // pickup-note visibility (program leads see operational notes for the
+        // households whose kids they oversee).
+        needs.programHouseholds && ctx.participantIdsInScopePrograms.size
+            ? prisma.person
+                  .findMany({
+                      where: { id: { in: [...ctx.participantIdsInScopePrograms] }, ...LIVE_PERSON },
+                      select: { householdId: true },
+                  })
+                  .then(members => {
+                      for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
+                  })
+            : undefined,
+        // Events belonging to the caller's programs — RSVP reaches a program only via
+        // eventId → Event.programId (RSVP has no programId column). Drives the
+        // 'their_program_participants' scope on RSVP rows.
+        needs.programEvents && scopePrograms.length
+            ? prisma.event
+                  .findMany({
+                      where: { programId: { in: scopePrograms } },
+                      select: { id: true },
+                  })
+                  .then(events => {
+                      for (const e of events) ctx.eventIdsInScopePrograms.add(e.id);
+                  })
+            : undefined,
+    ]);
 
     return ctx;
 }
