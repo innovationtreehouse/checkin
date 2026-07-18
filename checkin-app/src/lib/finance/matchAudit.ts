@@ -157,9 +157,15 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     // AND program lines, and "the membership process claimed this order" says
     // nothing about the program half. An ARCHIVED process is not a claim — the
     // application was abandoned, so its money is exactly the unclaimed kind.
+    // A BLOCKED process is not a claim either: activate()'s BLOCKED branch (see
+    // membership/payment.ts) stores paidAt + shopifyOrderId on a still-BLOCKED
+    // process — money in, NO access granted, refund owed — so counting it as a
+    // claim would bucket the order MATCHED and hide the exact case this audit
+    // hunts. Excluded, the open PAID_WHILE_BLOCKED exception (which carries
+    // processId) buckets it TRACKED_EXCEPTION instead.
     const [claimedProcs, claimedEnrolls, trackedExceptions] = await Promise.all([
         prisma.orgMembershipProcess.findMany({
-            where: { shopifyOrderId: { in: orderIds }, status: { not: "ARCHIVED" } },
+            where: { shopifyOrderId: { in: orderIds }, status: { notIn: ["ARCHIVED", "BLOCKED"] } },
             select: { shopifyOrderId: true },
         }),
         prisma.programParticipant.findMany({ where: { shopifyOrderId: { in: orderIds } }, select: { shopifyOrderId: true, programId: true } }),

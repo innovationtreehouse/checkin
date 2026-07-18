@@ -103,7 +103,7 @@ const ALLOWLIST: Record<string, string> = {
     'app/api/finance-ops/s-read/match-audit/track/route.ts':
         'Track-button staleness probes: claim re-check excluding ARCHIVED before promoting a gap — human-per-row, mirrors the matchAudit entry.',
     'lib/finance/matchAudit.ts':
-        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) and the claim lookup excluding ARCHIVED — report-only, mirrors the reconcile.ts entry.',
+        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) and the claim lookup excluding ARCHIVED/BLOCKED — report-only, mirrors the reconcile.ts entry.',
     'lib/finance/reconcile.ts': 'Reconciler lookups: pending/active order-to-row matching on both models.',
     'lib/membership/notifications.ts': 'Read query: board BLOCKED-process count for the notifications badge.',
     'lib/membership/payment.ts': 'Read query: this household’s PENDING_PAYMENT process before activate.',
