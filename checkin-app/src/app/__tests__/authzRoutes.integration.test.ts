@@ -5,7 +5,8 @@
  * Authorization-boundary tests for sensitive (PII / impersonation) routes that
  * previously had no integration coverage. Focus: who is rejected.
  *   - GET /api/safety/emergency-contacts   (isSysadmin | isBoardMember | isKeyholder)
- *   - GET /api/people/search  (isSysadmin | isBoardMember — isKeyholder MUST be denied)
+ *   - GET /api/people/search  (isSysadmin | isBoardMember | isOperations — isKeyholder
+ *     MUST be denied; an operations-only caller gets a stripped, ops-only shape)
  *   - GET /api/auth/dev-personas          (impersonation surface; 404 outside dev)
  */
 import { GET as EmergencyGet } from '@/app/api/safety/emergency-contacts/route';
@@ -42,7 +43,11 @@ describe('Sensitive route authorization', () => {
         householdIds.push(plain.householdId);
 
         const target = await prisma.person.create({
-            data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: { name: "Test HH" } } },
+            data: {
+                name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101',
+                lastBackgroundCheck: new Date('2026-01-01'),
+                household: { create: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } } },
+            },
         });
         searchTargetId = target.id;
         householdIds.push(target.householdId);
@@ -62,6 +67,8 @@ describe('Sensitive route authorization', () => {
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
         await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
+        // The target's orgMembership row must go before its household (RESTRICT FK).
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
@@ -111,6 +118,23 @@ describe('Sensitive route authorization', () => {
             const hit = json.people.find((p: { id: number }) => p.id === searchTargetId);
             expect(hit).toBeDefined();
             expect(hit.phone).toBe('555-0101');
+            expect(hit.lastBackgroundCheck).toBeTruthy();
+            expect(hit.household.orgMembership).toBeTruthy();
+        });
+
+        it('200 for an operations-only actor, with lastBackgroundCheck and orgMembership (finance) stripped', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, isOperations: true } });
+            const res = await SearchGet(req(url));
+            expect(res.status).toBe(200);
+            const json = await res.json();
+            const hit = json.people.find((p: { id: number }) => p.id === searchTargetId);
+            expect(hit).toBeDefined();
+            // Contact info stays — this is still the directory:
+            expect(hit.phone).toBe('555-0101');
+            // Background-check compliance dates and membership/finance standing do not:
+            expect(hit.lastBackgroundCheck).toBeUndefined();
+            expect(hit.household.orgMembership).toBeUndefined();
+            expect(hit.household.name).toBe('Test HH');
         });
     });
 

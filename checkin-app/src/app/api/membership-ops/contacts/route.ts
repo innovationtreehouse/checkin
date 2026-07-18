@@ -7,11 +7,10 @@ import { normalizeEmail } from "@/lib/prismaEmailNormalize";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
-// Email-only contact creation for Board. Sysadmin is deliberately EXCLUDED
-// (Jeff's decision; same board-only shape as Finance Ops #1083) — do NOT add
-// 'isSysadmin' here. Operations joins this endpoint in a follow-up PR once the
-// RBAC rework (the isOperations role) merges.
-export const POST = withAuth({ roles: ['isBoardMember'] }, async (req, auth) => {
+// Email-only contact creation for Board + Operations. Sysadmin is deliberately
+// EXCLUDED (Jeff's decision; same board-only shape as Finance Ops #1083) — do
+// NOT add 'isSysadmin' here.
+export const POST = withAuth({ roles: ['isBoardMember', 'isOperations'] }, async (req, auth) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
     try {
         const { name, email } = await req.json();
