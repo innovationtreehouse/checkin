@@ -267,6 +267,8 @@ export interface MirrorAuditOrder {
     totalCents: number;
     totalRefundedCents: number;
     cancelledAt: Date | null;
+    /** Order-level coupon codes (shop_order.discount_codes text[] @default([]), #1048). */
+    discountCodes: string[];
     /** Which of the requested variant ids this order's lines matched. */
     matchedVariantIds: string[];
 }
@@ -283,6 +285,7 @@ export async function ordersForVariants(variantIds: string[]): Promise<MirrorAud
         `SELECT legacy_id AS "legacyId", name, customer_email AS "customerEmail",
                 financial_status AS "financialStatus", total_cents AS "totalCents",
                 total_refunded_cents AS "totalRefundedCents",
+                discount_codes AS "discountCodes",
                 cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt",
                 (SELECT array_agg(DISTINCT l.variant_legacy_id)
                    FROM shop_order_line l
@@ -331,4 +334,23 @@ export async function disputedOrderGids(orderGids: string[]): Promise<Set<string
         [orderGids],
     );
     return new Set(rows.rows.map((r) => r.orderGid));
+}
+
+/**
+ * The smallest real (non-test) order legacy id in the mirror — the mirror's low-water mark.
+ * An activation whose recorded order id sits BELOW this predates the mirror's coverage and is
+ * unverifiable-by-design, not a gap. Null when the mirror holds no non-test orders (or is
+ * unwired) → the caller then treats every not-in-mirror id as a real gap.
+ * legacy_id is numeric-in-text; the ::bigint cast orders them numerically, ::text hands JS a
+ * string to BigInt-parse without node-pg's numeric coercion.
+ * ponytail: assumes every legacy_id parses as bigint — true for Shopify order ids.
+ */
+export async function minRealOrderLegacyId(): Promise<bigint | null> {
+    const p = getPool();
+    if (!p) return null;
+    const rows = await p.query<{ minLegacyId: string | null }>(
+        `SELECT min(legacy_id::bigint)::text AS "minLegacyId" FROM shop_order WHERE test = false`,
+    );
+    const v = rows.rows[0]?.minLegacyId;
+    return v == null ? null : BigInt(v);
 }

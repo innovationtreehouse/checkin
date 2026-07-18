@@ -16,6 +16,8 @@ const prismaMock = {
     programParticipant: { findMany: jest.fn() },
     paymentException: { findMany: jest.fn() },
     person: { findMany: jest.fn() },
+    auditLog: { findMany: jest.fn() },
+    orgMembership: { findMany: jest.fn() },
 };
 // The factories defer every dereference to call time (jest.mock is hoisted above
 // the consts, so touching them during factory evaluation would hit the TDZ).
@@ -28,6 +30,8 @@ jest.mock('@/lib/prisma', () => ({
         programParticipant: { findMany: (...a: unknown[]) => prismaMock.programParticipant.findMany(...a) },
         paymentException: { findMany: (...a: unknown[]) => prismaMock.paymentException.findMany(...a) },
         person: { findMany: (...a: unknown[]) => prismaMock.person.findMany(...a) },
+        auditLog: { findMany: (...a: unknown[]) => prismaMock.auditLog.findMany(...a) },
+        orgMembership: { findMany: (...a: unknown[]) => prismaMock.orgMembership.findMany(...a) },
     },
 }));
 
@@ -36,12 +40,16 @@ const mirrorMock = {
     lineVariantStats: jest.fn(),
     ordersForVariants: jest.fn(),
     orderLegacyIdsPresent: jest.fn(),
+    ordersByLegacyIds: jest.fn(),
+    minRealOrderLegacyId: jest.fn(),
 };
 jest.mock('@/lib/shopifyRead/client', () => ({
     isConfigured: () => mirrorMock.isConfigured(),
     lineVariantStats: () => mirrorMock.lineVariantStats(),
     ordersForVariants: (...a: unknown[]) => mirrorMock.ordersForVariants(...a),
     orderLegacyIdsPresent: (...a: unknown[]) => mirrorMock.orderLegacyIdsPresent(...a),
+    ordersByLegacyIds: (...a: unknown[]) => mirrorMock.ordersByLegacyIds(...a),
+    minRealOrderLegacyId: () => mirrorMock.minRealOrderLegacyId(),
 }));
 
 const paidOrder = (legacyId: string, over: Partial<Record<string, unknown>> = {}) => ({
@@ -74,6 +82,10 @@ beforeEach(() => {
     prismaMock.programParticipant.findMany.mockResolvedValue([]);
     prismaMock.paymentException.findMany.mockResolvedValue([]);
     prismaMock.person.findMany.mockResolvedValue([]);
+    prismaMock.auditLog.findMany.mockResolvedValue([]);
+    prismaMock.orgMembership.findMany.mockResolvedValue([]);
+    mirrorMock.ordersByLegacyIds.mockResolvedValue([]);
+    mirrorMock.minRealOrderLegacyId.mockResolvedValue(null);
 });
 
 it('reports configured:false without touching prisma or the mirror data when unwired', async () => {
@@ -210,6 +222,67 @@ describe('membership buckets (activation → Shopify)', () => {
         expect(sweep.where.kind).toEqual({ in: ['INITIAL', 'RENEWAL'] });
         expect(sweep.where.status).toEqual({ in: ['ACTIVE', 'PENDING_BG_CLEARANCE'] });
     });
+
+    it('reversed after activation → ORDER_REVERSED, not a fresh gap', async () => {
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([]) // claim lookup
+            .mockResolvedValueOnce([proc(1, { shopifyOrderId: '800' })]);
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set(['800']));
+        mirrorMock.ordersByLegacyIds.mockResolvedValue([
+            { legacyId: '800', financialStatus: 'REFUNDED', totalRefundedCents: 5000, cancelledAt: null },
+        ]);
+
+        const r = await runMatchAudit();
+        expect(r.memberships[0].bucket).toBe('ORDER_REVERSED');
+    });
+
+    it('an ACTIVE household membership with no INITIAL/RENEWAL process → NO_PROCESS gap', async () => {
+        prismaMock.orgMembership.findMany.mockResolvedValue([{ id: 5, household: { name: 'The Finches' } }]);
+
+        const r = await runMatchAudit();
+        expect(r.memberships).toContainEqual(
+            expect.objectContaining({ bucket: 'NO_PROCESS', processId: null, membershipId: 5, householdName: 'The Finches' }),
+        );
+    });
+
+    it('NO_PROCESS sweep asks for exactly the pinned where', async () => {
+        await runMatchAudit();
+        expect(prismaMock.orgMembership.findMany.mock.calls[0][0].where).toEqual({
+            status: 'ACTIVE',
+            processes: { none: { kind: { in: ['INITIAL', 'RENEWAL'] }, status: { not: 'ARCHIVED' } } },
+        });
+    });
+});
+
+describe('PRE_MIRROR vs ORDER_NOT_IN_MIRROR', () => {
+    const proc = (id: number, shopifyOrderId: string) => ({
+        id,
+        shopifyOrderId,
+        certifiedById: null,
+        orgMembership: { household: { name: `House ${id}` } },
+    });
+
+    it('an id below the mirror low-water mark is PRE_MIRROR; at/above it is a real gap', async () => {
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([]) // claim lookup
+            .mockResolvedValueOnce([proc(1, '50'), proc(2, '200')]);
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set());
+        mirrorMock.minRealOrderLegacyId.mockResolvedValue(BigInt(100));
+
+        const r = await runMatchAudit();
+        expect(r.memberships.map((m) => m.bucket)).toEqual(['PRE_MIRROR', 'ORDER_NOT_IN_MIRROR']);
+    });
+
+    it('an empty mirror (null low-water mark) never reclassifies — everything is a real gap', async () => {
+        prismaMock.orgMembershipProcess.findMany
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([proc(1, '50'), proc(2, '200')]);
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set());
+        mirrorMock.minRealOrderLegacyId.mockResolvedValue(null);
+
+        const r = await runMatchAudit();
+        expect(r.memberships.map((m) => m.bucket)).toEqual(['ORDER_NOT_IN_MIRROR', 'ORDER_NOT_IN_MIRROR']);
+    });
 });
 
 describe('enrollment buckets', () => {
@@ -235,5 +308,81 @@ describe('enrollment buckets', () => {
 
         const r = await runMatchAudit();
         expect(r.enrollments.map((e) => e.bucket)).toEqual(['ORDER_MATCHED', 'SCHOLARSHIP_APPROVED', 'NO_PAYMENT_BASIS']);
+    });
+
+    it('reversed after activation → ORDER_REVERSED, not a fresh gap', async () => {
+        prismaMock.programParticipant.findMany
+            .mockResolvedValueOnce([]) // claim lookup
+            .mockResolvedValueOnce([enroll(1, { shopifyOrderId: '700' })]);
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set(['700']));
+        mirrorMock.ordersByLegacyIds.mockResolvedValue([
+            { legacyId: '700', financialStatus: 'PAID', totalRefundedCents: 0, cancelledAt: new Date() },
+        ]);
+
+        const r = await runMatchAudit();
+        expect(r.enrollments[0].bucket).toBe('ORDER_REVERSED');
+    });
+
+    it('sweeps only payment-bearing programs — a free program never floods NO_PAYMENT_BASIS', async () => {
+        await runMatchAudit();
+        const sweep = prismaMock.programParticipant.findMany.mock.calls[1][0];
+        expect(sweep.where.status).toBe('ACTIVE');
+        expect(sweep.where.OR).toContainEqual({ shopifyOrderId: { not: null } });
+        expect(sweep.where.OR).toContainEqual({
+            program: {
+                OR: [
+                    { shopifyVariantId: { not: null } },
+                    { shopifyOrgMemberVariantId: { not: null } },
+                    { shopifyNonOrgMemberVariantId: { not: null } },
+                ],
+            },
+        });
+    });
+
+    describe('ADMIN_COMPED', () => {
+        it('an enrollment CREATED active with no order and no scholarship stamp → ADMIN_COMPED', async () => {
+            prismaMock.programParticipant.findMany
+                .mockResolvedValueOnce([]) // claim lookup
+                .mockResolvedValueOnce([enroll(3)]);
+            prismaMock.auditLog.findMany.mockResolvedValue([
+                { affectedEntityId: 3, secondaryAffectedEntity: 7, actorId: 42, newData: { status: 'ACTIVE' } },
+            ]);
+            prismaMock.person.findMany.mockResolvedValue([{ id: 42, name: 'Admin Amy' }]);
+
+            const r = await runMatchAudit();
+            expect(r.enrollments[0].bucket).toBe('ADMIN_COMPED');
+            expect(r.enrollments[0].compedByName).toBe('Admin Amy');
+        });
+
+        it('created PENDING (later flipped some other way) stays NO_PAYMENT_BASIS — proves the inference', async () => {
+            prismaMock.programParticipant.findMany
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([enroll(3)]);
+            prismaMock.auditLog.findMany.mockResolvedValue([
+                { affectedEntityId: 3, secondaryAffectedEntity: 7, actorId: 42, newData: { status: 'PENDING' } },
+            ]);
+
+            const r = await runMatchAudit();
+            expect(r.enrollments[0].bucket).toBe('NO_PAYMENT_BASIS');
+            expect(r.enrollments[0].compedByName).toBeNull();
+        });
+
+        it('looks up the CREATE audit row in one batched query with the pinned where', async () => {
+            prismaMock.programParticipant.findMany
+                .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([enroll(3)]);
+            prismaMock.auditLog.findMany.mockResolvedValue([
+                { affectedEntityId: 3, secondaryAffectedEntity: 7, actorId: 42, newData: { status: 'ACTIVE' } },
+            ]);
+            prismaMock.person.findMany.mockResolvedValue([{ id: 42, name: 'Admin Amy' }]);
+
+            await runMatchAudit();
+            expect(prismaMock.auditLog.findMany).toHaveBeenCalledTimes(1);
+            const where = prismaMock.auditLog.findMany.mock.calls[0][0].where;
+            expect(where.tableName).toBe('ProgramParticipant');
+            expect(where.action).toBe('CREATE');
+            expect(where.affectedEntityId).toEqual({ in: [3] });
+            expect(where.secondaryAffectedEntity).toEqual({ in: [7] });
+        });
     });
 });

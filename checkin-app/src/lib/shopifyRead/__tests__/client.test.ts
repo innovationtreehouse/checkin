@@ -143,6 +143,12 @@ describe('match-audit reads', () => {
         expect(queryMock.mock.calls[0][1]).toEqual([['111', '222']]);
     });
 
+    it('ordersForVariants projects discount_codes', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersForVariants(['111']);
+        expect(sqlOf(0)).toContain('discount_codes AS "discountCodes"');
+    });
+
     it('ordersForVariants short-circuits on an empty variant set without querying', async () => {
         expect(await freshClient().ordersForVariants([])).toEqual([]);
         expect(queryMock).not.toHaveBeenCalled();
@@ -163,6 +169,24 @@ describe('match-audit reads', () => {
         expect(await freshClient().orderLegacyIdsPresent(['900', '901'])).toEqual(new Set(['900']));
         // A test-mode order must not serve as an activation's payment basis.
         expect(sqlOf(0)).toContain('test = false');
+    });
+
+    it('minRealOrderLegacyId returns the mirror low-water mark', async () => {
+        queryMock.mockResolvedValue({ rows: [{ minLegacyId: '4200' }] });
+        expect(await freshClient().minRealOrderLegacyId()).toBe(BigInt(4200));
+        expect(sqlOf(0)).toContain('min(legacy_id::bigint)');
+        expect(sqlOf(0)).toContain('test = false');
+    });
+
+    it('minRealOrderLegacyId returns null for an empty mirror', async () => {
+        queryMock.mockResolvedValue({ rows: [{ minLegacyId: null }] });
+        expect(await freshClient().minRealOrderLegacyId()).toBeNull();
+    });
+
+    it('minRealOrderLegacyId returns null without opening a pool when unwired', async () => {
+        delete process.env.SHOPIFY_READ_DATABASE_URL;
+        expect(await freshClient().minRealOrderLegacyId()).toBeNull();
+        expect(poolCtor).not.toHaveBeenCalled();
     });
 });
 
