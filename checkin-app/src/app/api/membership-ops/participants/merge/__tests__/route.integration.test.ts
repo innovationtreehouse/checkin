@@ -171,9 +171,9 @@ describe("Merge Participants API", () => {
 
         const res = await POST(req);
         const data = await res.json();
-        if (res.status !== 200) console.error('Merge error:', data);
-        expect(res.status).toBe(200);
-        expect(data.success).toBe(true);
+        // Assert on the pair together so a failure's diff shows the response
+        // body (was a console.error; folded into the assertion instead).
+        expect({ status: res.status, data }).toEqual({ status: 200, data: { success: true } });
 
         const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
         expect(kept?.googleId).toBe("google-conflict-id");
