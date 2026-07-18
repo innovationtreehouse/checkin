@@ -69,6 +69,15 @@ describe("FinanceOpsLayout role gate", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("redirects a sysadmin (finance-ops is board-only, issue #1083)", () => {
+    renderLayout("/finance-ops/payment-plan", {
+      data: { user: { id: 3, isSysadmin: true, isBoardMember: false } },
+      status: "authenticated",
+    });
+    expect(screen.queryByText(CHILD)).not.toBeInTheDocument();
+    expect(push).toHaveBeenCalledWith("/");
+  });
+
   it("redirects an authenticated user with none of the allowed roles", () => {
     renderLayout("/finance-ops/payment-plan", {
       data: { user: { id: 2 } },

@@ -16,7 +16,7 @@ import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 // normal payment / grace-period expiry fires first (see
 // docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md).
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();

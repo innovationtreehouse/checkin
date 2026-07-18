@@ -20,7 +20,7 @@ import { apiError } from "@/lib/api-response";
 // confers no benefit on the applicant — it only records a seat the board already
 // removed, and the value-conferring approve step keeps its own CoI check.
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();

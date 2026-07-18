@@ -24,7 +24,7 @@ export const GET = handler('GET /api/finance-ops/membership-payment-plans', asyn
 });
 
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
