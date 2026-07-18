@@ -21,13 +21,15 @@ import { Prisma } from '@/generated/prisma/client'
  */
 
 /**
- * The single definition of how a Person.email is normalized. Writes lowercase
- * through this (below); every email *lookup* must run its key through the same
- * function or a differently-cased address (`John.Doe@x` vs the stored
- * `john.doe@x`) misses the row — the read half of issue #292. Keep read and
+ * The single definition of how a Person.email is normalized: trim surrounding
+ * whitespace, then lowercase. Writes go through this (below) — the write
+ * extension calls this same function, so it inherits the trim automatically;
+ * every email *lookup* must run its key through it too, or a differently-cased
+ * or whitespace-padded address (` John.Doe@x ` vs the stored `john.doe@x`)
+ * misses the row — the read half of issue #292. Keep read and
  * write on this one function so they can never drift.
  */
-export const normalizeEmail = (email: string): string => email.toLowerCase()
+export const normalizeEmail = (email: string): string => email.trim().toLowerCase()
 
 /** Lowercase `data.email`, handling the plain (`email: "X"`) and wrapped
  * (`email: { set: "X" }`) forms. Null/undefined/non-string emails are left

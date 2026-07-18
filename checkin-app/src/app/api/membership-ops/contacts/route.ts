@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { createParticipantWithHousehold } from "@/lib/auth-options";
@@ -50,8 +51,25 @@ export const POST = withAuth({ roles: ['isBoardMember'] }, async (req, auth) => 
             },
         });
 
-        return NextResponse.json({ success: true, participant: person });
+        // Re-fetch with household included so the client's optimistic prepend can
+        // render the household name immediately, without a full-list refetch.
+        const participant = await prisma.person.findUnique({
+            where: { id: person.id },
+            include: { household: true },
+        });
+
+        return NextResponse.json({ success: true, participant });
     } catch (error) {
+        // The dup check above is TOCTOU-racy (two concurrent creates for the same
+        // email can both pass it); the @unique constraint is the real guard, so a
+        // P2002 here gets the same owner-named-style 409 as the pre-check catch,
+        // not a generic 500.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return NextResponse.json(
+                { error: "This email already belongs to an existing account", fields: ["email"] },
+                { status: 409 },
+            );
+        }
         await logBackendError(error, "POST /api/membership-ops/contacts");
         return apiError("Failed to create contact", 500);
     }

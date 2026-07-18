@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
-import { useRequireRole } from "@/hooks/useRequireRole";
 
 type HouseholdRef = {
   id: number;
@@ -36,9 +36,11 @@ export default function AdminParticipantsIndex() {
   // Client-side mirror of the write-verb matrix (UX only — the endpoint is the
   // real guard). canAddContact mirrors POST /api/membership-ops/contacts' role
   // gate: board-only for now — Operations gets this button in a follow-up PR
-  // once the RBAC rework (the isOperations role) merges.
-  const { user: me } = useRequireRole([]);
-  const canAddContact = !!me?.isBoardMember;
+  // once the RBAC rework (the isOperations role) merges. Just reads the
+  // session here (no redirect effect) — the membership-ops layout already
+  // gates the whole section, so a second require-role redirect is redundant.
+  const { data: session } = useSession();
+  const canAddContact = !!session?.user?.isBoardMember;
 
   const toggleSort = (col: "id" | "name" | "email" | "household") => {
     if (sortBy === col) {

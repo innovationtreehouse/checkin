@@ -151,6 +151,46 @@ describe('POST /api/membership-ops/contacts', () => {
         expect(data.fields).toEqual(['email']);
     });
 
+    it('catches a whitespace-padded duplicate with the owner-named 409 — normalizeEmail trims, not just lowercases', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const variant = `  ${ownerEmail.toUpperCase()}  `;
+
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Someone Else', email: variant }));
+        expect(res.status).toBe(409);
+        const data = await res.json();
+        expect(data.error).toBe('This email already belongs to Jane Doe');
+        expect(data.fields).toEqual(['email']);
+    });
+
+    it('stores a whitespace-padded email trimmed', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const padded = `  Whitespace-${CREATED_TAG}@Example.com  `;
+
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Padded Email', email: padded }));
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.participant.email).toBe(padded.trim().toLowerCase());
+
+        const created = await prisma.person.findUnique({ where: { id: data.participant.id } });
+        expect(created?.email).toBe(padded.trim().toLowerCase());
+    });
+
+    it('400s a blank name', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: '   ', email: `blank-name-${CREATED_TAG}@example.com` }));
+        expect(res.status).toBe(400);
+        const data = await res.json();
+        expect(data.error).toBe('Name is required');
+    });
+
+    it('400s a malformed email', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Bad Email', email: 'not-an-email' }));
+        expect(res.status).toBe(400);
+        const data = await res.json();
+        expect(data.error).toBe('A valid email is required');
+    });
+
     it('403s a sysadmin-only actor — intentional, sysadmin is excluded from board-create (Jeff / #1083-style board-only carve-out), not a bug', async () => {
         asSession({ id: sysadminId, isSysadmin: true });
         const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Should Not Create', email: `blocked-${CREATED_TAG}@example.com` }));
