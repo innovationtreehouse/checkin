@@ -82,11 +82,12 @@ export function MatchAuditPanel() {
 
   // One memoized pass per result: this panel re-renders on every keystroke in
   // the page's resolve-exception modal, and the audit arrays can be large.
-  const { unclaimedPaid, membershipGaps, enrollmentGaps, manual, scholarships, comped, reversedMemberships, reversedEnrollments, preMirrorCount, matched } = useMemo(() => {
+  const { unclaimedPaid, unclaimedUnpaid, membershipGaps, enrollmentGaps, manual, scholarships, comped, reversedMemberships, reversedEnrollments, preMirrorCount, matched } = useMemo(() => {
     const matchedCounts = { orders: 0, tracked: 0, memberships: 0, enrollments: 0 };
     let preMirrorCount = 0;
     const groups = {
       unclaimedPaid: [] as NonNullable<typeof result>['orders'],
+      unclaimedUnpaid: [] as NonNullable<typeof result>['orders'],
       membershipGaps: [] as NonNullable<typeof result>['memberships'],
       enrollmentGaps: [] as NonNullable<typeof result>['enrollments'],
       manual: [] as NonNullable<typeof result>['memberships'],
@@ -98,6 +99,7 @@ export function MatchAuditPanel() {
     };
     for (const o of result?.orders ?? []) {
       if (o.bucket === 'UNCLAIMED_PAID') groups.unclaimedPaid.push(o);
+      else if (o.bucket === 'UNCLAIMED_UNPAID') groups.unclaimedUnpaid.push(o);
       else if (o.bucket === 'MATCHED') matchedCounts.orders++;
       else if (o.bucket === 'TRACKED_EXCEPTION') matchedCounts.tracked++;
     }
@@ -202,6 +204,36 @@ export function MatchAuditPanel() {
                           Track
                         </Button>
                       </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </>
+          )}
+
+          {unclaimedUnpaid.length > 0 && (
+            <>
+              <Title order={5} mt="md">Unpaid orders with a membership/program item</Title>
+              <Text size="xs" c="dimmed" mb="xs">
+                Orders carrying a known variant that aren&apos;t currently paid — refunded, cancelled, voided,
+                or authorized-but-not-captured — and that no activation claims. Informational: most are money
+                returned with no access granted, but an <b>authorized</b>/<b>pending</b> one is a purchase that
+                never captured. Not trackable until it settles.
+              </Text>
+              <Table striped withTableBorder mt="xs">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Order</Table.Th><Table.Th>Email</Table.Th><Table.Th>Status</Table.Th><Table.Th>Total</Table.Th><Table.Th>Expected</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {unclaimedUnpaid.map((o, i) => (
+                    <Table.Tr key={o.orderLegacyId ?? `uu-${i}`}>
+                      <Table.Td>{o.name ?? o.orderLegacyId}</Table.Td>
+                      <Table.Td>{o.customerEmail}</Table.Td>
+                      <Table.Td>{o.financialStatus ?? '—'}</Table.Td>
+                      <Table.Td>{formatCents(o.totalCents)}</Table.Td>
+                      <Table.Td>{o.expected.join(', ')}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>

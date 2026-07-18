@@ -61,6 +61,25 @@ describe("MatchAuditPanel", () => {
     expect(screen.queryByText("#1")).not.toBeInTheDocument();
   });
 
+  it("surfaces unpaid variant-matched orders in their own informational table, not as gaps", async () => {
+    mockFetchJson({
+      [AUDIT_URL]: {
+        configured: true, configuredVariants: 3, variantCoverage: { lines: 6, withVariant: 6 },
+        orders: [
+          { bucket: "UNCLAIMED_UNPAID", orderLegacyId: "9", name: "#9", customerEmail: "u@x.com", financialStatus: "AUTHORIZED", totalCents: 7500, discountCodes: [], expected: ["membership"] },
+        ],
+        memberships: [], enrollments: [],
+      },
+    });
+    renderWithProviders(<MatchAuditPanel />);
+    fireEvent.click(screen.getByRole("button", { name: /Run match audit/ }));
+    // Shows the row with its financial status so the auditor sees WHY it's unpaid...
+    expect(await screen.findByText("#9")).toBeInTheDocument();
+    expect(screen.getByText("AUTHORIZED")).toBeInTheDocument();
+    // ...but it is NOT counted as a gap (money not in / no access granted).
+    expect(screen.getByText("No gaps")).toBeInTheDocument();
+  });
+
   it("shows a clean badge when nothing is wrong", async () => {
     mockFetchJson({
       [AUDIT_URL]: { configured: true, configuredVariants: 3, variantCoverage: { lines: 6, withVariant: 6 }, orders: [], memberships: [], enrollments: [] },
