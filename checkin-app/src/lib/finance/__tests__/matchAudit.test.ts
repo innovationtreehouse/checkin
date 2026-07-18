@@ -154,10 +154,19 @@ describe('order buckets (Shopify → activation)', () => {
         expect(r.orders[0].bucket).toBe('MATCHED');
     });
 
-    it('an ARCHIVED process is not a claim — the lookup excludes it in the where', async () => {
+    it('neither an ARCHIVED nor a BLOCKED process is a claim — the lookup excludes both in the where', async () => {
         await runMatchAudit();
         const claimWhere = (prismaMock.orgMembershipProcess.findMany.mock.calls[0][0] as { where: { status: unknown } }).where;
-        expect(claimWhere.status).toEqual({ not: 'ARCHIVED' });
+        expect(claimWhere.status).toEqual({ notIn: ['ARCHIVED', 'BLOCKED'] });
+    });
+
+    it('paid-while-blocked: claim excluded, the open exception (processId-attributed) buckets it TRACKED_EXCEPTION', async () => {
+        mirrorMock.ordersForVariants.mockResolvedValue([paidOrder('911')]);
+        // The BLOCKED process's PAID_WHILE_BLOCKED exception is open and carries processId;
+        // the claim lookup's notIn keeps the BLOCKED process itself out of the claim set.
+        prismaMock.paymentException.findMany.mockResolvedValue([{ shopifyOrderId: '911', processId: 55, programId: null }]);
+        const r = await runMatchAudit();
+        expect(r.orders[0].bucket).toBe('TRACKED_EXCEPTION');
     });
 
     it('a kind-attributed exception covers only ITS half: tracked membership + untracked program → UNCLAIMED_PAID naming the program', async () => {
