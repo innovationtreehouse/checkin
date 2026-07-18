@@ -96,7 +96,7 @@ export default function PublicProgramsDirectory() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.currentTarget.checked)}
             />
-            <Button component={Link} href="/program-ops/new" color="green" variant="light">
+            <Button component={Link} href="/program-ops/new" variant="light">
               + New Program
             </Button>
           </Group>
@@ -119,8 +119,8 @@ export default function PublicProgramsDirectory() {
                 <Group justify="space-between" align="flex-start" mb="sm">
                   <Title order={4}>{program.name}</Title>
                   <Group gap={4}>
-                    {isOwner && <Badge color="green">Yours</Badge>}
-                    {program.orgMemberOnly && <Badge color="grape" variant="light">Treehouse Members Only</Badge>}
+                    {isOwner && <Badge>Yours</Badge>}
+                    {program.orgMemberOnly && <Badge color="treehousePurple" variant="light">Treehouse Members Only</Badge>}
                     {program.phase === 'PLANNING' && <Badge color="yellow" variant="light">Planning</Badge>}
                     {program.enrollmentStatus === 'CLOSED' && <Badge color="red" variant="light">Closed</Badge>}
                   </Group>
@@ -159,7 +159,7 @@ export default function PublicProgramsDirectory() {
                     View details and enroll
                   </Button>
                   {canManage && (
-                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">
+                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light">
                       Manage
                     </Button>
                   )}

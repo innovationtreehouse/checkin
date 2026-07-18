@@ -25,7 +25,7 @@ type PersonRow = {
 
 // Reason tag -> human label + badge color. Keys mirror the endpoint's tags.
 const REASON: Record<string, { label: string; color: string }> = {
-  STALE_BG: { label: "Background check expired", color: "orange" },
+  STALE_BG: { label: "Background check expired", color: "treehousePurple" },
   REVOKED: { label: "Revoked", color: "red" },
   DENIED: { label: "Denied", color: "red" },
   STUCK_BG_CLEARANCE: { label: "Stuck at BG clearance", color: "yellow" },
@@ -97,7 +97,7 @@ export default function CompliancePage() {
       });
       if (res.ok) {
         setSubmittedIds((s) => new Set(s).add(personId));
-        notifications.show({ color: "green", message: "Submitted for background-check review." });
+        notifications.show({ message: "Submitted for background-check review." });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: "red", message: data.error || "Could not submit for review." });
@@ -201,11 +201,11 @@ export default function CompliancePage() {
       <PersonSection
         title="Background check needed"
         description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked. Once an external check exists, submit it below for two-reviewer approval."
-        color="orange"
+        color="treehousePurple"
         people={peopleNeedingBgCheck}
         renderAction={(p) =>
           submittedIds.has(p.personId) ? (
-            <Badge color="green" variant="light">Submitted for review</Badge>
+            <Badge variant="light">Submitted for review</Badge>
           ) : (
             <Button size="xs" variant="light" loading={busyId === p.personId} disabled={busyId === p.personId} onClick={() => submitBg(p.personId)}>
               Record external check &amp; submit
@@ -217,7 +217,7 @@ export default function CompliancePage() {
       <PersonSection
         title="Missing date of birth"
         description="Program-attached people with no recorded age. Confirm their date of birth before a background check can be assessed."
-        color="grape"
+        color="treehousePurple"
         people={peopleMissingDob}
       />
     </Stack>

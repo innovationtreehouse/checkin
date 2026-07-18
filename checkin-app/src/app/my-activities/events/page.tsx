@@ -38,7 +38,7 @@ function groupByEvent(events: EventData[]): EventData[][] {
 }
 
 const RSVP_OPTIONS: { status: RsvpStatus; label: string; color: string }[] = [
-  { status: 'ATTENDING', label: 'Yes', color: 'green' },
+  { status: 'ATTENDING', label: 'Yes', color: 'treehouseGreen' },
   { status: 'MAYBE', label: 'Maybe', color: 'yellow' },
   { status: 'NOT_ATTENDING', label: 'No', color: 'red' },
 ];
@@ -141,7 +141,7 @@ export default function ParticipantEventsDashboard() {
                       <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
                     </div>
                     {rows.some((r) => r.isVolunteer) && (
-                      <Badge color="grape" variant="light" style={{ flexShrink: 0 }}>Volunteer</Badge>
+                      <Badge color="treehousePurple" variant="light" style={{ flexShrink: 0 }}>Volunteer</Badge>
                     )}
                   </Group>
 

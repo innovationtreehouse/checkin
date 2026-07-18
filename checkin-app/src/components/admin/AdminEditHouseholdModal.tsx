@@ -123,7 +123,7 @@ export function AdminEditHouseholdModal({
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Lead removed." });
+        notifications.show({ message: "Lead removed." });
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -187,7 +187,7 @@ export function AdminEditHouseholdModal({
       });
       if (res.ok) {
         const data = await res.json();
-        notifications.show({ color: "green", message: "Household updated." });
+        notifications.show({ message: "Household updated." });
         onSaved?.(data.household);
         onClose();
       } else {
@@ -313,7 +313,7 @@ export function AdminEditHouseholdModal({
               )}
             </Stack>
 
-            <Alert color="orange" mt="md">
+            <Alert color="treehousePurple" mt="md">
               You&apos;re editing <strong>{displayName}</strong>, a household you&apos;re not a member of. This
               uses your administrative privileges and is recorded in the audit log.
             </Alert>
@@ -321,7 +321,7 @@ export function AdminEditHouseholdModal({
               <Button variant="default" onClick={requestClose} disabled={saving}>
                 Cancel
               </Button>
-              <Button color="orange" onClick={handleSave} loading={saving} disabled={phoneInvalid}>
+              <Button color="treehousePurple" onClick={handleSave} loading={saving} disabled={phoneInvalid}>
                 Save Changes — As Admin
               </Button>
             </Group>

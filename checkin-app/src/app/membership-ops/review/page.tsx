@@ -70,7 +70,7 @@ export default function MembershipReviewPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
+        notifications.show({ message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
         await load();
         notifyNavRefresh();
       } else if (data.code === "already_attested") {
@@ -170,7 +170,7 @@ export default function MembershipReviewPage() {
               />
 
               <Group gap="sm" wrap="wrap" mt="md">
-                <Button color="green" disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
+                <Button disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
                   Attest — check is clean
                 </Button>
                 <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => submit(item.id, "REJECT")}>
@@ -179,7 +179,7 @@ export default function MembershipReviewPage() {
               </Group>
 
               {message?.processId === item.id && (
-                <Alert color={message.tone === "success" ? "green" : "red"} variant="light" mt="md">
+                <Alert color={message.tone === "success" ? "treehouseGreen" : "red"} variant="light" mt="md">
                   {message.text}
                 </Alert>
               )}

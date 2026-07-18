@@ -80,9 +80,9 @@ const label = (s: string) => s.replace(/_/g, " ");
 // (decision-less) states. Null → a fresh disclosure or a plain withdraw+resubmit, where
 // the board needs no prior-decision context.
 const PRIOR_DECISION_META: Record<string, { text: string; color: string }> = {
-    APPROVE: { text: "Renewal", color: "blue" },
+    APPROVE: { text: "Renewal", color: "treehousePurple" },
     DENY: { text: "Previously denied", color: "red" },
-    REQUEST_INFO: { text: "Previously: more info requested", color: "orange" },
+    REQUEST_INFO: { text: "Previously: more info requested", color: "treehousePurple" },
 };
 
 function priorDecisionReview(reviews: Review[]): Review | null {
@@ -154,7 +154,7 @@ export default function AdminTrustedAdultsPage() {
                     setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
                 }
             } else {
-                notifications.show({ color: "green", message: `Recorded: ${label(body.status)}.` });
+                notifications.show({ message: `Recorded: ${label(body.status)}.` });
                 await load();
                 notifyNavRefresh();
             }
@@ -240,7 +240,7 @@ export default function AdminTrustedAdultsPage() {
                 const changeBadge = priorMeta
                     ? { text: priorMeta.text + (infoUpdated ? " — info updated" : ""), color: priorMeta.color }
                     : infoUpdated
-                        ? { text: "Info updated", color: "blue" }
+                        ? { text: "Info updated", color: "treehousePurple" }
                         : null;
                 // "Previously dispositioned" note the board sent to staff — only APPROVE sets a
                 // sharedNote. When present on a renewal, offer to re-use it (gated by a radio).
@@ -353,7 +353,6 @@ export default function AdminTrustedAdultsPage() {
                                             <span>
                                                 <Button
                                                     size="xs" fz={15}
-                                                    color="green"
                                                     loading={busyId === latest.id}
                                                     disabled={isSelf || !sharedVal.trim() || (needsChoice && !choice)}
                                                     onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
@@ -397,7 +396,6 @@ export default function AdminTrustedAdultsPage() {
                                 <Button
                                     size="xs" fz={15}
                                     variant="subtle"
-                                    color="green"
                                     disabled={isSelf && !user?.isSysadmin}
                                     loading={busyId === latest.id}
                                     onClick={() => openPrompt({

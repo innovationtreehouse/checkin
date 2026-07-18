@@ -117,7 +117,7 @@ function ApplicationsBoard() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Updated." });
+        notifications.show({ message: "Updated." });
         await load(showArchived);
         notifyNavRefresh();
       } else {
@@ -142,7 +142,7 @@ function ApplicationsBoard() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
+        notifications.show({ message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
         await load(showArchived);
         notifyNavRefresh();
       } else if (data.code === "wrong_phase") {
@@ -170,7 +170,7 @@ function ApplicationsBoard() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Application archived." });
+        notifications.show({ message: "Application archived." });
         await load(showArchived);
         notifyNavRefresh();
       } else {
@@ -214,7 +214,7 @@ function ApplicationsBoard() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Application unarchived." });
+        notifications.show({ message: "Application unarchived." });
         await load(showArchived);
         notifyNavRefresh();
       } else {
@@ -239,7 +239,7 @@ function ApplicationsBoard() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Certified — membership activated." });
+        notifications.show({ message: "Certified — membership activated." });
         await load(showArchived);
         notifyNavRefresh();
       } else if (data.code === "wrong_phase") {
@@ -389,7 +389,7 @@ function ApplicationsBoard() {
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => handleCertify(r.id)}>
+                  <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => handleCertify(r.id)}>
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                   {ownHousehold(r) && (
@@ -415,7 +415,7 @@ function ApplicationsBoard() {
                     <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
+                    <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
                       Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
@@ -431,7 +431,7 @@ function ApplicationsBoard() {
 
               <Group justify="flex-end" mt="md">
                 {showArchived ? (
-                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id} onClick={() => unarchive(r.id)}>
+                  <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => unarchive(r.id)}>
                     Unarchive
                   </Button>
                 ) : (
@@ -467,7 +467,7 @@ function ApplicationsBoard() {
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={closeCertify}>Cancel</Button>
-          <Button color="green" onClick={confirmCertify} disabled={!certifyReason.trim()}>Certify</Button>
+          <Button onClick={confirmCertify} disabled={!certifyReason.trim()}>Certify</Button>
         </Group>
       </Modal>
     </Stack>

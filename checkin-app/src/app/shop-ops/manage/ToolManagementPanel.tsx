@@ -117,7 +117,7 @@ function GrantForm({
             />
           )}
           <Select label="Level" w={140} value={level} onChange={(v) => setLevel(v ?? "CERTIFIED")} allowDeselect={false} data={levelOptions} />
-          <Button type="submit" color="green" disabled={saving}>Grant</Button>
+          <Button type="submit" disabled={saving}>Grant</Button>
         </Group>
       </form>
 
@@ -127,7 +127,7 @@ function GrantForm({
         </Text>
         <Group grow>
           <Button variant="default" onClick={() => setConfirm(null)}>Cancel</Button>
-          <Button color="green" onClick={confirm_} disabled={saving} loading={saving}>Confirm</Button>
+          <Button onClick={confirm_} disabled={saving} loading={saving}>Confirm</Button>
         </Group>
       </Modal>
     </>
@@ -194,7 +194,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
 
   return (
     <div>
-      {msg && <Alert color="cyan" mb="md">{msg}</Alert>}
+      {msg && <Alert color="treehousePurple" mb="md">{msg}</Alert>}
 
       <Group mb="md" align="center" wrap="wrap">
         <TextInput placeholder="Search tools..." value={search} onChange={e => setSearch(e.currentTarget.value)} style={{ flex: '1 1 220px' }} />
@@ -262,7 +262,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
         <TextInput type="url" placeholder="https://..." value={editingGuide?.value ?? ''} onChange={e => editingGuide && setEditingGuide({ ...editingGuide, value: e.currentTarget.value })} mb="md" />
         <Group grow>
           <Button variant="default" onClick={() => setEditingGuide(null)}>Cancel</Button>
-          <Button color="green" onClick={saveGuide} disabled={savingGuide} loading={savingGuide}>Save</Button>
+          <Button onClick={saveGuide} disabled={savingGuide} loading={savingGuide}>Save</Button>
         </Group>
       </Modal>
     </div>

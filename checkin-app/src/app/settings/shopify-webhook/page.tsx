@@ -93,7 +93,7 @@ export default function ShopifyWebhookSettingsPage() {
               <Code style={{ fontSize: "var(--mantine-font-size-sm)" }}>{status.webhookUrl}</Code>
               <CopyButton value={status.webhookUrl}>
                 {({ copied, copy }) => (
-                  <Button size="xs" variant="light" color={copied ? "teal" : undefined} onClick={copy}>
+                  <Button size="xs" variant="light" color={copied ? "treehousePurple" : undefined} onClick={copy}>
                     {copied ? "Copied" : "Copy"}
                   </Button>
                 )}

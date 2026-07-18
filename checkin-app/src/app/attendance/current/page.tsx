@@ -356,7 +356,7 @@ function KioskDisplayInner() {
                 Check Me In
               </Button>
             ) : (
-              <Alert color="teal" ta="center">You are currently checked in!</Alert>
+              <Alert ta="center">You are currently checked in!</Alert>
             )}
           </Box>
         )}

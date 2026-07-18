@@ -173,7 +173,7 @@ function KioskCertificationsInner() {
           <Group align="center" wrap="wrap">
             <Group align="center" wrap="wrap">
               <Title order={1} fz="clamp(1.5rem, 4vw, 2rem)">Live Certifications</Title>
-              <Badge color={limitToPresent ? 'teal' : 'gray'} variant="light" size="lg">
+              <Badge color="gray" variant="light" size="lg">
                 {limitToPresent ? `${participants.length} People Present` : `${participants.length} Total Members`}
               </Badge>
             </Group>

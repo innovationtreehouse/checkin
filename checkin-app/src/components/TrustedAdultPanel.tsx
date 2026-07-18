@@ -21,8 +21,8 @@ import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
     PENDING_BOARD_REVIEW: { label: "Awaiting board review", color: "yellow" },
-    PENDING_SUBJECT_ACTION: { label: "Board needs more info — see email", color: "orange" },
-    APPROVED: { label: "Approved", color: "green" },
+    PENDING_SUBJECT_ACTION: { label: "Board needs more info — see email", color: "treehousePurple" },
+    APPROVED: { label: "Approved", color: "treehouseGreen" },
     DENIED: { label: "Denied", color: "red" },
     EXPIRED: { label: "Expired", color: "gray" },
     REVOKED: { label: "Withdrawn", color: "gray" },
@@ -270,7 +270,7 @@ export default function TrustedAdultPanel() {
                                         <Button size="xs" fz={15} variant="light" onClick={() => act(ta.id, "renew")}>
                                             Resubmit (same info)
                                         </Button>
-                                        <Button size="xs" fz={15} variant="light" color="blue" onClick={() => startResubmit(ta)}>
+                                        <Button size="xs" fz={15} variant="light" color="treehousePurple" onClick={() => startResubmit(ta)}>
                                             Submit with new info
                                         </Button>
                                     </>

@@ -33,8 +33,8 @@ type ImportResult = { success?: boolean; message?: string; errors?: string[] };
 
 const STATUS_META: Record<RowStatus | "all", { label: string; icon: string; color: string }> = {
   all: { label: "All", icon: "📋", color: "gray" },
-  ready: { label: "New", icon: "✅", color: "green" },
-  update: { label: "Update", icon: "🔄", color: "blue" },
+  ready: { label: "New", icon: "✅", color: "treehouseGreen" },
+  update: { label: "Update", icon: "🔄", color: "treehousePurple" },
   warning: { label: "Warning", icon: "⚠️", color: "yellow" },
   error: { label: "Error", icon: "❌", color: "red" },
 };
@@ -130,7 +130,7 @@ export default function BulkImportParticipants() {
             chance to review everything before anything is imported.
           </Text>
 
-          <Alert color="blue" variant="light" title="Instructions">
+          <Alert color="treehousePurple" variant="light" title="Instructions">
             <List type="ordered" spacing="xs">
               <List.Item>Download the import template provided below.</List.Item>
               <List.Item>Fill in the participant data. <strong>First Name</strong> and <strong>Last Name</strong> are required.</List.Item>
@@ -257,7 +257,7 @@ export default function BulkImportParticipants() {
       {/* Step 3: Import Result */}
       {importResult && (
         <Stack>
-          <Alert color={importResult.success ? 'green' : 'red'} title={importResult.success ? "✅ Import Successful" : "❌ Import Failed"}>
+          <Alert color={importResult.success ? 'treehouseGreen' : 'red'} title={importResult.success ? "✅ Import Successful" : "❌ Import Failed"}>
             <Text>{importResult.message}</Text>
             {importResult.errors && importResult.errors.length > 0 && (
               <Box mt="md">

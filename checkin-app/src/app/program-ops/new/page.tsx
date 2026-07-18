@@ -209,7 +209,7 @@ export default function CreateProgramPage() {
             )}
 
             <Group justify="flex-end">
-              <Button type="submit" color="green" disabled={saving || !name.trim() || !leadMentorId || !maxParticipants || datesInvalid} loading={saving}>
+              <Button type="submit" disabled={saving || !name.trim() || !leadMentorId || !maxParticipants || datesInvalid} loading={saving}>
                 Create Program
               </Button>
             </Group>
