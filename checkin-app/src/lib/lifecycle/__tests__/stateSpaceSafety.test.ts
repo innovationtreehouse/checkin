@@ -1,5 +1,5 @@
 /**
- * Exhaustive state-space safety proof (LIFECYCLE_ARCHITECTURE §6.1, last bullet).
+ * Exhaustive state-space safety proof (docs/designs/LIFECYCLE.md, last bullet).
  *
  * For each machine, enumerate the ENTIRE bounded state space — every
  * (status × flag-combination) tuple — and assert:
@@ -101,7 +101,7 @@ describe('membership — exhaustive state space', () => {
                             const name = classifyMembership(row);
                             if (name !== null) {
                                 expect(validateMembership(row)).toBeNull();
-                                // reachable, or the dead-but-guarded legacy status (doc §4.6)
+                                // reachable, or the dead-but-guarded legacy status (docs/designs/LIFECYCLE.md)
                                 expect(reachable.has(name) || legacy.has(name)).toBe(true);
                                 realized.add(name);
                             } else {

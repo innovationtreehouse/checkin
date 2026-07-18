@@ -1,13 +1,12 @@
 /**
  * ProgramParticipant enrollment lifecycle — ONE declarative definition.
  *
- * Instances the `@/lib/lifecycle` primitives per docs/designs/
- * PROGRAM_ENROLLMENT_STATE_MACHINE.md (§3 states, §4 invariants I1–I4, §5
- * transitions). This is the DEFINITION/VALIDATION layer only — it emits the
+ * Instances the `@/lib/lifecycle` primitives; see docs/designs/LIFECYCLE.md.
+ * This is the DEFINITION/VALIDATION layer only — it emits the
  * `where`/predicate the existing compare-and-set guards already hand-write; it
  * never executes a transition. Postgres stays the runtime authority.
  *
- * Client-safe (LIFECYCLE_ARCHITECTURE §3.4): value-imports NOTHING from
+ * Client-safe (docs/designs/LIFECYCLE.md): value-imports NOTHING from
  * `@/generated/prisma`. The status union is a local string-literal type checked
  * against the Prisma enum by a TYPE-ONLY parity line; the `where` fragments are
  * typed via `import type { Prisma }` (erased at build).

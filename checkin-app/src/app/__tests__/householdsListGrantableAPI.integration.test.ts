@@ -160,7 +160,7 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
 });
 
 /**
- * settledForComingYear (membership doc §7.4, fix #4). The route's "handled this
+ * settledForComingYear (docs/designs/LIFECYCLE.md, fix #4). The route's "handled this
  * cycle" probe now consumes settledThisCycleWhere = kind=RENEWAL, status IN
  * (ACTIVE, ARCHIVED), stageEnteredAt≥windowStart. Requires a boundary that puts
  * `now` inside the renewal window so the probe is live (out of season it matches
