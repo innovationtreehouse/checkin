@@ -340,7 +340,9 @@ export const authOptions: NextAuthOptions = {
                         },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
-                        household: { include: { orgMembership: true } }
+                        household: { include: { orgMembership: true } },
+                        // Source of truth for the five authority claims (assignParticipantClaims).
+                        roles: { select: { role: true } }
                     }
                 }));
 
@@ -350,11 +352,11 @@ export const authOptions: NextAuthOptions = {
                         dbParticipant.email &&
                         BOOTSTRAP_SYSADMINS.includes(dbParticipant.email.toLowerCase())
                     ) {
-                        await prisma.person.update({
-                            where: { id: dbParticipant.id },
-                            data: { isSysadmin: true },
-                        });
+                        await applyRoleFlag(prisma, dbParticipant.id, "isSysadmin", true);
                         dbParticipant.isSysadmin = true;
+                        // Claims derive from `roles`, not the mirror column — push the grant
+                        // into the in-memory list so this same-request sign-in gets it too.
+                        dbParticipant.roles.push({ role: "SYSADMIN" });
                     }
 
                     // Stamp authority claims, applying the household login gate (a board
@@ -379,7 +381,9 @@ export const authOptions: NextAuthOptions = {
                         },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
-                        household: { include: { orgMembership: true } }
+                        household: { include: { orgMembership: true } },
+                        // Source of truth for the five authority claims (assignParticipantClaims).
+                        roles: { select: { role: true } }
                     }
                 }));
 

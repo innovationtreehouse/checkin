@@ -24,7 +24,12 @@ export const classifications = {
         isBoardMember: 'public',
         isKeyholder: 'internal',
         isBackgroundCheckReviewer: 'internal',
-        isOperations: 'internal',
+    },
+    PersonRole: {
+        personId: 'internal',
+        role: 'internal',
+        grantedAt: 'internal',
+        grantedById: 'internal',
     },
     Tool: {
         id: 'public',
@@ -377,6 +382,12 @@ export const relations = {
         trustedAdultRecordsAsAdult: { model: 'TrustedAdult', isList: true },
         trustedAdultsDisclosed: { model: 'TrustedAdult', isList: true },
         trustedAdultReviewsDecided: { model: 'TrustedAdultReview', isList: true },
+        roles: { model: 'PersonRole', isList: true },
+        grantedRoles: { model: 'PersonRole', isList: true },
+    },
+    PersonRole: {
+        person: { model: 'Person', isList: false },
+        grantedBy: { model: 'Person', isList: false },
     },
     Tool: {
         toolStatuses: { model: 'ToolStatus', isList: true },
