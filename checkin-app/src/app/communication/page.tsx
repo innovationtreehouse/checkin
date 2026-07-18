@@ -12,7 +12,6 @@ const OPTIONS = [
   { key: 'emailCheckinReceipts', label: 'Email me when I check in or out' },
   { key: 'emailDependentCheckins', label: 'Email me realtime receipts when my dependents check in/out' },
   { key: 'notifyNewPrograms', label: 'Notify me when a new program is announced' },
-  { key: 'emailScholarshipUpdates', label: 'Email me about my scholarship / payment-plan requests' },
 ] as const;
 
 export default function CommunicationPage() {
@@ -26,8 +25,7 @@ export default function CommunicationPage() {
   const [settings, setSettings] = useState({
     emailCheckinReceipts: false,
     emailDependentCheckins: false,
-    notifyNewPrograms: true,
-    emailScholarshipUpdates: true
+    notifyNewPrograms: true
   });
 
   const fetchSettings = useCallback(async () => {
@@ -39,8 +37,7 @@ export default function CommunicationPage() {
         setSettings({
           emailCheckinReceipts: s.emailCheckinReceipts || false,
           emailDependentCheckins: s.emailDependentCheckins || false,
-          notifyNewPrograms: s.notifyNewPrograms !== undefined ? s.notifyNewPrograms : true,
-          emailScholarshipUpdates: s.emailScholarshipUpdates !== false
+          notifyNewPrograms: s.notifyNewPrograms !== undefined ? s.notifyNewPrograms : true
         });
       } else {
         setMessage("Failed to load settings.");
