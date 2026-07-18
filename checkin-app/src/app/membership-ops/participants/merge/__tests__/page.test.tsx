@@ -54,6 +54,29 @@ describe("membership-ops/participants/merge page", () => {
     expect(screen.getByRole("button", { name: "Proceed to Preview" })).toBeInTheDocument();
   });
 
+  it("renders multiple search results fully, not clipped to a sliver", async () => {
+    // Regression test for the merge page's search dropdown being clipped by an
+    // ancestor Card's default overflow:hidden (only a sliver of the first result
+    // was visible). All results must render, not just the first.
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/people/search?q=Sam": {
+        people: [
+          { id: 50, name: "Sam One", email: "sam1@example.com" },
+          { id: 51, name: "Sam Two", email: "sam2@example.com" },
+          { id: 52, name: "Sam Three", email: "sam3@example.com" },
+        ],
+      },
+    });
+    renderWithProviders(<MergeParticipants />);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Sam" } });
+
+    expect(await screen.findByText("Sam One", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Sam Two", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Sam Three", { exact: false })).toBeInTheDocument();
+  });
+
   it("previews and confirms the merge", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockRoutes();

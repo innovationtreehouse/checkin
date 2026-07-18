@@ -151,7 +151,7 @@ export default function MergeParticipants() {
             placeholder="Search by name or email..."
           />
           {results.length > 0 && (
-            <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 250, overflowY: "auto" }}>
+            <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 320, overflowY: "auto" }}>
               {results.map((r) => (
                 <Box key={r.id} p="sm" style={{ cursor: "pointer", borderBottom: "1px solid var(--mantine-color-default-border)" }} onClick={() => setSelected(r)}>
                   <Text>{r.name || "Unnamed"} <Text component="span" size="xs" c="dimmed">(ID: {r.id})</Text></Text>
@@ -254,7 +254,9 @@ export default function MergeParticipants() {
 
       {!previewMode ? (
         <>
-          <Card withBorder radius="md" padding="lg">
+          {/* overflow: visible overrides Mantine's Card default (overflow: hidden), which
+              otherwise clips the search results dropdown below to a sliver — see renderSearch. */}
+          <Card withBorder radius="md" padding="lg" style={{ overflow: "visible" }}>
             <Group align="flex-start" gap="xl" grow>
               {renderSearch("Participant 1", searchA, setSearchA, resultsA, pA, setPA)}
               {renderSearch("Participant 2", searchB, setSearchB, resultsB, pB, setPB)}
