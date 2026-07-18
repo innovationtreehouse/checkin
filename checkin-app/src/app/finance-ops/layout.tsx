@@ -10,7 +10,7 @@ import { tabBadgeFor } from "@/components/navBadges";
 import { CountBadge } from "@/components/ui/CountBadge";
 
 export default function FinanceOpsLayout({ children }: { children: React.ReactNode }) {
-  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const { loading, ready } = useRequireRole(["isBoardMember"]);
   const counts = useTodoCounts(true);
 
   if (loading) {

@@ -13,7 +13,7 @@ import { apiError } from "@/lib/api-response";
  * audit-logged since the actor is not the affected household.
  */
 export const PATCH = withAuth<{ params: Promise<{ id: string }> }>(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (request: NextRequest, auth, { params }) => {
         if (auth.type !== 'session') {
             return apiError("Unauthorized", 401);

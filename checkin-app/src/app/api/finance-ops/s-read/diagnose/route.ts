@@ -93,7 +93,7 @@ function classifyMirrorError(err: unknown, dbName: string): { detail: string; co
 const skipped = (id: string): DiagStep => ({ id, ok: null, detail: "Skipped — an earlier step already failed." });
 
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (_req, auth) => {
         if (auth.type !== 'session') {
             return apiError("Unauthorized", 401);

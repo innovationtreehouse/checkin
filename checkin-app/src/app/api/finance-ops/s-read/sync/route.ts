@@ -39,7 +39,7 @@ import { isConfigured, latestSyncRun } from "@/lib/shopifyRead/client";
  * GET on the same path reports the latest run's status — see below.
  */
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (_req, auth) => {
         if (auth.type !== 'session') {
             return apiError("Unauthorized", 401);
@@ -92,7 +92,7 @@ export const POST = withAuth(
  * value it does not recognise (s-read owns that enum and may extend it).
  */
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (_req, auth) => {
         if (auth.type !== 'session') {
             return apiError("Unauthorized", 401);
