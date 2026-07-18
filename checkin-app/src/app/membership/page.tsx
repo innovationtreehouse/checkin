@@ -537,8 +537,11 @@ export default function MembershipPage() {
   // Ask the board's Scholarship Review Team for a payment plan on membership dues.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
+  // Two-way sync to the server flag: a board deny clears isPaymentPlanRequested,
+  // so a one-way latch would leave a denied member stuck on "Requested!" after a
+  // refetch. The optimistic set in requestPaymentPlan still gives instant feedback.
   useEffect(() => {
-    if (state?.process?.isPaymentPlanRequested) setPlanRequested(true);
+    setPlanRequested(!!state?.process?.isPaymentPlanRequested);
   }, [state?.process?.isPaymentPlanRequested]);
 
   const requestPaymentPlan = async () => {

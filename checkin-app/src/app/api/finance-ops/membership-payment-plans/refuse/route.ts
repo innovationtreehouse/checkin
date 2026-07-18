@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { fromWhere } from "@/lib/membership/lifecycle";
 
 // Denies a pending membership scholarship / payment-plan request — the sibling
@@ -33,30 +34,49 @@ export const POST = withAuth(
                 return apiError("Unauthorized", 401);
             }
 
-            // Only act on a genuinely-requested, still-awaiting-payment process, so
-            // denying a stale/nonexistent request is a no-op error, mirroring the
-            // approve route's probe. Transactional true->false guard: a double-deny
-            // (already false) 409s instead of re-writing.
-            const data = { isPaymentPlanRequested: false };
-            const { count } = await prisma.orgMembershipProcess.updateMany({
-                // Deny CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
-                where: { id: processId, isPaymentPlanRequested: true, ...fromWhere('PENDING_PAYMENT') },
-                data,
+            // Conflict of interest: a board member may not deny their OWN household's
+            // request. Sysadmin bypasses. Approve enforces this inside certifyPaymentPlan
+            // (payment.ts) and program refuse checks it at route level — mirror that here.
+            // A nonexistent process → null householdId → no conflict → falls through to the
+            // CAS below, which 409s (not 403), keeping "not found" distinct from "your own".
+            const target = await prisma.orgMembershipProcess.findUnique({
+                where: { id: processId },
+                select: { orgMembership: { select: { householdId: true } } },
             });
-
-            if (count === 0) {
-                return apiError("No pending payment-plan request", 409);
+            if (await hasHouseholdConflict(prisma, auth.user.id, target?.orgMembership?.householdId, { isSysadmin: auth.user.isSysadmin === true })) {
+                return apiError("You cannot deny your own household's payment plan — a sysadmin must.", 403);
             }
 
-            await prisma.auditLog.create({
-                data: {
-                    actorId: auth.user.id,
-                    action: "EDIT",
-                    tableName: "OrgMembershipProcess",
-                    affectedEntityId: processId,
-                    newData: { paymentPlanDenied: true, isPaymentPlanRequested: false },
-                },
+            const data = { isPaymentPlanRequested: false };
+
+            // CAS + audit atomically (archive.ts pattern): a crash between the flag
+            // flip and the audit write would otherwise leave a flag-flipped denial
+            // with no audit row and no way to retry (the guard is already false).
+            // Only act on a genuinely-requested, still-awaiting-payment process, so
+            // denying a stale/nonexistent request is a no-op 409, mirroring approve's
+            // probe. Transactional true->false guard: a double-deny (already false) 409s.
+            const denied = await prisma.$transaction(async (tx) => {
+                const { count } = await tx.orgMembershipProcess.updateMany({
+                    // Deny CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
+                    where: { id: processId, isPaymentPlanRequested: true, ...fromWhere('PENDING_PAYMENT') },
+                    data,
+                });
+                if (count === 0) return false;
+                await tx.auditLog.create({
+                    data: {
+                        actorId: auth.user.id,
+                        action: "EDIT",
+                        tableName: "OrgMembershipProcess",
+                        affectedEntityId: processId,
+                        newData: { paymentPlanDenied: true, isPaymentPlanRequested: false },
+                    },
+                });
+                return true;
             });
+
+            if (!denied) {
+                return apiError("No pending payment-plan request", 409);
+            }
 
             return NextResponse.json({ success: true });
         } catch (error) {
