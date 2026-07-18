@@ -131,6 +131,7 @@ export const PAGES: PageEntry[] = [
   { href: '/system-status/errors', label: 'Errors', section: 'System Status', visible: BOARD },
   { href: '/system-status/audit-log', label: 'Audit Log', section: 'System Status', visible: BOARD },
   { href: '/system-status/links', label: 'Links', section: 'System Status', visible: BOARD },
+  { href: '/system-status/lifecycle', label: 'Lifecycle', section: 'System Status', keywords: 'invariant validate off-diagram drift reconcile enrollment membership state machine', visible: BOARD },
 
   // Settings — board
   { href: '/settings/membership', label: 'Membership Settings', section: 'Settings', visible: BOARD },

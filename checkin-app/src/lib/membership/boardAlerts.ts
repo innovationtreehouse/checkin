@@ -34,6 +34,7 @@ const EXCEPTION_BLURB: Record<string, string> = {
     CANCELLED: "an active membership/enrollment's order was cancelled",
     REVERSED_BEFORE_ACTIVATION: "a payment was refunded/cancelled before the family was activated",
     AMOUNT_MISMATCH: "a payment does not cover the expected dues/price",
+    DISCOUNT_UNAUTHORIZED: "a non-volunteer household's membership order used the volunteer discount code",
     ACTIVE_WITHOUT_PAYMENT: "a membership/enrollment is active with no matching payment on file",
     PAYMENT_UNVERIFIABLE: "an active membership/enrollment records a Shopify order that isn't in the mirror — its payment can't be verified",
 };

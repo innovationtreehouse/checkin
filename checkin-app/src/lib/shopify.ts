@@ -201,7 +201,7 @@ export async function fetchStorefrontProductVariants(productUrl: string): Promis
  * (System Status > Link Status) and best-effort email admins/board. Never
  * throws — callers return false/null regardless of whether this succeeds.
  */
-async function reportShopifyFailure(
+export async function reportShopifyFailure(
     operation: string,
     error: unknown,
     context: Record<string, unknown>,

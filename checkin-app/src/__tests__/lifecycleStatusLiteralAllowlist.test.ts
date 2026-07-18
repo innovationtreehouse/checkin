@@ -89,6 +89,10 @@ const ALLOWLIST: Record<string, string> = {
     'lib/membership/personBgTriggers.ts':
         'PERSON_BG create idempotency guard: where status in {PENDING_BG_REVIEW,BLOCKED}.',
 
+    // ── invariant-driven reconciler (Phase 4) ──
+    'lib/lifecycleDrift.ts':
+        'I1 heal query: where status=ACTIVE,inventoryHeldAt not null — the off-diagram violation set itself (has no StateSet; it is precisely what validate() rejects).',
+
     // ── read / query / probe filters (not yet migrated onto a StateSet.where) ──
     'app/api/facility/trends/route.ts': 'Read query: count ACTIVE enrollments for the trends view.',
     'app/api/membership-audit/compliance/route.ts': 'Read query: compliance count of PENDING_BG_CLEARANCE processes.',

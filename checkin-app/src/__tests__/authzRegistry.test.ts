@@ -129,6 +129,8 @@ const AUTHZ_TESTED = new Set<string>([
     'system-status/health',
     'system-status/links',
     'system-status/links/[id]',
+    // GET deny-path (401 anon / 403 non-board) in lifecycleReconcile.integration.test.ts.
+    'system-status/lifecycle',
 ]);
 
 // Role-gated routes deliberately WITHOUT a negative-authz test. Each entry must
