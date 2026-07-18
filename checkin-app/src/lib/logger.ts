@@ -18,12 +18,16 @@ export async function logBackendError(error: unknown, route?: string, context?: 
         const message = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : undefined;
 
+        // Log stack trace to centralized logging, never to the database
+        if (stack) {
+            console.error(`Backend error at ${route || 'unknown route'}:\n`, stack);
+        }
+
         // 1. Insert the new error log
         await prisma.errorLog.create({
             data: {
                 message,
                 route,
-                stack,
                 context: context ? JSON.parse(JSON.stringify(context)) : undefined, // Ensure it's JSON serializable
             }
         });
