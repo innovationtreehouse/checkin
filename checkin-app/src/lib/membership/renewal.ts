@@ -1,8 +1,6 @@
 import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { emailHouseholdLeads } from "@/lib/emailRecipients";
-import { config } from "@/lib/config";
 import { certifyPaymentPlan, PaymentError } from "./payment";
 import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
@@ -142,9 +140,9 @@ export async function runRenewalSweep(now: Date) {
         // cycle — a member who finished renewal early, or the admin "Grant for coming
         // year" override, both leave a terminal (ACTIVE/ARCHIVED) RENEWAL with
         // stageEnteredAt in this window. Without the second clause a completed renewal
-        // gets re-opened + re-reminded, since terminal rows aren't in-flight.
+        // gets re-opened, since terminal rows aren't in-flight.
         select: {
-            id: true, householdId: true,
+            id: true,
             processes: {
                 where: {
                     kind: "RENEWAL",
@@ -163,7 +161,7 @@ export async function runRenewalSweep(now: Date) {
     let skipped = 0;
     for (const m of memberships) {
         if (m.processes.length > 0) { skipped++; continue; } // already opened this cycle
-        const p = await createRenewalProcess(m.id, m.householdId, now, { remind: true, boundary });
+        const p = await createRenewalProcess(m.id);
         if (p) opened++; else skipped++; // null = concurrent run beat us to it
     }
 
@@ -220,18 +218,23 @@ export async function beginRenewal(processId: number) {
 }
 
 /**
- * Create one PENDING_RENEWAL process (+ audit, optional reminder), or no-op if one
- * is already in flight. The callers' check-then-act is NOT atomic, so this function
- * serializes its own check+insert by locking the parent Membership row (SELECT ...
- * FOR UPDATE): a concurrent sweep/admin-button/double-click blocks until the winner
- * commits, then sees the winner's in-flight process and returns null — no duplicate
- * audit row, no duplicate household reminder. This holds in every environment, not
- * just one provisioned via `migrate deploy` (the partial unique index
- * `membership_one_inflight_renewal` is migration-only — `prisma db push` and the
- * integration test DBs don't have it). The index stays as defense-in-depth and the
- * P2002 catch as a backstop. Returns null when this call lost the race.
+ * Create one PENDING_RENEWAL process (+ audit), or no-op if one is already in flight.
+ * The callers' check-then-act is NOT atomic, so this function serializes its own
+ * check+insert by locking the parent Membership row (SELECT ... FOR UPDATE): a
+ * concurrent sweep/admin-button/double-click blocks until the winner commits, then
+ * sees the winner's in-flight process and returns null — no duplicate audit row.
+ * This holds in every environment, not just one provisioned via `migrate deploy`
+ * (the partial unique index `membership_one_inflight_renewal` is migration-only —
+ * `prisma db push` and the integration test DBs don't have it). The index stays as
+ * defense-in-depth and the P2002 catch as a backstop. Returns null when this call
+ * lost the race.
+ *
+ * Never emails — the machine (sweep, go-live button) never sends a reminder; the
+ * settings/outreach page is the only send surface (see lib/outreach). householdId/now/
+ * boundary dropped from the signature (#PR-2) along with the reminder they only existed
+ * to feed — renewalReminderSentAt is now write-never (column kept, see its schema doc).
  */
-export async function createRenewalProcess(orgMembershipId: number, householdId: number, now: Date, opts: { remind: boolean; boundary: Date }) {
+export async function createRenewalProcess(orgMembershipId: number) {
     let process;
     try {
         process = await prisma.$transaction(async (tx) => {
@@ -243,7 +246,7 @@ export async function createRenewalProcess(orgMembershipId: number, householdId:
             });
             if (existing) return null; // someone else already opened the renewal
             const created = await tx.orgMembershipProcess.create({
-                data: { orgMembershipId, kind: "RENEWAL", status: "PENDING_RENEWAL", renewalReminderSentAt: opts.remind ? now : null },
+                data: { orgMembershipId, kind: "RENEWAL", status: "PENDING_RENEWAL" },
             });
             await tx.auditLog.create({
                 data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "OrgMembershipProcess", affectedEntityId: created.id, newData: { kind: "RENEWAL", status: "PENDING_RENEWAL" } },
@@ -261,25 +264,18 @@ export async function createRenewalProcess(orgMembershipId: number, householdId:
         logger.info("Renewal already in flight for membership %d — concurrent open, skipping", orgMembershipId);
         return null;
     }
-    if (opts.remind) await remindHousehold(householdId, opts.boundary);
     return process;
 }
 
 /**
  * Go-live migration: open a renewal cycle for EVERY active membership that isn't
- * already mid-renewal, ignoring the date window. Reminders are opt-in (default
- * off) to avoid an unexpected mass email blast on the button press — the board
- * can send them deliberately or let the normal cron remind on schedule.
+ * already mid-renewal, ignoring the date window. Never emails — see createRenewalProcess.
  */
-export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?: boolean } = {}) {
-    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, now) : now;
-
+export async function openRenewalsForAllActive() {
     const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
         select: {
             id: true,
-            householdId: true,
             processes: { where: { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL] } }, select: { id: true } },
         },
     });
@@ -288,7 +284,7 @@ export async function openRenewalsForAllActive(now: Date, opts: { sendReminders?
     let skipped = 0;
     for (const m of memberships) {
         if (m.processes.length > 0) { skipped++; continue; }
-        const p = await createRenewalProcess(m.id, m.householdId, now, { remind: !!opts.sendReminders, boundary });
+        const p = await createRenewalProcess(m.id);
         if (p) opened++; else skipped++; // null = concurrent run beat us to it
     }
     return { opened, skipped };
@@ -368,15 +364,4 @@ export async function grantRenewalPayment(
     });
 
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: process.id } });
-}
-
-async function remindHousehold(householdId: number, boundary: Date) {
-    const base = config.baseUrl();
-    const due = boundary.toISOString().slice(0, 10);
-    await emailHouseholdLeads(
-        householdId,
-        "Time to renew your Treehouse membership",
-        `<p>Your household membership is up for renewal by ${due}. Please sign in to renew: <a href="${base}/membership">${base}/membership</a></p>`,
-        "Renewal reminder failed:",
-    );
 }

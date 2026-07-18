@@ -55,6 +55,7 @@ export const GET = withAuth(
                 lastBackgroundCheck: p.lastBackgroundCheck,
                 isMember: personRecordIsActiveOrgMember(p),
                 ...rolesToFlags(p.roles),
+                emailSuppressed: p.emailSuppressed,
                 household: p.household,
             }));
 
