@@ -10,6 +10,7 @@ import { openConfigIssues } from "@/lib/configHealth";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
 import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -328,7 +329,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         for (const [programId, evs] of upcomingByProgram) for (const e of evs) eventProgram.set(e.id, programId);
         const rsvpRows = upcomingEventIds.length
             ? await prisma.rSVP.findMany({
-                  where: { eventId: { in: upcomingEventIds } },
+                  where: { eventId: { in: upcomingEventIds }, person: LIVE_PERSON },
                   select: { eventId: true, personId: true, status: true },
               })
             : [];
@@ -378,7 +379,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // Shopify reconciliation queue, and the board is already emailed when a
             // hold fails, so they don't need a green "approval pending" pill.
             prisma.programParticipant.count({
-                where: { status: "PENDING", isPaymentPlanRequested: true, inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null },
+                where: { status: "PENDING", isPaymentPlanRequested: true, inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null, person: LIVE_PERSON },
             }),
             // Households awaiting board approval of a membership-dues payment plan.
             prisma.orgMembershipProcess.count({

@@ -90,6 +90,25 @@ describe('POST /api/scan', () => {
         const json = await res.json();
         expect(json.error).toBe('A valid numeric participantId is required.');
     });
+    it('should 409 when the participant is a merged-away tombstone, without writing a badge log or visit', async () => {
+        (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
+        const req = new Request('http://localhost/api/scan', {
+            method: 'POST',
+            body: JSON.stringify({ participantId: 1 })
+        }) as unknown as import('next/server').NextRequest;
+
+        (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: 99 });
+
+        const res = await POST(req);
+        expect(res.status).toBe(409);
+
+        const json = await res.json();
+        expect(json.error).toContain('merged record');
+        expect(json.error).toContain('99');
+        expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        expect(prisma.visit.findFirst).not.toHaveBeenCalled();
+    });
+
     it('should silently ignore repeated scans within 3 seconds', async () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
         const req = new Request('http://localhost/api/scan', {

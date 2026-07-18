@@ -7,7 +7,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
-import MergeParticipants from "../page";
+import MergeParticipants, { MergedBadge } from "../page";
 
 beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
@@ -49,7 +49,7 @@ describe("membership-ops/participants/merge page", () => {
     await selectBoth();
 
     expect(await screen.findByText("Keep and augment")).toBeInTheDocument();
-    expect(screen.getByText("Merge and delete")).toBeInTheDocument();
+    expect(screen.getByText("Merge and tombstone")).toBeInTheDocument();
     // Alice scores higher (visits + googleId) so she's recommended to keep.
     expect(screen.getByRole("button", { name: "Proceed to Preview" })).toBeInTheDocument();
   });
@@ -88,12 +88,15 @@ describe("membership-ops/participants/merge page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
     expect(await screen.findByText("Preview & Confirm Merge")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/membership-ops/participants/merge",
-        expect.objectContaining({ method: "POST", body: JSON.stringify({ keepId: 1, mergeId: 2 }) }),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", email: "keep" } }),
+        }),
       ),
     );
     expect(await screen.findByText("Merge Successful!")).toBeInTheDocument();
@@ -135,13 +138,13 @@ describe("membership-ops/participants/merge page", () => {
     expect(within(belleCard).getByText(/Google Auth: Yes/)).toBeInTheDocument();
 
     const zackCard = screen.getByText("Zack Zero (ID: 30)").closest(".mantine-Card-root") as HTMLElement;
-    expect(within(zackCard).getByText("Merge and delete")).toBeInTheDocument();
+    expect(within(zackCard).getByText("Merge and tombstone")).toBeInTheDocument();
     expect(within(zackCard).getByText(/Household: None/)).toBeInTheDocument();
     expect(within(zackCard).getByText(/Google Auth: No/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Swap Kept / Merged" }));
     expect(within(zackCard).getByText("Keep and augment")).toBeInTheDocument();
-    expect(within(belleCard).getByText("Merge and delete")).toBeInTheDocument();
+    expect(within(belleCard).getByText("Merge and tombstone")).toBeInTheDocument();
   });
 
   it("lets you change a selected participant back to search", async () => {
@@ -242,18 +245,18 @@ describe("membership-ops/participants/merge page", () => {
     await screen.findByText("Preview & Confirm Merge");
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Cannot merge." }) })) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     expect(await screen.findByText("Cannot merge.")).toBeInTheDocument();
 
     // Network failure surfaces as a persistent toast, and never leaks the raw JS error text.
     global.fetch = jest.fn(() => Promise.reject(new Error("Connection lost"))) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(
       expect.objectContaining({ color: "red", message: "Network error", autoClose: false })));
     expect(screen.queryByText("Connection lost")).not.toBeInTheDocument();
 
     global.fetch = jest.fn(() => Promise.reject("not an Error")) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     await waitFor(() => expect(notifications.show).toHaveBeenCalledTimes(2));
   });
 
@@ -265,7 +268,7 @@ describe("membership-ops/participants/merge page", () => {
     await screen.findByText("Keep and augment");
     fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
     await screen.findByText("Preview & Confirm Merge");
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     await screen.findByText("Merge Successful!");
 
     fireEvent.click(screen.getByRole("button", { name: "Merge More" }));
@@ -283,5 +286,77 @@ describe("membership-ops/participants/merge page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText("Keep and augment")).toBeInTheDocument();
+  });
+
+  // Matrix 19
+  it("renders a radio group only for true conflicts (shared null phone gets no radio)", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+    await selectBoth();
+    await screen.findByText("Keep and augment");
+
+    // Alice/Bob differ on name+email; both share phone: null.
+    const picker = screen.getByText("Resolve conflicting fields").closest(".mantine-Card-root") as HTMLElement;
+    expect(within(picker).getByText("Name")).toBeInTheDocument();
+    expect(within(picker).getByText("Email")).toBeInTheDocument();
+    expect(within(picker).queryByText("Phone")).not.toBeInTheDocument();
+    expect(within(picker).queryByText("Google Account")).not.toBeInTheDocument();
+    expect(within(picker).queryByText("Date of Birth")).not.toBeInTheDocument();
+  });
+
+  // Matrix 20
+  it("defaults each conflict radio to the keeper's value; swapping resets defaults to the new keeper", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+    await selectBoth();
+    await screen.findByText("Keep and augment");
+
+    // Alice out-scores Bob (visits + googleId), so she's the default keeper.
+    expect(screen.getByRole("radio", { name: "Alice Adams" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "alice@example.com" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Swap Kept / Merged" }));
+
+    expect(screen.getByRole("radio", { name: "Bob Adams" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "bob@example.com" })).toBeChecked();
+  });
+
+  // Matrix 21
+  it("includes the chosen fieldChoices in the merge POST body", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+    await selectBoth();
+    await screen.findByText("Keep and augment");
+
+    // Pick the tombstone's (Bob's) email instead of the keeper's default.
+    fireEvent.click(screen.getByRole("radio", { name: "bob@example.com" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
+    await screen.findByText("Preview & Confirm Merge");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/merge",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", email: "merge" } }),
+        }),
+      ),
+    );
+  });
+});
+
+// Matrix 22
+describe("MergedBadge", () => {
+  it("renders the badge only for a merged (tombstoned) person", () => {
+    renderWithProviders(<MergedBadge person={{ mergedIntoId: null }} />);
+    expect(screen.queryByText("merged")).not.toBeInTheDocument();
+
+    renderWithProviders(<MergedBadge person={{ mergedIntoId: 7 }} />);
+    expect(screen.getByText("merged")).toBeInTheDocument();
   });
 });

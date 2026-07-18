@@ -327,7 +327,10 @@ describe('AuditLog Integration Tests', () => {
 
         const req = new Request('http://localhost:4000/api/membership-ops/participants/merge', {
             method: 'POST',
-            body: JSON.stringify({ keepId: keep.id, mergeId: merge.id }),
+            // name/email differ between the two fixtures (real conflicts) — resolve
+            // both to "keep" so this audit-log assertion doesn't depend on the
+            // field-picker's validation, which is exercised by its own suite.
+            body: JSON.stringify({ keepId: keep.id, mergeId: merge.id, fieldChoices: { name: 'keep', email: 'keep' } }),
         });
 
         const res = await mergeParticipants(req as never);

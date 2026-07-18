@@ -51,6 +51,13 @@ export const POST = withKiosk(
             return apiError(`Participant ${participantId} not found.`, 404);
         }
 
+        // A badge still encoding a tombstone's id must not resolve the dead record —
+        // reject rather than forward (forwarding would have to walk merge chains and
+        // would hide that the badge needs reissuing; rejecting is chain-proof).
+        if (participant.mergedIntoId != null) {
+            return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+        }
+
         // Household lead check: verify participant is in the same household
         if (pendingHouseholdCheck && auth.type === 'session') {
             if (participant.householdId !== auth.user.householdId) {
