@@ -1,31 +1,54 @@
 import { NextResponse } from "next/server";
-import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
-import { withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { STATES } from "@/lib/programs/enrollmentState";
-import { resolveHouseholdRecipients } from "@/lib/emailRecipients";
+import { resolveHouseholdRecipients, emailBoardMembers } from "@/lib/emailRecipients";
 import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 
+/**
+ * Non-payment sweep for PENDING_UNPAID enrollments: warns the household at day
+ * 1/3/6 and flags day-7+ rows as overdue for the board. The cron NEVER removes
+ * anyone — reviewer decision: this is core customer service, and a computer
+ * isn't enough here. Removal is a human action, done by the board via the
+ * existing program-participants admin surface (`DELETE
+ * /api/programs/[id]/participants`), which routes through the hold-ledger
+ * release helper in `lib/program/capacity.ts` (see
+ * docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md §3).
+ */
+
 /** Warning copy (day 1/3/6) — identical body across all three, only the subject escalates. */
 function warningHtml(programName: string): string {
-    return `<p>If not paid, your spot in <strong>${escapeHtml(programName)}</strong> will be freed up. If you need a scholarship or payment plan, request one from the program's page — the Scholarship Review Team will follow up.</p>`;
-}
-
-function removalHtml(programName: string, diffDays: number): string {
-    return `<p>You have been removed from <strong>${escapeHtml(programName)}</strong> due to non-payment after ${diffDays}+ days. The seat has been released. If you still want to participate, you can re-enroll and pay, or request a scholarship or payment plan from the program's page.</p>`;
+    return `<p>If not paid, your spot in <strong>${escapeHtml(programName)}</strong> may be released by the board. If you need a scholarship or payment plan, request one from the program's page — the Scholarship Review Team will follow up.</p>`;
 }
 
 /** Resolve household leads ∪ participant and fan out. No household → nothing to email
  *  (person.householdId is a required column, but stays defensive here since this is
- *  the removal/warning path, not a place to let a missing recipient throw). */
+ *  the warning path, not a place to let a missing recipient throw). */
 async function notifyHousehold(householdId: number | null | undefined, personId: number, subject: string, html: string): Promise<void> {
     if (!householdId) return;
     const recipients = await resolveHouseholdRecipients(householdId, personId);
     // sendEmail never rejects (failures resolve to `false` and are logged internally) —
     // fire-and-forget fan-out, nothing left to catch here.
     await Promise.all(recipients.map((r) => sendEmail(r.email, subject, html)));
+}
+
+interface DigestRow { name: string; programName: string; diffDays: number; }
+
+function digestListItems(rows: DigestRow[]): string {
+    return rows.map((r) => `<li>${escapeHtml(r.name)} — ${escapeHtml(r.programName)} (day ${r.diffDays})</li>`).join("");
+}
+
+/** One digest per cron run to the board — never per-person — so day-3 and overdue
+ *  rows land in front of a human instead of a removal happening unattended. */
+async function sendLeadershipDigest(approaching: DigestRow[], overdue: DigestRow[]): Promise<void> {
+    if (approaching.length === 0 && overdue.length === 0) return;
+    const subject = `Non-payment digest: ${approaching.length} approaching deadline, ${overdue.length} overdue`;
+    const html = `<p><strong>Approaching deadline (3+ days unpaid, final warning at day 6)</strong></p>`
+        + `<ul>${digestListItems(approaching)}</ul>`
+        + `<p><strong>Overdue (7+ days) — action needed: remove the enrollment or contact the household</strong></p>`
+        + `<ul>${digestListItems(overdue)}</ul>`;
+    await emailBoardMembers(subject, html, "Non-payment leadership digest failed:");
 }
 
 export const GET = withCron(async () => {
@@ -37,7 +60,7 @@ export const GET = withCron(async () => {
                 // which is what keeps HOLD_FAILED (req=true) and denied applicants
                 // (den≠null, governed by the grace-expiry cron) out of this sweep —
                 // a denial never resets pendingSince, so without that they'd be
-                // kicked the night after denial.
+                // flagged the night after denial.
                 ...STATES.PENDING_UNPAID.where,
                 pendingSince: { not: null }
             },
@@ -47,9 +70,10 @@ export const GET = withCron(async () => {
             }
         });
 
-        let kickedCount = 0;
+        let overdueCount = 0;
         let warnedCount = 0;
-        const toDelete: Array<(typeof pendingParticipants)[number] & { diffDays: number }> = [];
+        const approachingDigest: DigestRow[] = [];
+        const overdueDigest: DigestRow[] = [];
 
         for (const record of pendingParticipants) {
             if (!record.pendingSince) continue;
@@ -58,12 +82,9 @@ export const GET = withCron(async () => {
             const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); // Calculate total full days
 
             if (diffDays >= 7) {
-                // Collect for removal below (denied scholarship applicants are
-                // excluded by the query above; anything caught here is an
-                // ordinary non-payer, though withdrawAndReleaseHold still
-                // handles a held seat correctly if one slips through).
-                toDelete.push({ ...record, diffDays });
-                kickedCount++;
+                // No longer auto-removed — flagged for the board to act on.
+                overdueCount++;
+                overdueDigest.push({ name: record.person.name ?? "(no name on file)", programName: record.program.name, diffDays });
             } else if (diffDays === 6 || diffDays === 3 || diffDays === 1) {
                 warnedCount++;
                 const subject = diffDays === 6
@@ -72,39 +93,13 @@ export const GET = withCron(async () => {
                         ? `Please pay for ${record.program.name} within 4 days`
                         : `Reminder: Payment required for ${record.program.name}`;
                 await notifyHousehold(record.person.householdId, record.personId, subject, warningHtml(record.program.name));
-            }
-        }
-
-        // Removed one row at a time (not a bulk deleteMany) so the hold-ledger
-        // release (withdrawAndReleaseHold) runs per participant, and one bad row
-        // can't block the rest of the sweep.
-        for (const record of toDelete) {
-            try {
-                await withdrawAndReleaseHold(record.programId, record.personId, record.program);
-                logger.info(`[CRON] Removed participant ${record.person.name} from ${record.program.name} after ${record.diffDays} days.`);
-
-                // Email only AFTER the removal is confirmed. withdrawAndReleaseHold can
-                // throw (row already gone — P2025 — or a real failure that leaves the
-                // row in place for next run's retry); sending before it returns would
-                // lie about a removal that didn't happen.
-                await notifyHousehold(
-                    record.person.householdId,
-                    record.personId,
-                    `Removed from ${record.program.name} due to non-payment`,
-                    removalHtml(record.program.name, record.diffDays),
-                );
-            } catch (err) {
-                // P2025 = already removed by another path (e.g. self-withdraw)
-                // between this sweep's read and now — benign, skip (no email either).
-                if (!isPrismaP2025(err)) {
-                    logger.error(`[CRON] Failed to remove pending participant ${record.personId} from program ${record.programId}:`, err);
+                if (diffDays === 3) {
+                    approachingDigest.push({ name: record.person.name ?? "(no name on file)", programName: record.program.name, diffDays });
                 }
             }
         }
 
-        return NextResponse.json({ success: true, processed: pendingParticipants.length, kicked: kickedCount, warned: warnedCount });
-});
+        await sendLeadershipDigest(approachingDigest, overdueDigest);
 
-function isPrismaP2025(err: unknown): boolean {
-    return typeof err === 'object' && err !== null && 'code' in err && (err as { code?: unknown }).code === 'P2025';
-}
+        return NextResponse.json({ success: true, processed: pendingParticipants.length, warned: warnedCount, overdue: overdueCount });
+});

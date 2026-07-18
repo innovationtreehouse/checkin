@@ -136,11 +136,13 @@ against *failed calls* but not against *crashes between the two steps*:
   periodic reconcile job is deliberately deferred until the drift is observed in
   practice.
 
-- **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self or admin removal;
-  the same route handles both) and the non-payment kick
-  (`cron/pending-participants`; denied-and-still-PENDING participants are excluded
-  from the kick via `paymentPlanDeniedAt: null` — their timeline belongs to the
-  grace-expiry cron in (c)) both funnel through this.
+- **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self, admin, or
+  board removal; the same route handles all three) funnels through this. This is
+  also now the *only* path a non-payment kick takes: `cron/pending-participants`
+  no longer removes anyone itself (reviewer decision — removal is a human,
+  board-driven action, not something a cron does unattended). The cron warns the
+  household at day 1/3/6 and, from day 3 on, digests the board so a person
+  decides whether to remove the enrollment via this same admin route.
 - **(b) Normal payment** — the `orders/paid` webhook's activation path. A denied
   applicant who pays anyway makes Shopify auto-decrement a *second* unit for the same
   seat (the application's hold already took one out); the webhook releases the hold
@@ -194,7 +196,7 @@ pending-participants cron (rows below) calls `resolveHouseholdRecipients` direct
 | Membership deny | — | **does not exist** | — |
 | Manual-hold | `…/payment-plans/manual-hold` | — | **no email** |
 | Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (non-payer household: leads ∪ participant), ungated |
-| Non-payment removal (day 7+, after removal confirmed) | `GET /api/cron/pending-participants` | — | ✅ removal notice (leads ∪ participant), ungated |
+| Leadership digest (board) | `GET /api/cron/pending-participants` | ✅ all board (`emailBoardMembers`) — one digest per run, day-3 + day-7+ tiers | — |
 
 (The cron rows are not scholarship-applicant emails — the sweep excludes requested and
 denied rows by design; they are ordinary non-payment notices and do not count against the
@@ -216,13 +218,21 @@ side has **only approve** — there is no membership-deny route. Now that neithe
 deny sends automatic email either way, this asymmetry only matters for the manual process:
 the board has no dedicated membership-deny action to hang a manual communication step off of.
 
-**5. The pending-participants cron's warning/removal emails are real** (previously
-`[EMAIL DISPATCH]` log stubs while the kick itself really fired): day-1/3/6 warnings and
-the day-7+ removal notice send to leads ∪ participant, ungated (see table above). The
-removal notice is ordered deliberately: it sends **only after `withdrawAndReleaseHold`
-returns without throwing** — not from the classification pass that decides a row is 7+
-days old. A benign `P2025` (already removed by another path) or any other delete failure
-sends **no** email; the row survives to retry (or was already gone) on the next run.
+**5. The pending-participants cron never removes anyone — reviewer decision (this is core
+customer service and a computer isn't enough here).** Day-1/3/6 household warnings send to
+leads ∪ participant, ungated, exactly as before (previously `[EMAIL DISPATCH]` log stubs
+while the kick itself really fired — the warnings are real sends, see table above). Day-7+
+rows are classified `overdue`, not deleted; removal is a manual board action via the
+existing `DELETE /api/programs/[id]/participants` admin surface (§3(a)), which still routes
+through `withdrawAndReleaseHold` for the hold-ledger release. Any communication that
+accompanies a manual removal is manual too, the same way the board's manual
+approve/deny/scholarship communications work (§5.2) — there is no automatic
+"you've been removed" email. **In addition to the day-1/3/6 warnings, the cron sends one
+leadership digest per run** (`emailBoardMembers`, subject `Non-payment digest: <a>
+approaching deadline, <b> overdue`) whenever there's at least one day-3 ("approaching
+deadline") or day-7+ ("overdue") row, listing each by person/program/day-count so the
+board can decide whether to remove an enrollment or reach out to the household. Nothing
+sends when both lists are empty.
 
 ## 6. Related
 
