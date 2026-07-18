@@ -348,6 +348,19 @@ describe('Membership payment-plan routes', () => {
     });
 
     describe('email behavior', () => {
+        // Pin the review-team address so these counts are hermetic: unset, the
+        // fallback emails EVERY isBoardMember row, and other suites' board
+        // personas share the DB in a full CI run.
+        const REVIEW_TEAM = `review-team-${TAG}@example.com`;
+        let prevNotify: string | null = null;
+        beforeAll(async () => {
+            const s = await prisma.boardSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+            prevNotify = s.scholarshipNotifyEmail;
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: REVIEW_TEAM } });
+        });
+        afterAll(async () => {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: prevNotify } });
+        });
         it('a fresh request sends the review-team notify and the household ack, each once', async () => {
             const fresh = await makeProc('EmailFreshReq', { requested: false, withLead: true });
             mockSession.mockResolvedValue({ user: { id: fresh.personId } });
@@ -356,7 +369,7 @@ describe('Membership payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             const sent = __getSentEmails();
-            expect(sent.filter((e) => e.subject.includes('New membership scholarship'))).toHaveLength(1);
+            expect(sent.filter((e) => e.subject.includes('New membership scholarship') && e.to === REVIEW_TEAM)).toHaveLength(1);
             expect(sent.filter((e) => e.subject === 'We received your scholarship / payment-plan request')).toHaveLength(1);
         });
 
@@ -369,18 +382,23 @@ describe('Membership payment-plan routes', () => {
             expect(__getSentEmails()).toHaveLength(0);
         });
 
-        // User decision: an applicant receives EXACTLY ONE automatic email (the
-        // request ack, covered above). Certify/approve sends NO automatic email —
-        // the board communicates decisions manually — even though leadProcessId's
-        // household lead (a gate-worthy recipient) exists.
-        it('certify (approve) sends no automatic email', async () => {
+        // User decision: an applicant receives EXACTLY ONE automatic *scholarship*
+        // email (the request ack, covered above). Certify/approve sends NO automatic
+        // scholarship-decision email — the board communicates decisions manually —
+        // even though leadProcessId's household lead (a gate-worthy recipient) exists.
+        // The standard activation "welcome — your membership is active" email is
+        // orthogonal to the scholarship decision and IS expected here.
+        it('certify (approve) sends no automatic scholarship email', async () => {
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
             __clearSentEmails();
             const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: 'Board approved scholarship' }) }));
             expect(res.status).toBe(200);
 
-            expect(__getSentEmails()).toHaveLength(0);
+            const scholarshipEmails = __getSentEmails().filter(
+                (e) => !e.subject.startsWith('Welcome to the Treehouse'),
+            );
+            expect(scholarshipEmails).toHaveLength(0);
         });
 
         // User decision: deny is deliberately silent — no automatic applicant email

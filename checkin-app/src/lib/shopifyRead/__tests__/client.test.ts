@@ -131,6 +131,68 @@ describe('latestSyncRun', () => {
 /** The SQL of the Nth query, whitespace-collapsed so indentation doesn't matter. */
 const sqlOf = (call: number) => (queryMock.mock.calls[call][0] as string).replace(/\s+/g, ' ');
 
+describe('match-audit reads', () => {
+    it('ordersForVariants filters to non-test orders with a live line in the requested variant set', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersForVariants(['111', '222']);
+
+        const sql = sqlOf(0);
+        expect(sql).toContain('test = false');
+        expect(sql).toContain('removed = false');
+        expect(sql).toContain(`variant_legacy_id = ANY($1::text[])`);
+        expect(queryMock.mock.calls[0][1]).toEqual([['111', '222']]);
+    });
+
+    it('ordersForVariants projects discount_codes', async () => {
+        queryMock.mockResolvedValue({ rows: [] });
+        await freshClient().ordersForVariants(['111']);
+        expect(sqlOf(0)).toContain('discount_codes AS "discountCodes"');
+    });
+
+    it('ordersForVariants short-circuits on an empty variant set without querying', async () => {
+        expect(await freshClient().ordersForVariants([])).toEqual([]);
+        expect(queryMock).not.toHaveBeenCalled();
+    });
+
+    it('lineVariantStats counts only live lines of real (non-test) orders', async () => {
+        queryMock.mockResolvedValue({ rows: [{ lines: 5, withVariant: 2 }] });
+        expect(await freshClient().lineVariantStats()).toEqual({ lines: 5, withVariant: 2 });
+        expect(sqlOf(0)).toContain('removed = false');
+        // Same test-order rule as ordersForVariants: test lines must not count as
+        // variant coverage, or they'd mask an unbackfilled real mirror.
+        expect(sqlOf(0)).toContain('test = false');
+        expect(sqlOf(0)).toContain('JOIN shop_order');
+    });
+
+    it('orderLegacyIdsPresent returns the found ids as a set, ignoring test orders', async () => {
+        queryMock.mockResolvedValue({ rows: [{ legacyId: '900' }] });
+        expect(await freshClient().orderLegacyIdsPresent(['900', '901'])).toEqual(new Set(['900']));
+        // A test-mode order must not serve as an activation's payment basis.
+        expect(sqlOf(0)).toContain('test = false');
+    });
+
+    it('minRealOrderLegacyId returns the mirror low-water mark', async () => {
+        queryMock.mockResolvedValue({ rows: [{ minLegacyId: '4200' }] });
+        expect(await freshClient().minRealOrderLegacyId()).toBe(BigInt(4200));
+        expect(sqlOf(0)).toContain('min(legacy_id::bigint)');
+        expect(sqlOf(0)).toContain('test = false');
+        // Guards the ::bigint cast against a non-numeric legacy_id, which would
+        // otherwise throw for the whole aggregate and 500 the audit.
+        expect(sqlOf(0)).toContain(`legacy_id ~ '^\\d+$'`);
+    });
+
+    it('minRealOrderLegacyId returns null for an empty mirror', async () => {
+        queryMock.mockResolvedValue({ rows: [{ minLegacyId: null }] });
+        expect(await freshClient().minRealOrderLegacyId()).toBeNull();
+    });
+
+    it('minRealOrderLegacyId returns null without opening a pool when unwired', async () => {
+        delete process.env.SHOPIFY_READ_DATABASE_URL;
+        expect(await freshClient().minRealOrderLegacyId()).toBeNull();
+        expect(poolCtor).not.toHaveBeenCalled();
+    });
+});
+
 describe('countSyncRuns (the diagnose route\'s probe)', () => {
     it('returns the run count', async () => {
         queryMock.mockResolvedValue({ rows: [{ runs: 3 }] });

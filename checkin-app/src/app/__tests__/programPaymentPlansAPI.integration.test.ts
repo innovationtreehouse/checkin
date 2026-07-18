@@ -969,14 +969,22 @@ describe('Program payment-plan routes', () => {
             return { id: p.id, email };
         }
 
+        let prevNotify: string | null = null;
         beforeAll(async () => {
             const p = await prisma.program.create({
                 data: { name: `PP Email Behavior Program ${TAG}`, enrollmentStatus: 'OPEN' },
             });
             emailProgramId = p.id;
+            // Pin the review-team address list so the exact-recipients assertions are
+            // hermetic: unset, the fallback emails EVERY isBoardMember row, and other
+            // suites' board personas share the DB in a full CI run.
+            const settings = await prisma.boardSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+            prevNotify = settings.scholarshipNotifyEmail;
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: REVIEW_TEAM_EMAILS.join(', ') } });
         });
 
         afterAll(async () => {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: prevNotify } });
             await prisma.programParticipant.deleteMany({ where: { programId: emailProgramId } });
             await prisma.person.deleteMany({ where: { id: { in: createdPersonIds } } });
             await prisma.household.deleteMany({ where: { id: { in: createdHouseholdIds } } });
