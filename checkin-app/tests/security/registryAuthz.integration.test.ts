@@ -104,6 +104,7 @@ describe('Registry route admission gates', () => {
             isBoardMember: false,
             isKeyholder: false,
             isBackgroundCheckReviewer: false,
+            isOperations: false,
         };
 
         // For the public route's 2xx sanity (programs/[id]). orgMemberOnly defaults

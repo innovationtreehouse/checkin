@@ -2,17 +2,23 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, Tooltip, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
+import { RoleBadge, roleLabel } from "@/components/ui/RoleBadge";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 type HouseholdRef = {
   id: number;
   name: string | null;
   householdMembers: { id: number; name: string | null; email: string | null }[];
 };
+
+type RoleFlag = "isSysadmin" | "isBoardMember" | "isKeyholder" | "isBackgroundCheckReviewer" | "isOperations";
+const ROLE_FLAGS: RoleFlag[] = ["isSysadmin", "isBoardMember", "isKeyholder", "isBackgroundCheckReviewer", "isOperations"];
 
 type PersonRow = {
   id: number;
@@ -23,6 +29,11 @@ type PersonRow = {
   isDeclaredAdult?: boolean;
   lastBackgroundCheck?: string | null;
   household?: HouseholdRef | null;
+  isSysadmin?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
+  isBackgroundCheckReviewer?: boolean;
+  isOperations?: boolean;
 };
 
 export default function AdminParticipantsIndex() {
@@ -32,6 +43,10 @@ export default function AdminParticipantsIndex() {
   const [sortBy, setSortBy] = useState<"id" | "name" | "email" | "household">("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const router = useRouter();
+  // Typed session user for the client-side role-edit actor matrix (UX only — the
+  // endpoint is the real guard). Empty allowed list = any authenticated user; the
+  // membership-ops layout already enforces the page's real access gate.
+  const { user: me } = useRequireRole([]);
 
   const toggleSort = (col: "id" | "name" | "email" | "household") => {
     if (sortBy === col) {
@@ -96,8 +111,106 @@ export default function AdminParticipantsIndex() {
   // Admin edit of household's own info (name, address, emergency contact)
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
 
+  // Edit Roles state
+  const [rolesTarget, setRolesTarget] = useState<PersonRow | null>(null);
+  const [rolesForm, setRolesForm] = useState<Record<RoleFlag, boolean>>({
+    isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, isOperations: false,
+  });
+  const [savingRoles, setSavingRoles] = useState(false);
+
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     notifications.show({ message, color: type === 'error' ? 'red' : 'green', autoClose: type === 'error' ? false : 4000 });
+  };
+
+  const openRolesModal = (p: PersonRow) => {
+    setRolesTarget(p);
+    setRolesForm({
+      isSysadmin: !!p.isSysadmin,
+      isBoardMember: !!p.isBoardMember,
+      isKeyholder: !!p.isKeyholder,
+      isBackgroundCheckReviewer: !!p.isBackgroundCheckReviewer,
+      isOperations: !!p.isOperations,
+    });
+  };
+
+  const closeRolesModal = () => setRolesTarget(null);
+
+  // Client-side mirror of the server's authority matrix (§4.3) — UX only, so
+  // switches the actor can't legally flip are disabled with an explanation.
+  // The endpoint enforces the real rule regardless of what this renders.
+  const roleSwitchState = (field: RoleFlag): { disabled: boolean; reason?: string } => {
+    if (me?.isBoardMember) return { disabled: false };
+    if (me?.isSysadmin) {
+      if (field === 'isBoardMember' && rolesTarget?.isBoardMember) {
+        return { disabled: true, reason: 'Only board members can remove board membership' };
+      }
+      return { disabled: false };
+    }
+    return { disabled: true, reason: 'You do not have permission to edit roles' };
+  };
+
+  const handleSaveRoles = () => {
+    if (!rolesTarget) return;
+    const target = rolesTarget;
+    const current: Record<RoleFlag, boolean> = {
+      isSysadmin: !!target.isSysadmin,
+      isBoardMember: !!target.isBoardMember,
+      isKeyholder: !!target.isKeyholder,
+      isBackgroundCheckReviewer: !!target.isBackgroundCheckReviewer,
+      isOperations: !!target.isOperations,
+    };
+    const delta: Partial<Record<RoleFlag, boolean>> = {};
+    for (const field of ROLE_FLAGS) {
+      if (rolesForm[field] !== current[field]) delta[field] = rolesForm[field];
+    }
+    if (Object.keys(delta).length === 0) {
+      closeRolesModal();
+      return;
+    }
+    const deltaText = (Object.keys(delta) as RoleFlag[])
+      .map((f) => `${delta[f] ? 'Grant' : 'Revoke'} ${roleLabel(f)}`)
+      .join('; ');
+    modals.openConfirmModal({
+      title: "Update roles?",
+      children: (
+        <Text size="sm">
+          {deltaText} — for <strong>{target.name || target.email}</strong>
+        </Text>
+      ),
+      labels: { confirm: 'Save', cancel: 'Cancel' },
+      onConfirm: () => saveRoles(target, delta),
+    });
+  };
+
+  const saveRoles = async (target: PersonRow, delta: Partial<Record<RoleFlag, boolean>>) => {
+    setSavingRoles(true);
+    const previous = { ...target };
+    // Optimistic update
+    setResults(results.map((p) => (p.id === target.id ? { ...p, ...delta } : p)));
+    try {
+      const res = await fetch('/api/roles', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: target.id, ...delta }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setResults(results.map((p) => (p.id === target.id ? { ...p, ...data.user } : p)));
+        showNotification("Roles updated.");
+        closeRolesModal();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        // Revert optimistic update
+        setResults(results.map((p) => (p.id === target.id ? previous : p)));
+        showNotification(data.error || "Failed to update roles", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      setResults(results.map((p) => (p.id === target.id ? previous : p)));
+      showNotification("Network error updating roles", "error");
+    } finally {
+      setSavingRoles(false);
+    }
   };
 
   const closeAssign = () => {
@@ -220,6 +333,7 @@ export default function AdminParticipantsIndex() {
                         </Table.Th>
                       );
                     })}
+                    <Table.Th>Roles</Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -230,6 +344,13 @@ export default function AdminParticipantsIndex() {
                       <Table.Td fw={600}>{p.name}</Table.Td>
                       <Table.Td>{p.email || <Text span c="dimmed">No email</Text>}</Table.Td>
                       <Table.Td>{p.household?.name || <Text span c="dimmed">No household</Text>}</Table.Td>
+                      <Table.Td>
+                        <Group gap={4} wrap="wrap">
+                          {ROLE_FLAGS.filter((f) => p[f]).map((f) => (
+                            <RoleBadge key={f} role={f} size="sm" />
+                          ))}
+                        </Group>
+                      </Table.Td>
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
                           {p.household ? (
@@ -247,6 +368,9 @@ export default function AdminParticipantsIndex() {
                             setEditModalOpen(true);
                           }}>
                             Details
+                          </Button>
+                          <Button size="xs" fz={15} variant="default" onClick={() => openRolesModal(p)}>
+                            Edit roles
                           </Button>
                         </Group>
                       </Table.Td>
@@ -392,6 +516,39 @@ export default function AdminParticipantsIndex() {
           ));
         }}
       />
+
+      {/* Edit roles modal */}
+      <Modal opened={rolesTarget !== null} onClose={closeRolesModal} title={<Text span fw={700} fz="lg">Edit Roles — {rolesTarget?.name || rolesTarget?.email}</Text>}>
+        <Stack>
+          {ROLE_FLAGS.map((field) => {
+            const { disabled, reason } = roleSwitchState(field);
+            const switchEl = (
+              <Switch
+                label={roleLabel(field)}
+                checked={rolesForm[field]}
+                disabled={disabled}
+                onChange={(e) => {
+                  const checked = e.currentTarget.checked;
+                  setRolesForm((f) => ({ ...f, [field]: checked }));
+                }}
+              />
+            );
+            return (
+              <div key={field}>
+                {disabled && reason ? (
+                  <Tooltip label={reason}>
+                    <Box>{switchEl}</Box>
+                  </Tooltip>
+                ) : switchEl}
+              </div>
+            );
+          })}
+        </Stack>
+        <Group justify="flex-end" mt="lg">
+          <Button variant="default" onClick={closeRolesModal} disabled={savingRoles}>Cancel</Button>
+          <Button onClick={handleSaveRoles} disabled={savingRoles} loading={savingRoles}>Save</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

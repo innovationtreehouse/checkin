@@ -14,6 +14,7 @@ declare module "next-auth" {
       isKeyholder?: boolean;
       isBoardMember?: boolean;
       isBackgroundCheckReviewer?: boolean;
+      isOperations?: boolean;
       householdId?: number | null;
       householdLead?: boolean;
       // Program ids this user is the lead mentor of. Client-side row gate only
@@ -35,6 +36,7 @@ declare module "next-auth" {
     isKeyholder?: boolean;
     isBoardMember?: boolean;
     isBackgroundCheckReviewer?: boolean;
+    isOperations?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
     toolStatuses?: { toolId: number; level: string }[];
@@ -57,6 +59,7 @@ declare module "next-auth/jwt" {
     isKeyholder?: boolean;
     isBoardMember?: boolean;
     isBackgroundCheckReviewer?: boolean;
+    isOperations?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
     programsLed?: number[];

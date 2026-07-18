@@ -405,6 +405,7 @@ export const authOptions: NextAuthOptions = {
                 session.user.isKeyholder = token.isKeyholder;
                 session.user.isBoardMember = token.isBoardMember;
                 session.user.isBackgroundCheckReviewer = token.isBackgroundCheckReviewer;
+                session.user.isOperations = token.isOperations;
                 session.user.householdId = token.householdId;
                 session.user.householdLead = token.householdLead ?? false;
                 session.user.programsLed = token.programsLed ?? [];

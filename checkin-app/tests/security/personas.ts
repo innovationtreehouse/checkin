@@ -54,6 +54,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         isBoardMember: boolean;
         isKeyholder: boolean;
         isBackgroundCheckReviewer: boolean;
+        isOperations: boolean;
     }): SessionUser => ({
         id: p.id,
         email: p.email ?? '',
@@ -62,6 +63,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         isBoardMember: p.isBoardMember,
         isKeyholder: p.isKeyholder,
         isBackgroundCheckReviewer: p.isBackgroundCheckReviewer,
+        isOperations: p.isOperations,
     });
 
     cached = {

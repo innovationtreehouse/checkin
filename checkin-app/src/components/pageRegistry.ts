@@ -137,7 +137,6 @@ export const PAGES: PageEntry[] = [
 
   // Settings — board
   { href: '/settings/membership', label: 'Membership Settings', section: 'Settings', visible: BOARD },
-  { href: '/settings/roles', label: 'Role Assignment', section: 'Settings', visible: BOARD },
   { href: '/settings/localization', label: 'Localization', section: 'Settings', visible: SYSADMIN },
   { href: '/settings/email', label: 'Email Settings', section: 'Settings', keywords: 'sender from reply-to identity', visible: BOARD },
   { href: '/settings/shopify-webhook', label: 'Shopify Webhook', section: 'Settings', keywords: 'orders paid delivery test notification signature secret payment', visible: BOARD },

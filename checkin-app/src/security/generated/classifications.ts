@@ -24,6 +24,7 @@ export const classifications = {
         isBoardMember: 'public',
         isKeyholder: 'internal',
         isBackgroundCheckReviewer: 'internal',
+        isOperations: 'internal',
     },
     Tool: {
         id: 'public',
