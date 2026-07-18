@@ -11,6 +11,7 @@ import { formatDateTime, relTime } from '@/lib/time';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { PageLoader } from "@/components/ui/PageLoader";
+import { MatchAuditPanel } from "@/components/admin/MatchAuditPanel";
 
 // Mirrors the flat shape returned by GET /api/finance-ops/payments.
 type PaymentException = {
@@ -341,6 +342,8 @@ export default function PaymentProblemsPage() {
         getRowKey={(row) => row.id}
         emptyMessage="No open payment problems."
       />
+
+      <MatchAuditPanel />
 
       <Modal
         opened={resolveOpened}

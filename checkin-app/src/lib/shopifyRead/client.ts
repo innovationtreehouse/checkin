@@ -234,6 +234,89 @@ export async function countSyncRuns(): Promise<number> {
     return rows.rows[0].runs;
 }
 
+// ── match-audit reads (lib/finance/matchAudit.ts) ────────────────────────────
+
+/**
+ * How much of the mirror's line data carries a variant id. Rows synced before
+ * s-read's variant columns shipped are null until a BACKFILL run repopulates
+ * them — the audit reports that state explicitly instead of concluding "no
+ * membership orders exist" from a mirror that simply predates the column.
+ */
+export async function lineVariantStats(): Promise<{ lines: number; withVariant: number }> {
+    const p = getPool();
+    if (!p) throw new Error("shopify_read mirror is not configured");
+    const rows = await p.query<{ lines: number; withVariant: number }>(
+        // Joined to shop_order for the same `test = false` rule as ordersForVariants:
+        // lines of test orders must not count as coverage, or a handful of test
+        // orders synced post-backfill would mask a still-unbackfilled real mirror.
+        `SELECT count(*)::int AS "lines", count(l.variant_legacy_id)::int AS "withVariant"
+         FROM shop_order_line l
+         JOIN shop_order o ON o.shopify_gid = l.order_gid
+         WHERE l.removed = false AND o.test = false`,
+    );
+    return rows.rows[0];
+}
+
+/** An order holding at least one line whose variant is one checkin knows about. */
+export interface MirrorAuditOrder {
+    legacyId: string | null;
+    /** Shopify order name, e.g. "#1042" — what the board sees in Shopify admin. */
+    name: string | null;
+    customerEmail: string | null;
+    financialStatus: string | null;
+    totalCents: number;
+    totalRefundedCents: number;
+    cancelledAt: Date | null;
+    /** Order-level coupon codes (shop_order.discount_codes text[] @default([]), #1048). */
+    discountCodes: string[];
+    /** Which of the requested variant ids this order's lines matched. */
+    matchedVariantIds: string[];
+}
+
+/**
+ * Every non-test order with a non-removed line whose variant_legacy_id is one of
+ * `variantIds` — i.e. the orders that SHOULD reconcile to a membership or program.
+ * Donations/t-shirts/etc. never match and are deliberately absent.
+ */
+export async function ordersForVariants(variantIds: string[]): Promise<MirrorAuditOrder[]> {
+    const p = getPool();
+    if (!p || variantIds.length === 0) return [];
+    const rows = await p.query<MirrorAuditOrder>(
+        `SELECT legacy_id AS "legacyId", name, customer_email AS "customerEmail",
+                financial_status AS "financialStatus", total_cents AS "totalCents",
+                total_refunded_cents AS "totalRefundedCents",
+                discount_codes AS "discountCodes",
+                cancelled_at AT TIME ZONE 'UTC' AS "cancelledAt",
+                (SELECT array_agg(DISTINCT l.variant_legacy_id)
+                   FROM shop_order_line l
+                  WHERE l.order_gid = shop_order.shopify_gid AND l.removed = false
+                    AND l.variant_legacy_id = ANY($1::text[])) AS "matchedVariantIds"
+         FROM shop_order
+         WHERE test = false
+           AND EXISTS (SELECT 1 FROM shop_order_line l
+                        WHERE l.order_gid = shop_order.shopify_gid AND l.removed = false
+                          AND l.variant_legacy_id = ANY($1::text[]))
+         ORDER BY legacy_id NULLS LAST`,
+        [variantIds],
+    );
+    return rows.rows;
+}
+
+/**
+ * Which of the given numeric order ids exist in the mirror as REAL orders.
+ * `test = false` matches every other read here: a test-mode order must not
+ * serve as the payment basis that turns an activation "ORDER_MATCHED".
+ */
+export async function orderLegacyIdsPresent(legacyIds: string[]): Promise<Set<string>> {
+    const p = getPool();
+    if (!p || legacyIds.length === 0) return new Set();
+    const rows = await p.query<{ legacyId: string }>(
+        `SELECT legacy_id AS "legacyId" FROM shop_order WHERE test = false AND legacy_id = ANY($1::text[])`,
+        [legacyIds],
+    );
+    return new Set(rows.rows.map((r) => r.legacyId));
+}
+
 /**
  * Order GIDs that have a chargeback/dispute balance transaction, among the given
  * GIDs. Shopify Payments surfaces a dispute as a signed balance transaction whose
@@ -251,4 +334,27 @@ export async function disputedOrderGids(orderGids: string[]): Promise<Set<string
         [orderGids],
     );
     return new Set(rows.rows.map((r) => r.orderGid));
+}
+
+/**
+ * The smallest real (non-test) order legacy id in the mirror — the mirror's low-water mark.
+ * An activation whose recorded order id sits BELOW this predates the mirror's coverage and is
+ * unverifiable-by-design, not a gap. Null when the mirror holds no non-test orders (or is
+ * unwired) → the caller then treats every not-in-mirror id as a real gap.
+ * legacy_id is numeric-in-text; the ::bigint cast orders them numerically, ::text hands JS a
+ * string to BigInt-parse without node-pg's numeric coercion.
+ * ponytail: assumes every legacy_id parses as bigint — true for Shopify order ids.
+ */
+export async function minRealOrderLegacyId(): Promise<bigint | null> {
+    const p = getPool();
+    if (!p) return null;
+    const rows = await p.query<{ minLegacyId: string | null }>(
+        // `~ '^\d+$'` guards the ::bigint cast: a single non-numeric legacy_id (a
+        // hand-loaded/test row) would otherwise throw for the WHOLE aggregate and
+        // 500 the audit. Shopify ids are always numeric, so this skips only junk.
+        `SELECT min(legacy_id::bigint)::text AS "minLegacyId"
+         FROM shop_order WHERE test = false AND legacy_id ~ '^\\d+$'`,
+    );
+    const v = rows.rows[0]?.minLegacyId;
+    return v == null ? null : BigInt(v);
 }
