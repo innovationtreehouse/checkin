@@ -1,6 +1,6 @@
 /**
  * Invariant-driven lifecycle drift — the scan + reconcile that is the payoff for
- * the two machines' `validate()` oracles (LIFECYCLE_ARCHITECTURE §4.2, §6.2).
+ * the two machines' `validate()` oracles (docs/designs/LIFECYCLE.md).
  *
  * `scanLifecycleViolations` runs each machine's OWN `validate` over every live
  * row and returns the off-diagram set — read-only, shared by the System Status
@@ -113,7 +113,7 @@ export type ReconcileSummary = {
  * healed. Per-row isolated; the Shopify leg is non-fatal.
  */
 async function healEnrollmentI1(): Promise<number> {
-    // status=ACTIVE ∧ inventoryHeldAt≠null IS the I1 set (doc §4 I1) — no re-derivation.
+    // status=ACTIVE ∧ inventoryHeldAt≠null IS the I1 set (I1, docs/designs/LIFECYCLE.md) — no re-derivation.
     const stranded = await prisma.programParticipant.findMany({
         where: { status: "ACTIVE", inventoryHeldAt: { not: null } },
         select: {
@@ -197,7 +197,7 @@ async function reportViolation(v: LifecycleViolation): Promise<void> {
 }
 
 /**
- * The reconciler sweep (LIFECYCLE_ARCHITECTURE §4.2): heal the one safe,
+ * The reconciler sweep (docs/designs/LIFECYCLE.md): heal the one safe,
  * unambiguous case (enrollment I1), report every remaining violation, return a
  * summary. Complementary to the order-driven `lib/finance/reconcile.ts` — this
  * one is invariant-driven.
