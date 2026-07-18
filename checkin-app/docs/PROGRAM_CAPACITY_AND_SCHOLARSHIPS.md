@@ -136,11 +136,13 @@ against *failed calls* but not against *crashes between the two steps*:
   periodic reconcile job is deliberately deferred until the drift is observed in
   practice.
 
-- **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self or admin removal;
-  the same route handles both) and the non-payment kick
-  (`cron/pending-participants`; denied-and-still-PENDING participants are excluded
-  from the kick via `paymentPlanDeniedAt: null` — their timeline belongs to the
-  grace-expiry cron in (c)) both funnel through this.
+- **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self, admin, or
+  board removal; the same route handles all three) funnels through this. This is
+  also now the *only* path a non-payment kick takes: `cron/pending-participants`
+  no longer removes anyone itself (reviewer decision — removal is a human,
+  board-driven action, not something a cron does unattended). The cron warns the
+  household at day 1/3/6 and, from day 3 on, digests the board so a person
+  decides whether to remove the enrollment via this same admin route.
 - **(b) Normal payment** — the `orders/paid` webhook's activation path. A denied
   applicant who pays anyway makes Shopify auto-decrement a *second* unit for the same
   seat (the application's hold already took one out); the webhook releases the hold
@@ -174,13 +176,17 @@ to `null`.
 
 **User decision: an applicant receives exactly one automatic email — the request
 acknowledgement.** `src/lib/scholarshipEmails.ts` resolves recipients / fans out; callers
-build their own subject/html and pass them in. The ack fires *after* the state transition
+build their own subject/html and pass them in. Sends fire *after* the state transition
 commits, fire-and-forget (a failed send never fails the request), and only when the
-request actually transitioned (no duplicate mail on a no-op re-POST).
+request actually transitioned (no duplicate mail on a no-op re-POST). Recipient
+resolution itself lives in `src/lib/emailRecipients.ts` (`resolveHouseholdRecipients`) — a
+household-generic helper, not scholarship-specific — with `scholarshipEmails.ts`
+re-exporting it as `resolveScholarshipRecipients` for its existing call sites. The
+pending-participants cron (rows below) calls `resolveHouseholdRecipients` directly.
 
 **1. Who is emailed when:**
 
-| Event | Route | Review Team | Applicant household |
+| Event | Route | Review Team | Household |
 |---|---|---|---|
 | Program request (fresh hold or re-request-after-denial) | `POST /api/programs/[id]/request-payment-plan` | ✅ `scholarshipNotifyEmail` → else all board | ✅ ack (leads ∪ participant), ungated |
 | Membership request | `POST /api/membership/request-payment-plan` | ✅ | ✅ ack (leads only), ungated |
@@ -189,6 +195,12 @@ request actually transitioned (no duplicate mail on a no-op re-POST).
 | Membership approve (certify) | `POST /api/finance-ops/membership-payment-plans` | — | **no automatic email** |
 | Membership deny | — | **does not exist** | — |
 | Manual-hold | `…/payment-plans/manual-hold` | — | **no email** |
+| Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (non-payer household: leads ∪ participant), ungated |
+| Leadership digest (board) | `GET /api/cron/pending-participants` | ✅ all board (`emailBoardMembers`) — one digest per run, day-3 + day-7+ tiers | — |
+
+(The cron rows are not scholarship-applicant emails — the sweep excludes requested and
+denied rows by design; they are ordinary non-payment notices and do not count against the
+one-automatic-email rule.)
 
 **2. Approve/deny are silent by design.** Board decisions — program approve, program deny,
 membership approve — send **no** automatic applicant email; the Scholarship Review Team
@@ -205,6 +217,22 @@ sends nothing when it fires — both silences are deliberate, not gaps.
 side has **only approve** — there is no membership-deny route. Now that neither approve nor
 deny sends automatic email either way, this asymmetry only matters for the manual process:
 the board has no dedicated membership-deny action to hang a manual communication step off of.
+
+**5. The pending-participants cron never removes anyone — reviewer decision (this is core
+customer service and a computer isn't enough here).** Day-1/3/6 household warnings send to
+leads ∪ participant, ungated, exactly as before (previously `[EMAIL DISPATCH]` log stubs
+while the kick itself really fired — the warnings are real sends, see table above). Day-7+
+rows are classified `overdue`, not deleted; removal is a manual board action via the
+existing `DELETE /api/programs/[id]/participants` admin surface (§3(a)), which still routes
+through `withdrawAndReleaseHold` for the hold-ledger release. Any communication that
+accompanies a manual removal is manual too, the same way the board's manual
+approve/deny/scholarship communications work (§5.2) — there is no automatic
+"you've been removed" email. **In addition to the day-1/3/6 warnings, the cron sends one
+leadership digest per run** (`emailBoardMembers`, subject `Non-payment digest: <a>
+approaching deadline, <b> overdue`) whenever there's at least one day-3 ("approaching
+deadline") or day-7+ ("overdue") row, listing each by person/program/day-count so the
+board can decide whether to remove an enrollment or reach out to the household. Nothing
+sends when both lists are empty.
 
 ## 6. Related
 
