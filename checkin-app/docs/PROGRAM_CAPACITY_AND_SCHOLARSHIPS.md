@@ -4,9 +4,8 @@
 PENDING) and #931 (`34a92fb7`, org-member snapshot at approval) on top.
 **Product decisions:** 2026-07-06 (single-pool capacity, hold-ledger scholarship lifecycle).
 **Statechart:** the enrollment trunk + scholarship parallel region are formalized as one
-declarative machine in `designs/PROGRAM_ENROLLMENT_STATE_MACHINE.md` (pattern/strategy:
-`designs/LIFECYCLE_ARCHITECTURE.md`). This doc (§1–4) is the Shopify/capacity mechanics it
-builds on.
+declarative machine — see `designs/LIFECYCLE.md`. This doc (§1–4) is the Shopify/capacity
+mechanics it builds on.
 
 ## 1. Shopify is the source of truth for program capacity
 
