@@ -251,8 +251,9 @@ jobs:
   #    history.
   # 2. ACCUMULATION WARNING (non-blocking): more than 5 unreleased migrations
   #    in a chain annotates the PR as a cue to coalesce the tail before the
-  #    next release. The hard per-release limit stays where it is (the
-  #    migration release gate); this is the early nudge that keeps PRs moving.
+  #    next release. Migration count per release is a manual team judgment
+  #    now (no CI gate enforces it); this is just the early nudge that keeps
+  #    PRs moving.
   history:
     name: Released migrations immutable (+ accumulation warning)
     runs-on: ubuntu-latest
