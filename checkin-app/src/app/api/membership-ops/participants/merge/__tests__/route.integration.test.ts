@@ -511,9 +511,11 @@ describe("Merge Participants API", () => {
         });
         await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 3600000), departedAt: new Date() } });
 
+        // Session is deliberately excluded from this invariant: it's the one
+        // relation the merge deletes rather than moves (see route.ts step 5) —
+        // asserted separately below.
         const countAll = async () => ({
             account: await prisma.account.count({ where: { userId: { in: [pKeepId, pMergeId] } } }),
-            session: await prisma.session.count({ where: { userId: { in: [pKeepId, pMergeId] } } }),
             bgAttestation: await prisma.backgroundCheckAttestation.count({ where: { reviewerId: { in: [pKeepId, pMergeId] } } }),
             corporationLead: await prisma.corporationLead.count({ where: { personId: { in: [pKeepId, pMergeId] } } }),
             corporationMember: await prisma.corporationMember.count({ where: { personId: { in: [pKeepId, pMergeId] } } }),
@@ -529,6 +531,10 @@ describe("Merge Participants API", () => {
         const after = await countAll();
 
         expect(after).toEqual(before);
+
+        // Sessions are the deliberate exception: deleted, not moved — no reason to
+        // inherit a login session, and forcing re-login is smaller and safer.
+        expect(await prisma.session.count({ where: { userId: { in: [pKeepId, pMergeId] } } })).toBe(0);
     });
 
     // Matrix 13

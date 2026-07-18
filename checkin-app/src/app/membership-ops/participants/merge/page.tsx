@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Badge, Box, Button, Card, Group, List, Paper, Radio, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, List, Paper, Radio, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { MergedBadge } from "@/components/ui/MergedBadge";
 import { formatPhone } from "@/lib/phone";
 
 interface ParticipantMergeView {
@@ -28,21 +29,25 @@ const FIELD_LABELS: Record<ConflictField, string> = {
   name: "Name", email: "Email", phone: "Phone", googleId: "Google Account", dateOfBirth: "Date of Birth",
 };
 
-function formatFieldValue(field: ConflictField, value: unknown): string {
+// googleId has no human-readable value of its own — a raw "Connected" label reads
+// identically for both sides of a conflict, so the radio can't tell the admin what
+// they're actually choosing between. Show the identity behind it instead: the
+// person's own email (the account you'd recognize), falling back to the tail of
+// the googleId itself when there's no email to show.
+function googleIdIdentity(person: { email?: string; googleId?: string }): string {
+  if (person.email) return person.email;
+  if (person.googleId) return `…${person.googleId.slice(-6)}`;
+  return "—";
+}
+
+function formatFieldValue(field: ConflictField, value: unknown, person: { email?: string; googleId?: string }): string {
   if (field === "dateOfBirth" && typeof value === "string") {
     const d = new Date(value);
     return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
   }
   if (field === "phone" && typeof value === "string") return formatPhone(value);
-  if (field === "googleId") return value ? "Connected" : "—";
+  if (field === "googleId") return googleIdIdentity(person);
   return String(value ?? "—");
-}
-
-// Reused wherever a tombstoned (merged-away) Person can surface in an admin view —
-// one badge component, not a new "merge status" subsystem (ponytail).
-export function MergedBadge({ person }: { person: { mergedIntoId?: number | null } }) {
-  if (person.mergedIntoId == null) return null;
-  return <Badge color="gray">merged</Badge>;
 }
 
 export default function MergeParticipants() {
@@ -336,19 +341,34 @@ export default function MergeParticipants() {
                 <Card withBorder radius="md" padding="lg">
                   <Title order={5} mb="sm">Resolve conflicting fields</Title>
                   <Stack gap="md">
-                    {conflicts.map((field) => (
-                      <Radio.Group
-                        key={field}
-                        label={FIELD_LABELS[field]}
-                        value={fieldChoices[field] ?? "keep"}
-                        onChange={(v) => setFieldChoices((prev) => ({ ...prev, [field]: v as "keep" | "merge" }))}
-                      >
-                        <Group mt="xs">
-                          <Radio value="keep" label={formatFieldValue(field, keepParticipant[field])} />
-                          <Radio value="merge" label={formatFieldValue(field, mergeParticipant[field])} />
-                        </Group>
-                      </Radio.Group>
-                    ))}
+                    {conflicts.map((field) => {
+                      const radioGroup = (
+                        <Radio.Group
+                          label={FIELD_LABELS[field]}
+                          value={fieldChoices[field] ?? "keep"}
+                          onChange={(v) => setFieldChoices((prev) => ({ ...prev, [field]: v as "keep" | "merge" }))}
+                        >
+                          <Group mt="xs">
+                            <Radio value="keep" label={formatFieldValue(field, keepParticipant[field], keepParticipant)} />
+                            <Radio value="merge" label={formatFieldValue(field, mergeParticipant[field], mergeParticipant)} />
+                          </Group>
+                        </Radio.Group>
+                      );
+
+                      // DOB conflicts get warning treatment, not a plain radio: differing
+                      // birth dates are a much stronger "these might not be the same
+                      // person" signal than a differing email or phone.
+                      if (field === "dateOfBirth") {
+                        return (
+                          <Alert key={field} color="yellow" variant="light" title="Birth date conflict">
+                            Different birth dates may mean these are NOT the same person — verify before merging.
+                            <Box mt="xs">{radioGroup}</Box>
+                          </Alert>
+                        );
+                      }
+
+                      return <Box key={field}>{radioGroup}</Box>;
+                    })}
                   </Stack>
                 </Card>
               )}

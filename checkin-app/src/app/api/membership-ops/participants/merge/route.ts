@@ -271,7 +271,11 @@ export const POST = withAuth(
 
                 // 5. Move the remaining MOVE relations (§4) — single updateMany, no delete.
                 await tx.account.updateMany({ where: { userId: mergeId }, data: { userId: keepId } });
-                await tx.session.updateMany({ where: { userId: mergeId }, data: { userId: keepId } });
+                // DELIBERATE exception to the no-deletion principle above: sessions are
+                // auth artifacts, not person data, and there's no reason for the keeper
+                // to inherit the tombstone's login session. Deleting forces a re-login
+                // (smaller and safer than moving a session onto a different person mid-use).
+                await tx.session.deleteMany({ where: { userId: mergeId } });
                 await tx.orgMembershipProcess.updateMany({ where: { subjectPersonId: mergeId }, data: { subjectPersonId: keepId } });
                 await tx.program.updateMany({ where: { leadMentorId: mergeId }, data: { leadMentorId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });

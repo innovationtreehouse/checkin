@@ -7,7 +7,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
-import MergeParticipants, { MergedBadge } from "../page";
+import MergeParticipants from "../page";
 
 beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
 
@@ -348,15 +348,74 @@ describe("membership-ops/participants/merge page", () => {
       ),
     );
   });
-});
 
-// Matrix 22
-describe("MergedBadge", () => {
-  it("renders the badge only for a merged (tombstoned) person", () => {
-    renderWithProviders(<MergedBadge person={{ mergedIntoId: null }} />);
-    expect(screen.queryByText("merged")).not.toBeInTheDocument();
+  // Matrix 22
+  it("shows each side's own identity for a googleId conflict instead of 'Connected' on both", async () => {
+    const gia = {
+      id: 60, name: "Gia Google", email: "gia@example.com", phone: null, googleId: "g-gia-000000",
+      _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    const gary = {
+      id: 61, name: "Gary Gmail", email: null, phone: null, googleId: "g-gary-111111",
+      _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/participants/merge/analyze": { participants: [gia, gary] },
+      "/api/people/search?q=Gia": { people: [gia] },
+      "/api/people/search?q=Gary": { people: [gary] },
+    });
+    renderWithProviders(<MergeParticipants />);
 
-    renderWithProviders(<MergedBadge person={{ mergedIntoId: 7 }} />);
-    expect(screen.getByText("merged")).toBeInTheDocument();
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Gia" } });
+    fireEvent.click(await screen.findByText("Gia Google", { exact: false }));
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Gary" } });
+    fireEvent.click(await screen.findByText("Gary Gmail", { exact: false }));
+
+    await screen.findByText("Keep and augment");
+    const picker = screen.getByText("Resolve conflicting fields").closest(".mantine-Card-root") as HTMLElement;
+    // Gia has an email, so her radio shows it; Gary has none, so his falls back
+    // to the googleId tail — neither says the uninformative "Connected".
+    expect(within(picker).getByText("gia@example.com")).toBeInTheDocument();
+    expect(within(picker).getByText("…111111")).toBeInTheDocument();
+    expect(within(picker).queryByText("Connected")).not.toBeInTheDocument();
+  });
+
+  // Matrix 23
+  it("wraps a dateOfBirth conflict in a warning alert instead of a plain radio", async () => {
+    const dan = {
+      id: 70, name: "Dan Date", email: "dan@example.com", phone: null, googleId: "g70",
+      dateOfBirth: "1990-01-01",
+      _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    const dot = {
+      id: 71, name: "Dot Different", email: "dot@example.com", phone: null, googleId: null,
+      dateOfBirth: "2005-06-15",
+      _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/participants/merge/analyze": { participants: [dan, dot] },
+      "/api/people/search?q=Dan": { people: [dan] },
+      "/api/people/search?q=Dot": { people: [dot] },
+    });
+    renderWithProviders(<MergeParticipants />);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Dan" } });
+    fireEvent.click(await screen.findByText("Dan Date", { exact: false }));
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Dot" } });
+    fireEvent.click(await screen.findByText("Dot Different", { exact: false }));
+
+    await screen.findByText("Keep and augment");
+    const warningText = await screen.findByText(/Different birth dates may mean these are NOT the same person/);
+    const alertBox = warningText.closest(".mantine-Alert-root") as HTMLElement;
+    expect(alertBox).toBeInTheDocument();
+    // Still resolvable via the radio, just nested inside the warning — exact date
+    // text is locale/timezone-formatted (toLocaleDateString), so just count them.
+    expect(within(alertBox).getAllByRole("radio")).toHaveLength(2);
   });
 });
