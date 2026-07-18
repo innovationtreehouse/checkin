@@ -1152,6 +1152,10 @@ enum PaymentExceptionKind {
   AMOUNT_MISMATCH
   ACTIVE_WITHOUT_PAYMENT
   DISCOUNT_UNAUTHORIZED
+  // An activation records a Shopify order id, but that order isn't in the mirror
+  // (deleted in Shopify, or a mirror low-water/backfill gap). Distinct from
+  // ACTIVE_WITHOUT_PAYMENT: a payment IS on record here, it just can't be verified.
+  PAYMENT_UNVERIFIABLE
 }
 
 enum PaymentExceptionSeverity {

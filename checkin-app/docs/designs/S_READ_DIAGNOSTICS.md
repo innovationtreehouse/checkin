@@ -1,6 +1,8 @@
 # s-read sync diagnostics
 
-**Status:** implemented — `/api/finance-ops/s-read/diagnose` + the card on `/system-status/health`
+**Status:** implemented (plumbing diagnostics: `/api/finance-ops/s-read/diagnose` +
+system-status card). A second, data-level layer — the **match audit** — was added on
+top: see the addendum at the bottom of this doc.
 **Motivating pain:** the sync-status feature (#1041, #1045) sits at the end of an
 eight-link chain, and today *every* broken link collapses into one of two
 indistinguishable symptoms: the status line silently doesn't render, or the board
@@ -168,3 +170,73 @@ until infra's companion PR is applied and the bootstrap task has run**):
 4. **Trigger side**: red "Failed to start the Shopify sync" toast + server log
    `Failed to trigger s-read sync:` → IAM or function-name problem;
    `AccessDeniedException` vs `ResourceNotFoundException` in the logged error.
+
+---
+
+## Addendum: the match audit (data-level layer)
+
+The diagnose endpoint proves the PLUMBING works; it says nothing about whether the
+DATA reconciles. The match audit is that second layer: a bidirectional
+Shopify ↔ activation completeness report.
+
+**What's already merged vs what this doc's audit adds:** the mirror columns
+(#1048: line variant ids + order discount codes), the plumbing diagnostics
+(#1049), and the reconciler's own variant-item gate (#1074 — membership recovery
+now checks the order carries a membership variant instead of amount-gating, with
+a discount-aware gross fallback for pre-backfill rows, which killed the
+couponed-order `AMOUNT_MISMATCH` false positive). The match audit below is the
+remaining piece: the reconciler recovers and flags what it can ATTRIBUTE; nothing
+merged yet reports completeness across everything.
+
+**Scope rule (product decision):** "should reconcile" is decided by **variant id** —
+BoardSettings holds the membership variants (`orgMembershipVariantId`,
+`shopifyNormalVariantId`, `shopifyVolunteerVariantId`, plus the dev-mock variant
+when the Shopify mock is active — the same set the reconciler's #1074 gate
+builds), Program rows hold the program variants (`shopifyVariantId` + the legacy
+org/non-org pair). An order with none of those variants on any line (donation,
+t-shirt) is out of scope by design and never reported.
+
+**Prerequisite:** the mirror previously carried no variant identity
+(`shop_order_line` had sku/title only). s-read now mirrors
+`variant_gid`/`variant_legacy_id` (migration `0000000000007_order_variant_and_discount_codes`, which also mirrors order-level `discount_codes`);
+rows synced before that are null until a **backfill** run repopulates them — the
+persisted bulk JSONL predates the query change, so `reingestBulkExports` cannot fill
+these. The audit reports this state explicitly (`variantCoverage`) instead of
+producing a falsely clean report.
+
+**Endpoint:** `GET /api/finance-ops/s-read/match-audit` (board/sysadmin, on-demand
+only, read-only — raises no PaymentExceptions). Surfaced as a panel on the payments
+page. Buckets:
+
+- *Shopify → activation*, every variant-matched order: `MATCHED` (claimed by a
+  membership process or enrollment) / `TRACKED_EXCEPTION` (an unresolved
+  PaymentException already covers it) / `UNCLAIMED_PAID` (**the gap**: money in,
+  no access) / `UNCLAIMED_UNPAID` (informational).
+- *Activation → Shopify*, every ACTIVE (or paid-pending-BG) INITIAL/RENEWAL process:
+  `ORDER_MATCHED` / `MANUAL_CERTIFIED` (board certify-payment override, listed with
+  who certified — the "what is manual" audit view) / `ORDER_NOT_IN_MIRROR` /
+  `NO_PAYMENT_BASIS` (**the gap** — finally computes the `ACTIVE_WITHOUT_PAYMENT`
+  case that had an enum value and alert copy but no producer). PERSON_BG processes
+  are excluded: they carry no payment by design.
+- *Enrollments*: same, with `SCHOLARSHIP_APPROVED` (`wasOrgMemberAtApproval`
+  stamped) as the legitimate manual class.
+
+**Reconciler fix that fell out of the audit design:** `runReconcile` advanced its
+cursor past an order whose forward pass THREW, skipping it forever; the cursor now
+freezes at the first failure (later orders still process — idempotent — and get
+re-scanned next run).
+
+**Still deliberately not covered:** raising PaymentExceptions from audit findings
+(read-only first; promote to exceptions once the board has seen real output), Fee /
+FeePayment program-fee reconciliation, and any per-line amount validation.
+
+**Open follow-up — coupon entitlement:** #1074 solved the coupon *false positive*
+(amount no longer gates variant-backed orders), but nothing yet rules on WHO may
+use a code: a non-volunteer family redeeming the volunteer-rate coupon now
+activates cleanly with no flag, since the variant check passes and the amount
+check no longer applies. The mirrored `discount_codes` column exists precisely
+for this; the sketched fix is a tiny board-owned registry —
+`DiscountCodeRule { code, volunteerOnly, validUntil }` — validated by the
+reconciler (unregistered/expired code or volunteer code on a non-volunteer
+family → exception naming the code). Not built; build when the board wants the
+entitlement enforced rather than eyeballed.

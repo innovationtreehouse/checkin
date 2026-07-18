@@ -51,7 +51,8 @@ export type PaymentExceptionKind =
     | "REVERSED_BEFORE_ACTIVATION"
     | "AMOUNT_MISMATCH"
     | "ACTIVE_WITHOUT_PAYMENT"
-    | "DISCOUNT_UNAUTHORIZED";
+    | "DISCOUNT_UNAUTHORIZED"
+    | "PAYMENT_UNVERIFIABLE";
 
 type Severity = "WARN" | "CRITICAL";
 
@@ -119,14 +120,41 @@ export async function raisePaymentException(kind: PaymentExceptionKind, ref: Exc
 
 // ── predicates over a mirror order ───────────────────────────────────────────
 
-/** Shopify displayFinancialStatus that means "money is in" and not reversed. */
-function isPaid(o: MirrorOrder): boolean {
+/**
+ * Shopify displayFinancialStatus that means "money is in" and not reversed.
+ * Exported: matchAudit.ts must apply the SAME predicate, or the audit and the
+ * reconciler disagree about which orders count as paid.
+ */
+export function isPaid(o: Pick<MirrorOrder, "financialStatus" | "cancelledAt" | "totalRefundedCents">): boolean {
     const s = (o.financialStatus ?? "").toUpperCase();
     return (s === "PAID" || s === "PARTIALLY_PAID") && !o.cancelledAt && o.totalRefundedCents === 0;
 }
 
-/** Any sign the money came back out. */
-function isReversed(o: MirrorOrder): boolean {
+/**
+ * The membership variant-id set (BoardSettings variants + the dev-mock variant
+ * when the Shopify mock is active) — the ONE "is this line a membership?" rule.
+ * Exported so matchAudit.ts consumes the same set as the #1074 item gate; a
+ * variant added here but missed in a private copy would silently VANISH from
+ * the audit (filtered out in SQL), not show as a gap.
+ */
+export function membershipVariantIdSet(settings: {
+    orgMembershipVariantId: string | null;
+    shopifyNormalVariantId: string | null;
+    shopifyVolunteerVariantId: string | null;
+} | null): Set<string> {
+    return new Set(
+        [
+            settings?.orgMembershipVariantId,
+            settings?.shopifyNormalVariantId,
+            settings?.shopifyVolunteerVariantId,
+            config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
+        ].filter((v): v is string => !!v),
+    );
+}
+
+/** Any sign the money came back out. Exported so matchAudit.ts marks reversed activations
+ *  with the SAME predicate the reversal pass raises exceptions on. */
+export function isReversed(o: Pick<MirrorOrder, "financialStatus" | "cancelledAt" | "totalRefundedCents">): boolean {
     const s = (o.financialStatus ?? "").toUpperCase();
     return !!o.cancelledAt || o.totalRefundedCents > 0 || s === "REFUNDED" || s === "PARTIALLY_REFUNDED" || s === "VOIDED";
 }
@@ -248,14 +276,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
             volunteerDiscountCode: true,
         },
     });
-    const membershipVariantIds = new Set(
-        [
-            settings?.orgMembershipVariantId,
-            settings?.shopifyNormalVariantId,
-            settings?.shopifyVolunteerVariantId,
-            config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
-        ].filter((v): v is string => !!v),
-    );
+    const membershipVariantIds = membershipVariantIdSet(settings ?? null);
     const lineVariantIds = await mirror.orderLineVariantIds(order.orderGid);
     // Both branches below need the membership's volunteer flag: the amount-gate
     // fallback for expected dues, the coupon entitlement check for volunteerOnly.
@@ -514,14 +535,28 @@ export async function runReconcile(): Promise<ReconcileResult> {
 
     const orders = await mirror.ordersChangedSince(cursor);
     let newCursor = cursor;
+    // Stop advancing the cursor at the first order whose pass throws: advancing past
+    // it would skip that order FOREVER (the forward pass is cursor-once). Later
+    // orders in this batch still get processed (idempotent, so re-scanning them
+    // tomorrow is harmless); only the watermark holds back until the bad order heals.
+    let cursorFrozen = false;
     for (const order of orders) {
         try {
             const claimed = await reconcileForwardMembership(order);
             if (!claimed) await reconcileForwardProgram(order);
         } catch (e) {
             logger.error(`[reconcile] forward pass failed for order ${order.legacyId ?? order.orderGid}:`, e);
+            cursorFrozen = true;
+            // The watermark may ALREADY sit at this order's updatedAt — an earlier
+            // order in the batch with the same timestamp succeeded and advanced it.
+            // ordersChangedSince compares with a strict `updated_at >`, so leaving
+            // the cursor there would skip this order forever. Pull it back below
+            // the failed order so the next run re-fetches it.
+            if (order.updatedAt && newCursor && newCursor >= order.updatedAt) {
+                newCursor = new Date(order.updatedAt.getTime() - 1);
+            }
         }
-        if (order.updatedAt && (!newCursor || order.updatedAt > newCursor)) newCursor = order.updatedAt;
+        if (!cursorFrozen && order.updatedAt && (!newCursor || order.updatedAt > newCursor)) newCursor = order.updatedAt;
     }
 
     const reversalsRaised = await reconcileReversals();
