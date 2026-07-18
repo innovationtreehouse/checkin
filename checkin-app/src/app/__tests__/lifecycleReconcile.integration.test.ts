@@ -3,7 +3,7 @@
  */
 /**
  * Integration tests for the invariant-driven lifecycle reconciler
- * (LIFECYCLE_ARCHITECTURE §4.2) against a real DB.
+ * (docs/designs/LIFECYCLE.md) against a real DB.
  *
  *  - I1 heal: an ACTIVE enrollment with a stranded `inventoryHeldAt` (the §7
  *    two-step crash window) is cleared, the missed `+1` is fired via

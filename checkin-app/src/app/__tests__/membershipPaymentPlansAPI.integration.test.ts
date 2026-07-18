@@ -331,18 +331,18 @@ describe('Membership payment-plan routes', () => {
             expect(__getSentEmails()).toHaveLength(0);
         });
 
-        it('approve sends a status email to the household lead', async () => {
-            const lead = await prisma.person.findUniqueOrThrow({ where: { id: leadId } });
+        // User decision: an applicant receives EXACTLY ONE automatic email (the
+        // request ack, covered above). Certify/approve sends NO automatic email —
+        // the board communicates decisions manually — even though leadProcessId's
+        // household lead (a gate-worthy recipient) exists.
+        it('certify (approve) sends no automatic email', async () => {
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
+            __clearSentEmails();
             const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: 'Board approved scholarship' }) }));
             expect(res.status).toBe(200);
 
-            const sent = __getSentEmails();
-            expect(sent).toContainEqual(expect.objectContaining({
-                to: lead.email,
-                subject: 'Your membership scholarship / payment plan was approved',
-            }));
+            expect(__getSentEmails()).toHaveLength(0);
         });
 
         const denyReq = (body: unknown) => new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {

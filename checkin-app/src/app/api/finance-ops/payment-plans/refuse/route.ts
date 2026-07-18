@@ -5,9 +5,6 @@ import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { fromWhere } from "@/lib/programs/enrollmentState";
-import { resolveScholarshipRecipients, sendScholarshipStatus } from "@/lib/scholarshipEmails";
-import { escapeHtml } from "@/lib/email-templates/base";
-import { formatDate } from "@/lib/time";
 
 // Denies a pending scholarship / payment-plan request — the sibling of
 // POST /api/finance-ops/payment-plans (approve) this branch previously lacked.
@@ -69,31 +66,11 @@ export const POST = withAuth(
                 });
             }
 
-            const settings = await prisma.boardSettings.findUnique({ where: { id: 1 }, select: { scholarshipDenialGraceDays: true } });
-            const p = await prisma.programParticipant.findUnique({
-                where: { programId_personId: { programId, personId: participantId } },
-                include: { person: { select: { householdId: true } }, program: { select: { name: true } } },
-            });
-            const programName = p?.program?.name ?? 'your program';
-            let seatCopy = `<p>Your seat is still held and you can still pay to keep it.</p>`;
-            const graceDays = settings?.scholarshipDenialGraceDays;
-            if (graceDays != null && p?.paymentPlanDeniedAt) {
-                // Deadline must MATCH the grace cron: cron releases rows where
-                // paymentPlanDeniedAt + graceDays days <= now (scholarship-grace-expiry/route.ts;
-                // design doc §4/§5).
-                const deadline = new Date(p.paymentPlanDeniedAt.getTime() + graceDays * 24 * 60 * 60 * 1000);
-                seatCopy = `<p>Your seat is still held — you can still pay to keep it until `
-                    + `<strong>${formatDate(deadline)}</strong>. After that the seat may be released.</p>`;
-            }
-            if (p?.person?.householdId) {
-                const recipients = await resolveScholarshipRecipients(p.person.householdId, participantId);
-                await sendScholarshipStatus(
-                    recipients,
-                    `Update on your scholarship / payment-plan request for ${programName}`,
-                    `<p>The Scholarship Review Team was unable to approve your scholarship / payment plan for `
-                    + `<strong>${escapeHtml(programName)}</strong> at this time.</p>` + seatCopy,
-                );
-            }
+            // Denial is deliberately silent — no automatic applicant email (user
+            // decision: the ack at request time is the only automatic applicant
+            // email; the board communicates decisions, including this one, manually).
+            // That means the scholarshipDenialGraceDays clock (§4) now starts
+            // without any notice to the applicant.
 
             return NextResponse.json({ success: true });
         } catch (error) {

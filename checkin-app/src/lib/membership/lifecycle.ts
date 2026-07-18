@@ -1,7 +1,7 @@
 /**
  * OrgMembershipProcess lifecycle — ONE declarative definition (Phase 2b).
  *
- * See docs/designs/ORG_MEMBERSHIP_STATE_MACHINE.md. This module instances the
+ * See docs/designs/LIFECYCLE.md. This module instances the
  * dependency-free primitives in `@/lib/lifecycle` for the membership machine:
  * the states, the transition-set predicates (as StateSets that emit BOTH a
  * client-safe `has` and a server Prisma `where` from one source), the
@@ -10,7 +10,7 @@
  * `FOR UPDATE` lock, conditional `updateMany`, and partial-unique-index +
  * P2002 catch is unchanged and merely *fed* the status set it names.
  *
- * CLIENT-SAFETY (doc §6.1, LIFECYCLE_ARCHITECTURE §3.4) — CRITICAL, pages import
+ * CLIENT-SAFETY (docs/designs/LIFECYCLE.md) — CRITICAL, pages import
  * this file: NOTHING here value-imports `@/generated/prisma`. `Prisma` and the
  * enums are `import type` only (erased at build); predicates take booleans, not
  * `Date | null`; the `where` fragments are plain object literals typed via the
@@ -47,7 +47,7 @@ export type ProcessStatus =
 export type ProcessKind = "INITIAL" | "RENEWAL" | "PERSON_BG";
 
 // Compile-time parity: these fail to compile if the schema enum drifts from the
-// local union (LIFECYCLE_ARCHITECTURE §3.4). `import type` keeps the enum out of
+// local union (docs/designs/LIFECYCLE.md). `import type` keeps the enum out of
 // the client bundle; the TEST does the value-based `assertEnumParity` counterpart.
 // Type-only assertions — intentionally unreferenced; their value IS the compile check.
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -65,7 +65,7 @@ export type ProcessFlags = {
 
 type Where = Prisma.OrgMembershipProcessWhereInput;
 
-// ── Legacy tag (doc §4.6) ──────────────────────────────────────────────────────
+// ── Legacy tag (docs/designs/LIFECYCLE.md) ──────────────────────────────────────────────────────
 // RENEWAL_PENDING_BG is dead-but-guarded: nothing writes it since the 20260715
 // migration, but surviving rows are still read/guarded and it stays in the renewal
 // in-flight index. Kept explicit here instead of quietly appearing in six lists.
@@ -145,8 +145,8 @@ export const awaitingBgReview: StateSet<AwaitingBgRow, Where> = {
 // ── renewal grantability (fix #3) & settled-this-cycle (fix #4) ────────────────
 
 /**
- * The "this renewal is payable now" set the coming-year grant derives from (doc
- * §7.3): a RENEWAL at PENDING_PAYMENT — full stop. NOT gated on bgClearedAt: the
+ * The "this renewal is payable now" set the coming-year grant derives from
+ * (docs/designs/LIFECYCLE.md): a RENEWAL at PENDING_PAYMENT — full stop. NOT gated on bgClearedAt: the
  * grant comps PAYMENT ONLY and the background-check gate stays independent, so a
  * parallel-track renewal (paid ahead of BG, bgClearedAt null) is grantable and
  * settles to PENDING_BG_CLEARANCE, while a cleared one settles to ACTIVE — activate()
@@ -160,7 +160,7 @@ export const grantableRenewalWhere: Where = {
 };
 
 /**
- * "Handled this renewal cycle" (doc §7.4): a RENEWAL that reached a terminal state
+ * "Handled this renewal cycle" (docs/designs/LIFECYCLE.md): a RENEWAL that reached a terminal state
  * (ACTIVE finished, or ARCHIVED by the board) stamped inside the current renewal
  * window. Consumed by BOTH the households route probe and runRenewalSweep's
  * skip-test so they can't disagree. The `kind=RENEWAL` and `ARCHIVED` clauses are
@@ -174,7 +174,7 @@ export const settledThisCycleWhere = (windowStart: Date): Where => ({
     stageEnteredAt: { gte: windowStart },
 });
 
-// ── fromWhere (§5 CAS from-state, #1080) ───────────────────────────────────────
+// ── fromWhere (docs/designs/LIFECYCLE.md — CAS from-state, #1080) ───────────────
 
 /**
  * Emit the `status` clause a CAS transition guard names for its from-state. For this
@@ -193,7 +193,7 @@ export function fromWhere(from: ProcessStatus): Where {
     return fromStatusWhere<Where>([from]);
 }
 
-// ── classify / validate (LIFECYCLE_ARCHITECTURE §3.2) ──────────────────────────
+// ── classify / validate (docs/designs/LIFECYCLE.md) ──────────────────────────
 
 /** Row shape classify/validate read — all four flags as booleans, no Prisma. */
 export type ClassifyRow = { status: ProcessStatus } & ProcessFlags;
@@ -243,14 +243,14 @@ export const INVARIANTS: readonly Invariant<ClassifyRow>[] = [
 
 export const validate = defineValidator(INVARIANTS);
 
-// ── transition table (doc §5) — documentation + test oracle, never executed ────
+// ── transition table (docs/designs/LIFECYCLE.md) — documentation + test oracle, never executed ────
 
 /** The origin pseudo-state for entry transitions (∅). */
 export type OriginState = "∅";
 type TState = ProcessStatus | OriginState;
 
 /**
- * The 14 machine edges of doc §5, each carrying the (unchanged) enforcement site
+ * The 14 machine edges (docs/designs/LIFECYCLE.md), each carrying the (unchanged) enforcement site
  * it feeds. Not a runtime executor — powers isLegalTransition + reachability in
  * tests/doc-artifacts. Flag-only stamps (contractSignedAt/bgConsentAt) are not
  * status edges and are omitted; they gate the advance, not a state change.

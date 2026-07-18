@@ -7,8 +7,6 @@ import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { STATES, fromWhere } from "@/lib/programs/enrollmentState";
-import { resolveScholarshipRecipients, sendScholarshipStatus } from "@/lib/scholarshipEmails";
-import { escapeHtml } from "@/lib/email-templates/base";
 
 // Two DISJOINT board queues over PENDING + isPaymentPlanRequested rows, split on
 // whether a Shopify seat is actually held (inventoryHeldAt):
@@ -124,20 +122,6 @@ export const POST = withAuth(
             // stops billing them for it. This supersedes the earlier approve-time
             // decrement (see PR history — that double-counted against the
             // apply-time decrement added alongside it).
-            const p = await prisma.programParticipant.findUnique({
-                where: { programId_personId: { programId, personId: participantId } },
-                include: { person: { select: { householdId: true } }, program: { select: { name: true } } },
-            });
-            if (p?.person?.householdId) {
-                const recipients = await resolveScholarshipRecipients(p.person.householdId, participantId);
-                await sendScholarshipStatus(
-                    recipients,
-                    `Your scholarship / payment plan for ${p.program?.name ?? 'your program'} was approved`,
-                    `<p>Good news — the Scholarship Review Team approved your scholarship / payment plan for `
-                    + `<strong>${escapeHtml(p.program?.name ?? 'your program')}</strong>. Your enrollment is now active; nothing further is needed.</p>`,
-                );
-            }
-
             return NextResponse.json({ success: true });
         } catch (error) {
             logger.error("Failed to approve payment plan:", error);
