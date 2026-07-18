@@ -136,7 +136,7 @@ const ALLOWLIST: Record<string, string> = {
     'lib/finance/reconcile.ts':
         'Reconciler paid-order set: where status in {ACTIVE,PENDING_BG_CLEARANCE} on OrgMembershipProcess.',
     'lib/finance/matchAudit.ts':
-        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) — report-only, mirrors the reconcile.ts entry.',
+        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) and the claim lookup excluding ARCHIVED/BLOCKED — report-only, mirrors the reconcile.ts entry.',
 };
 
 // ── scanner ──────────────────────────────────────────────────────────────────
