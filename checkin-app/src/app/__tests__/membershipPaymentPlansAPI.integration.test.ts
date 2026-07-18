@@ -3,9 +3,10 @@
  */
 /**
  * Integration tests for the membership payment-plan routes:
- *   GET  /api/finance-ops/membership-payment-plans     (board-only queue)
- *   POST /api/finance-ops/membership-payment-plans      (board approves -> certify/activate)
- *   POST /api/membership/request-payment-plan           (request, with IDOR guard)
+ *   GET  /api/finance-ops/membership-payment-plans        (board-only queue)
+ *   POST /api/finance-ops/membership-payment-plans         (board approves -> certify/activate)
+ *   POST /api/finance-ops/membership-payment-plans/refuse  (board denies -> clear flag, stay PENDING_PAYMENT)
+ *   POST /api/membership/request-payment-plan              (request, with IDOR guard)
  *
  * Covers auth rejections (401/403), validation (400/404), the wrong-phase gate
  * (409 off PENDING_PAYMENT), the IDOR path (an unrelated authenticated user
@@ -13,14 +14,21 @@
  * (flag set on request; certify -> ACTIVE + flag cleared + audit on approve).
  */
 import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/membership-payment-plans/route';
+import { POST as DenyPost } from '@/app/api/finance-ops/membership-payment-plans/refuse/route';
 import { POST as RequestPost } from '@/app/api/membership/request-payment-plan/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email');
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockSession = require('next-auth/next').getServerSession;
+// `@/lib/email`'s real module has no __getSentEmails/__clearSentEmails — those
+// only exist on the manual mock (src/lib/__mocks__/email.ts) that jest.mock
+// above swaps in. jest.requireMock (not a direct import) fetches that swapped
+// instance so this typechecks against the mock's own shape.
+const { __getSentEmails, __clearSentEmails } =
+    jest.requireMock<typeof import('@/lib/__mocks__/email')>('@/lib/email');
 
 const TAG = 'membership-payment-plans-test';
 
@@ -29,6 +37,12 @@ function nextReq(url = 'http://localhost/api/finance-ops/membership-payment-plan
 }
 function requestReq(body: unknown) {
     return new Request('http://localhost/api/membership/request-payment-plan', {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }) as unknown as import('next/server').NextRequest;
+}
+function denyReq(body: unknown) {
+    return new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {
         method: 'POST',
         body: JSON.stringify(body),
     }) as unknown as import('next/server').NextRequest;
@@ -92,6 +106,7 @@ describe('Membership payment-plan routes', () => {
 
     beforeEach(async () => {
         jest.clearAllMocks();
+        __clearSentEmails();
         // Fresh requested + PENDING_PAYMENT process owned by a household lead each
         // test (the approve test mutates it to ACTIVE, so it can't be shared).
         const proc = await makeProc('Lead', { requested: true, withLead: true });
@@ -190,6 +205,91 @@ describe('Membership payment-plan routes', () => {
         });
     });
 
+    describe('POST /api/finance-ops/membership-payment-plans/refuse (deny)', () => {
+        it('401 without a session', async () => {
+            mockSession.mockResolvedValue(null);
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(401);
+        });
+
+        it('403 for a non-board user', async () => {
+            mockSession.mockResolvedValue({ user: { id: otherId } });
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(403);
+        });
+
+        it('400 when processId is missing', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({}))).status).toBe(400);
+        });
+
+        it('409 when there is no pending request for the process', async () => {
+            const cleared = await makeProc('DenyCleared', { requested: false });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: cleared.processId }))).status).toBe(409);
+        });
+
+        it('board denial clears the flag, keeps the process PENDING_PAYMENT, and writes an audit row', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            const res = await DenyPost(denyReq({ processId: leadProcessId }));
+            expect(res.status).toBe(200);
+
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
+            expect(proc?.isPaymentPlanRequested).toBe(false);
+            expect(proc?.status).toBe('PENDING_PAYMENT'); // stays awaiting payment — no seat, no grace, pay-to-activate
+            expect(proc?.certifiedById).toBeNull(); // denial never certifies/activates
+
+            const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
+            expect(membership?.status).toBe('NONE'); // untouched by denial
+
+            const audits = await prisma.auditLog.findMany({
+                where: { tableName: 'OrgMembershipProcess', affectedEntityId: leadProcessId, actorId: boardId },
+            });
+            expect(audits.some(a => (a.newData as { paymentPlanDenied?: boolean })?.paymentPlanDenied === true)).toBe(true);
+        });
+
+        it('a re-deny of an already-denied (flag false) process is a 409 no-op', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(200);
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(409);
+        });
+
+        it('404 when the process does not exist', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: 999999999 }))).status).toBe(404);
+        });
+
+        it('403 (conflict of interest) when a board member denies their OWN household; the request is untouched', async () => {
+            const own = await makeProc('DenyCOI', { requested: true });
+            const boardKin = await prisma.person.create({
+                data: { name: 'Board Kin', email: `board-kin-${own.processId}-${TAG}@example.com`, isBoardMember: true, householdId: own.householdId },
+            });
+            mockSession.mockResolvedValue({ user: { id: boardKin.id, isBoardMember: true } });
+
+            const res = await DenyPost(denyReq({ processId: own.processId }));
+            expect(res.status).toBe(403);
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: own.processId } });
+            expect(proc?.isPaymentPlanRequested).toBe(true); // flag NOT flipped by the refused deny
+
+            // Drop this extra board member so it doesn't inflate the "email all board
+            // members" review-team fallback that later count-based tests assert on.
+            await prisma.person.delete({ where: { id: boardKin.id } });
+        });
+
+        it('a sysadmin may deny their own household (COI bypass)', async () => {
+            const own = await makeProc('DenySysadmin', { requested: true });
+            const sysKin = await prisma.person.create({
+                data: { name: 'Sys Kin', email: `sys-kin-${own.processId}-${TAG}@example.com`, isBoardMember: true, householdId: own.householdId },
+            });
+            mockSession.mockResolvedValue({ user: { id: sysKin.id, isBoardMember: true, isSysadmin: true } });
+
+            const res = await DenyPost(denyReq({ processId: own.processId }));
+            expect(res.status).toBe(200);
+            const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: own.processId } });
+            expect(proc?.isPaymentPlanRequested).toBe(false);
+
+            await prisma.person.delete({ where: { id: sysKin.id } }); // keep it out of the board-member fallback set
+        });
+    });
+
     describe('POST /api/membership/request-payment-plan', () => {
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
@@ -244,6 +344,104 @@ describe('Membership payment-plan routes', () => {
 
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: fresh.processId } });
             expect(proc?.isPaymentPlanRequested).toBe(true);
+        });
+    });
+
+    describe('email behavior', () => {
+        // Pin the review-team address so these counts are hermetic: unset, the
+        // fallback emails EVERY isBoardMember row, and other suites' board
+        // personas share the DB in a full CI run.
+        const REVIEW_TEAM = `review-team-${TAG}@example.com`;
+        let prevNotify: string | null = null;
+        beforeAll(async () => {
+            const s = await prisma.boardSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+            prevNotify = s.scholarshipNotifyEmail;
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: REVIEW_TEAM } });
+        });
+        afterAll(async () => {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: { scholarshipNotifyEmail: prevNotify } });
+        });
+        it('a fresh request sends the review-team notify and the household ack, each once', async () => {
+            const fresh = await makeProc('EmailFreshReq', { requested: false, withLead: true });
+            mockSession.mockResolvedValue({ user: { id: fresh.personId } });
+
+            const res = await RequestPost(requestReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails();
+            expect(sent.filter((e) => e.subject.includes('New membership scholarship') && e.to === REVIEW_TEAM)).toHaveLength(1);
+            expect(sent.filter((e) => e.subject === 'We received your scholarship / payment-plan request')).toHaveLength(1);
+        });
+
+        it('a no-op re-POST (already requested) sends zero emails', async () => {
+            // leadProcessId was seeded with requested:true in beforeEach.
+            mockSession.mockResolvedValue({ user: { id: leadId } });
+
+            const res = await RequestPost(requestReq({ processId: leadProcessId }));
+            expect(res.status).toBe(200);
+            expect(__getSentEmails()).toHaveLength(0);
+        });
+
+        // User decision: an applicant receives EXACTLY ONE automatic *scholarship*
+        // email (the request ack, covered above). Certify/approve sends NO automatic
+        // scholarship-decision email — the board communicates decisions manually —
+        // even though leadProcessId's household lead (a gate-worthy recipient) exists.
+        // The standard activation "welcome — your membership is active" email is
+        // orthogonal to the scholarship decision and IS expected here.
+        it('certify (approve) sends no automatic scholarship email', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            __clearSentEmails();
+            const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: 'Board approved scholarship' }) }));
+            expect(res.status).toBe(200);
+
+            const scholarshipEmails = __getSentEmails().filter(
+                (e) => !e.subject.startsWith('Welcome to the Treehouse'),
+            );
+            expect(scholarshipEmails).toHaveLength(0);
+        });
+
+        // User decision: deny is deliberately silent — no automatic applicant email
+        // (the request ack, covered above, is the applicant's only automatic email;
+        // the board communicates a denial manually). Filtered to exclude a stray
+        // "Welcome to the Treehouse" send (another test's certify/activate) rather
+        // than asserting a bare zero total, so this can't be fooled by mock bleed.
+        it('deny sends no automatic email', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            __clearSentEmails();
+            const res = await DenyPost(denyReq({ processId: leadProcessId }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails().filter((e) => !e.subject.startsWith('Welcome to the Treehouse'));
+            expect(sent).toHaveLength(0);
+        });
+
+        it('a no-op re-deny (flag already false) sends zero emails', async () => {
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+            expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(200);
+            __clearSentEmails();
+            const res = await DenyPost(denyReq({ processId: leadProcessId }));
+            expect(res.status).toBe(409);
+            expect(__getSentEmails()).toHaveLength(0);
+        });
+
+        it('deny sends no automatic email regardless of household notification settings', async () => {
+            const fresh = await makeProc('DenyGate', { requested: true, withLead: true });
+            await prisma.person.create({
+                data: {
+                    email: `deny-gate-out-${TAG}@example.com`, name: 'OptOut', householdId: fresh.householdId,
+                    isHouseholdLead: true, notificationSettings: { emailScholarshipUpdates: false },
+                },
+            });
+            mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+            __clearSentEmails();
+            const res = await DenyPost(denyReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const sent = __getSentEmails().filter((e) => !e.subject.startsWith('Welcome to the Treehouse'));
+            expect(sent).toHaveLength(0);
         });
     });
 });

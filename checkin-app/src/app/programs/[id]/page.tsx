@@ -222,12 +222,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         if (res.ok) {
           anyRequested = true;
         } else {
-          errors.push("Enrolled as pending, but failed to alert the finance committee for one member. Please email them directly.");
+          errors.push("Enrolled as pending, but failed to alert the Scholarship Review Team for one member. Please email them directly.");
         }
       }
 
       if (anyRequested) {
-        notifications.show({ color: "green", message: "Requested! Please check your email for communication from the finance committee of the board." });
+        notifications.show({ color: "green", message: "Requested! Please check your email for communication from the Scholarship Review Team." });
         fetchProgram();
         notifyNavRefresh();
       }
@@ -576,7 +576,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     onClick={handleRequestPaymentPlan}
                     styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                   >
-                    Request a scholarship or payment plan from the Finance Committee of the Board
+                    Request a scholarship or payment plan from the Scholarship Review Team
                   </Button>
                 )}
               </Stack>

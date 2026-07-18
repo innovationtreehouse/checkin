@@ -330,7 +330,7 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Which of your household wants to enroll?");
 
         fireEvent.click(screen.getByRole("button", { name: /request a scholarship or payment plan/i }));
-        expect(await screen.findByText(/failed to alert the finance committee/)).toBeInTheDocument();
+        expect(await screen.findByText(/failed to alert the Scholarship Review Team/)).toBeInTheDocument();
     });
 
     it("shows a network-error message when requesting a payment plan throws", async () => {

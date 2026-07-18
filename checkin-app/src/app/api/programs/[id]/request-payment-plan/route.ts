@@ -5,6 +5,9 @@ import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { fromWhere } from "@/lib/programs/enrollmentState";
+import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck } from "@/lib/scholarshipEmails";
+import { config } from "@/lib/config";
+import { escapeHtml } from "@/lib/email-templates/base";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -84,22 +87,27 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // time, and without this a concurrent approval (ACTIVE, hold consumed
         // to null) would match branch 1, re-stamp the hold, fire a second -1,
         // and reopen a resolved scholarship.
+        const wasRequested = participant.isPaymentPlanRequested; // pre-image (findUnique above)
         const holdResult = await prisma.programParticipant.updateMany({
             // T3 apply CAS from-state (PENDING_UNPAID); flag narrowing stays literal (#1080).
             where: { programId, personId: participantId, ...fromWhere('PENDING_UNPAID'), inventoryHeldAt: null },
             data: { isPaymentPlanRequested: true, inventoryHeldAt: new Date(), paymentPlanDeniedAt: null },
         });
+        let reCount = 0;
         if (holdResult.count === 0) {
-            await prisma.programParticipant.updateMany({
+            const re = await prisma.programParticipant.updateMany({
                 // T3 re-apply CAS from-state (PENDING_HELD_DENIED); status clause shared with UNPAID.
                 where: { programId, personId: participantId, ...fromWhere('PENDING_HELD_DENIED'), inventoryHeldAt: { not: null } },
                 data: { isPaymentPlanRequested: true, paymentPlanDeniedAt: null },
             });
+            reCount = re.count;
         }
-
-        // Send email to finances
-        // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
-        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Scholarship / Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
+        // fromWhere only narrows on `status` (PENDING) — both branches' where also match an
+        // already-PENDING_HELD no-op re-POST, so a bare count>0 check would over-notify. Key
+        // on the pre-image flag instead: true for exactly the two real transitions (fresh hold,
+        // re-request after denial), false for both non-transitions (no-op re-POST, hold-failed
+        // retry whose request was already recorded).
+        const transitioned = !wasRequested && (holdResult.count > 0 || reCount > 0);
 
         let warning: string | undefined;
         if (holdResult.count > 0 && participant.program) {
@@ -124,6 +132,29 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                 // Applicant-facing: never tell them to retry — the request is
                 // recorded and the board finalizes it. Nothing is required of them.
                 warning = "Your scholarship / payment-plan request has been recorded and the board notified. A seat-reservation step needs a board member to finish it — nothing more is required from you.";
+            }
+        }
+
+        if (transitioned) {
+            const base = config.baseUrl();
+            const personName = participant.person?.name || 'A household member';
+            const programName = participant.program?.name || 'a program';
+            await notifyReviewTeam(
+                `New scholarship / payment-plan request: ${personName} — ${programName}`,
+                `<p>The Scholarship Review Team has a new request to review.</p>`
+                + `<p><strong>${escapeHtml(personName)}</strong> requested a scholarship / payment plan for <strong>${escapeHtml(programName)}</strong>.</p>`
+                + `<p>Review it here: <a href="${base}/finance-ops/payment-plan">${base}/finance-ops/payment-plan</a></p>`,
+                "Scholarship review-team notify failed (program request):",
+            );
+            // A participant with no household can't have leads to ack — skip the
+            // ack, review-team notify above still fired.
+            if (participant.person?.householdId) {
+                const recipients = await resolveScholarshipRecipients(participant.person.householdId, participantId);
+                const ackBody = warning
+                    ? `<p>${escapeHtml(warning)}</p>` // Shopify-failure branch: carry that branch's applicant-facing copy
+                    : `<p>Hi — we've received your scholarship / payment-plan request for <strong>${escapeHtml(programName)}</strong>. `
+                    + `The Scholarship Review Team will review it and follow up. Your spot is held while they do.</p>`;
+                await sendScholarshipAck(recipients, "We received your scholarship / payment-plan request", ackBody);
             }
         }
 

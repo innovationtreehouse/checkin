@@ -977,7 +977,7 @@ describe("scholarship / payment-plan request", () => {
     renderWithProviders(<MembershipPage />);
     fireEvent.click(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Send request" }));
-    expect(await screen.findByText(/requested — the finance committee will follow up/)).toBeInTheDocument();
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
     expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("request-payment-plan")).length).toBe(1);
     expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
   });
@@ -986,7 +986,31 @@ describe("scholarship / payment-plan request", () => {
     setSession({ id: 1 });
     mockFetchJson(pendingPayment({ isPaymentPlanRequested: true }));
     renderWithProviders(<MembershipPage />);
-    expect(await screen.findByText(/requested — the finance committee will follow up/)).toBeInTheDocument();
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
+  });
+
+  it("a state refetch with isPaymentPlanRequested:false reverts the button to requestable", async () => {
+    setSession({ id: 1 });
+    // Piggyback on the payment-holdoff visibility refetch (already exercised
+    // above) as the lever to force a second /api/membership load — the
+    // PENDING_PAYMENT card has no other user-facing refresh trigger.
+    sessionStorage.setItem("membership_awaiting_payment_1", String(Date.now()));
+    let requested = true;
+    mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": () => state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT", isPaymentPlanRequested: requested },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
+
+    requested = false;
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ })).toBeInTheDocument();
   });
 });

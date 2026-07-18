@@ -495,6 +495,13 @@ model BoardSettings {
   /// go to From). Need not be on the sending domain.
   /// @sensitivity:public
   emailReplyToAddress        String?
+  /// Where a new scholarship / payment-plan request is announced (the "Scholarship
+  /// Review Team"). Comma-separated list of one or more addresses, each a bare
+  /// address or "Name <addr@domain>" — same shape as emailReplyToAddress. NULL =
+  /// fall back to emailing every board member (the board IS the review team until
+  /// this is configured).
+  /// @sensitivity:internal
+  scholarshipNotifyEmail     String?
   /// @sensitivity:internal
   shopifyOrgMembershipProductId String?
   /// @sensitivity:internal

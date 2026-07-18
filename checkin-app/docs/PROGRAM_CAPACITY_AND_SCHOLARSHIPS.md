@@ -87,7 +87,9 @@ Stamps `inventoryHeldAt = now()` and clears `paymentPlanDeniedAt`, guarded so th
 only fires the moment `inventoryHeldAt` transitions **null → set**. A denied re-applicant
 already has `inventoryHeldAt` set (denial never clears it — see below), so re-applying
 just flips `isPaymentPlanRequested` back to `true` and clears the denial stamp — it does
-**not** decrement a second time for a seat it's already holding.
+**not** decrement a second time for a seat it's already holding. On a genuine transition
+(fresh hold or re-request after denial) this now emails the Scholarship Review Team and
+sends the applicant household an acknowledgement — see §5.
 
 ### Denial (`POST /api/finance-ops/payment-plans/refuse`)
 
@@ -96,7 +98,8 @@ Performs **no Shopify operation**. The seat stays held exactly as the applicatio
 is untouched. The applicant may still pay normally; a board member did not "give away"
 their held seat by saying no to a payment plan. (This supersedes an earlier design where
 denial fired a `+1` — that let the seat resell out from under a denied-but-not-withdrawn
-applicant, silently drifting DB capacity and Shopify's count apart.)
+applicant, silently drifting DB capacity and Shopify's count apart.) Sends no automatic
+email — see §5.
 
 ### Approval (`POST /api/finance-ops/payment-plans`)
 
@@ -104,7 +107,8 @@ No Shopify operation either (the seat was already taken out of the pool at appli
 time) — approval only stops billing the applicant. It additionally clears
 `inventoryHeldAt` to `null` **without** a `+1`: the hold is **consumed**, not released. An
 approved participant is a permanent comped enrollment; if they're later removed from the
-program, that removal must not credit a seat back that was never returned to Shopify.
+program, that removal must not credit a seat back that was never returned to Shopify. Sends
+no automatic email — see §5.
 
 ### Release, exactly once — three paths
 
@@ -132,11 +136,13 @@ against *failed calls* but not against *crashes between the two steps*:
   periodic reconcile job is deliberately deferred until the drift is observed in
   practice.
 
-- **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self or admin removal;
-  the same route handles both) and the non-payment kick
-  (`cron/pending-participants`; denied-and-still-PENDING participants are excluded
-  from the kick via `paymentPlanDeniedAt: null` — their timeline belongs to the
-  grace-expiry cron in (c)) both funnel through this.
+- **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self, admin, or
+  board removal; the same route handles all three) funnels through this. This is
+  also now the *only* path a non-payment kick takes: `cron/pending-participants`
+  no longer removes anyone itself (reviewer decision — removal is a human,
+  board-driven action, not something a cron does unattended). The cron warns the
+  household at day 1/3/6 and, from day 3 on, digests the board so a person
+  decides whether to remove the enrollment via this same admin route.
 - **(b) Normal payment** — the `orders/paid` webhook's activation path. A denied
   applicant who pays anyway makes Shopify auto-decrement a *second* unit for the same
   seat (the application's hold already took one out); the webhook releases the hold
@@ -166,7 +172,66 @@ Configured on the membership settings surface (`/settings/membership` →
 (`bgRecheckMonths`, dues) — board/sysadmin only, audit-logged, blank input clears it back
 to `null`.
 
-## 5. Related
+## 5. Notifications
+
+**User decision: an applicant receives exactly one automatic email — the request
+acknowledgement.** `src/lib/scholarshipEmails.ts` resolves recipients / fans out; callers
+build their own subject/html and pass them in. Sends fire *after* the state transition
+commits, fire-and-forget (a failed send never fails the request), and only when the
+request actually transitioned (no duplicate mail on a no-op re-POST). Recipient
+resolution itself lives in `src/lib/emailRecipients.ts` (`resolveHouseholdRecipients`) — a
+household-generic helper, not scholarship-specific — with `scholarshipEmails.ts`
+re-exporting it as `resolveScholarshipRecipients` for its existing call sites. The
+pending-participants cron (rows below) calls `resolveHouseholdRecipients` directly.
+
+**1. Who is emailed when:**
+
+| Event | Route | Review Team | Household |
+|---|---|---|---|
+| Program request (fresh hold or re-request-after-denial) | `POST /api/programs/[id]/request-payment-plan` | ✅ `scholarshipNotifyEmail` → else all board | ✅ ack (leads ∪ participant), ungated |
+| Membership request | `POST /api/membership/request-payment-plan` | ✅ | ✅ ack (leads only), ungated |
+| Program approve | `POST /api/finance-ops/payment-plans` | — | **no automatic email** |
+| Program deny | `POST /api/finance-ops/payment-plans/refuse` | — | **no automatic email** |
+| Membership approve (certify) | `POST /api/finance-ops/membership-payment-plans` | — | **no automatic email** |
+| Membership deny | `POST /api/finance-ops/membership-payment-plans/refuse` | — | **no automatic email** |
+| Manual-hold | `…/payment-plans/manual-hold` | — | **no email** |
+| Non-payment warning (day 1 / 3 / 6) | `GET /api/cron/pending-participants` | — | ✅ warning (non-payer household: leads ∪ participant), ungated |
+| Leadership digest (board) | `GET /api/cron/pending-participants` | ✅ all board (`emailBoardMembers`) — one digest per run, day-3 + day-7+ tiers | — |
+
+(The cron rows are not scholarship-applicant emails — the sweep excludes requested and
+denied rows by design; they are ordinary non-payment notices and do not count against the
+one-automatic-email rule.)
+
+**2. Approve/deny are silent by design.** Board decisions — program approve, program deny,
+membership approve — send **no** automatic applicant email; the Scholarship Review Team
+communicates its decision **manually**. A consequence: a **denial** starts the
+`scholarshipDenialGraceDays` clock (§4) with no automatic notice, so the board's manual
+denial message should state the deadline itself; the grace-expiry auto-withdraw (§4) also
+sends nothing when it fires — both silences are deliberate, not gaps.
+
+**3. Fallback rule.** `BoardSettings.scholarshipNotifyEmail` unset (or unparseable) → email
+**all board members** (the board *is* the review team until configured). Set on
+**Settings → Email** (distinct from `scholarshipDenialGraceDays`, set on Settings → Membership).
+
+**4. Membership deny — parity closed, still silent.** The membership side now has both approve and deny (`POST /api/finance-ops/membership-payment-plans/refuse`). Denial clears `isPaymentPlanRequested` back to `false`; the process stays `PENDING_PAYMENT` and the household returns to normal pay-to-activate (membership holds no seat and has no grace cron, so denial state is the cleared flag plus the audit row). Like every other board decision it sends **no automatic email** — the board communicates the denial manually.
+
+**5. The pending-participants cron never removes anyone — reviewer decision (this is core
+customer service and a computer isn't enough here).** Day-1/3/6 household warnings send to
+leads ∪ participant, ungated, exactly as before (previously `[EMAIL DISPATCH]` log stubs
+while the kick itself really fired — the warnings are real sends, see table above). Day-7+
+rows are classified `overdue`, not deleted; removal is a manual board action via the
+existing `DELETE /api/programs/[id]/participants` admin surface (§3(a)), which still routes
+through `withdrawAndReleaseHold` for the hold-ledger release. Any communication that
+accompanies a manual removal is manual too, the same way the board's manual
+approve/deny/scholarship communications work (§5.2) — there is no automatic
+"you've been removed" email. **In addition to the day-1/3/6 warnings, the cron sends one
+leadership digest per run** (`emailBoardMembers`, subject `Non-payment digest: <a>
+approaching deadline, <b> overdue`) whenever there's at least one day-3 ("approaching
+deadline") or day-7+ ("overdue") row, listing each by person/program/day-count so the
+board can decide whether to remove an enrollment or reach out to the household. Nothing
+sends when both lists are empty.
+
+## 6. Related
 
 - `docs/designs/SHOPIFY_MEMBER_SEGMENT_PRICING.md` — the segment-gated pricing design
   that per-checkout discount codes stand in for until checkout identity is solved.
