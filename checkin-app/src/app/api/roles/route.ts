@@ -3,19 +3,13 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { ROLE_FLAGS, type RoleFlag, applyRoleFlag, rolesToFlags } from "@/lib/roles";
 
-type RoleFlag = "isSysadmin" | "isBoardMember" | "isKeyholder" | "isBackgroundCheckReviewer" | "isOperations";
-const ROLE_FLAGS: RoleFlag[] = ["isSysadmin", "isBoardMember", "isKeyholder", "isBackgroundCheckReviewer", "isOperations"];
-
-const ROLE_SELECT = {
+const PERSON_SELECT = {
     id: true,
     email: true,
     name: true,
-    isSysadmin: true,
-    isBoardMember: true,
-    isKeyholder: true,
-    isBackgroundCheckReviewer: true,
-    isOperations: true,
+    roles: { select: { role: true } },
 } as const;
 
 /** Thrown inside the tx when the actor's authority matrix denies a requested flag change. */
@@ -38,17 +32,15 @@ export const GET = withAuth(
                     email: true,
                     name: true,
                     dateOfBirth: true,
-                    isSysadmin: true,
-                    isBoardMember: true,
-                    isKeyholder: true,
-                    isBackgroundCheckReviewer: true,
-                    isOperations: true,
+                    roles: { select: { role: true } },
                 },
                 orderBy: { name: "asc" },
             });
-            // Don't leak dob (PII); expose only a youth flag for filtering.
-            const people = rows.map(({ dateOfBirth, ...p }: (typeof rows)[number]) => ({
+            // Don't leak dob (PII); expose only a youth flag for filtering. isOperations has
+            // no column, so every flag is derived through the one `roles` relation.
+            const people = rows.map(({ dateOfBirth, roles, ...p }) => ({
                 ...p,
+                ...rolesToFlags(roles),
                 isYouth: dateOfBirth != null && dateOfBirth > eighteenYearsAgo,
             }));
             return NextResponse.json({ people });
@@ -96,13 +88,15 @@ export const PATCH = withAuth(
                 // rows), so a coarse lock is fine; per-row locking buys nothing at this
                 // scale. This serializes concurrent board-removals so two txns can't each
                 // drop a different board member down to zero.
-                await tx.$queryRaw`SELECT id FROM "Person" WHERE "isBoardMember" = true FOR UPDATE`;
+                await tx.$queryRaw`SELECT "personId" FROM "PersonRole" WHERE "role" = 'BOARD' FOR UPDATE`;
 
                 const target = await tx.person.findUnique({
                     where: { id: targetUserId },
-                    select: ROLE_SELECT,
+                    select: PERSON_SELECT,
                 });
                 if (!target) throw new TargetNotFoundError();
+
+                const currentFlags = rolesToFlags(target.roles);
 
                 // Real delta: only flags whose requested value actually differs from the
                 // target's current value are "changes" — a present flag equal to the
@@ -110,7 +104,7 @@ export const PATCH = withAuth(
                 const updateData: Partial<Record<RoleFlag, boolean>> = {};
                 for (const field of ROLE_FLAGS) {
                     const val = requested[field];
-                    if (val === undefined || val === target[field]) continue;
+                    if (val === undefined || val === currentFlags[field]) continue;
                     updateData[field] = val;
                 }
 
@@ -131,9 +125,9 @@ export const PATCH = withAuth(
                     throw new RoleMatrixError("Forbidden");
                 }
 
-                const removingBoard = updateData.isBoardMember === false && target.isBoardMember === true;
+                const removingBoard = updateData.isBoardMember === false && currentFlags.isBoardMember === true;
                 if (removingBoard) {
-                    const boardCount = await tx.person.count({ where: { isBoardMember: true } });
+                    const boardCount = await tx.personRole.count({ where: { role: 'BOARD' } });
                     if (boardCount <= 1) {
                         throw new LastBoardMemberError();
                     }
@@ -142,18 +136,16 @@ export const PATCH = withAuth(
                 if (Object.keys(updateData).length === 0) {
                     // Every requested flag was already at its current value — nothing to
                     // change, nothing to audit.
-                    return { user: target };
+                    return { user: { id: target.id, email: target.email, name: target.name, ...currentFlags } };
                 }
 
-                const updated = await tx.person.update({
-                    where: { id: targetUserId },
-                    data: updateData,
-                    select: ROLE_SELECT,
-                });
+                for (const field of Object.keys(updateData) as RoleFlag[]) {
+                    await applyRoleFlag(tx, targetUserId, field, updateData[field]!, actor.id);
+                }
 
                 const oldData: Partial<Record<RoleFlag, boolean>> = {};
                 for (const field of Object.keys(updateData) as RoleFlag[]) {
-                    oldData[field] = target[field];
+                    oldData[field] = currentFlags[field];
                 }
 
                 await tx.auditLog.create({
@@ -167,7 +159,8 @@ export const PATCH = withAuth(
                     },
                 });
 
-                return { user: updated };
+                const newFlags = { ...currentFlags, ...updateData };
+                return { user: { id: target.id, email: target.email, name: target.name, ...newFlags } };
             });
 
             return NextResponse.json({ message: "Roles updated successfully", user: result.user });

@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { addHouseholdLead } from "@/lib/household/leads";
+import { applyRoleFlag } from "@/lib/roles";
 
 /**
  * Dev seed + macro helpers (DEV_DASHBOARD_DESIGN.md §4) — the ONE source of truth for creating
@@ -72,6 +73,10 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             household: { create: { name: "Board Member Household" } },
         },
     });
+    // PersonRole is the source of truth the claims/lock now read — every non-PATCH
+    // board/role writer (seeds included) must populate the table, not just the mirror.
+    await applyRoleFlag(prisma, isBoardMember.id, "isSysadmin", true);
+    await applyRoleFlag(prisma, isBoardMember.id, "isBoardMember", true);
 
     const parentFamily = await prisma.person.upsert({
         where: { email: "parent.family@example.com" },
@@ -128,7 +133,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    await prisma.person.upsert({
+    const keyholder1 = await prisma.person.upsert({
         where: { email: "keyholder1@example.com" },
         update: { name: "Keyholder One", phone: "555-555-0005", isKeyholder: true },
         create: {
@@ -139,8 +144,9 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             household: { create: { name: "Keyholder One Household" } },
         },
     });
+    await applyRoleFlag(prisma, keyholder1.id, "isKeyholder", true);
 
-    await prisma.person.upsert({
+    const keyholder2 = await prisma.person.upsert({
         where: { email: "keyholder2@example.com" },
         update: { name: "Keyholder Two", phone: "555-555-0006", isKeyholder: true },
         create: {
@@ -151,6 +157,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             household: { create: { name: "Keyholder Two Household" } },
         },
     });
+    await applyRoleFlag(prisma, keyholder2.id, "isKeyholder", true);
 
     const certifiedAdult = await prisma.person.upsert({
         where: { email: "certified.adult@example.com" },
@@ -177,7 +184,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
         },
     });
 
-    await prisma.person.upsert({
+    const bgReviewer = await prisma.person.upsert({
         where: { email: "bg.reviewer@example.com" },
         update: { name: "BG Reviewer", phone: "555-555-0009", isBackgroundCheckReviewer: true },
         create: {
@@ -188,6 +195,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             household: { create: { name: "BG Reviewer Household" } },
         },
     });
+    await applyRoleFlag(prisma, bgReviewer.id, "isBackgroundCheckReviewer", true);
 
     // 3. Household assignments & leads
     await prisma.person.update({ where: { id: parentFamily.id }, data: { householdId: household1.id } });

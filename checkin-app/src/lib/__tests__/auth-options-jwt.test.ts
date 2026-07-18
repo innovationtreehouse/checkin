@@ -49,10 +49,19 @@ jest.mock('@/lib/prisma', () => ({
 
 jest.mock('@/lib/household/leads', () => ({ addHouseholdLead: jest.fn() }));
 
+// applyRoleFlag's dual-write plumbing (PersonRole upsert + mirror column) has its own
+// integration coverage (adminRolesAPI.integration.test.ts); this file only drives the
+// jwt() callback WIRING around it, so it's mocked here like addHouseholdLead above.
+jest.mock('@/lib/roles', () => ({
+    ...jest.requireActual('@/lib/roles'),
+    applyRoleFlag: jest.fn(),
+}));
+
 // jest.setup.js globally mocks @/lib/auth-options to `{}`; unmock to get the real callbacks.
 jest.unmock('@/lib/auth-options');
 
 import { authOptions, PERSONA_MINT_PROVIDER_ID } from '@/lib/auth-options';
+import { FLAG_TO_KIND, type RoleFlag } from '@/lib/roles';
 
 const mockFindUnique = (prisma as unknown as { person: { findUnique: jest.Mock } })
     .person.findUnique;
@@ -75,7 +84,7 @@ function callRefresh(token: Record<string, unknown>) {
 }
 
 function dbParticipant(overrides: Record<string, unknown> = {}) {
-    return {
+    const merged = {
         id: 7,
         email: 'p@example.com',
         isSysadmin: true,
@@ -86,7 +95,13 @@ function dbParticipant(overrides: Record<string, unknown> = {}) {
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
         household: { orgMembership: { status: 'ACTIVE' } },
         ...overrides,
-    };
+    } as Record<string, unknown>;
+    // Claims now derive from `roles` (PersonRole rows), not the boolean columns —
+    // translate this fixture's flat flags into the shape auth-options actually reads.
+    const roles = (Object.keys(FLAG_TO_KIND) as RoleFlag[])
+        .filter((flag) => merged[flag])
+        .map((flag) => ({ role: FLAG_TO_KIND[flag] }));
+    return { ...merged, roles };
 }
 
 beforeEach(() => {
@@ -207,15 +222,16 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
         process.env.BOOTSTRAP_SYSADMINS = 'Boss@Example.com';
         let freshJwt!: JwtCallback;
         let freshFindUnique!: jest.Mock;
-        let freshUpdate!: jest.Mock;
+        let freshApplyRoleFlag!: jest.Mock;
         try {
             jest.isolateModules(() => {
                 // Fresh module registry so BOOTSTRAP_SYSADMINS is re-read from the env just set above.
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
                 const freshPrisma = (require('@/lib/prisma') as { default: { person: { findUnique: jest.Mock; update: jest.Mock } } }).default;
                 freshFindUnique = freshPrisma.person.findUnique;
-                freshUpdate = freshPrisma.person.update;
                 freshFindUnique.mockResolvedValue(dbParticipant({ isSysadmin: false, email: 'boss@example.com' }));
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                freshApplyRoleFlag = (require('@/lib/roles') as { applyRoleFlag: jest.Mock }).applyRoleFlag;
                 // eslint-disable-next-line @typescript-eslint/no-require-imports
                 freshJwt = (require('@/lib/auth-options') as typeof import('@/lib/auth-options')).authOptions.callbacks!.jwt!;
             });
@@ -228,7 +244,9 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
             } as unknown as Parameters<JwtCallback>[0])) as Record<string, unknown>;
 
             // Env comparison is case-insensitive (BOOTSTRAP_SYSADMINS is lowercased on parse).
-            expect(freshUpdate).toHaveBeenCalledWith({ where: { id: 7 }, data: { isSysadmin: true } });
+            // The bootstrap promotion routes through the same dual-write helper every role
+            // grant uses (lib/roles.ts applyRoleFlag), not a direct person.update.
+            expect(freshApplyRoleFlag).toHaveBeenCalledWith(expect.anything(), 7, 'isSysadmin', true);
             expect(result.isSysadmin).toBe(true);
         } finally {
             process.env.BOOTSTRAP_SYSADMINS = prevEnv;

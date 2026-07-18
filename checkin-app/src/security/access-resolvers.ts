@@ -159,6 +159,8 @@ export function callerHoldsRole(
             return auth.type === 'session' && auth.user.isKeyholder;
         case 'isBackgroundCheckReviewer':
             return auth.type === 'session' && auth.user.isBackgroundCheckReviewer;
+        case 'isOperations':
+            return auth.type === 'session' && auth.user.isOperations;
         case 'certifier':
             return isCertifier(auth);
         case 'householdLead':

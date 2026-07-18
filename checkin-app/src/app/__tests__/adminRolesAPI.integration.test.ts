@@ -20,6 +20,14 @@ import { GET, PATCH } from '@/app/api/roles/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
+/** Does this person hold OPERATIONS in the table? isOperations has no Person column. */
+async function hasOperationsRow(personId: number): Promise<boolean> {
+    const row = await prisma.personRole.findUnique({
+        where: { personId_role: { personId, role: 'OPERATIONS' } },
+    });
+    return row !== null;
+}
+
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -171,8 +179,7 @@ describe('Admin Roles API Integration Tests', () => {
             asSession({ id: testSysAdminId, isSysadmin: true });
             const res = await PATCH(patchReq({ targetUserId: testSysAdminId, isOperations: true }));
             expect(res.status).toBe(200);
-            const row = await prisma.person.findUnique({ where: { id: testSysAdminId } });
-            expect(row?.isOperations).toBe(true);
+            expect(await hasOperationsRow(testSysAdminId)).toBe(true);
         });
     });
 
@@ -181,12 +188,23 @@ describe('Admin Roles API Integration Tests', () => {
         let board2Id: number;
 
         beforeAll(async () => {
+            // PersonRole is what the lock/count and claims now read — every board fixture
+            // that bypasses PATCH (this one included) must carry the table row, not just
+            // the mirror column.
             const boardActor = await prisma.person.create({
-                data: { email: `board-actor-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true, household: { create: { name: "Test HH" } } },
+                data: {
+                    email: `board-actor-${TAG}@example.com`, name: 'Board Actor', isBoardMember: true,
+                    household: { create: { name: "Test HH" } },
+                    roles: { create: [{ role: 'BOARD' }] },
+                },
             });
             boardActorId = boardActor.id;
             const board2 = await prisma.person.create({
-                data: { email: `board2-${TAG}@example.com`, name: 'Board Two', isBoardMember: true, household: { create: { name: "Test HH" } } },
+                data: {
+                    email: `board2-${TAG}@example.com`, name: 'Board Two', isBoardMember: true,
+                    household: { create: { name: "Test HH" } },
+                    roles: { create: [{ role: 'BOARD' }] },
+                },
             });
             board2Id = board2.id;
         });
@@ -220,20 +238,26 @@ describe('Admin Roles API Integration Tests', () => {
             }));
             expect(grant.status).toBe(200);
             let row = await prisma.person.findUnique({ where: { id: testTargetUserId } });
+            // Dual-write consistency: the four legacy-mirrored flags agree between the
+            // table and the column; OPERATIONS has a row but (by design) no column.
             expect(row?.isKeyholder).toBe(true);
             expect(row?.isBackgroundCheckReviewer).toBe(true);
-            expect(row?.isOperations).toBe(true);
+            expect(await hasOperationsRow(testTargetUserId)).toBe(true);
+            expect(await prisma.personRole.findUnique({ where: { personId_role: { personId: testTargetUserId, role: 'KEYHOLDER' } } })).not.toBeNull();
+            expect(await prisma.personRole.findUnique({ where: { personId_role: { personId: testTargetUserId, role: 'BG_REVIEWER' } } })).not.toBeNull();
+            expect(row && 'isOperations' in row).toBe(false);
 
             const revoke = await PATCH(patchReq({ targetUserId: testTargetUserId, isKeyholder: false }));
             expect(revoke.status).toBe(200);
             row = await prisma.person.findUnique({ where: { id: testTargetUserId } });
             expect(row?.isKeyholder).toBe(false);
+            expect(await prisma.personRole.findUnique({ where: { personId_role: { personId: testTargetUserId, role: 'KEYHOLDER' } } })).toBeNull();
         });
 
         it('writes an audit row with per-flag before/after on a successful change', async () => {
             asSession({ id: boardActorId, isBoardMember: true });
-            const before = await prisma.person.findUnique({ where: { id: testTargetUserId }, select: { isOperations: true } });
-            const res = await PATCH(patchReq({ targetUserId: testTargetUserId, isOperations: !before?.isOperations }));
+            const before = await hasOperationsRow(testTargetUserId);
+            const res = await PATCH(patchReq({ targetUserId: testTargetUserId, isOperations: !before }));
             expect(res.status).toBe(200);
 
             const audit = await prisma.auditLog.findFirst({
@@ -242,8 +266,8 @@ describe('Admin Roles API Integration Tests', () => {
             });
             expect(audit).not.toBeNull();
             expect(audit?.tableName).toBe('Participant');
-            expect(audit?.newData).toMatchObject({ isOperations: !before?.isOperations });
-            expect(audit?.oldData).toMatchObject({ isOperations: !!before?.isOperations });
+            expect(audit?.newData).toMatchObject({ isOperations: !before });
+            expect(audit?.oldData).toMatchObject({ isOperations: before });
         });
 
         it('board removes board membership from another board member -> 200 (>=2 board members present)', async () => {
@@ -298,8 +322,7 @@ describe('Admin Roles API Integration Tests', () => {
             asSession({ id: testSysAdminId, isSysadmin: true });
             const res = await PATCH(patchReq({ targetUserId: plainTargetId, isOperations: true }));
             expect(res.status).toBe(200);
-            const row = await prisma.person.findUnique({ where: { id: plainTargetId } });
-            expect(row?.isOperations).toBe(true);
+            expect(await hasOperationsRow(plainTargetId)).toBe(true);
         });
 
         it('sysadmin-only removes board -> 403 (message asserted), target unchanged', async () => {
@@ -318,12 +341,18 @@ describe('Admin Roles API Integration Tests', () => {
         let loneBoardId: number;
 
         beforeAll(async () => {
-            const ambientBoardCount = await prisma.person.count({ where: { isBoardMember: true } });
+            // The lock/count the route guards on is PersonRole now — assert the ambient
+            // invariant against the table, not the (dual-written but derivative) mirror.
+            const ambientBoardCount = await prisma.personRole.count({ where: { role: 'BOARD' } });
             if (ambientBoardCount !== 0) {
                 throw new Error(`Expected zero ambient board members before this describe, found ${ambientBoardCount}. A prior describe's board fixtures leaked.`);
             }
             const lone = await prisma.person.create({
-                data: { email: `lone-board-${TAG}@example.com`, name: 'Lone Board', isBoardMember: true, household: { create: { name: "Test HH" } } },
+                data: {
+                    email: `lone-board-${TAG}@example.com`, name: 'Lone Board', isBoardMember: true,
+                    household: { create: { name: "Test HH" } },
+                    roles: { create: [{ role: 'BOARD' }] },
+                },
             });
             loneBoardId = lone.id;
         });
@@ -350,16 +379,24 @@ describe('Admin Roles API Integration Tests', () => {
         let raceBId: number;
 
         beforeAll(async () => {
-            const ambientBoardCount = await prisma.person.count({ where: { isBoardMember: true } });
+            const ambientBoardCount = await prisma.personRole.count({ where: { role: 'BOARD' } });
             if (ambientBoardCount !== 0) {
                 throw new Error(`Expected zero ambient board members before this describe, found ${ambientBoardCount}. A prior describe's board fixtures leaked.`);
             }
             const a = await prisma.person.create({
-                data: { email: `race-a-${TAG}@example.com`, name: 'Race A', isBoardMember: true, household: { create: { name: "Test HH" } } },
+                data: {
+                    email: `race-a-${TAG}@example.com`, name: 'Race A', isBoardMember: true,
+                    household: { create: { name: "Test HH" } },
+                    roles: { create: [{ role: 'BOARD' }] },
+                },
             });
             raceAId = a.id;
             const b = await prisma.person.create({
-                data: { email: `race-b-${TAG}@example.com`, name: 'Race B', isBoardMember: true, household: { create: { name: "Test HH" } } },
+                data: {
+                    email: `race-b-${TAG}@example.com`, name: 'Race B', isBoardMember: true,
+                    household: { create: { name: "Test HH" } },
+                    roles: { create: [{ role: 'BOARD' }] },
+                },
             });
             raceBId = b.id;
         });
@@ -392,8 +429,66 @@ describe('Admin Roles API Integration Tests', () => {
             const loserData = await loser.json();
             expect(loserData.error).toBe("Cannot remove the last board member");
 
-            const finalBoardCount = await prisma.person.count({ where: { isBoardMember: true, id: { in: [raceAId, raceBId] } } });
+            // Assert on the table (the lock's source of truth), not the mirror, to prove
+            // the FOR UPDATE lock is actually serializing against PersonRole now.
+            const finalBoardCount = await prisma.personRole.count({ where: { role: 'BOARD', personId: { in: [raceAId, raceBId] } } });
             expect(finalBoardCount).toBe(1);
+            // The mirror stays consistent with the table (dual-write).
+            const finalMirrorCount = await prisma.person.count({ where: { isBoardMember: true, id: { in: [raceAId, raceBId] } } });
+            expect(finalMirrorCount).toBe(1);
+        });
+    });
+
+    describe('PersonRole backfill (migration 20260718180437_person_roles_table)', () => {
+        // Same shape as the migration's INSERT...SELECT, restricted by id so it only
+        // touches this describe's own fixtures on the shared test DB (running the
+        // unrestricted migration SQL again here would collide with every other
+        // describe's already-backfilled BOARD/etc. rows).
+        async function runBackfill(ids: number[]) {
+            const idList = ids.join(',');
+            await prisma.$executeRawUnsafe(`
+                INSERT INTO "PersonRole" ("personId", "role", "grantedAt")
+                SELECT "id", 'SYSADMIN'::"PersonRoleKind", CURRENT_TIMESTAMP FROM "Person" WHERE "isSysadmin" = true AND "id" IN (${idList})
+                UNION ALL
+                SELECT "id", 'BOARD', CURRENT_TIMESTAMP FROM "Person" WHERE "isBoardMember" = true AND "id" IN (${idList})
+                UNION ALL
+                SELECT "id", 'KEYHOLDER', CURRENT_TIMESTAMP FROM "Person" WHERE "isKeyholder" = true AND "id" IN (${idList})
+                UNION ALL
+                SELECT "id", 'BG_REVIEWER', CURRENT_TIMESTAMP FROM "Person" WHERE "isBackgroundCheckReviewer" = true AND "id" IN (${idList});
+            `);
+        }
+
+        it('backfills exactly one row per true legacy boolean, and no row for isOperations (never had a column)', async () => {
+            // Simulates pre-migration data: legacy booleans set directly, no PersonRole
+            // rows (as if these people existed before the table was created).
+            const both = await prisma.person.create({
+                data: { email: `backfill-both-${TAG}@example.com`, name: 'Backfill Both', isSysadmin: true, isBoardMember: true, household: { create: { name: "Test HH" } } },
+            });
+            const keyholderOnly = await prisma.person.create({
+                data: { email: `backfill-kh-${TAG}@example.com`, name: 'Backfill KH', isKeyholder: true, household: { create: { name: "Test HH" } } },
+            });
+            const nobody = await prisma.person.create({
+                data: { email: `backfill-nobody-${TAG}@example.com`, name: 'Backfill Nobody', household: { create: { name: "Test HH" } } },
+            });
+
+            try {
+                expect(await prisma.personRole.count({ where: { personId: { in: [both.id, keyholderOnly.id, nobody.id] } } })).toBe(0);
+
+                await runBackfill([both.id, keyholderOnly.id, nobody.id]);
+
+                const bothRoles = (await prisma.personRole.findMany({ where: { personId: both.id }, select: { role: true } })).map(r => r.role).sort();
+                expect(bothRoles).toEqual(['BOARD', 'SYSADMIN']);
+
+                const khRoles = (await prisma.personRole.findMany({ where: { personId: keyholderOnly.id }, select: { role: true } })).map(r => r.role);
+                expect(khRoles).toEqual(['KEYHOLDER']);
+
+                expect(await prisma.personRole.count({ where: { personId: nobody.id } })).toBe(0);
+
+                // isOperations never shipped a column — nothing to backfill it from.
+                expect(await prisma.personRole.count({ where: { role: 'OPERATIONS', personId: { in: [both.id, keyholderOnly.id, nobody.id] } } })).toBe(0);
+            } finally {
+                await prisma.person.deleteMany({ where: { id: { in: [both.id, keyholderOnly.id, nobody.id] } } });
+            }
         });
     });
 });

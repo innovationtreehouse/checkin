@@ -1,14 +1,18 @@
 import type { JWT } from 'next-auth/jwt';
 import { assignParticipantClaims, type ClaimSourceParticipant } from '@/lib/authClaims';
 
+const ALL_ROLES: ClaimSourceParticipant['roles'] = [
+    { role: 'SYSADMIN' },
+    { role: 'BOARD' },
+    { role: 'KEYHOLDER' },
+    { role: 'BG_REVIEWER' },
+    { role: 'OPERATIONS' },
+];
+
 function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSourceParticipant {
     return {
         id: 7,
-        isSysadmin: true,
-        isKeyholder: true,
-        isBoardMember: true,
-        isBackgroundCheckReviewer: true,
-        isOperations: true,
+        roles: ALL_ROLES,
         householdId: 99,
         isHouseholdLead: false,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
@@ -56,6 +60,50 @@ describe('assignParticipantClaims — household login gate', () => {
             expect(token.isKeyholder).toBe(true);
         },
     );
+});
+
+describe('assignParticipantClaims — claims derive from PersonRole rows', () => {
+    it('no rows ⇒ every authority flag false', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ roles: [] }));
+
+        expect(token.isSysadmin).toBe(false);
+        expect(token.isBoardMember).toBe(false);
+        expect(token.isKeyholder).toBe(false);
+        expect(token.isBackgroundCheckReviewer).toBe(false);
+        expect(token.isOperations).toBe(false);
+    });
+
+    it('one row ⇒ only that flag is true', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ roles: [{ role: 'BOARD' }] }));
+
+        expect(token.isBoardMember).toBe(true);
+        expect(token.isSysadmin).toBe(false);
+        expect(token.isKeyholder).toBe(false);
+        expect(token.isBackgroundCheckReviewer).toBe(false);
+        expect(token.isOperations).toBe(false);
+    });
+
+    it('a grant (row added) flips the claim true on the next stamp', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ roles: [] }));
+        expect(token.isOperations).toBe(false);
+
+        // Simulates a refresh after PATCH /api/roles granted OPERATIONS.
+        assignParticipantClaims(token, participant({ roles: [{ role: 'OPERATIONS' }] }));
+        expect(token.isOperations).toBe(true);
+    });
+
+    it('a revoke (row removed) flips the claim false on the next stamp', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ roles: [{ role: 'KEYHOLDER' }] }));
+        expect(token.isKeyholder).toBe(true);
+
+        // Simulates a refresh after PATCH /api/roles revoked KEYHOLDER.
+        assignParticipantClaims(token, participant({ roles: [] }));
+        expect(token.isKeyholder).toBe(false);
+    });
 });
 
 describe('assignParticipantClaims — householdLead claim', () => {
