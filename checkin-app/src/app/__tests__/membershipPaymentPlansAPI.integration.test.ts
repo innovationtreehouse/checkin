@@ -276,18 +276,23 @@ describe('Membership payment-plan routes', () => {
             expect(__getSentEmails()).toHaveLength(0);
         });
 
-        // User decision: an applicant receives EXACTLY ONE automatic email (the
-        // request ack, covered above). Certify/approve sends NO automatic email —
-        // the board communicates decisions manually — even though leadProcessId's
-        // household lead (a gate-worthy recipient) exists.
-        it('certify (approve) sends no automatic email', async () => {
+        // User decision: an applicant receives EXACTLY ONE automatic *scholarship*
+        // email (the request ack, covered above). Certify/approve sends NO automatic
+        // scholarship-decision email — the board communicates decisions manually —
+        // even though leadProcessId's household lead (a gate-worthy recipient) exists.
+        // The standard activation "welcome — your membership is active" email is
+        // orthogonal to the scholarship decision and IS expected here.
+        it('certify (approve) sends no automatic scholarship email', async () => {
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
             __clearSentEmails();
             const res = await PlansPost(nextReq('http://localhost', { method: 'POST', body: JSON.stringify({ processId: leadProcessId, reason: 'Board approved scholarship' }) }));
             expect(res.status).toBe(200);
 
-            expect(__getSentEmails()).toHaveLength(0);
+            const scholarshipEmails = __getSentEmails().filter(
+                (e) => !e.subject.startsWith('Welcome to the Treehouse'),
+            );
+            expect(scholarshipEmails).toHaveLength(0);
         });
     });
 });
