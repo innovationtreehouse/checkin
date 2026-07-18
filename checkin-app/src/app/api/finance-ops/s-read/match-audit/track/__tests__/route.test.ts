@@ -204,6 +204,17 @@ describe('kind: membership', () => {
         expect(raisePaymentExceptionMock).not.toHaveBeenCalled();
     });
 
+    it('recorded order absent from the mirror → PAYMENT_UNVERIFIABLE, not ACTIVE_WITHOUT_PAYMENT', async () => {
+        prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
+            status: 'ACTIVE', kind: 'RENEWAL', shopifyOrderId: '801', certifiedById: null,
+        });
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set()); // 801 not present
+        const res = await POST(req({ kind: 'membership', processId: 42 }));
+        expect(res.status).toBe(200);
+        // A payment IS on record (order 801) — it just can't be verified.
+        expect(raisePaymentExceptionMock).toHaveBeenCalledWith('PAYMENT_UNVERIFIABLE', { processId: 42 });
+    });
+
     it('409 for a process outside the audit-swept status/kind population', async () => {
         prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
             status: 'PENDING_PAYMENT', kind: 'INITIAL', shopifyOrderId: null, certifiedById: null,
@@ -237,6 +248,26 @@ describe('kind: enrollment', () => {
         prismaMock.programParticipant.findUnique.mockResolvedValue({
             status: 'ACTIVE', shopifyOrderId: null, wasOrgMemberAtApproval: true,
         });
+        const res = await POST(req({ kind: 'enrollment', programId: 7, personId: 9 }));
+        expect(res.status).toBe(409);
+        expect(raisePaymentExceptionMock).not.toHaveBeenCalled();
+    });
+
+    it('recorded order absent from the mirror → PAYMENT_UNVERIFIABLE, not ACTIVE_WITHOUT_PAYMENT', async () => {
+        prismaMock.programParticipant.findUnique.mockResolvedValue({
+            status: 'ACTIVE', shopifyOrderId: '802', wasOrgMemberAtApproval: null,
+        });
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set()); // 802 not present
+        const res = await POST(req({ kind: 'enrollment', programId: 7, personId: 9 }));
+        expect(res.status).toBe(200);
+        expect(raisePaymentExceptionMock).toHaveBeenCalledWith('PAYMENT_UNVERIFIABLE', { programId: 7, personId: 9 });
+    });
+
+    it('409 when the recorded order is now present in the mirror', async () => {
+        prismaMock.programParticipant.findUnique.mockResolvedValue({
+            status: 'ACTIVE', shopifyOrderId: '803', wasOrgMemberAtApproval: null,
+        });
+        mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set(['803']));
         const res = await POST(req({ kind: 'enrollment', programId: 7, personId: 9 }));
         expect(res.status).toBe(409);
         expect(raisePaymentExceptionMock).not.toHaveBeenCalled();

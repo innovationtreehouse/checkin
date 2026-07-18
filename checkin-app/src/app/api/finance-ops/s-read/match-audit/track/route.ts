@@ -21,8 +21,12 @@ import { isPaid, raisePaymentException } from "@/lib/finance/reconcile";
  * activated/certified/refunded/scholarship-approved since the audit ran)
  * cannot mint an exception. This keeps the route independent of whatever
  * bucket set matchAudit.ts happens to have (see that file's P2 buckets):
- * the only two gaps this route ever promotes are the ones that re-derive true
- * below, regardless of bucket name.
+ * the only gaps this route ever promotes are the ones that re-derive true
+ * below, regardless of bucket name. The exception KIND is chosen from the
+ * re-derived state, not the bucket: a recorded-but-absent order is
+ * PAYMENT_UNVERIFIABLE (payment on record, unverifiable), a missing order is
+ * ACTIVE_WITHOUT_PAYMENT (no payment on record), an unclaimed paid order is
+ * UNMATCHED_ORDER.
  */
 
 export type TrackBody =
@@ -84,10 +88,17 @@ async function trackMembership(processId: number): Promise<NextResponse> {
     // Only the population the audit sweeps: ACTIVE/PENDING_BG_CLEARANCE, INITIAL/RENEWAL.
     const swept = (p.status === "ACTIVE" || p.status === "PENDING_BG_CLEARANCE") && (p.kind === "INITIAL" || p.kind === "RENEWAL");
     if (!swept) return apiError("Not an active membership activation", 409);
-    const gap = p.shopifyOrderId
-        ? !(await mirror.orderLegacyIdsPresent([p.shopifyOrderId])).has(p.shopifyOrderId) // ORDER_NOT_IN_MIRROR
-        : p.certifiedById == null; // NO_PAYMENT_BASIS (certified => MANUAL, not a gap)
-    if (!gap) return apiError("Membership is no longer a gap (matched or certified since the audit)", 409);
+    // Two distinct gaps, two distinct kinds: an order recorded-but-absent from the
+    // mirror is PAYMENT_UNVERIFIABLE (a payment IS on record, just unverifiable);
+    // no order at all is ACTIVE_WITHOUT_PAYMENT (no payment on record).
+    if (p.shopifyOrderId) {
+        if ((await mirror.orderLegacyIdsPresent([p.shopifyOrderId])).has(p.shopifyOrderId)) {
+            return apiError("Membership is no longer a gap (its order is now in the mirror)", 409);
+        }
+        await raisePaymentException("PAYMENT_UNVERIFIABLE", { processId });
+        return NextResponse.json({ tracked: true });
+    }
+    if (p.certifiedById != null) return apiError("Membership is no longer a gap (certified since the audit)", 409);
     // ponytail: for the null-order kinds the @@unique(kind, shopifyOrderId) index does
     // NOT dedup (NULLs are distinct — no NULLS NOT DISTINCT), so two *concurrent*
     // clicks on the same row could create two ACTIVE_WITHOUT_PAYMENT rows.
@@ -105,10 +116,16 @@ async function trackEnrollment(programId: number, personId: number): Promise<Nex
     });
     if (!e) return apiError("Enrollment not found", 404);
     if (e.status !== "ACTIVE") return apiError("Not an active enrollment", 409); // audit sweeps status ACTIVE only
-    const gap = e.shopifyOrderId
-        ? !(await mirror.orderLegacyIdsPresent([e.shopifyOrderId])).has(e.shopifyOrderId) // ORDER_NOT_IN_MIRROR
-        : e.wasOrgMemberAtApproval == null; // NO_PAYMENT_BASIS (scholarship => not a gap)
-    if (!gap) return apiError("Enrollment is no longer a gap (matched or scholarship-approved since the audit)", 409);
+    // Same split as trackMembership: recorded-but-absent order → PAYMENT_UNVERIFIABLE
+    // (payment on record, unverifiable); no order → ACTIVE_WITHOUT_PAYMENT.
+    if (e.shopifyOrderId) {
+        if ((await mirror.orderLegacyIdsPresent([e.shopifyOrderId])).has(e.shopifyOrderId)) {
+            return apiError("Enrollment is no longer a gap (its order is now in the mirror)", 409);
+        }
+        await raisePaymentException("PAYMENT_UNVERIFIABLE", { programId, personId });
+        return NextResponse.json({ tracked: true });
+    }
+    if (e.wasOrgMemberAtApproval != null) return apiError("Enrollment is no longer a gap (scholarship-approved since the audit)", 409);
     // ponytail: for the null-order kinds the @@unique(kind, shopifyOrderId) index does
     // NOT dedup (NULLs are distinct — no NULLS NOT DISTINCT), so two *concurrent*
     // clicks on the same row could create two ACTIVE_WITHOUT_PAYMENT rows.

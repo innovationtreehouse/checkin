@@ -48,7 +48,8 @@ export type PaymentExceptionKind =
     | "CANCELLED"
     | "REVERSED_BEFORE_ACTIVATION"
     | "AMOUNT_MISMATCH"
-    | "ACTIVE_WITHOUT_PAYMENT";
+    | "ACTIVE_WITHOUT_PAYMENT"
+    | "PAYMENT_UNVERIFIABLE";
 
 type Severity = "WARN" | "CRITICAL";
 
