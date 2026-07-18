@@ -4,11 +4,15 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 import { notifications } from "@mantine/notifications";
-import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, resetRtl, setSession } from "@/test-helpers/rtl";
 import AdminParticipantsIndex from "../page";
 
 beforeEach(() => {
     resetRtl();
+    // Default actor for the pre-existing tests below: a board member, who holds
+    // every affordance this suite exercises (Details/Household/Assign/Bulk
+    // Import/+New Person/+ Add contact).
+    setSession({ id: 999, isBoardMember: true });
     (notifications.show as jest.Mock).mockClear();
 });
 
@@ -290,5 +294,78 @@ describe("AdminParticipantsIndex", () => {
         fireEvent.click(screen.getByRole("button", { name: "Edit Household Info" }));
         expect(await screen.findByText(/Edit Household Info —/)).toBeInTheDocument();
         await waitFor(() => expect(screen.queryByText("Edit Person")).not.toBeInTheDocument());
+    });
+
+    describe("Add-contact modal", () => {
+        it("renders for a board session, creates a contact via POST /api/membership-ops/contacts, and prepends the row", async () => {
+            // One fetch stand-in installed BEFORE render, covering both endpoints the
+            // page calls. Swapping global.fetch mid-test (after render) would race the
+            // page's own 250ms search-debounce: if that debounce's GET fires (and calls
+            // setResults) AFTER the POST below, it clobbers the optimistic prepend with
+            // its own (empty) response — a single stable mock avoids that entirely.
+            const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+                const url = typeof input === "string" ? input : input.toString();
+                if (url.includes("/api/membership-ops/contacts")) {
+                    return {
+                        ok: true, status: 200,
+                        json: async () => ({ success: true, participant: { id: 50, name: "Ada Lovelace", email: "ada@example.com", phone: null, household: null } }),
+                    } as Response;
+                }
+                return { ok: true, status: 200, json: async () => ({ people: [] }) } as Response;
+            });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderWithProviders(<AdminParticipantsIndex />);
+            // Let the initial search-debounce fetch fire and settle before creating a
+            // contact, so it can't land its (empty) setResults after the prepend below.
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/people/search")));
+
+            fireEvent.click(await screen.findByRole("button", { name: "+ Add contact" }));
+            expect(await screen.findByText("Add Contact")).toBeInTheDocument();
+
+            // Mantine's required-field asterisk is a separate (aria-hidden) span but
+            // still part of the label's text content, so the accessible label is
+            // "Name *" / "Email *" — match with a regex, not an exact string.
+            fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "Ada Lovelace" } });
+            fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: "ada@example.com" } });
+
+            fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+            await waitFor(() => expect(screen.queryByText("Add Contact")).not.toBeInTheDocument());
+            expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+            expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Contact added." }));
+            expect(fetchMock).toHaveBeenCalledWith(
+                "/api/membership-ops/contacts",
+                expect.objectContaining({ method: "POST" }),
+            );
+        }, 15000);
+
+        it("shows the endpoint's owner-named message inline on the email field for a 409 duplicate", async () => {
+            const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+                const url = typeof input === "string" ? input : input.toString();
+                if (url.includes("/api/membership-ops/contacts")) {
+                    return {
+                        ok: false, status: 409,
+                        json: async () => ({ error: "This email already belongs to Jane Doe", fields: ["email"] }),
+                    } as Response;
+                }
+                return { ok: true, status: 200, json: async () => ({ people: [] }) } as Response;
+            });
+            global.fetch = fetchMock as unknown as typeof fetch;
+
+            renderWithProviders(<AdminParticipantsIndex />);
+            await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/api/people/search")));
+
+            fireEvent.click(await screen.findByRole("button", { name: "+ Add contact" }));
+            expect(await screen.findByText("Add Contact")).toBeInTheDocument();
+            fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "Dup" } });
+            fireEvent.change(screen.getByLabelText(/^Email/), { target: { value: "foo@x.com" } });
+
+            fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+            expect(await screen.findByText("This email already belongs to Jane Doe")).toBeInTheDocument();
+            // The modal stays open on a 409 (only the field error shows), unlike the success path.
+            expect(screen.getByText("Add Contact")).toBeInTheDocument();
+        }, 15000);
     });
 });
