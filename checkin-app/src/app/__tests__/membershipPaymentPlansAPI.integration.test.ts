@@ -41,6 +41,12 @@ function requestReq(body: unknown) {
         body: JSON.stringify(body),
     }) as unknown as import('next/server').NextRequest;
 }
+function denyReq(body: unknown) {
+    return new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {
+        method: 'POST',
+        body: JSON.stringify(body),
+    }) as unknown as import('next/server').NextRequest;
+}
 
 describe('Membership payment-plan routes', () => {
     let boardId: number;
@@ -200,11 +206,6 @@ describe('Membership payment-plan routes', () => {
     });
 
     describe('POST /api/finance-ops/membership-payment-plans/refuse (deny)', () => {
-        const denyReq = (body: unknown) => new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {
-            method: 'POST',
-            body: JSON.stringify(body),
-        }) as unknown as import('next/server').NextRequest;
-
         it('401 without a session', async () => {
             mockSession.mockResolvedValue(null);
             expect((await DenyPost(denyReq({ processId: leadProcessId }))).status).toBe(401);
@@ -345,22 +346,20 @@ describe('Membership payment-plan routes', () => {
             expect(__getSentEmails()).toHaveLength(0);
         });
 
-        const denyReq = (body: unknown) => new Request('http://localhost/api/finance-ops/membership-payment-plans/refuse', {
-            method: 'POST',
-            body: JSON.stringify(body),
-        }) as unknown as import('next/server').NextRequest;
-
-        it('deny sends the household a status email (no grace line), once', async () => {
-            const lead = await prisma.person.findUniqueOrThrow({ where: { id: leadId } });
+        // User decision: deny is deliberately silent — no automatic applicant email
+        // (the request ack, covered above, is the applicant's only automatic email;
+        // the board communicates a denial manually). Filtered to exclude a stray
+        // "Welcome to the Treehouse" send (another test's certify/activate) rather
+        // than asserting a bare zero total, so this can't be fooled by mock bleed.
+        it('deny sends no automatic email', async () => {
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
+            __clearSentEmails();
             const res = await DenyPost(denyReq({ processId: leadProcessId }));
             expect(res.status).toBe(200);
 
-            const sent = __getSentEmails();
-            const status = sent.filter((e) => e.subject === 'Update on your membership scholarship / payment-plan request');
-            expect(status).toEqual([expect.objectContaining({ to: lead.email })]);
-            expect(status[0].html).not.toMatch(/grace|deadline|released/i); // membership deny has no seat/grace lines
+            const sent = __getSentEmails().filter((e) => !e.subject.startsWith('Welcome to the Treehouse'));
+            expect(sent).toHaveLength(0);
         });
 
         it('a no-op re-deny (flag already false) sends zero emails', async () => {
@@ -372,10 +371,9 @@ describe('Membership payment-plan routes', () => {
             expect(__getSentEmails()).toHaveLength(0);
         });
 
-        it('deny status email is gated per-recipient: an opted-out lead is excluded, the other lead receives it', async () => {
+        it('deny sends no automatic email regardless of household notification settings', async () => {
             const fresh = await makeProc('DenyGate', { requested: true, withLead: true });
-            const defaultOn = await prisma.person.findUniqueOrThrow({ where: { id: fresh.personId! } });
-            const optedOut = await prisma.person.create({
+            await prisma.person.create({
                 data: {
                     email: `deny-gate-out-${TAG}@example.com`, name: 'OptOut', householdId: fresh.householdId,
                     isHouseholdLead: true, notificationSettings: { emailScholarshipUpdates: false },
@@ -383,14 +381,12 @@ describe('Membership payment-plan routes', () => {
             });
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
 
+            __clearSentEmails();
             const res = await DenyPost(denyReq({ processId: fresh.processId }));
             expect(res.status).toBe(200);
 
-            const to = __getSentEmails()
-                .filter((e) => e.subject === 'Update on your membership scholarship / payment-plan request')
-                .map((e) => e.to);
-            expect(to).toContain(defaultOn.email);
-            expect(to).not.toContain(optedOut.email);
+            const sent = __getSentEmails().filter((e) => !e.subject.startsWith('Welcome to the Treehouse'));
+            expect(sent).toHaveLength(0);
         });
     });
 });

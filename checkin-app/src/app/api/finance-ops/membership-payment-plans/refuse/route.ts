@@ -3,8 +3,8 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { fromWhere } from "@/lib/membership/lifecycle";
-import { resolveScholarshipRecipients, sendScholarshipStatus } from "@/lib/scholarshipEmails";
 
 // Denies a pending membership scholarship / payment-plan request — the sibling
 // of POST /api/finance-ops/membership-payment-plans (approve) that membership
@@ -21,60 +21,71 @@ import { resolveScholarshipRecipients, sendScholarshipStatus } from "@/lib/schol
 export const POST = withAuth(
     { roles: ['isBoardMember'] },
     async (req, auth) => {
+        let body;
         try {
-            const body = await req.json();
+            body = await req.json();
+        } catch {
+            return apiError("Invalid JSON", 400);
+        }
+
+        try {
             const processId = parseInt(body.processId, 10);
 
             if (Number.isNaN(processId)) {
                 return apiError("processId is required", 400);
             }
-            if (auth.type !== 'session') {
-                return apiError("Unauthorized", 401);
+
+            // Probe the process itself (not just the target household) so a
+            // nonexistent processId gets a real 404, mirroring the program refuse
+            // route's probe order.
+            const process = await prisma.orgMembershipProcess.findUnique({
+                where: { id: processId },
+                select: { orgMembership: { select: { householdId: true } } },
+            });
+            if (!process) {
+                return apiError("Membership application not found", 404);
+            }
+
+            // Conflict of interest: mirrors certifyPaymentPlan (approve) — a board
+            // member may not deny their OWN household's request either. Sysadmin bypasses.
+            if (auth.type === 'session') {
+                if (await hasHouseholdConflict(prisma, auth.user.id, process.orgMembership?.householdId, { isSysadmin: auth.user.isSysadmin === true })) {
+                    return apiError("You cannot deny your own household's payment plan — a sysadmin must.", 403);
+                }
             }
 
             // Only act on a genuinely-requested, still-awaiting-payment process, so
-            // denying a stale/nonexistent request is a no-op error, mirroring the
-            // approve route's probe. Transactional true->false guard: a double-deny
-            // (already false) 409s and sends no email.
-            const data = { isPaymentPlanRequested: false };
-            const { count } = await prisma.orgMembershipProcess.updateMany({
-                // Deny CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
-                where: { id: processId, isPaymentPlanRequested: true, ...fromWhere('PENDING_PAYMENT') },
-                data,
+            // denying a stale/already-denied request 409s, mirroring the approve
+            // route's probe. Transactional true->false guard inside $transaction: the
+            // CAS and its audit row commit together, and a double-deny (already
+            // false) leaves count at 0 with no audit row written.
+            const count = await prisma.$transaction(async (tx) => {
+                const { count } = await tx.orgMembershipProcess.updateMany({
+                    // Deny CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
+                    where: { id: processId, isPaymentPlanRequested: true, ...fromWhere('PENDING_PAYMENT') },
+                    data: { isPaymentPlanRequested: false },
+                });
+                if (count === 1 && auth.type === 'session') {
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: auth.user.id,
+                            action: "EDIT",
+                            tableName: "OrgMembershipProcess",
+                            affectedEntityId: processId,
+                            newData: { paymentPlanDenied: true, isPaymentPlanRequested: false },
+                        },
+                    });
+                }
+                return count;
             });
 
             if (count === 0) {
                 return apiError("No pending payment-plan request", 409);
             }
 
-            await prisma.auditLog.create({
-                data: {
-                    actorId: auth.user.id,
-                    action: "EDIT",
-                    tableName: "OrgMembershipProcess",
-                    affectedEntityId: processId,
-                    newData: { paymentPlanDenied: true, isPaymentPlanRequested: false },
-                },
-            });
-
-            // Fire-and-forget status email after the transition commits (a failed send
-            // never fails the request). Mirrors program deny voice MINUS the seat/grace
-            // lines — membership holds no seat and has no grace deadline.
-            const process = await prisma.orgMembershipProcess.findUnique({
-                where: { id: processId },
-                select: { orgMembership: { select: { householdId: true } } },
-            });
-            const householdId = process?.orgMembership?.householdId;
-            if (householdId) {
-                const recipients = await resolveScholarshipRecipients(householdId); // no requester at deny time
-                await sendScholarshipStatus(
-                    recipients,
-                    "Update on your membership scholarship / payment-plan request",
-                    `<p>The Scholarship Review Team was unable to approve your household's scholarship / payment plan `
-                    + `for your Treehouse membership dues at this time.</p>`
-                    + `<p>You can still pay your dues normally to activate your membership.</p>`,
-                );
-            }
+            // Deny sends NO automatic email (notification contract: the request ack
+            // is the applicant's only automatic email; the board communicates the
+            // denial manually).
 
             return NextResponse.json({ success: true });
         } catch (error) {

@@ -537,8 +537,14 @@ export default function MembershipPage() {
   // Ask the board's Scholarship Review Team for a payment plan on membership dues.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
+  // Mirrors the server flag both ways (not just true->true) so a denial that
+  // clears isPaymentPlanRequested — surfaced on the next state refetch — reverts
+  // the button to requestable instead of latching "requested" forever. The
+  // request button's own optimistic setPlanRequested(true) after a successful
+  // POST (below) is untouched by this: it doesn't change `state`, so this effect
+  // doesn't re-run and clobber it.
   useEffect(() => {
-    if (state?.process?.isPaymentPlanRequested) setPlanRequested(true);
+    setPlanRequested(!!state?.process?.isPaymentPlanRequested);
   }, [state?.process?.isPaymentPlanRequested]);
 
   const requestPaymentPlan = async () => {

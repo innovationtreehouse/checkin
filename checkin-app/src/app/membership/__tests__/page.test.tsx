@@ -989,4 +989,28 @@ describe("scholarship / payment-plan request", () => {
     expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
   });
+
+  it("a state refetch with isPaymentPlanRequested:false reverts the button to requestable", async () => {
+    setSession({ id: 1 });
+    // Piggyback on the payment-holdoff visibility refetch (already exercised
+    // above) as the lever to force a second /api/membership load — the
+    // PENDING_PAYMENT card has no other user-facing refresh trigger.
+    sessionStorage.setItem("membership_awaiting_payment_1", String(Date.now()));
+    let requested = true;
+    mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": () => state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT", isPaymentPlanRequested: requested },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
+
+    requested = false;
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ })).toBeInTheDocument();
+  });
 });

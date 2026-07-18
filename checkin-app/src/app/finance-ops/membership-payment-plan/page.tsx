@@ -35,6 +35,7 @@ export default function MembershipPaymentPlansPage() {
   const [reason, setReason] = useState("");
   const [confirmDenyOpened, { open: openConfirmDeny, close: closeConfirmDeny }] = useDisclosure(false);
   const [pendingDenial, setPendingDenial] = useState<number | null>(null);
+  const [denying, setDenying] = useState(false);
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -102,6 +103,7 @@ export default function MembershipPaymentPlansPage() {
   };
 
   const doDeny = async (processId: number) => {
+    setDenying(true);
     try {
       const res = await fetch('/api/finance-ops/membership-payment-plans/refuse', {
         method: 'POST',
@@ -115,7 +117,7 @@ export default function MembershipPaymentPlansPage() {
         notifications.show({ color: 'green', message: 'Scholarship / payment plan denied.' });
       } else {
         const data = await res.json();
-        if (data.error === "No pending payment-plan request") {
+        if (res.status === 409) {
           notifications.show({ color: 'red', message: data.error, autoClose: 4000 });
           fetchRequests();
         } else {
@@ -124,15 +126,17 @@ export default function MembershipPaymentPlansPage() {
       }
     } catch {
       notifications.show({ color: 'red', message: "Network error processing denial.", autoClose: false });
+    } finally {
+      setDenying(false);
     }
   };
 
   const confirmDeny = async () => {
     if (pendingDenial === null) return;
-    closeConfirmDeny();
     const processId = pendingDenial;
-    setPendingDenial(null);
     await doDeny(processId);
+    setPendingDenial(null);
+    closeConfirmDeny();
   };
 
   if (authLoading || loading) {
@@ -224,11 +228,12 @@ export default function MembershipPaymentPlansPage() {
       >
         <Text mb="lg">
           Deny this request? The household stays awaiting payment and can still pay their dues
-          normally to activate, or re-request later. They&apos;ll be emailed that the request was declined.
+          normally to activate, or re-request later. No automatic email is sent — contact the
+          household to let them know.
         </Text>
         <Group justify="flex-end">
-          <Button variant="default" onClick={closeConfirmDeny}>Cancel</Button>
-          <Button color="red" onClick={confirmDeny}>Deny</Button>
+          <Button variant="default" onClick={closeConfirmDeny} disabled={denying}>Cancel</Button>
+          <Button color="red" onClick={confirmDeny} disabled={denying} loading={denying}>Deny</Button>
         </Group>
       </Modal>
     </Stack>
