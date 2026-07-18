@@ -4,20 +4,22 @@
 
 Migrations accumulate on `main` between releases — every PR that needs a
 schema change adds its own migration, same as always. **Before a release**,
-the accumulated migrations are coalesced into a single migration via a
-manual PR produced by `scripts/coalesce-migrations.ts`. **A release may apply
-at most one new database migration**, enforced by a release-gate step in
-`deploy-prod.yml`.
+the accumulated migrations are *usually* coalesced into a single migration
+via a manual PR produced by `scripts/coalesce-migrations.ts` — but how many
+migrations a release actually carries is a **human judgment call at release
+time**, not something CI enforces. There is no advisory PR-time warning and
+no blocking release-time gate (both existed and were removed — see "Release
+gate" below); the team just weighs it per release.
 
 ```
- PR merges to main            a coalesce PR                  a release
-┌──────────────────┐         ┌──────────────────┐         ┌──────────────────┐
-│ migration A       │         │ scripts/          │         │ deploy-prod.yml  │
-│ migration B       │  --->   │ coalesce-         │  --->   │ release gate:    │
-│ migration C       │         │ migrations.ts     │         │ "added migration │
-│ ...accumulate...  │         │ deletes A..N,     │         │  dirs since prev │
-│ migration N       │         │ adds ONE baseline │         │  release <= 1"   │
-└──────────────────┘         └──────────────────┘         └──────────────────┘
+ PR merges to main            a coalesce PR                   a release
+┌──────────────────┐         ┌──────────────────┐         ┌───────────────────┐
+│ migration A       │         │ scripts/          │         │ deploy-prod.yml   │
+│ migration B       │  --->   │ coalesce-         │  --->   │ human decides:    │
+│ migration C       │         │ migrations.ts     │         │ coalesce first,   │
+│ ...accumulate...  │         │ deletes A..N,     │         │ or ship as-is —   │
+│ migration N       │         │ adds ONE baseline │         │ CI doesn't count  │
+└──────────────────┘         └──────────────────┘         └───────────────────┘
 ```
 
 This repo hit both failure modes this policy exists to prevent, in the same
@@ -44,8 +46,10 @@ git diff --name-status <previous-release-tag>..origin/main -- checkin-app/prisma
 ```
 
 If that shows more than one new migration directory, run the coalesce script
-and land its PR before cutting the release — the release gate (below) will
-otherwise block it anyway.
+and land its PR before cutting the release. Nothing in CI enforces this
+anymore (see "Release gate" below) — it's a judgment call — but the
+mid-batch P3009 risk this flow exists to avoid doesn't go away just because
+the count is unchecked.
 
 ## Running the script
 
@@ -208,24 +212,27 @@ check instead of the normal replay:
 Normal PRs are unaffected — same steps, same conditions as before shape
 detection was added.
 
-## Release gate (`deploy-prod.yml`)
+## Release gate (removed)
 
-A new `migration-release-gate` job (deploy's `validate` job is a
-reusable-workflow call to `ci.yml` with no step surface to extend — this
-runs alongside it, and `deploy` needs both):
+There is no CI enforcement of migration count anymore. Two mechanisms used
+to exist and are both gone:
 
-1. Finds the previous `v*` release tag by fetching all tags, sorting with
-   `sort -V` (a real version sort, handles annotated and lightweight tags
-   identically — `git tag -l` doesn't distinguish them), and taking the one
-   immediately before the tag being released.
-2. **First release**: no previous `v*` tag exists — the gate logs a notice
-   and passes. There's nothing to have accumulated against yet.
-3. Otherwise, counts migration directories **added** (not deleted) between
-   the previous tag and this release. A normal release with exactly one new
-   migration passes. A coalesce release — which deletes many and adds
-   exactly one — also passes (only additions are counted). More than one
-   added migration directory fails the gate with a message pointing back at
-   this doc.
+- An **advisory** PR-time check (a callable workflow triggered on
+  `pull_request`) that warned, green, when unreleased migrations exceeded
+  the budget.
+- A **blocking** release-time gate (the same workflow, called from
+  `deploy-prod.yml`) that failed a release outright if it carried more than
+  one new migration directory per database.
 
-This is a plain bash step (no new action, no dependency), matching the rest
-of the workflow's style.
+Both were removed after the blocking gate stopped the legitimate v1.0.4
+deploy (4 additive migrations vs. its budget of 1) — the team judged the
+per-release migration count a human call, not CI's. Migration count is now
+managed manually: whoever cuts a release decides whether to coalesce first,
+using the "When to run it" check above.
+
+The reason coalescing is still usually the right call hasn't changed:
+`prisma migrate deploy` is not transactional across migrations, so a
+multi-migration release that fails partway through can leave prod partially
+migrated behind a P3009 (the 2026-07-02 incident). Fewer migrations in a
+release means less surface for that failure mode — it's just no longer a
+number CI checks for you.

@@ -79,26 +79,24 @@ jobs:
       ref: ${{ github.event.release.tag_name }}
     secrets: inherit
 
-  # Release gate: a release may apply AT MOST ONE new database migration.
-  # The rule lives in the callable migration-release-gate.yml — the same
-  # workflow runs advisory (allowed to fail) on every PR, so the "coalesce
-  # before preparing a release" signal shows up long before this blocking
-  # call. Passing exclude_tag makes the gate compare against the release's
-  # true predecessor; with no previous release, every migration counts.
+  # Migration COUNT is deliberately ungated here — no CI job blocks a release
+  # on how many new migrations it carries. The team manages coalescing
+  # manually per release (docs/MIGRATION_COALESCE_FLOW.md is still the
+  # playbook and its script still works); this used to be enforced by a
+  # blocking release-time job (removed) plus an advisory PR-time check (also
+  # removed) — both judged a per-release human call, not CI's, after the old
+  # gate blocked the legitimate v1.0.4 deploy (4 additive migrations vs. its
+  # budget of 1).
   #
-  # This is not a step inside `validate`: that job is a reusable-workflow
-  # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
-  # own to add to. Runs as its own job instead; `deploy` needs both.
-  migration-release-gate:
-    name: Release gate — at most 1 new migration
-    uses: ./.github/workflows/migration-release-gate.yml
-    with:
-      ref: ${{ github.event.release.tag_name }}
-      exclude_tag: ${{ github.event.release.tag_name }}
+  # Historical warning, still true: `prisma migrate deploy` is not
+  # transactional across migrations, so a multi-migration release that fails
+  # mid-batch can leave prod partially migrated behind a P3009 (the
+  # 2026-07-02 incident). A human should still weigh coalescing before
+  # releasing a multi-migration batch.
 
   deploy:
     name: Build, migrate, roll out
-    needs: [validate, migration-release-gate]   # do not build/migrate/roll out unless the tag re-passed all of CI and the release gate
+    needs: [validate]   # do not build/migrate/roll out unless the tag re-passed all of CI
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production
