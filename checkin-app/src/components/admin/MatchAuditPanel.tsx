@@ -48,14 +48,18 @@ export function MatchAuditPanel() {
 
   // One memoized pass per result: this panel re-renders on every keystroke in
   // the page's resolve-exception modal, and the audit arrays can be large.
-  const { unclaimedPaid, membershipGaps, enrollmentGaps, manual, scholarships, matched } = useMemo(() => {
+  const { unclaimedPaid, membershipGaps, enrollmentGaps, manual, scholarships, comped, reversedMemberships, reversedEnrollments, preMirrorCount, matched } = useMemo(() => {
     const matchedCounts = { orders: 0, tracked: 0, memberships: 0, enrollments: 0 };
+    let preMirrorCount = 0;
     const groups = {
       unclaimedPaid: [] as NonNullable<typeof result>['orders'],
       membershipGaps: [] as NonNullable<typeof result>['memberships'],
       enrollmentGaps: [] as NonNullable<typeof result>['enrollments'],
       manual: [] as NonNullable<typeof result>['memberships'],
       scholarships: [] as NonNullable<typeof result>['enrollments'],
+      comped: [] as NonNullable<typeof result>['enrollments'],
+      reversedMemberships: [] as NonNullable<typeof result>['memberships'],
+      reversedEnrollments: [] as NonNullable<typeof result>['enrollments'],
       matched: matchedCounts,
     };
     for (const o of result?.orders ?? []) {
@@ -64,16 +68,21 @@ export function MatchAuditPanel() {
       else if (o.bucket === 'TRACKED_EXCEPTION') matchedCounts.tracked++;
     }
     for (const m of result?.memberships ?? []) {
-      if (m.bucket === 'NO_PAYMENT_BASIS' || m.bucket === 'ORDER_NOT_IN_MIRROR') groups.membershipGaps.push(m);
+      if (m.bucket === 'NO_PAYMENT_BASIS' || m.bucket === 'ORDER_NOT_IN_MIRROR' || m.bucket === 'NO_PROCESS') groups.membershipGaps.push(m);
       else if (m.bucket === 'MANUAL_CERTIFIED') groups.manual.push(m);
-      else matchedCounts.memberships++;
+      else if (m.bucket === 'ORDER_REVERSED') groups.reversedMemberships.push(m);
+      else if (m.bucket === 'PRE_MIRROR') preMirrorCount++;
+      else matchedCounts.memberships++; // ORDER_MATCHED
     }
     for (const e of result?.enrollments ?? []) {
       if (e.bucket === 'NO_PAYMENT_BASIS' || e.bucket === 'ORDER_NOT_IN_MIRROR') groups.enrollmentGaps.push(e);
       else if (e.bucket === 'SCHOLARSHIP_APPROVED') groups.scholarships.push(e);
-      else matchedCounts.enrollments++;
+      else if (e.bucket === 'ADMIN_COMPED') groups.comped.push(e);
+      else if (e.bucket === 'ORDER_REVERSED') groups.reversedEnrollments.push(e);
+      else if (e.bucket === 'PRE_MIRROR') preMirrorCount++;
+      else matchedCounts.enrollments++; // ORDER_MATCHED
     }
-    return groups;
+    return { ...groups, preMirrorCount };
   }, [result]);
   const gapCount = unclaimedPaid.length + membershipGaps.length + enrollmentGaps.length;
 
@@ -128,6 +137,8 @@ export function MatchAuditPanel() {
             {count('Enrollments matched', matched.enrollments)}
             {count('Board-certified', manual.length)}
             {count('Scholarships', scholarships.length)}
+            {count('Comped', comped.length)}
+            {preMirrorCount > 0 && count('Pre-mirror (before mirror history)', preMirrorCount)}
           </Group>
 
           {unclaimedPaid.length > 0 && (
@@ -136,7 +147,7 @@ export function MatchAuditPanel() {
               <Table striped withTableBorder mt="xs">
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>Order</Table.Th><Table.Th>Email</Table.Th><Table.Th>Total</Table.Th><Table.Th>Expected</Table.Th>
+                    <Table.Th>Order</Table.Th><Table.Th>Email</Table.Th><Table.Th>Total</Table.Th><Table.Th>Expected</Table.Th><Table.Th>Codes</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -146,6 +157,7 @@ export function MatchAuditPanel() {
                       <Table.Td>{o.customerEmail}</Table.Td>
                       <Table.Td>{formatCents(o.totalCents)}</Table.Td>
                       <Table.Td>{o.expected.join(', ')}</Table.Td>
+                      <Table.Td>{(o.discountCodes ?? []).join(', ')}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -164,10 +176,14 @@ export function MatchAuditPanel() {
                 </Table.Thead>
                 <Table.Tbody>
                   {membershipGaps.map((m) => (
-                    <Table.Tr key={`m-${m.processId}`}>
-                      <Table.Td>Membership process {m.processId}</Table.Td>
+                    <Table.Tr key={m.processId != null ? `m-${m.processId}` : `mm-${m.membershipId}`}>
+                      <Table.Td>{m.processId != null ? `Membership process ${m.processId}` : `Membership — ${m.householdName ?? m.membershipId}`}</Table.Td>
                       <Table.Td>{m.householdName}</Table.Td>
-                      <Table.Td>{m.bucket === 'NO_PAYMENT_BASIS' ? 'No order and no certification' : `Order ${m.shopifyOrderId} not in the mirror`}</Table.Td>
+                      <Table.Td>{
+                        m.bucket === 'NO_PAYMENT_BASIS' ? 'No order and no certification'
+                        : m.bucket === 'NO_PROCESS' ? 'Active membership with no INITIAL/RENEWAL process'
+                        : `Order ${m.shopifyOrderId} not in the mirror`
+                      }</Table.Td>
                     </Table.Tr>
                   ))}
                   {enrollmentGaps.map((e) => (
@@ -182,7 +198,7 @@ export function MatchAuditPanel() {
             </>
           )}
 
-          {(manual.length > 0 || scholarships.length > 0) && (
+          {(manual.length > 0 || scholarships.length > 0 || comped.length > 0) && (
             <>
               <Title order={5} mt="md">Manual — legitimate, listed for audit</Title>
               <Table striped withTableBorder mt="xs">
@@ -204,6 +220,34 @@ export function MatchAuditPanel() {
                       <Table.Td>{e.programName}</Table.Td>
                       <Table.Td>{e.personName}</Table.Td>
                       <Table.Td>Scholarship / payment plan approved</Table.Td>
+                    </Table.Tr>
+                  ))}
+                  {comped.map((e) => (
+                    <Table.Tr key={`comp-${e.programId}-${e.personId}`}>
+                      <Table.Td>{e.programName}</Table.Td>
+                      <Table.Td>{e.personName}</Table.Td>
+                      <Table.Td>Comped by {e.compedByName}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </>
+          )}
+
+          {(reversedMemberships.length > 0 || reversedEnrollments.length > 0) && (
+            <>
+              <Title order={5} mt="md" c="yellow">Reversed after activation — already in the exceptions queue</Title>
+              <Table striped withTableBorder mt="xs">
+                <Table.Thead><Table.Tr><Table.Th>What</Table.Th><Table.Th>Who</Table.Th><Table.Th>Order</Table.Th></Table.Tr></Table.Thead>
+                <Table.Tbody>
+                  {reversedMemberships.map((m) => (
+                    <Table.Tr key={`rm-${m.processId}`}>
+                      <Table.Td>Membership process {m.processId}</Table.Td><Table.Td>{m.householdName}</Table.Td><Table.Td>{m.shopifyOrderId}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                  {reversedEnrollments.map((e) => (
+                    <Table.Tr key={`re-${e.programId}-${e.personId}`}>
+                      <Table.Td>{e.programName}</Table.Td><Table.Td>{e.personName}</Table.Td><Table.Td>{e.shopifyOrderId}</Table.Td>
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
