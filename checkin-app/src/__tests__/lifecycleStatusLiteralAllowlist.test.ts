@@ -2,31 +2,46 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
- * Status-literal allowlist drift guard (LIFECYCLE_ARCHITECTURE §5) — the lifecycle
+ * Status-literal allowlist drift guard (docs/designs/LIFECYCLE.md) — the lifecycle
  * analogue of EDGE_INCLUDE_ALLOWLIST / authzRegistry.test.ts.
  *
- * A raw `where: { status: <literal> }` on the ProgramParticipant or
- * OrgMembershipProcess models is a hand-encoded state-set that can silently drift
- * from the ONE definition in the machine module. This test scans src for every
- * such literal and asserts it appears ONLY in:
+ * A hand-encoded state-SET in a `where` on the ProgramParticipant or
+ * OrgMembershipProcess models can silently drift from the ONE definition in the
+ * machine module. This test scans src for every such set and asserts it appears
+ * ONLY in:
  *   - the definition modules (enrollmentState.ts, membership/lifecycle.ts,
  *     lib/lifecycle/*) — the single source of "what is legal"; or
- *   - the ALLOWLIST below: CAS transition-guard sites (which keep a literal `where`
- *     on purpose — they encode a *transition*, "from-state ∧ nothing-changed", not a
- *     state-set) plus a handful of read/query filters not yet migrated onto a
- *     StateSet.where.
+ *   - the ALLOWLIST below: sites that keep such a `where` on purpose — CAS
+ *     status+flag transition guards (from-state ∧ a lifecycle flag = a *transition*,
+ *     not a plain state-set) and a handful of multi-status read/query filters not
+ *     yet migrated onto a StateSet.where.
  *
- * A new raw `where: { status: … }` anywhere else fails CI, forcing the author to
- * either consume a StateSet or register here with a justification — exactly how a
- * new sensitive `include` must earn an EDGE_INCLUDE_ALLOWLIST entry.
+ * SHARPENED GRANULARITY (why this test only flags SETS, not lone literals):
+ *   The drift risk is a hand-listed *set of states* getting out of sync with the
+ *   machine. A single bare `status: 'ACTIVE'` read carries none of that risk — it is
+ *   pure indirection, trivially wrappable in a StateSet later with zero behavioural
+ *   change. Flagging every lone literal forced ~8 single-status reads into the
+ *   allowlist purely to absorb false-positives, burying the real signal. So a `where`
+ *   is flagged ONLY when its status clause is a genuine multi-status construct:
+ *     - a set filter: `status: { in: [...] }` or `status: { notIn: [...] }`, OR
+ *     - a `status: '<literal>'` appearing ALONGSIDE ≥1 lifecycle flag condition in the
+ *       same object (a status+flag CAS guard — from-state plus a flag it also sets).
+ *   A lone `status: 'X'` with no set and no flag is NOT flagged.
  *
- * The irreducibly-human call (is a new `where` a duplicate of a StateSet or a
+ * A new such construct anywhere else fails CI, forcing the author to either consume a
+ * StateSet or register here with a justification — exactly how a new sensitive
+ * `include` must earn an EDGE_INCLUDE_ALLOWLIST entry.
+ *
+ * The irreducibly-human call (is a new set a duplicate of a StateSet or a
  * legitimately-new transition guard?) is what the allowlist forces into review; a
  * person answers it. Everything above is machine-checked.
  *
  * Scope / precision (a deliberate, documented simplification):
  *   - Only `where:{…}` blocks are scanned — `data:`/`oldData:`/`newData:` writes and
  *     `p.status === '…'` comparisons are NOT state-set drift and are ignored.
+ *   - A set spelled with a canonical constant (`status: { in: [...IN_FLIGHT_RENEWAL] }`)
+ *     carries no bare literal, so it is INVISIBLE to this scanner by design — it already
+ *     consumes the one definition and cannot drift.
  *   - Distinctive OrgMembershipProcessStatus literals (INTAKE, PENDING_BG_REVIEW, …)
  *     are attributed unambiguously. The two SHARED literals `ACTIVE`/`PENDING` also
  *     appear in OrgMembershipStatus/RSVPStatus/etc, so they are counted only when a
@@ -54,6 +69,20 @@ const SHARED = new Set<string>(PP_LITERALS); // ACTIVE / PENDING — ambiguous a
 const OMP_DISTINCT = OMP_LITERALS.filter((l) => !SHARED.has(l));
 const ALL_LITERALS = [...new Set<string>([...PP_LITERALS, ...OMP_LITERALS])];
 
+// Lifecycle flag columns whose presence next to a bare status literal marks a
+// status+flag CAS guard (a *transition*, not a plain read). One list, checked as a
+// union — a flag "belongs" to a model only loosely, and a status+flag combo is a
+// transition regardless of which flag it pairs with.
+const LIFECYCLE_FLAGS = [
+    'inventoryHeldAt',
+    'paymentPlanDeniedAt',
+    'isPaymentPlanRequested', // ProgramParticipant
+    'contractSignedAt',
+    'bgConsentAt',
+    'bgClearedAt',
+    'paidAt', // OrgMembershipProcess
+] as const;
+
 // Always-allowed: the definition layer itself is where literals are supposed to live.
 function isDefinitionModule(rel: string): boolean {
     const p = rel.split(sep).join('/');
@@ -65,54 +94,49 @@ function isDefinitionModule(rel: string): boolean {
 }
 
 /**
- * Every non-definition source file that keeps a raw status `where` literal on one of
- * the two models, each with a justification. `T#` = the transition id from the state
- * machine docs. New entries need a real reason; a stale one (no literal left) also
- * fails, keeping the list honest.
+ * Every non-definition source file that keeps a genuine multi-status `where` construct
+ * (a set, or a status+flag CAS combo — see the sharpened match above) on one of the two
+ * models, each with a justification. `T#` = the transition id from the state machine
+ * docs. New entries need a real reason; a stale one (no such construct left) also fails,
+ * keeping the list honest.
+ *
+ * Note: lone single-status reads (a bare `status: 'ACTIVE'` filter) are NO LONGER flagged
+ * and therefore do NOT belong here — they are pure indirection with zero drift risk. This
+ * is why files like facility/trends, renewal-status, notifications, payment.ts, and
+ * orgMembership.ts (all single-status reads) are absent; likewise single-status CAS guards
+ * (activateEnrollment PENDING→ACTIVE, archive ARCHIVED→target) and sets spelled with a
+ * canonical constant (renewal's `{ in: [...IN_FLIGHT_RENEWAL] }`, which carries no bare
+ * literal and cannot drift).
  */
 const ALLOWLIST: Record<string, string> = {
-    // ── enrollment (ProgramParticipant) CAS transition guards ──
-    'lib/programs/activateEnrollment.ts': 'T4 activate CAS: where status=PENDING → ACTIVE (from-state guard).',
-    'app/api/programs/[id]/request-payment-plan/route.ts':
-        'T3/T3f apply CAS: where status=PENDING (+ held null / not-null) — encodes the apply transition.',
-    'app/api/finance-ops/payment-plans/route.ts': 'T5 approve CAS: where isPaymentPlanRequested,status=PENDING.',
-    'app/api/finance-ops/payment-plans/refuse/route.ts': 'T6 deny CAS: where isPaymentPlanRequested,status=PENDING.',
-    'app/api/finance-ops/payment-plans/manual-hold/route.ts':
-        'T3m manual-hold CAS: where status=PENDING,inventoryHeldAt null,isPaymentPlanRequested.',
+    // ── CAS transition guards now source their from-state status from the definition (#1080) ──
+    // The enrollment guards (activateEnrollment, request-payment-plan, payment-plans
+    // approve/refuse/manual-hold) and the membership advanceExternal/beginRenewal/unarchive/
+    // membership-payment-plans guards spread `...fromWhere(<from>)` instead of a raw `status:`
+    // literal, so they carry NO bare status literal and no longer appear here — the guard↔table
+    // parity test (guardFromStateParity.test.ts) is what keeps them honest now. (renewal's
+    // beginRenewalForUser read is a LONE single-status literal, which the sharpened scanner no
+    // longer flags either, so it isn't listed.)
 
-    // ── membership (OrgMembershipProcess) CAS transition guards ──
-    'app/api/finance-ops/membership-payment-plans/route.ts':
-        'Membership grant CAS + probe: where status=PENDING_PAYMENT (payable-renewal guard).',
-    'lib/membership/external.ts': 'advanceExternalIfComplete CAS (#7): where status=PENDING_EXTERNAL_ACTION.',
-    'lib/membership/renewal.ts': 'beginRenewal CAS (#4): where status=PENDING_RENEWAL → PENDING_EXTERNAL_ACTION.',
-    'lib/membership/archive.ts': 'unarchive CAS (#13): where status=ARCHIVED → restore target (idempotent).',
+    // Not a transition from-state: the PERSON_BG edge is ∅→PENDING_BG_REVIEW (no from-row).
+    // An idempotency EXISTENCE SET (already open/blocked → skip), broader than any one
+    // from-state, so it stays a literal set rather than misrepresent it via fromWhere.
     'lib/membership/personBgTriggers.ts':
-        'PERSON_BG create idempotency guard: where status in {PENDING_BG_REVIEW,BLOCKED}.',
+        'PERSON_BG create idempotency existence set: where status in {PENDING_BG_REVIEW,BLOCKED}.',
 
     // ── invariant-driven reconciler (Phase 4) ──
     'lib/lifecycleDrift.ts':
         'I1 heal query: where status=ACTIVE,inventoryHeldAt not null — the off-diagram violation set itself (has no StateSet; it is precisely what validate() rejects).',
 
-    // ── read / query / probe filters (not yet migrated onto a StateSet.where) ──
-    'app/api/facility/trends/route.ts': 'Read query: count ACTIVE enrollments for the trends view.',
-    'app/api/membership-audit/compliance/route.ts': 'Read query: compliance count of PENDING_BG_CLEARANCE processes.',
+    // ── multi-status read / query filters (not yet migrated onto a StateSet.where) ──
     'app/api/membership-ops/applications/route.ts':
-        'Board application list: archived (ARCHIVED) vs live (notIn ACTIVE,ARCHIVED).',
-    'app/api/membership/renewal-status/route.ts': 'Member probe: this household’s RENEWAL at PENDING_RENEWAL.',
-    'app/api/nav/todo-counts/route.ts': 'Dashboard counts: PENDING enrollments + member-actionable membership statuses.',
-    'app/api/finance-ops/s-read/match-audit/track/route.ts':
-        'Track-button staleness probes: claim re-check excluding ARCHIVED before promoting a gap — human-per-row, mirrors the matchAudit entry.',
+        'Board application list: live view is a set — status notIn {ACTIVE,ARCHIVED}.',
+    'app/api/nav/todo-counts/route.ts':
+        'Dashboard counts: status+flag probes — {PENDING,isPaymentPlanRequested,inventoryHeldAt,paymentPlanDeniedAt} and {PENDING_PAYMENT,isPaymentPlanRequested}.',
+    'lib/finance/reconcile.ts':
+        'Reconciler paid-order set: where status in {ACTIVE,PENDING_BG_CLEARANCE} on OrgMembershipProcess.',
     'lib/finance/matchAudit.ts':
-        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) and the claim lookup excluding ARCHIVED — report-only, mirrors the reconcile.ts entry.',
-    'lib/finance/reconcile.ts': 'Reconciler lookups: pending/active order-to-row matching on both models.',
-    'lib/membership/notifications.ts': 'Read query: board BLOCKED-process count for the notifications badge.',
-    'lib/membership/payment.ts': 'Read query: this household’s PENDING_PAYMENT process before activate.',
-    'lib/membership/personBgSubmit.ts': 'Read query: the subject’s PERSON_BG process at PENDING_BG_REVIEW.',
-    'lib/orgMembership.ts': 'Read query: latest settled OrgMembershipProcess (status=ACTIVE) for the login horizon.',
-
-    // ── dev-only tooling ──
-    'app/api/dev/shopify/orders-paid/route.ts': 'Dev webhook simulator: finds PENDING enrollments to fake a paid order.',
-    'app/dev/shopify/page.tsx': 'Dev tool listing: PENDING enrollments + PENDING_PAYMENT processes.',
+        'Audit read queries: activation sweep (ACTIVE/PENDING_BG_CLEARANCE + ACTIVE participants) — report-only, mirrors the reconcile.ts entry.',
 };
 
 // ── scanner ──────────────────────────────────────────────────────────────────
@@ -130,8 +154,9 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 /** Capture the object literal at/after `from`, skipping strings & comments so a
- *  brace inside them can't unbalance the scan. */
-function captureObject(s: string, from: number): string | null {
+ *  brace inside them can't unbalance the scan. Returns the text and the index just
+ *  past the closing brace (so a caller can look for a ternary else-branch). */
+function captureObject(s: string, from: number): { text: string; end: number } | null {
     let i = s.indexOf('{', from);
     if (i < 0) return null;
     const start = i;
@@ -161,10 +186,24 @@ function captureObject(s: string, from: number): string | null {
         if (c === '{') depth++;
         else if (c === '}') {
             depth--;
-            if (depth === 0) return s.slice(start, i + 1);
+            if (depth === 0) return { text: s.slice(start, i + 1), end: i + 1 };
         }
     }
     return null;
+}
+
+/** The full filter for a `where:` match, INCLUDING a ternary else-branch. For
+ *  `where: c ? { A } : { B }` we must see both branches — otherwise a set in the
+ *  else-branch (e.g. `{ status: { notIn: [...] } }`) is invisible and the true
+ *  multi-status filter goes unflagged. A `where` object is never followed by `:`,
+ *  so a `: {` immediately after the first object unambiguously marks the else-branch. */
+function captureWhere(s: string, from: number): string | null {
+    const first = captureObject(s, from);
+    if (!first) return null;
+    const m = /^\s*:\s*(?=\{)/.exec(s.slice(first.end));
+    if (!m) return first.text;
+    const second = captureObject(s, first.end + m[0].length);
+    return second ? `${first.text}\n${second.text}` : first.text;
 }
 
 // `where: {`  or  `where: cond ? {`  (a ternary whose first branch is the filter)
@@ -182,22 +221,32 @@ function scan(): Set<string> {
         WHERE_RE.lastIndex = 0;
         let wm: RegExpExecArray | null;
         while ((wm = WHERE_RE.exec(src))) {
-            const body = captureObject(src, wm.index);
+            const body = captureWhere(src, wm.index);
             if (!body) continue;
             const pre = src.slice(Math.max(0, wm.index - 240), wm.index);
             const isPP = /\bprogramParticipant\b/.test(pre);
             const isOMP = /\borgMembershipProcess\b/.test(pre);
+            // A lifecycle flag condition anywhere in this same `where` object turns a
+            // bare status literal into a status+flag CAS combo.
+            const bodyHasFlag = LIFECYCLE_FLAGS.some((f) => new RegExp(`\\b${f}\\b`).test(body));
             STATUS_VAL_RE.lastIndex = 0;
             let vm: RegExpExecArray | null;
             while ((vm = STATUS_VAL_RE.exec(body))) {
                 const expr = vm[1];
+                // A genuine multi-status SET: { in: [...] } / { notIn: [...] }. A bare
+                // literal, or a single { not: 'X' } exclusion, is not a set.
+                const isSet = expr[0] === '{' && /\b(?:in|notIn)\s*:/.test(expr);
                 for (const lit of ALL_LITERALS) {
                     if (!new RegExp(`['"]${lit}['"]`).test(expr)) continue;
                     const inScope =
                         (OMP_DISTINCT as readonly string[]).includes(lit) || // unambiguous OMP literal
                         (isPP && (PP_LITERALS as readonly string[]).includes(lit)) ||
                         (isOMP && (OMP_LITERALS as readonly string[]).includes(lit));
-                    if (inScope) hits.add(rel.split(sep).join('/'));
+                    if (!inScope) continue;
+                    // Sharpened: only a real state-SET, or a status literal sitting
+                    // alongside a lifecycle flag (a status+flag CAS combo), carries
+                    // drift risk. A lone bare status literal is pure indirection.
+                    if (isSet || bodyHasFlag) hits.add(rel.split(sep).join('/'));
                 }
             }
         }
@@ -212,7 +261,7 @@ describe('lifecycle status-literal allowlist drift guard', () => {
     it('no raw status where-literal outside the definition modules + allowlist', () => {
         const unexpected = flagged.filter((f) => !known.has(f)).sort();
         // A new one of these must consume a StateSet.where or be added to ALLOWLIST
-        // with a justification (see LIFECYCLE_ARCHITECTURE §5).
+        // with a justification (see docs/designs/LIFECYCLE.md).
         expect(unexpected).toEqual([]);
     });
 

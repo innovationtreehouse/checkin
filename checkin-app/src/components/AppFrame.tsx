@@ -139,7 +139,8 @@ const NAV_ITEMS: NavItem[] = [
     href: '/finance-ops',
     label: 'Finance Ops',
     icon: <IconCoin size={18} />,
-    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
+    // Finance Ops is board-only — sysadmin has no access (issue #1083).
+    visible: (u) => !!u?.isBoardMember,
   },
   {
     href: '/system-status',

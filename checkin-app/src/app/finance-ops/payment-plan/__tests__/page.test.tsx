@@ -22,7 +22,7 @@ const requests = [
 
 describe("finance-ops/payment-plan page", () => {
   it("loads and renders pending payment plan requests", async () => {
-    setSession({ id: 1, isSysadmin: true });
+    setSession({ id: 1, isBoardMember: true });
     mockFetchJson({ "/api/finance-ops/payment-plans": { ProgramParticipant: requests, BoardSettings: null } });
     renderWithProviders(<PendingParticipantsPage />);
 
@@ -33,7 +33,7 @@ describe("finance-ops/payment-plan page", () => {
   });
 
   it("approves a request and removes it from the list", async () => {
-    setSession({ id: 1, isSysadmin: true });
+    setSession({ id: 1, isBoardMember: true });
     const fetchMock = mockFetchJson({
       "/api/finance-ops/payment-plans": () => ({ ProgramParticipant: requests, BoardSettings: null }),
     });

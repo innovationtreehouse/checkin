@@ -74,6 +74,13 @@ describe('POST /api/finance-ops/s-read/sync', () => {
         expect(sendMock).not.toHaveBeenCalled();
     });
 
+    it('403 for a sysadmin — finance-ops is board-only (issue #1083)', async () => {
+        mockSession.mockResolvedValue({ user: { id: 5, isSysadmin: true, isBoardMember: false } });
+        const res = await POST(req());
+        expect(res.status).toBe(403);
+        expect(sendMock).not.toHaveBeenCalled();
+    });
+
     it('invokes the configured trigger with a hardcoded incremental mode for a board member', async () => {
         mockSession.mockResolvedValue({ user: { id: 5, isBoardMember: true } });
         const res = await POST(req());

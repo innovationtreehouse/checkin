@@ -1,19 +1,19 @@
 /**
  * ProgramParticipant enrollment lifecycle — ONE declarative definition.
  *
- * Instances the `@/lib/lifecycle` primitives per docs/designs/
- * PROGRAM_ENROLLMENT_STATE_MACHINE.md (§3 states, §4 invariants I1–I4, §5
- * transitions). This is the DEFINITION/VALIDATION layer only — it emits the
+ * Instances the `@/lib/lifecycle` primitives; see docs/designs/LIFECYCLE.md.
+ * This is the DEFINITION/VALIDATION layer only — it emits the
  * `where`/predicate the existing compare-and-set guards already hand-write; it
  * never executes a transition. Postgres stays the runtime authority.
  *
- * Client-safe (LIFECYCLE_ARCHITECTURE §3.4): value-imports NOTHING from
+ * Client-safe (docs/designs/LIFECYCLE.md): value-imports NOTHING from
  * `@/generated/prisma`. The status union is a local string-literal type checked
  * against the Prisma enum by a TYPE-ONLY parity line; the `where` fragments are
  * typed via `import type { Prisma }` (erased at build).
  */
 import {
     defineStateSet,
+    fromStatusWhere,
     assertNever,
     defineValidator,
     type Invariant,
@@ -104,6 +104,30 @@ export const STATES = {
         flags: { inventoryHeldAt: false },
     }),
 } as const;
+
+// ---- fromWhere (§5 CAS from-state, #1080) -----------------------------------
+
+/** The named present-row states — the keys of STATES, i.e. every state a CAS
+ *  guard can transition FROM. */
+export type FromStateName = keyof typeof STATES;
+
+/**
+ * Emit the `status` clause a CAS transition guard names for its from-state, sourced
+ * from STATES so a status rename/split flows into every guard that spreads it
+ * (#1080). All enrollment PENDING_* states share `status:'PENDING'`; ACTIVE is its
+ * own status — the scalar shape matches what the guards hand-write, so the migrated
+ * query is byte-for-byte identical.
+ *
+ * It emits ONLY the status: the guard keeps its transition-specific flag narrowing
+ * (`inventoryHeldAt`, `isPaymentPlanRequested`, `paymentPlanDeniedAt`) literal — those
+ * are not statuses and don't drift on a status rename, and several guards check a
+ * strict SUBSET of the from-state's defining flags (e.g. T4 activate checks only
+ * `status`; T5 approve keeps `isPaymentPlanRequested`), so over-emitting them would
+ * over-constrain the CAS. Never includes the transition's mutation (that lives in `data`).
+ */
+export function fromWhere(from: FromStateName): Where {
+    return fromStatusWhere<Where>(STATES[from].statuses);
+}
 
 // ---- classify (§3 table, total switch) --------------------------------------
 

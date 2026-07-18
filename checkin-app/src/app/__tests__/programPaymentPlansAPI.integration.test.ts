@@ -40,6 +40,7 @@ describe('Program payment-plan routes', () => {
     let programId: number;
     let mentorId: number;
     let boardId: number;
+    let board2Id: number;
     let boardKinId: number;
     let selfId: number;
     let otherId: number;
@@ -64,6 +65,15 @@ describe('Program payment-plan routes', () => {
         });
         boardId = board.id;
         householdIds.push(board.householdId);
+
+        // A second board member in a DIFFERENT household — the non-conflicted
+        // approver, and (since #1083 gated sysadmins out of finance-ops) the
+        // remedy when the first board member has a household conflict.
+        const board2 = await prisma.person.create({
+            data: { name: 'PP Board Two', email: `board2-${TAG}@example.com`, isBoardMember: true, household: { create: { name: "Test HH2" } } },
+        });
+        board2Id = board2.id;
+        householdIds.push(board2.householdId);
 
         // A household-mate of the board member — the conflict-of-interest target.
         const boardKin = await prisma.person.create({
@@ -105,7 +115,7 @@ describe('Program payment-plan routes', () => {
         await prisma.programParticipant.deleteMany({ where: { programId } });
         await prisma.program.delete({ where: { id: programId } });
         await prisma.person.deleteMany({
-            where: { id: { in: [mentorId, boardId, boardKinId, selfId, otherId, noiseId, memberId] } },
+            where: { id: { in: [mentorId, boardId, board2Id, boardKinId, selfId, otherId, noiseId, memberId] } },
         });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
@@ -319,7 +329,7 @@ describe('Program payment-plan routes', () => {
             expect(row?.wasOrgMemberAtApproval).toBe(false);
         });
 
-        it("refuses to approve a plan for the board member's OWN household (conflict of interest); sysadmin overrides", async () => {
+        it("refuses to approve a plan for the board member's OWN household (conflict of interest); another board member is the remedy", async () => {
             await enroll(boardKinId, { requested: true });
             mockSession.mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
             const res = await PlansPost(nextReq('http://localhost', {
@@ -332,8 +342,21 @@ describe('Program payment-plan routes', () => {
             });
             expect(row?.status).toBe('PENDING'); // unchanged — nothing approved
 
-            // Sysadmin is the deliberate remedy.
+            // Sysadmins are gated out of finance-ops entirely (#1083), so they are
+            // no longer the COI remedy here — a non-conflicted board member is.
             mockSession.mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
+            const denied = await PlansPost(nextReq('http://localhost', {
+                method: 'POST',
+                body: JSON.stringify({ programId, participantId: boardKinId }),
+            }));
+            expect(denied.status).toBe(403);
+            row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: boardKinId } },
+            });
+            expect(row?.status).toBe('PENDING'); // still unchanged
+
+            // A second board member, from a different household, has no conflict.
+            mockSession.mockResolvedValue({ user: { id: board2Id, isBoardMember: true } });
             const ok = await PlansPost(nextReq('http://localhost', {
                 method: 'POST',
                 body: JSON.stringify({ programId, participantId: boardKinId }),

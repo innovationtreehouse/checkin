@@ -8,8 +8,8 @@
  *     Prisma fragment) across the full status × flags matrix (fix #1);
  *   - grantableRenewalWhere / settledThisCycleWhere emit the exact fragments the
  *     route + guard + sweep consume (fix #3/#4);
- *   - isLegalTransition covers the doc §5 edges; reachability flags the legacy
- *     RENEWAL_PENDING_BG as unreachable (doc §4.6 / §6.1);
+ *   - isLegalTransition covers the machine’s edges; reachability flags the legacy
+ *     RENEWAL_PENDING_BG as unreachable (docs/designs/LIFECYCLE.md);
  *   - the local ProcessStatus/ProcessKind unions stay in lockstep with the Prisma
  *     enums (value-based assertEnumParity here; type-only Expect<Equal> in-module).
  */
@@ -171,7 +171,7 @@ describe('validate', () => {
     });
 });
 
-// ── transitions (doc §5) ───────────────────────────────────────────────────────
+// ── transitions (docs/designs/LIFECYCLE.md) ───────────────────────────────────────────────────────
 
 describe('isLegalTransition covers §5', () => {
     test('accepts declared spine edges', () => {
@@ -215,7 +215,7 @@ describe('isLegalTransition covers §5', () => {
     });
 });
 
-describe('reachability (doc §6.1)', () => {
+describe('reachability (docs/designs/LIFECYCLE.md)', () => {
     test('flags the legacy RENEWAL_PENDING_BG as unreachable', () => {
         const r = reachability(TRANSITIONS, ALL_STATUSES, INITIAL_STATES, ['ACTIVE', 'ARCHIVED']);
         expect(r.unreachable).toContain('RENEWAL_PENDING_BG');
@@ -227,7 +227,7 @@ describe('reachability (doc §6.1)', () => {
     });
 });
 
-// ── enum parity (LIFECYCLE_ARCHITECTURE §3.4) ──────────────────────────────────
+// ── enum parity (docs/designs/LIFECYCLE.md) ──────────────────────────────────
 
 describe('enum parity with Prisma', () => {
     test('ProcessStatus union matches OrgMembershipProcessStatus keys', () => {

@@ -14,7 +14,7 @@ import { ordersByLegacyIds, type MirrorOrder } from "@/lib/shopifyRead/client";
  * yields no live block — the row still lists. See lib/shopifyRead/client.ts.
  */
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async () => {
         const exceptions = await prisma.paymentException.findMany({
             where: { status: { in: ['OPEN', 'ACKNOWLEDGED'] } },

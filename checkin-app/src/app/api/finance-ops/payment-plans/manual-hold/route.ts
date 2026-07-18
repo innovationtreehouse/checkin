@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { fromWhere } from "@/lib/programs/enrollmentState";
 
 // Board manual-hold confirmation for a PENDING_HOLD_FAILED row (the apply-time
 // Shopify -1 failed, so { status: PENDING, inventoryHeldAt: null,
@@ -20,7 +21,7 @@ import { apiError } from "@/lib/api-response";
 // confers no benefit on the applicant — it only records a seat the board already
 // removed, and the value-conferring approve step keeps its own CoI check.
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
@@ -38,7 +39,8 @@ export const POST = withAuth(
             // concurrent approve/deny/manual-hold that already moved it 409s
             // instead of double-stamping.
             const { count } = await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: null, isPaymentPlanRequested: true },
+                // T3m manual-hold CAS: from-state status from the definition (#1080); held/req narrowing stays literal.
+                where: { programId, personId: participantId, ...fromWhere('PENDING_HOLD_FAILED'), inventoryHeldAt: null, isPaymentPlanRequested: true },
                 data,
             });
 

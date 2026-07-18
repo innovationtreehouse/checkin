@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { fromWhere } from "@/lib/programs/enrollmentState";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -84,12 +85,14 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // to null) would match branch 1, re-stamp the hold, fire a second -1,
         // and reopen a resolved scholarship.
         const holdResult = await prisma.programParticipant.updateMany({
-            where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: null },
+            // T3 apply CAS from-state (PENDING_UNPAID); flag narrowing stays literal (#1080).
+            where: { programId, personId: participantId, ...fromWhere('PENDING_UNPAID'), inventoryHeldAt: null },
             data: { isPaymentPlanRequested: true, inventoryHeldAt: new Date(), paymentPlanDeniedAt: null },
         });
         if (holdResult.count === 0) {
             await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: { not: null } },
+                // T3 re-apply CAS from-state (PENDING_HELD_DENIED); status clause shared with UNPAID.
+                where: { programId, personId: participantId, ...fromWhere('PENDING_HELD_DENIED'), inventoryHeldAt: { not: null } },
                 data: { isPaymentPlanRequested: true, paymentPlanDeniedAt: null },
             });
         }

@@ -28,6 +28,8 @@ const HOUSEHOLD_LEAD: Visible = (u, signedIn) => signedIn && !!u?.householdLead;
 // Program lead mentors only — mirrors the staff "My Programs" nav gate.
 const LEADS_PROGRAM: Visible = (_u, signedIn, counts) => signedIn && leadsAnyProgram(counts);
 const BOARD: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember;
+// Finance Ops is board-only — sysadmin has no access (issue #1083).
+const BOARD_ONLY: Visible = (u) => !!u?.isBoardMember;
 const SYSADMIN: Visible = (u) => !!u?.isSysadmin;
 const SAFETY: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder;
 const SHOP: Visible = (u) =>
@@ -119,11 +121,11 @@ export const PAGES: PageEntry[] = [
   { href: '/program-ops/sessions/new', label: 'New Session', section: 'Program Ops', visible: BOARD },
 
   // Finance Ops — board
-  { href: '/finance-ops', label: 'Finance Ops', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/payment-plan', label: 'Program Payment Plan', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/membership-payment-plan', label: 'Membership Payment Plan', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/shopify-holds', label: 'Shopify Hold Reconciliation', section: 'Finance Ops', keywords: 'seat hold failed inventory scholarship manual reconcile shopify', visible: BOARD },
-  { href: '/finance-ops/payments', label: 'Payment problems', section: 'Finance Ops', keywords: 'reconcile exception refund chargeback unmatched shopify', visible: BOARD },
+  { href: '/finance-ops', label: 'Finance Ops', section: 'Finance Ops', visible: BOARD_ONLY },
+  { href: '/finance-ops/payment-plan', label: 'Program Payment Plan', section: 'Finance Ops', visible: BOARD_ONLY },
+  { href: '/finance-ops/membership-payment-plan', label: 'Membership Payment Plan', section: 'Finance Ops', visible: BOARD_ONLY },
+  { href: '/finance-ops/shopify-holds', label: 'Shopify Hold Reconciliation', section: 'Finance Ops', keywords: 'seat hold failed inventory scholarship manual reconcile shopify', visible: BOARD_ONLY },
+  { href: '/finance-ops/payments', label: 'Payment problems', section: 'Finance Ops', keywords: 'reconcile exception refund chargeback unmatched shopify', visible: BOARD_ONLY },
 
   // System Status — board
   { href: '/system-status', label: 'System Status', section: 'System Status', visible: BOARD },

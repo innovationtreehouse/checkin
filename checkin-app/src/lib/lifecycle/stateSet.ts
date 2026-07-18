@@ -19,6 +19,29 @@ export type StateSet<Row, Where> = {
 };
 
 /**
+ * Emit the identifying STATUS `where` clause for a from-state: a scalar
+ * `{ status: X }` for a single status, `{ status: { in: [...] } }` for many.
+ *
+ * This is the from-state drift-closer (#1080). A CAS transition guard's from-clause
+ * is `from-state ∧ nothing-else-moved`; the ONLY part that a status rename/split
+ * changes is the `status:` literal. Sourcing THAT from the definition (each machine
+ * wraps this as `fromWhere(edge)`) — instead of hand-writing it per guard — is what
+ * keeps the ~10 CAS guards in sync with the TRANSITIONS table. The guard keeps its
+ * transition-specific flag narrowing (`inventoryHeldAt`, `isPaymentPlanRequested`, …)
+ * literal: those are not statuses and cannot drift with a status rename.
+ *
+ * Client-safe: the caller supplies the Prisma `Where` type param; the value is an
+ * inert object literal (no `@/generated/prisma` value reaches the client bundle).
+ * The scalar/`in` split mirrors what the guards already hand-write, so a migrated
+ * guard's runtime query is byte-for-byte identical.
+ */
+export function fromStatusWhere<Where>(statuses: readonly string[]): Where {
+    return (statuses.length === 1
+        ? { status: statuses[0] }
+        : { status: { in: [...statuses] } }) as Where;
+}
+
+/**
  * A field-rule map: field name → required boolean. Reused for both `flags`
  * (presence of a nullable column) and `equals` (value of a boolean column) —
  * see `defineStateSet`. The two differ only in how the boolean maps to `where`.
