@@ -62,7 +62,10 @@ export type MembershipBucket =
     | "PRE_MIRROR"
     | "ORDER_REVERSED"
     | "NO_PROCESS"
-    | "NO_PAYMENT_BASIS";
+    | "NO_PAYMENT_BASIS"
+    // Not claimed, but an open/acknowledged PaymentException already tracks it
+    // (the Track button on the panel raises one) — parity with the order side.
+    | "TRACKED_EXCEPTION";
 
 export type EnrollmentBucket =
     | "ORDER_MATCHED"
@@ -71,7 +74,8 @@ export type EnrollmentBucket =
     | "ORDER_NOT_IN_MIRROR"
     | "PRE_MIRROR"
     | "ORDER_REVERSED"
-    | "NO_PAYMENT_BASIS";
+    | "NO_PAYMENT_BASIS"
+    | "TRACKED_EXCEPTION";
 
 export interface AuditMembershipRow {
     bucket: MembershipBucket;
@@ -354,19 +358,48 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         ...enrolls.map((e) => e.shopifyOrderId),
     ].filter((v): v is string => !!v);
     const uniqueActivationIds = [...new Set(activationOrderIds)];
-    const [inMirror, mirrorOrders, minReal] = await Promise.all([
+
+    // Tracked-exception lookups for the two P3-trackable gap buckets
+    // (NO_PAYMENT_BASIS / ORDER_NOT_IN_MIRROR): batched IN-lists over the swept
+    // ids, run in the same round-trip as the mirror presence lookup below.
+    const procIds = procs.map((p) => p.id);
+    const enrollProgramIds = [...new Set(enrolls.map((e) => e.programId))];
+    const enrollPersonIds = [...new Set(enrolls.map((e) => e.personId))];
+    const [inMirror, mirrorOrders, minReal, trackedProcRows, trackedEnrollRows] = await Promise.all([
         mirror.orderLegacyIdsPresent(uniqueActivationIds), // test=false authoritative present set
         mirror.ordersByLegacyIds(uniqueActivationIds),      // full rows, for reversal state only
         mirror.minRealOrderLegacyId(),
+        procIds.length
+            ? prisma.paymentException.findMany({
+                  where: { status: { not: "RESOLVED" }, processId: { in: procIds } },
+                  select: { processId: true },
+              })
+            : Promise.resolve([]),
+        // Composite key: Prisma can't tuple-IN, so IN×IN over-fetches, then filter to
+        // exact (programId, personId) pairs via a Set — same over-approximate-then-filter
+        // shape the order side's trackedExceptions lookup uses, above.
+        enrollProgramIds.length && enrollPersonIds.length
+            ? prisma.paymentException.findMany({
+                  where: { status: { not: "RESOLVED" }, programId: { in: enrollProgramIds }, personId: { in: enrollPersonIds } },
+                  select: { programId: true, personId: true },
+              })
+            : Promise.resolve([]),
     ]);
+    // No `kind` filter — parity with the order-side tracked lookup, which keys purely
+    // on order + `status != RESOLVED`. Any open exception carrying this processId (or
+    // this programId:personId) means the board is already tracking this activation.
+    // It only ever overrides a row that is otherwise a gap (below), so a stray
+    // order-linked exception on an ORDER_MATCHED row can't hide it.
+    const trackedProcs = new Set(trackedProcRows.map((r) => r.processId));
+    const trackedEnrolls = new Set(trackedEnrollRows.map((r) => `${r.programId}:${r.personId}`));
     // Reversal is only meaningful for orders that ARE present (test=false gated by inMirror below),
     // so a test order that ordersByLegacyIds returns can never become a payment basis here.
     const reversedIds = new Set(mirrorOrders.filter((o) => o.legacyId && isReversed(o)).map((o) => o.legacyId!));
     // Recorded id below the mirror's low-water mark = pre-mirror history, informational not a gap.
     const isPreMirror = (id: string) => minReal != null && /^\d+$/.test(id) && BigInt(id) < minReal;
 
-    const membershipRows: AuditMembershipRow[] = procs.map((p) => ({
-        bucket: p.shopifyOrderId
+    const membershipRows: AuditMembershipRow[] = procs.map((p) => {
+        const raw: MembershipBucket = p.shopifyOrderId
             ? !inMirror.has(p.shopifyOrderId)
                 ? (isPreMirror(p.shopifyOrderId) ? "PRE_MIRROR" : "ORDER_NOT_IN_MIRROR")
                 : reversedIds.has(p.shopifyOrderId)
@@ -374,13 +407,22 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
                     : "ORDER_MATCHED"
             : p.certifiedById != null
                 ? "MANUAL_CERTIFIED"
-                : "NO_PAYMENT_BASIS",
-        processId: p.id,
-        membershipId: null,
-        householdName: p.orgMembership?.household?.name ?? null,
-        shopifyOrderId: p.shopifyOrderId,
-        certifiedByName: p.certifiedById != null ? (personName.get(p.certifiedById) ?? `person ${p.certifiedById}`) : null,
-    }));
+                : "NO_PAYMENT_BASIS";
+        // Override only the two trackable gaps — literal bucket names, so a P2
+        // bucket this PR doesn't know about is never touched (see file header).
+        const bucket: MembershipBucket =
+            (raw === "NO_PAYMENT_BASIS" || raw === "ORDER_NOT_IN_MIRROR") && trackedProcs.has(p.id)
+                ? "TRACKED_EXCEPTION"
+                : raw;
+        return {
+            bucket,
+            processId: p.id,
+            membershipId: null,
+            householdName: p.orgMembership?.household?.name ?? null,
+            shopifyOrderId: p.shopifyOrderId,
+            certifiedByName: p.certifiedById != null ? (personName.get(p.certifiedById) ?? `person ${p.certifiedById}`) : null,
+        };
+    });
 
     const noProcessRows: AuditMembershipRow[] = noProcessMemberships.map((m) => ({
         bucket: "NO_PROCESS",
@@ -391,8 +433,8 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         certifiedByName: null,
     }));
 
-    const enrollmentRows: AuditEnrollmentRow[] = enrolls.map((e) => ({
-        bucket: e.shopifyOrderId
+    const enrollmentRows: AuditEnrollmentRow[] = enrolls.map((e) => {
+        const raw: EnrollmentBucket = e.shopifyOrderId
             ? !inMirror.has(e.shopifyOrderId)
                 ? (isPreMirror(e.shopifyOrderId) ? "PRE_MIRROR" : "ORDER_NOT_IN_MIRROR")
                 : reversedIds.has(e.shopifyOrderId)
@@ -402,14 +444,21 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
                 ? "SCHOLARSHIP_APPROVED"
                 : createdActive(e)
                     ? "ADMIN_COMPED"
-                    : "NO_PAYMENT_BASIS",
-        programId: e.programId,
-        programName: e.program.name,
-        personId: e.personId,
-        personName: e.person.name,
-        shopifyOrderId: e.shopifyOrderId,
-        compedByName: createdActive(e) ? (personName.get(compActorId(e)!) ?? null) : null,
-    }));
+                    : "NO_PAYMENT_BASIS";
+        const bucket: EnrollmentBucket =
+            (raw === "NO_PAYMENT_BASIS" || raw === "ORDER_NOT_IN_MIRROR") && trackedEnrolls.has(`${e.programId}:${e.personId}`)
+                ? "TRACKED_EXCEPTION"
+                : raw;
+        return {
+            bucket,
+            programId: e.programId,
+            programName: e.program.name,
+            personId: e.personId,
+            personName: e.person.name,
+            shopifyOrderId: e.shopifyOrderId,
+            compedByName: createdActive(e) ? (personName.get(compActorId(e)!) ?? null) : null,
+        };
+    });
 
     return {
         configured: true,
