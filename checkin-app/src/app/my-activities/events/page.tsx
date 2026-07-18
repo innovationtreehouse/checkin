@@ -141,7 +141,7 @@ export default function ParticipantEventsDashboard() {
                       <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
                     </div>
                     {rows.some((r) => r.isVolunteer) && (
-                      <Badge color="treehousePurple" variant="light" style={{ flexShrink: 0 }}>Volunteer</Badge>
+                      <Badge color="grape" variant="light" style={{ flexShrink: 0 }}>Volunteer</Badge>
                     )}
                   </Group>
 

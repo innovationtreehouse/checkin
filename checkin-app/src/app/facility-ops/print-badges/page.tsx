@@ -157,8 +157,8 @@ export default function PrintBadgesPage() {
       header: 'Roles',
       render: (p) => (
         <Group gap={4}>
-          {p.isBoardMember && <Badge size="xs" color="treehousePurple">BOARD</Badge>}
-          {p.isKeyholder && <Badge size="xs" color="treehousePurple">KEYHOLDER</Badge>}
+          {p.isBoardMember && <Badge size="xs" color="blue">BOARD</Badge>}
+          {p.isKeyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
           {!p.isBoardMember && !p.isKeyholder && p.isMember && (
             <Badge size="xs">MEMBER</Badge>
           )}

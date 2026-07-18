@@ -80,9 +80,9 @@ const label = (s: string) => s.replace(/_/g, " ");
 // (decision-less) states. Null → a fresh disclosure or a plain withdraw+resubmit, where
 // the board needs no prior-decision context.
 const PRIOR_DECISION_META: Record<string, { text: string; color: string }> = {
-    APPROVE: { text: "Renewal", color: "treehousePurple" },
+    APPROVE: { text: "Renewal", color: "blue" },
     DENY: { text: "Previously denied", color: "red" },
-    REQUEST_INFO: { text: "Previously: more info requested", color: "treehousePurple" },
+    REQUEST_INFO: { text: "Previously: more info requested", color: "orange" },
 };
 
 function priorDecisionReview(reviews: Review[]): Review | null {
@@ -240,7 +240,7 @@ export default function AdminTrustedAdultsPage() {
                 const changeBadge = priorMeta
                     ? { text: priorMeta.text + (infoUpdated ? " — info updated" : ""), color: priorMeta.color }
                     : infoUpdated
-                        ? { text: "Info updated", color: "treehousePurple" }
+                        ? { text: "Info updated", color: "blue" }
                         : null;
                 // "Previously dispositioned" note the board sent to staff — only APPROVE sets a
                 // sharedNote. When present on a renewal, offer to re-use it (gated by a radio).

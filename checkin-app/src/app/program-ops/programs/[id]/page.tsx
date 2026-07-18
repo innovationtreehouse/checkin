@@ -52,8 +52,8 @@ export type ParticipantOption = { id: number; name: string | null; email: string
 const PHASE_BADGE: Record<string, { label: string; color: string }> = {
   PLANNING: { label: 'Planning', color: 'gray' },
   UPCOMING: { label: 'Upcoming', color: 'yellow' },
-  RUNNING: { label: 'Running', color: 'treehousePurple' },
-  FINISHED: { label: 'Finished', color: 'gray' },
+  RUNNING: { label: 'Running', color: 'cyan' },
+  FINISHED: { label: 'Finished', color: 'teal' },
 };
 
 export default function ProgramDetailsPage({ params }: { params: Promise<{ id: string }> }) {

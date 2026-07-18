@@ -25,7 +25,7 @@ type PersonRow = {
 
 // Reason tag -> human label + badge color. Keys mirror the endpoint's tags.
 const REASON: Record<string, { label: string; color: string }> = {
-  STALE_BG: { label: "Background check expired", color: "treehousePurple" },
+  STALE_BG: { label: "Background check expired", color: "orange" },
   REVOKED: { label: "Revoked", color: "red" },
   DENIED: { label: "Denied", color: "red" },
   STUCK_BG_CLEARANCE: { label: "Stuck at BG clearance", color: "yellow" },
@@ -201,7 +201,7 @@ export default function CompliancePage() {
       <PersonSection
         title="Background check needed"
         description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked. Once an external check exists, submit it below for two-reviewer approval."
-        color="treehousePurple"
+        color="orange"
         people={peopleNeedingBgCheck}
         renderAction={(p) =>
           submittedIds.has(p.personId) ? (
@@ -217,7 +217,7 @@ export default function CompliancePage() {
       <PersonSection
         title="Missing date of birth"
         description="Program-attached people with no recorded age. Confirm their date of birth before a background check can be assessed."
-        color="treehousePurple"
+        color="grape"
         people={peopleMissingDob}
       />
     </Stack>

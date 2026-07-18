@@ -128,7 +128,7 @@ export default function AdminProgramsIndex() {
     {
       header: "Access",
       render: (p) => (
-        <Badge color={p.orgMemberOnly ? 'treehousePurple' : 'gray'} variant="light">
+        <Badge color={p.orgMemberOnly ? 'grape' : 'blue'} variant="light">
           {p.orgMemberOnly ? 'Treehouse Members Only' : 'Public'}
         </Badge>
       ),

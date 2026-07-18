@@ -313,7 +313,7 @@ export function AdminEditHouseholdModal({
               )}
             </Stack>
 
-            <Alert color="treehousePurple" mt="md">
+            <Alert color="orange" mt="md">
               You&apos;re editing <strong>{displayName}</strong>, a household you&apos;re not a member of. This
               uses your administrative privileges and is recorded in the audit log.
             </Alert>
@@ -321,7 +321,7 @@ export function AdminEditHouseholdModal({
               <Button variant="default" onClick={requestClose} disabled={saving}>
                 Cancel
               </Button>
-              <Button color="treehousePurple" onClick={handleSave} loading={saving} disabled={phoneInvalid}>
+              <Button color="orange" onClick={handleSave} loading={saving} disabled={phoneInvalid}>
                 Save Changes — As Admin
               </Button>
             </Group>

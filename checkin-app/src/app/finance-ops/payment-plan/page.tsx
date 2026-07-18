@@ -176,7 +176,7 @@ export default function PendingParticipantsPage() {
           <Group gap="xs">
             <Text fw={500}>{req.program.name}</Text>
             {landsNextYear(req.program.startAt, cutoff) && (
-              <Badge size="sm" color="treehousePurple" variant="light">Next year</Badge>
+              <Badge size="sm" color="orange" variant="light">Next year</Badge>
             )}
           </Group>
           <Text size="sm" c="dimmed">

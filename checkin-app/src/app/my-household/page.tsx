@@ -440,7 +440,7 @@ export default function HouseholdPage() {
                           {p.allergies && <Text size="sm" c="dimmed" style={{ wordBreak: 'break-word' }}>Allergies: {p.allergies}</Text>}
                           {leadMissingPhone && <Badge color="red" variant="filled" mt="xs">TODO: Add phone number</Badge>}
                           <Group gap="xs" mt="sm">
-                            {householdMemberIsLead && <Badge color="treehousePurple" variant="light">Household Lead</Badge>}
+                            {householdMemberIsLead && <Badge color="grape" variant="light">Household Lead</Badge>}
                             {!householdMemberIsLead && isAdult && viewerIsLead && (
                               <Button size="compact-xs" variant="light" onClick={() => handleMakeLead(p.id)}>Make Lead</Button>
                             )}
