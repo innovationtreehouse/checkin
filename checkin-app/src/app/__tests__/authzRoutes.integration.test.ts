@@ -32,6 +32,9 @@ describe('Sensitive route authorization', () => {
     let plainId: number;
     let searchTargetId: number;
     let personaId: number;
+    let adultId: number;
+    let minorId: number;
+    let declaredAdultId: number;
     const householdIds: number[] = [];
     const ENV_BEFORE = process.env.CHECKIN_ENV;
 
@@ -57,6 +60,33 @@ describe('Sensitive route authorization', () => {
         });
         personaId = persona.id;
         householdIds.push(persona.householdId);
+
+        // Age fixtures for ?filter=adults (the lead-mentor pickers). Relative to now so
+        // they never age past the boundary the way a hardcoded year would.
+        const yearsAgo = (n: number) => {
+            const d = new Date();
+            d.setFullYear(d.getFullYear() - n);
+            return d;
+        };
+        const adult = await prisma.person.create({
+            data: { name: `ZZAdult ${TAG}`, email: `adult-${TAG}@example.com`, dateOfBirth: yearsAgo(40), household: { create: { name: "Test HH" } } },
+        });
+        adultId = adult.id;
+        householdIds.push(adult.householdId);
+
+        const minor = await prisma.person.create({
+            data: { name: `ZZMinor ${TAG}`, email: `minor-${TAG}@example.com`, dateOfBirth: yearsAgo(10), household: { create: { name: "Test HH" } } },
+        });
+        minorId = minor.id;
+        householdIds.push(minor.householdId);
+
+        // No DoB, but a lead marked them 25+ — must survive the filter, or every
+        // null-DoB adult mentor vanishes from the picker.
+        const declared = await prisma.person.create({
+            data: { name: `ZZDeclared ${TAG}`, email: `declared-${TAG}@example.com`, dateOfBirth: null, isDeclaredAdult: true, household: { create: { name: "Test HH" } } },
+        });
+        declaredAdultId = declared.id;
+        householdIds.push(declared.householdId);
     });
 
     beforeEach(() => {
@@ -66,7 +96,7 @@ describe('Sensitive route authorization', () => {
 
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
-        await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId, adultId, minorId, declaredAdultId] } } });
         // The target's orgMembership row must go before its household (RESTRICT FK).
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
@@ -149,6 +179,40 @@ describe('Sensitive route authorization', () => {
             // only place that pins the contract; dropping it from the select must fail here.
             // Present for ops too (opsOnly strips only orgMembership on the household).
             expect(hit.household.householdMembers[0]).toHaveProperty('isHouseholdLead', false);
+        });
+
+        // ?filter=adults backs both lead-mentor pickers (program-ops/new and
+        // program-ops/programs/[id]). The param used to be read nowhere, so a minor
+        // could be picked as a program lead mentor.
+        describe('?filter=adults', () => {
+            const ids = async (u: string) => {
+                mockSession.mockResolvedValue({ user: { id: plainId, isBoardMember: true } });
+                const res = await SearchGet(req(u));
+                expect(res.status).toBe(200);
+                return (await res.json()).people.map((p: { id: number }) => p.id);
+            };
+
+            it('returns adults (by DoB and by isDeclaredAdult) and excludes minors', async () => {
+                const got = await ids(`http://localhost/api/people/search?q=ZZ&filter=adults`);
+                expect(got).toContain(adultId);
+                expect(got).toContain(declaredAdultId);
+                expect(got).not.toContain(minorId);
+            });
+
+            it('applies no age filter without the param, or with an unrecognized value', async () => {
+                expect(await ids(`http://localhost/api/people/search?q=ZZ`)).toContain(minorId);
+                expect(await ids(`http://localhost/api/people/search?q=ZZ&filter=everyone`)).toContain(minorId);
+            });
+
+            // Pins the hazard: `q` and `filter` are both ORs, so a naive second `OR:` key
+            // drops the name search. Both must apply — a matching minor stays out, and a
+            // non-matching adult does not leak in on the age leg alone.
+            it('applies BOTH q and the age filter', async () => {
+                const got = await ids(`http://localhost/api/people/search?q=ZZMinor&filter=adults`);
+                expect(got).not.toContain(minorId);
+                expect(got).not.toContain(adultId);
+                expect(got).not.toContain(declaredAdultId);
+            });
         });
     });
 
