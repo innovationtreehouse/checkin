@@ -28,8 +28,24 @@ jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 // unit test cascading into next-auth's Google/ESM provider imports). This suite
 // calls the route, which imports the REAL createParticipantWithHousehold from
 // that module — unmock it here, same as auth-options-jwt.test.ts /
-// auth-options-adapter.test.ts. Real Postgres (this is `.integration.test.ts`)
-// + the real .env dummy Google/NextAuth creds let the module construct cleanly.
+// auth-options-adapter.test.ts. Those two also stub config's Google/NextAuth
+// secret reads so the module constructs without real secrets — CI's
+// integration-tests job has no .env (gitignored) and sets none of these vars,
+// so a local dev .env's dummy values (what this suite relied on before) only
+// work on a laptop; mirror the same stub here.
+jest.mock('@/lib/config', () => {
+    const actual = jest.requireActual('@/lib/config');
+    return {
+        __esModule: true,
+        ...actual,
+        config: {
+            ...actual.config,
+            nextAuthSecret: jest.fn(() => 'test-secret'),
+            googleClientId: jest.fn(() => 'gid'),
+            googleClientSecret: jest.fn(() => 'gsecret'),
+        },
+    };
+});
 jest.unmock('@/lib/auth-options');
 
 // Two tags, two lifetimes (mirrors adminParticipants.integration.test.ts):
