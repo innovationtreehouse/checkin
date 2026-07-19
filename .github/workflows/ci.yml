@@ -205,7 +205,11 @@ jobs:
 
       - name: Check route coverage (security policy lint)
         if: needs.changes.outputs.app == 'true'
-        run: npm run check-route-coverage
+        # --strict: errors fail the build (0 errors at flip time; warnings never
+        # fail). The new-route-old-authz ratchet would block even without
+        # --strict, but strict also arms direct-json / third-party-fetch /
+        # registry-drift as real gates.
+        run: npm run check-route-coverage -- --strict
 
       # Full unit tier with coverage, no DB (sibling Jest-side contract).
       # SKIP_COVERAGE_THRESHOLD=1 disables jest.config.js's coverageThreshold

@@ -8,6 +8,9 @@
  *   3. Migrated routes (listed in scripts/migrated-routes.txt) must NOT call NextResponse.json / Response.json directly.
  *   4. Calls to third-party hosts (shopify.com, myshopify.com, resend.com, SHOPIFY_STORE_DOMAIN) live only in src/lib/shopify.ts and src/lib/email.ts.
  *   5. src/security/generated/classifications.ts is up to date with prisma/schema.prisma.
+ *   6. RATCHET (blocking even in advisory mode): every exported route method is
+ *      either in src/security/registry.ts or in the frozen legacy baseline
+ *      (scripts/legacy-authz-routes.txt) — no NEW route can ship on old authz.
  *
  * Uses string/regex parsing — fast, no AST library to load. Trade-off: a
  * sufficiently-obfuscated bypass slips past, but this lint is one layer
@@ -55,6 +58,28 @@ function report(severity: Finding['severity'], rule: string, file: string, messa
 function loadMigratedRoutes(): Set<string> {
     const file = path.join(REPO_ROOT, 'scripts/migrated-routes.txt');
     if (!fs.existsSync(file)) return new Set();
+    return new Set(
+        fs.readFileSync(file, 'utf-8')
+            .split('\n')
+            .map(l => l.trim())
+            .filter(l => l && !l.startsWith('#')),
+    );
+}
+
+/**
+ * The legacy-authz ratchet baseline: route method keys that predate the
+ * registry and are allowed to keep withAuth/withKiosk/withCron/bespoke authz.
+ * Frozen; may only shrink (see the file header). A key in NEITHER the
+ * registry NOR this file is a NEW route on old authz → hard error, blocking
+ * even in advisory mode.
+ */
+function loadLegacyAuthzRoutes(): Set<string> {
+    const file = path.join(REPO_ROOT, 'scripts/legacy-authz-routes.txt');
+    if (!fs.existsSync(file)) {
+        report('error', 'new-route-old-authz', file,
+            'scripts/legacy-authz-routes.txt missing — the legacy-authz ratchet cannot run');
+        return new Set();
+    }
     return new Set(
         fs.readFileSync(file, 'utf-8')
             .split('\n')
@@ -128,6 +153,7 @@ function checkGeneratedFileFresh() {
 
 function main() {
     const migrated = loadMigratedRoutes();
+    const legacyAuthz = loadLegacyAuthzRoutes();
     const { routes: registered } = loadRegisteredEndpoints();
     const routeFiles = findRouteFiles(API_DIR);
 
@@ -144,6 +170,15 @@ function main() {
             if (migrated.has(key)) migratedVerbs.push(verb);
             if (migrated.has(key) && !registered.has(key)) {
                 report('error', 'missing-registry', file, `migrated route ${key} not in registry`);
+            }
+            // The legacy-authz ratchet: a route method in neither the registry
+            // nor the frozen baseline is NEW surface on old authz. New routes
+            // go through defineRoute() + handler() — see legacy-authz-routes.txt.
+            if (!registered.has(key) && !legacyAuthz.has(key)) {
+                report('error', 'new-route-old-authz', file,
+                    `${key} is not in the security registry and not in the frozen ` +
+                    `legacy baseline (scripts/legacy-authz-routes.txt). New routes must ` +
+                    `use defineRoute() + handler() from @/security.`);
             }
         }
 
@@ -176,6 +211,20 @@ function main() {
         }
     }
 
+    // Keep the ratchet honest: a baseline entry whose route no longer exists
+    // (deleted or migrated) must be pruned, or a later re-creation of the same
+    // METHOD+path would silently inherit its old-authz allowance.
+    for (const key of legacyAuthz) {
+        if (!allRouteEndpoints.has(key)) {
+            report('warn', 'stale-legacy-baseline', 'scripts/legacy-authz-routes.txt',
+                `baseline entry ${key} has no corresponding route method — remove the line`);
+        }
+        if (registered.has(key)) {
+            report('warn', 'stale-legacy-baseline', 'scripts/legacy-authz-routes.txt',
+                `baseline entry ${key} is now in the security registry — remove the line`);
+        }
+    }
+
     const allTs = walkTsFiles(SRC_DIR);
     for (const file of allTs) {
         if (ALLOWED_THIRD_PARTY_FETCH_FILES.has(file)) continue;
@@ -204,9 +253,16 @@ function main() {
     console.log(`${errors.length} error(s), ${warnings.length} warning(s)`);
 
     if (errors.length > 0) {
-        if (ADVISORY_MODE) {
+        // The legacy-authz ratchet blocks unconditionally — advisory mode was
+        // the migration on-ramp for EXISTING routes, and grandfathering is the
+        // baseline file's job. A new route on old authz has no advisory tier.
+        const ratchet = errors.filter(f => f.rule === 'new-route-old-authz');
+        if (ADVISORY_MODE && ratchet.length === 0) {
             console.log('(advisory mode — exiting 0; pass --strict to fail the build)');
             process.exit(0);
+        }
+        if (ADVISORY_MODE) {
+            console.log(`(${ratchet.length} new-route-old-authz error(s) block even in advisory mode)`);
         }
         process.exit(1);
     }
