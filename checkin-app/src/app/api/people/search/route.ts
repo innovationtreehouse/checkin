@@ -34,7 +34,15 @@ export const GET = withAuth(
                 include: {
                     household: {
                         include: {
-                            householdMembers: true,
+                            // Explicit select, not `true` — a plain include returns full
+                            // Person rows one level down (lastBackgroundCheck, googleId,
+                            // emailVerified, emailUndeliverableAt, ...), leaking every
+                            // household member's sensitive fields regardless of the
+                            // opsOnly strip below, which only touches the top-level person.
+                            // id/name/email is exactly what every consumer of this
+                            // endpoint's household.householdMembers reads (the
+                            // Assign-household picker and its household-member list).
+                            householdMembers: { select: { id: true, name: true, email: true } },
                             orgMembership: true,
                         }
                     },
@@ -45,10 +53,14 @@ export const GET = withAuth(
                 }
             });
 
-            // Operations holds the Participants directory (contacts) view only — no
-            // background-check compliance dates, no membership/finance standing
-            // (Household.orgMembership). Board/sysadmin keep the full shape.
-            // See membership-ops/layout.tsx's Participants-only nav gate for ops.
+            // Operations holds the Participants directory (contacts) view only:
+            // names, contact info (email/phone), and role pills (isBoardMember etc.
+            // are @sensitivity:public org structure, not PII — not stripped). It is
+            // denied background-check compliance dates (lastBackgroundCheck),
+            // membership/finance standing (isMember, Household.orgMembership), and
+            // every non-contact field on a household's OTHER members (see the
+            // explicit householdMembers select above). Board/sysadmin keep the full
+            // shape. See membership-ops/layout.tsx's Participants-only nav gate for ops.
             const opsOnly = auth.type === 'session' && auth.user.isOperations
                 && !auth.user.isSysadmin && !auth.user.isBoardMember;
 
@@ -62,7 +74,7 @@ export const GET = withAuth(
                 // `undefined` drops the key on JSON serialization — a stripped
                 // response, not a null/zeroed one.
                 lastBackgroundCheck: opsOnly ? undefined : p.lastBackgroundCheck,
-                isMember: personRecordIsActiveOrgMember(p),
+                isMember: opsOnly ? undefined : personRecordIsActiveOrgMember(p),
                 ...rolesToFlags(p.roles),
                 household: p.household ? { ...p.household, orgMembership: opsOnly ? undefined : p.household.orgMembership } : null,
             }));

@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { createParticipantWithHousehold } from "@/lib/auth-options";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { normalizeEmail } from "@/lib/prismaEmailNormalize";
+import { rolesToFlags } from "@/lib/roles";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
@@ -25,10 +26,12 @@ export const POST = withAuth({ roles: ['isBoardMember', 'isOperations'] }, async
             where: { email: normalizeEmail(email) },
             select: { name: true },
         });
-        // Deliberate, not a leak: every caller role here (board) is already
-        // trusted with the full people directory and can look up this same
-        // name+email via people/search. The 409 reveals nothing they can't already
-        // query. Flagged for future audits — do not redact.
+        // Deliberate, not a leak: every caller role here (board + operations) is
+        // already trusted with a people/search view that includes name+email —
+        // board sees the full directory, and ops's stripped view (no background-check
+        // dates, no membership/finance standing) still surfaces name+email for every
+        // record. The 409 reveals nothing either caller couldn't already query.
+        // Flagged for future audits — do not redact.
         if (existing) {
             return NextResponse.json(
                 { error: `This email already belongs to ${existing.name ?? 'an existing account'}`, fields: ["email"] },
@@ -49,7 +52,22 @@ export const POST = withAuth({ roles: ['isBoardMember', 'isOperations'] }, async
             },
         });
 
-        return NextResponse.json({ success: true, participant: person });
+        // Re-fetch with household included so the client's optimistic prepend can
+        // render the household name immediately, without a full-list refetch. A
+        // brand-new contact holds no PersonRole rows, so the role flags are all
+        // false — stamp them explicitly (rolesToFlags([])) rather than relying on
+        // the raw Person row's mirror columns, which don't cover isOperations (it
+        // has none), so the prepended row carries the same five flags as every row
+        // that came from /api/people/search instead of a partially-shaped one.
+        const participant = await prisma.person.findUnique({
+            where: { id: person.id },
+            include: { household: true },
+        });
+
+        return NextResponse.json({
+            success: true,
+            participant: { ...participant, ...rolesToFlags([]) },
+        });
     } catch (error) {
         await logBackendError(error, "POST /api/membership-ops/contacts");
         return apiError("Failed to create contact", 500);

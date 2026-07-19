@@ -306,9 +306,21 @@ describe("AdminParticipantsIndex", () => {
             const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
                 const url = typeof input === "string" ? input : input.toString();
                 if (url.includes("/api/membership-ops/contacts")) {
+                    // Honest shape: the route returns the created participant WITH
+                    // `include: { household: true }` (createParticipantWithHousehold always
+                    // gives a brand-new contact a single-person household named after them)
+                    // plus the five role flags defaulted false (a fresh contact holds no
+                    // PersonRole rows), so the prepended row renders like its neighbors.
                     return {
                         ok: true, status: 200,
-                        json: async () => ({ success: true, participant: { id: 50, name: "Ada Lovelace", email: "ada@example.com", phone: null, household: null } }),
+                        json: async () => ({
+                            success: true,
+                            participant: {
+                                id: 50, name: "Ada Lovelace", email: "ada@example.com", phone: null,
+                                household: { id: 77, name: "Ada Lovelace", householdMembers: [{ id: 50, name: "Ada Lovelace", email: "ada@example.com" }] },
+                                isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, isOperations: false,
+                            },
+                        }),
                     } as Response;
                 }
                 return { ok: true, status: 200, json: async () => ({ people: [] }) } as Response;
@@ -332,7 +344,10 @@ describe("AdminParticipantsIndex", () => {
             fireEvent.click(screen.getByRole("button", { name: "Add" }));
 
             await waitFor(() => expect(screen.queryByText("Add Contact")).not.toBeInTheDocument());
-            expect(await screen.findByText("Ada Lovelace")).toBeInTheDocument();
+            // "Ada Lovelace" renders twice in the prepended row — once as the person's
+            // Name cell, once as the Household cell (a solo household is named after its
+            // one member) — proving the household name came along, not just the person.
+            expect(await screen.findAllByText("Ada Lovelace")).toHaveLength(2);
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Contact added." }));
             expect(fetchMock).toHaveBeenCalledWith(
                 "/api/membership-ops/contacts",

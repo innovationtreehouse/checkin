@@ -133,8 +133,16 @@ describe('Sensitive route authorization', () => {
             expect(hit.phone).toBe('555-0101');
             // Background-check compliance dates and membership/finance standing do not:
             expect(hit.lastBackgroundCheck).toBeUndefined();
+            expect(hit.isMember).toBeUndefined();
             expect(hit.household.orgMembership).toBeUndefined();
             expect(hit.household.name).toBe('Test HH');
+            // household.householdMembers must NOT leak full Person rows one level down
+            // (a plain `householdMembers: true` include returns every column, including
+            // lastBackgroundCheck/googleId, regardless of the opsOnly strip above, which
+            // only touches the top-level person) — the target is its own household's
+            // sole member, and it has both fields set, so a leak would show up here.
+            expect(hit.household.householdMembers[0].lastBackgroundCheck).toBeUndefined();
+            expect(hit.household.householdMembers[0].googleId).toBeUndefined();
         });
     });
 
