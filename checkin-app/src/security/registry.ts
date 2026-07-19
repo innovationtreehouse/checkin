@@ -153,7 +153,9 @@ defineRoute({
 // depth: dateOfBirth and googleId are 'personal'/'pii' on Person and must
 // never enter this response even for sysadmin.
 //
-// INERT until the route migrates to handler() in the follow-up PR.
+// Landed registry-first, ahead of the route's handler() migration, per the
+// AGENTS.md boundary-isolation rule: an unused defineRoute is inert, so the
+// grant is reviewable on its own before anything serves it.
 defineRoute({
     endpoint: 'GET /api/safety/board-contacts',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
