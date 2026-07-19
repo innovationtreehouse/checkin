@@ -16,7 +16,7 @@ import { join, relative, sep } from 'node:path';
  * (a) references LIVE_PERSON / mergedIntoId in its own query context, or
  * (b) is named in the ALLOWLIST below with a reviewed justification.
  *
- * WHAT COUNTS AS A "SITE" (two independent patterns, matching how this codebase
+ * WHAT COUNTS AS A "SITE" (three independent patterns, matching how this codebase
  * actually reads Person — see lib/person/filters.ts's consumers):
  *
  *   1. A direct list/count call on the Person delegate:
@@ -33,6 +33,20 @@ import { join, relative, sep } from 'node:path';
  *      — is a WHERE-relation FILTER, not a data pull: it narrows the parent rows,
  *      it doesn't expose a Person's identity. That shape is intentionally out of
  *      scope (see the boundary note below).
+ *
+ *   3. A list/count call on a JOIN delegate that has a `person` relation:
+ *        prisma.programParticipant|programVolunteer|rSVP|toolStatus|feePayment
+ *          .findMany(...) / .findFirst(...) / .count(...) / .aggregate(...) / .groupBy(...)
+ *      excluding `findUnique` / `findUniqueOrThrow`, same as class 1.
+ *      WHY THIS EXISTS: pattern 2's "a where-relation filter is not a data pull"
+ *      reasoning holds for IDENTITY leaks but not for COUNTS. A headcount over a
+ *      join table carries no `person:` key at all —
+ *        prisma.programParticipant.count({ where: { programId } })
+ *      matches neither pattern above, yet a tombstone's left-behind enrollment row
+ *      (merge/route.ts leaves colliding rows on the tombstone) inflates that number
+ *      and can trip a capacity gate, without any Person data ever being read. So a
+ *      join-table list/count is a site in its own right: it must filter through the
+ *      `person` relation (`where: { person: LIVE_PERSON }`) or be allowlisted.
  *
  * BOUNDARY — why `findUnique`/`findUniqueOrThrow` are excluded entirely (from
  * BOTH patterns: a `visit.findUnique({ include: { person: true } })` is just as
@@ -77,19 +91,11 @@ const SRC = join(__dirname, '..');
  */
 const ALLOWLIST: Record<string, string> = {
     // ── sweeps / reconcilers (rule: "must still see tombstone rows") ──────────
-    //
-    // lib/lifecycleDrift.ts (I1 heal, releases stranded inventoryHeldAt) is
-    // deliberately ABSENT here even though it's a sweep in the same family as
-    // the two below: it never queries Person at all — scanLifecycleViolations
-    // and runLifecycleReconcile read/update programParticipant fields
-    // (personId, status, inventoryHeldAt) directly and only ever use personId
-    // as a scalar label, never a `person` relation select/include. It hits
-    // neither pattern this scanner looks for, so — like the merge/analyze/scan
-    // routes (see the boundary note above) — it never shows up as a scanner
-    // hit and adding it here would be a stale entry the second test rejects.
+    'lib/lifecycleDrift.ts': 'I1 auto-heal (releases stranded inventoryHeldAt). It never reads Person data — scanLifecycleViolations/runLifecycleReconcile read and update programParticipant fields (personId, status, inventoryHeldAt) directly — but its programParticipant.findMany calls are class-3 sites. Filtering them would be a REGRESSION, not a fix: a merge deliberately leaves colliding enrollment rows on the tombstone (merge/route.ts step 4), and those are exactly the rows whose holds need releasing. Hidden from this sweep they become immortal and leak held Shopify inventory forever. Same sweep rationale as the two cron entries below.',
     'app/api/cron/pending-participants/route.ts': '7-day clock → withdrawAndReleaseHold — must see a tombstoned participant to release its hold.',
     'app/api/cron/scholarship-grace-expiry/route.ts': 'Grace cutoff sweep — must see a tombstoned participant to release its held seat.',
     'lib/finance/reconcile.ts': 'Payment reconciler: a Shopify order must still settle a PENDING programParticipant "left" on a tombstone by a merge collision (merge/route.ts step 4) — that row has no other owner to settle it.',
+    'app/api/finance-ops/s-read/match-audit/track/route.ts': 'Order-claim reconciliation check: `programParticipant.findFirst({ where: { shopifyOrderId } })` asks "has any enrollment already claimed this order". A merge-collision row left on a tombstone still holds the order — filtering it would falsely report the order unmatched and raise a spurious payment exception.',
     'lib/scan-service.ts': 'Facility force-checkout sweep (last keyholder leaving): must see every open visit, including a merge-orphaned tombstone\'s (merge/route.ts leaves a concurrently-open visit in place), or it never gets force-closed.',
     'app/api/cron/nightly/route.ts': 'Nightly force-checkout sweep: must see every open visit, including a merge-orphaned tombstone\'s, or a stranded open visit is never released (same rationale as lifecycleDrift.ts\'s I1 heal).',
 
@@ -101,6 +107,17 @@ const ALLOWLIST: Record<string, string> = {
     'lib/trusted-adult/service.ts': 'assertHouseholdLead ANDs an explicit `id: actorId` into the where — at most one row, same shape as findUnique-by-id.',
     'app/api/attendance/route.ts': 'Checkout POST loads the target visit via `visit.findUnique({ where: { id: visitId }, include: { person: true } })` — the outer query is a findUnique-by-id; nesting `person: true` off it is the same excluded one-row shape.',
     'lib/auth-options.ts': 'Dev persona mint ANDs an explicit `id: personaId` into the where (and is separately scoped to `@example.com`, mirroring dev-personas/route.ts) — at most one row, same shape as findUnique-by-id.',
+
+    // ── person-scoped join reads (class 3, one already-identified person) ─────
+    // A join-table list whose where pins `personId` to a single already-known id
+    // is not a roster and not a headcount: it answers "what is THIS person in",
+    // so a tombstone can never be leaked into someone else's list or added to a
+    // total. Same boundary as the id-scoped findFirst group above, one rung out.
+    'lib/attendanceTransitions.ts': 'getRelevantProgramIds pins `personId: participantId` — the enrollment/volunteer rows of one already-identified person, used to pick their associated event on scan. Not a roster, not a count.',
+
+    // ── authz target checks (class 3, never rendered or counted) ──────────────
+    'app/api/events/[id]/attendance/route.ts': 'Builds the enrolled/volunteering id set purely to REJECT attendance writes for targets outside this event\'s program (IDOR guard). The set is never rendered and never counted; a tombstone\'s leftover enrollment row only ever widens what the roster UI — which does filter — will never offer.',
+    'app/api/events/[id]/route.ts': 'Same IDOR guard as events/[id]/attendance, in single-target form: two findFirsts pinned to `personId: targetId` asking "is this one target enrolled or volunteering". One-row shape, no list, no count.',
 
     // ── historical / audit trail (showing a since-merged identity is correct) ──
     'app/api/system-status/audit-log/route.ts': 'Resolves actor names for audit-log rows by their recorded actorId — a historical record must still name an actor who has since been merged away.',
@@ -114,12 +131,15 @@ const ALLOWLIST: Record<string, string> = {
 
     // ── safe by construction via another site's fix (scanner can't see across files) ──
     'app/api/programs/mine/route.ts': 'personId set is sourced from activityMembers() (lib/household/activityMembers.ts), which filters LIVE_PERSON — this join\'s person select can only resolve to a live person by construction; the scanner can\'t see that cross-file guarantee textually.',
+    'app/api/events/mine/route.ts': 'Same construction as programs/mine: both join reads pin `personId: { in: householdMemberIds }`, and that id set comes from activityMembers() (lib/household/activityMembers.ts), which filters LIVE_PERSON.',
+    'app/api/shop/certifications/route.ts': 'Scanner is textually blind to a VARIABLE-held where. The "All Assignments" grid — the only many-person list here — spells out `where: { person: LIVE_PERSON }` inline; the second findMany passes `whereClause`, whose two branches are `{ toolId, person: LIVE_PERSON }` (list) and `{ personId: targetUserId }` (one already-identified person). Both covered, neither visible in the captured argument object.',
 
     // ── security-boundary deferral (fix ships in its own boundary PR, not bundled into a feature PR) ──
     'security/access-resolvers.ts': 'buildCallerContext\'s Trusted-Adult scope computation (participantIdsInScopePrograms -> householdIdsInScopePrograms) reads Person without LIVE_PERSON. security-boundary-isolation.yml requires src/security/** changes to ship in their own PR; #1103 (which owns the Person.mergedIntoId column and lib/person/filters.ts on this branch — neither exists on main yet) reverted the tombstone filter here so it can land as its own tiny boundary PR once #1103 merges. Bounded risk meanwhile: merge/route.ts step 1 wipes the tombstone\'s email/googleId (CAS to merged-*@deleted.checkme.in) and step 5 deletes its sessions — a tombstone cannot authenticate, so no live session ever exercises this over-grant.',
 
     // ── dev-only tooling (no production / user-facing effect) ─────────────────
     'app/api/auth/dev-personas/route.ts': 'Dev-only persona picker (config.isDevInstance() gated), scoped to `email: { endsWith: "@example.com" }` — a merge tombstone\'s email is always rewritten to merged-*@deleted.checkme.in (merge/route.ts step 1 CAS), so it can never match this domain filter.',
+    'app/api/dev/shopify/orders-paid/route.ts': 'Dev-only mock-webhook firer (config.isDevInstance() gated). Both join reads pin `personId: { in: participantIds }` from the request body and are echoed back to the dev UI — no production or user-facing effect.',
     'lib/dev/seed-helpers.ts': 'Dev seed helper: picks an arbitrary sample of existing persons for local macro/demo flows. No production or user-facing effect.',
     'lib/dev/zoho-import.ts': 'One-time legacy Zoho data importer (scripts/import-zoho.ts) — not part of the running application.',
 };
@@ -187,6 +207,13 @@ const PERSON_CALL_RE = /\b(?:prisma|tx|db)\.person\.(findMany|findFirst|count|ag
 // is checked below and skipped).
 const PERSON_RELATION_RE = /\bperson\s*:\s*(true|\{)/g;
 
+// Class 3: a list/count call on a join delegate carrying a `person` relation.
+// Same findUnique(OrThrow) exclusion as class 1, and the captured argument object
+// is checked with the same FILTERED_RE — see the class-3 note in the header for
+// why a count with no `person:` key at all still needs the filter.
+const JOIN_CALL_RE =
+    /\b(?:prisma|tx|db)\.(programParticipant|programVolunteer|rSVP|toolStatus|feePayment)\.(findMany|findFirst|count|aggregate|groupBy)\s*\(/g;
+
 const FILTERED_RE = /LIVE_PERSON|mergedIntoId/;
 
 /**
@@ -236,6 +263,14 @@ function scan(): Set<string> {
         PERSON_CALL_RE.lastIndex = 0;
         let m: RegExpExecArray | null;
         while ((m = PERSON_CALL_RE.exec(src))) {
+            const parenIndex = m.index + m[0].length - 1; // the call's own '('
+            const args = captureObject(src, parenIndex);
+            const scopeText = args ? args.text : src.slice(m.index, m.index + 200);
+            if (!FILTERED_RE.test(scopeText)) hits.add(rel);
+        }
+
+        JOIN_CALL_RE.lastIndex = 0;
+        while ((m = JOIN_CALL_RE.exec(src))) {
             const parenIndex = m.index + m[0].length - 1; // the call's own '('
             const args = captureObject(src, parenIndex);
             const scopeText = args ? args.text : src.slice(m.index, m.index + 200);
