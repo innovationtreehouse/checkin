@@ -137,7 +137,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     if (user.householdId) {
         const householdId = user.householdId;
         const members = await prisma.person.findMany({
-            where: { householdId },
+            where: { householdId, ...LIVE_PERSON },
             select: { id: true },
         });
         const memberIds = members.map((m) => m.id);
@@ -175,7 +175,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // page highlights the member box; this drives the nav badge count.
             isLead
                 ? prisma.person.findMany({
-                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }] },
+                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }], ...LIVE_PERSON },
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
@@ -183,7 +183,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // on the household page; the lead must add one or the other.
             isLead
                 ? prisma.person.findMany({
-                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
+                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false, ...LIVE_PERSON },
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
@@ -404,7 +404,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // People Resend has reported as undeliverable (bounce/complaint), not since
             // cleared by a later delivery. See Person.emailUndeliverableAt / webhooks/resend.
             prisma.person.count({
-                where: { emailUndeliverableAt: { not: null } },
+                where: { emailUndeliverableAt: { not: null }, ...LIVE_PERSON },
             }),
             // Programs priced on a tier with no matching Shopify variant — paid enrollment
             // silently can't check out. Same condition as the list/detail UI, shared via

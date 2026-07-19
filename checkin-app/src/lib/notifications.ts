@@ -4,6 +4,7 @@ import { formatTime, formatDate } from "./time";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
 import { escapeHtml, type VisitSource } from "./email-templates/base";
+import { LIVE_PERSON } from "./person/filters";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -78,7 +79,7 @@ export async function notifyNewProgramAnnounced(programName: string): Promise<vo
         // most once per program (the UPCOMING+OPEN edge), so a table scan is fine;
         // switch to a JSON-path where-filter if the person table grows large.
         const users = await prisma.person.findMany({
-            where: { email: { not: null } },
+            where: { email: { not: null }, ...LIVE_PERSON },
             select: { email: true, name: true, notificationSettings: true },
         });
 
@@ -147,7 +148,7 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         // 2. Notify household leads if the participant is in a household
         if (participant.householdId) {
             const householdLeads = await prisma.person.findMany({
-                where: { householdId: participant.householdId, isHouseholdLead: true },
+                where: { householdId: participant.householdId, isHouseholdLead: true, ...LIVE_PERSON },
                 select: {
                     id: true,
                     email: true,

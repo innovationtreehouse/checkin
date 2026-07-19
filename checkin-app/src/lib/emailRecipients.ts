@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { logger } from "@/lib/logger";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Email fan-out helpers. Kept dependency-free (prisma + email + logger only) so
@@ -25,6 +26,7 @@ export async function resolveHouseholdRecipients(
             where: {
                 householdId,
                 ...(alsoPersonId ? { OR: [{ isHouseholdLead: true }, { id: alsoPersonId }] } : { isHouseholdLead: true }),
+                ...LIVE_PERSON,
             },
             select: { email: true, notificationSettings: true },
         });
@@ -57,7 +59,7 @@ function fanOutEmails(emails: string[], subject: string, html: string): Promise<
 export async function emailHouseholdLeads(householdId: number, subject: string, html: string, errorLabel: string): Promise<void> {
     try {
         const leads = await prisma.person.findMany({
-            where: { householdId, isHouseholdLead: true },
+            where: { householdId, isHouseholdLead: true, ...LIVE_PERSON },
             select: { email: true },
         });
         const emails = leads.map((l) => l.email).filter((e): e is string => !!e);
@@ -71,7 +73,7 @@ export async function emailHouseholdLeads(householdId: number, subject: string, 
 export async function emailBoardMembers(subject: string, html: string, errorLabel: string): Promise<void> {
     try {
         const board = await prisma.person.findMany({
-            where: { isBoardMember: true, email: { not: null } },
+            where: { isBoardMember: true, email: { not: null }, ...LIVE_PERSON },
             select: { email: true },
         });
         const emails = board.map((b) => b.email).filter((e): e is string => !!e);

@@ -35,7 +35,7 @@ describe("resolveScholarshipRecipients", () => {
         const result = await resolveScholarshipRecipients(1);
 
         expect(prisma.person.findMany).toHaveBeenCalledWith({
-            where: { householdId: 1, isHouseholdLead: true },
+            where: { householdId: 1, isHouseholdLead: true, mergedIntoId: null },
             select: { email: true, notificationSettings: true },
         });
         expect(result).toEqual([{ email: "lead@x.org", settings: null }]);
@@ -50,7 +50,7 @@ describe("resolveScholarshipRecipients", () => {
         const result = await resolveScholarshipRecipients(1, 42);
 
         expect(prisma.person.findMany).toHaveBeenCalledWith({
-            where: { householdId: 1, OR: [{ isHouseholdLead: true }, { id: 42 }] },
+            where: { householdId: 1, OR: [{ isHouseholdLead: true }, { id: 42 }], mergedIntoId: null },
             select: { email: true, notificationSettings: true },
         });
         expect(result.map((r) => r.email).sort()).toEqual(["kid@x.org", "lead@x.org"]);
@@ -120,7 +120,7 @@ describe("notifyReviewTeam", () => {
         await notifyReviewTeam("Subject", "<p>Body</p>", "err:");
 
         expect(prisma.person.findMany).toHaveBeenCalledWith({
-            where: { isBoardMember: true, email: { not: null } },
+            where: { isBoardMember: true, email: { not: null }, mergedIntoId: null },
             select: { email: true },
         });
         expect(__getSentEmails().map((e) => e.to)).toEqual(["board@x.org"]);
