@@ -115,6 +115,9 @@ const ALLOWLIST: Record<string, string> = {
     // ── safe by construction via another site's fix (scanner can't see across files) ──
     'app/api/programs/mine/route.ts': 'personId set is sourced from activityMembers() (lib/household/activityMembers.ts), which filters LIVE_PERSON — this join\'s person select can only resolve to a live person by construction; the scanner can\'t see that cross-file guarantee textually.',
 
+    // ── security-boundary deferral (fix ships in its own boundary PR, not bundled into a feature PR) ──
+    'security/access-resolvers.ts': 'buildCallerContext\'s Trusted-Adult scope computation (participantIdsInScopePrograms -> householdIdsInScopePrograms) reads Person without LIVE_PERSON. security-boundary-isolation.yml requires src/security/** changes to ship in their own PR; #1103 (which owns the Person.mergedIntoId column and lib/person/filters.ts on this branch — neither exists on main yet) reverted the tombstone filter here so it can land as its own tiny boundary PR once #1103 merges. Bounded risk meanwhile: merge/route.ts step 1 wipes the tombstone\'s email/googleId (CAS to merged-*@deleted.checkme.in) and step 5 deletes its sessions — a tombstone cannot authenticate, so no live session ever exercises this over-grant.',
+
     // ── dev-only tooling (no production / user-facing effect) ─────────────────
     'app/api/auth/dev-personas/route.ts': 'Dev-only persona picker (config.isDevInstance() gated), scoped to `email: { endsWith: "@example.com" }` — a merge tombstone\'s email is always rewritten to merged-*@deleted.checkme.in (merge/route.ts step 1 CAS), so it can never match this domain filter.',
     'lib/dev/seed-helpers.ts': 'Dev seed helper: picks an arbitrary sample of existing persons for local macro/demo flows. No production or user-facing effect.',
