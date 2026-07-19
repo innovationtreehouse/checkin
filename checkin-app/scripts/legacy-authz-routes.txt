@@ -1,0 +1,178 @@
+# RATCHET — routes that predate the security registry (@/security/handler).
+#
+# Every route method key here still uses legacy authorization (withAuth /
+# withKiosk / withCron / bespoke verify) instead of defineRoute() + handler().
+# The CI lint (scripts/check-route-coverage.ts, rule `new-route-old-authz`)
+# fails any exported route method that is in NEITHER src/security/registry.ts
+# NOR this file — so a NEW route cannot ship on old authz.
+#
+# This list may only SHRINK:
+#   - migrating a route to handler(): delete its line here (and add the
+#     registry entry + scripts/migrated-routes.txt line).
+#   - deleting a route: delete its line here.
+#   - ADDING a line requires CODEOWNERS sign-off and is an explicit decision
+#     to ship new surface outside the audited policy layer. Don't.
+#
+# Frozen 2026-07-19 from the live route tree (161 method keys).
+# Comment lines and blank lines are ignored.
+GET /api/admin/broken-households
+GET /api/admin/settings/localization
+PUT /api/admin/settings/localization
+POST /api/attendance/manual
+GET /api/attendance
+POST /api/attendance
+DELETE /api/attendance
+GET /api/auth/dev-personas
+POST /api/auth/dev-personas
+GET /api/cron/lifecycle-reconcile
+GET /api/cron/membership-renewals
+GET /api/cron/nightly
+GET /api/cron/pending-participants
+GET /api/cron/person-bg-annual
+GET /api/cron/post-event
+GET /api/cron/reconcile-shopify
+GET /api/cron/scholarship-grace-expiry
+GET /api/cron/trusted-adult-expiry
+POST /api/dev/bg-consent/complete
+POST /api/dev/shopify/orders-paid
+POST /api/dev/zoho-sign/complete
+POST /api/events/[id]/attendance
+PATCH /api/events/[id]
+PATCH /api/events/[id]/rsvp
+GET /api/events/mine
+GET /api/events
+POST /api/events
+GET /api/facility/badges
+GET /api/facility/trends
+GET /api/facility/visits
+PATCH /api/facility/visits
+DELETE /api/facility/visits
+POST /api/finance-ops/membership-payment-plans/refuse
+POST /api/finance-ops/membership-payment-plans
+POST /api/finance-ops/payment-plans/manual-hold
+POST /api/finance-ops/payment-plans/refuse
+POST /api/finance-ops/payment-plans
+PATCH /api/finance-ops/payments/[id]
+GET /api/finance-ops/payments
+GET /api/finance-ops/s-read/diagnose
+GET /api/finance-ops/s-read/match-audit
+POST /api/finance-ops/s-read/match-audit/track
+GET /api/finance-ops/s-read/sync
+POST /api/finance-ops/s-read/sync
+GET /api/health/db
+GET /api/health
+PATCH /api/household/emergency-contacts/[contactId]
+DELETE /api/household/emergency-contacts/[contactId]
+GET /api/household/emergency-contacts
+POST /api/household/emergency-contacts
+GET /api/household/intake
+POST /api/household/intake
+POST /api/household/lead
+DELETE /api/household/lead
+PATCH /api/household/member
+GET /api/household
+PATCH /api/household
+PATCH /api/household/settings
+GET /api/household/visits
+GET /api/kioskdisplay/certifications
+GET /api/membership-audit/compliance
+GET /api/membership-audit/households-missing-contact
+POST /api/membership-audit/person-bg
+GET /api/membership-audit/unclaimed-households
+POST /api/membership-ops/applications/archive
+POST /api/membership-ops/applications/certify-payment
+POST /api/membership-ops/applications/external
+POST /api/membership-ops/applications/review-override
+POST /api/membership-ops/applications/unarchive
+POST /api/membership-ops/contacts
+PATCH /api/membership-ops/households/[id]
+GET /api/membership-ops/households
+POST /api/membership-ops/households
+POST /api/membership-ops/participants/[id]/household
+PUT /api/membership-ops/participants/[id]
+POST /api/membership-ops/participants/import/preview
+POST /api/membership-ops/participants/import
+GET /api/membership-ops/participants/merge/analyze
+POST /api/membership-ops/participants/merge
+POST /api/membership-ops/participants
+POST /api/membership/bg-consent
+POST /api/membership/contract/sign
+POST /api/membership/contract/sync
+PATCH /api/membership/intake
+POST /api/membership/intake/submit
+GET /api/membership/payment
+POST /api/membership/renew
+GET /api/membership/renewal-status
+POST /api/membership/request-payment-plan
+POST /api/membership/reviews
+GET /api/membership
+POST /api/membership
+POST /api/my-programs/conflicts/resolve
+GET /api/my-programs/conflicts
+GET /api/nav/todo-counts
+GET /api/notifications
+POST /api/outreach/process-batch
+POST /api/outreach/send
+GET /api/outreach/status
+POST /api/outreach/status
+POST /api/outreach/test-send
+GET /api/people/search
+GET /api/profile/onboarding-status
+POST /api/profile/onboarding
+PATCH /api/profile
+GET /api/profile/visits
+POST /api/programs/[id]/discount-code
+POST /api/programs/[id]/participants
+DELETE /api/programs/[id]/participants
+POST /api/programs/[id]/publish
+POST /api/programs/[id]/request-payment-plan
+PATCH /api/programs/[id]
+PATCH /api/programs/[id]/settings
+POST /api/programs/[id]/sync-shopify
+POST /api/programs/[id]/volunteers
+PATCH /api/programs/[id]/volunteers
+DELETE /api/programs/[id]/volunteers
+GET /api/programs/mine
+GET /api/programs
+POST /api/programs
+GET /api/roles
+PATCH /api/roles
+GET /api/safety/emergency-contacts
+POST /api/safety/trusted-adults/decision
+POST /api/safety/trusted-adults/override
+POST /api/scan
+GET /api/settings/email
+PUT /api/settings/email
+POST /api/settings/membership/bulk-open-renewals
+POST /api/settings/membership/extract-variant
+GET /api/settings/membership
+PUT /api/settings/membership
+GET /api/settings/membership/volunteer-designations
+POST /api/settings/membership/volunteer-designations
+DELETE /api/settings/membership/volunteer-designations
+GET /api/settings/outreach
+PUT /api/settings/outreach
+GET /api/settings/shopify-webhook
+POST /api/shop/certifications
+PATCH /api/shop/tools/[id]
+GET /api/shop/tools
+POST /api/shop/tools
+GET /api/system-status/audit-log
+GET /api/system-status/config-health
+GET /api/system-status/errors
+GET /api/system-status/health
+GET /api/system-status/kiosk-version
+GET /api/system-status/lifecycle
+PATCH /api/system-status/links/[id]
+GET /api/system-status/links
+POST /api/trusted-adults/[id]/hide
+POST /api/trusted-adults/[id]/renew
+POST /api/trusted-adults/[id]/resubmit
+POST /api/trusted-adults/[id]/withdraw
+POST /api/trusted-adults
+GET /api/unsubscribe
+POST /api/unsubscribe
+POST /api/webhooks/resend
+POST /api/webhooks/shopify/reversals
+POST /api/webhooks/shopify
+POST /api/webhooks/zoho
