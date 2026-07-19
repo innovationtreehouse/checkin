@@ -46,7 +46,16 @@ describe('Sensitive route authorization', () => {
             data: {
                 name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101',
                 lastBackgroundCheck: new Date('2026-01-01'),
-                household: { create: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } } },
+                dateOfBirth: new Date('1990-05-05'),
+                // intakeNotes (pii) and line1 (internal) exist on the fixture so the
+                // ops-strip assertions below pin the projection instead of passing
+                // vacuously on an unset column.
+                household: {
+                    create: {
+                        name: "Test HH", intakeNotes: 'sensitive family note', line1: '1 Test St',
+                        orgMembership: { create: { status: 'ACTIVE' } },
+                    },
+                },
             },
         });
         searchTargetId = target.id;
@@ -120,6 +129,13 @@ describe('Sensitive route authorization', () => {
             expect(hit.phone).toBe('555-0101');
             expect(hit.lastBackgroundCheck).toBeTruthy();
             expect(hit.household.orgMembership).toBeTruthy();
+            // dateOfBirth is role-conditional: board sees it, ops does not (below).
+            expect(hit.dateOfBirth).toBeTruthy();
+            // Household address/intakeNotes are NOT role-conditional — the explicit
+            // projection drops them for every role, board included, because no
+            // consumer of this endpoint reads them.
+            expect(hit.household.intakeNotes).toBeUndefined();
+            expect(hit.household.line1).toBeUndefined();
         });
 
         it('200 for an operations-only actor, with lastBackgroundCheck and orgMembership (finance) stripped', async () => {
@@ -135,6 +151,13 @@ describe('Sensitive route authorization', () => {
             expect(hit.lastBackgroundCheck).toBeUndefined();
             expect(hit.isMember).toBeUndefined();
             expect(hit.household.orgMembership).toBeUndefined();
+            expect(hit.dateOfBirth).toBeUndefined();
+            expect(hit.isDeclaredAdult).toBeUndefined();
+            // The household is an explicit projection, not a `...p.household` spread:
+            // intakeNotes (pii, free-text hardship/medical disclosures) and the home
+            // address must never ride along on a 200-hit directory search.
+            expect(hit.household.intakeNotes).toBeUndefined();
+            expect(hit.household.line1).toBeUndefined();
             expect(hit.household.name).toBe('Test HH');
             // household.householdMembers must NOT leak full Person rows one level down
             // (a plain `householdMembers: true` include returns every column, including

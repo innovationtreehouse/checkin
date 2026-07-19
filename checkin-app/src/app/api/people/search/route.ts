@@ -59,10 +59,15 @@ export const GET = withAuth(
             // names, contact info (email/phone), and role pills (isBoardMember etc.
             // are @sensitivity:public org structure, not PII — not stripped). It is
             // denied background-check compliance dates (lastBackgroundCheck),
-            // membership/finance standing (isMember, Household.orgMembership), and
-            // every non-contact field on a household's OTHER members (see the
-            // explicit householdMembers select above). Board/sysadmin keep the full
-            // shape. See membership-ops/layout.tsx's Participants-only nav gate for ops.
+            // membership/finance standing (isMember, Household.orgMembership),
+            // date of birth, and every non-contact field on a household's OTHER
+            // members (see the explicit householdMembers select above). The
+            // household itself is an explicit projection, not a row spread, so the
+            // Household's own home address (line1/line2/city/state/postalCode) and
+            // free-text intakeNotes (hardship/medical/family disclosures) reach
+            // nobody through this route — no consumer reads them off it. Board/
+            // sysadmin keep the full shape.
+            // See membership-ops/layout.tsx's Participants-only nav gate for ops.
             const opsOnly = auth.type === 'session' && auth.user.isOperations
                 && !auth.user.isSysadmin && !auth.user.isBoardMember;
 
@@ -71,15 +76,21 @@ export const GET = withAuth(
                 name: p.name,
                 email: p.email,
                 phone: p.phone,
-                dateOfBirth: p.dateOfBirth,
-                isDeclaredAdult: p.isDeclaredAdult,
                 // `undefined` drops the key on JSON serialization — a stripped
                 // response, not a null/zeroed one.
+                dateOfBirth: opsOnly ? undefined : p.dateOfBirth,
+                isDeclaredAdult: opsOnly ? undefined : p.isDeclaredAdult,
                 lastBackgroundCheck: opsOnly ? undefined : p.lastBackgroundCheck,
                 isMember: opsOnly ? undefined : personRecordIsActiveOrgMember(p),
                 ...rolesToFlags(p.roles),
                 emailSuppressed: p.emailSuppressed,
-                household: p.household ? { ...p.household, orgMembership: opsOnly ? undefined : p.household.orgMembership } : null,
+                household: p.household ? {
+                    id: p.household.id,
+                    name: p.household.name,
+                    householdMembers: p.household.householdMembers,
+                    // orgMembership is membership/finance standing — board/sysadmin only.
+                    orgMembership: opsOnly ? undefined : p.household.orgMembership,
+                } : null,
             }));
 
             return NextResponse.json({ people: formatted });
