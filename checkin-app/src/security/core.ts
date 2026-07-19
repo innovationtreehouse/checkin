@@ -79,6 +79,7 @@ export type Role =
     | 'isBoardMember'
     | 'isKeyholder'
     | 'isBackgroundCheckReviewer'
+    | 'isOperations'
     // Holds a MAY_CERTIFY_OTHERS toolStatus (a shop certifier). Not a Person
     // role boolean — derived from session.user.toolStatuses (see callerHoldsRole).
     | 'certifier'
@@ -96,7 +97,9 @@ const VALID_SCOPES = new Set<Scope>([
     'all_current_visitors',
 ]);
 const VALID_SENSITIVE_TIERS = new Set<SensitiveTier>(['pii', 'personal', 'internal']);
-const VALID_ROLES = new Set<Role>([
+// Exported so a guard test can assert BusinessRole (types/auth.ts) ⊆ VALID_ROLES —
+// the gap that let #1104 add isOperations to BusinessRole without adding it here.
+export const VALID_ROLES = new Set<Role>([
     'anyone',
     'unauthenticated',
     'authenticated',
@@ -105,6 +108,7 @@ const VALID_ROLES = new Set<Role>([
     'isBoardMember',
     'isKeyholder',
     'isBackgroundCheckReviewer',
+    'isOperations',
     'certifier',
     'householdLead',
     'programLeadMentor',

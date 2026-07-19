@@ -7,6 +7,7 @@ import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logIntegrationError } from "@/lib/logger";
 import { config } from "@/lib/config";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -213,7 +214,8 @@ export async function reportShopifyFailure(
         const admins = await prisma.person.findMany({
             where: {
                 OR: [{ isSysadmin: true }, { isBoardMember: true }],
-                email: { not: null }
+                email: { not: null },
+                ...LIVE_PERSON,
             },
             select: { email: true }
         });

@@ -7,6 +7,7 @@ import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { renewalSeasonWindow, nextBoundary, bgValidUntilBoundary, grantRenewalPayment } from "@/lib/membership/renewal";
 import { grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 import { PaymentError } from "@/lib/membership/payment";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -234,7 +235,7 @@ export const POST = withAuth(
                     // containing a board member cannot be denied. Remove the board role first.
                     // Enforced server-side; the UI's disabled button is only a courtesy.
                     const boardMemberInHousehold = await prisma.person.findFirst({
-                        where: { householdId, isBoardMember: true },
+                        where: { householdId, isBoardMember: true, ...LIVE_PERSON },
                         select: { id: true }
                     });
                     if (boardMemberInHousehold) {

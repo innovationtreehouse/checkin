@@ -1,5 +1,6 @@
 import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
 import prisma from "@/lib/prisma";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Shared household-lead ownership check (audit P1-2). Loads the person and
@@ -102,7 +103,7 @@ async function addHouseholdLeadTx(
     }
     if (person?.isHouseholdLead) return { created: false };
 
-    const count = await tx.person.count({ where: householdLeadsWhere(householdId) });
+    const count = await tx.person.count({ where: { ...householdLeadsWhere(householdId), ...LIVE_PERSON } });
     if (count >= MAX_HOUSEHOLD_LEADS) {
         throw new HouseholdLeadLimitError(householdId);
     }
@@ -167,7 +168,7 @@ async function removeHouseholdLeadTx(
     }
     if (!person?.isHouseholdLead) return { removed: false, reason: "not_lead" };
 
-    const count = await tx.person.count({ where: householdLeadsWhere(householdId) });
+    const count = await tx.person.count({ where: { ...householdLeadsWhere(householdId), ...LIVE_PERSON } });
     if (count <= 1) return { removed: false, reason: "last_lead" };
 
     await tx.person.update({ where: { id: participantId }, data: { isHouseholdLead: false } });

@@ -8,6 +8,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -51,13 +52,20 @@ export async function GET(req: NextRequest) {
             return apiError("Unauthorized", 401);
         }
 
-        const { attendance, counts, safety } = await getFullAttendance();
+        // The kiosk is an unattended device in a public room and re-broadcasts this
+        // payload into an iframe with a wildcard postMessage target origin
+        // (client/client.py). It gets a display-only roster: no dateOfBirth
+        // (personal), no phone (pii), no emergency contacts (personal) — none of
+        // which it renders. A signed-in keyholder/board/sysadmin still gets the
+        // full payload: that grant is deliberate (registry.ts `keyholders:personal`,
+        // for pickup/emergency lookups) and unchanged here.
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: isKiosk });
 
         // Determine access level
         const isAdmin = isKiosk || user?.isSysadmin || user?.isBoardMember || user?.isKeyholder;
 
         if (isAdmin) {
-            // Full access: return all visits + counts
+            // Full roster access: all visits + counts (kiosk gets the reduced rows above)
             return NextResponse.json({
                 access: "full",
                 attendance,
@@ -250,7 +258,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
             // Find all board members
             const boardMembers = await prisma.person.findMany({
-                where: { isBoardMember: true },
+                where: { isBoardMember: true, ...LIVE_PERSON },
                 select: { email: true, name: true }
             });
 

@@ -2,9 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, List, Paper, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Box, Button, Card, Group, List, Paper, Radio, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { MergedBadge } from "@/components/ui/MergedBadge";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { PageLoader } from "@/components/ui/PageLoader";
 import { formatPhone } from "@/lib/phone";
 
 interface ParticipantMergeView {
@@ -13,12 +16,44 @@ interface ParticipantMergeView {
   name?: string;
   phone?: string;
   googleId?: string;
+  dateOfBirth?: string | null;
+  mergedIntoId?: number | null;
   _count: { visits: number, rawBadgeLogs: number, programParticipants: number, programVolunteers: number };
   household?: { id: number, name: string, _count?: { householdMembers: number }, householdMembers: Record<string, unknown>[] } | null;
   [key: string]: unknown;
 }
 
+// The 5 fields eligible for a conflict radio — mirrors the server's CONFLICT_FIELDS
+// (route.ts). image/lastBackgroundCheck/lastWaiverSign always auto-resolve, never a radio.
+const CONFLICT_FIELDS = ["name", "email", "phone", "googleId", "dateOfBirth"] as const;
+type ConflictField = typeof CONFLICT_FIELDS[number];
+const FIELD_LABELS: Record<ConflictField, string> = {
+  name: "Name", email: "Email", phone: "Phone", googleId: "Google Account", dateOfBirth: "Date of Birth",
+};
+
+// googleId has no human-readable value of its own — a raw "Connected" label reads
+// identically for both sides of a conflict, so the radio can't tell the admin what
+// they're actually choosing between. Show the identity behind it instead: the
+// person's own email (the account you'd recognize), falling back to the tail of
+// the googleId itself when there's no email to show.
+function googleIdIdentity(person: { email?: string; googleId?: string }): string {
+  if (person.email) return person.email;
+  if (person.googleId) return `…${person.googleId.slice(-6)}`;
+  return "—";
+}
+
+function formatFieldValue(field: ConflictField, value: unknown, person: { email?: string; googleId?: string }): string {
+  if (field === "dateOfBirth" && typeof value === "string") {
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
+  }
+  if (field === "phone" && typeof value === "string") return formatPhone(value);
+  if (field === "googleId") return googleIdIdentity(person);
+  return String(value ?? "—");
+}
+
 export default function MergeParticipants() {
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const router = useRouter();
   const [searchA, setSearchA] = useState("");
   const [searchB, setSearchB] = useState("");
@@ -40,6 +75,32 @@ export default function MergeParticipants() {
   const [success, setSuccess] = useState(false);
 
   const [previewMode, setPreviewMode] = useState(false);
+
+  // One choice per true conflict field ('keep' | 'merge'); default 'keep' (the
+  // keeper's value). Recomputed below (derived from analyzedA/analyzedB + keepId)
+  // and reset whenever the keeper flips (Swap Kept/Merged).
+  const [fieldChoices, setFieldChoices] = useState<Record<string, "keep" | "merge">>({});
+
+  const mergeParticipant = keepId === analyzedA?.id ? analyzedB : analyzedA;
+  const keepParticipant = keepId === analyzedA?.id ? analyzedA : analyzedB;
+
+  const conflicts: ConflictField[] = keepParticipant && mergeParticipant
+    ? CONFLICT_FIELDS.filter((f) => {
+        const kv = keepParticipant[f];
+        const mv = mergeParticipant[f];
+        return !!kv && !!mv && kv !== mv;
+      })
+    : [];
+
+  useEffect(() => {
+    if (!keepParticipant || !mergeParticipant) return;
+    const defaults: Record<string, "keep" | "merge"> = {};
+    for (const f of conflicts) defaults[f] = "keep";
+    setFieldChoices(defaults);
+    // Reset defaults only when the keeper flips (or analysis first lands) — not on
+    // every keystroke the picker itself causes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keepId, analyzedA?.id, analyzedB?.id]);
 
   useEffect(() => {
     if (searchA.length > 2 && !pA) {
@@ -99,6 +160,14 @@ export default function MergeParticipants() {
     }
   }, [pA, pB]);
 
+  if (authLoading) {
+    return <PageLoader />;
+  }
+
+  if (!ready) {
+    return null;
+  }
+
   const handleMerge = async () => {
     setMerging(true);
     setError(null);
@@ -108,7 +177,8 @@ export default function MergeParticipants() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           keepId,
-          mergeId: keepId === pA?.id ? pB?.id : pA?.id
+          mergeId: keepId === pA?.id ? pB?.id : pA?.id,
+          fieldChoices
         })
       });
       const data = await res.json().catch(() => ({}));
@@ -167,9 +237,12 @@ export default function MergeParticipants() {
 
   const renderStats = (p: ParticipantMergeView, isKept: boolean, isLeadWithOthers: boolean) => (
     <Card withBorder radius="md" padding="lg" style={{ borderColor: isKept ? "var(--mantine-color-green-6)" : "var(--mantine-color-red-6)", borderWidth: 2 }}>
-      <Title order={4} c={isKept ? "green" : "red"} mb="sm">
-        {isKept ? "Keep and augment" : "Merge and delete"}
-      </Title>
+      <Group gap="xs" mb="sm">
+        <Title order={4} c={isKept ? "green" : "red"}>
+          {isKept ? "Keep and augment" : "Merge and tombstone"}
+        </Title>
+        <MergedBadge person={p} />
+      </Group>
 
       <Box mb="md">
         <Text fw={600}>{p.name || "Unnamed"} (ID: {p.id})</Text>
@@ -200,8 +273,8 @@ export default function MergeParticipants() {
 
       {!isKept && isLeadWithOthers && (
         <Alert color="red" variant="light" mt="md" fw={700}>
-          Error: This participant is the lead of a household with other members. You cannot delete
-          them. Change the household lead first.
+          Error: This participant is the lead of a household with other members. You cannot merge
+          them away. Change the household lead first.
         </Alert>
       )}
 
@@ -230,9 +303,6 @@ export default function MergeParticipants() {
       </Card>
     );
   }
-
-  const mergeParticipant = keepId === analyzedA?.id ? analyzedB : analyzedA;
-  const keepParticipant = keepId === analyzedA?.id ? analyzedA : analyzedB;
 
   let isLeadWithOthers = false;
   if (mergeParticipant && !previewMode) {
@@ -278,6 +348,42 @@ export default function MergeParticipants() {
                 {renderStats(analyzedB, keepId === analyzedB.id, analyzedB.id !== keepId ? isLeadWithOthers : false)}
               </SimpleGrid>
 
+              {conflicts.length > 0 && keepParticipant && mergeParticipant && (
+                <Card withBorder radius="md" padding="lg">
+                  <Title order={5} mb="sm">Resolve conflicting fields</Title>
+                  <Stack gap="md">
+                    {conflicts.map((field) => {
+                      const radioGroup = (
+                        <Radio.Group
+                          label={FIELD_LABELS[field]}
+                          value={fieldChoices[field] ?? "keep"}
+                          onChange={(v) => setFieldChoices((prev) => ({ ...prev, [field]: v as "keep" | "merge" }))}
+                        >
+                          <Group mt="xs">
+                            <Radio value="keep" label={formatFieldValue(field, keepParticipant[field], keepParticipant)} />
+                            <Radio value="merge" label={formatFieldValue(field, mergeParticipant[field], mergeParticipant)} />
+                          </Group>
+                        </Radio.Group>
+                      );
+
+                      // DOB conflicts get warning treatment, not a plain radio: differing
+                      // birth dates are a much stronger "these might not be the same
+                      // person" signal than a differing email or phone.
+                      if (field === "dateOfBirth") {
+                        return (
+                          <Alert key={field} color="yellow" variant="light" title="Birth date conflict">
+                            Different birth dates may mean these are NOT the same person — verify before merging.
+                            <Box mt="xs">{radioGroup}</Box>
+                          </Alert>
+                        );
+                      }
+
+                      return <Box key={field}>{radioGroup}</Box>;
+                    })}
+                  </Stack>
+                </Card>
+              )}
+
               <Group justify="flex-end">
                 <Button size="md" disabled={isLeadWithOthers} onClick={() => setPreviewMode(true)}>
                   Proceed to Preview
@@ -306,7 +412,7 @@ export default function MergeParticipants() {
 
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setPreviewMode(false)} disabled={merging}>Cancel</Button>
-            <Button color="red" onClick={handleMerge} disabled={merging} loading={merging}>Confirm Merge &amp; Delete</Button>
+            <Button color="red" onClick={handleMerge} disabled={merging} loading={merging}>Confirm Merge &amp; Tombstone</Button>
           </Group>
         </Card>
       ) : null}

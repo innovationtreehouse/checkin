@@ -17,13 +17,21 @@ export const classifications = {
         lastBackgroundCheck: 'internal',
         emailUndeliverableAt: 'internal',
         notificationSettings: 'personal',
+        emailSuppressed: 'personal',
         householdId: 'public',
         isHouseholdLead: 'public',
+        mergedIntoId: 'internal',
         allergies: 'personal',
         isSysadmin: 'internal',
         isBoardMember: 'public',
         isKeyholder: 'internal',
         isBackgroundCheckReviewer: 'internal',
+    },
+    PersonRole: {
+        personId: 'internal',
+        role: 'internal',
+        grantedAt: 'internal',
+        grantedById: 'internal',
     },
     Tool: {
         id: 'public',
@@ -117,6 +125,10 @@ export const classifications = {
         emailFromAddress: 'public',
         emailReplyToAddress: 'public',
         scholarshipNotifyEmail: 'internal',
+        outreachOpeningSubject: 'internal',
+        outreachOpeningBody: 'internal',
+        outreachReminderSubject: 'internal',
+        outreachReminderBody: 'internal',
         shopifyOrgMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',
@@ -353,6 +365,24 @@ export const classifications = {
         resolutionNote: 'personal',
         detectedAt: 'internal',
     },
+    BulkSend: {
+        id: 'internal',
+        emailType: 'internal',
+        audience: 'internal',
+        senderId: 'internal',
+        startedAt: 'internal',
+        completedAt: 'internal',
+    },
+    BulkSendItem: {
+        id: 'internal',
+        bulkSendId: 'internal',
+        personId: 'internal',
+        email: 'internal',
+        variant: 'internal',
+        status: 'internal',
+        sentAt: 'internal',
+        error: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -360,6 +390,8 @@ export const relations = {
         accounts: { model: 'Account', isList: true },
         sessions: { model: 'Session', isList: true },
         household: { model: 'Household', isList: false },
+        mergedInto: { model: 'Person', isList: false },
+        mergedFrom: { model: 'Person', isList: true },
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
@@ -376,6 +408,12 @@ export const relations = {
         trustedAdultRecordsAsAdult: { model: 'TrustedAdult', isList: true },
         trustedAdultsDisclosed: { model: 'TrustedAdult', isList: true },
         trustedAdultReviewsDecided: { model: 'TrustedAdultReview', isList: true },
+        roles: { model: 'PersonRole', isList: true },
+        grantedRoles: { model: 'PersonRole', isList: true },
+    },
+    PersonRole: {
+        person: { model: 'Person', isList: false },
+        grantedBy: { model: 'Person', isList: false },
     },
     Tool: {
         toolStatuses: { model: 'ToolStatus', isList: true },
@@ -495,6 +533,12 @@ export const relations = {
     DevSentEmail: {
     },
     PaymentException: {
+    },
+    BulkSend: {
+        items: { model: 'BulkSendItem', isList: true },
+    },
+    BulkSendItem: {
+        bulkSend: { model: 'BulkSend', isList: false },
     },
 } as const;
 

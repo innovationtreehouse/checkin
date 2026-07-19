@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { isPaid, isReversed, membershipVariantIdSet } from "@/lib/finance/reconcile";
 import * as mirror from "@/lib/shopifyRead/client";
 import { normalizeAuditData } from "@/lib/auditPayload";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Bidirectional Shopify ↔ activation match audit — the completeness check the
@@ -276,6 +277,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         prisma.programParticipant.findMany({
             where: {
                 status: "ACTIVE",
+                person: LIVE_PERSON,
                 OR: [
                     { shopifyOrderId: { not: null } },
                     { program: { OR: [

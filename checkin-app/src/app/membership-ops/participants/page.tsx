@@ -3,11 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
+import Link from "next/link";
+import { Alert, Badge, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
+import { RoleBadge } from "@/components/ui/RoleBadge";
+import { ROLE_FLAGS } from "@/lib/roles";
 
 type HouseholdRef = {
   id: number;
@@ -24,6 +27,12 @@ type PersonRow = {
   isDeclaredAdult?: boolean;
   lastBackgroundCheck?: string | null;
   household?: HouseholdRef | null;
+  isSysadmin?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
+  isBackgroundCheckReviewer?: boolean;
+  isOperations?: boolean;
+  emailSuppressed?: boolean;
 };
 
 export default function AdminParticipantsIndex() {
@@ -272,6 +281,12 @@ export default function AdminParticipantsIndex() {
                         </Table.Th>
                       );
                     })}
+                    <Table.Th>
+                      <Group gap={4} wrap="nowrap">
+                        Roles
+                        <Text component={Link} href="/membership-ops/roles" size="xs" c="blue">Manage</Text>
+                      </Group>
+                    </Table.Th>
                     <Table.Th>Actions</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
@@ -280,8 +295,20 @@ export default function AdminParticipantsIndex() {
                     <Table.Tr key={p.id}>
                       <Table.Td c="dimmed">{p.id}</Table.Td>
                       <Table.Td fw={600}>{p.name}</Table.Td>
-                      <Table.Td>{p.email || <Text span c="dimmed">No email</Text>}</Table.Td>
+                      <Table.Td>
+                        <Group gap={6} wrap="nowrap">
+                          {p.email || <Text span c="dimmed">No email</Text>}
+                          {p.emailSuppressed && <Badge size="xs" color="gray" variant="light">Unsubscribed</Badge>}
+                        </Group>
+                      </Table.Td>
                       <Table.Td>{p.household?.name || <Text span c="dimmed">No household</Text>}</Table.Td>
+                      <Table.Td>
+                        <Group gap={4} wrap="wrap">
+                          {ROLE_FLAGS.filter((f) => p[f]).map((f) => (
+                            <RoleBadge key={f} role={f} size="sm" />
+                          ))}
+                        </Group>
+                      </Table.Td>
                       <Table.Td>
                         <Group gap="xs" wrap="nowrap">
                           {p.household ? (

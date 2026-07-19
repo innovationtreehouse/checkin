@@ -4,6 +4,8 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { personRecordIsActiveOrgMember } from "@/lib/orgMembership";
 import { apiError } from "@/lib/api-response";
+import { rolesToFlags } from "@/lib/roles";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -18,12 +20,15 @@ export const GET = withAuth(
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
             const people = await prisma.person.findMany({
-                where: q ? {
-                    OR: [
-                        { name: { contains: q, mode: 'insensitive' } },
-                        { email: { contains: q, mode: 'insensitive' } },
-                    ]
-                } : {},
+                where: {
+                    ...LIVE_PERSON,
+                    ...(q ? {
+                        OR: [
+                            { name: { contains: q, mode: 'insensitive' } },
+                            { email: { contains: q, mode: 'insensitive' } },
+                        ]
+                    } : {}),
+                },
                 take: 200,
                 orderBy: { id: 'desc' },
                 include: {
@@ -32,7 +37,11 @@ export const GET = withAuth(
                             householdMembers: true,
                             orgMembership: true,
                         }
-                    }
+                    },
+                    // isOperations has no column — every flag derives through this one
+                    // relation so there's a single code path (rolesToFlags), not four
+                    // mirror reads plus one table read.
+                    roles: { select: { role: true } },
                 }
             });
 
@@ -45,8 +54,8 @@ export const GET = withAuth(
                 isDeclaredAdult: p.isDeclaredAdult,
                 lastBackgroundCheck: p.lastBackgroundCheck,
                 isMember: personRecordIsActiveOrgMember(p),
-                isBoardMember: p.isBoardMember,
-                isKeyholder: p.isKeyholder,
+                ...rolesToFlags(p.roles),
+                emailSuppressed: p.emailSuppressed,
                 household: p.household,
             }));
 

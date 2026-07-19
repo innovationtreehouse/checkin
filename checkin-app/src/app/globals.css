@@ -10,11 +10,6 @@ body {
   margin: 0;
 }
 
-/* Glass buttons are real <button>s; show a pointer on hover like a link. */
-.glass-button {
-  cursor: pointer;
-}
-
 /* Kiosk display runs unattended on a Raspberry Pi — never show a pointer there. */
 .kiosk-mode,
 .kiosk-mode * {

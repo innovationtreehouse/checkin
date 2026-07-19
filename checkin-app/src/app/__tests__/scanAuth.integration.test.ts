@@ -71,6 +71,7 @@ function sessionUser(overrides: Partial<SessionUser> & { id: number }): SessionU
         isBoardMember: false,
         isKeyholder: false,
         isBackgroundCheckReviewer: false,
+        isOperations: false,
         ...overrides,
     };
 }

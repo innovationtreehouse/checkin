@@ -15,7 +15,7 @@ describe("MEMBERSHIP_OPS_NAV_LINKS", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
-  it("does not surface the disabled Merge Participants tool", () => {
-    expect(MEMBERSHIP_OPS_NAV_LINKS.some((l) => l.href.includes("merge"))).toBe(false);
+  it("surfaces the Merge Participants tool now that the merge route deletes nothing", () => {
+    expect(MEMBERSHIP_OPS_NAV_LINKS.some((l) => l.href.includes("merge"))).toBe(true);
   });
 });

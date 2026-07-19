@@ -8,6 +8,7 @@ import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
 import type { DbClient } from "@/lib/db-client";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
@@ -213,7 +214,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
                         // Find or create child in that household
                         let participant = await tx.person.findFirst({
-                            where: { householdId: parentHouseholdId, name: pr.fullName }
+                            where: { householdId: parentHouseholdId, name: pr.fullName, ...LIVE_PERSON }
                         });
                         if (participant) {
                             participant = await tx.person.update({
@@ -241,7 +242,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         const matchQuery: { name: string; dateOfBirth?: Date } = { name: pr.fullName };
                         if (pr.parsedDob) matchQuery.dateOfBirth = pr.parsedDob;
 
-                        let participant = await tx.person.findFirst({ where: matchQuery });
+                        let participant = await tx.person.findFirst({ where: { ...matchQuery, ...LIVE_PERSON } });
                         if (participant) {
                             await applyAddressToHousehold(participant.householdId, pr.address, tx);
                         } else {
@@ -297,7 +298,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             }
 
             const byName = await prisma.person.findFirst({
-                where: { name: { equals: trimmed, mode: 'insensitive' } },
+                where: { name: { equals: trimmed, mode: 'insensitive' }, ...LIVE_PERSON },
                 select: { id: true, householdId: true }
             });
             if (byName) {
@@ -337,7 +338,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
                         // Merge the ENTIRE source household into the target.
                         const sourceLeads = await prisma.person.findMany({
-                            where: { householdId: sourceHouseholdId, isHouseholdLead: true },
+                            where: { householdId: sourceHouseholdId, isHouseholdLead: true, ...LIVE_PERSON },
                             select: { id: true }
                         });
 
@@ -345,7 +346,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         // the merge up front rather than start a doomed transaction.
                         const projectedLeadIds = new Set(
                             (await prisma.person.findMany({
-                                where: { householdId: targetHouseholdId, isHouseholdLead: true },
+                                where: { householdId: targetHouseholdId, isHouseholdLead: true, ...LIVE_PERSON },
                                 select: { id: true }
                             })).map((l) => l.id)
                         );
@@ -374,7 +375,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                             // over. (The pr.email add below re-checks its own add too.)
                             await tx.$queryRaw`SELECT id FROM "Household" WHERE id = ${targetHouseholdId} FOR UPDATE`;
                             const targetLeadCount = await tx.person.count({
-                                where: { householdId: targetHouseholdId, isHouseholdLead: true }
+                                where: { householdId: targetHouseholdId, isHouseholdLead: true, ...LIVE_PERSON }
                             });
                             if (targetLeadCount > MAX_HOUSEHOLD_LEADS) {
                                 throw new HouseholdLeadLimitError(targetHouseholdId);

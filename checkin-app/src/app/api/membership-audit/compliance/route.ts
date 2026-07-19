@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
                     { programVolunteers: { some: {} } },
                     { programsLed: { some: {} } },
                 ],
+                ...LIVE_PERSON,
             },
             select: {
                 id: true,
