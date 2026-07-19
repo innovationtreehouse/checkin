@@ -114,6 +114,60 @@ describe("Participant PII minimization (M1, M2)", () => {
         expect(callArgs.include.household.include.householdMembers).toEqual({ select: HOUSEHOLD_PEER_SELECT });
     });
 
+    // Household.intakeNotes is the family's free-text note TO the board (tier
+    // 'pii', read by the BG-review queue). Household peers — including youth
+    // with their own logins — must not receive a note a parent wrote about
+    // them. Only the lead, who authored it and edits it on /my-household, does.
+    describe("GET /api/household intakeNotes is lead-only", () => {
+        const mockCaller = (caller: Record<string, unknown>) => {
+            mockSession.mockResolvedValue({ user: { id: 1 } });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({
+                id: 1,
+                householdId: 10,
+                ...caller,
+                household: {
+                    id: 10,
+                    name: "Test Household",
+                    line1: "123 Main St",
+                    city: "Austin",
+                    state: "TX",
+                    postalCode: "78701",
+                    intakeNotes: "we are volunteer only; dad lost his job",
+                    orgMembership: null,
+                    householdMembers: [],
+                },
+            });
+        };
+
+        const get = async () => {
+            const req = new Request("http://localhost/api/household") as unknown as NextRequest;
+            const res = await householdGET(req);
+            expect(res.status).toBe(200);
+            return (await res.json()).household;
+        };
+
+        it("strips the note for a non-lead household member", async () => {
+            mockCaller({ isHouseholdLead: false, isSysadmin: false });
+            const household = await get();
+
+            expect(household.intakeNotes).toBeNull();
+            // The address is shared household data the family authored — a peer
+            // still gets it. Only the note is lead-gated.
+            expect(household.line1).toBe("123 Main St");
+            expect(household.postalCode).toBe("78701");
+        });
+
+        it("returns the note to a household lead", async () => {
+            mockCaller({ isHouseholdLead: true, isSysadmin: false });
+            expect((await get()).intakeNotes).toBe("we are volunteer only; dad lost his job");
+        });
+
+        it("returns the note to a sysadmin", async () => {
+            mockCaller({ isHouseholdLead: false, isSysadmin: true });
+            expect((await get()).intakeNotes).toBe("we are volunteer only; dad lost his job");
+        });
+    });
+
     it("GET /api/attendance (full access) does not leak email/googleId", async () => {
         // No session — admitted via a verified kiosk signature instead.
         mockPubKeys.mockReturnValue(["dummy-key"]);
