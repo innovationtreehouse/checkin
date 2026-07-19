@@ -6,7 +6,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
-import { useIsDevInstance } from "@/components/EnvProvider";
+import { useCheckinEnv } from "@/components/EnvProvider";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Settings {
@@ -46,7 +46,9 @@ export default function MembershipSettingsPage() {
   const [extracting, setExtracting] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
   // Dev-instance-only: where contract signing requests go ('zoho' | 'debug').
-  const isDev = useIsDevInstance();
+  // Strictly CHECKIN_ENV=dev, not useIsDevInstance()'s not-prod: the API rejects
+  // devSigningTarget on any other env, and one rejected field 400s the whole PUT.
+  const isDev = useCheckinEnv() === "dev";
   const [signingTarget, setSigningTarget] = useState("zoho");
 
   // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to

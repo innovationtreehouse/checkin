@@ -5,7 +5,7 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, setCheckinEnv, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
 import MembershipSettingsPage from "../page";
 
@@ -229,6 +229,29 @@ describe("MembershipSettingsPage", () => {
     await waitFor(() =>
       expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "red", message: "Network error." })),
     );
+  });
+
+  // The signing-target radio is a CHECKIN_ENV=dev knob: the API 400s devSigningTarget on
+  // any other env, and one rejected field rejects the whole PUT — so sending it on 'local'
+  // made every membership setting unsaveable. tsc can't see this (both predicates are
+  // boolean), so the env gate needs a real assertion on the PUT body.
+  it.each([
+    ["local" as const, false],
+    ["dev" as const, true],
+  ])("on CHECKIN_ENV=%s, sends devSigningTarget: %s", async (env, expected) => {
+    setCheckinEnv(env);
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/settings/membership": { settings: SETTINGS } });
+    renderWithProviders(<MembershipSettingsPage />);
+    await screen.findByDisplayValue("150.00");
+
+    // The radio itself is only rendered on a real dev instance.
+    expect(!!screen.queryByText(/Contract signing target/)).toBe(expected);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/membership", expect.objectContaining({ method: "PUT" })));
+    const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
+    expect("devSigningTarget" in JSON.parse(putOpts!.body as string)).toBe(expected);
   });
 
   it("opens renewals for all active members after confirming (never emails — PR-2)", async () => {
