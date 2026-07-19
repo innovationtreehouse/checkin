@@ -6,5 +6,4 @@
 # Comment lines and blank lines are ignored.
 GET /api/profile
 GET /api/programs/[id]
-GET /api/directory/board
 GET /api/safety/board-contacts
