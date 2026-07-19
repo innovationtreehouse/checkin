@@ -123,19 +123,6 @@ defineRoute({
     ],
 });
 
-defineRoute({
-    endpoint: 'GET /api/directory/board',
-    authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
-    envelope: 'boardMembers',
-    // Bag: { Person }.
-    returns: ['Person'],
-    orderedView: [
-        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['isKeyholder',   ['member', 'public']],
-    ],
-});
-
 // Emergency board contact sheet for the front desk. Board email + phone to
 // keyholders is DELIBERATE and owner-confirmed: a keyholder on shift needs to
 // reach a board member, and this is the sheet they reach for. That makes the
