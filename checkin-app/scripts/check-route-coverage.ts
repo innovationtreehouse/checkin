@@ -11,6 +11,9 @@
  *   6. RATCHET (blocking even in advisory mode): every exported route method is
  *      either in src/security/registry.ts or in the frozen legacy baseline
  *      (scripts/legacy-authz-routes.txt) — no NEW route can ship on old authz.
+ *   7. Routes with NO registered verb must not use bare `include: { rel: true }`
+ *      — with no handler() response stripper in front of them, every column of
+ *      the related model reaches the wire (see 62dd6d80, GET /api/household).
  *
  * Uses string/regex parsing — fast, no AST library to load. Trade-off: a
  * sufficiently-obfuscated bypass slips past, but this lint is one layer
@@ -42,6 +45,69 @@ const ALLOWED_THIRD_PARTY_FETCH_FILES = new Set<string>([
 const THIRD_PARTY_HOST_RE = /(shopify\.com|myshopify\.com|resend\.com|SHOPIFY_STORE_DOMAIN)/;
 const VERB_EXPORT_RE = /export\s+(?:const|async\s+function|function)\s+(GET|POST|PUT|PATCH|DELETE)\b/g;
 const JSON_CALL_RE = /\b(NextResponse|Response)\.json\s*\(/;
+
+/**
+ * Rule 7 parser. A `x: true` leg inside `select: {}` is how you NARROW a query
+ * and is everywhere; the same leg inside `include: {}` pulls whole rows. So the
+ * only thing that matters is the NEAREST enclosing block kind, tracked through
+ * nested braces — the dangerous shape is routinely nested inside a safe one:
+ *
+ *   include: { household: { include: { householdMembers: true },   // <- flagged
+ *                           select:  { id: true } } }              // <- not
+ *
+ * `_count` legs are exempt: `_count: { select: {...} }` returns integers.
+ *
+ * ponytail: brace counting, not an AST (see the header's no-AST trade-off).
+ * Known ceiling — an unbalanced `{` inside a string literal would skew the
+ * stack. `${...}` interpolation is balanced so it self-corrects; comments are
+ * blanked below. Reach for an AST only if that ceiling is actually hit.
+ */
+const BLOCK_KEY_RE = /([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*$/;
+const BARE_TRUE_LEG_RE = /([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*true\b/y;
+
+/** Blank out comment bodies, preserving offsets and line count. Line comments
+ *  only when the `//` starts the line, so `'https://…'` survives intact. */
+function blankComments(src: string): string {
+    return src
+        .replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, ' '))
+        .replace(/^[ \t]*\/\/[^\n]*/gm, c => ' '.repeat(c.length));
+}
+
+export function findBareIncludeLegs(source: string): { name: string; line: number }[] {
+    const src = blankComments(source);
+    const hits: { name: string; line: number }[] = [];
+    const stack: string[] = [];
+    let line = 1;
+    for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        if (ch === '\n') { line++; continue; }
+        if (ch === '{') {
+            const m = BLOCK_KEY_RE.exec(src.slice(Math.max(0, i - 200), i));
+            stack.push(m ? m[1] : '');
+            continue;
+        }
+        if (ch === '}') { stack.pop(); continue; }
+        if (stack[stack.length - 1] !== 'include') continue;
+        if (i > 0 && /[A-Za-z0-9_$.]/.test(src[i - 1])) continue; // mid-identifier
+        BARE_TRUE_LEG_RE.lastIndex = i;
+        const leg = BARE_TRUE_LEG_RE.exec(src);
+        if (!leg) continue;
+        if (leg[1] !== '_count') hits.push({ name: leg[1], line });
+        i = BARE_TRUE_LEG_RE.lastIndex - 1;
+    }
+    return hits;
+}
+
+/** Rule 7's gate: registered verbs go through handler(), whose response stripper
+ *  enforces the tier policy regardless of what the query fetched — a bare
+ *  `household: true` there is safe. A route with NO registered verb has no
+ *  stripper, so whatever the include pulled reaches the wire as-is. */
+export function findUnregisteredBareIncludeLegs(
+    content: string, verbs: string[], endpointPath: string, registered: Set<string>,
+): { name: string; line: number }[] {
+    if (verbs.length === 0 || verbs.some(v => registered.has(`${v} ${endpointPath}`))) return [];
+    return findBareIncludeLegs(content);
+}
 
 interface Finding {
     severity: 'error' | 'warn';
@@ -194,6 +260,18 @@ function main() {
             });
         }
 
+        // Rule 7. ponytail: warn, not error — there are pre-existing hits and CI
+        // runs this with --strict, so error would break main on contact. Flip to
+        // 'error' once the hit list reaches zero; that is this one word and no new
+        // machinery (deliberately NOT a third baseline file — the warn severity IS
+        // the grandfathering, and every scripts/*.txt is CODEOWNERS-gated).
+        for (const leg of findUnregisteredBareIncludeLegs(content, verbs, endpointPath, registered)) {
+            report('warn', 'bare-include-relation', file,
+                `bare 'include: { ${leg.name}: true }' on an unregistered route returns every ` +
+                `column of ${leg.name} — use an explicit select, or migrate to handler()`,
+                leg.line);
+        }
+
         if (verbs.length > 0 && migratedVerbs.length === 0) {
             report('warn', 'unmigrated', file,
                 `route ${verbs.join('/')} ${endpointPath} has not yet been migrated to handler()`);
@@ -269,4 +347,6 @@ function main() {
     process.exit(0);
 }
 
-main();
+// Guarded so the rule-7 parser above can be imported by its test without
+// running the whole lint (and its process.exit) on import.
+if (require.main === module) main();
