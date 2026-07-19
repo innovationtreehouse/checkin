@@ -11,28 +11,28 @@
 # these gates were active until the prefix fix below (2026-07-19).
 
 # Schema annotations — the source of truth for field sensitivity.
-/checkin-app/prisma/schema.prisma                 @dkaygithub
+/checkin-app/prisma/schema.prisma                 @dkaygithub @jee7s @thpr
 
 # The policy layer itself.
-/checkin-app/src/security/                        @dkaygithub
+/checkin-app/src/security/                        @dkaygithub @jee7s @thpr
 
 # Authentication & session machinery.
-/checkin-app/src/lib/auth.ts                      @dkaygithub
-/checkin-app/src/lib/auth-options.ts              @dkaygithub
+/checkin-app/src/lib/auth.ts                      @dkaygithub @jee7s @thpr
+/checkin-app/src/lib/auth-options.ts              @dkaygithub @jee7s @thpr
 
 # Contract tests that enforce the policy in CI.
-/checkin-app/tests/security/                      @dkaygithub
+/checkin-app/tests/security/                      @dkaygithub @jee7s @thpr
 
 # CODEOWNERS itself and CI workflows — without protecting these, the rest
 # can be quietly disabled in a PR you'd never see.
-/.github/                             @dkaygithub
+/.github/                             @dkaygithub @jee7s @thpr
 
 # The CI lint and the codegen — bypass routes if changed.
-/checkin-app/scripts/check-route-coverage.ts      @dkaygithub
-/checkin-app/scripts/security-generator.js        @dkaygithub
-/checkin-app/scripts/migrated-routes.txt          @dkaygithub
-/checkin-app/scripts/legacy-authz-routes.txt      @dkaygithub
-/checkin-app/scripts/tsconfig.json                @dkaygithub
+/checkin-app/scripts/check-route-coverage.ts      @dkaygithub @jee7s @thpr
+/checkin-app/scripts/security-generator.js        @dkaygithub @jee7s @thpr
+/checkin-app/scripts/migrated-routes.txt          @dkaygithub @jee7s @thpr
+/checkin-app/scripts/legacy-authz-routes.txt      @dkaygithub @jee7s @thpr
+/checkin-app/scripts/tsconfig.json                @dkaygithub @jee7s @thpr
 
 # Git hooks.
-/.husky/                              @dkaygithub
+/.husky/                              @dkaygithub @jee7s @thpr
