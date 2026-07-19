@@ -2,15 +2,21 @@
  * @jest-environment node
  */
 /**
- * Regression guard for GET /api/directory/board.
+ * Regression guard for GET /api/safety/board-contacts.
  *
- * Pins the field set leaving the board directory. The endpoint must NEVER ship
- * pii (`dob`, `googleId`) regardless of caller — this is enforced twice: the
- * route's explicit Prisma `select` (defense in depth) AND the outbound stripper.
- * Reverting the `select` makes the board-member assertions fail, which is the
- * point: this test guards the leak.
+ * Pins the field set leaving the emergency board contact sheet. Two distinct
+ * properties, and they pull in opposite directions:
+ *
+ *  - Keyholders DO receive email + phone. That is the registry's
+ *    'keyholders:pii' grant — deliberate and owner-confirmed, because a
+ *    keyholder on shift needs to reach a board member and this is the sheet
+ *    they reach for.
+ *  - `dateOfBirth` and `googleId` must NEVER ship, for ANY caller, sysadmin
+ *    and board included. Enforced twice: the route's tight Prisma `select`
+ *    (defense in depth) AND the outbound stripper. Widening the `select`
+ *    makes these assertions fail, which is the point.
  */
-import { GET } from '@/app/api/directory/board/route';
+import { GET } from '@/app/api/safety/board-contacts/route';
 import prisma from '@/lib/prisma';
 
 jest.mock('next-auth/next', () => ({
@@ -20,13 +26,13 @@ jest.mock('next-auth/next', () => ({
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockSession = require('next-auth/next').getServerSession;
 
-const TAG = 'directory-board-test';
+const TAG = 'safety-board-contacts-test';
 
 function req() {
-    return new Request('http://localhost/api/directory/board') as unknown as import('next/server').NextRequest;
+    return new Request('http://localhost/api/safety/board-contacts') as unknown as import('next/server').NextRequest;
 }
 
-describe('GET /api/directory/board', () => {
+describe('GET /api/safety/board-contacts', () => {
     let boardId: number;
     let keyholderId: number;
     const householdIds: number[] = [];
@@ -72,36 +78,40 @@ describe('GET /api/directory/board', () => {
 
         const res = await GET(req());
         expect(res.status).toBe(200);
-        const { boardMembers } = await res.json();
+        const { members } = await res.json();
 
-        expect(Array.isArray(boardMembers)).toBe(true);
-        const seeded = boardMembers.find((r: { id: number }) => r.id === boardId);
+        expect(Array.isArray(members)).toBe(true);
+        const seeded = members.find((r: { id: number }) => r.id === boardId);
         expect(seeded).toBeDefined();
         // Board legitimately sees contact fields...
         expect(seeded.email).toBe(`board-${TAG}@example.com`);
         expect(seeded.phone).toBe('555-0001');
-        // ...but pii must never ship, for any row.
-        for (const row of boardMembers) {
+        // ...but dob/googleId must never ship, for any row.
+        for (const row of members) {
             expect(row).not.toHaveProperty('dateOfBirth');
             expect(row).not.toHaveProperty('googleId');
         }
     });
 
-    it('a isKeyholder gets only public/member fields — no email/phone/dob/googleId', async () => {
+    it('a isKeyholder gets email and phone — the owner-confirmed emergency-contact grant', async () => {
         mockSession.mockResolvedValue({ user: { id: keyholderId, isKeyholder: true } });
 
         const res = await GET(req());
         expect(res.status).toBe(200);
-        const { boardMembers } = await res.json();
+        const { members } = await res.json();
 
-        const seeded = boardMembers.find((r: { id: number }) => r.id === boardId);
+        const seeded = members.find((r: { id: number }) => r.id === boardId);
         expect(seeded).toBeDefined();
         // Public fields survive.
         expect(seeded.name).toBe(`Board ${TAG}`);
-        // Stripper clears contact pii for keyholders.
-        for (const row of boardMembers) {
-            expect(row).not.toHaveProperty('email');
-            expect(row).not.toHaveProperty('phone');
+        // Contact pii reaches keyholders BY DESIGN: the registry's
+        // 'keyholders:pii' grant on this route. A keyholder on shift must be
+        // able to phone a board member. If this assertion ever flips to
+        // not.toHaveProperty, the emergency sheet has silently gone blank.
+        expect(seeded.email).toBe(`board-${TAG}@example.com`);
+        expect(seeded.phone).toBe('555-0001');
+        // dob/googleId stay out for keyholders too.
+        for (const row of members) {
             expect(row).not.toHaveProperty('dateOfBirth');
             expect(row).not.toHaveProperty('googleId');
         }
