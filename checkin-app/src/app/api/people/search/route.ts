@@ -15,19 +15,38 @@ export const GET = withAuth(
         try {
             const url = new URL(req.url);
             const q = url.searchParams.get('q') || '';
+            // Only `adults` is recognized; any other value (or none) filters by age not at all.
+            const adultsOnly = url.searchParams.get('filter') === 'adults';
 
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
             const people = await prisma.person.findMany({
+                // Both clauses below are ORs, so they go in an AND array rather than as
+                // two `OR:` keys — a second top-level OR would silently overwrite the
+                // first, and Prisma's recursive WhereInput accepts that without a type
+                // error. `?q=x&filter=adults` must apply both.
                 where: {
                     ...LIVE_PERSON,
-                    ...(q ? {
-                        OR: [
-                            { name: { contains: q, mode: 'insensitive' } },
-                            { email: { contains: q, mode: 'insensitive' } },
-                        ]
-                    } : {}),
+                    AND: [
+                        ...(q ? [{
+                            OR: [
+                                { name: { contains: q, mode: 'insensitive' as const } },
+                                { email: { contains: q, mode: 'insensitive' as const } },
+                            ]
+                        }] : []),
+                        // Adult = 18+. The isDeclaredAdult leg keeps members a lead marked
+                        // 25+ without a DoB (schema.prisma) in the picker; a null-DoB person
+                        // who was never declared adult is excluded, which is what a strict
+                        // 18+ rule means — the "mark 25+" control in the Details modal is
+                        // the affordance to fix that.
+                        ...(adultsOnly ? [{
+                            OR: [
+                                { dateOfBirth: { lte: eighteenYearsAgo } },
+                                { isDeclaredAdult: true },
+                            ]
+                        }] : []),
+                    ],
                 },
                 take: 200,
                 orderBy: { id: 'desc' },
