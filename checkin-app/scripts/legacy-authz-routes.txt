@@ -120,7 +120,6 @@ GET /api/people/search
 GET /api/profile/onboarding-status
 POST /api/profile/onboarding
 PATCH /api/profile
-GET /api/profile/visits
 POST /api/programs/[id]/discount-code
 POST /api/programs/[id]/participants
 DELETE /api/programs/[id]/participants
