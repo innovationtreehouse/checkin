@@ -69,7 +69,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
     }
 
     const coreVols = await prisma.programVolunteer.findMany({
-        where: { personId: auth.user.id, isCore: true },
+        where: { personId: auth.user.id, isCore: true, person: LIVE_PERSON },
         select: {
             programId: true,
             program: { select: { participants: { select: { personId: true } } } },
