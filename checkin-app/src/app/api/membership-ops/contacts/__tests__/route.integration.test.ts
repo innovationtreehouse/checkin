@@ -10,12 +10,9 @@
  * surface, writes a CREATE audit row), the owner-named 409 (the case-variant
  * regression — the dup check MUST normalize before the lookup or a
  * case-variant slips past to a 500 on the @unique constraint), the deliberate
- * sysadmin exclusion (403 — NOT a bug), and the standard anon/plain
- * negative-authz pair.
- *
- * Operations access (asSession isOperations, the ops-only edit-endpoint deny
- * suite) is granted separately in #1111 — see that PR's own integration
- * coverage.
+ * sysadmin exclusion (403 — NOT a bug), operations admission (the RBAC
+ * rework's follow-on — ops clears this same endpoint), and the standard
+ * anon/plain negative-authz pair.
  */
 import { POST } from '@/app/api/membership-ops/contacts/route';
 import prisma from '@/lib/prisma';
@@ -81,6 +78,7 @@ function nreq(url: string, method = 'POST', body?: unknown) {
 describe('POST /api/membership-ops/contacts', () => {
     let boardId: number;
     let sysadminId: number;
+    let opsId: number;
     let plainId: number;
     let plainHh: number;
     let ownerEmail: string;
@@ -96,6 +94,11 @@ describe('POST /api/membership-ops/contacts', () => {
         const sysadminHh = await prisma.household.create({ data: { name: `Sysadmin HH ${PERSISTENT_TAG}` } });
         sysadminId = (await prisma.person.create({
             data: { name: 'Sysadmin Actor', email: `sysadmin-${PERSISTENT_TAG}@example.com`, isSysadmin: true, householdId: sysadminHh.id },
+        })).id;
+
+        const opsHh = await prisma.household.create({ data: { name: `Ops HH ${PERSISTENT_TAG}` } });
+        opsId = (await prisma.person.create({
+            data: { name: 'Ops Actor', email: `ops-${PERSISTENT_TAG}@example.com`, householdId: opsHh.id },
         })).id;
 
         const plainHhRow = await prisma.household.create({ data: { name: `Plain HH ${PERSISTENT_TAG}` } });
@@ -217,6 +220,27 @@ describe('POST /api/membership-ops/contacts', () => {
         expect(res.status).toBe(400);
         const data = await res.json();
         expect(data.error).toBe('A valid email is required');
+    });
+
+    it('creates a household + lead for an operations-only actor (the RBAC rework follow-on)', async () => {
+        asSession({ id: opsId, isOperations: true });
+        const email = `Grace-${CREATED_TAG}@Example.com`;
+
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Grace Hopper', email }));
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.success).toBe(true);
+
+        const created = await prisma.person.findUnique({ where: { id: data.participant.id } });
+        expect(created?.email).toBe(email.toLowerCase());
+
+        const log = await expectAuditRow(prisma, {
+            action: 'CREATE',
+            tableName: 'Person',
+            affectedEntityId: created!.id,
+            secondaryAffectedEntity: created!.householdId!,
+        });
+        expect(log.actorId).toBe(opsId);
     });
 
     it('403s a sysadmin-only actor — intentional, sysadmin is excluded from board-create (Jeff / #1083-style board-only carve-out), not a bug', async () => {
