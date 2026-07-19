@@ -49,9 +49,10 @@ describe("OutreachSettingsPage", () => {
     await screen.findByDisplayValue("Time to {{actionWord}}");
     expect(screen.getAllByDisplayValue(/Hi \{\{name\}\}/)).toHaveLength(2);
 
-    // Live preview substitutes the tokens for both variants (join/renew).
-    expect(screen.getByText(/please join by 2026-08-01/)).toBeInTheDocument();
-    expect(screen.getByText(/please renew by 2026-08-01/)).toBeInTheDocument();
+    // Live preview substitutes the tokens for both variants (join/renew). The body renders in a
+    // scriptless sandboxed iframe (XSS hardening), so assert against its srcDoc, not the DOM text.
+    expect(screen.getByTitle("Opening of renewals: join preview").getAttribute("srcdoc")).toMatch(/please join by 2026-08-01/);
+    expect(screen.getByTitle("Opening of renewals: renew preview").getAttribute("srcdoc")).toMatch(/please renew by 2026-08-01/);
   });
 
   it("live preview updates as the board types", async () => {

@@ -236,7 +236,16 @@ function TemplateCard({
           <Card key={variant} withBorder padding="sm" radius="sm">
             <Badge size="sm" mb="xs" variant="light">{variant === "join" ? "Join (non-member preview)" : "Renew (member preview)"}</Badge>
             <Text fw={600} size="sm" mb={4}>{previewSubject(variant)}</Text>
-            <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: preview(variant) }} />
+            {/* Template body is operator-authored HTML (PUT is open to isOperations). Render it in a
+                scriptless sandboxed iframe so an <img onerror> can't run in a board/sysadmin session
+                that opens this same-origin admin page — sandbox="" blocks scripts while still showing
+                the markup a mail client would. */}
+            <iframe
+              title={`${title}: ${variant} preview`}
+              sandbox=""
+              srcDoc={`<style>body{margin:0;font:13px system-ui,sans-serif}</style>${preview(variant)}`}
+              style={{ border: 0, width: "100%", height: 160 }}
+            />
           </Card>
         ))}
       </Group>

@@ -60,7 +60,14 @@ export const POST = withAuth({ roles: ROLES }, async (req) => {
         const claim = await prisma.bulkSendItem.updateMany({ where: { id: item.id, status: "queued" }, data: { status: "sending" } });
         if (claim.count === 0) continue; // already claimed elsewhere — skip, don't send
 
-        const person = await prisma.person.findUnique({ where: { id: item.personId }, select: { name: true } });
+        const person = await prisma.person.findUnique({ where: { id: item.personId }, select: { name: true, emailSuppressed: true } });
+        // Honor an unsubscribe that landed AFTER the snapshot was frozen: the drain resumes
+        // arbitrarily later (survives deploys), so re-check suppression at send time. Join-only,
+        // recorded (not dropped) as the same status the snapshot path uses — spec §2.4.
+        if (item.variant === "join" && person?.emailSuppressed) {
+            await prisma.bulkSendItem.update({ where: { id: item.id }, data: { status: "skipped_unsubscribed" } });
+            continue;
+        }
         const { subject, html } = renderOutreachEmail(template.subject, template.body, {
             name: person?.name ?? "",
             variant: item.variant as OutreachVariant,

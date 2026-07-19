@@ -51,6 +51,15 @@ export const POST = withAuth({ roles: ROLES }, async (req) => {
     const bulkSend = await prisma.bulkSend.findUnique({ where: { id: body.bulkSendId } });
     if (!bulkSend) return apiError("Send not found", 404);
 
+    // Reopening a completed send must not create a second in-flight row: two rows with
+    // completedAt: null break the one-in-flight invariant (send/route.ts 409s every new
+    // campaign, and process-batch's no-id fallback drains whichever is newest). Plain check —
+    // the create path guards under Serializable, but this reopen's exposure is far narrower.
+    if (bulkSend.completedAt) {
+        const other = await prisma.bulkSend.findFirst({ where: { completedAt: null }, select: { id: true } });
+        if (other) return apiError("A send is already in progress.", 409);
+    }
+
     await prisma.bulkSendItem.updateMany({ where: { bulkSendId: bulkSend.id, status: "failed" }, data: { status: "queued", error: null } });
     const reopened = bulkSend.completedAt
         ? await prisma.bulkSend.update({ where: { id: bulkSend.id }, data: { completedAt: null } })

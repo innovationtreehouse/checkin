@@ -46,9 +46,12 @@ export const POST = withAuth({ roles: ROLES }, async (req, auth) => {
             name: SAMPLE_NAME,
             variant,
             boundary,
-            personId: variant === "join" ? auth.user.id : undefined,
+            // No personId: a test render must not mint a working unsubscribe token for the tester
+            // (who would opt themselves out by clicking through to verify the link). Mirror the
+            // client preview's inert footer (settings/outreach/page.tsx) so test and preview match.
         });
-        await sendEmail(to, `[Test - ${variant}] ${subject}`, html);
+        const testHtml = html + (variant === "join" ? '<p><a href="#">Unsubscribe from invitations</a></p>' : "");
+        await sendEmail(to, `[Test - ${variant}] ${subject}`, testHtml);
     }
 
     return NextResponse.json({ success: true });

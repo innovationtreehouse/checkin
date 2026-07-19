@@ -221,6 +221,29 @@ describe('outreach ledger (send / process-batch / status)', () => {
         expect(finalBulkSend.completedAt).not.toBeNull();
     });
 
+    it('retry 409s when another send is already in flight (protects the one-in-flight invariant)', async () => {
+        await makeNonMemberLead('RetryGuard', `retryguard-${TAG}@example.com`);
+        asBoard(boardId);
+
+        // Send A: force a failure so it completes with a failed item (0 queued → completedAt set).
+        (sendEmail as jest.Mock).mockResolvedValue(false);
+        const aRes = await SEND(req('POST', { emailType: 'opening', audience: 'c' }));
+        const a = await aRes.json();
+        await PROCESS_BATCH(req('POST', { bulkSendId: a.bulkSend.id }));
+        expect((await prisma.bulkSend.findUniqueOrThrow({ where: { id: a.bulkSend.id } })).completedAt).not.toBeNull();
+
+        // Send B: created after A completed, left un-drained so it is genuinely in flight.
+        (sendEmail as jest.Mock).mockResolvedValue(true);
+        const bRes = await SEND(req('POST', { emailType: 'reminder', audience: 'c' }));
+        expect(bRes.status).toBe(201);
+
+        // Retrying A would reopen a second in-flight row — reject it, and don't re-queue A's failures.
+        const retry = await STATUS_POST(req('POST', { action: 'retry', bulkSendId: a.bulkSend.id }));
+        expect(retry.status).toBe(409);
+        expect((await prisma.bulkSend.findUniqueOrThrow({ where: { id: a.bulkSend.id } })).completedAt).not.toBeNull();
+        expect(await prisma.bulkSendItem.count({ where: { bulkSendId: a.bulkSend.id, status: 'failed' } })).toBe(1);
+    });
+
     it('no double-send: two concurrent process-batch calls on the same send never send an item twice', async () => {
         for (let i = 0; i < 8; i++) {
             await makeNonMemberLead(`Race${i}`, `race${i}-${TAG}@example.com`);
@@ -252,6 +275,33 @@ describe('outreach ledger (send / process-batch / status)', () => {
         expect(third.status).toBe(404); // already completedAt-set — nothing left to drain
     });
 
+    it('drain honors an unsubscribe that landed AFTER the snapshot: no email, item marked skipped_unsubscribed', async () => {
+        const hh = await makeNonMemberLead('LateUnsub', `lateunsub-${TAG}@example.com`);
+        const person = await prisma.person.findFirstOrThrow({ where: { householdId: hh.id } });
+        asBoard(boardId);
+
+        const createRes = await SEND(req('POST', { emailType: 'opening', audience: 'c' }));
+        const created = await createRes.json();
+        const bulkSendId = created.bulkSend.id;
+        // Snapshot froze this recipient as queued (join variant, not yet suppressed).
+        const item = await prisma.bulkSendItem.findFirstOrThrow({ where: { bulkSendId, personId: person.id } });
+        expect(item.status).toBe('queued');
+        expect(item.variant).toBe('join');
+
+        // Unsubscribe click arrives between snapshot and drain.
+        await prisma.person.update({ where: { id: person.id }, data: { emailSuppressed: true } });
+
+        let remaining = created.counts.queued;
+        let guard = 0;
+        while (remaining > 0 && guard++ < 5) {
+            remaining = (await (await PROCESS_BATCH(req('POST', { bulkSendId }))).json()).remaining;
+        }
+
+        const drained = await prisma.bulkSendItem.findUniqueOrThrow({ where: { id: item.id } });
+        expect(drained.status).toBe('skipped_unsubscribed');
+        expect((sendEmail as jest.Mock).mock.calls.some(([to]) => to === `lateunsub-${TAG}@example.com`)).toBe(false);
+    });
+
     it('test-send renders both variants and sends them to the caller', async () => {
         asBoard(boardId, `tester-${TAG}@example.com`);
         const res = await TEST_SEND(req('POST', {
@@ -267,5 +317,10 @@ describe('outreach ledger (send / process-batch / status)', () => {
         expect(bodies.some((h) => h.includes('please renew'))).toBe(true);
         // Join variant carries the unsubscribe footer, renew does not.
         expect(bodies.filter((h) => h.includes('Unsubscribe from invitations'))).toHaveLength(1);
+        // ...but it is an INERT placeholder (href="#") — a test render must never mint a live,
+        // signed unsubscribe token that would opt the tester out when they click to verify it.
+        const joinBody = bodies.find((h) => h.includes('Unsubscribe from invitations'))!;
+        expect(joinBody).toContain('href="#"');
+        expect(joinBody).not.toContain('/api/unsubscribe');
     });
 });
