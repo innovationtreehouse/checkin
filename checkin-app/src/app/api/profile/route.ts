@@ -39,7 +39,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { name, phone, dob, notificationSettings } = body;
+            const { name, phone, dob, notificationSettings, emailSuppressed } = body;
 
             if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
                 return apiError(PHONE_ERROR, 400);
@@ -52,6 +52,7 @@ export const PATCH = withAuth(
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                     dateOfBirth: dob ? new Date(dob) : undefined,
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
+                    emailSuppressed: emailSuppressed !== undefined ? !!emailSuppressed : undefined,
                 },
                 select: {
                     name: true,
@@ -59,6 +60,7 @@ export const PATCH = withAuth(
                     phone: true,
                     dateOfBirth: true,
                     notificationSettings: true,
+                    emailSuppressed: true,
                 }
             });
 
