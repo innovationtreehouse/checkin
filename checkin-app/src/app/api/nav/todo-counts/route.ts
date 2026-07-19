@@ -202,7 +202,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 },
             }),
             prisma.programParticipant.findMany({
-                where: { personId: { in: memberIds }, status: "PENDING" },
+                where: { personId: { in: memberIds }, status: "PENDING", person: LIVE_PERSON },
                 select: { programId: true, isPaymentPlanRequested: true, program: { select: { name: true } } },
             }),
         ]);
@@ -280,7 +280,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // "Total Enrolled" = active (not PENDING) participants per program.
             prisma.programParticipant.groupBy({
                 by: ["programId"],
-                where: { programId: { in: ledIds }, status: "ACTIVE" },
+                where: { programId: { in: ledIds }, status: "ACTIVE", person: LIVE_PERSON },
                 _count: { personId: true },
             }),
             // All upcoming sessions, ascending; we keep the next 3 per program below.
@@ -291,7 +291,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             // Volunteer roster per program — used to split RSVP tallies by role.
             prisma.programVolunteer.findMany({
-                where: { programId: { in: ledIds } },
+                where: { programId: { in: ledIds }, person: LIVE_PERSON },
                 select: { programId: true, personId: true },
             }),
             getLeadConflicts(user.id),

@@ -231,7 +231,7 @@ describe("MembershipSettingsPage", () => {
     );
   });
 
-  it("opens renewals for all active members after confirming, with reminders toggled on", async () => {
+  it("opens renewals for all active members after confirming (never emails — PR-2)", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
       "/api/settings/membership/bulk-open-renewals": { opened: 12, skipped: 3 },
@@ -240,7 +240,8 @@ describe("MembershipSettingsPage", () => {
     renderWithProviders(<MembershipSettingsPage />);
     await screen.findByDisplayValue("150.00");
 
-    fireEvent.click(screen.getByLabelText("Also email each household a renewal reminder"));
+    expect(screen.queryByLabelText("Also email each household a renewal reminder")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Open renewals for all active members" }));
     const modal = await screen.findByRole("dialog", { name: "Open Renewals For All Active Members" });
     fireEvent.click(within(modal).getByRole("button", { name: "Open Renewals" }));
@@ -248,7 +249,7 @@ describe("MembershipSettingsPage", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/settings/membership/bulk-open-renewals",
-        expect.objectContaining({ method: "POST", body: JSON.stringify({ sendReminders: true }) }),
+        expect.objectContaining({ method: "POST" }),
       ),
     );
     expect(await screen.findByText("Opened 12 renewal(s); 3 already in progress.")).toBeInTheDocument();

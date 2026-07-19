@@ -99,6 +99,14 @@ model Person {
   /// @sensitivity:personal
   notificationSettings Json?
 
+  /// Self- or board-set suppression of outreach (join-invitation) email to this
+  /// person. Set via the unsubscribe link (join-variant only) or the member's own
+  /// communication-page toggle. Renew-variant outreach ignores this — see
+  /// lib/outreach/recipients.ts. 'personal' (not 'internal'): the member reads/writes
+  /// their own via their_own:personal; board/ops see it on the directory pill via
+  /// everyones:personal. @sensitivity:personal
+  emailSuppressed Boolean @default(false)
+
   /// @sensitivity:public
   householdId Int
   household   Household @relation(fields: [householdId], references: [id])
@@ -450,6 +458,10 @@ model OrgMembershipProcess {
   certifiedById         Int?
   /// @sensitivity:internal
   certificationNote     String?
+  /// Write-never as of the outreach engine (PR-2): the renewal sweep and the go-live
+  /// bulk-open button no longer email, so nothing stamps this anymore. Kept (not
+  /// dropped) because dropping a column is a destructive migration for no benefit —
+  /// see lib/outreach for the only remaining send surface.
   /// @sensitivity:internal
   renewalReminderSentAt DateTime?
   /// @sensitivity:internal
@@ -551,6 +563,17 @@ model BoardSettings {
   /// this is configured).
   /// @sensitivity:internal
   scholarshipNotifyEmail     String?
+  /// Opening-of-renewals campaign template (settings/outreach). Board/sysadmin/ops
+  /// editable; four tokens only ({{name}} {{deadline}} {{actionWord}} {{actionLink}}),
+  /// validated on save. @sensitivity:internal
+  outreachOpeningSubject     String?
+  /// @sensitivity:internal
+  outreachOpeningBody        String?
+  /// Reminder campaign template (settings/outreach). Same token set as
+  /// outreachOpeningSubject/Body. @sensitivity:internal
+  outreachReminderSubject    String?
+  /// @sensitivity:internal
+  outreachReminderBody       String?
   /// @sensitivity:internal
   shopifyOrgMembershipProductId String?
   /// @sensitivity:internal
@@ -1252,4 +1275,60 @@ model PaymentException {
   // the reconciler upserts on this key instead of duplicating each run.
   @@unique([kind, shopifyOrderId])
   @@index([status, severity])
+}
+
+/// One manual outreach campaign send (settings/outreach). The recipient snapshot
+/// is captured into BulkSendItem rows at create time; there is no background
+/// job — the browser drains `queued` items via /api/outreach/process-batch until
+/// none remain. This row (+ its items) IS the send log / last-sent panel data.
+/// Counts are computed from items (groupBy status), never denormalized here.
+model BulkSend {
+  /// @sensitivity:internal
+  id          Int       @id @default(autoincrement())
+  /// "opening" | "reminder"
+  /// @sensitivity:internal
+  emailType   String
+  /// "a" | "b" | "c" — the audience preset chosen at send time.
+  /// @sensitivity:internal
+  audience    String
+  /// Person.id who fired the send.
+  /// @sensitivity:internal
+  senderId    Int
+  /// @sensitivity:internal
+  startedAt   DateTime  @default(now())
+  /// Set when a batch finds zero `queued` items remaining.
+  /// @sensitivity:internal
+  completedAt DateTime?
+  items       BulkSendItem[]
+}
+
+/// One recipient row of a BulkSend — the per-item idempotency key for the
+/// client-driven drain (a guarded `updateMany where status='queued'` claim means
+/// a re-POST of an already-processed batch claims and sends nothing).
+model BulkSendItem {
+  /// @sensitivity:internal
+  id         Int       @id @default(autoincrement())
+  /// @sensitivity:internal
+  bulkSendId Int
+  bulkSend   BulkSend  @relation(fields: [bulkSendId], references: [id])
+  /// @sensitivity:internal
+  personId   Int
+  /// Captured at snapshot time (not re-read from Person at send time). Tagged
+  /// `internal` rather than `pii` as a DELIBERATE call, FLAGGED FOR REVIEW: this
+  /// row is only ever read by board/ops on the admin send panel, never serialized
+  /// through a member-facing bag — same admin-ledger tier as the rest of this model.
+  /// @sensitivity:internal
+  email      String
+  /// "join" | "renew"
+  /// @sensitivity:internal
+  variant    String
+  /// "queued" | "sent" | "failed" | "skipped_unsubscribed"
+  /// @sensitivity:internal
+  status     String
+  /// @sensitivity:internal
+  sentAt     DateTime?
+  /// @sensitivity:internal
+  error      String?
+
+  @@index([bulkSendId, status])
 }

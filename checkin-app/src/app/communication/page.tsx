@@ -27,6 +27,7 @@ export default function CommunicationPage() {
     emailDependentCheckins: false,
     notifyNewPrograms: true
   });
+  const [emailSuppressed, setEmailSuppressed] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -39,6 +40,7 @@ export default function CommunicationPage() {
           emailDependentCheckins: s.emailDependentCheckins || false,
           notifyNewPrograms: s.notifyNewPrograms !== undefined ? s.notifyNewPrograms : true
         });
+        setEmailSuppressed(!!data.profile.emailSuppressed);
       } else {
         setMessage("Failed to load settings.");
       }
@@ -77,6 +79,25 @@ export default function CommunicationPage() {
     }
   };
 
+  // Same immediate-persist / revert-on-failure pattern as the checkboxes above, for the
+  // one field that isn't inside notificationSettings.
+  const persistSuppression = async (value: boolean) => {
+    const prev = emailSuppressed;
+    setEmailSuppressed(value);
+    setMessage("");
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailSuppressed: value })
+      });
+      if (!res.ok) throw new Error();
+    } catch {
+      setEmailSuppressed(prev);
+      setMessage("Failed to update settings.");
+    }
+  };
+
   if (loading || status === "loading") {
     return <PageLoader />;
   }
@@ -105,6 +126,14 @@ export default function CommunicationPage() {
               />
             </Tooltip>
           ))}
+        </Stack>
+
+        <Stack mt="lg">
+          <Checkbox
+            checked={emailSuppressed}
+            onChange={(e) => persistSuppression(e.currentTarget.checked)}
+            label="Don't email me membership join/renewal invitations"
+          />
         </Stack>
 
         {message && <Alert color="red" mt="md">{message}</Alert>}

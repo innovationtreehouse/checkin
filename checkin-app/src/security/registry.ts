@@ -136,6 +136,39 @@ defineRoute({
     ],
 });
 
+// Emergency board contact sheet for the front desk. Board email + phone to
+// keyholders is DELIBERATE and owner-confirmed: a keyholder on shift needs to
+// reach a board member, and this is the sheet they reach for. That makes the
+// 'pii' grant an operational one exactly as core.ts describes it ("routinely
+// grantable to operational roles: program leads, keyholders"), not a leak.
+// Declared here so the recurring audit finding on this route resolves to
+// policy instead of being re-litigated each sweep — same move as
+// GET /api/shop/certifications below.
+//
+// Written as 'keyholders:pii' (bound flag-only on Person) rather than
+// 'everyones:pii' so the grant reads as what it is. Both resolve identically
+// under this route's role gate; the token is the audit signal.
+//
+// The route's Prisma select stays tight (id/name/email/phone) as defense in
+// depth: dateOfBirth and googleId are 'personal'/'pii' on Person and must
+// never enter this response even for sysadmin.
+//
+// Landed registry-first, ahead of the route's handler() migration, per the
+// AGENTS.md boundary-isolation rule: an unused defineRoute is inert, so the
+// grant is reviewable on its own before anything serves it.
+defineRoute({
+    endpoint: 'GET /api/safety/board-contacts',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
+    envelope: 'members',
+    // Bag: { Person }.
+    returns: ['Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isKeyholder',   ['keyholders:pii', 'member', 'public']],
+    ],
+});
+
 // Board's in-flight membership applications. Exposes every applicant household's
 // PII (parents + children names/emails), so only isSysadmin/board may see it, and
 // the field grant is explicit per role.
