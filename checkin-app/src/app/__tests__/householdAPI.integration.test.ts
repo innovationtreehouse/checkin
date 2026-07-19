@@ -50,7 +50,7 @@ describe('Household API Integration Tests', () => {
 
         // Setup mock database records
         const household = await prisma.household.create({
-            data: { name: 'Lead User Household', line1: '123 Main' }
+            data: { name: 'Lead User Household', line1: '123 Main', intakeNotes: 'Private note to the board.' }
         });
         householdId = household.id;
 
@@ -129,7 +129,7 @@ describe('Household API Integration Tests', () => {
 
         it('should return household info if the user belongs to one', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testUserId }
+                user: { id: testUserId, householdId, householdLead: true }
             });
 
             const req = new Request('http://localhost:4000/api/household', { method: 'GET' });
@@ -140,6 +140,48 @@ describe('Household API Integration Tests', () => {
             expect(data.household).toBeDefined();
             expect(data.household.id).toBe(householdId);
             expect(data.household.householdMembers.length).toBeGreaterThanOrEqual(2);
+        });
+
+        // The lead authored intakeNotes for the board, so the lead still reads it
+        // back (the my-household Textarea prefills from this response).
+        it('gives a household lead the address, peer contact details, and intakeNotes', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testUserId, householdId, householdLead: true }
+            });
+
+            const req = new Request('http://localhost:4000/api/household', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.household.line1).toBe('123 Main');
+            expect(data.household.intakeNotes).toBe('Private note to the board.');
+            const peer = data.household.householdMembers.find((m: { id: number }) => m.id === testMemberId);
+            expect(peer.email).toBe('member-user-household-api-test@example.com');
+        });
+
+        // The leak this route's migration closed: intakeNotes is 'pii', and the
+        // their_households:pii token the view needs for peer email/phone would
+        // otherwise hand the lead's private note to the board to every household
+        // member with a login — including youth. Kept out by the handler, not a
+        // token (see the registry comment). The address is shared family data and
+        // deliberately stays.
+        it('a non-lead household member does not receive intakeNotes', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testMemberId, householdId }
+            });
+
+            const req = new Request('http://localhost:4000/api/household', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.household.id).toBe(householdId);
+            expect(data.household.intakeNotes).toBeUndefined();
+            // Still a full household view otherwise.
+            expect(data.household.line1).toBe('123 Main');
+            const peer = data.household.householdMembers.find((m: { id: number }) => m.id === testUserId);
+            expect(peer.email).toBe('lead-user-household-api-test@example.com');
         });
     });
 

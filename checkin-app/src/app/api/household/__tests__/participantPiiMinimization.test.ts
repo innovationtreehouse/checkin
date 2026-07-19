@@ -24,11 +24,17 @@ jest.mock("@/lib/verify-kiosk", () => ({
     verifyKioskSignature: jest.fn(),
 }));
 jest.mock("@/lib/logger", () => ({ logBackendError: jest.fn() }));
+// GET /api/household now runs through the security handler(), whose
+// buildCallerContext prefetches the caller's programs/events before the route
+// body executes. Those all resolve empty here — this caller leads nothing.
 jest.mock("@/lib/prisma", () => ({
     __esModule: true,
     default: {
-        person: { findUnique: jest.fn() },
+        person: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
         visit: { findMany: jest.fn() },
+        program: { findMany: jest.fn().mockResolvedValue([]) },
+        programVolunteer: { findMany: jest.fn().mockResolvedValue([]) },
+        event: { findMany: jest.fn().mockResolvedValue([]) },
     },
 }));
 
@@ -45,7 +51,10 @@ beforeEach(() => {
 
 describe("Participant PII minimization (M1, M2)", () => {
     it("GET /api/household does not leak a peer's internal-tier fields", async () => {
-        mockSession.mockResolvedValue({ user: { id: 1 } });
+        // householdId is what the handler's `their_households` scope reads — a
+        // real session carries it, and without it the peer's own pii/personal
+        // fields would strip out for the wrong reason.
+        mockSession.mockResolvedValue({ user: { id: 1, householdId: 10 } });
 
         // Full raw row as it exists in the DB, including everything a household
         // peer must never see (M2). The mock applies whatever `select` the route
@@ -71,13 +80,13 @@ describe("Participant PII minimization (M1, M2)", () => {
         } as Record<string, unknown>;
 
         (prisma.person.findUnique as jest.Mock).mockImplementation((args) => {
-            const peerSelect = args.include.household.include.householdMembers.select as Record<string, boolean>;
+            const peerSelect = args.select.household.include.householdMembers.select as Record<string, boolean>;
             const projected = Object.fromEntries(
                 Object.keys(peerSelect).filter((k) => peerSelect[k]).map((k) => [k, rawPeer[k]])
             );
             return Promise.resolve({
-                id: 1,
-                householdId: 10,
+                isHouseholdLead: false,
+                isSysadmin: false,
                 household: {
                     id: 10,
                     name: "Test Household",
@@ -109,9 +118,12 @@ describe("Participant PII minimization (M1, M2)", () => {
         expect(peer.waiverSignedBy).toBeUndefined();
         expect(peer.notificationSettings).toBeUndefined();
 
-        // Pin the actual query shape, not just this test's mock.
+        // Pin the actual query shape, not just this test's mock. householdId is
+        // additive to HOUSEHOLD_PEER_SELECT (the scope key, see the route).
         const callArgs = (prisma.person.findUnique as jest.Mock).mock.calls[0][0];
-        expect(callArgs.include.household.include.householdMembers).toEqual({ select: HOUSEHOLD_PEER_SELECT });
+        expect(callArgs.select.household.include.householdMembers).toEqual({
+            select: { ...HOUSEHOLD_PEER_SELECT, householdId: true },
+        });
     });
 
     it("GET /api/attendance (full access) does not leak email/googleId", async () => {

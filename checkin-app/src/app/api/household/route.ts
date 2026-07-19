@@ -9,35 +9,43 @@ import { isOrgAccount } from "@/lib/orgAccount";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
 import { apiError } from "@/lib/api-response";
+import { handler, notFound, unauthorized } from "@/security/handler";
 
-export const GET = withAuth(
-    {},
-    async (_req, auth) => {
-        try {
-            if (auth.type !== 'session') return apiError("Unauthorized", 401);
-            const userId = auth.user.id;
+export const GET = handler('GET /api/household', async ({ auth }) => {
+    if (auth.type !== 'session') throw unauthorized();
 
-            const user = await prisma.person.findUnique({
-                where: { id: userId },
+    const user = await prisma.person.findUnique({
+        where: { id: auth.user.id },
+        select: {
+            isHouseholdLead: true,
+            isSysadmin: true,
+            household: {
                 include: {
-                    household: {
-                        include: {
-                            householdMembers: { select: HOUSEHOLD_PEER_SELECT },
-                            orgMembership: true,
-                        }
-                    }
-                }
-            });
+                    // householdId is what Person's `their_households` scope binding
+                    // reads (scopeBindings.ts) — without it every peer row fails
+                    // closed and loses email/phone/dob/allergies.
+                    householdMembers: { select: { ...HOUSEHOLD_PEER_SELECT, householdId: true } },
+                    orgMembership: true,
+                },
+            },
+        },
+    });
 
-            if (!user) return apiError("User not found", 404);
+    if (!user) throw notFound("User not found");
+    if (!user.household) return { Household: null };
 
-            return NextResponse.json({ household: user.household }, { status: 200 });
-        } catch (error: unknown) {
-            logger.error("Household GET Error:", error);
-            return apiError("Internal Server Error", 500);
-        }
-    }
-);
+    // intakeNotes is the lead's freeform note TO the board (hardship, medical,
+    // family circumstance) and is 'pii' only because background-check reviewers
+    // must read it. The view's their_households:pii token — needed for peers'
+    // email/phone — would also hand it to every household member incl. youth,
+    // which is exactly the schema GUARD's case. Leads (and sysadmins) only; the
+    // my-household Textarea that renders it is already `viewerIsLead`-gated and
+    // the write path 403s non-leads. Do not move this into a token.
+    const { intakeNotes: _intakeNotes, ...withoutNotes } = user.household;
+    const canManage = user.isHouseholdLead || user.isSysadmin;
+
+    return { Household: canManage ? user.household : withoutNotes };
+});
 
 export const PATCH = withAuth(
     {},

@@ -190,6 +190,26 @@ defineRoute({
     ],
 });
 
+// The caller's own household. Household-scoped: every member (incl. youth) sees
+// the family's address (internal — the family authored it) and their peers'
+// contact details (pii — HOUSEHOLD_PEER_SELECT). That their_households:pii grant
+// nominally also covers Household.intakeNotes, the lead's private "anything else
+// we should know?" note TO the board — the exact case the schema GUARD on that
+// field names. It is kept out for non-leads by the handler, which drops the field
+// unless isHouseholdLead || isSysadmin, pinned by householdAPI.integration.test.ts
+// ("a non-lead household member does not receive intakeNotes"). Do not express
+// that split as a token — a token here is household-wide by construction.
+defineRoute({
+    endpoint: 'GET /api/household',
+    authorize: 'authenticated',
+    envelope: 'household',
+    // Bag: { Household } with householdMembers (Person) + orgMembership (OrgMembership).
+    returns: ['Household', 'Person', 'OrgMembership'],
+    orderedView: [
+        ['authenticated', ['their_households:pii', 'their_households:personal', 'their_households:internal', 'member', 'public']],
+    ],
+});
+
 // Board's trusted-adult review queue. Full visibility incl. familyContext
 // (internal — narrative band) and the board's internal decision notes.
 defineRoute({
