@@ -6,33 +6,28 @@
 # DO NOT remove paths from this file without understanding which guarantee
 # you are weakening. See docs/SECURITY-POLICY.md.
 
-# NOTE: paths were root-anchored from Sprint 1 (#140) while the app lives
-# under /checkin-app — root-anchored patterns matched NOTHING, so none of
-# these gates were active until the prefix fix below (2026-07-19).
-
 # Schema annotations — the source of truth for field sensitivity.
-/checkin-app/prisma/schema.prisma                 @dkaygithub
+/prisma/schema.prisma                 @dkay
 
 # The policy layer itself.
-/checkin-app/src/security/                        @dkaygithub
+/src/security/                        @dkay
 
 # Authentication & session machinery.
-/checkin-app/src/lib/auth.ts                      @dkaygithub
-/checkin-app/src/lib/auth-options.ts              @dkaygithub
+/src/lib/auth.ts                      @dkay
+/src/lib/auth-options.ts              @dkay
 
 # Contract tests that enforce the policy in CI.
-/checkin-app/tests/security/                      @dkaygithub
+/tests/security/                      @dkay
 
 # CODEOWNERS itself and CI workflows — without protecting these, the rest
 # can be quietly disabled in a PR you'd never see.
-/.github/                             @dkaygithub
+/.github/                             @dkay
 
 # The CI lint and the codegen — bypass routes if changed.
-/checkin-app/scripts/check-route-coverage.ts      @dkaygithub
-/checkin-app/scripts/security-generator.js        @dkaygithub
-/checkin-app/scripts/migrated-routes.txt          @dkaygithub
-/checkin-app/scripts/legacy-authz-routes.txt      @dkaygithub
-/checkin-app/scripts/tsconfig.json                @dkaygithub
+/scripts/check-route-coverage.ts      @dkay
+/scripts/security-generator.js        @dkay
+/scripts/migrated-routes.txt          @dkay
+/scripts/tsconfig.json                @dkay
 
 # Git hooks.
-/.husky/                              @dkaygithub
+/.husky/                              @dkay
