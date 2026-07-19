@@ -39,10 +39,12 @@ export const GET = withAuth(
                             // emailVerified, emailUndeliverableAt, ...), leaking every
                             // household member's sensitive fields regardless of the
                             // opsOnly strip below, which only touches the top-level person.
-                            // id/name/email is exactly what every consumer of this
-                            // endpoint's household.householdMembers reads (the
-                            // Assign-household picker and its household-member list).
-                            householdMembers: { select: { id: true, name: true, email: true } },
+                            // id/name/email/isHouseholdLead is exactly what every consumer of
+                            // this endpoint's household.householdMembers reads: the
+                            // Assign-household picker and its household-member list, and the
+                            // participant-merge page (isLeadWithOthers guard + [Lead] marker).
+                            // isHouseholdLead is @sensitivity:public, so ops sees it too.
+                            householdMembers: { select: { id: true, name: true, email: true, isHouseholdLead: true } },
                             orgMembership: true,
                         }
                     },

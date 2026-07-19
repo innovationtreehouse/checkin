@@ -143,6 +143,12 @@ describe('Sensitive route authorization', () => {
             // sole member, and it has both fields set, so a leak would show up here.
             expect(hit.household.householdMembers[0].lastBackgroundCheck).toBeUndefined();
             expect(hit.household.householdMembers[0].googleId).toBeUndefined();
+            // ...but isHouseholdLead (@sensitivity:public) MUST survive the select — the
+            // participant-merge page reads it off these rows for its isLeadWithOthers guard
+            // and [Lead] marker. The merge page's own tests mock the response, so this is the
+            // only place that pins the contract; dropping it from the select must fail here.
+            // Present for ops too (opsOnly strips only orgMembership on the household).
+            expect(hit.household.householdMembers[0]).toHaveProperty('isHouseholdLead', false);
         });
     });
 
