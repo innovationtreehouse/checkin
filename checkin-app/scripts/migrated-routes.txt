@@ -7,3 +7,5 @@
 GET /api/profile
 GET /api/programs/[id]
 GET /api/safety/board-contacts
+GET /api/system-status/errors
+GET /api/system-status/links
