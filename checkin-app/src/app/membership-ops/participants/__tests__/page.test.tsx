@@ -306,10 +306,13 @@ describe("AdminParticipantsIndex", () => {
             const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
                 const url = typeof input === "string" ? input : input.toString();
                 if (url.includes("/api/membership-ops/contacts")) {
-                    // Honest shape: the route now returns the created participant WITH
-                    // `include: { household: true }` (createParticipantWithHousehold always
-                    // gives a brand-new contact a single-person household named after them),
-                    // so the optimistic prepend can show the household name immediately.
+                    // Honest shape: pinned to the route's actual re-fetch include
+                    // (`household: { include: { householdMembers: { select: { id, name,
+                    // email } } } }`) — createParticipantWithHousehold always gives a
+                    // brand-new contact a single-person household named after them, and
+                    // the client's HouseholdRef type requires householdMembers, so a mock
+                    // missing it would pass here while the real (bare `household: true`)
+                    // route TypeErrors the Assign-household render path in prod.
                     return {
                         ok: true, status: 200,
                         json: async () => ({
@@ -348,6 +351,16 @@ describe("AdminParticipantsIndex", () => {
                 "/api/membership-ops/contacts",
                 expect.objectContaining({ method: "POST" }),
             );
+
+            // The exact regression path (thpr #3): create -> prepend -> select ->
+            // canSubmitAssign/canChangeHousehold. Those two are computed at component
+            // top level off selectedParticipant.household.householdMembers, so opening
+            // the Assign flow for the freshly-created row (via Details -> "Move to
+            // Another Household", since a solo household shows the Household button,
+            // not Assign) must not throw when the prepended row is missing that array.
+            fireEvent.click(screen.getByRole("button", { name: "Details" }));
+            fireEvent.click(await screen.findByRole("button", { name: "Move to Another Household" }));
+            expect(await screen.findByText("Assign Household to Ada Lovelace")).toBeInTheDocument();
         }, 15000);
 
         it("shows the endpoint's owner-named message inline on the email field for a 409 duplicate", async () => {

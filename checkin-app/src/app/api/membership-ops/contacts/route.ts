@@ -51,11 +51,14 @@ export const POST = withAuth({ roles: ['isBoardMember'] }, async (req, auth) => 
             },
         });
 
-        // Re-fetch with household included so the client's optimistic prepend can
-        // render the household name immediately, without a full-list refetch.
+        // Re-fetch with household (+ its members) included so the client's
+        // optimistic prepend can render immediately, without a full-list refetch.
+        // The client's HouseholdRef type requires householdMembers — a bare
+        // `include: { household: true }` returns household scalars only and
+        // TypeErrors the Assign-household render path on the new row.
         const participant = await prisma.person.findUnique({
             where: { id: person.id },
-            include: { household: true },
+            include: { household: { include: { householdMembers: { select: { id: true, name: true, email: true } } } } },
         });
 
         return NextResponse.json({ success: true, participant });
