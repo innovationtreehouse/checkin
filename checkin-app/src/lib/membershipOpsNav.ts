@@ -19,4 +19,5 @@ export const MEMBERSHIP_OPS_NAV_LINKS: NavLink[] = [
   // "Unclaimed Accounts" moved to Membership Audit (/membership-audit/unclaimed).
   { name: "Background-check Review", href: "/membership-ops/review", icon: "🔍" },
   // "Broken Households" moved to Membership Audit (/membership-audit/broken).
+  { name: "Roles", href: "/membership-ops/roles", icon: "🔑" },
 ];

@@ -12,6 +12,7 @@ export interface SessionUser {
     isBoardMember: boolean;
     isKeyholder: boolean;
     isBackgroundCheckReviewer: boolean;
+    isOperations: boolean;
     householdId?: number;
     householdLead?: boolean;
     // Shop tool certifications carried on the session (set by the jwt/session

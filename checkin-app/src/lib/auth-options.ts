@@ -11,6 +11,7 @@ import { config, ORG_DOMAIN } from "@/lib/config";
 import { evaluateMint, type MintMode } from "@/lib/impersonation";
 import { recordLedger } from "@/lib/dev/ledger";
 import { assignParticipantClaims } from "@/lib/authClaims";
+import { ROLE_FLAGS, setRoleFlag } from "@/lib/roles";
 import { addHouseholdLead } from "@/lib/household/leads";
 import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
 import { normalizeEmail } from "@/lib/prismaEmailNormalize";
@@ -340,7 +341,9 @@ export const authOptions: NextAuthOptions = {
                         },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
-                        household: { include: { orgMembership: true } }
+                        household: { include: { orgMembership: true } },
+                        // Source of truth for the five authority claims (assignParticipantClaims).
+                        roles: { select: { role: true } }
                     }
                 }));
 
@@ -350,11 +353,14 @@ export const authOptions: NextAuthOptions = {
                         dbParticipant.email &&
                         BOOTSTRAP_SYSADMINS.includes(dbParticipant.email.toLowerCase())
                     ) {
-                        await prisma.person.update({
-                            where: { id: dbParticipant.id },
-                            data: { isSysadmin: true },
-                        });
+                        // System bypass: bootstrap self-promotion off an env-configured
+                        // allowlist, not a user-initiated authority-matrix request — there is
+                        // no actor to check against, only a trusted source deciding its own grant.
+                        await setRoleFlag(prisma, dbParticipant.id, "isSysadmin", true, "system");
                         dbParticipant.isSysadmin = true;
+                        // Claims derive from `roles`, not the mirror column — push the grant
+                        // into the in-memory list so this same-request sign-in gets it too.
+                        dbParticipant.roles.push({ role: "SYSADMIN" });
                     }
 
                     // Stamp authority claims, applying the household login gate (a board
@@ -379,7 +385,9 @@ export const authOptions: NextAuthOptions = {
                         },
                         // Program ids led — drives the client program-ops row gate.
                         programsLed: { select: { id: true } },
-                        household: { include: { orgMembership: true } }
+                        household: { include: { orgMembership: true } },
+                        // Source of truth for the five authority claims (assignParticipantClaims).
+                        roles: { select: { role: true } }
                     }
                 }));
 
@@ -401,10 +409,9 @@ export const authOptions: NextAuthOptions = {
             if (session.user) {
                 session.user.id = token.id;
                 session.user.denied = token.denied ?? false;
-                session.user.isSysadmin = token.isSysadmin;
-                session.user.isKeyholder = token.isKeyholder;
-                session.user.isBoardMember = token.isBoardMember;
-                session.user.isBackgroundCheckReviewer = token.isBackgroundCheckReviewer;
+                for (const flag of ROLE_FLAGS) {
+                    session.user[flag] = token[flag];
+                }
                 session.user.householdId = token.householdId;
                 session.user.householdLead = token.householdLead ?? false;
                 session.user.programsLed = token.programsLed ?? [];

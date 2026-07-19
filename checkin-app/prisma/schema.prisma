@@ -121,12 +121,18 @@ model Person {
   /// @sensitivity:personal
   allergies String?
 
+  /// @deprecated legacy mirror column, kept in sync by write-through for existing
+  /// readers (see PersonRole). PersonRole is the source of truth; dropped in the
+  /// CONTRACT PR once those readers are ported to `roles:{some:{role:...}}`.
   /// @sensitivity:internal
   isSysadmin                Boolean @default(false)
+  /// @deprecated legacy mirror column — see isSysadmin.
   /// @sensitivity:public
   isBoardMember             Boolean @default(false)
+  /// @deprecated legacy mirror column — see isSysadmin.
   /// @sensitivity:internal
   isKeyholder               Boolean @default(false)
+  /// @deprecated legacy mirror column — see isSysadmin.
   /// @sensitivity:internal
   isBackgroundCheckReviewer Boolean @default(false)
 
@@ -148,11 +154,46 @@ model Person {
   trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
   trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
 
+  // Source-of-truth role grants (see PersonRole). Two named relations because
+  // Person is referenced twice (holder + granter) — same pattern as BgAttestations.
+  roles        PersonRole[] @relation("PersonRoles")
+  grantedRoles PersonRole[] @relation("RoleGrantedBy")
+
   // Household-lead lookups (a1): "leads of household X" runs on the hot paths
   // (check-in notification fan-out, nav badges, broken/unclaimed-household scans).
   // Person had no householdId index — the old HouseholdLead composite PK provided
   // one; this restores it, extended with isHouseholdLead so lead scans stay index-only.
   @@index([householdId, isHouseholdLead])
+}
+
+enum PersonRoleKind {
+  SYSADMIN
+  BOARD
+  KEYHOLDER
+  BG_REVIEWER
+  OPERATIONS
+}
+
+/// Source of truth for role grants (expand phase of the boolean-column -> table
+/// migration; see docs on the roles-foundation rework). The five session/JWT
+/// booleans (isSysadmin...isOperations) are derived from this table
+/// (src/lib/roles.ts rolesToFlags); four legacy Person columns stay as a
+/// write-through mirror for existing readers (isOperations never had one).
+model PersonRole {
+  /// @sensitivity:internal
+  personId    Int
+  /// @sensitivity:internal
+  role        PersonRoleKind
+  /// @sensitivity:internal
+  grantedAt   DateTime       @default(now())
+  /// @sensitivity:internal
+  grantedById Int?
+
+  person    Person  @relation("PersonRoles",  fields: [personId],    references: [id], onDelete: Cascade)
+  grantedBy Person? @relation("RoleGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@id([personId, role])
+  // ponytail: no @@index([role]) — handful of rows, seq scan is free; add when the table grows.
 }
 
 model Tool {

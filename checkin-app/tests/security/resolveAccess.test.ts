@@ -15,6 +15,7 @@ const session = (id: number): AuthResult => ({
         isBoardMember: false,
         isKeyholder: false,
         isBackgroundCheckReviewer: false,
+        isOperations: false,
     },
 });
 
@@ -128,6 +129,7 @@ describe("resolveAccess 'certifier'", () => {
             isBoardMember: false,
             isKeyholder: false,
             isBackgroundCheckReviewer: false,
+            isOperations: false,
             toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }],
         },
     });

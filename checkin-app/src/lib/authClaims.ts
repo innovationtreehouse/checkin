@@ -1,14 +1,13 @@
 import type { JWT } from "next-auth/jwt";
-import type { OrgMembershipStatus } from "@/generated/prisma/client";
+import type { OrgMembershipStatus, PersonRoleKind } from "@/generated/prisma/client";
 import { orgMembershipStatusBlocksLogin } from "@/lib/orgMembership";
+import { ROLE_FLAGS, rolesToFlags } from "@/lib/roles";
 
 /** The participant fields the JWT carries, plus the household membership the login gate reads. */
 export type ClaimSourceParticipant = {
     id: number;
-    isSysadmin: boolean;
-    isKeyholder: boolean;
-    isBoardMember: boolean;
-    isBackgroundCheckReviewer: boolean;
+    // Source of truth for the five authority booleans (see lib/roles.ts rolesToFlags).
+    roles: { role: PersonRoleKind }[];
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
     // Leadership of their own household. Single source of truth (a1) — supersedes
@@ -30,13 +29,13 @@ export type ClaimSourceParticipant = {
  */
 export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): void {
     const denied = orgMembershipStatusBlocksLogin(p.household?.orgMembership?.status);
+    const f = rolesToFlags(p.roles);
 
     token.id = p.id;
     token.denied = denied;
-    token.isSysadmin = denied ? false : p.isSysadmin;
-    token.isKeyholder = denied ? false : p.isKeyholder;
-    token.isBoardMember = denied ? false : p.isBoardMember;
-    token.isBackgroundCheckReviewer = denied ? false : p.isBackgroundCheckReviewer;
+    for (const flag of ROLE_FLAGS) {
+        token[flag] = denied ? false : f[flag];
+    }
     token.householdId = p.householdId;
     token.householdLead = denied ? false : p.isHouseholdLead;
     token.toolStatuses = denied ? [] : p.toolStatuses;

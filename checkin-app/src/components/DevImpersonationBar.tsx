@@ -76,7 +76,6 @@ function DevImpersonationBarInner() {
                         type="button"
                         onClick={returnToMe}
                         disabled={busy}
-                        className="glass-button"
                         style={{ padding: "0.25rem 0.75rem", cursor: busy ? "wait" : "pointer" }}
                     >
                         {busy ? "Returning…" : "Return to me"}
