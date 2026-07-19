@@ -341,6 +341,53 @@ describe("Merge Participants API", () => {
         expect(analyzeRes.status).toBe(409);
     });
 
+    it("analyze projects only what the merge picker reads — no raw Person/Household rows", async () => {
+        // The fixture must actually SET the sensitive fields, or the negative
+        // assertions below pass vacuously and pin nothing.
+        await prisma.household.update({
+            where: { id: householdId },
+            data: { intakeNotes: "family notes, not for the merge screen", line1: "1 Secret Ln" }
+        });
+        await prisma.person.update({
+            where: { id: pKeepId },
+            data: { allergies: "peanuts", googleId: "google-keep-1", dateOfBirth: new Date("2001-02-03") }
+        });
+        await prisma.person.update({
+            where: { id: pMergeId },
+            data: { allergies: "latex", googleId: "google-merge-2", dateOfBirth: new Date("2002-03-04") }
+        });
+        await prisma.visit.create({ data: { personId: pKeepId, arrivedAt: new Date() } });
+
+        const res = await analyzeGET(analyzeReq(pKeepId, pMergeId));
+        expect(res.status).toBe(200);
+        const { participants } = await res.json();
+        const hit = participants[0];
+        expect(hit.id).toBe(pKeepId);
+
+        // Stripped: nothing on this screen reads any of these.
+        expect(hit.allergies).toBeUndefined();
+        expect(hit.notificationSettings).toBeUndefined();
+        expect(hit.lastBackgroundCheck).toBeUndefined();
+        expect(hit.household.intakeNotes).toBeUndefined();
+        expect(hit.household.line1).toBeUndefined();
+        const member = hit.household.householdMembers.find((m: { id: number }) => m.id === pMergeId);
+        expect(member.googleId).toBeUndefined();
+        expect(member.dateOfBirth).toBeUndefined();
+        expect(member.email).toBeUndefined();
+        expect(member.allergies).toBeUndefined();
+
+        // Surviving: the conflict picker's inputs and the keep/merge score.
+        expect(hit.googleId).toBe("google-keep-1");
+        expect(hit.dateOfBirth).toBeTruthy();
+        expect(hit.name).toBe("Keep User");
+        expect(hit.email).toBe("keep@example.com");
+        expect(member).toHaveProperty("isHouseholdLead");
+        expect(member.name).toBe("Merge User");
+        expect(hit.household.name).toBe("Merge Test Household");
+        expect(hit._count.visits).toBe(1);
+        expect(hit._count.programParticipants).toBe(0);
+    });
+
     // Matrix 6
     it("concurrent double-merge: exactly one CAS wins, the other 409s and rolls back", async () => {
         const keep2 = await prisma.person.create({ data: { name: "Keep Two", householdId } });
