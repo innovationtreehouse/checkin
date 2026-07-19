@@ -134,7 +134,7 @@ export default function MembershipSettingsPage() {
           ...(boundaryUnlocked || !boundaryWasSet ? { orgMembershipYearBoundary: boundary || null } : {}),
         }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); notifyNavRefresh(); await load(); }
+      if (res.ok) { notifications.show({ message: "Settings saved." }); setBoundaryUnlocked(false); notifyNavRefresh(); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
@@ -157,7 +157,7 @@ export default function MembershipSettingsPage() {
       if (res.ok) {
         setVariantId(data.variantId);
         setFieldErrors((f) => ({ ...f, variantId: undefined }));
-        notifications.show({ color: "green", message: `Variant ${data.variantId} filled in — press Save settings to keep it.` });
+        notifications.show({ message: `Variant ${data.variantId} filled in — press Save settings to keep it.` });
       } else {
         setSaveNotice({ text: data.error || "Could not extract the variant.", err: true });
       }
@@ -342,7 +342,7 @@ export default function MembershipSettingsPage() {
             )}
 
             {saveNotice && (
-              <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">
+              <Alert mt="lg" color={saveNotice.err ? "red" : "treehouseGreen"} variant="light">
                 {saveNotice.text}
               </Alert>
             )}
@@ -360,7 +360,7 @@ export default function MembershipSettingsPage() {
               imported (board or isSysadmin).
             </Text>
             {renewalNotice && (
-              <Alert mt="md" mb="md" color={renewalNotice.err ? "red" : "green"} variant="light">
+              <Alert mt="md" mb="md" color={renewalNotice.err ? "red" : "treehouseGreen"} variant="light">
                 {renewalNotice.text}
               </Alert>
             )}

@@ -136,7 +136,7 @@ export default function PaymentProblemsPage() {
       if (res.ok) {
         await fetchRows();
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: action === 'resolve' ? 'Payment problem resolved.' : 'Payment problem acknowledged.' });
+        notifications.show({ message: action === 'resolve' ? 'Payment problem resolved.' : 'Payment problem acknowledged.' });
       } else {
         const data = await res.json();
         notifications.show({ color: 'red', message: data.error || "Failed to update.", autoClose: false });
@@ -165,7 +165,7 @@ export default function PaymentProblemsPage() {
         notifications.show({ color: 'red', message: data.error || "Failed to start the Shopify sync.", autoClose: false });
         return;
       }
-      notifications.show({ color: 'green', message: 'Shopify sync started…' });
+      notifications.show({ message: 'Shopify sync started…' });
 
       for (let i = 0; i < POLL_MAX_ATTEMPTS; i++) {
         await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
@@ -194,7 +194,7 @@ export default function PaymentProblemsPage() {
         const { status } = res.run;
         await fetchRows();
         if (status === 'COMPLETED') {
-          notifications.show({ color: 'green', message: 'Shopify sync finished. Live payment amounts are up to date.' });
+          notifications.show({ message: 'Shopify sync finished. Live payment amounts are up to date.' });
         } else {
           notifications.show({
             color: 'red',
@@ -211,7 +211,6 @@ export default function PaymentProblemsPage() {
       // the sentence carries the "check back later", not a colour the app never uses
       // for anything else.
       notifications.show({
-        color: 'green',
         message: 'Shopify sync is still running. Reload the page in a few minutes to see the result.',
       });
     } catch {
@@ -302,7 +301,7 @@ export default function PaymentProblemsPage() {
               Acknowledge
             </Button>
           )}
-          <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleResolve(row)}>
+          <Button size="xs" fz={15} variant="light" onClick={() => handleResolve(row)}>
             Resolve
           </Button>
         </Group>
@@ -365,7 +364,7 @@ export default function PaymentProblemsPage() {
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={closeResolve}>Cancel</Button>
-          <Button color="green" onClick={confirmResolve}>Resolve</Button>
+          <Button onClick={confirmResolve}>Resolve</Button>
         </Group>
       </Modal>
     </Stack>

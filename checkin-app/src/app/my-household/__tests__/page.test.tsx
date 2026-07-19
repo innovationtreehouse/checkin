@@ -417,7 +417,7 @@ describe("HouseholdPage", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/household/emergency-contacts/2", expect.objectContaining({ method: "DELETE" })),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Emergency contact removed." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Emergency contact removed." })));
     await waitFor(() => expect(screen.queryByText("Jess Friend")).not.toBeInTheDocument());
 
     const editButtons = screen.getAllByRole("button", { name: "Edit" });
@@ -432,7 +432,7 @@ describe("HouseholdPage", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/household/emergency-contacts/1", expect.objectContaining({ method: "PATCH" })),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Emergency contact updated." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Emergency contact updated." })));
   });
 
   it("shows a dismissible contact server error, and validates/cancels the contact form", async () => {

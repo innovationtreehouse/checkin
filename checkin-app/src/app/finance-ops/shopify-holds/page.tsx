@@ -84,7 +84,7 @@ export default function ShopifyHoldsPage() {
       if (res.ok) {
         drop(programId, participantId);
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: successMsg });
+        notifications.show({ message: successMsg });
       } else {
         const data = await res.json();
         notifications.show({ color: 'red', message: data.error || "Action failed.", autoClose: 4000 });

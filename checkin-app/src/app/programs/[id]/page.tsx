@@ -227,7 +227,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
 
       if (anyRequested) {
-        notifications.show({ color: "green", message: "Requested! Please check your email for communication from the Scholarship Review Team." });
+        notifications.show({ message: "Requested! Please check your email for communication from the Scholarship Review Team." });
         fetchProgram();
         notifyNavRefresh();
       }
@@ -316,7 +316,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             body: JSON.stringify({ programId: program.id, participantIds: enrolledIds }),
           });
           if (payRes.ok) {
-            notifications.show({ color: "green", message: "Payment mocked (local) — enrollment activated." });
+            notifications.show({ message: "Payment mocked (local) — enrollment activated." });
           } else {
             notifications.show({ color: "red", autoClose: false, message: "Enrolled, but the mock payment failed — fire it from the Debug → Shopify tool." });
           }
@@ -343,7 +343,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id, discountCode);
           return; // spinner stays; page unloads on redirect
         } else {
-          notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
+          notifications.show({ message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
           setRequiresOverride(false);
           fetchProgram();
         }
@@ -410,7 +410,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           <Title order={1}>{program.name}</Title>
           <Group>
             {canManage && (
-              <Button color="green" variant="light" onClick={() => router.push(`/program-ops/programs/${program.id}`)}>
+              <Button variant="light" onClick={() => router.push(`/program-ops/programs/${program.id}`)}>
                 Manage Program
               </Button>
             )}
@@ -478,7 +478,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         )}
 
         {message && <Alert color="red" mb="lg">{message}</Alert>}
-        {successMessage && <Alert color="green" mb="lg">{successMessage}</Alert>}
+        {successMessage && <Alert mb="lg">{successMessage}</Alert>}
 
         <Center mt="xl">
           {!showEnrollmentSelection ? (

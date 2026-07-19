@@ -107,7 +107,7 @@ export default function AdminProgramsIndex() {
     {
       header: "Enrollment",
       render: (p) => (
-        <Badge color={p.enrollmentStatus === "OPEN" ? "green" : "gray"} variant="light">
+        <Badge color={p.enrollmentStatus === "OPEN" ? "treehouseGreen" : "gray"} variant="light">
           {p.enrollmentStatus === "OPEN" ? "Open" : "Closed"}
         </Badge>
       ),
@@ -149,7 +149,7 @@ export default function AdminProgramsIndex() {
     <Stack>
       <Group justify="space-between" align="flex-start" wrap="wrap">
         <Text c="dimmed">Manage recurring programs and curriculum tracks.</Text>
-        <Button color="green" onClick={() => router.push('/program-ops/new')}>
+        <Button onClick={() => router.push('/program-ops/new')}>
           + New Program
         </Button>
       </Group>

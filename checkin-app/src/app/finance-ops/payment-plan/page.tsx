@@ -89,7 +89,7 @@ export default function PendingParticipantsPage() {
       if (res.ok) {
         setRequests(prev => prev.filter(r => !(r.programId === programId && r.personId === participantId)));
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: 'Scholarship / payment plan approved.' });
+        notifications.show({ message: 'Scholarship / payment plan approved.' });
       } else {
         const data = await res.json();
         if (data.error === "No pending payment-plan request") {
@@ -128,7 +128,7 @@ export default function PendingParticipantsPage() {
       if (res.ok) {
         setRequests(prev => prev.filter(r => !(r.programId === programId && r.personId === participantId)));
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: 'Scholarship / payment plan refused.' });
+        notifications.show({ message: 'Scholarship / payment plan refused.' });
       } else {
         const data = await res.json();
         if (data.error === "No pending payment-plan request") {
@@ -210,7 +210,7 @@ export default function PendingParticipantsPage() {
             Refuse
           </Button>
           <Button
-            size="xs" fz={15} color="green" variant="light"
+            size="xs" fz={15} variant="light"
             disabled={ownHousehold(req)}
             title={ownHousehold(req) ? "You can't approve your own household's plan — a sysadmin must." : undefined}
             onClick={() => handleApprove(req.programId, req.personId)}
@@ -251,7 +251,7 @@ export default function PendingParticipantsPage() {
         </Text>
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmApprove}>Cancel</Button>
-          <Button color="green" onClick={confirmApprove}>Approve &amp; Mark Active</Button>
+          <Button onClick={confirmApprove}>Approve &amp; Mark Active</Button>
         </Group>
       </Modal>
 

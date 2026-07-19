@@ -52,7 +52,7 @@ export function MatchAuditPanel() {
         memberships: prev.memberships.map((m) => body.kind === 'membership' && m.processId === body.processId ? { ...m, bucket: 'TRACKED_EXCEPTION' as const } : m),
         enrollments: prev.enrollments.map((e) => body.kind === 'enrollment' && e.programId === body.programId && e.personId === body.personId ? { ...e, bucket: 'TRACKED_EXCEPTION' as const } : e),
       });
-      notifications.show({ color: 'green', message: 'Gap tracked as a payment problem.' });
+      notifications.show({ message: 'Gap tracked as a payment problem.' });
     } catch {
       notifications.show({ color: 'red', autoClose: false, message: 'Network error tracking this gap.' });
     } finally {
@@ -167,7 +167,7 @@ export function MatchAuditPanel() {
 
           <Group mt="md" gap="xs">
             {gapCount === 0
-              ? <Badge color="green">No gaps</Badge>
+              ? <Badge>No gaps</Badge>
               : <Badge color="red">{gapCount} gap(s)</Badge>}
             {count('Orders matched', matched.orders)}
             {count('Tracked as exceptions', matched.tracked)}

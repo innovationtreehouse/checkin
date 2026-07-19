@@ -89,7 +89,7 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
         {status === "DENIED" ? (
           <Badge color="red">Denied</Badge>
         ) : status === "ACTIVE" ? (
-          <Badge color="green">Member</Badge>
+          <Badge>Member</Badge>
         ) : (
           <Badge color="gray">Not a member</Badge>
         )}
@@ -121,7 +121,7 @@ export default function HouseholdDetailPage({ params }: { params: Promise<{ id: 
                       <Badge
                         key={e.program.id}
                         variant="light"
-                        color={e.status === "ACTIVE" ? "green" : "yellow"}
+                        color={e.status === "ACTIVE" ? "treehouseGreen" : "yellow"}
                         style={{ cursor: "pointer" }}
                         onClick={() => router.push(`/program-ops/programs/${e.program.id}`)}
                       >

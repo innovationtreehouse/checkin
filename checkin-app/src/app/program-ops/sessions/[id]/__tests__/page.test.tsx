@@ -103,7 +103,7 @@ describe("EventAdminPage", () => {
         expect(screen.getByText("Attending")).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Confirm Attendance" }));
-        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Attendance confirmed successfully!" })));
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Attendance confirmed successfully!" })));
 
         fireEvent.click(screen.getAllByRole("button", { name: "Manual Edit" })[0]);
         expect(await screen.findByText(/Manual Edit:/)).toBeInTheDocument();
@@ -127,7 +127,7 @@ describe("EventAdminPage", () => {
         expect(screen.getByLabelText(/Apply to Series/)).toBeInTheDocument();
 
         fireEvent.click(screen.getByRole("button", { name: "Save Time Changes" }));
-        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Event time updated successfully!" })));
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Event time updated successfully!" })));
 
         fireEvent.click(screen.getByRole("button", { name: "Edit Date / Time" }));
         fireEvent.click(screen.getByRole("button", { name: "Cancel Event(s)" }));
@@ -162,7 +162,7 @@ describe("EventAdminPage", () => {
 
         expect(await screen.findByText(/by Unknown/)).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Re-confirm" }));
-        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Attendance confirmed successfully!" })));
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Attendance confirmed successfully!" })));
     });
 
     it("confirm attendance: shows the server error, then a network-error message", async () => {

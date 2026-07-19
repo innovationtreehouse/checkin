@@ -250,7 +250,7 @@ export function NewEventForm() {
             )}
           </Card>
 
-          <Button type="submit" color="green" disabled={saving} loading={saving} mt="sm">
+          <Button type="submit" disabled={saving} loading={saving} mt="sm">
             Create Event(s)
           </Button>
         </Stack>

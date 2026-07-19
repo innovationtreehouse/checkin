@@ -187,7 +187,7 @@ export default function Home() {
                   <Button
                     size="lg"
                     fullWidth
-                    color={isCheckedIn ? 'red' : 'green'}
+                    color={isCheckedIn ? 'red' : 'treehouseGreen'}
                     onClick={handleToggleCheckin}
                     loading={loading}
                   >
@@ -229,7 +229,6 @@ export default function Home() {
               </Text>
 
               <Button
-                color="green"
                 size="md"
                 onClick={() => router.push('/programs')}
                 style={{ maxWidth: 300, width: '100%' }}
