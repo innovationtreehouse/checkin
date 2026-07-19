@@ -323,6 +323,146 @@ defineRoute({
     ],
 });
 
+// ─── Wave-1 migration entries (registry-first, inert until each route's ─────
+// ─── handler() conversion lands in its feature PR — AGENTS.md boundary rule ─
+
+// Standalone (one-time) events list — admin surface. The handler selects only
+// public-tier Event columns (id/name/startAt/endAt/description); the full
+// everyones band is the standard admin view so a later select widening is
+// still policy-covered rather than silently leaking.
+defineRoute({
+    endpoint: 'GET /api/events',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { Event } — bare-array response (envelope null + single-key bag).
+    returns: ['Event'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Facility visit log (latest 50, all people) — admin surface. Nested person
+// carries email (pii) + role flags; admin everyones band covers them.
+defineRoute({
+    endpoint: 'GET /api/facility/visits',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'visits',
+    // Bag: { Visit } with person (Person).
+    returns: ['Visit', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Raw badge scan log (latest 200) — admin surface. RawBadgeLog rows are
+// internal/personal tier; nested person name/email for display.
+defineRoute({
+    endpoint: 'GET /api/facility/badges',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'badges',
+    // Bag: { RawBadgeLog } with person (Person).
+    returns: ['RawBadgeLog', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// App-localization singleton (timezone/locale) — sysadmin-only surface,
+// wholly public-tier data; the gate is about who may see admin settings
+// screens, not the fields.
+defineRoute({
+    endpoint: 'GET /api/admin/settings/localization',
+    authorize: { anyRole: ['isSysadmin'] },
+    envelope: 'settings',
+    // Bag: { AppSettings } (singleton row).
+    returns: ['AppSettings'],
+    orderedView: [
+        ['isSysadmin', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// The caller's own visit history (±7-day window). their_own:personal delivers
+// arrivedAt/departedAt on the caller's rows (Visit binding keys on
+// row.personId — the handler's select must include personId or the scope
+// fails closed and the timestamps strip). Nested event name is public.
+defineRoute({
+    endpoint: 'GET /api/profile/visits',
+    authorize: 'authenticated',
+    envelope: 'visits',
+    // Bag: { Visit } with event (Event).
+    returns: ['Visit', 'Event'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
+// Server error log (latest 100) — admin surface, all internal tier.
+defineRoute({
+    endpoint: 'GET /api/system-status/errors',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['ErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Integration error log (latest 200) — admin surface, all internal tier.
+// (The response key is `errors` for back-compat with the existing UI.)
+defineRoute({
+    endpoint: 'GET /api/system-status/links',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['IntegrationErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Email identity settings (From/Reply-To/scholarship notify) — admin surface.
+// BoardSettings singleton, narrow select in the handler.
+defineRoute({
+    endpoint: 'GET /api/settings/email',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'settings',
+    returns: ['BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Membership settings singleton (dues, year boundary, Shopify variant ids —
+// internal tier) — admin surface, full row.
+defineRoute({
+    endpoint: 'GET /api/settings/membership',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'settings',
+    returns: ['BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Volunteer designations (dues-discount allowlist; email is pii) — admin
+// surface.
+defineRoute({
+    endpoint: 'GET /api/settings/membership/volunteer-designations',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'designations',
+    returns: ['VolunteerDesignation'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
