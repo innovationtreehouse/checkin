@@ -418,4 +418,13 @@ describe("membership-ops/participants/merge page", () => {
     // text is locale/timezone-formatted (toLocaleDateString), so just count them.
     expect(within(alertBox).getAllByRole("radio")).toHaveLength(2);
   });
+
+  it("renders nothing for a background-check reviewer who navigates directly", () => {
+    setSession({ id: 9, isBackgroundCheckReviewer: true });
+    mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+
+    expect(screen.queryByPlaceholderText("Search by name or email...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Keep and augment")).not.toBeInTheDocument();
+  });
 });

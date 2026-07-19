@@ -6,6 +6,8 @@ import { Alert, Box, Button, Card, Group, List, Paper, Radio, SimpleGrid, Stack,
 import { notifications } from "@mantine/notifications";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { MergedBadge } from "@/components/ui/MergedBadge";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { PageLoader } from "@/components/ui/PageLoader";
 import { formatPhone } from "@/lib/phone";
 
 interface ParticipantMergeView {
@@ -51,6 +53,7 @@ function formatFieldValue(field: ConflictField, value: unknown, person: { email?
 }
 
 export default function MergeParticipants() {
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const router = useRouter();
   const [searchA, setSearchA] = useState("");
   const [searchB, setSearchB] = useState("");
@@ -156,6 +159,14 @@ export default function MergeParticipants() {
       setPreviewMode(false);
     }
   }, [pA, pB]);
+
+  if (authLoading) {
+    return <PageLoader />;
+  }
+
+  if (!ready) {
+    return null;
+  }
 
   const handleMerge = async () => {
     setMerging(true);
