@@ -1,9 +1,10 @@
 import prisma from "@/lib/prisma";
 import { isYouth } from "@/lib/time";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export async function getFullAttendance() {
     const activeVisits = await prisma.visit.findMany({
-        where: { departedAt: null },
+        where: { departedAt: null, person: LIVE_PERSON },
         include: {
             person: {
                 select: {

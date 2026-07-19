@@ -7,6 +7,7 @@ import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
@@ -78,8 +79,8 @@ export async function GET(req: Request) {
             include: {
                 _count: {
                     select: {
-                        participants: true,
-                        volunteers: true,
+                        participants: { where: { person: LIVE_PERSON } },
+                        volunteers: { where: { person: LIVE_PERSON } },
                         events: true
                     }
                 }
@@ -107,7 +108,7 @@ export async function GET(req: Request) {
             const counts = await Promise.race([
                 prisma.program.findMany({
                     where: { id: { in: staticRows.map((prg) => prg.id) } },
-                    select: { id: true, _count: { select: { participants: true, volunteers: true, events: true } } },
+                    select: { id: true, _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } }, events: true } } },
                 }).catch(() => null),
                 new Promise<null>((resolve) => { const t = setTimeout(() => resolve(null), 2_500); t.unref?.(); }),
             ]);

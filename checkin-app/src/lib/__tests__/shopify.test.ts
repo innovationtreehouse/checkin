@@ -142,7 +142,8 @@ describe('createShopifyProgramVariants', () => {
         expect(prisma.person.findMany).toHaveBeenCalledWith({
             where: {
                 OR: [{ isSysadmin: true }, { isBoardMember: true }],
-                email: { not: null }
+                email: { not: null },
+                mergedIntoId: null
             },
             select: { email: true }
         });

@@ -11,6 +11,7 @@ import {
     RoleMatrixError,
     LastBoardMemberError,
 } from "@/lib/roles";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 const PERSON_SELECT = {
     id: true,
@@ -30,6 +31,7 @@ export const GET = withAuth(
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
             const rows = await prisma.person.findMany({
+                where: LIVE_PERSON,
                 select: {
                     id: true,
                     email: true,

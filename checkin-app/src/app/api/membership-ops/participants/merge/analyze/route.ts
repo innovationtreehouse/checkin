@@ -46,6 +46,10 @@ export const GET = withAuth(
                 return apiError("Participant not found", 404);
             }
 
+            if (pA.mergedIntoId != null || pB.mergedIntoId != null) {
+                return apiError("Cannot analyze: one of these participants has already been merged.", 409);
+            }
+
             return NextResponse.json({ participants: [pA, pB] });
         } catch (error) {
             logger.error("Failed to analyze participants:", error);

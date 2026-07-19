@@ -6,6 +6,7 @@ import { withAuth } from "@/lib/auth";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -32,15 +33,18 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
             program: {
                 include: {
                     volunteers: {
+                        where: { person: LIVE_PERSON },
                         include: { person: true }
                     },
                     participants: {
+                        where: { person: LIVE_PERSON },
                         include: { person: true }
                     }
                 }
             },
             visits: true,
             rsvps: {
+                where: { person: LIVE_PERSON },
                 include: { person: true }
             },
             attendanceConfirmedBy: {

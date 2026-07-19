@@ -5,6 +5,12 @@ import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/sc
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
 
+// A merged-away badge should still get its owner through the door — an admin
+// tidying up dupes must not be the reason a member gets rejected at the
+// scanner. Chains this long are pathological (real merges are 1 hop); cap so
+// a corrupt/cyclic chain can't loop the lookup forever, and reissue instead.
+const MAX_MERGE_HOPS = 5;
+
 // High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
 // reads the raw body, authenticates it (kiosk signature OR session), rejects
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
@@ -43,12 +49,38 @@ export const POST = withKiosk(
         }
 
         // 3. Lookup participant
-        const participant = await prisma.person.findUnique({
+        const badgeRecord = await prisma.person.findUnique({
             where: { id: participantId },
         });
 
-        if (!participant) {
+        if (!badgeRecord) {
             return apiError(`Participant ${participantId} not found.`, 404);
+        }
+
+        // A badge still encoding a tombstone's id must not reject its owner at the
+        // door — walk mergedIntoId to the live survivor and scan as them. Capped
+        // at MAX_MERGE_HOPS; a chain that deep can't be resolved with confidence,
+        // so fall back to the reissue message instead of chasing it further.
+        let participant = badgeRecord;
+        let mergeHops = 0;
+        while (participant.mergedIntoId != null) {
+            mergeHops++;
+            if (mergeHops > MAX_MERGE_HOPS) {
+                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+            }
+            const next: typeof participant | null = await prisma.person.findUnique({ where: { id: participant.mergedIntoId } });
+            if (!next) {
+                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+            }
+            participant = next;
+        }
+        if (mergeHops > 0) {
+            logger.info("Scan forwarded from merged record", {
+                badgeId: badgeRecord.id,
+                tombstoneId: badgeRecord.mergedIntoId,
+                survivorId: participant.id,
+                hops: mergeHops,
+            });
         }
 
         // Household lead check: verify participant is in the same household

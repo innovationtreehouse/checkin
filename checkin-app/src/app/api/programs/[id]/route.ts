@@ -8,6 +8,7 @@ import { notifyNewProgramAnnounced } from "@/lib/notifications";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
 // ORDER MATTERS: this export sits ABOVE getProgram so the routeAuthDrift
@@ -50,8 +51,9 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const program = await prisma.program.findUnique({
         where: { id: programId },
         include: {
-            volunteers: { include: { person: true } },
+            volunteers: { where: { person: LIVE_PERSON }, include: { person: true } },
             participants: {
+                where: { person: LIVE_PERSON },
                 include: {
                     person: {
                         include: {
@@ -74,7 +76,7 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
             events: { orderBy: { startAt: 'asc' } },
             fees: true,
             leadMentor: true,
-            _count: { select: { participants: true, volunteers: true } },
+            _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } } } },
         },
     });
 

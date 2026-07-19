@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     // Non-blocking warning: is this email already an active full-price member?
     let warning: string | undefined;
     const participant = await prisma.person.findFirst({
-        where: { email: { equals: email, mode: "insensitive" } },
+        where: { email: { equals: email, mode: "insensitive" }, ...LIVE_PERSON },
         select: { household: { select: { orgMembership: { select: { status: true, isVolunteer: true } } } } },
     });
     const m = participant?.household?.orgMembership;

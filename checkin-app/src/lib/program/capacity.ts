@@ -2,6 +2,7 @@ import type { TxClient } from "@/lib/db-client";
 import type { ProgramParticipant } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /** Thrown by {@link lockProgramAndCheckCapacity} when a program is full. */
 export class ProgramCapacityError extends Error {
@@ -36,7 +37,7 @@ export async function lockProgramAndCheckCapacity(
 
     if (maxParticipants === null) return;
 
-    const count = await tx.programParticipant.count({ where: { programId } });
+    const count = await tx.programParticipant.count({ where: { programId, person: LIVE_PERSON } });
     if (count + seats > maxParticipants) {
         throw new ProgramCapacityError(Math.max(0, maxParticipants - count));
     }
