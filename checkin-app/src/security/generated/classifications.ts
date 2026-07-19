@@ -17,6 +17,7 @@ export const classifications = {
         lastBackgroundCheck: 'internal',
         emailUndeliverableAt: 'internal',
         notificationSettings: 'personal',
+        emailSuppressed: 'personal',
         householdId: 'public',
         isHouseholdLead: 'public',
         mergedIntoId: 'internal',
@@ -124,6 +125,10 @@ export const classifications = {
         emailFromAddress: 'public',
         emailReplyToAddress: 'public',
         scholarshipNotifyEmail: 'internal',
+        outreachOpeningSubject: 'internal',
+        outreachOpeningBody: 'internal',
+        outreachReminderSubject: 'internal',
+        outreachReminderBody: 'internal',
         shopifyOrgMembershipProductId: 'internal',
         shopifyNormalVariantId: 'internal',
         shopifyVolunteerVariantId: 'internal',
@@ -360,6 +365,24 @@ export const classifications = {
         resolutionNote: 'personal',
         detectedAt: 'internal',
     },
+    BulkSend: {
+        id: 'internal',
+        emailType: 'internal',
+        audience: 'internal',
+        senderId: 'internal',
+        startedAt: 'internal',
+        completedAt: 'internal',
+    },
+    BulkSendItem: {
+        id: 'internal',
+        bulkSendId: 'internal',
+        personId: 'internal',
+        email: 'internal',
+        variant: 'internal',
+        status: 'internal',
+        sentAt: 'internal',
+        error: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -510,6 +533,12 @@ export const relations = {
     DevSentEmail: {
     },
     PaymentException: {
+    },
+    BulkSend: {
+        items: { model: 'BulkSendItem', isList: true },
+    },
+    BulkSendItem: {
+        bulkSend: { model: 'BulkSend', isList: false },
     },
 } as const;
 

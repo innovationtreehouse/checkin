@@ -78,6 +78,7 @@ export const GET = withAuth(
                 lastBackgroundCheck: opsOnly ? undefined : p.lastBackgroundCheck,
                 isMember: opsOnly ? undefined : personRecordIsActiveOrgMember(p),
                 ...rolesToFlags(p.roles),
+                emailSuppressed: p.emailSuppressed,
                 household: p.household ? { ...p.household, orgMembership: opsOnly ? undefined : p.household.orgMembership } : null,
             }));
 

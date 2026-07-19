@@ -343,9 +343,12 @@ describe('Admin Roles API Integration Tests', () => {
         beforeAll(async () => {
             // The lock/count the route guards on is PersonRole now — assert the ambient
             // invariant against the table, not the (dual-written but derivative) mirror.
-            const ambientBoardCount = await prisma.personRole.count({ where: { role: 'BOARD' } });
-            if (ambientBoardCount !== 0) {
-                throw new Error(`Expected zero ambient board members before this describe, found ${ambientBoardCount}. A prior describe's board fixtures leaked.`);
+            const ambient = await prisma.personRole.findMany({
+                where: { role: 'BOARD' },
+                include: { person: { select: { email: true, name: true } } },
+            });
+            if (ambient.length !== 0) {
+                throw new Error(`Expected zero ambient board members before this describe, found ${ambient.length}: ${ambient.map((r) => `${r.person.name} <${r.person.email}>`).join(', ')}. A prior describe's board fixtures leaked.`);
             }
             const lone = await prisma.person.create({
                 data: {
@@ -358,6 +361,9 @@ describe('Admin Roles API Integration Tests', () => {
         });
 
         afterAll(async () => {
+            // If beforeAll threw before assignment, an undefined id would make these
+            // where clauses match ALL rows — bail instead of cascading the failure.
+            if (loneBoardId === undefined) return;
             await prisma.auditLog.deleteMany({ where: { actorId: loneBoardId } });
             await prisma.person.deleteMany({ where: { id: loneBoardId } });
         });
@@ -379,9 +385,12 @@ describe('Admin Roles API Integration Tests', () => {
         let raceBId: number;
 
         beforeAll(async () => {
-            const ambientBoardCount = await prisma.personRole.count({ where: { role: 'BOARD' } });
-            if (ambientBoardCount !== 0) {
-                throw new Error(`Expected zero ambient board members before this describe, found ${ambientBoardCount}. A prior describe's board fixtures leaked.`);
+            const ambient = await prisma.personRole.findMany({
+                where: { role: 'BOARD' },
+                include: { person: { select: { email: true, name: true } } },
+            });
+            if (ambient.length !== 0) {
+                throw new Error(`Expected zero ambient board members before this describe, found ${ambient.length}: ${ambient.map((r) => `${r.person.name} <${r.person.email}>`).join(', ')}. A prior describe's board fixtures leaked.`);
             }
             const a = await prisma.person.create({
                 data: {
@@ -402,8 +411,12 @@ describe('Admin Roles API Integration Tests', () => {
         });
 
         afterAll(async () => {
-            await prisma.auditLog.deleteMany({ where: { actorId: { in: [raceAId, raceBId] } } });
-            await prisma.person.deleteMany({ where: { id: { in: [raceAId, raceBId] } } });
+            // Drop ids left unassigned by a failed beforeAll so a fixture failure
+            // doesn't cascade into a PrismaClientValidationError masking the real error.
+            const ids = [raceAId, raceBId].filter((id) => id !== undefined);
+            if (ids.length === 0) return;
+            await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
+            await prisma.person.deleteMany({ where: { id: { in: ids } } });
         });
 
         it('two concurrent self-removals with count==2 -> exactly one 200 and one 409; final count is 1', async () => {

@@ -306,20 +306,18 @@ describe("AdminParticipantsIndex", () => {
             const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
                 const url = typeof input === "string" ? input : input.toString();
                 if (url.includes("/api/membership-ops/contacts")) {
-                    // Honest shape: the route returns the created participant WITH
-                    // `include: { household: true }` (createParticipantWithHousehold always
-                    // gives a brand-new contact a single-person household named after them)
-                    // plus the five role flags defaulted false (a fresh contact holds no
-                    // PersonRole rows), so the prepended row renders like its neighbors.
+                    // Honest shape: pinned to the route's actual re-fetch include
+                    // (`household: { include: { householdMembers: { select: { id, name,
+                    // email } } } }`) — createParticipantWithHousehold always gives a
+                    // brand-new contact a single-person household named after them, and
+                    // the client's HouseholdRef type requires householdMembers, so a mock
+                    // missing it would pass here while the real (bare `household: true`)
+                    // route TypeErrors the Assign-household render path in prod.
                     return {
                         ok: true, status: 200,
                         json: async () => ({
                             success: true,
-                            participant: {
-                                id: 50, name: "Ada Lovelace", email: "ada@example.com", phone: null,
-                                household: { id: 77, name: "Ada Lovelace", householdMembers: [{ id: 50, name: "Ada Lovelace", email: "ada@example.com" }] },
-                                isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, isOperations: false,
-                            },
+                            participant: { id: 50, name: "Ada Lovelace", email: "ada@example.com", phone: null, household: { id: 77, name: "Ada Lovelace", householdMembers: [{ id: 50, name: "Ada Lovelace", email: "ada@example.com" }] } },
                         }),
                     } as Response;
                 }
@@ -353,6 +351,16 @@ describe("AdminParticipantsIndex", () => {
                 "/api/membership-ops/contacts",
                 expect.objectContaining({ method: "POST" }),
             );
+
+            // The exact regression path (thpr #3): create -> prepend -> select ->
+            // canSubmitAssign/canChangeHousehold. Those two are computed at component
+            // top level off selectedParticipant.household.householdMembers, so opening
+            // the Assign flow for the freshly-created row (via Details -> "Move to
+            // Another Household", since a solo household shows the Household button,
+            // not Assign) must not throw when the prepended row is missing that array.
+            fireEvent.click(screen.getByRole("button", { name: "Details" }));
+            fireEvent.click(await screen.findByRole("button", { name: "Move to Another Household" }));
+            expect(await screen.findByText("Assign Household to Ada Lovelace")).toBeInTheDocument();
         }, 15000);
 
         it("shows the endpoint's owner-named message inline on the email field for a 409 duplicate", async () => {
@@ -382,5 +390,18 @@ describe("AdminParticipantsIndex", () => {
             // The modal stays open on a 409 (only the field error shows), unlike the success path.
             expect(screen.getByText("Add Contact")).toBeInTheDocument();
         }, 15000);
+    });
+
+    it("shows an Unsubscribed pill for a suppressed row, and not for others", async () => {
+        mockFetchJson({
+            "/api/people/search": { people: [{ ...alice, emailSuppressed: true }, { ...dave, emailSuppressed: false }] },
+        });
+        renderWithProviders(<AdminParticipantsIndex />);
+
+        const aliceRow = (await screen.findByText("Alice A")).closest("tr")!;
+        expect(within(aliceRow).getByText("Unsubscribed")).toBeInTheDocument();
+
+        const daveRow = screen.getByText("Dave D").closest("tr")!;
+        expect(within(daveRow).queryByText("Unsubscribed")).not.toBeInTheDocument();
     });
 });

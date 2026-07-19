@@ -139,6 +139,18 @@ describe('POST /api/membership-ops/contacts', () => {
         const household = await prisma.household.findUnique({ where: { id: created!.householdId! } });
         expect(household?.name).toBe('Ada Lovelace');
 
+        // Pin the route's serialized response shape, not just the DB rows above —
+        // every assertion before this line still passes if the route's nested
+        // `include: { household: { include: { householdMembers } } }` gets reverted
+        // to a bare `include: { household: true }`; the RTL mock is hand-maintained
+        // and can't catch that regression either.
+        expect(data.participant.household.householdMembers).toHaveLength(1);
+        expect(data.participant.household.householdMembers[0]).toMatchObject({
+            id: created!.id,
+            name: 'Ada Lovelace',
+            email: email.toLowerCase(),
+        });
+
         // The board's unclaimed-households surface (and the nav todo-count badge)
         // share this predicate — a shell with an emailed, unclaimed lead must match
         // it with zero new wiring.
@@ -168,6 +180,46 @@ describe('POST /api/membership-ops/contacts', () => {
         const data = await res.json();
         expect(data.error).toBe('This email already belongs to Jane Doe');
         expect(data.fields).toEqual(['email']);
+    });
+
+    it('catches a whitespace-padded duplicate with the owner-named 409 — normalizeEmail trims, not just lowercases', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const variant = `  ${ownerEmail.toUpperCase()}  `;
+
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Someone Else', email: variant }));
+        expect(res.status).toBe(409);
+        const data = await res.json();
+        expect(data.error).toBe('This email already belongs to Jane Doe');
+        expect(data.fields).toEqual(['email']);
+    });
+
+    it('stores a whitespace-padded email trimmed', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const padded = `  Whitespace-${CREATED_TAG}@Example.com  `;
+
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Padded Email', email: padded }));
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.participant.email).toBe(padded.trim().toLowerCase());
+
+        const created = await prisma.person.findUnique({ where: { id: data.participant.id } });
+        expect(created?.email).toBe(padded.trim().toLowerCase());
+    });
+
+    it('400s a blank name', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: '   ', email: `blank-name-${CREATED_TAG}@example.com` }));
+        expect(res.status).toBe(400);
+        const data = await res.json();
+        expect(data.error).toBe('Name is required');
+    });
+
+    it('400s a malformed email', async () => {
+        asSession({ id: boardId, isBoardMember: true });
+        const res = await POST(nreq('http://localhost/api/membership-ops/contacts', 'POST', { name: 'Bad Email', email: 'not-an-email' }));
+        expect(res.status).toBe(400);
+        const data = await res.json();
+        expect(data.error).toBe('A valid email is required');
     });
 
     it('creates a household + lead for an operations-only actor (the RBAC rework follow-on)', async () => {

@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { createParticipantWithHousehold } from "@/lib/auth-options";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { normalizeEmail } from "@/lib/prismaEmailNormalize";
-import { rolesToFlags } from "@/lib/roles";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
@@ -52,23 +52,28 @@ export const POST = withAuth({ roles: ['isBoardMember', 'isOperations'] }, async
             },
         });
 
-        // Re-fetch with household included so the client's optimistic prepend can
-        // render the household name immediately, without a full-list refetch. A
-        // brand-new contact holds no PersonRole rows, so the role flags are all
-        // false — stamp them explicitly (rolesToFlags([])) rather than relying on
-        // the raw Person row's mirror columns, which don't cover isOperations (it
-        // has none), so the prepended row carries the same five flags as every row
-        // that came from /api/people/search instead of a partially-shaped one.
+        // Re-fetch with household (+ its members) included so the client's
+        // optimistic prepend can render immediately, without a full-list refetch.
+        // The client's HouseholdRef type requires householdMembers — a bare
+        // `include: { household: true }` returns household scalars only and
+        // TypeErrors the Assign-household render path on the new row.
         const participant = await prisma.person.findUnique({
             where: { id: person.id },
-            include: { household: true },
+            include: { household: { include: { householdMembers: { select: { id: true, name: true, email: true } } } } },
         });
 
-        return NextResponse.json({
-            success: true,
-            participant: { ...participant, ...rolesToFlags([]) },
-        });
+        return NextResponse.json({ success: true, participant });
     } catch (error) {
+        // The dup check above is TOCTOU-racy (two concurrent creates for the same
+        // email can both pass it); the @unique constraint is the real guard, so a
+        // P2002 here gets the same owner-named-style 409 as the pre-check catch,
+        // not a generic 500.
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return NextResponse.json(
+                { error: "This email already belongs to an existing account", fields: ["email"] },
+                { status: 409 },
+            );
+        }
         await logBackendError(error, "POST /api/membership-ops/contacts");
         return apiError("Failed to create contact", 500);
     }

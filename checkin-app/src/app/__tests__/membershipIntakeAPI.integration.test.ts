@@ -222,7 +222,7 @@ describe('Membership Intake API', () => {
         const householdId = owner.householdId!;
         const membership = await prisma.orgMembership.findUniqueOrThrow({ where: { householdId } });
 
-        const proc = await createRenewalProcess(membership.id, householdId, new Date(), { remind: false, boundary: new Date() });
+        const proc = await createRenewalProcess(membership.id);
         expect(proc).not.toBeNull();
 
         const createLog = await expectAuditRow(prisma, { action: 'CREATE', tableName: 'OrgMembershipProcess', affectedEntityId: proc!.id });

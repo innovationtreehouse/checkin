@@ -270,6 +270,14 @@ function eq(a: Set<string>, b: Set<string>): boolean {
  * coverage validator passes — runtime-inert (no route grants their_own:internal
  * on AuditLog). On a row whose actorId === selfId the table therefore adds
  * their_own where the snapshot did not. That is the one expected diff.
+ *
+ * Person.keyholders: the switch's Person case had no keyholders grant, so it
+ * yields no 'keyholders'. Person was later bound `keyholders: { flag }` — an
+ * unconditional per-row grant mirroring TrustedAdult — so that
+ * GET /api/safety/board-contacts can hand keyholders the board's email/phone
+ * via a 'keyholders:pii' token instead of a blanket 'everyones:pii'. On any
+ * object row, a keyholder caller therefore holds 'keyholders' where the
+ * snapshot did not. That is the second expected diff.
  */
 function expectedFromSnapshot(
     model: string,
@@ -285,6 +293,9 @@ function expectedFromSnapshot(
         row.actorId === callerCtx.selfId
     ) {
         expected.add('their_own');
+    }
+    if (model === 'Person' && row && typeof row === 'object' && callerCtx.isKeyholder) {
+        expected.add('keyholders');
     }
     return expected;
 }
