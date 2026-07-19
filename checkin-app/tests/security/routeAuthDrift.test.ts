@@ -58,6 +58,14 @@ const ALLOWLIST = new Set<string>([
     // getOptionalSessionUser doesn't apply. Abuse is bounded by IP + email rate
     // limits inside the handler (see the "email-bomb / DB-spam target" comment).
     'programs/[id]/public-register/route.ts',
+    // Session-less, self-verifying via a signed HMAC token in the URL (?p=&sig=),
+    // NOT a shared-secret family like withCron/withWebhook/withKiosk (no header,
+    // no config-held secret to check) — see lib/outreach/unsubscribeToken.ts. GET
+    // must not flip the flag (mail scanners prefetch GET links) and POST verifies
+    // the token itself, so neither handler fits withAuth/withCron/withWebhook/
+    // withKiosk, and it's genuinely public so getOptionalSessionUser doesn't apply
+    // either. Bad/missing/tampered tokens get a neutral page, no info leak.
+    'unsubscribe/route.ts',
 ]);
 
 const HTTP_METHODS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS';
