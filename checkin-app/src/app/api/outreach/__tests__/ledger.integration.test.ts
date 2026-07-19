@@ -18,6 +18,22 @@ import { sendEmail } from '@/lib/email';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn() }));
+// process-batch's join-variant unsubscribe footer (unsubscribeToken.ts hmacKey) reads
+// config.nextAuthSecret(), which throws when unset — fine locally (the gitignored .env
+// supplies it) but CI has no .env. Same partial-mock pattern as auth-options-jwt.test.ts:
+// preserve every other config read (render.ts's baseUrl(), etc.) via requireActual and
+// stub only the secret.
+jest.mock('@/lib/config', () => {
+    const actual = jest.requireActual('@/lib/config');
+    return {
+        __esModule: true,
+        ...actual,
+        config: {
+            ...actual.config,
+            nextAuthSecret: jest.fn(() => 'test-secret'),
+        },
+    };
+});
 
 const TAG = 'outreach-ledger-test';
 const BOUNDARY = new Date(Date.UTC(2000, 7, 1)); // Aug 1
