@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Alert, Badge, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -11,6 +10,7 @@ import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
 import { RoleBadge } from "@/components/ui/RoleBadge";
 import { ROLE_FLAGS } from "@/lib/roles";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 type HouseholdRef = {
   id: number;
@@ -42,14 +42,14 @@ export default function AdminParticipantsIndex() {
   const [sortBy, setSortBy] = useState<"id" | "name" | "email" | "household">("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const router = useRouter();
-  // Client-side mirror of the write-verb matrix (UX only — the endpoint is the
-  // real guard). canAddContact mirrors POST /api/membership-ops/contacts' role
-  // gate: board-only for now — Operations access to this button is granted
-  // separately in #1111. Just reads the session here (no redirect effect) —
-  // the membership-ops layout already gates the whole section, so a second
-  // require-role redirect is redundant.
-  const { data: session } = useSession();
-  const canAddContact = !!session?.user?.isBoardMember;
+  // Client-side mirror of the write-verb matrix (UX only — the endpoints are the
+  // real guard). isStaff = full read/write access (household assign, edit-details,
+  // bulk import, new person, roles). Operations gets the read-only directory
+  // plus add-contact (canAddContact mirrors POST /api/membership-ops/contacts'
+  // role gate: board + operations, sysadmin deliberately excluded there).
+  const { user: me } = useRequireRole([]);
+  const isStaff = !!me?.isBoardMember || !!me?.isSysadmin;
+  const canAddContact = !!me?.isBoardMember || !!me?.isOperations;
 
   const toggleSort = (col: "id" | "name" | "email" | "household") => {
     if (sortBy === col) {
@@ -114,7 +114,7 @@ export default function AdminParticipantsIndex() {
   // Admin edit of household's own info (name, address, emergency contact)
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
 
-  // Add-contact modal state (board-only for now — see canAddContact above).
+  // Add-contact modal state (board + operations — see canAddContact above).
   const [addContactOpen, setAddContactOpen] = useState(false);
   const [addContactName, setAddContactName] = useState("");
   const [addContactEmail, setAddContactEmail] = useState("");
@@ -243,8 +243,8 @@ export default function AdminParticipantsIndex() {
           <Text c="dimmed">Search and manage system people and households.</Text>
         </div>
         <Group>
-          <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>
-          <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>
+          {isStaff && <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>}
+          {isStaff && <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>}
           {canAddContact && <Button variant="outline" onClick={() => setAddContactOpen(true)}>+ Add contact</Button>}
         </Group>
       </Group>
@@ -284,10 +284,10 @@ export default function AdminParticipantsIndex() {
                     <Table.Th>
                       <Group gap={4} wrap="nowrap">
                         Roles
-                        <Text component={Link} href="/membership-ops/roles" size="xs" c="blue">Manage</Text>
+                        {isStaff && <Text component={Link} href="/membership-ops/roles" size="xs" c="blue">Manage</Text>}
                       </Group>
                     </Table.Th>
-                    <Table.Th>Actions</Table.Th>
+                    {isStaff && <Table.Th>Actions</Table.Th>}
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -309,26 +309,28 @@ export default function AdminParticipantsIndex() {
                           ))}
                         </Group>
                       </Table.Td>
-                      <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
-                          {p.household ? (
-                            <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
-                              Household
+                      {isStaff && (
+                        <Table.Td>
+                          <Group gap="xs" wrap="nowrap">
+                            {p.household ? (
+                              <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                                Household
+                              </Button>
+                            ) : (
+                              <Button size="xs" fz={15} variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
+                                Assign
+                              </Button>
+                            )}
+                            <Button size="xs" fz={15} variant="default" onClick={() => {
+                              setEditingParticipant(p);
+                              setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "", isDeclaredAdult: !!p.isDeclaredAdult, lastBackgroundCheck: p.lastBackgroundCheck ? p.lastBackgroundCheck.slice(0, 10) : "" });
+                              setEditModalOpen(true);
+                            }}>
+                              Details
                             </Button>
-                          ) : (
-                            <Button size="xs" fz={15} variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
-                              Assign
-                            </Button>
-                          )}
-                          <Button size="xs" fz={15} variant="default" onClick={() => {
-                            setEditingParticipant(p);
-                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "", isDeclaredAdult: !!p.isDeclaredAdult, lastBackgroundCheck: p.lastBackgroundCheck ? p.lastBackgroundCheck.slice(0, 10) : "" });
-                            setEditModalOpen(true);
-                          }}>
-                            Details
-                          </Button>
-                        </Group>
-                      </Table.Td>
+                          </Group>
+                        </Table.Td>
+                      )}
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -340,7 +342,7 @@ export default function AdminParticipantsIndex() {
         </Box>
       </Card>
 
-      {/* Add contact modal (board-only for now) — email-only create, POST /api/membership-ops/contacts */}
+      {/* Add contact modal (board + operations) — email-only create, POST /api/membership-ops/contacts */}
       <Modal opened={addContactOpen} onClose={closeAddContact} title={<Text span fw={700} fz="lg">Add Contact</Text>}>
         <form onSubmit={handleAddContact}>
           <Stack>

@@ -8,11 +8,10 @@ import { normalizeEmail } from "@/lib/prismaEmailNormalize";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
-// Email-only contact creation for Board. Sysadmin is deliberately EXCLUDED
-// (Jeff's decision; same board-only shape as Finance Ops #1083) — do NOT add
-// 'isSysadmin' here. Operations access to this endpoint is granted separately
-// in #1111.
-export const POST = withAuth({ roles: ['isBoardMember'] }, async (req, auth) => {
+// Email-only contact creation for Board + Operations. Sysadmin is deliberately
+// EXCLUDED (Jeff's decision; same board-only shape as Finance Ops #1083) — do
+// NOT add 'isSysadmin' here.
+export const POST = withAuth({ roles: ['isBoardMember', 'isOperations'] }, async (req, auth) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
     try {
         const { name, email } = await req.json();
@@ -27,10 +26,12 @@ export const POST = withAuth({ roles: ['isBoardMember'] }, async (req, auth) => 
             where: { email: normalizeEmail(email) },
             select: { name: true },
         });
-        // Deliberate, not a leak: every caller role here (board) is already
-        // trusted with the full people directory and can look up this same
-        // name+email via people/search. The 409 reveals nothing they can't already
-        // query. Flagged for future audits — do not redact.
+        // Deliberate, not a leak: every caller role here (board + operations) is
+        // already trusted with a people/search view that includes name+email —
+        // board sees the full directory, and ops's stripped view (no background-check
+        // dates, no membership/finance standing) still surfaces name+email for every
+        // record. The 409 reveals nothing either caller couldn't already query.
+        // Flagged for future audits — do not redact.
         if (existing) {
             return NextResponse.json(
                 { error: `This email already belongs to ${existing.name ?? 'an existing account'}`, fields: ["email"] },

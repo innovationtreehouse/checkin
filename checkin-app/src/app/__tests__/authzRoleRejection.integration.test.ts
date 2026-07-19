@@ -226,6 +226,19 @@ describe('Protected-route role rejection', () => {
         });
     });
 
+    // ---- Operations gets the Participants directory (read + membership-ops/
+    // contacts create) only — every edit/rich-create participants endpoint stays
+    // board/sysadmin-only. isOperations must still 403 here (contrast with
+    // membership-ops/contacts, the one endpoint operations DOES clear — see its
+    // own integration suite).
+    const participantsEditRoutes = roleGated.filter((c) => c.name.includes('/membership-ops/participants'));
+    describe.each(participantsEditRoutes)('$name — operations-only is denied', ({ invoke }) => {
+        it('403s an operations-only actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            expect((await invoke()).status).toBe(403);
+        });
+    });
+
     // ---- membership/reviews POST — reviewer PII boundary ----------------------
     // The attestation surface exposes applicant parents' names/emails. Reviewers
     // AND board members (implicit reviewers, canReviewBackgroundChecks) may pass;
