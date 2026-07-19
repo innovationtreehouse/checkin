@@ -104,7 +104,13 @@ export async function processCheckout(
                 }
 
                 if (!confirmForceClose) {
-                    const names = remainingUsers.map(u => u.person.name || u.person.email).join(", ");
+                    // Never render the raw address (tier `pii`) on the kiosk screen (#329):
+                    // fall back to the email local-part, same as getFullAttendance /
+                    // kioskdisplay/certifications.
+                    const names = remainingUsers
+                        .map(u => u.person.name?.trim() || u.person.email?.split("@")[0] || "")
+                        .filter(Boolean)
+                        .join(", ");
                     return apiJson({
                         error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
                         type: "warning" as const
