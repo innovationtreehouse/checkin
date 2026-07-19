@@ -136,6 +136,18 @@ describe('POST /api/membership-ops/contacts', () => {
         const household = await prisma.household.findUnique({ where: { id: created!.householdId! } });
         expect(household?.name).toBe('Ada Lovelace');
 
+        // Pin the route's serialized response shape, not just the DB rows above —
+        // every assertion before this line still passes if the route's nested
+        // `include: { household: { include: { householdMembers } } }` gets reverted
+        // to a bare `include: { household: true }`; the RTL mock is hand-maintained
+        // and can't catch that regression either.
+        expect(data.participant.household.householdMembers).toHaveLength(1);
+        expect(data.participant.household.householdMembers[0]).toMatchObject({
+            id: created!.id,
+            name: 'Ada Lovelace',
+            email: email.toLowerCase(),
+        });
+
         // The board's unclaimed-households surface (and the nav todo-count badge)
         // share this predicate — a shell with an emailed, unclaimed lead must match
         // it with zero new wiring.

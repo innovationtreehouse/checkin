@@ -44,10 +44,10 @@ export default function AdminParticipantsIndex() {
   const router = useRouter();
   // Client-side mirror of the write-verb matrix (UX only — the endpoint is the
   // real guard). canAddContact mirrors POST /api/membership-ops/contacts' role
-  // gate: board-only for now — Operations gets this button in a follow-up PR
-  // once the RBAC rework (the isOperations role) merges. Just reads the
-  // session here (no redirect effect) — the membership-ops layout already
-  // gates the whole section, so a second require-role redirect is redundant.
+  // gate: board-only for now — Operations access to this button is granted
+  // separately in #1111. Just reads the session here (no redirect effect) —
+  // the membership-ops layout already gates the whole section, so a second
+  // require-role redirect is redundant.
   const { data: session } = useSession();
   const canAddContact = !!session?.user?.isBoardMember;
 
