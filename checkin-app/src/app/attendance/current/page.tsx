@@ -24,6 +24,9 @@ type Person = {
   name?: string | null;
   isKeyholder: boolean;
   isSysadmin: boolean;
+  // Server-computed youth classification. The kiosk payload carries this INSTEAD of
+  // dateOfBirth (personal tier); privileged payloads carry both.
+  isYouth?: boolean;
   dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
@@ -76,16 +79,20 @@ function KioskDisplayInner() {
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
+  // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
+  // fall back to the birth date the privileged payload still ships.
+  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth);
+
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
-  const youthList = fullAttendance.filter(v => isYouth(v.participant.dateOfBirth));
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
+  const youthList = fullAttendance.filter(v => visitIsYouth(v));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
-  const householdYouth = limitedHousehold.filter(v => isYouth(v.participant.dateOfBirth));
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
+  const householdYouth = limitedHousehold.filter(v => visitIsYouth(v));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)

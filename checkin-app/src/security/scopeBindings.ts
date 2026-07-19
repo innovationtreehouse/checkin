@@ -35,6 +35,11 @@ export const SCOPE_BINDINGS = {
         their_own: { field: 'id', eqCtx: 'selfId' },
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_program_participants: { field: 'id', inCtx: 'participantIdsInScopePrograms' },
+        // Global front-desk grant, unconditional per row (mirrors TrustedAdult).
+        // Only GET /api/safety/board-contacts grants keyholders:* on Person, and
+        // that route returns board members only. Any future Person view granting
+        // a keyholders:* token is a policy decision, not an inherited one.
+        keyholders: { flag: 'isKeyholder' },
         all_current_visitors: {
             all: [{ flag: 'isKeyholder' }, { field: 'id', inCtx: 'activeVisitorIds' }],
         },

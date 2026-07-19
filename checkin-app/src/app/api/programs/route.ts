@@ -11,6 +11,32 @@ import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
+// Public catalog projection: every Program column whose `/// @sensitivity:` tier
+// is `public` per src/security/generated/classifications.ts, in schema order.
+// Deliberately omits `leadMentorNotificationSettings` (tier `personal`) — GET is
+// anonymous-readable and its rows are shared through a 60s cache, so a bare
+// findMany shipped that column to every signed-out visitor. Keep this in sync
+// with the classifications Program block when columns are added.
+const PUBLIC_PROGRAM_SELECT = {
+    id: true,
+    name: true,
+    leadMentorId: true,
+    startAt: true,
+    endAt: true,
+    phase: true,
+    enrollmentStatus: true,
+    orgMemberOnly: true,
+    minAge: true,
+    maxAge: true,
+    maxParticipants: true,
+    orgMemberPriceCents: true,
+    nonOrgMemberPriceCents: true,
+    shopifyProductId: true,
+    shopifyOrgMemberVariantId: true,
+    shopifyNonOrgMemberVariantId: true,
+    shopifyVariantId: true,
+} as const;
+
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
 // non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
 // so it can't move to withAuth (which 401s anonymous). getOptionalSessionUser
@@ -76,7 +102,8 @@ export async function GET(req: Request) {
         const fetchPrograms = () => prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
             orderBy: { startAt: 'asc' },
-            include: {
+            select: {
+                ...PUBLIC_PROGRAM_SELECT,
                 _count: {
                     select: {
                         participants: { where: { person: LIVE_PERSON } },
@@ -103,6 +130,7 @@ export async function GET(req: Request) {
                 () => prisma.program.findMany({
                     where: andClauses.length > 0 ? { AND: andClauses } : undefined,
                     orderBy: { startAt: 'asc' },
+                    select: PUBLIC_PROGRAM_SELECT,
                 }),
             );
             const counts = await Promise.race([

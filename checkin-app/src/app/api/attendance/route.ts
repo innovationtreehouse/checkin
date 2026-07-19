@@ -52,13 +52,20 @@ export async function GET(req: NextRequest) {
             return apiError("Unauthorized", 401);
         }
 
-        const { attendance, counts, safety } = await getFullAttendance();
+        // The kiosk is an unattended device in a public room and re-broadcasts this
+        // payload into an iframe with a wildcard postMessage target origin
+        // (client/client.py). It gets a display-only roster: no dateOfBirth
+        // (personal), no phone (pii), no emergency contacts (personal) — none of
+        // which it renders. A signed-in keyholder/board/sysadmin still gets the
+        // full payload: that grant is deliberate (registry.ts `keyholders:personal`,
+        // for pickup/emergency lookups) and unchanged here.
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: isKiosk });
 
         // Determine access level
         const isAdmin = isKiosk || user?.isSysadmin || user?.isBoardMember || user?.isKeyholder;
 
         if (isAdmin) {
-            // Full access: return all visits + counts
+            // Full roster access: all visits + counts (kiosk gets the reduced rows above)
             return NextResponse.json({
                 access: "full",
                 attendance,

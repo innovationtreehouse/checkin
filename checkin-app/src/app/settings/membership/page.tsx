@@ -55,7 +55,6 @@ export default function MembershipSettingsPage() {
   // separate save flow — wire it if it grows edits.
   const [initial, setInitial] = useState<Record<string, string> | null>(null);
 
-  const [bulkReminders, setBulkReminders] = useState(false);
   const [confirmOpenRenewalsOpened, { open: openConfirmOpenRenewals, close: closeConfirmOpenRenewals }] = useDisclosure(false);
 
   const [loading, setLoading] = useState(true);
@@ -171,11 +170,7 @@ export default function MembershipSettingsPage() {
     setSaving(true);
     setRenewalNotice(null);
     try {
-      const res = await fetch("/api/settings/membership/bulk-open-renewals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sendReminders: bulkReminders }),
-      });
+      const res = await fetch("/api/settings/membership/bulk-open-renewals", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setRenewalNotice({ text: `Opened ${data.opened} renewal(s); ${data.skipped} already in progress.`, err: false });
       else setRenewalNotice({ text: data.error || "Failed.", err: true });
@@ -364,12 +359,6 @@ export default function MembershipSettingsPage() {
               they renew for the upcoming year. Press this once, after your existing members are
               imported (board or isSysadmin).
             </Text>
-            <Checkbox
-              my="sm"
-              checked={bulkReminders}
-              onChange={(e) => setBulkReminders(e.currentTarget.checked)}
-              label="Also email each household a renewal reminder"
-            />
             {renewalNotice && (
               <Alert mt="md" mb="md" color={renewalNotice.err ? "red" : "green"} variant="light">
                 {renewalNotice.text}

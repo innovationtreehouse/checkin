@@ -12,6 +12,7 @@ export type RegistryUser = {
   isSysadmin?: boolean;
   isBoardMember?: boolean;
   isKeyholder?: boolean;
+  isOperations?: boolean;
   householdLead?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
@@ -28,6 +29,8 @@ const HOUSEHOLD_LEAD: Visible = (u, signedIn) => signedIn && !!u?.householdLead;
 // Program lead mentors only — mirrors the staff "My Programs" nav gate.
 const LEADS_PROGRAM: Visible = (_u, signedIn, counts) => signedIn && leadsAnyProgram(counts);
 const BOARD: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember;
+// Outreach is the one settings/* page operations can also reach (see settings/layout.tsx).
+const BOARD_OR_OPS: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isOperations;
 // Finance Ops is board-only — sysadmin has no access (issue #1083).
 const BOARD_ONLY: Visible = (u) => !!u?.isBoardMember;
 const SYSADMIN: Visible = (u) => !!u?.isSysadmin;
@@ -140,6 +143,7 @@ export const PAGES: PageEntry[] = [
   { href: '/settings/membership', label: 'Membership Settings', section: 'Settings', visible: BOARD },
   { href: '/settings/localization', label: 'Localization', section: 'Settings', visible: SYSADMIN },
   { href: '/settings/email', label: 'Email Settings', section: 'Settings', keywords: 'sender from reply-to identity', visible: BOARD },
+  { href: '/settings/outreach', label: 'Outreach', section: 'Settings', keywords: 'renewal join campaign email template bulk send reminder opening', visible: BOARD_OR_OPS },
   { href: '/settings/shopify-webhook', label: 'Shopify Webhook', section: 'Settings', keywords: 'orders paid delivery test notification signature secret payment', visible: BOARD },
 ];
 
