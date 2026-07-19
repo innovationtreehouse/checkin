@@ -4,28 +4,25 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
+import { handler } from "@/security/handler";
 
-export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
-    async () => {
-        try {
-            const visits = await prisma.visit.findMany({
-                take: 50,
-                orderBy: { arrivedAt: "desc" },
-                include: {
-                    person: {
-                        select: { email: true, name: true, isSysadmin: true, isKeyholder: true },
-                    },
-                },
-            });
+// Registry-governed (GET /api/facility/visits): admission anyRole
+// sysadmin/board; envelope 'visits'. Nested person carries email (pii) —
+// covered by the admin everyones band, and now stripped for any role a
+// future view adds. Same query, same take-50 shape.
+export const GET = handler('GET /api/facility/visits', async () => {
+    const visits = await prisma.visit.findMany({
+        take: 50,
+        orderBy: { arrivedAt: "desc" },
+        include: {
+            person: {
+                select: { email: true, name: true, isSysadmin: true, isKeyholder: true },
+            },
+        },
+    });
 
-            return NextResponse.json({ visits });
-        } catch (error) {
-            logger.error("Fetch visits error:", error);
-            return apiError("Internal Server Error", 500);
-        }
-    }
-);
+    return { Visit: visits };
+});
 
 export const PATCH = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
