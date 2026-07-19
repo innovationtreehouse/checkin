@@ -161,13 +161,7 @@ export function callerHoldsRole(
         case 'isBackgroundCheckReviewer':
             return auth.type === 'session' && auth.user.isBackgroundCheckReviewer;
         case 'isOperations':
-            // SessionUser (types/participant.ts) doesn't declare isOperations yet —
-            // that lands with the roles-foundation PR (which stamps the flag on the
-            // session). This boundary PR adds the role vocabulary alone, ahead of
-            // it; the structural cast reads the flag once it exists without
-            // widening this PR's diff outside src/security/** (isolation-enforced).
-            // Falls back to false (default-deny) until roles-foundation lands.
-            return auth.type === 'session' && !!(auth.user as { isOperations?: boolean }).isOperations;
+            return auth.type === 'session' && auth.user.isOperations;
         case 'certifier':
             return isCertifier(auth);
         case 'householdLead':
