@@ -42,9 +42,7 @@ PATCH /api/events/[id]/rsvp
 GET /api/events/mine
 GET /api/events
 POST /api/events
-GET /api/facility/badges
 GET /api/facility/trends
-GET /api/facility/visits
 PATCH /api/facility/visits
 DELETE /api/facility/visits
 POST /api/finance-ops/membership-payment-plans/refuse
