@@ -1,17 +1,75 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import type { Person } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
+// Fields eligible for a conflict radio: both sides non-null and different.
+// `image` auto-backfills only (never a radio, decision 4) so it's a separate list below.
+const CONFLICT_FIELDS = ['name', 'email', 'phone', 'googleId', 'dateOfBirth'] as const;
+// Single-sided auto-backfill fields (today's semantics) — the 5 conflict fields plus image.
+const AUTO_BACKFILL_FIELDS = [...CONFLICT_FIELDS, 'image'] as const;
+
+/** Thrown when the tombstone CAS loses the race (concurrent/repeat merge) — caught below and mapped to a 409. */
+class AlreadyMergedError extends Error {}
+
+function isEmpty(v: unknown): boolean {
+    return v === null || v === undefined || v === '';
+}
+
+/** True conflict: both sides non-null/non-empty AND different. */
+function valuesConflict(a: unknown, b: unknown): boolean {
+    if (isEmpty(a) || isEmpty(b)) return false;
+    if (a instanceof Date && b instanceof Date) return a.getTime() !== b.getTime();
+    return a !== b;
+}
+
+/**
+ * Build the keeper's `person.update` data from: single-sided auto-backfill,
+ * radio-resolved true conflicts (name/email/phone/googleId/dateOfBirth), and
+ * the newer-date auto-pick for the two compliance dates (never a radio).
+ */
+function resolveKeeperUpdate(
+    keep: Person,
+    merge: Person,
+    choices: Partial<Record<string, 'keep' | 'merge'>>,
+): Record<string, unknown> {
+    const data: Record<string, unknown> = {};
+
+    for (const field of AUTO_BACKFILL_FIELDS) {
+        const keepVal = keep[field];
+        const mergeVal = merge[field];
+        if (field !== 'image' && valuesConflict(keepVal, mergeVal)) {
+            const choice = choices[field] ?? 'keep';
+            if (choice === 'merge') data[field] = mergeVal;
+            // 'keep' -> no write, keeper's existing value stands.
+        } else if (isEmpty(keepVal) && !isEmpty(mergeVal)) {
+            data[field] = mergeVal;
+        }
+    }
+
+    // Compliance dates: always take the newer one. Same human — an older check
+    // is never the right survivor. Never a radio.
+    for (const field of ['lastBackgroundCheck', 'lastWaiverSign'] as const) {
+        const keepVal = keep[field];
+        const mergeVal = merge[field];
+        if (mergeVal != null && (keepVal == null || mergeVal.getTime() > keepVal.getTime())) {
+            data[field] = mergeVal;
+        }
+    }
+
+    return data;
+}
+
 export const POST = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
-            const { keepId, mergeId } = body;
+            const { keepId, mergeId, fieldChoices } = body;
 
             if (!keepId || !mergeId || keepId === mergeId) {
                 return apiError("Invalid participant IDs provided.", 400);
@@ -24,7 +82,10 @@ export const POST = withAuth(
                     programVolunteers: true,
                     rsvps: true,
                     toolStatuses: true,
-                    feePayments: true
+                    feePayments: true,
+                    bgAttestations: true,
+                    corporationLeads: true,
+                    corporationMembers: true,
                 }
             });
 
@@ -36,6 +97,9 @@ export const POST = withAuth(
                     rsvps: true,
                     toolStatuses: true,
                     feePayments: true,
+                    bgAttestations: true,
+                    corporationLeads: true,
+                    corporationMembers: true,
                     household: {
                         include: {
                             householdMembers: true
@@ -48,6 +112,11 @@ export const POST = withAuth(
                 return apiError("Participant(s) not found.", 404);
             }
 
+            // Double-merge / merge-a-tombstone guard — either side, before opening the tx.
+            if (keepParticipant.mergedIntoId != null || mergeParticipant.mergedIntoId != null) {
+                return apiError("Cannot merge: one of these participants has already been merged.", 409);
+            }
+
             const isLead = mergeParticipant.isHouseholdLead;
             const householdOthersCount = mergeParticipant.household?.householdMembers.filter(p => p.id !== mergeId).length || 0;
 
@@ -55,62 +124,91 @@ export const POST = withAuth(
                 return apiError("Cannot merge: the to-be-deleted participant is the lead of a household with other members.", 400);
             }
 
-            await prisma.$transaction(async (tx) => {
-                const updates: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-                const fields = ['googleId', 'email', 'phone', 'name', 'dateOfBirth', 'image', 'lastWaiverSign', 'lastBackgroundCheck'];
-                for (const field of fields) {
-                    const keepVal = keepParticipant[field as keyof typeof keepParticipant];
-                    const mergeVal = mergeParticipant[field as keyof typeof mergeParticipant];
-                    if (!keepVal && mergeVal) {
-                        updates[field] = mergeVal;
-                    }
+            // ---- Server-side fieldChoices validation (recompute conflicts; never trust the client's) ----
+            const rawChoices = (fieldChoices ?? {}) as Record<string, unknown>;
+            if (typeof rawChoices !== 'object' || rawChoices === null || Array.isArray(rawChoices)) {
+                return apiError("Invalid fieldChoices", 400);
+            }
+            const choices: Partial<Record<string, 'keep' | 'merge'>> = {};
+            for (const [key, value] of Object.entries(rawChoices)) {
+                if (!(CONFLICT_FIELDS as readonly string[]).includes(key)) {
+                    return apiError(`Unknown field choice: ${key}`, 400);
                 }
+                if (value !== 'keep' && value !== 'merge') {
+                    return apiError(`Invalid choice for ${key}: must be 'keep' or 'merge'`, 400);
+                }
+                choices[key] = value;
+            }
+            for (const field of CONFLICT_FIELDS) {
+                if (valuesConflict(keepParticipant[field], mergeParticipant[field]) && !choices[field]) {
+                    return apiError(`Choose a value for ${field}`, 400);
+                }
+            }
 
-                // Clear the merged person's unique identity fields FIRST, before
-                // backfilling those same values onto the keeper below. Postgres
-                // checks non-deferrable unique constraints per-statement, so
-                // clearing mergeId's googleId/email in this statement means the
-                // keeper's backfill statement (same values, captured pre-tx) no
-                // longer collides with it. Reordering these two was the fix for
-                // the P2002 that produced the prod 500 (a1).
-                //
-                // householdId stays pointing at the old household: every
-                // participant must belong to a household, and merged-away
-                // records are tombstoned rather than deleted. Leadership is
-                // cleared (a1): the tombstone is no longer a lead of anything.
-                await tx.person.update({
-                    where: { id: mergeId },
+            // ---- Resolve the keeper's final field values, then guard against stranding login ----
+            const keeperUpdateData = resolveKeeperUpdate(keepParticipant, mergeParticipant, choices);
+            const finalEmail = 'email' in keeperUpdateData ? keeperUpdateData.email : keepParticipant.email;
+            const finalGoogleId = 'googleId' in keeperUpdateData ? keeperUpdateData.googleId : keepParticipant.googleId;
+            const hadLoginIdentity = !!(keepParticipant.email || keepParticipant.googleId || mergeParticipant.email || mergeParticipant.googleId);
+            if (hadLoginIdentity && !finalEmail && !finalGoogleId) {
+                return apiError("Merge would strand the login identity: choose a field value that keeps an email or Google account.", 400);
+            }
+
+            await prisma.$transaction(async (tx) => {
+                // 1. Clear tombstone identity first (CAS) — frees the tombstone's unique
+                // email/googleId so the keeper can adopt them below without a P2002.
+                // updateMany (not update) so `mergedIntoId: null` is part of the write:
+                // two concurrent merges targeting the same mergeId race on this row, and
+                // exactly one wins — the loser's count is 0 and its tx rolls back.
+                const cas = await tx.person.updateMany({
+                    where: { id: mergeId, mergedIntoId: null },
                     data: {
+                        mergedIntoId: keepId,
                         googleId: null,
                         email: `merged-${mergeId}@deleted.checkme.in`,
                         phone: null,
-                        name: `${mergeParticipant.name || 'Unknown'} (Merged into ${keepId})`,
                         isHouseholdLead: false,
-                    }
+                        // NOTE: name is NOT mangled — mergedIntoId carries the semantics;
+                        // the UI shows a "merged" badge wherever tombstones surface.
+                    },
                 });
+                if (cas.count !== 1) throw new AlreadyMergedError();
 
-                if (Object.keys(updates).length > 0) {
+                // 2. Apply keeper field choices (computed above, pre-tx).
+                if (Object.keys(keeperUpdateData).length > 0) {
                     await tx.person.update({
                         where: { id: keepId },
-                        data: updates
+                        data: keeperUpdateData
                     });
                 }
 
                 const moved = {
                     visits: 0,
-                    programParticipants: { migrated: 0, deleted: 0 },
-                    programVolunteers: { migrated: 0, deleted: 0 },
-                    rsvps: { migrated: 0, deleted: 0 },
-                    feePayments: { migrated: 0, deleted: 0 },
-                    toolStatuses: { migrated: 0, deleted: 0 },
+                    programParticipants: { migrated: 0, left: 0 },
+                    programVolunteers: { migrated: 0, left: 0 },
+                    rsvps: { migrated: 0, left: 0 },
+                    feePayments: { migrated: 0, left: 0 },
+                    toolStatuses: { migrated: 0, left: 0 },
+                    bgAttestations: { migrated: 0, left: 0 },
+                    corporationLeads: { migrated: 0, left: 0 },
+                    corporationMembers: { migrated: 0, left: 0 },
                 };
 
+                // 3. Move visits, but never create a second open visit on the keeper. If the
+                // keeper already has one open, the tombstone's own open visit (if any) is
+                // LEFT in place — no delete, no fabricated departedAt. finalizeFacilityClose
+                // closes open visits by scan-service regardless of person, so it can't leak.
+                // ponytail: leave-the-row over inventing a departedAt; revisit only if a real
+                // "two humans, one badge, both open" case appears — it can't, same human.
+                const keeperHasOpenVisit = await tx.visit.findFirst({ where: { personId: keepId, departedAt: null }, select: { id: true } });
                 moved.visits = (await tx.visit.updateMany({
-                    where: { personId: mergeId },
+                    where: { personId: mergeId, ...(keeperHasOpenVisit ? { departedAt: { not: null } } : {}) },
                     data: { personId: keepId }
                 })).count;
 
-                // Instead of failing on unique constraints, we migrate manually:
+                // 4. Move the 5 join tables — no deletes. Migrate the non-colliding row;
+                // leave the colliding row on the tombstone (both survive; §3's LIVE_PERSON
+                // filter excludes the tombstone's from every count/roster).
                 for (const pp of mergeParticipant.programParticipants) {
                     if (!keepParticipant.programParticipants.find(k => k.programId === pp.programId)) {
                         await tx.programParticipant.update({
@@ -119,10 +217,7 @@ export const POST = withAuth(
                         });
                         moved.programParticipants.migrated++;
                     } else {
-                        await tx.programParticipant.delete({
-                            where: { programId_personId: { programId: pp.programId, personId: mergeId } }
-                        });
-                        moved.programParticipants.deleted++;
+                        moved.programParticipants.left++;
                     }
                 }
 
@@ -134,10 +229,7 @@ export const POST = withAuth(
                         });
                         moved.programVolunteers.migrated++;
                     } else {
-                        await tx.programVolunteer.delete({
-                            where: { programId_personId: { programId: pv.programId, personId: mergeId } }
-                        });
-                        moved.programVolunteers.deleted++;
+                        moved.programVolunteers.left++;
                     }
                 }
 
@@ -149,10 +241,7 @@ export const POST = withAuth(
                         });
                         moved.rsvps.migrated++;
                     } else {
-                        await tx.rSVP.delete({
-                            where: { eventId_personId: { eventId: rsvp.eventId, personId: mergeId } }
-                        });
-                        moved.rsvps.deleted++;
+                        moved.rsvps.left++;
                     }
                 }
 
@@ -164,10 +253,7 @@ export const POST = withAuth(
                         });
                         moved.feePayments.migrated++;
                     } else {
-                        await tx.feePayment.delete({
-                            where: { feeId_personId: { feeId: fee.feeId, personId: mergeId } }
-                        });
-                        moved.feePayments.deleted++;
+                        moved.feePayments.left++;
                     }
                 }
 
@@ -179,14 +265,68 @@ export const POST = withAuth(
                         });
                         moved.toolStatuses.migrated++;
                     } else {
-                        await tx.toolStatus.delete({
-                            where: { personId_toolId: { toolId: tool.toolId, personId: mergeId } }
-                        });
-                        moved.toolStatuses.deleted++;
+                        moved.toolStatuses.left++;
                     }
                 }
 
-                // ponytail: audit only — undo is unimplemented; merge is still irreversible.
+                // 5. Move the remaining MOVE relations (§4) — single updateMany, no delete.
+                await tx.account.updateMany({ where: { userId: mergeId }, data: { userId: keepId } });
+                // DELIBERATE exception to the no-deletion principle above: sessions are
+                // auth artifacts, not person data, and there's no reason for the keeper
+                // to inherit the tombstone's login session. Deleting forces a re-login
+                // (smaller and safer than moving a session onto a different person mid-use).
+                await tx.session.deleteMany({ where: { userId: mergeId } });
+                await tx.orgMembershipProcess.updateMany({ where: { subjectPersonId: mergeId }, data: { subjectPersonId: keepId } });
+                await tx.program.updateMany({ where: { leadMentorId: mergeId }, data: { leadMentorId: keepId } });
+                await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });
+                await tx.trustedAdult.updateMany({ where: { disclosedById: mergeId }, data: { disclosedById: keepId } });
+
+                // bgAttestations/corporationLeads/corporationMembers carry a unique
+                // constraint on the FK, so a blind updateMany could collide — loop-or-skip
+                // like step 4.
+                const keepAttestProcessIds = new Set(keepParticipant.bgAttestations.map(a => a.processId));
+                for (const att of mergeParticipant.bgAttestations) {
+                    if (!keepAttestProcessIds.has(att.processId)) {
+                        await tx.backgroundCheckAttestation.update({ where: { id: att.id }, data: { reviewerId: keepId } });
+                        moved.bgAttestations.migrated++;
+                    } else {
+                        moved.bgAttestations.left++;
+                    }
+                }
+
+                const keepCorpLeadIds = new Set(keepParticipant.corporationLeads.map(c => c.corporationId));
+                for (const cl of mergeParticipant.corporationLeads) {
+                    if (!keepCorpLeadIds.has(cl.corporationId)) {
+                        await tx.corporationLead.update({
+                            where: { corporationId_personId: { corporationId: cl.corporationId, personId: mergeId } },
+                            data: { personId: keepId }
+                        });
+                        moved.corporationLeads.migrated++;
+                    } else {
+                        moved.corporationLeads.left++;
+                    }
+                }
+
+                const keepCorpMemberIds = new Set(keepParticipant.corporationMembers.map(c => c.corporationId));
+                for (const cm of mergeParticipant.corporationMembers) {
+                    if (!keepCorpMemberIds.has(cm.corporationId)) {
+                        await tx.corporationMember.update({
+                            where: { corporationId_personId: { corporationId: cm.corporationId, personId: mergeId } },
+                            data: { personId: keepId }
+                        });
+                        moved.corporationMembers.migrated++;
+                    } else {
+                        moved.corporationMembers.left++;
+                    }
+                }
+
+                // 6. Household lead guard already ran pre-tx (see above). householdId stays
+                // pointing at the old household: every participant must belong to one, and
+                // merged-away records are tombstoned rather than deleted. Leadership was
+                // cleared in step 1's CAS.
+
+                // 8. Audit — extends the existing oldData capture with fieldChoices + moved
+                // (tallies now migrated/left, not deleted).
                 if (auth.type === 'session') {
                     await tx.auditLog.create({
                         data: {
@@ -211,7 +351,7 @@ export const POST = withAuth(
                                 isHouseholdLead: mergeParticipant.isHouseholdLead,
                                 householdId: mergeParticipant.householdId,
                             },
-                            newData: { keepId, moved },
+                            newData: { keepId, fieldChoices: choices, moved },
                         }
                     });
                 }
@@ -219,6 +359,9 @@ export const POST = withAuth(
 
             return NextResponse.json({ success: true });
         } catch (error: unknown) {
+            if (error instanceof AlreadyMergedError) {
+                return apiError("Cannot merge: this participant has already been merged.", 409);
+            }
             const field = prismaUniqueConflictField(error);
             if (field) {
                 const label = field === 'googleId' ? 'the Google identity'

@@ -8,6 +8,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -250,7 +251,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
             // Find all board members
             const boardMembers = await prisma.person.findMany({
-                where: { isBoardMember: true },
+                where: { isBoardMember: true, ...LIVE_PERSON },
                 select: { email: true, name: true }
             });
 

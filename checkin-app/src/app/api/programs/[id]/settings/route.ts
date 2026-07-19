@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
@@ -62,7 +63,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
                 return apiError("maxParticipants must be a positive integer", 400);
             }
-            const enrolled = await prisma.programParticipant.count({ where: { programId } });
+            const enrolled = await prisma.programParticipant.count({ where: { programId, person: LIVE_PERSON } });
             if (maxParticipants < enrolled) {
                 return apiError(`maxParticipants cannot be set below the current enrollment of ${enrolled}`, 400);
             }

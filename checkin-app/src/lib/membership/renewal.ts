@@ -5,6 +5,7 @@ import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { config } from "@/lib/config";
 import { certifyPaymentPlan, PaymentError } from "./payment";
 import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -314,7 +315,7 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
     if (recheckMonths <= 0) return false;
     const threshold = monthsBefore(boundary, recheckMonths);
     const fresh = await prisma.person.findFirst({
-        where: { householdId, isHouseholdLead: true, lastBackgroundCheck: { gte: threshold } },
+        where: { householdId, isHouseholdLead: true, lastBackgroundCheck: { gte: threshold }, ...LIVE_PERSON },
         select: { id: true },
     });
     return fresh !== null;

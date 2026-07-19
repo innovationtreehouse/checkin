@@ -3,13 +3,14 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     async () => {
         try {
             const members = await prisma.person.findMany({
-                where: { isBoardMember: true },
+                where: { isBoardMember: true, ...LIVE_PERSON },
                 select: { id: true, name: true, phone: true, email: true },
                 orderBy: { name: "asc" },
             });

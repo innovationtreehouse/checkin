@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { personRecordIsActiveOrgMember } from "@/lib/orgMembership";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -18,12 +19,15 @@ export const GET = withAuth(
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
             const people = await prisma.person.findMany({
-                where: q ? {
-                    OR: [
-                        { name: { contains: q, mode: 'insensitive' } },
-                        { email: { contains: q, mode: 'insensitive' } },
-                    ]
-                } : {},
+                where: {
+                    ...LIVE_PERSON,
+                    ...(q ? {
+                        OR: [
+                            { name: { contains: q, mode: 'insensitive' } },
+                            { email: { contains: q, mode: 'insensitive' } },
+                        ]
+                    } : {}),
+                },
                 take: 200,
                 orderBy: { id: 'desc' },
                 include: {
