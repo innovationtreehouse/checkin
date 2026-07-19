@@ -59,9 +59,11 @@ export const GET = withAuth(
             // names, contact info (email/phone), and role pills (isBoardMember etc.
             // are @sensitivity:public org structure, not PII — not stripped). It is
             // denied background-check compliance dates (lastBackgroundCheck),
-            // membership/finance standing (isMember, Household.orgMembership),
             // date of birth, and every non-contact field on a household's OTHER
-            // members (see the explicit householdMembers select above). The
+            // members (see the explicit householdMembers select above). Household
+            // orgMembership (and isMember, derived from it) IS shown to ops: every
+            // field on that row — memberSince/status/isVolunteer — is
+            // @sensitivity:public, so it is standing, not finance detail. The
             // household itself is an explicit projection, not a row spread, so the
             // Household's own home address (line1/line2/city/state/postalCode) and
             // free-text intakeNotes (hardship/medical/family disclosures) reach
@@ -81,15 +83,15 @@ export const GET = withAuth(
                 dateOfBirth: opsOnly ? undefined : p.dateOfBirth,
                 isDeclaredAdult: opsOnly ? undefined : p.isDeclaredAdult,
                 lastBackgroundCheck: opsOnly ? undefined : p.lastBackgroundCheck,
-                isMember: opsOnly ? undefined : personRecordIsActiveOrgMember(p),
+                isMember: personRecordIsActiveOrgMember(p),
                 ...rolesToFlags(p.roles),
                 emailSuppressed: p.emailSuppressed,
                 household: p.household ? {
                     id: p.household.id,
                     name: p.household.name,
                     householdMembers: p.household.householdMembers,
-                    // orgMembership is membership/finance standing — board/sysadmin only.
-                    orgMembership: opsOnly ? undefined : p.household.orgMembership,
+                    // Every OrgMembership field is @sensitivity:public — ops sees it.
+                    orgMembership: p.household.orgMembership,
                 } : null,
             }));
 

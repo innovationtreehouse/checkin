@@ -138,7 +138,7 @@ describe('Sensitive route authorization', () => {
             expect(hit.household.line1).toBeUndefined();
         });
 
-        it('200 for an operations-only actor, with lastBackgroundCheck and orgMembership (finance) stripped', async () => {
+        it('200 for an operations-only actor, with lastBackgroundCheck, dateOfBirth and the household address stripped', async () => {
             mockSession.mockResolvedValue({ user: { id: plainId, isOperations: true } });
             const res = await SearchGet(req(url));
             expect(res.status).toBe(200);
@@ -147,10 +147,12 @@ describe('Sensitive route authorization', () => {
             expect(hit).toBeDefined();
             // Contact info stays — this is still the directory:
             expect(hit.phone).toBe('555-0101');
-            // Background-check compliance dates and membership/finance standing do not:
+            // Membership standing stays too: every OrgMembership field is
+            // @sensitivity:public, and isMember is derived from that same row.
+            expect(hit.isMember).toBe(true);
+            expect(hit.household.orgMembership).toBeTruthy();
+            // Background-check compliance dates and date of birth do not:
             expect(hit.lastBackgroundCheck).toBeUndefined();
-            expect(hit.isMember).toBeUndefined();
-            expect(hit.household.orgMembership).toBeUndefined();
             expect(hit.dateOfBirth).toBeUndefined();
             expect(hit.isDeclaredAdult).toBeUndefined();
             // The household is an explicit projection, not a `...p.household` spread:
