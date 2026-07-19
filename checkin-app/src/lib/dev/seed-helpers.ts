@@ -30,8 +30,8 @@ function yearsAgo(years: number): Date {
 // System bypass: dev seed fixtures are the trusted source of their own grants — there is
 // no requesting user's authority to check, so this always passes actor "system" (the
 // last-board-member guard still applies inside setRoleFlag; only the matrix is skipped).
-function seedRole(prisma: Db, personId: number, flag: RoleFlag): Promise<void> {
-    return setRoleFlag(prisma, { id: personId, roles: [] }, flag, true, "system");
+async function seedRole(prisma: Db, personId: number, flag: RoleFlag): Promise<void> {
+    await setRoleFlag(prisma, personId, flag, true, "system");
 }
 
 // ──────────────────────────────────────────────────────────────────────────

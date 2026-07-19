@@ -47,14 +47,13 @@ export function rolesToFlags(rows: { role: PersonRoleKind }[]): Record<RoleFlag,
 /**
  * Grant or revoke one role flag: writes the `PersonRole` row (truth + grant
  * metadata) AND mirrors the legacy boolean column (if one exists), in one tx.
- * The single dual-write point — every writer routes through this (directly,
- * or via `setRoleFlag` below), so no caller hand-writes both the row and the
- * column.
+ * Private dual-write primitive — `setRoleFlag` is the only caller (it owns
+ * the lock + invariants).
  *
  * Idempotent: granting an already-held role keeps the original grant metadata
  * (upsert's `update` is a no-op) rather than clobbering grantedAt/grantedById.
  */
-export async function applyRoleFlag(
+async function applyRoleFlag(
     db: DbClient,
     personId: number,
     flag: RoleFlag,
@@ -119,21 +118,26 @@ export type RoleActor = { id: number; isBoardMember: boolean; isSysadmin: boolea
  * same transaction already holds is a no-op, so calling this more than once
  * per request (one delta field at a time) is safe.
  *
- * A no-op (flag already at `on`, per `target.roles`) returns without locking,
- * checking, or writing anything.
+ * A no-op (flag already at `on`, per the under-lock read) returns
+ * `{changed:false}` after taking the lock but without writing or auditing.
  */
 export async function setRoleFlag(
     db: DbClient,
-    target: { id: number; roles: { role: PersonRoleKind }[] },
+    personId: number,
     flag: RoleFlag,
     on: boolean,
     actor: RoleActor,
-): Promise<void> {
-    const current = rolesToFlags(target.roles);
-    if (current[flag] === on) return;
-
-    await withTx(db, async (tx) => {
+): Promise<{ changed: boolean; before: boolean; after: boolean }> {
+    return withTx(db, async (tx) => {
+        // Lock the BOARD row set FIRST, then read THIS person's roles under the lock,
+        // so the no-op short-circuit and the returned before/after are consistent with
+        // the write (thpr C: no pre-lock snapshot). ponytail: a no-op now takes the lock
+        // before returning — fine, the board table is a handful of rows.
         await tx.$queryRaw`SELECT "personId" FROM "PersonRole" WHERE "role" = 'BOARD' FOR UPDATE`;
+
+        const rows = await tx.personRole.findMany({ where: { personId }, select: { role: true } });
+        const before = rolesToFlags(rows)[flag];
+        if (before === on) return { changed: false, before, after: before };
 
         if (actor !== "system") {
             if (!actor.isBoardMember) {
@@ -154,6 +158,7 @@ export async function setRoleFlag(
             if (boardCount <= 1) throw new LastBoardMemberError();
         }
 
-        await applyRoleFlag(tx, target.id, flag, on, actor === "system" ? undefined : actor.id);
+        await applyRoleFlag(tx, personId, flag, on, actor === "system" ? undefined : actor.id);
+        return { changed: true, before, after: on };
     });
 }

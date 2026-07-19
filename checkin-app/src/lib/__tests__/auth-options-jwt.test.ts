@@ -248,12 +248,9 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
             // The bootstrap promotion routes through the same write choke point every role
             // grant uses (lib/roles.ts setRoleFlag), passing the "system" actor bypass — not
             // a direct person.update, and not the matrix (there's no requesting user to check).
-            // `target.roles` is the same array reference auth-options pushes the granted
-            // SYSADMIN row onto right after this call (so the same-request sign-in sees it
-            // too) — jest records call args by reference, so that push is visible here too.
             expect(freshSetRoleFlag).toHaveBeenCalledWith(
                 expect.anything(),
-                { id: 7, roles: [{ role: 'BOARD' }, { role: 'KEYHOLDER' }, { role: 'BG_REVIEWER' }, { role: 'SYSADMIN' }] },
+                7,
                 'isSysadmin',
                 true,
                 'system',

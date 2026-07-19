@@ -17,7 +17,6 @@ const PERSON_SELECT = {
     id: true,
     email: true,
     name: true,
-    roles: { select: { role: true } },
 } as const;
 
 /** Thrown inside the tx when `targetUserId` does not resolve to a Person. */
@@ -95,49 +94,40 @@ export const PATCH = withAuth(
                 });
                 if (!target) throw new TargetNotFoundError();
 
-                const currentFlags = rolesToFlags(target.roles);
-
-                // Real delta: only flags whose requested value actually differs from the
-                // target's current value are "changes" — a present flag equal to the
-                // current value is a no-op, not an authz-relevant change.
-                const updateData: Partial<Record<RoleFlag, boolean>> = {};
-                for (const field of ROLE_FLAGS) {
-                    const val = requested[field];
-                    if (val === undefined || val === currentFlags[field]) continue;
-                    updateData[field] = val;
-                }
-
-                if (Object.keys(updateData).length === 0) {
-                    // Every requested flag was already at its current value — nothing to
-                    // change, nothing to audit.
-                    return { user: { id: target.id, email: target.email, name: target.name, ...currentFlags } };
-                }
-
-                // The authority matrix (§4.3), the last-board-member guard, and the FOR
-                // UPDATE lock they need all live in setRoleFlag now — this loop is pure
-                // parsing/dispatch, one call per changed flag.
-                for (const field of Object.keys(updateData) as RoleFlag[]) {
-                    await setRoleFlag(tx, target, field, updateData[field]!, actor);
-                }
-
+                // Delta + audit are built from setRoleFlag's post-lock read, so the
+                // no-op check and the recorded before/after are consistent with the
+                // write (thpr C). One call per requested flag; no-ops report changed:false.
                 const oldData: Partial<Record<RoleFlag, boolean>> = {};
-                for (const field of Object.keys(updateData) as RoleFlag[]) {
-                    oldData[field] = currentFlags[field];
+                const newData: Partial<Record<RoleFlag, boolean>> = {};
+                for (const field of Object.keys(requested) as RoleFlag[]) {
+                    const { changed, before, after } = await setRoleFlag(
+                        tx, targetUserId, field, requested[field]!, actor,
+                    );
+                    if (changed) {
+                        oldData[field] = before;
+                        newData[field] = after;
+                    }
                 }
 
-                await tx.auditLog.create({
-                    data: {
-                        actorId: actor.id,
-                        action: "EDIT",
-                        tableName: "PersonRole",
-                        affectedEntityId: targetUserId,
-                        oldData,
-                        newData: updateData,
-                    },
-                });
+                if (Object.keys(newData).length > 0) {
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: actor.id,
+                            action: "EDIT",
+                            tableName: "PersonRole",
+                            affectedEntityId: targetUserId,
+                            oldData,
+                            newData,
+                        },
+                    });
+                }
 
-                const newFlags = { ...currentFlags, ...updateData };
-                return { user: { id: target.id, email: target.email, name: target.name, ...newFlags } };
+                // Post-write read for the response's full flag set (lock already held).
+                const rows = await tx.personRole.findMany({
+                    where: { personId: targetUserId },
+                    select: { role: true },
+                });
+                return { user: { id: target.id, email: target.email, name: target.name, ...rolesToFlags(rows) } };
             });
 
             return NextResponse.json({ message: "Roles updated successfully", user: result.user });
