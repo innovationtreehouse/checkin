@@ -14,8 +14,8 @@
  * negative-authz pair.
  *
  * Operations access (asSession isOperations, the ops-only edit-endpoint deny
- * suite) arrives in a follow-on PR once the RBAC rework (isOperations role)
- * merges — see that PR's own integration coverage.
+ * suite) is granted separately in #1111 — see that PR's own integration
+ * coverage.
  */
 import { POST } from '@/app/api/membership-ops/contacts/route';
 import prisma from '@/lib/prisma';
