@@ -41,7 +41,7 @@ export default function CreateToolPage() {
       });
 
       if (res.ok) {
-        notifications.show({ color: "green", message: "New tool added successfully!" });
+        notifications.show({ message: "New tool added successfully!" });
         setNewToolName("");
         setNewToolGuide("");
         loadTools();

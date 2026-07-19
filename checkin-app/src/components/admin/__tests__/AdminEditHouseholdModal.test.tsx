@@ -102,7 +102,7 @@ describe("AdminEditHouseholdModal", () => {
       expect.objectContaining({ name: "Smith Fam", line1: "2 Main St", city: "Round Rock", postalCode: "78664" }),
     );
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green" })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Household updated." })));
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ name: "Smith Fam" }));
     expect(onClose).toHaveBeenCalled();
   });
@@ -200,7 +200,7 @@ describe("AdminEditHouseholdModal", () => {
         expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 1 }) }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Lead removed." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Lead removed." })));
 
     // Now down to a single lead: the last remaining Remove-lead button is disabled
     // and the "must keep at least one lead" copy shows.

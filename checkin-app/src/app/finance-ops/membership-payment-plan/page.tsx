@@ -114,7 +114,7 @@ export default function MembershipPaymentPlansPage() {
       if (res.ok) {
         setRequests(prev => prev.filter(r => r.id !== processId));
         notifyNavRefresh();
-        notifications.show({ color: 'green', message: 'Scholarship / payment plan denied.' });
+        notifications.show({ message: 'Scholarship / payment plan denied.' });
       } else {
         const data = await res.json();
         if (res.status === 409) {
@@ -169,7 +169,7 @@ export default function MembershipPaymentPlansPage() {
           <Button size="xs" fz={15} color="red" variant="light" onClick={() => handleDeny(req.id)}>
             Deny
           </Button>
-          <Button size="xs" fz={15} color="green" variant="light" onClick={() => handleApprove(req.id)}>
+          <Button size="xs" fz={15} variant="light" onClick={() => handleApprove(req.id)}>
             Approve &amp; Activate
           </Button>
         </Group>
@@ -216,7 +216,7 @@ export default function MembershipPaymentPlansPage() {
         />
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmApprove}>Cancel</Button>
-          <Button color="green" onClick={confirmApprove} disabled={!reason.trim()}>Approve &amp; Activate</Button>
+          <Button onClick={confirmApprove} disabled={!reason.trim()}>Approve &amp; Activate</Button>
         </Group>
       </Modal>
 

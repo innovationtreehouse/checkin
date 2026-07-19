@@ -244,7 +244,7 @@ export default function AdminParticipantsIndex() {
         </div>
         <Group>
           {isStaff && <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>}
-          {isStaff && <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>}
+          {isStaff && <Button onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>}
           {canAddContact && <Button variant="outline" onClick={() => setAddContactOpen(true)}>+ Add contact</Button>}
         </Group>
       </Group>
@@ -415,7 +415,7 @@ export default function AdminParticipantsIndex() {
             <Group justify="flex-end" mt="lg">
               <Button type="button" variant="default" onClick={closeAssign} disabled={assigning}>Cancel</Button>
               {canSubmitAssign && (
-                <Button type="submit" color="green" disabled={assigning} loading={assigning}>
+                <Button type="submit" disabled={assigning} loading={assigning}>
                   {householdId ? "Add to Household" : (selectedParticipant?.household ? "Pull from household and start a new one" : "Create New Household")}
                 </Button>
               )}

@@ -123,7 +123,7 @@ export function AdminEditHouseholdModal({
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Lead removed." });
+        notifications.show({ message: "Lead removed." });
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -187,7 +187,7 @@ export function AdminEditHouseholdModal({
       });
       if (res.ok) {
         const data = await res.json();
-        notifications.show({ color: "green", message: "Household updated." });
+        notifications.show({ message: "Household updated." });
         onSaved?.(data.household);
         onClose();
       } else {

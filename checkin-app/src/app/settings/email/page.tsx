@@ -90,7 +90,7 @@ export default function EmailSettingsPage() {
           scholarshipNotifyEmail: notify || null,
         }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Email settings saved." }); setUnlocked(false); await load(); }
+      if (res.ok) { notifications.show({ message: "Email settings saved." }); setUnlocked(false); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
@@ -174,7 +174,7 @@ export default function EmailSettingsPage() {
           </Stack>
 
           {saveNotice && (
-            <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">
+            <Alert mt="lg" color={saveNotice.err ? "red" : "treehouseGreen"} variant="light">
               {saveNotice.text}
             </Alert>
           )}

@@ -274,7 +274,7 @@ describe("membership page", () => {
     });
     renderWithProviders(<MembershipPage />);
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Thanks — your signature was received." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Thanks — your signature was received." })));
     expect(window.location.search).toBe("");
   });
 
@@ -290,7 +290,7 @@ describe("membership page", () => {
     });
     renderWithProviders(<MembershipPage />);
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: expect.stringContaining("Signature received — finalizing.") })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("Signature received — finalizing.") })));
   });
 
   it("falls back to a finalizing message when the sync request itself errors", async () => {
@@ -309,7 +309,7 @@ describe("membership page", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     renderWithProviders(<MembershipPage />);
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: expect.stringContaining("Signature received — finalizing.") })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("Signature received — finalizing.") })));
   });
 
   // ── PENDING_PAYMENT dues fetch branches ──────────────────────────────────────

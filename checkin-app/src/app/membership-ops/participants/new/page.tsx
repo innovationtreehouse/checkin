@@ -98,7 +98,7 @@ function NewParticipantForm() {
       const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
-        notifications.show({ color: "green", message: `Participant ${name || data.participant.email || 'created'} successfully!` });
+        notifications.show({ message: `Participant ${name || data.participant.email || 'created'} successfully!` });
         setName("");
         setEmail("");
         setParentEmail("");
@@ -211,7 +211,7 @@ function NewParticipantForm() {
               />
             )}
 
-            <Button type="submit" color="green" disabled={submitDisabled} loading={saving} mt="sm">
+            <Button type="submit" disabled={submitDisabled} loading={saving} mt="sm">
               Create Participant
             </Button>
           </Stack>

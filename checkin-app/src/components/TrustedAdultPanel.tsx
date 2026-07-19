@@ -22,7 +22,7 @@ import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 const STATUS_META: Record<string, { label: string; color: string }> = {
     PENDING_BOARD_REVIEW: { label: "Awaiting board review", color: "yellow" },
     PENDING_SUBJECT_ACTION: { label: "Board needs more info — see email", color: "orange" },
-    APPROVED: { label: "Approved", color: "green" },
+    APPROVED: { label: "Approved", color: "treehouseGreen" },
     DENIED: { label: "Denied", color: "red" },
     EXPIRED: { label: "Expired", color: "gray" },
     REVOKED: { label: "Withdrawn", color: "gray" },

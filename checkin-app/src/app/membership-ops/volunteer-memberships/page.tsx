@@ -61,7 +61,7 @@ export default function VolunteerMembershipsPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNewEmail("");
-        if (data.warning) { flash(data.warning, "warning"); } else { notifications.show({ color: "green", message: "Designation added." }); }
+        if (data.warning) { flash(data.warning, "warning"); } else { notifications.show({ message: "Designation added." }); }
         await load();
       } else flash(data.error || "Could not add.");
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }

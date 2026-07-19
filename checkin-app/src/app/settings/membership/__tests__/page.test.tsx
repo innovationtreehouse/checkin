@@ -54,7 +54,7 @@ describe("MembershipSettingsPage", () => {
     expect(JSON.parse(putOpts!.body as string)).toEqual(expect.objectContaining({ normalDuesCents: 20000 }));
 
     await waitFor(() =>
-      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Settings saved." })),
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Settings saved." })),
     );
   });
 
@@ -98,7 +98,7 @@ describe("MembershipSettingsPage", () => {
     // The extracted id lands in the variant-ID field, with a reminder to Save.
     expect(await screen.findByDisplayValue("789789")).toBeInTheDocument();
     expect(notifications.show).toHaveBeenCalledWith(
-      expect.objectContaining({ color: "green", message: expect.stringMatching(/789789.*Save settings/) }),
+      expect.objectContaining({ message: expect.stringMatching(/789789.*Save settings/) }),
     );
 
     // The normal save persists both the URL and the extracted variant ID.

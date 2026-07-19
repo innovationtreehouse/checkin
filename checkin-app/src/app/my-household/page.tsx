@@ -70,7 +70,7 @@ export default function HouseholdPage() {
   // decided by `message.includes('success')`).
   // Successes toast in the corner (no layout shift); errors/warnings stay in
   // the page banner where they can't be missed.
-  const ok = (text: string) => notifications.show({ color: "green", message: text });
+  const ok = (text: string) => notifications.show({ message: text });
   const err = (text: string) => setMessage({ text, tone: "error" });
   const warn = (text: string) => setMessage({ text, tone: "warning" });
   const [addingHouseholdMember, setAddingHouseholdMember] = useState(false);
@@ -192,7 +192,7 @@ export default function HouseholdPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: editing ? "Emergency contact updated." : "Emergency contact added." });
+        notifications.show({ message: editing ? "Emergency contact updated." : "Emergency contact added." });
         setContactForm(blankContactForm);
         setShowContactForm(false);
         fetchContacts();
@@ -213,7 +213,7 @@ export default function HouseholdPage() {
       const res = await fetch(`/api/household/emergency-contacts/${id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Emergency contact removed." });
+        notifications.show({ message: "Emergency contact removed." });
         fetchContacts();
         notifyNavRefresh();
       } else {
@@ -373,10 +373,10 @@ export default function HouseholdPage() {
                 </Group>
               </Alert>
             ) : household.orgMembership?.status === 'ACTIVE' ? (
-              <Alert color="green" mb="lg">
+              <Alert mb="lg">
                 <Group gap="xs" wrap="wrap">
                   <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getFullYear()}` : ''}</Text>
-                  {household.orgMembership.isVolunteer && <Badge color="green" variant="light">Volunteer-only family</Badge>}
+                  {household.orgMembership.isVolunteer && <Badge variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>
             ) : (
@@ -424,7 +424,7 @@ export default function HouseholdPage() {
                               <Checkbox label="Household Lead" checked={editForm.isLead} onChange={(e) => setEditForm({ ...editForm, isLead: e.currentTarget.checked })} />
                             )}
                             <Group gap="xs">
-                              <Button type="submit" size="xs" fz={15} color="green">Save</Button>
+                              <Button type="submit" size="xs" fz={15}>Save</Button>
                               <Button type="button" size="xs" fz={15} variant="default" onClick={() => { setEditingHouseholdMemberId(null); setEditErrors({}); }}>Cancel</Button>
                             </Group>
                           </Stack>
@@ -480,7 +480,7 @@ export default function HouseholdPage() {
                       <TextInput type="tel" label="Phone (optional)" value={householdMemberForm.phone} error={householdMemberErrors.phone} onChange={(e) => { setHouseholdMemberForm({ ...householdMemberForm, phone: e.currentTarget.value }); setHouseholdMemberErrors({ ...householdMemberErrors, phone: undefined }); }} />
                       <TextInput label="Allergies (optional)" value={householdMemberForm.allergies} onChange={(e) => setHouseholdMemberForm({ ...householdMemberForm, allergies: e.currentTarget.value })} />
                       <Group grow>
-                        <Button type="submit" color="green">Save / Invite</Button>
+                        <Button type="submit">Save / Invite</Button>
                         <Button type="button" variant="default" onClick={() => { setAddingHouseholdMember(false); setHouseholdMemberErrors({}); }}>Cancel</Button>
                       </Group>
                     </Stack>
@@ -514,7 +514,7 @@ export default function HouseholdPage() {
                 onChange={(e) => setNotes(e.currentTarget.value)}
               />
             </Stack>
-            <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} color="green" fullWidth mt="md">
+            <Button onClick={handleSaveSettings} disabled={savingSettings} loading={savingSettings} fullWidth mt="md">
               Save household details
             </Button>
           </Card>
@@ -588,7 +588,7 @@ export default function HouseholdPage() {
                         <TextInput label="Relationship (optional)" value={contactForm.relationship} onChange={(e) => setContactForm({ ...contactForm, relationship: e.currentTarget.value })} placeholder="Aunt, Neighbor…" />
                       </SimpleGrid>
                       <Group gap="xs">
-                        <Button type="submit" size="xs" fz={15} color="green" loading={savingContact}>{contactForm.id !== null ? "Save Contact" : "Add Contact"}</Button>
+                        <Button type="submit" size="xs" fz={15} loading={savingContact}>{contactForm.id !== null ? "Save Contact" : "Add Contact"}</Button>
                         <Button type="button" size="xs" fz={15} variant="default" onClick={() => { setShowContactForm(false); setContactForm(blankContactForm); setContactError(""); setContactErrors({}); }}>Cancel</Button>
                       </Group>
                     </Stack>
