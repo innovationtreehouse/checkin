@@ -3,15 +3,18 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
+import { handler } from "@/security/handler";
 
 export const dynamic = "force-dynamic";
 
 const SELECT = { emailFromAddress: true, emailReplyToAddress: true, scholarshipNotifyEmail: true } as const;
 
-/** GET /api/settings/email — outbound-email sender identity (BoardSettings singleton). */
-export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
+/** GET /api/settings/email — outbound-email sender identity (BoardSettings singleton).
+ *  Registry-governed: admission anyRole sysadmin/board; envelope 'settings'.
+ *  The narrow SELECT stays as defense in depth. */
+export const GET = handler('GET /api/settings/email', async () => {
     const settings = await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1 }, update: {}, select: SELECT });
-    return NextResponse.json({ settings });
+    return { BoardSettings: settings };
 });
 
 /**
