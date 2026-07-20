@@ -20,7 +20,10 @@ import { getServerSession } from 'next-auth/next';
 import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 const TAG = 'trustedadult-api-test';
 const SHARED = 'Grandma may pick up the kids.';

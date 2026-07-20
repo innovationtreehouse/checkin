@@ -41,6 +41,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             phase,
             enrollmentStatus,
             orgMemberOnly,
+            announceOnOpen,
             minAge,
             maxAge,
             maxParticipants,
@@ -77,6 +78,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         if (phase !== undefined) updateData.phase = phase;
         if (enrollmentStatus !== undefined) updateData.enrollmentStatus = enrollmentStatus;
         if (orgMemberOnly !== undefined) updateData.orgMemberOnly = orgMemberOnly;
+        if (announceOnOpen !== undefined) updateData.announceOnOpen = announceOnOpen;
         if (minAge !== undefined) updateData.minAge = minAge;
         if (maxAge !== undefined) updateData.maxAge = maxAge;
         if (maxParticipants !== undefined) updateData.maxParticipants = maxParticipants;

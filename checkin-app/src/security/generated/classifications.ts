@@ -203,6 +203,7 @@ export const classifications = {
         phase: 'public',
         enrollmentStatus: 'public',
         orgMemberOnly: 'public',
+        announceOnOpen: 'public',
         minAge: 'public',
         maxAge: 'public',
         maxParticipants: 'public',

@@ -156,7 +156,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, announceOnOpen, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -179,6 +179,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
             ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
             ...(orgMemberOnly !== undefined && { orgMemberOnly }),
+            ...(announceOnOpen !== undefined && { announceOnOpen }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),
             ...(minAge !== undefined && { minAge }),
@@ -218,7 +219,15 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
         const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
         if (!wasAnnounced && nowAnnounced) {
-            await notifyNewProgramAnnounced(updatedProgram.name);
+            if (updatedProgram.announceOnOpen) {
+                // Fire-and-forget: paced send is ~(recipients/5) seconds — must not block
+                // the PATCH response. notifyNewProgramAnnounced swallows its own errors;
+                // .catch is belt-and-suspenders, matching the best-effort idiom.
+                void notifyNewProgramAnnounced(updatedProgram).catch((e) =>
+                    logger.error("notifyNewProgramAnnounced failed:", e));
+            } else {
+                logger.info(`[announce] Program ${updatedProgram.id} reached UPCOMING+OPEN; announceOnOpen off — skipping.`);
+            }
         }
 
         // Shopify is the source of truth for program capacity (product decision

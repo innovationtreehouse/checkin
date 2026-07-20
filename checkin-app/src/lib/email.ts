@@ -55,3 +55,25 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         return false;
     }
 }
+
+/**
+ * Run async tasks in chunks, pausing `gapMs` between chunks — a crude client-side
+ * rate limiter for provider fan-out (#1154, chunks of 5 @ 1/s). Best-effort: assumes
+ * each task already swallows its own errors (sendEmail resolves false, never rejects),
+ * so nothing is caught here. Order of results matches order of tasks.
+ */
+export async function runPaced<T>(
+    tasks: Array<() => Promise<T>>,
+    chunkSize = 5,
+    gapMs = 1000,
+): Promise<T[]> {
+    const results: T[] = [];
+    for (let i = 0; i < tasks.length; i += chunkSize) {
+        const chunk = tasks.slice(i, i + chunkSize);
+        results.push(...await Promise.all(chunk.map((t) => t())));
+        if (i + chunkSize < tasks.length) {
+            await new Promise((r) => setTimeout(r, gapMs));
+        }
+    }
+    return results;
+}

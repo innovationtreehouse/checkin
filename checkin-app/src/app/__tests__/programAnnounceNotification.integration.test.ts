@@ -19,7 +19,9 @@ jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
 }));
 jest.mock('@/lib/notifications', () => ({
-    notifyNewProgramAnnounced: jest.fn(),
+    // route.ts's fire-without-await edge does `notifyNewProgramAnnounced(...).catch(...)`
+    // (#1154 belt-and-suspenders) — the mock must resolve so `.catch` is defined.
+    notifyNewProgramAnnounced: jest.fn().mockResolvedValue(undefined),
 }));
 
 const PROGRAM_NAME_TAG = 'Announce Notify Test Program';
@@ -70,22 +72,33 @@ describe('New-program announce notification trigger', () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
     });
 
-    it('fires once when a program crosses INTO UPCOMING + OPEN', async () => {
+    it('fires once when a program crosses INTO UPCOMING + OPEN (announceOnOpen: true)', async () => {
         const name = `${PROGRAM_NAME_TAG} cross`;
+        const program = await prisma.program.create({
+            data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
+        });
+
+        const res = await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
+        expect(res.status).toBe(200);
+        expect(mockNotify).toHaveBeenCalledTimes(1);
+        expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ name }));
+    });
+
+    it('does NOT fire when crossing INTO UPCOMING + OPEN with announceOnOpen left at its false default', async () => {
+        const name = `${PROGRAM_NAME_TAG} default-off`;
         const program = await prisma.program.create({
             data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' },
         });
 
         const res = await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
         expect(res.status).toBe(200);
-        expect(mockNotify).toHaveBeenCalledTimes(1);
-        expect(mockNotify).toHaveBeenCalledWith(name);
+        expect(mockNotify).not.toHaveBeenCalled();
     });
 
     it('does NOT re-fire on a later edit while already UPCOMING + OPEN', async () => {
         const name = `${PROGRAM_NAME_TAG} already`;
         const program = await prisma.program.create({
-            data: { name, leadMentorId: leadId, phase: 'UPCOMING', enrollmentStatus: 'OPEN' },
+            data: { name, leadMentorId: leadId, phase: 'UPCOMING', enrollmentStatus: 'OPEN', announceOnOpen: true },
         });
 
         const res = await patch(program.id, { name: `${name} renamed` });
@@ -96,7 +109,7 @@ describe('New-program announce notification trigger', () => {
     it('does NOT fire when only phase flips to UPCOMING (enrollment still CLOSED)', async () => {
         const name = `${PROGRAM_NAME_TAG} phaseonly`;
         const program = await prisma.program.create({
-            data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' },
+            data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
         });
 
         const res = await patch(program.id, { phase: 'UPCOMING' });
@@ -107,7 +120,7 @@ describe('New-program announce notification trigger', () => {
     it('does NOT fire when only enrollment flips to OPEN (phase still PLANNING)', async () => {
         const name = `${PROGRAM_NAME_TAG} enrollonly`;
         const program = await prisma.program.create({
-            data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' },
+            data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
         });
 
         const res = await patch(program.id, { enrollmentStatus: 'OPEN' });

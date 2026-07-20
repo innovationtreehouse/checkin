@@ -17,7 +17,10 @@ import { getServerSession } from 'next-auth/next';
 import { sendEmail } from '@/lib/email';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 const TAG = 'payment-test';
 const WEBHOOK_SECRET = 'shopify-test-secret';

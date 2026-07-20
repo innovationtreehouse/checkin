@@ -139,6 +139,33 @@ describe('Program Settings API Integration Tests', () => {
              expect(data.program.minAge).toBe(15);
         });
 
+        // #1153: the announce toggle is a lead-mentor setting — the existing gate
+        // (line ~28-33) already allows lead mentors, no new role needed.
+        it('should allow the lead mentor to flip announceOnOpen (persists round-trip)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const onReq = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ announceOnOpen: true })
+             });
+             const onRes = await PATCH(onReq as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(onRes.status).toBe(200);
+             const onData = await onRes.json();
+             expect(onData.program.announceOnOpen).toBe(true);
+
+             const persisted = await prisma.program.findUnique({ where: { id: targetProgramId } });
+             expect(persisted?.announceOnOpen).toBe(true);
+
+             const offReq = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 method: 'PATCH',
+                 body: JSON.stringify({ announceOnOpen: false })
+             });
+             const offRes = await PATCH(offReq as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(offRes.status).toBe(200);
+             const offData = await offRes.json();
+             expect(offData.program.announceOnOpen).toBe(false);
+        });
+
         it('should block the lead mentor from reassigning the leadMentorId', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 

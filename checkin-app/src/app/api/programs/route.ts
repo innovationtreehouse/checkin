@@ -26,6 +26,7 @@ const PUBLIC_PROGRAM_SELECT = {
     phase: true,
     enrollmentStatus: true,
     orgMemberOnly: true,
+    announceOnOpen: true,
     minAge: true,
     maxAge: true,
     maxParticipants: true,
