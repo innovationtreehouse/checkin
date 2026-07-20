@@ -9,6 +9,7 @@
 import { GET, PATCH } from '@/app/api/programs/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { ORG_DOMAIN } from '@/lib/config';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -271,6 +272,89 @@ describe('Individual Program API Integration Tests', () => {
              const data = await res.json();
              expect(Array.isArray(data.participants)).toBe(true);
              expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
+        });
+    });
+
+    // ── ops-stg ACCESS GATE regression (the defect that killed the prior staging
+    // design) ─────────────────────────────────────────────────────────────────
+    // GET /api/programs/[id] is registered `authorize: 'public'` (security/registry.ts)
+    // and returns real enrolled participants' names/household/emergency-contact data —
+    // exactly the surface an anonymous `curl` against a copy of PRODUCTION data must
+    // never reach. `authorize: 'public'` unconditionally admits every caller regardless
+    // of session state, so the gate has to be enforced ahead of that check
+    // (resolveAccess in security/access-resolvers.ts), not only in authenticateRequest —
+    // this describe is that regression test, run against the REAL route (handler() ->
+    // registry -> resolveAccess -> stripBag), not a mock of the gate.
+    describe('GET /api/programs/[id] — ops-stg access gate (regression: authorize:"public" must not bypass staging)', () => {
+        const CHECKIN_STAGING_BEFORE = process.env.CHECKIN_STAGING;
+
+        beforeEach(() => {
+            process.env.CHECKIN_STAGING = '1';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_STAGING_BEFORE === undefined) delete process.env.CHECKIN_STAGING;
+            else process.env.CHECKIN_STAGING = CHECKIN_STAGING_BEFORE;
+        });
+
+        it('DENIES an anonymous caller — the regression case for the defect that shipped real minors\' data to curl', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).not.toBe(200);
+            expect(res.status).toBe(401);
+            // Belt-and-suspenders: even if the status assertion above were wrong, the
+            // roster identity must never appear in the body.
+            const text = await res.text();
+            expect(text).not.toContain(ENROLLED_NAME);
+        });
+
+        it('DENIES an authenticated non-org caller with canAccessStaging unset (false)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: 'gmail.com', emailVerified: true, canAccessStaging: false } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('DENIES an authenticated non-org caller whose emailVerified is false, even with the right hd', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: ORG_DOMAIN, emailVerified: false } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('ALLOWS an authenticated non-org caller with canAccessStaging=true (the sysadmin-settable escape hatch)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: 'gmail.com', emailVerified: true, canAccessStaging: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('ALLOWS a verified org member', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: ORG_DOMAIN, emailVerified: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('is inert outside staging (CHECKIN_STAGING unset): the same anonymous request that gets denied above still succeeds', async () => {
+            delete process.env.CHECKIN_STAGING;
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
         });
     });
 
