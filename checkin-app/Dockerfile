@@ -34,6 +34,13 @@ ENV NEXT_PUBLIC_GIT_SHA=${NEXT_PUBLIC_GIT_SHA}
 # "<tag> <sha>" on prod. Empty on dev/local builds -> footer shows the hash alone.
 ARG NEXT_PUBLIC_RELEASE_TAG
 ENV NEXT_PUBLIC_RELEASE_TAG=${NEXT_PUBLIC_RELEASE_TAG}
+# Branch, passed by deploy-dev.yml (main) and deploy-staging.yml (the rel/*
+# branch being deployed) -> footer shows "<branch> <sha>" on those envs. NOT
+# passed by deploy-prod.yml: on prod, github.ref_name IS the tag, so passing it
+# here would just duplicate NEXT_PUBLIC_RELEASE_TAG in the label. Empty on
+# prod/local builds -> footer omits the branch part.
+ARG NEXT_PUBLIC_GIT_BRANCH
+ENV NEXT_PUBLIC_GIT_BRANCH=${NEXT_PUBLIC_GIT_BRANCH}
 # Needed for GitHub to build the image, overwritten by secrets in AWS at run time.
 # (next build imports auth-options.ts, which requires these to exist; the values
 # are never used — every route is dynamic — and never reach the runner stage.)

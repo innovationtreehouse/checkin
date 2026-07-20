@@ -12,19 +12,26 @@ const FULL_SHA =
 // Release tag (e.g. "v1.0.0"), set only by the prod deploy workflow. Empty on
 // dev/local builds -> the footer shows the hash alone.
 const RELEASE_TAG = process.env.NEXT_PUBLIC_RELEASE_TAG;
+// Branch (e.g. "main", "rel/1.2"), set by deploy-dev.yml and deploy-staging.yml.
+// NOT set by deploy-prod.yml (its ref IS the tag — see the Dockerfile comment).
+const GIT_BRANCH = process.env.NEXT_PUBLIC_GIT_BRANCH;
 
 /**
- * Human-facing build label: "<tag> <7-char sha>" on a tagged prod build,
- * the 7-char SHA alone otherwise, or "dev" when unbuilt.
+ * Human-facing build label: "<branch> <tag> <7-char sha>", omitting whichever
+ * of branch/tag are unset, or "dev" when there is no sha at all.
  */
-export function buildLabel(sha: string | undefined | null, tag?: string | null): string {
+export function buildLabel(
+  sha: string | undefined | null,
+  tag?: string | null,
+  branch?: string | null,
+): string {
   if (!sha) return "dev";
   const short = sha.slice(0, 7);
-  return tag ? `${tag} ${short}` : short;
+  return [branch, tag, short].filter(Boolean).join(" ");
 }
 
 export function BuildInfoFooter() {
-  const label = buildLabel(FULL_SHA, RELEASE_TAG);
+  const label = buildLabel(FULL_SHA, RELEASE_TAG, GIT_BRANCH);
   return (
     <Text
       component="div"
