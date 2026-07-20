@@ -7,6 +7,10 @@ on:
   pull_request:
     branches:
       - main
+      # pull_request triggers evaluate against the BASE branch's workflow
+      # file, so this must exist on both main (every future rel/* cut
+      # inherits it) and rel/1.0 (so current release-line PRs get checks).
+      - 'rel/**'
   merge_group:
   # Callable so the prod release flow can RE-RUN the full pipeline (tests + the
   # deploy build/smoke) against the exact released tag before shipping — see
