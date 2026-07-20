@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, unauthorized } from "@/security/handler";
 import { eligibleReviewProcessIds, attest, ReviewError } from "@/lib/membership/review";
+import { parseCheckDate } from "@/lib/membership/bgCheckDate";
 import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ const STATUS_FOR: Record<ReviewError["code"], number> = {
     same_household_applicant: 403,
     same_household_reviewer: 403,
     already_attested: 409,
+    date_mismatch: 409,
 };
 
 /**
@@ -75,7 +77,7 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
 // Board members are implicit reviewers (see canReviewBackgroundChecks); attest() re-checks.
 export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
-    let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean; note?: string };
+    let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean; note?: string; checkDate?: string };
     try {
         body = await req.json();
     } catch {
@@ -88,12 +90,20 @@ export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMemb
     if (body.result === "REJECT" && !note) {
         return apiError("A note explaining the denial is required", 400);
     }
+    const parsed = parseCheckDate(body.checkDate);
+    if ("error" in parsed) return apiError(parsed.error, 400);
     try {
-        const outcome = await attest(auth.user.id, body.processId, { result: body.result, isMarkedVolunteer: body.isMarkedVolunteer, note: note || undefined });
+        const outcome = await attest(auth.user.id, body.processId, { result: body.result, isMarkedVolunteer: body.isMarkedVolunteer, note: note || undefined, checkDate: parsed.date });
         return NextResponse.json({ outcome });
     } catch (error) {
         if (error instanceof ReviewError) {
-            return NextResponse.json({ error: error.message, code: error.code }, { status: STATUS_FOR[error.code] });
+            // date_mismatch carries the date the first reviewer already attested to
+            // (null = as-of-today), so the UI can require the second reviewer to
+            // confirm that exact date.
+            return NextResponse.json(
+                { error: error.message, code: error.code, ...(error.code === "date_mismatch" ? { requiredCheckDate: error.requiredCheckDate ?? null } : {}) },
+                { status: STATUS_FOR[error.code] },
+            );
         }
         logger.error("Attestation error:", error);
         return apiError("Internal Server Error", 500);

@@ -137,6 +137,59 @@ describe('Membership BG review API', () => {
         expect(advance?.actorId).toBe(rev2);
     });
 
+    it('backdated check: BOTH reviewers must attest the same date, and it stamps lastBackgroundCheck to that date', async () => {
+        const proc = await makeApplicantProcess('Backdate');
+
+        // Reviewer 1 attests a past completion date.
+        as(rev1, { isBackgroundCheckReviewer: true });
+        const r1 = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', checkDate: '2026-01-15' }) as never);
+        expect(r1.status).toBe(200);
+
+        // Reviewer 2 approving AS-OF-TODAY (no date) is refused with the required date.
+        as(rev2, { isBackgroundCheckReviewer: true });
+        const noDate = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
+        expect(noDate.status).toBe(409);
+        const mm = await noDate.json();
+        expect(mm.code).toBe('date_mismatch');
+        expect(mm.requiredCheckDate).toBe('2026-01-15');
+
+        // A DIFFERENT date is refused too — the mismatched attempt records no attestation.
+        const wrongDate = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', checkDate: '2026-02-01' }) as never);
+        expect(wrongDate.status).toBe(409);
+
+        // Attesting the SAME date clears the check and stamps THAT date (not today).
+        const ok = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', checkDate: '2026-01-15' }) as never);
+        expect(ok.status).toBe(200);
+        expect((await ok.json()).outcome.status).toBe('PENDING_PAYMENT');
+        const parent = await prisma.person.findFirst({ where: { householdId: proc.householdId, isHouseholdLead: true } });
+        expect(parent?.lastBackgroundCheck?.toISOString().slice(0, 10)).toBe('2026-01-15');
+
+        // The clearance audit records the attested check date.
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: proc.processId } });
+        expect(audits.some((a) => JSON.stringify(normalizeAuditData(a.newData)).includes('"checkDate":"2026-01-15"'))).toBe(true);
+    });
+
+    it('an as-of-today clear (no custom date) stamps today, unchanged behavior', async () => {
+        const proc = await makeApplicantProcess('Today');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
+        as(rev2, { isBackgroundCheckReviewer: true });
+        const ok = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
+        expect(ok.status).toBe(200);
+        const parent = await prisma.person.findFirst({ where: { householdId: proc.householdId, isHouseholdLead: true } });
+        expect(parent?.lastBackgroundCheck?.toISOString().slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+    });
+
+    it('rejects a future check date with 400 before any attestation is recorded', async () => {
+        const proc = await makeApplicantProcess('FutureDate');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        const future = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+        const res = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', checkDate: future }) as never);
+        expect(res.status).toBe(400);
+        const count = await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } });
+        expect(count).toBe(0);
+    });
+
     it('applies volunteer status from a pre-designation (Gmail dot-insensitive), without a checkbox', async () => {
         // Gmail drops dots, so vol.parent... matches the dotless designation. Non-Gmail
         // domains keep dots significant (see volunteerMatch.test.ts) — that's the fix.
