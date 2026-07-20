@@ -4,7 +4,6 @@ import { withAuth, authenticateRequest } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember, isActiveOrgMemberThrough, programCoverageDate } from "@/lib/orgMembership";
-import { notifyNewProgramAnnounced } from "@/lib/notifications";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
@@ -212,14 +211,6 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 newData: updatedProgram
             }
         });
-
-        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
-        // save while already there, and not when only one of the two is set.
-        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
-        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
-        if (!wasAnnounced && nowAnnounced) {
-            await notifyNewProgramAnnounced(updatedProgram.name);
-        }
 
         // Shopify is the source of truth for program capacity (product decision
         // 2026-07-06): cap edits propagate as relative inventory adjustments.
