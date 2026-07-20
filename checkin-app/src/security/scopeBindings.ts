@@ -162,6 +162,17 @@ export const OPT_OUT_PENDING_ROUTE = new Set<string>([
     // served via withAuth on finance-ops/payments; a household-facing "your payment
     // problem" route is plausible later, and that is when this earns a real binding.
     'PaymentException',
+    // Same shape as PaymentException above: the model (ProgramSlackAuth — the
+    // isolated Slack-bot-token table, group-slack-sync PR1) ships schema-only,
+    // fully inert, with no route yet. `programId` makes it isScopable(); its
+    // `updatedAt`/`updatedById` internal-tier fields make it "sensitive" by the
+    // coverage check even though the actual secret (`botToken`) is tier `secret`
+    // and thus never reaches a GET select regardless (security/core.ts's stripper
+    // drops `secret` unconditionally — see spec §9). GET /api/settings/sync-status
+    // is the model's real reader; its registry entry lands in the boundary PR
+    // (spec §7.4/§12 PR3), which is when this earns a real SCOPE_BINDINGS row and
+    // leaves this queue.
+    'ProgramSlackAuth',
 ]);
 
 /**
