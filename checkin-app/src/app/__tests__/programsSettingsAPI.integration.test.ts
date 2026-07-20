@@ -9,10 +9,19 @@
 import { PATCH } from '@/app/api/programs/[id]/settings/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { notifyNewProgramAnnounced } from '@/lib/notifications';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
 }));
+jest.mock('@/lib/notifications', () => ({
+    // The settings route's fire-without-await edge does
+    // `notifyNewProgramAnnounced(...).catch(...)` — the mock must resolve so
+    // `.catch` is defined (a bare jest.fn() returns undefined and throws).
+    notifyNewProgramAnnounced: jest.fn().mockResolvedValue(undefined),
+}));
+
+const mockNotify = notifyNewProgramAnnounced as jest.Mock;
 describe('Program Settings API Integration Tests', () => {
     let adminId: number;
     let leadId: number;
@@ -79,10 +88,11 @@ describe('Program Settings API Integration Tests', () => {
             await prisma.programParticipant.deleteMany({
                 where: { programId: targetProgramId }
             });
-            await prisma.program.deleteMany({
-                where: { id: targetProgramId }
-            });
         }
+        // Covers targetProgramId plus the per-test programs the announce cases create.
+        await prisma.program.deleteMany({
+            where: { name: { contains: 'Settings API Test' } }
+        });
         
         if (existingUserIds.length > 0) {
             await prisma.auditLog.deleteMany({
@@ -272,6 +282,76 @@ describe('Program Settings API Integration Tests', () => {
              });
              const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
              expect(res.status).toBe(400);
+        });
+    });
+
+    // The settings PATCH is the lead-mentor edit surface and accepts phase /
+    // enrollmentStatus / announceOnOpen, so it owns the same announce edge as
+    // programs/[id] PATCH — see programAnnounceNotification.integration.test.ts.
+    describe('announce trigger on PATCH /api/programs/[id]/settings', () => {
+        const patchSettings = async (id: number, body: Record<string, unknown>) => {
+            const req = new Request(`http://localhost:4000/api/programs/${id}/settings`, {
+                method: 'PATCH',
+                body: JSON.stringify(body)
+            });
+            return PATCH(req as unknown as import("next/server").NextRequest, createParams(id) as unknown as never);
+        };
+
+        beforeEach(() => {
+            mockNotify.mockClear();
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+        });
+
+        it('fires once when the settings PATCH crosses INTO UPCOMING + OPEN (announceOnOpen: true)', async () => {
+            const name = 'Settings API Test announce cross';
+            const program = await prisma.program.create({
+                data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
+            });
+
+            const res = await patchSettings(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
+            expect(res.status).toBe(200);
+            expect(mockNotify).toHaveBeenCalledTimes(1);
+            expect(mockNotify).toHaveBeenCalledWith(expect.objectContaining({ name }));
+        });
+
+        it('does NOT fire on the same crossing with announceOnOpen at its false default', async () => {
+            const program = await prisma.program.create({
+                data: { name: 'Settings API Test announce default-off', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' }
+            });
+
+            const res = await patchSettings(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
+            expect(res.status).toBe(200);
+            expect(mockNotify).not.toHaveBeenCalled();
+        });
+
+        it('does NOT re-fire on a later edit while already UPCOMING + OPEN', async () => {
+            const program = await prisma.program.create({
+                data: { name: 'Settings API Test announce already', leadMentorId: leadId, phase: 'UPCOMING', enrollmentStatus: 'OPEN', announceOnOpen: true }
+            });
+
+            const res = await patchSettings(program.id, { name: 'Settings API Test announce already renamed' });
+            expect(res.status).toBe(200);
+            expect(mockNotify).not.toHaveBeenCalled();
+        });
+
+        it('does NOT fire when only phase flips to UPCOMING (enrollment still CLOSED)', async () => {
+            const program = await prisma.program.create({
+                data: { name: 'Settings API Test announce phaseonly', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
+            });
+
+            const res = await patchSettings(program.id, { phase: 'UPCOMING' });
+            expect(res.status).toBe(200);
+            expect(mockNotify).not.toHaveBeenCalled();
+        });
+
+        it('does NOT fire when only enrollment flips to OPEN (phase still PLANNING)', async () => {
+            const program = await prisma.program.create({
+                data: { name: 'Settings API Test announce enrollonly', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
+            });
+
+            const res = await patchSettings(program.id, { enrollmentStatus: 'OPEN' });
+            expect(res.status).toBe(200);
+            expect(mockNotify).not.toHaveBeenCalled();
         });
     });
 });

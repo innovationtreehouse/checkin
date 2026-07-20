@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { notifyNewProgramAnnounced } from "@/lib/notifications";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -110,6 +111,25 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
                 newData: updateData
             }
         });
+
+        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
+        // save while already there, and not when only one of the two is set.
+        // ponytail: duplicated verbatim from programs/[id] PATCH rather than
+        // extracted — a shared helper in @/lib/notifications would need mock
+        // plumbing in every suite that stubs that module, for six lines.
+        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
+        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
+        if (!wasAnnounced && nowAnnounced) {
+            if (updatedProgram.announceOnOpen) {
+                // Fire-and-forget: paced send is ~(recipients/5) seconds — must not block
+                // the PATCH response. notifyNewProgramAnnounced swallows its own errors;
+                // .catch is belt-and-suspenders, matching the best-effort idiom.
+                void notifyNewProgramAnnounced(updatedProgram).catch((e) =>
+                    logger.error("notifyNewProgramAnnounced failed:", e));
+            } else {
+                logger.info(`[announce] Program ${updatedProgram.id} reached UPCOMING+OPEN; announceOnOpen off — skipping.`);
+            }
+        }
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {
