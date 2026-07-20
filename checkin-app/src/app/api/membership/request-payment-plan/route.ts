@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
-import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck } from "@/lib/scholarshipEmails";
+import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck, resolveAckCopy } from "@/lib/scholarshipEmails";
 import { config } from "@/lib/config";
 
 export const POST = withAuth({}, async (req, auth) => {
@@ -61,12 +61,12 @@ export const POST = withAuth({}, async (req, auth) => {
             "Scholarship review-team notify failed (membership request):",
         );
         const recipients = await resolveScholarshipRecipients(householdId);
-        await sendScholarshipAck(
-            recipients,
-            "We received your scholarship / payment-plan request",
-            `<p>Hi — we've received your household's scholarship / payment-plan request for your Treehouse membership dues. `
-            + `The Scholarship Review Team will review it and follow up.</p>`,
-        );
+        const ackSettings = await prisma.boardSettings.findUnique({
+            where: { id: 1 },
+            select: { scholarshipAckSubject: true, scholarshipAckMembershipBody: true },
+        });
+        const ack = resolveAckCopy(ackSettings, "membership");
+        await sendScholarshipAck(recipients, ack.subject, ack.body);
 
         return NextResponse.json({ success: true, process: updated });
     } catch (error) {

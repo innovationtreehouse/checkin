@@ -563,6 +563,23 @@ model BoardSettings {
   /// this is configured).
   /// @sensitivity:internal
   scholarshipNotifyEmail     String?
+  /// Subject line for the scholarship / payment-plan request ACK — the applicant's
+  /// only automatic email (scholarshipEmails.ts). NULL or blank = the default copy
+  /// in lib/scholarshipEmails.ts. Set on Settings → Email, same section as
+  /// scholarshipNotifyEmail. @sensitivity:internal
+  scholarshipAckSubject      String?
+  /// ACK body for a membership-dues request (POST /api/membership/request-payment-plan).
+  /// Plain text: rendered by HTML-escaping then splitting into `<p>` paragraphs — never
+  /// interpreted as HTML (see scholarshipAckProgramBody re: the outreach preview XSS
+  /// history this deliberately avoids). NULL/blank = the default copy.
+  /// @sensitivity:internal
+  scholarshipAckMembershipBody String?
+  /// ACK body for a program request (POST /api/programs/[id]/request-payment-plan).
+  /// Same plain-text rendering as scholarshipAckMembershipBody, plus one token,
+  /// `{{programName}}`. Ignored on the Shopify-seat-hold-failed branch, which always
+  /// sends its own hard-coded operational-incident copy (the subject above still
+  /// applies). NULL/blank = the default copy. @sensitivity:internal
+  scholarshipAckProgramBody String?
   /// Opening-of-renewals campaign template (settings/outreach). Board/sysadmin/ops
   /// editable; four tokens only ({{name}} {{deadline}} {{actionWord}} {{actionLink}}),
   /// validated on save. @sensitivity:internal

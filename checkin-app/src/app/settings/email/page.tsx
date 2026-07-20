@@ -1,17 +1,31 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Button, Card, Center, Checkbox, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Checkbox, Loader, Stack, Text, Textarea, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
 
+// Mirrors the DEFAULT_ACK_* constants in lib/scholarshipEmails.ts, shown here only
+// as placeholder text. Not imported directly: that module pulls in prisma (server-only)
+// at the top level, which a "use client" page must never bundle.
+const DEFAULT_ACK_SUBJECT = "We received your scholarship / payment-plan request";
+const DEFAULT_ACK_MEMBERSHIP_BODY =
+  "Hi — we've received your household's scholarship / payment-plan request for your Treehouse membership dues. "
+  + "The Scholarship Review Team will review it and follow up.";
+const DEFAULT_ACK_PROGRAM_BODY =
+  "Hi — we've received your scholarship / payment-plan request for {{programName}}. "
+  + "The Scholarship Review Team will review it and follow up. Your spot is held while they do.";
+
 interface Settings {
   emailFromAddress: string | null;
   emailReplyToAddress: string | null;
   scholarshipNotifyEmail: string | null;
+  scholarshipAckSubject: string | null;
+  scholarshipAckMembershipBody: string | null;
+  scholarshipAckProgramBody: string | null;
 }
 
 const HEADER_ERROR = 'Enter an email address or "Name <addr@domain>".';
@@ -26,6 +40,9 @@ export default function EmailSettingsPage() {
   const [emailFrom, setEmailFrom] = useState("");
   const [emailReplyTo, setEmailReplyTo] = useState("");
   const [scholarshipNotify, setScholarshipNotify] = useState("");
+  const [ackSubject, setAckSubject] = useState("");
+  const [ackMembershipBody, setAckMembershipBody] = useState("");
+  const [ackProgramBody, setAckProgramBody] = useState("");
   // Once an identity exists, editing is high-stakes (a wrong From on an unverified
   // domain bounces all mail; a wrong Reply-To misroutes replies) — lock behind an
   // explicit unlock, mirroring the membership-year boundary. First-time set is free.
@@ -47,10 +64,16 @@ export default function EmailSettingsPage() {
           emailFrom: settings.emailFromAddress ?? "",
           emailReplyTo: settings.emailReplyToAddress ?? "",
           scholarshipNotify: settings.scholarshipNotifyEmail ?? "",
+          ackSubject: settings.scholarshipAckSubject ?? "",
+          ackMembershipBody: settings.scholarshipAckMembershipBody ?? "",
+          ackProgramBody: settings.scholarshipAckProgramBody ?? "",
         };
         setEmailFrom(snap.emailFrom);
         setEmailReplyTo(snap.emailReplyTo);
         setScholarshipNotify(snap.scholarshipNotify);
+        setAckSubject(snap.ackSubject);
+        setAckMembershipBody(snap.ackMembershipBody);
+        setAckProgramBody(snap.ackProgramBody);
         setInitial(snap);
       }
     } finally {
@@ -88,6 +111,9 @@ export default function EmailSettingsPage() {
           emailFromAddress: emailFrom.trim() || null,
           emailReplyToAddress: emailReplyTo.trim() || null,
           scholarshipNotifyEmail: notify || null,
+          scholarshipAckSubject: ackSubject.trim() || null,
+          scholarshipAckMembershipBody: ackMembershipBody.trim() || null,
+          scholarshipAckProgramBody: ackProgramBody.trim() || null,
         }),
       });
       if (res.ok) { notifications.show({ message: "Email settings saved." }); setUnlocked(false); await load(); }
@@ -96,7 +122,9 @@ export default function EmailSettingsPage() {
     finally { setSaving(false); }
   };
 
-  const isDirty = !!initial && !shallowEqual(initial, { emailFrom, emailReplyTo, scholarshipNotify });
+  const isDirty = !!initial && !shallowEqual(initial, {
+    emailFrom, emailReplyTo, scholarshipNotify, ackSubject, ackMembershipBody, ackProgramBody,
+  });
   useUnsavedGuard(isDirty);
 
   if (authLoading) return <Center mih="60vh"><Loader /></Center>;
@@ -169,6 +197,35 @@ export default function EmailSettingsPage() {
               value={scholarshipNotify}
               error={fieldErrors.scholarshipNotify}
               onChange={(e) => { setScholarshipNotify(e.currentTarget.value); setFieldErrors((f) => ({ ...f, scholarshipNotify: undefined })); }}
+              disabled={locked}
+            />
+            <TextInput
+              label="Scholarship ACK subject"
+              description="Subject line for the applicant's request-received email. Blank = default shown below."
+              placeholder={DEFAULT_ACK_SUBJECT}
+              w={440}
+              value={ackSubject}
+              onChange={(e) => setAckSubject(e.currentTarget.value)}
+              disabled={locked}
+            />
+            <Textarea
+              label="Scholarship ACK body — membership dues request"
+              description="Plain text (blank lines separate paragraphs) — not HTML. Blank = default shown below."
+              placeholder={DEFAULT_ACK_MEMBERSHIP_BODY}
+              minRows={3}
+              autosize
+              value={ackMembershipBody}
+              onChange={(e) => setAckMembershipBody(e.currentTarget.value)}
+              disabled={locked}
+            />
+            <Textarea
+              label="Scholarship ACK body — program request"
+              description={'Plain text (blank lines separate paragraphs) — not HTML. "{{programName}}" is replaced with the program\'s name. Blank = default shown below.'}
+              placeholder={DEFAULT_ACK_PROGRAM_BODY}
+              minRows={3}
+              autosize
+              value={ackProgramBody}
+              onChange={(e) => setAckProgramBody(e.currentTarget.value)}
               disabled={locked}
             />
           </Stack>
