@@ -135,6 +135,8 @@ export const classifications = {
         shopifyPriceSyncedAt: 'internal',
         shopifyReconcileCursorAt: 'internal',
         scholarshipDenialGraceDays: 'public',
+        membersGoogleGroupEmail: 'internal',
+        newsletterGoogleGroupEmail: 'internal',
         updatedAt: 'internal',
     },
     AppSettings: {
@@ -213,6 +215,15 @@ export const classifications = {
         shopifyOrgMemberVariantId: 'public',
         shopifyNonOrgMemberVariantId: 'public',
         shopifyVariantId: 'public',
+        googleGroupEmail: 'internal',
+        slackChannelId: 'internal',
+        slackWorkspaceInviteUrl: 'internal',
+    },
+    ProgramSlackAuth: {
+        programId: 'public',
+        botToken: 'secret',
+        updatedAt: 'internal',
+        updatedById: 'internal',
     },
     ProgramVolunteer: {
         programId: 'public',
@@ -383,6 +394,22 @@ export const classifications = {
         sentAt: 'internal',
         error: 'internal',
     },
+    SyncState: {
+        id: 'public',
+        personId: 'public',
+        targetKind: 'public',
+        targetRef: 'internal',
+        scope: 'public',
+        desired: 'public',
+        applied: 'public',
+        lastAttemptAt: 'internal',
+        error: 'internal',
+        inviteEmailedAt: 'internal',
+        removalWarnedAt: 'internal',
+        reasons: 'internal',
+        createdAt: 'internal',
+        updatedAt: 'internal',
+    },
 } as const;
 
 export const relations = {
@@ -405,6 +432,7 @@ export const relations = {
         rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
+        syncStates: { model: 'SyncState', isList: true },
         trustedAdultRecordsAsAdult: { model: 'TrustedAdult', isList: true },
         trustedAdultsDisclosed: { model: 'TrustedAdult', isList: true },
         trustedAdultReviewsDecided: { model: 'TrustedAdultReview', isList: true },
@@ -474,10 +502,14 @@ export const relations = {
     },
     Program: {
         leadMentor: { model: 'Person', isList: false },
+        slackAuth: { model: 'ProgramSlackAuth', isList: false },
         volunteers: { model: 'ProgramVolunteer', isList: true },
         participants: { model: 'ProgramParticipant', isList: true },
         fees: { model: 'Fee', isList: true },
         events: { model: 'Event', isList: true },
+    },
+    ProgramSlackAuth: {
+        program: { model: 'Program', isList: false },
     },
     ProgramVolunteer: {
         program: { model: 'Program', isList: false },
@@ -539,6 +571,9 @@ export const relations = {
     },
     BulkSendItem: {
         bulkSend: { model: 'BulkSend', isList: false },
+    },
+    SyncState: {
+        person: { model: 'Person', isList: false },
     },
 } as const;
 

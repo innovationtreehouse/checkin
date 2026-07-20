@@ -232,6 +232,19 @@ export const config = {
     // explicit name fails to null, i.e. to doing nothing.
     sReadTriggerFunction: (): string | null => process.env.S_READ_TRIGGER_FUNCTION || null,
 
+    // Google Directory API — domain-wide-delegated service account for Google Group
+    // membership sync (lib/sync/googleGroups.ts). The JSON key (client_email +
+    // private_key) lives in Secrets Manager; absent ⇒ Google group sync is OFF
+    // (mirrors resendApiKey/shopifyRead above).
+    googleDirectorySaKey: (): string | null => process.env.GOOGLE_DIRECTORY_SA_KEY || null,
+    // The Workspace admin the SA impersonates (domain-wide delegation `sub`). An
+    // email, not a secret → plain env. Absent ⇒ Google group sync OFF.
+    googleDirectoryAdminSubject: (): string | null => process.env.GOOGLE_DIRECTORY_ADMIN_SUBJECT || null,
+    // True only when BOTH are set — real Google Directory integration wired. Slack
+    // tokens are per-program in the DB (ProgramSlackAuth), NOT env.
+    googleDirectoryConfigured: (): boolean =>
+        !!(process.env.GOOGLE_DIRECTORY_SA_KEY && process.env.GOOGLE_DIRECTORY_ADMIN_SUBJECT),
+
     // Shopify — Client Credentials Grant integration (see shopify.ts). All three
     // null when unset (integration "off").
     shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,

@@ -157,6 +157,7 @@ model Person {
   rawBadgeLogs        RawBadgeLog[]
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
+  syncStates          SyncState[]
 
   trustedAdultRecordsAsAdult TrustedAdult[]       @relation("TrustedAdultPerson")
   trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
@@ -593,6 +594,12 @@ model BoardSettings {
   /// withdrawal or payment; it never auto-expires).
   /// @sensitivity:public
   scholarshipDenialGraceDays Int?
+  /// Pre-existing "members" Google group email. Membership approval adds; membership
+  /// boundary removes. Null = members-group sync off. @sensitivity:internal
+  membersGoogleGroupEmail    String?
+  /// Pre-existing newsletter Google group email. Membership approval adds; NEVER
+  /// auto-removed (R3). Null = newsletter sync off. @sensitivity:internal
+  newsletterGoogleGroupEmail String?
   /// @sensitivity:internal
   updatedAt                  DateTime  @updatedAt
 }
@@ -850,10 +857,44 @@ model Program {
   /// @sensitivity:public
   shopifyVariantId          String?
 
+  /// Pre-existing Google group email this program's roster syncs with. Pasted by
+  /// an admin; the app manages memberships, never creates the group. Null = program
+  /// Google sync off. @sensitivity:internal
+  googleGroupEmail        String?
+  /// Slack channel id (e.g. "C0123ABCD") active enrollees are invited to. Store the
+  /// ID, not the name — conversations.invite needs the id. Null = program Slack off.
+  /// @sensitivity:internal
+  slackChannelId          String?
+  /// Workspace invite URL emailed once to an enrollee not already in the workspace
+  /// (Slack gap handling, R5). @sensitivity:internal
+  slackWorkspaceInviteUrl String?
+  slackAuth               ProgramSlackAuth?
+
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
   fees         Fee[]
   events       Event[]
+}
+
+/// The Slack bot token for a program's channel, ISOLATED in its own table (never a
+/// column on Program) — see spec §2.2. Every `prisma.program.findUnique/findMany`
+/// without an explicit `select` would otherwise load the secret into memory on
+/// dozens of unrelated code paths; a separate table means a caller must explicitly
+/// JOIN to ever touch it. Also lets a future read-only DB consumer exclude this one
+/// table (`REVOKE SELECT`) rather than needing a column-level revoke on the hot
+/// Program table — see the migration's defensive REVOKE (§2.5/§9).
+model ProgramSlackAuth {
+  /// @sensitivity:public
+  programId    Int      @id
+  program      Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  /// Per-program Slack bot token (xoxb-…). WRITE-ONLY at every layer: never in a
+  /// GET select, never returned to a client (secret tier is always stripped —
+  /// security/core.ts:251), audited on change. @sensitivity:secret
+  botToken     String
+  /// @sensitivity:internal
+  updatedAt    DateTime @updatedAt
+  /// @sensitivity:internal
+  updatedById  Int?
 }
 
 model ProgramVolunteer {
@@ -1331,4 +1372,66 @@ model BulkSendItem {
   error      String?
 
   @@index([bulkSendId, status])
+}
+
+enum SyncTargetKind {
+  google_group   // program group OR members group; add + remove
+  slack_channel  // program channel; add + warn-then-remove (see SyncState.removalWarnedAt)
+  newsletter     // newsletter group; add-only, NEVER removed
+}
+
+/// Applied-state cache + error/retry record + invite-sent ledger for the Google
+/// Groups / Slack membership sync — NOT the source of truth for "who should be
+/// synced" (that's computed live each reconcile by lib/sync/desired.ts). One row
+/// per person per target per scope; the nightly reconcile diffs desired-vs-applied
+/// off this table and upserts it. See spec §2.4 / §0.
+model SyncState {
+  /// @sensitivity:public
+  id              Int            @id @default(autoincrement())
+  /// @sensitivity:public
+  personId        Int
+  person          Person         @relation(fields: [personId], references: [id])
+  /// @sensitivity:public
+  targetKind      SyncTargetKind
+  /// Group email (google_group/newsletter) or Slack channel id (slack_channel).
+  /// @sensitivity:internal
+  targetRef       String
+  /// "program:<id>" or "org". @sensitivity:public
+  scope           String
+  /// Recomputed each reconcile; desired = at least one live reason. @sensitivity:public
+  desired         Boolean        @default(false)
+  /// True once the external ADD/REMOVE landed (or was tolerated as 409/404).
+  /// @sensitivity:public
+  applied         Boolean        @default(false)
+  /// @sensitivity:internal
+  lastAttemptAt   DateTime?
+  /// Last external error (null on success). Drives the ops status view + retries.
+  /// @sensitivity:internal
+  error           String?
+  /// Slack gap handling: set once when the workspace invite link was emailed for
+  /// this (program, person). Never re-sent unless an admin resets it (clears this).
+  /// @sensitivity:internal
+  inviteEmailedAt DateTime?
+  /// Slack warn-then-remove (A2): set once a boundary-triggered removal warning
+  /// email has been sent for a `slack_channel` row that is `applied && !desired`.
+  /// The actual `conversations.kick` fires 7 days after this timestamp. Cleared
+  /// (set back to null) if `desired` flips true again before the kick fires —
+  /// re-enrollment cancels a pending removal. google_group/newsletter never set
+  /// this (Google removal stays immediate; newsletter is never removed).
+  /// @sensitivity:internal
+  removalWarnedAt DateTime?
+  /// Provenance snapshot from the last reconcile — the live reason tokens that made
+  /// this row desired (e.g. ["own_enrollment:program:12","minor_enrollment:program:12:person:88"]).
+  /// For the status view + debugging only; NOT the source of truth (desired is
+  /// recomputed from live data each run). @sensitivity:internal
+  reasons         Json           @default("[]")
+  /// @sensitivity:internal
+  createdAt       DateTime       @default(now())
+  /// @sensitivity:internal
+  updatedAt       DateTime       @updatedAt
+
+  // One row per person per target per scope — the diff/upsert key.
+  @@unique([personId, targetKind, targetRef, scope])
+  @@index([error])
+  @@index([desired, applied])
 }
