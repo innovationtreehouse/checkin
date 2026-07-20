@@ -488,6 +488,12 @@ model BackgroundCheckAttestation {
   note            String?
   /// @sensitivity:internal
   isMarkedVolunteer Boolean           @default(false)
+  /// The check-completion date this reviewer attests to. Null = "as of today"
+  /// (the check is stamped at clearance time). When a reviewer backdates via the
+  /// review UI, BOTH reviewers' attestations must carry the SAME date — the
+  /// second reviewer attests to the first's proposed date (see review.ts › attest).
+  /// @sensitivity:internal
+  proposedCheckDate DateTime?
   /// @sensitivity:public
   createdAt       DateTime          @default(now())
 

@@ -12,6 +12,7 @@ import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest"
 import { type DbClient, type TxClient } from "@/lib/db-client";
 import { awaitingBgReview } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { attestedDay, sameAttestedDay } from "@/lib/membership/bgCheckDate";
 
 /**
  * Background-check review — now a PARALLEL track, not a blocking phase.
@@ -58,8 +59,13 @@ export class ReviewError extends Error {
             | "wrong_phase"
             | "same_household_applicant"
             | "same_household_reviewer"
-            | "already_attested",
+            | "already_attested"
+            | "date_mismatch",
         message: string,
+        // date_mismatch only: the date the FIRST reviewer already attested to (ISO
+        // "YYYY-MM-DD"), or null when they attested "as of today". The API surfaces
+        // it so the second reviewer's UI can require them to attest to the SAME date.
+        public readonly requiredCheckDate?: string | null,
     ) {
         super(message);
         this.name = "ReviewError";
@@ -196,8 +202,11 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
 export async function attest(
     reviewerId: number,
     processId: number,
-    input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean; note?: string },
+    input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean; note?: string; checkDate?: Date | null },
 ) {
+    // The completion date this reviewer attests to (null = as-of-today). Only an
+    // APPROVE carries one; a REJECT never backdates anything.
+    const attestedDate = input.result === "APPROVE" ? (input.checkDate ?? null) : null;
     const reviewer = await loadReviewer(reviewerId);
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
 
@@ -224,8 +233,29 @@ export async function attest(
         if (process.attestations.some((a) => a.reviewerId === reviewerId)) throw new ReviewError("already_attested", "You have already reviewed this application.");
         if (process.attestations.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
 
+        // Both reviewers must attest to the SAME completion date. When a prior
+        // APPROVE exists (this attestation is the clearing one), the incoming date
+        // must match it — the second reviewer attests to the first's proposed date,
+        // not a date of their own. A mismatch is refused with the required date so
+        // the UI can walk the second reviewer through confirming it. (An awaiting
+        // process only ever holds APPROVE attestations — any REJECT has already
+        // moved it to BLOCKED — so the first APPROVE is the one to match.)
+        if (input.result === "APPROVE") {
+            const priorApprove = process.attestations.find((a) => a.result === "APPROVE");
+            if (priorApprove && !sameAttestedDay(attestedDate, priorApprove.proposedCheckDate)) {
+                const required = attestedDay(priorApprove.proposedCheckDate);
+                throw new ReviewError(
+                    "date_mismatch",
+                    required
+                        ? `The first reviewer attested this check was completed on ${required}. You must attest to that same date.`
+                        : "The first reviewer attested this check as of today. To approve, attest as of today too (turn off the custom date).",
+                    required,
+                );
+            }
+        }
+
         await tx.backgroundCheckAttestation.create({
-            data: { processId, reviewerId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer, note: input.note ?? null },
+            data: { processId, reviewerId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer, note: input.note ?? null, proposedCheckDate: attestedDate },
         });
 
         if (input.result === "REJECT") {
@@ -281,15 +311,24 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
     });
     if (!process) throw new ReviewError("not_found", "Application not found.");
 
+    // The completion date the reviewers attested to. attest() guarantees both
+    // APPROVE attestations carry the SAME proposedCheckDate, so any non-null one is
+    // the agreed date; null everywhere = "as of today" (clearance time), the
+    // pre-feature behavior. bgClearedAt/stageEnteredAt stay `now` — the CLEARANCE
+    // happened now; only the check's own date is backdated. A board force-clear
+    // (overrideBlocked) with no reviewer date falls through to `now` too.
+    const checkDate =
+        process.attestations.find((a) => a.result === "APPROVE" && a.proposedCheckDate)?.proposedCheckDate ?? new Date();
+
     // PERSON_BG: subject-scoped. Stamp ONLY the subject person and resolve — there is
     // no household membership to activate/pay, so skip the payment/activation
     // convergence entirely, and do NOT touch the household-lead blanket stamp (that's
     // the household path below, whose lead-stamp change is Phase 5).
     if (process.subjectPersonId) {
         const now = new Date();
-        await tx.person.update({ where: { id: process.subjectPersonId }, data: { lastBackgroundCheck: now } });
+        await tx.person.update({ where: { id: process.subjectPersonId }, data: { lastBackgroundCheck: checkDate } });
         await tx.orgMembershipProcess.update({ where: { id: processId }, data: { bgClearedAt: now, status: "ACTIVE", stageEnteredAt: now } });
-        await audit(tx, actorId, processId, { status: process.status }, { status: "ACTIVE", bgCleared: true, subjectPersonId: process.subjectPersonId });
+        await audit(tx, actorId, processId, { status: process.status }, { status: "ACTIVE", bgCleared: true, subjectPersonId: process.subjectPersonId, checkDate: attestedDay(checkDate) });
         return { activated: false, householdId: null, isInitial: false };
     }
 
@@ -300,9 +339,11 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
     const now = new Date();
     const paid = !!process.paidAt;
 
-    // Stamp the guardians' (household leads') lastBackgroundCheck. Expiry is derived from this
-    // plus BoardSettings.bgRecheckMonths at read time (see householdBgIsFresh) — not stored.
-    await tx.person.updateMany({ where: { householdId, isHouseholdLead: true }, data: { lastBackgroundCheck: now } });
+    // Stamp the guardians' (household leads') lastBackgroundCheck with the attested
+    // completion date (checkDate above; `now` unless backdated). Expiry is derived
+    // from this plus BoardSettings.bgRecheckMonths at read time (see householdBgIsFresh)
+    // — not stored — so a backdated check correctly expires earlier.
+    await tx.person.updateMany({ where: { householdId, isHouseholdLead: true }, data: { lastBackgroundCheck: checkDate } });
     await applyVolunteerStatus(tx, process.orgMembershipId!, householdId, process.attestations.some((a) => a.isMarkedVolunteer));
 
     await tx.orgMembershipProcess.update({
@@ -313,7 +354,7 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
         await tx.orgMembership.update({ where: { id: process.orgMembershipId! }, data: { status: "ACTIVE" } });
     }
 
-    await audit(tx, actorId, processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true });
+    await audit(tx, actorId, processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true, checkDate: attestedDay(checkDate) });
     return { activated: paid, householdId, isInitial: process.kind === "INITIAL" };
 }
 

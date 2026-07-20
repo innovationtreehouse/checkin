@@ -104,6 +104,7 @@ export const classifications = {
         result: 'internal',
         note: 'internal',
         isMarkedVolunteer: 'internal',
+        proposedCheckDate: 'internal',
         createdAt: 'public',
     },
     VolunteerDesignation: {
