@@ -128,6 +128,117 @@ describe('middleware org gate is inert outside dev', () => {
 });
 
 /**
+ * ops-stg ACCESS GATE (pages surface). ops-stg runs a scrubbed copy of PRODUCTION data
+ * behind PROD's Google OAuth client, deliberately unrestricted to the org workspace, so
+ * ANY Google account can complete sign-in — canAccessStaging is the sysadmin-settable
+ * escape hatch for an explicitly-admitted outside collaborator. Unlike the dev-instance
+ * gate above, a failing caller is bounced to the bare /access-denied page, not /signin.
+ * This is only ONE of three surfaces the gate covers — see authenticateRequest
+ * (lib/auth.ts) and resolveAccess (security/access-resolvers.ts) for the API surfaces,
+ * which this middleware's matcher can never reach (see the matcher describe below).
+ */
+describe('middleware ops-stg access gate', () => {
+    const ORIGINAL_STAGING = process.env.CHECKIN_STAGING;
+    beforeEach(() => { process.env.CHECKIN_STAGING = '1'; });
+    afterEach(() => {
+        if (ORIGINAL_STAGING === undefined) delete process.env.CHECKIN_STAGING;
+        else process.env.CHECKIN_STAGING = ORIGINAL_STAGING;
+    });
+
+    type Res = { kind: string; location: string | null };
+
+    it('redirects an anonymous visitor to /access-denied (never next(), never /signin)', async () => {
+        mockToken(null);
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('redirect');
+        expect(res.location).toBe('http://localhost:4000/access-denied');
+    });
+
+    it('lets a verified org member through', async () => {
+        mockToken({ hd: ORG_DOMAIN, emailVerified: true });
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('next');
+    });
+
+    it('redirects an authenticated non-org caller with canAccessStaging unset (false) to /access-denied', async () => {
+        mockToken({ hd: 'gmail.com', emailVerified: true, canAccessStaging: false });
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('redirect');
+        expect(res.location).toBe('http://localhost:4000/access-denied');
+    });
+
+    it('lets an authenticated non-org caller through when canAccessStaging is true', async () => {
+        mockToken({ hd: 'gmail.com', emailVerified: true, canAccessStaging: true });
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('next');
+    });
+
+    it('redirects an org email whose emailVerified is false, even with canAccessStaging unset', async () => {
+        mockToken({ hd: ORG_DOMAIN, emailVerified: false });
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('redirect');
+        expect(res.location).toBe('http://localhost:4000/access-denied');
+    });
+
+    it('does not loop — a caller already on /access-denied is let through', async () => {
+        mockToken(null);
+
+        const res = await middleware(reqFor('/access-denied')) as unknown as Res;
+
+        expect(res.kind).toBe('next');
+    });
+
+    it('a DENIED household is redirected to /access-denied even with canAccessStaging true (the household gate runs first)', async () => {
+        mockToken({ denied: true, canAccessStaging: true });
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('redirect');
+        expect(res.location).toBe('http://localhost:4000/access-denied');
+    });
+});
+
+/**
+ * The staging branch is a SEPARATE fuse (CHECKIN_STAGING) from CHECKIN_ENV — it must stay
+ * inert whenever CHECKIN_STAGING is unset, regardless of CHECKIN_ENV, or every prod/dev/local
+ * deploy would suddenly start enforcing the staging predicate.
+ */
+describe('middleware ops-stg gate is inert outside staging', () => {
+    const ORIGINAL_STAGING = process.env.CHECKIN_STAGING;
+    const ORIGINAL_ENV = process.env.CHECKIN_ENV;
+    beforeEach(() => {
+        delete process.env.CHECKIN_STAGING;
+        // Isolate from the ambient CHECKIN_ENV=dev jest.setup.js sets globally — this
+        // describe is specifically about the CHECKIN_STAGING fuse, not the dev gate
+        // (covered separately above), so pin CHECKIN_ENV=prod to rule the dev gate out.
+        process.env.CHECKIN_ENV = 'prod';
+    });
+    afterEach(() => {
+        if (ORIGINAL_STAGING === undefined) delete process.env.CHECKIN_STAGING;
+        else process.env.CHECKIN_STAGING = ORIGINAL_STAGING;
+        process.env.CHECKIN_ENV = ORIGINAL_ENV;
+    });
+
+    it('lets a non-org anonymous visitor through in prod when CHECKIN_STAGING is unset', async () => {
+        mockToken(null);
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as { kind: string };
+
+        expect(res.kind).toBe('next');
+    });
+});
+
+/**
  * The matcher — not the function body — is what exempts /api from the gate. Next applies it
  * before invoking middleware(), so assert the regex itself: API/signin/static excluded,
  * real page routes included.

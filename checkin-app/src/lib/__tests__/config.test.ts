@@ -1,10 +1,10 @@
-import { config, ORG_DOMAIN, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET, DEV_MOCK_WEBHOOK_SECRET } from "@/lib/config";
+import { config, ORG_DOMAIN, isStagingAccessAllowed, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET, DEV_MOCK_WEBHOOK_SECRET } from "@/lib/config";
 
 const ENV_KEYS = [
     "DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
     "KIOSK_PUBLIC_KEY", "RESEND_API_KEY", "EMAIL_FROM", "AVERITY_CONSENT_URL", "ZOHO_WEBHOOK_SECRET",
     "AWS_REGION", "AGREEMENT_PDF_S3_BUCKET", "AGREEMENT_PDF_S3_KEY", "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET",
-    "ZOHO_REFRESH_TOKEN", "ZOHO_ACCOUNTS_URL", "ZOHO_SIGN_API", "CHECKIN_ENV", "VERCEL_URL", "NODE_ENV",
+    "ZOHO_REFRESH_TOKEN", "ZOHO_ACCOUNTS_URL", "ZOHO_SIGN_API", "CHECKIN_ENV", "CHECKIN_STAGING", "VERCEL_URL", "NODE_ENV",
     "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_WEBHOOK_SECRET",
     "SHOPIFY_READ_DATABASE_URL", "SHOPIFY_READ_DB",
 ];
@@ -99,6 +99,97 @@ describe("checkinEnv / isProd / isDevInstance / isLocal / devToolsActive", () =>
         } finally {
             Object.defineProperty(process.env, "NODE_ENV", { value: original, configurable: true });
         }
+    });
+});
+
+describe("isStaging — a separate fuse from CheckinEnv", () => {
+    it("false when unset", () => {
+        delete process.env.CHECKIN_STAGING;
+        expect(config.isStaging()).toBe(false);
+    });
+    it("true only for the exact string '1'", () => {
+        process.env.CHECKIN_STAGING = "1";
+        expect(config.isStaging()).toBe(true);
+    });
+    it("false for any other value, including a stray 'false' or 'true' string (explicit '1', not a truthy-string check)", () => {
+        process.env.CHECKIN_STAGING = "false";
+        expect(config.isStaging()).toBe(false);
+        process.env.CHECKIN_STAGING = "true";
+        expect(config.isStaging()).toBe(false);
+        process.env.CHECKIN_STAGING = "0";
+        expect(config.isStaging()).toBe(false);
+    });
+    it("is independent of CHECKIN_ENV — 'stg' still fails safe to prod on checkinEnv() while isStaging() is true", () => {
+        process.env.CHECKIN_ENV = "stg";
+        process.env.CHECKIN_STAGING = "1";
+        expect(config.checkinEnv()).toBe("prod");
+        expect(config.isProd()).toBe(true);
+        expect(config.isStaging()).toBe(true);
+    });
+
+    // 2026-07-20 hardening: CHECKIN_STAGING alone fails OPEN on a missing/blank/
+    // malformed value (unlike readCheckinEnv, which fails safe to prod) — derive
+    // it too, from the host NEXTAUTH_URL points at (can't be forgotten, or OAuth
+    // callbacks break).
+    describe("derived from config.baseUrl() as a second signal (CHECKIN_STAGING unset)", () => {
+        beforeEach(() => {
+            delete process.env.CHECKIN_STAGING;
+            delete process.env.VERCEL_URL;
+        });
+
+        it("true when NEXTAUTH_URL's host starts with 'ops-stg.'", () => {
+            process.env.NEXTAUTH_URL = "https://ops-stg.innovationtreehouse.org";
+            expect(config.isStaging()).toBe(true);
+        });
+
+        it("false for a similarly-named but different host (e.g. prod's 'ops.')", () => {
+            process.env.NEXTAUTH_URL = "https://ops.innovationtreehouse.org";
+            expect(config.isStaging()).toBe(false);
+        });
+
+        it("false for the localhost default", () => {
+            delete process.env.NEXTAUTH_URL;
+            expect(config.isStaging()).toBe(false);
+        });
+
+        it("does not throw on an unparsable NEXTAUTH_URL — fails closed to false", () => {
+            process.env.NEXTAUTH_URL = "not a url";
+            expect(() => config.isStaging()).not.toThrow();
+            expect(config.isStaging()).toBe(false);
+        });
+
+        it("CHECKIN_STAGING=1 still wins even if the host does not match", () => {
+            process.env.NEXTAUTH_URL = "https://checkin.example.org";
+            process.env.CHECKIN_STAGING = "1";
+            expect(config.isStaging()).toBe(true);
+        });
+    });
+});
+
+describe("isStagingAccessAllowed — the ops-stg gate predicate", () => {
+    it("denies null/undefined claims (no token, anonymous caller)", () => {
+        expect(isStagingAccessAllowed(null)).toBe(false);
+        expect(isStagingAccessAllowed(undefined)).toBe(false);
+    });
+    it("denies an empty claims object", () => {
+        expect(isStagingAccessAllowed({})).toBe(false);
+    });
+    it("allows a verified org member", () => {
+        expect(isStagingAccessAllowed({ hd: ORG_DOMAIN, emailVerified: true })).toBe(true);
+    });
+    it("denies the right hd without emailVerified", () => {
+        expect(isStagingAccessAllowed({ hd: ORG_DOMAIN, emailVerified: false })).toBe(false);
+        expect(isStagingAccessAllowed({ hd: ORG_DOMAIN })).toBe(false);
+    });
+    it("denies emailVerified=true with the wrong hd", () => {
+        expect(isStagingAccessAllowed({ hd: "gmail.com", emailVerified: true })).toBe(false);
+    });
+    it("allows canAccessStaging=true regardless of hd/emailVerified", () => {
+        expect(isStagingAccessAllowed({ canAccessStaging: true })).toBe(true);
+        expect(isStagingAccessAllowed({ hd: "gmail.com", emailVerified: false, canAccessStaging: true })).toBe(true);
+    });
+    it("denies canAccessStaging=false with no org claims", () => {
+        expect(isStagingAccessAllowed({ canAccessStaging: false })).toBe(false);
     });
 });
 

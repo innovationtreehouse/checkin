@@ -30,6 +30,69 @@ function readCheckinEnv(): CheckinEnv {
     return value === 'dev' || value === 'local' ? value : 'prod';
 }
 
+/**
+ * True on the ops-stg staging environment — a SEPARATE fuse from CheckinEnv,
+ * not a third CheckinEnv value. ops-stg deploys with CHECKIN_ENV=stg, which
+ * readCheckinEnv() deliberately falls back to 'prod' for (it's unrecognized),
+ * keeping every mock (Zoho/Shopify/background-check) off and persona-mint
+ * unregistered — see readCheckinEnv above. Adding 'staging' to the CheckinEnv
+ * union would flip every `readCheckinEnv() !== 'prod'` mock gate ON in
+ * staging, which is the opposite of what a prod-data copy needs.
+ *
+ * CHECKIN_STAGING is read as an explicit '1', not a truthy-string check, so a
+ * stray `CHECKIN_STAGING=false` in some env file can't accidentally engage
+ * the gate's staging branch — this flag only ever widens the surface that
+ * runs a stricter check (isStagingAccessAllowed below), so failing to '0'
+ * (inert) rather than '1' (gate active) on any ambiguous value is the safe
+ * default.
+ *
+ * Derived as well as declared (2026-07-20 hardening): unlike readCheckinEnv,
+ * which fails SAFE to prod for any unset/unrecognized value, a missing, blank,
+ * or malformed CHECKIN_STAGING (a forgotten task-def entry, a trailing space,
+ * "true" instead of "1") fails this predicate OPEN — the gate goes inert
+ * exactly when it matters most. So this is not the only signal: the ops-stg
+ * host (config.baseUrl(), sourced from NEXTAUTH_URL) is a second, independent
+ * one that can't be silently forgotten the way an extra env var can — Google
+ * OAuth callbacks don't work without NEXTAUTH_URL pointed at the real host, so
+ * it is set correctly by construction, not by a task-def author remembering a
+ * second variable.
+ */
+function isStagingEnv(): boolean {
+    if (process.env.CHECKIN_STAGING === '1') return true;
+    try {
+        return new URL(config.baseUrl()).hostname.startsWith('ops-stg.');
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * ops-stg trust-boundary predicate (see docs on the staging access gate).
+ * ops-stg runs a scrubbed copy of PRODUCTION data behind PROD's Google OAuth
+ * client, deliberately NOT restricted to the org Google Workspace (a
+ * sysadmin-settable exception must be able to admit an outside collaborator).
+ * That means any Google account on the internet can complete sign-in and
+ * NextAuth auto-creates a Person row for them — this predicate is the ONLY
+ * thing standing between that stranger and copied prod data, so it is applied
+ * at all three surfaces that can serve a response: middleware (pages),
+ * authenticateRequest (the API auth chokepoint), and resolveAccess (the
+ * `authorize: 'public'` path, which reaches authenticateRequest but does not
+ * gate on its result by default).
+ *
+ * Fails closed: missing/undefined claims (no token, anonymous caller, a
+ * caller whose claims didn't decode) deny.
+ */
+export type StagingGateClaims = {
+    hd?: string | null;
+    emailVerified?: boolean;
+    canAccessStaging?: boolean;
+};
+
+export function isStagingAccessAllowed(claims: StagingGateClaims | null | undefined): boolean {
+    if (!claims) return false;
+    return (claims.hd === ORG_DOMAIN && claims.emailVerified === true) || claims.canAccessStaging === true;
+}
+
 /** True only when all three Zoho OAuth secrets are present. */
 function zohoConfiguredEnv(): boolean {
     return !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
@@ -271,6 +334,9 @@ export const config = {
     devToolsActive: (): boolean => readCheckinEnv() !== 'prod',
     // True only on a developer laptop. Gates offline credential login + keyless kiosk.
     isLocal: (): boolean => readCheckinEnv() === 'local',
+    // True on ops-stg. A separate fuse from CheckinEnv (see isStagingEnv) — gates the
+    // access gate's staging branch (middleware/authenticateRequest/resolveAccess).
+    isStaging: (): boolean => isStagingEnv(),
     baseUrl: (): string => {
         if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
         return process.env.NEXTAUTH_URL || 'http://localhost:4000';

@@ -403,4 +403,39 @@ describe('getOrCreateContractSigningUrl', () => {
 
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'agreement_unavailable' });
     });
+
+    // ops-stg: CHECKIN_ENV=stg falls back to 'prod' (readCheckinEnv), so config.isProd()
+    // alone would call ops-stg's signing flow "prod" and skip the watermark/prefix the
+    // moment a real Zoho credential is ever wired to staging to rehearse signing —
+    // producing a document indistinguishable from a binding prod agreement. isStaging()
+    // must override isProd() here regardless.
+    it('ops-stg (CHECKIN_STAGING=1, isProd()=true via the CHECKIN_ENV=stg fallback): watermark + [DEV TEST] prefix still applied', async () => {
+        const prevStaging = process.env.CHECKIN_STAGING;
+        process.env.CHECKIN_STAGING = '1';
+        try {
+            config.isProd.mockReturnValue(true); // the stg->'prod' fallback (readCheckinEnv)
+            prisma.person.findUnique.mockResolvedValue(leadUser);
+            zohoSign.getAccessToken.mockResolvedValue('token-1');
+            const rawPdf = Buffer.from('raw-agreement');
+            const watermarkedPdf = Buffer.from('watermarked-agreement');
+            loadAgreementPdf.mockResolvedValue({ pdf: rawPdf, lastPageNo: 1, pageWidth: 1, pageHeight: 1 });
+            stampWatermark.mockResolvedValue(watermarkedPdf);
+            zohoSign.createRequest.mockResolvedValue({ requestId: 'req-stg', actionId: 'act-stg', documentId: 'doc-stg' });
+            zohoSign.submitRequest.mockResolvedValue(undefined);
+            zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-stg');
+
+            await getOrCreateContractSigningUrl(1);
+
+            expect(stampWatermark).toHaveBeenCalledWith(rawPdf, 'DEV TEST — NOT A LEGAL AGREEMENT');
+            expect(zohoSign.createRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    pdf: watermarkedPdf,
+                    requestName: expect.stringContaining('[DEV TEST — NOT BINDING] '),
+                }),
+            );
+        } finally {
+            if (prevStaging === undefined) delete process.env.CHECKIN_STAGING;
+            else process.env.CHECKIN_STAGING = prevStaging;
+        }
+    });
 });
