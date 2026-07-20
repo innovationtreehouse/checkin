@@ -20,7 +20,15 @@ interface ScrollableTabsListProps extends TabsListProps {
 export function ScrollableTabsList({ children, style, mb, ...props }: ScrollableTabsListProps) {
   return (
     <ScrollArea type="auto" scrollbarSize={6} mb={mb}>
-      <Tabs.List style={{ flexWrap: "nowrap", ...style }} {...props}>
+      {/*
+        min-width: max-content is what actually makes this scroll. nowrap alone only
+        stops wrapping — the flex row still shrinks to the ScrollArea's width, and the
+        first thing to collapse is the count Badge, whose `overflow: hidden` zeroes its
+        automatic minimum size (labels have `white-space: nowrap` and keep their
+        min-content floor). That rendered the tab pills as empty capsules below ~1150px
+        (#1155). With max-content the row overflows and the ScrollArea scrolls instead.
+      */}
+      <Tabs.List style={{ flexWrap: "nowrap", minWidth: "max-content", ...style }} {...props}>
         {children}
       </Tabs.List>
     </ScrollArea>
