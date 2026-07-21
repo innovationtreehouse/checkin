@@ -106,6 +106,9 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ github.event.release.tag_name }}
+          # Full history + tags for `git describe` below (see deploy-dev.yml's
+          # note: a shallow clone degrades describe to a bare SHA silently).
+          fetch-depth: 0
 
       - name: Resolve released commit
         id: vars
@@ -116,6 +119,11 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
           echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          # On a release this normally reads "<tag>-0-g<sha>" — the -0- is the
+          # point: it proves the deployed commit IS the tag, not a descendant.
+          DESCRIBE=$(git describe --tags --long --abbrev=7 --always)
+          echo "describe=$DESCRIBE" >> "$GITHUB_OUTPUT"
+          echo "build describe: $DESCRIBE"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -144,6 +152,7 @@ jobs:
           # deploy-dev.yml (the release-scrub found this job would die here).
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_GIT_DESCRIBE="${{ steps.vars.outputs.describe }}" \
             --build-arg NEXT_PUBLIC_RELEASE_TAG="${{ steps.vars.outputs.tag }}" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
