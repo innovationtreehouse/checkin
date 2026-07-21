@@ -183,7 +183,7 @@ Product-owner decision — **design to these; do not relitigate the names or sha
 
 - **Membership Year** = **Sept 1 – Aug 31** (policy); `membershipYearBoundary` stays configurable by design.
 - **Single facility** — check-in happens only at the one Treehouse Facility; multi-location is not on the roadmap (`RawBadgeLog.location` free-text is fine).
-- **Integration vendors** — **Averity** (background check; aka "VERITY"), **Zoho** (e-sign / import), **Shopify** (payment).
+- **Integration vendors** — **Averity** (background check; aka "VERITY"), **Zoho** (e-sign), **Shopify** (payment).
 - **Treehouse Card** — any corporate/business/debit/credit card opened on the Treehouse EIN (reserved for future financial rules).
 
 ## Coding conventions
