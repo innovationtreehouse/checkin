@@ -178,11 +178,11 @@ describe("resolveAccess 'kiosk'", () => {
  * BEFORE the `authorize` switch, for every authorize value, not only session-gated ones.
  */
 describe("resolveAccess — ops-stg access gate (checked ahead of every `authorize` branch)", () => {
-    const ORIGINAL_STAGING = process.env.CHECKIN_STAGING;
-    beforeEach(() => { process.env.CHECKIN_STAGING = '1'; });
+    const ORIGINAL_ENV = process.env.CHECKIN_ENV;
+    beforeEach(() => { process.env.CHECKIN_ENV = 'stg'; });
     afterEach(() => {
-        if (ORIGINAL_STAGING === undefined) delete process.env.CHECKIN_STAGING;
-        else process.env.CHECKIN_STAGING = ORIGINAL_STAGING;
+        if (ORIGINAL_ENV === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = ORIGINAL_ENV;
     });
 
     const orgMember = (): AuthResult => ({
@@ -232,8 +232,8 @@ describe("resolveAccess — ops-stg access gate (checked ahead of every `authori
         expect((await resolveAccess('program-lead-mentor', rctx(admin, { id: '5' }))).allowed).toBe(false);
     });
 
-    test('is inert outside staging: the same anonymous public request is allowed once CHECKIN_STAGING is unset', async () => {
-        delete process.env.CHECKIN_STAGING;
+    test('is inert outside staging: the same anonymous public request is allowed once CHECKIN_ENV is not stg', async () => {
+        process.env.CHECKIN_ENV = 'prod';
         expect((await resolveAccess('public', rctx({ type: 'unauthenticated' }))).allowed).toBe(true);
     });
 });

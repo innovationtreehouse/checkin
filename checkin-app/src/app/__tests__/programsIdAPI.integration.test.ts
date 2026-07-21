@@ -286,15 +286,15 @@ describe('Individual Program API Integration Tests', () => {
     // this describe is that regression test, run against the REAL route (handler() ->
     // registry -> resolveAccess -> stripBag), not a mock of the gate.
     describe('GET /api/programs/[id] — ops-stg access gate (regression: authorize:"public" must not bypass staging)', () => {
-        const CHECKIN_STAGING_BEFORE = process.env.CHECKIN_STAGING;
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
 
         beforeEach(() => {
-            process.env.CHECKIN_STAGING = '1';
+            process.env.CHECKIN_ENV = 'stg';
         });
 
         afterAll(() => {
-            if (CHECKIN_STAGING_BEFORE === undefined) delete process.env.CHECKIN_STAGING;
-            else process.env.CHECKIN_STAGING = CHECKIN_STAGING_BEFORE;
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
         });
 
         it('DENIES an anonymous caller — the regression case for the defect that shipped real minors\' data to curl', async () => {
@@ -347,8 +347,8 @@ describe('Individual Program API Integration Tests', () => {
             expect(res.status).toBe(200);
         });
 
-        it('is inert outside staging (CHECKIN_STAGING unset): the same anonymous request that gets denied above still succeeds', async () => {
-            delete process.env.CHECKIN_STAGING;
+        it('is inert outside staging (CHECKIN_ENV not stg): the same anonymous request that gets denied above still succeeds', async () => {
+            process.env.CHECKIN_ENV = 'prod';
             (getServerSession as jest.Mock).mockResolvedValue(null);
 
             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
