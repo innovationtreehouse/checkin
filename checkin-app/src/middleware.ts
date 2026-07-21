@@ -14,10 +14,13 @@ import { config as appConfig, isStagingAccessAllowed, ORG_DOMAIN } from '@/lib/c
  * In `prod` and `local` the gate is inert (public surfaces stay public; local work needs no Google).
  *
  * On ops-stg (isStaging()) the predicate is the same verified-org-member check, OR'd with
- * canAccessStaging (the sysadmin-settable escape hatch) — but a failing caller is bounced to
- * the bare /access-denied page, not /signin: ops-stg runs a scrubbed copy of PRODUCTION data
- * behind PROD's Google OAuth client, deliberately unrestricted to the org workspace, so ANY
- * Google account can complete sign-in. This is only ONE of three surfaces the gate covers —
+ * canAccessStaging (the sysadmin-settable escape hatch). An AUTHENTICATED caller who fails it
+ * is bounced to the bare /access-denied page, not /signin: ops-stg runs a scrubbed copy of
+ * PRODUCTION data behind PROD's Google OAuth client, deliberately unrestricted to the org
+ * workspace, so ANY Google account can complete sign-in and re-prompting login would only
+ * loop a stranger through Google to the same wall. An ANONYMOUS caller still goes to /signin,
+ * like the dev gate — otherwise an org member who hasn't logged in yet dead-ends on a page
+ * that deliberately carries no sign-in affordance. This is only ONE of three surfaces the gate covers —
  * see isStagingAccessAllowed's callers in lib/auth.ts (authenticateRequest, the API chokepoint)
  * and security/access-resolvers.ts (resolveAccess, the `authorize: 'public'` path this
  * middleware's matcher can never reach because /api is exempt below).
@@ -50,6 +53,22 @@ export async function middleware(req: NextRequest) {
         // explicit canAccessStaging revocation takes effect immediately there.
         if (isStagingAccessAllowed(token)) {
             return NextResponse.next();
+        }
+        // Split by AUTHENTICATION, not authorization. An anonymous caller gets the
+        // login screen exactly like the dev gate below: /access-denied is by product
+        // decision a bare wall with no sign-in affordance (it is also the DENIED-
+        // household landing screen, which must not offer one), so an org member who
+        // simply hasn't logged in yet would otherwise dead-end there with no way
+        // forward but hand-typing /signin.
+        //
+        // Safe because signing in grants nothing by itself: the same
+        // isStagingAccessAllowed predicate re-runs on the way back, so a stranger who
+        // completes Google login lands on /access-denied then — with a token, so this
+        // branch doesn't retry and there is no loop.
+        if (!token) {
+            const signInUrl = new URL('/signin', req.url);
+            signInUrl.searchParams.set('callbackUrl', req.nextUrl.pathname + req.nextUrl.search);
+            return NextResponse.redirect(signInUrl);
         }
         return NextResponse.redirect(new URL('/access-denied', req.url));
     }

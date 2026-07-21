@@ -132,7 +132,11 @@ describe('middleware org gate is inert outside dev', () => {
  * behind PROD's Google OAuth client, deliberately unrestricted to the org workspace, so
  * ANY Google account can complete sign-in — canAccessStaging is the sysadmin-settable
  * escape hatch for an explicitly-admitted outside collaborator. Unlike the dev-instance
- * gate above, a failing caller is bounced to the bare /access-denied page, not /signin.
+ * gate above, an AUTHENTICATED caller who fails the predicate is bounced to the bare
+ * /access-denied page, not /signin — re-prompting login would only loop a stranger
+ * through Google to the same wall. An ANONYMOUS caller does go to /signin, like the dev
+ * gate: /access-denied deliberately carries no sign-in affordance (it is also the
+ * DENIED-household screen), so an org member who hasn't logged in yet would dead-end.
  * This is only ONE of three surfaces the gate covers — see authenticateRequest
  * (lib/auth.ts) and resolveAccess (security/access-resolvers.ts) for the API surfaces,
  * which this middleware's matcher can never reach (see the matcher describe below).
@@ -149,8 +153,33 @@ describe('middleware ops-stg access gate', () => {
 
     type Res = { kind: string; location: string | null };
 
-    it('redirects an anonymous visitor to /access-denied (never next(), never /signin)', async () => {
+    it('sends an ANONYMOUS visitor to /signin with a callbackUrl (never next()) — /access-denied has no sign-in affordance', async () => {
         mockToken(null);
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('redirect');
+        expect(res.location).toBe(
+            'http://localhost:4000/signin?callbackUrl=%2Fmembership-ops%2Fhouseholds',
+        );
+    });
+
+    it('does not loop: the caller returning from sign-in still fails the predicate and lands on /access-denied', async () => {
+        // The stranger case the /signin redirect above must not turn into a cycle —
+        // any Google account can complete sign-in on ops-stg, so the caller comes back
+        // WITH a token, which takes the authenticated branch instead of /signin again.
+        mockToken({ hd: 'gmail.com', emailVerified: true });
+
+        const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
+
+        expect(res.kind).toBe('redirect');
+        expect(res.location).toBe('http://localhost:4000/access-denied');
+    });
+
+    it('still sends a DENIED household to /access-denied, not /signin, even with no staging access', async () => {
+        // The denial gate runs before the staging block, so a denied session must not
+        // be offered a login round-trip by the anonymous branch.
+        mockToken({ denied: true });
 
         const res = await middleware(reqFor('/membership-ops/households')) as unknown as Res;
 
