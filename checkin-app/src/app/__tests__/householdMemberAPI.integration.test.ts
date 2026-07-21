@@ -190,7 +190,7 @@ describe('Household Member API Integration Tests', () => {
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
-                where: { actorId: testLeadId, action: 'EDIT', tableName: 'Participant', affectedEntityId: testMemberId }
+                where: { actorId: testLeadId, action: 'EDIT', tableName: 'Person', affectedEntityId: testMemberId }
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });
