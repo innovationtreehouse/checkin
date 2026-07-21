@@ -221,15 +221,15 @@ describe('General Attendance API Integration Tests', () => {
     // isAdmin, and get the full roster + safety data even after the ops-stg gate
     // rejected the caller's session.
     describe('GET /api/attendance — ops-stg access gate', () => {
-        const CHECKIN_STAGING_BEFORE = process.env.CHECKIN_STAGING;
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
 
         beforeEach(() => {
-            process.env.CHECKIN_STAGING = '1';
+            process.env.CHECKIN_ENV = 'stg';
         });
 
         afterAll(() => {
-            if (CHECKIN_STAGING_BEFORE === undefined) delete process.env.CHECKIN_STAGING;
-            else process.env.CHECKIN_STAGING = CHECKIN_STAGING_BEFORE;
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
         });
 
         it('DENIES a caller presenting a VALID kiosk signature — the regression case for Finding 2', async () => {
@@ -285,8 +285,8 @@ describe('General Attendance API Integration Tests', () => {
             expect(res.status).toBe(401);
         });
 
-        it('is inert outside staging: the SAME valid-kiosk-signature request that was denied above succeeds once CHECKIN_STAGING is unset', async () => {
-            delete process.env.CHECKIN_STAGING;
+        it('is inert outside staging: the SAME valid-kiosk-signature request that was denied above succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
             (getServerSession as jest.Mock).mockResolvedValue(null);
             (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
             (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });

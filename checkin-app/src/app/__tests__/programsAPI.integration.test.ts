@@ -178,15 +178,15 @@ describe('Programs API Integration Tests', () => {
     // check an anonymous curl would read the full prod-copied catalog (names,
     // dates, prices, Shopify ids, live enrollment counts) straight through.
     describe('GET /api/programs — ops-stg access gate', () => {
-        const CHECKIN_STAGING_BEFORE = process.env.CHECKIN_STAGING;
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
 
         beforeEach(() => {
-            process.env.CHECKIN_STAGING = '1';
+            process.env.CHECKIN_ENV = 'stg';
         });
 
         afterAll(() => {
-            if (CHECKIN_STAGING_BEFORE === undefined) delete process.env.CHECKIN_STAGING;
-            else process.env.CHECKIN_STAGING = CHECKIN_STAGING_BEFORE;
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
         });
 
         it('DENIES an anonymous caller — the regression case for Finding 1', async () => {
@@ -223,8 +223,8 @@ describe('Programs API Integration Tests', () => {
             expect(res.status).toBe(401);
         });
 
-        it('is inert outside staging: the same anonymous request succeeds once CHECKIN_STAGING is unset', async () => {
-            delete process.env.CHECKIN_STAGING;
+        it('is inert outside staging: the same anonymous request succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
             (getServerSession as jest.Mock).mockResolvedValue(null);
 
             const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });

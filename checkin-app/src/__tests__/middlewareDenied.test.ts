@@ -138,11 +138,13 @@ describe('middleware org gate is inert outside dev', () => {
  * which this middleware's matcher can never reach (see the matcher describe below).
  */
 describe('middleware ops-stg access gate', () => {
-    const ORIGINAL_STAGING = process.env.CHECKIN_STAGING;
-    beforeEach(() => { process.env.CHECKIN_STAGING = '1'; });
+    // CHECKIN_ENV=stg is the sole staging signal; it also collapses checkinEnv() to
+    // 'prod', so the dev gate below can't confound these staging assertions.
+    const ORIGINAL_ENV = process.env.CHECKIN_ENV;
+    beforeEach(() => { process.env.CHECKIN_ENV = 'stg'; });
     afterEach(() => {
-        if (ORIGINAL_STAGING === undefined) delete process.env.CHECKIN_STAGING;
-        else process.env.CHECKIN_STAGING = ORIGINAL_STAGING;
+        if (ORIGINAL_ENV === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = ORIGINAL_ENV;
     });
 
     type Res = { kind: string; location: string | null };
@@ -209,27 +211,21 @@ describe('middleware ops-stg access gate', () => {
 });
 
 /**
- * The staging branch is a SEPARATE fuse (CHECKIN_STAGING) from CHECKIN_ENV — it must stay
- * inert whenever CHECKIN_STAGING is unset, regardless of CHECKIN_ENV, or every prod/dev/local
- * deploy would suddenly start enforcing the staging predicate.
+ * The staging gate keys off CHECKIN_ENV=stg — it must stay inert for every other
+ * CHECKIN_ENV (prod/dev/local), or those deploys would suddenly start enforcing the
+ * staging predicate. (The dev-instance gate is covered separately above.)
  */
 describe('middleware ops-stg gate is inert outside staging', () => {
-    const ORIGINAL_STAGING = process.env.CHECKIN_STAGING;
     const ORIGINAL_ENV = process.env.CHECKIN_ENV;
-    beforeEach(() => {
-        delete process.env.CHECKIN_STAGING;
-        // Isolate from the ambient CHECKIN_ENV=dev jest.setup.js sets globally — this
-        // describe is specifically about the CHECKIN_STAGING fuse, not the dev gate
-        // (covered separately above), so pin CHECKIN_ENV=prod to rule the dev gate out.
-        process.env.CHECKIN_ENV = 'prod';
-    });
+    // Pin CHECKIN_ENV=prod: not 'stg' (staging gate off) and not 'dev' (so the dev
+    // gate — covered above — doesn't fire and confound this).
+    beforeEach(() => { process.env.CHECKIN_ENV = 'prod'; });
     afterEach(() => {
-        if (ORIGINAL_STAGING === undefined) delete process.env.CHECKIN_STAGING;
-        else process.env.CHECKIN_STAGING = ORIGINAL_STAGING;
-        process.env.CHECKIN_ENV = ORIGINAL_ENV;
+        if (ORIGINAL_ENV === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = ORIGINAL_ENV;
     });
 
-    it('lets a non-org anonymous visitor through in prod when CHECKIN_STAGING is unset', async () => {
+    it('lets a non-org anonymous visitor through in prod (CHECKIN_ENV is not stg)', async () => {
         mockToken(null);
 
         const res = await middleware(reqFor('/membership-ops/households')) as unknown as { kind: string };

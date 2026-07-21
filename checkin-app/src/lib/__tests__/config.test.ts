@@ -4,7 +4,7 @@ const ENV_KEYS = [
     "DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
     "KIOSK_PUBLIC_KEY", "RESEND_API_KEY", "EMAIL_FROM", "AVERITY_CONSENT_URL", "ZOHO_WEBHOOK_SECRET",
     "AWS_REGION", "AGREEMENT_PDF_S3_BUCKET", "AGREEMENT_PDF_S3_KEY", "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET",
-    "ZOHO_REFRESH_TOKEN", "ZOHO_ACCOUNTS_URL", "ZOHO_SIGN_API", "CHECKIN_ENV", "CHECKIN_STAGING", "VERCEL_URL", "NODE_ENV",
+    "ZOHO_REFRESH_TOKEN", "ZOHO_ACCOUNTS_URL", "ZOHO_SIGN_API", "CHECKIN_ENV", "VERCEL_URL", "NODE_ENV",
     "SHOPIFY_STORE_DOMAIN", "SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_WEBHOOK_SECRET",
     "SHOPIFY_READ_DATABASE_URL", "SHOPIFY_READ_DB",
 ];
@@ -102,41 +102,38 @@ describe("checkinEnv / isProd / isDevInstance / isLocal / devToolsActive", () =>
     });
 });
 
-describe("isStaging — a separate fuse from CheckinEnv", () => {
-    it("false when unset", () => {
-        delete process.env.CHECKIN_STAGING;
+describe("isStaging — driven by CHECKIN_ENV=stg (no separate variable)", () => {
+    // Control both signals: the raw CHECKIN_ENV and the NEXTAUTH_URL-derived host.
+    beforeEach(() => {
+        delete process.env.CHECKIN_ENV;
+        delete process.env.NEXTAUTH_URL;
+        delete process.env.VERCEL_URL;
+    });
+
+    it("false when CHECKIN_ENV is unset", () => {
         expect(config.isStaging()).toBe(false);
     });
-    it("true only for the exact string '1'", () => {
-        process.env.CHECKIN_STAGING = "1";
+    it("true for the exact value 'stg'", () => {
+        process.env.CHECKIN_ENV = "stg";
         expect(config.isStaging()).toBe(true);
     });
-    it("false for any other value, including a stray 'false' or 'true' string (explicit '1', not a truthy-string check)", () => {
-        process.env.CHECKIN_STAGING = "false";
-        expect(config.isStaging()).toBe(false);
-        process.env.CHECKIN_STAGING = "true";
-        expect(config.isStaging()).toBe(false);
-        process.env.CHECKIN_STAGING = "0";
-        expect(config.isStaging()).toBe(false);
+    it("false for any other CHECKIN_ENV — exact match, not truthy/substring", () => {
+        for (const v of ["prod", "dev", "local", "staging", "STG", ""]) {
+            process.env.CHECKIN_ENV = v;
+            expect(config.isStaging()).toBe(false);
+        }
     });
-    it("is independent of CHECKIN_ENV — 'stg' still fails safe to prod on checkinEnv() while isStaging() is true", () => {
+    it("checkinEnv() still collapses 'stg' to prod while isStaging() is true — the mock path stays off", () => {
         process.env.CHECKIN_ENV = "stg";
-        process.env.CHECKIN_STAGING = "1";
         expect(config.checkinEnv()).toBe("prod");
         expect(config.isProd()).toBe(true);
         expect(config.isStaging()).toBe(true);
     });
 
-    // 2026-07-20 hardening: CHECKIN_STAGING alone fails OPEN on a missing/blank/
-    // malformed value (unlike readCheckinEnv, which fails safe to prod) — derive
-    // it too, from the host NEXTAUTH_URL points at (can't be forgotten, or OAuth
-    // callbacks break).
-    describe("derived from config.baseUrl() as a second signal (CHECKIN_STAGING unset)", () => {
-        beforeEach(() => {
-            delete process.env.CHECKIN_STAGING;
-            delete process.env.VERCEL_URL;
-        });
-
+    // Derived as well as declared: a missing/blank/malformed CHECKIN_ENV fails
+    // readCheckinEnv() SAFE to prod, which fails isStaging() OPEN — so the host
+    // NEXTAUTH_URL points at is a second signal (can't be forgotten, or OAuth breaks).
+    describe("derived from config.baseUrl() as a second signal (CHECKIN_ENV not 'stg')", () => {
         it("true when NEXTAUTH_URL's host starts with 'ops-stg.'", () => {
             process.env.NEXTAUTH_URL = "https://ops-stg.innovationtreehouse.org";
             expect(config.isStaging()).toBe(true);
@@ -148,7 +145,6 @@ describe("isStaging — a separate fuse from CheckinEnv", () => {
         });
 
         it("false for the localhost default", () => {
-            delete process.env.NEXTAUTH_URL;
             expect(config.isStaging()).toBe(false);
         });
 
@@ -158,9 +154,9 @@ describe("isStaging — a separate fuse from CheckinEnv", () => {
             expect(config.isStaging()).toBe(false);
         });
 
-        it("CHECKIN_STAGING=1 still wins even if the host does not match", () => {
+        it("CHECKIN_ENV=stg still wins even if the host does not match", () => {
             process.env.NEXTAUTH_URL = "https://checkin.example.org";
-            process.env.CHECKIN_STAGING = "1";
+            process.env.CHECKIN_ENV = "stg";
             expect(config.isStaging()).toBe(true);
         });
     });

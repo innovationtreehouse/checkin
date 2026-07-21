@@ -409,9 +409,9 @@ describe('getOrCreateContractSigningUrl', () => {
     // moment a real Zoho credential is ever wired to staging to rehearse signing —
     // producing a document indistinguishable from a binding prod agreement. isStaging()
     // must override isProd() here regardless.
-    it('ops-stg (CHECKIN_STAGING=1, isProd()=true via the CHECKIN_ENV=stg fallback): watermark + [DEV TEST] prefix still applied', async () => {
-        const prevStaging = process.env.CHECKIN_STAGING;
-        process.env.CHECKIN_STAGING = '1';
+    it('ops-stg (CHECKIN_ENV=stg, isProd()=true via the readCheckinEnv stg->prod fallback): watermark + [DEV TEST] prefix still applied', async () => {
+        const prevStaging = process.env.CHECKIN_ENV;
+        process.env.CHECKIN_ENV = 'stg';
         try {
             config.isProd.mockReturnValue(true); // the stg->'prod' fallback (readCheckinEnv)
             prisma.person.findUnique.mockResolvedValue(leadUser);
@@ -434,8 +434,8 @@ describe('getOrCreateContractSigningUrl', () => {
                 }),
             );
         } finally {
-            if (prevStaging === undefined) delete process.env.CHECKIN_STAGING;
-            else process.env.CHECKIN_STAGING = prevStaging;
+            if (prevStaging === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = prevStaging;
         }
     });
 });

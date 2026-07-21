@@ -21,26 +21,26 @@ describe('Health API Integration Tests', () => {
         // So a deploy can actually assert the ops-stg access gate is live rather
         // than trusting the task-def env var was set correctly (config.ts isStaging).
         it('reports staging: false off ops-stg', async () => {
-            const prev = process.env.CHECKIN_STAGING;
-            delete process.env.CHECKIN_STAGING;
+            const prev = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'prod';
             try {
                 const data = await (await GET()).json();
                 expect(data.staging).toBe(false);
             } finally {
-                if (prev === undefined) delete process.env.CHECKIN_STAGING;
-                else process.env.CHECKIN_STAGING = prev;
+                if (prev === undefined) delete process.env.CHECKIN_ENV;
+                else process.env.CHECKIN_ENV = prev;
             }
         });
 
-        it('reports staging: true when CHECKIN_STAGING=1', async () => {
-            const prev = process.env.CHECKIN_STAGING;
-            process.env.CHECKIN_STAGING = '1';
+        it('reports staging: true when CHECKIN_ENV=stg', async () => {
+            const prev = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'stg';
             try {
                 const data = await (await GET()).json();
                 expect(data.staging).toBe(true);
             } finally {
-                if (prev === undefined) delete process.env.CHECKIN_STAGING;
-                else process.env.CHECKIN_STAGING = prev;
+                if (prev === undefined) delete process.env.CHECKIN_ENV;
+                else process.env.CHECKIN_ENV = prev;
             }
         });
     });

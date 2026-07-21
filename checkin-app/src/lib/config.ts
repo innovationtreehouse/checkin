@@ -31,34 +31,32 @@ function readCheckinEnv(): CheckinEnv {
 }
 
 /**
- * True on the ops-stg staging environment — a SEPARATE fuse from CheckinEnv,
- * not a third CheckinEnv value. ops-stg deploys with CHECKIN_ENV=stg, which
- * readCheckinEnv() deliberately falls back to 'prod' for (it's unrecognized),
- * keeping every mock (Zoho/Shopify/background-check) off and persona-mint
- * unregistered — see readCheckinEnv above. Adding 'staging' to the CheckinEnv
- * union would flip every `readCheckinEnv() !== 'prod'` mock gate ON in
- * staging, which is the opposite of what a prod-data copy needs.
+ * True on the ops-stg staging environment. ops-stg deploys with CHECKIN_ENV=stg
+ * and NOTHING ELSE — no separate CHECKIN_STAGING variable to wire or forget.
  *
- * CHECKIN_STAGING is read as an explicit '1', not a truthy-string check, so a
- * stray `CHECKIN_STAGING=false` in some env file can't accidentally engage
- * the gate's staging branch — this flag only ever widens the surface that
- * runs a stricter check (isStagingAccessAllowed below), so failing to '0'
- * (inert) rather than '1' (gate active) on any ambiguous value is the safe
- * default.
+ * 'stg' is deliberately NOT a member of the CheckinEnv union: readCheckinEnv()
+ * collapses the unrecognized value to 'prod', keeping every mock
+ * (Zoho/Shopify/background-check) off and persona-mint unregistered — a
+ * prod-data copy needs that. Adding 'staging' to CheckinEnv would flip every
+ * `readCheckinEnv() !== 'prod'` mock gate ON in staging, the opposite of what
+ * we want. So this predicate reads the RAW process.env.CHECKIN_ENV, not
+ * checkinEnv(), to see the un-collapsed 'stg' that the mock path throws away.
  *
- * Derived as well as declared (2026-07-20 hardening): unlike readCheckinEnv,
- * which fails SAFE to prod for any unset/unrecognized value, a missing, blank,
- * or malformed CHECKIN_STAGING (a forgotten task-def entry, a trailing space,
- * "true" instead of "1") fails this predicate OPEN — the gate goes inert
- * exactly when it matters most. So this is not the only signal: the ops-stg
- * host (config.baseUrl(), sourced from NEXTAUTH_URL) is a second, independent
- * one that can't be silently forgotten the way an extra env var can — Google
- * OAuth callbacks don't work without NEXTAUTH_URL pointed at the real host, so
- * it is set correctly by construction, not by a task-def author remembering a
- * second variable.
+ * Exact `=== 'stg'`, not a truthy/substring check, so a stray value can't
+ * accidentally engage the gate — it only ever widens the surface that runs a
+ * stricter check (isStagingAccessAllowed below), so failing inert on any
+ * ambiguous value is the safe default.
+ *
+ * Derived as well as declared: a missing/blank/malformed CHECKIN_ENV fails
+ * readCheckinEnv() SAFE to prod, which fails THIS predicate OPEN — the gate
+ * goes inert exactly when it matters most. So CHECKIN_ENV is not the only
+ * signal: the ops-stg host (config.baseUrl(), sourced from NEXTAUTH_URL) is a
+ * second, independent one that can't be silently forgotten — Google OAuth
+ * callbacks don't work without NEXTAUTH_URL pointed at the real host, so it is
+ * set correctly by construction, not by a task-def author remembering it.
  */
 function isStagingEnv(): boolean {
-    if (process.env.CHECKIN_STAGING === '1') return true;
+    if (process.env.CHECKIN_ENV === 'stg') return true;
     try {
         return new URL(config.baseUrl()).hostname.startsWith('ops-stg.');
     } catch {
@@ -334,8 +332,8 @@ export const config = {
     devToolsActive: (): boolean => readCheckinEnv() !== 'prod',
     // True only on a developer laptop. Gates offline credential login + keyless kiosk.
     isLocal: (): boolean => readCheckinEnv() === 'local',
-    // True on ops-stg. A separate fuse from CheckinEnv (see isStagingEnv) — gates the
-    // access gate's staging branch (middleware/authenticateRequest/resolveAccess).
+    // True on ops-stg (CHECKIN_ENV=stg; see isStagingEnv) — gates the access
+    // gate's staging branch (middleware/authenticateRequest/resolveAccess).
     isStaging: (): boolean => isStagingEnv(),
     baseUrl: (): string => {
         if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;

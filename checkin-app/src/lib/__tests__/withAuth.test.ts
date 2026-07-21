@@ -117,11 +117,11 @@ describe('withAuth', () => {
  * `roles` list), so even a route with no role requirement at all is covered.
  */
 describe('withAuth — ops-stg access gate', () => {
-    const ORIGINAL_STAGING = process.env.CHECKIN_STAGING;
-    beforeEach(() => { process.env.CHECKIN_STAGING = '1'; });
+    const ORIGINAL_ENV = process.env.CHECKIN_ENV;
+    beforeEach(() => { process.env.CHECKIN_ENV = 'stg'; });
     afterEach(() => {
-        if (ORIGINAL_STAGING === undefined) delete process.env.CHECKIN_STAGING;
-        else process.env.CHECKIN_STAGING = ORIGINAL_STAGING;
+        if (ORIGINAL_ENV === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = ORIGINAL_ENV;
     });
 
     it('401s an anonymous request, never reaching the handler', async () => {
@@ -187,8 +187,8 @@ describe('withAuth — ops-stg access gate', () => {
         expect(handler).not.toHaveBeenCalled();
     });
 
-    it('is inert outside staging: the same non-org session that was 401d above now succeeds once CHECKIN_STAGING is unset', async () => {
-        delete process.env.CHECKIN_STAGING;
+    it('is inert outside staging: the same non-org session that was 401d above now succeeds once CHECKIN_ENV is not stg', async () => {
+        process.env.CHECKIN_ENV = 'prod';
         mockSession.mockResolvedValue({ user: user({ hd: 'gmail.com', emailVerified: true }) });
         const route = withAuth({}, handler);
         const res = await route(sessionReq());
