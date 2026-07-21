@@ -67,6 +67,32 @@ env:
   APP_URL: https://ops.innovationtreehouse.org
 
 jobs:
+  # A release must ship from its OWN release line: v1.1.x may only be cut from
+  # rel/1.1. The version and the branch are two independent claims about "which
+  # line is this", and nothing previously made them agree — so v1.1.0 could be
+  # tagged on rel/1.0, or on main, and deploy to prod carrying a version number
+  # that lies about its lineage. That is worst exactly when it matters: during an
+  # incident, when the version string is what people reason about.
+  #
+  # Checks ANCESTRY, not `release.target_commitish`. That field can be a branch
+  # name OR a bare SHA, is chosen by whoever cut the release, and is re-taggable —
+  # containment in the branch is the property we actually care about.
+  #
+  # Runs before `validate` so a mis-cut release fails in seconds with one clear
+  # error, instead of burning a full CI pass in parallel first.
+  release-branch-match:
+    name: Release version matches its rel/ branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout released tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0   # ancestry check needs real history, not a shallow clone
+
+      - name: Assert the tag's line matches the branch containing it
+        run: ./scripts/release-branch-match.sh "${{ github.event.release.tag_name }}"
+
   # Re-run the FULL CI pipeline (lint, type-check, migration-drift, Jest, the
   # security contract tests, AND the deploy build + boot/smoke) against the exact
   # released tag. This is the H1 fix: a release tag can point at any commit, and
@@ -74,6 +100,7 @@ jobs:
   # the released code green from scratch before a human is even asked to approve.
   validate:
     name: Revalidate CI on the released tag
+    needs: [release-branch-match]   # never burn a CI pass on a mis-cut release
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ github.event.release.tag_name }}
@@ -96,7 +123,10 @@ jobs:
 
   deploy:
     name: Build, migrate, roll out
-    needs: [validate]   # do not build/migrate/roll out unless the tag re-passed all of CI
+    # Both listed explicitly, not just [validate]: the branch gate is a release
+    # correctness property, and a refactor that changes what `validate` needs
+    # must not be able to drop it silently.
+    needs: [release-branch-match, validate]
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production
