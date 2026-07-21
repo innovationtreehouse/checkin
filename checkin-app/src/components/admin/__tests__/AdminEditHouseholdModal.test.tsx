@@ -209,6 +209,47 @@ describe("AdminEditHouseholdModal", () => {
     expect(screen.getByText("A household must keep at least one lead.")).toBeInTheDocument();
   });
 
+  it("promotes a non-lead adult to lead, excluding youth and existing leads", async () => {
+    // One lead (adult), one promotable adult, one youth. Only the promotable
+    // adult gets a Make-lead button; youth is excluded, the lead has Remove.
+    const oneLady = {
+      ...household,
+      householdLeads: [{ personId: 1 }],
+      householdMembers: [
+        { id: 1, name: "Lead Adult", email: "lead@example.com", dateOfBirth: "1985-01-01" },
+        { id: 2, name: "Other Adult", email: "adult@example.com", dateOfBirth: "1990-01-01" },
+        { id: 3, name: "A Kid", email: null, dateOfBirth: "2015-01-01" },
+      ],
+    };
+    const promoted = { ...oneLady, householdLeads: [{ personId: 1 }, { personId: 2 }] };
+    mockFetchJson({
+      "/api/membership-ops/households?id=55": { household: oneLady },
+      "/api/household/lead": { ok: true },
+    });
+    renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} />);
+    await screen.findByDisplayValue("Smith Family");
+
+    const makeLeadButtons = screen.getAllByRole("button", { name: "Make lead" });
+    expect(makeLeadButtons).toHaveLength(1); // Other Adult only — not the youth, not the lead
+    expect(screen.getByText("Other Adult")).toBeInTheDocument();
+    expect(screen.queryByText("A Kid")).not.toBeInTheDocument();
+
+    // After a successful promote the reload shows both leads and no Make-lead button (cap of 2).
+    const fetchMock = mockFetchJson({
+      "/api/household/lead": { ok: true },
+      "/api/membership-ops/households?id=55": { household: promoted },
+    });
+    fireEvent.click(makeLeadButtons[0]);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/household/lead",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ participantId: 2 }) }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Make lead" })).not.toBeInTheDocument());
+  });
+
   it("shows a failure notification, and a network-error notification, when removing a lead", async () => {
     mockFetchJson({ "/api/membership-ops/households?id=55": { household } });
     renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} />);
