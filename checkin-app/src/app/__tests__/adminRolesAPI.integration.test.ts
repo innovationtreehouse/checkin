@@ -393,6 +393,10 @@ describe('Admin Roles API Integration Tests', () => {
             });
             expect(audit?.newData).toMatchObject({ canAccessStaging: true });
             expect(audit?.oldData).toMatchObject({ canAccessStaging: false });
+            // canAccessStaging is a column on Person, NOT a PersonRole row. Filing it
+            // under "PersonRole" would hide the staging grant from anyone querying the
+            // audit log by table.
+            expect(audit?.tableName).toBe('Person');
         });
 
         it('a sysadmin can also revoke it -> 200, persisted', async () => {
@@ -422,6 +426,32 @@ describe('Admin Roles API Integration Tests', () => {
             const data = await res.json();
             expect(data.user.canAccessStaging).toBe(true);
             expect(data.user.isOperations).toBe(true);
+        });
+
+        it('one request touching both tables writes TWO audit rows, each under its own tableName', async () => {
+            // Reset so this request changes both at once.
+            await prisma.person.update({ where: { id: stagingTargetId }, data: { canAccessStaging: false } });
+            await prisma.personRole.deleteMany({ where: { personId: stagingTargetId, role: 'OPERATIONS' } });
+            const before = await prisma.auditLog.count({ where: { affectedEntityId: stagingTargetId } });
+
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: true, isOperations: true }));
+            expect(res.status).toBe(200);
+
+            const rows = await prisma.auditLog.findMany({
+                where: { affectedEntityId: stagingTargetId },
+                orderBy: { id: 'desc' },
+                take: 2,
+            });
+            expect(await prisma.auditLog.count({ where: { affectedEntityId: stagingTargetId } })).toBe(before + 2);
+
+            const person = rows.find((r) => r.tableName === 'Person');
+            const personRole = rows.find((r) => r.tableName === 'PersonRole');
+            expect(person?.newData).toMatchObject({ canAccessStaging: true });
+            expect(personRole?.newData).toMatchObject({ isOperations: true });
+            // The role row must not carry the column change — that was the drift.
+            expect(personRole?.newData).not.toHaveProperty('canAccessStaging');
+            expect(person?.newData).not.toHaveProperty('isOperations');
         });
     });
 
