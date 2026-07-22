@@ -66,7 +66,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             data: {
                 actorId: auth.user.id,
                 action: "EDIT",
-                tableName: "Participant",
+                tableName: "Person",
                 affectedEntityId: id,
                 oldData: prior ?? undefined,
                 newData: updateData,

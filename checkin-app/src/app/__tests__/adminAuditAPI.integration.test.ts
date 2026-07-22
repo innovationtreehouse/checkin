@@ -53,7 +53,7 @@ describe('Admin Audit API Integration Tests', () => {
                 actorId: adminId,
                 action: 'CREATE',
                 affectedEntityId: commonId,
-                tableName: 'Participant',
+                tableName: 'Person',
                 newData: { email: 'common-audit-api-test@example.com' }
             }
         });
@@ -116,7 +116,7 @@ describe('Admin Audit API Integration Tests', () => {
         it('should filter by action and entity and page server-side', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const url = 'http://localhost:4000/api/system-status/audit-log?action=CREATE&table=Participant&page=1';
+             const url = 'http://localhost:4000/api/system-status/audit-log?action=CREATE&table=Person&page=1';
              const req = new Request(url, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(200);
@@ -126,7 +126,7 @@ describe('Admin Audit API Integration Tests', () => {
              // Every returned row must satisfy both filters.
              for (const log of data.logs) {
                  expect(log.action).toBe('CREATE');
-                 expect(log.tableName).toBe('Participant');
+                 expect(log.tableName).toBe('Person');
              }
         });
     });

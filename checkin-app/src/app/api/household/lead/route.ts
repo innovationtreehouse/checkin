@@ -51,8 +51,8 @@ export const POST = withAuth(
                     actorId: userId,
                     action: "CREATE",
                     tableName: "Person",
-                    affectedEntityId: targetHouseholdId,
-                    secondaryAffectedEntity: participantId,
+                    affectedEntityId: participantId,
+                    secondaryAffectedEntity: targetHouseholdId,
                     newData: { ...newLead, isHouseholdLead: true }
                 }
             });
@@ -125,8 +125,8 @@ export const DELETE = withAuth(
                     actorId: userId,
                     action: "DELETE",
                     tableName: "Person",
-                    affectedEntityId: targetHouseholdId,
-                    secondaryAffectedEntity: participantId,
+                    affectedEntityId: participantId,
+                    secondaryAffectedEntity: targetHouseholdId,
                     oldData: { householdId: targetHouseholdId, personId: participantId, isHouseholdLead: true }
                 }
             });

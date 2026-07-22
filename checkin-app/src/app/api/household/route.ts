@@ -117,7 +117,7 @@ export const PATCH = withAuth(
                     data: {
                         actorId: userId,
                         action: "EDIT",
-                        tableName: "Participant",
+                        tableName: "Person",
                         affectedEntityId: member.id,
                         newData: { householdId, email: member.email, name: member.name }
                     }

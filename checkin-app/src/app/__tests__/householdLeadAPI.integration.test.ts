@@ -190,7 +190,7 @@ describe('Household Lead API Integration Tests', () => {
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
-                where: { actorId: testLeadId, action: 'CREATE', tableName: 'Person', secondaryAffectedEntity: testAdultId }
+                where: { actorId: testLeadId, action: 'CREATE', tableName: 'Person', affectedEntityId: testAdultId }
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });
