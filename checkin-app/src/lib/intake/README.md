@@ -50,7 +50,5 @@ New surface? Add a context + profile here first; don't invent a parallel form.
 
 ## History
 
-This registry was extracted from the auth-first program-registration work
-(the old anonymous `public-register` form was the poorest of the four intakes and
-was removed). If you're tempted to hand-roll a new intake form, that's the smell
-this file exists to prevent.
+This registry was extracted from the auth-first program-registration work; the old
+anonymous `public-register` form was the poorest of the four intakes and was removed.

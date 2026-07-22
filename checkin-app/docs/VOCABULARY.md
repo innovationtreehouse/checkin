@@ -27,13 +27,12 @@ identifier that just says "member" is a bug against this dictionary.
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `Person.isHouseholdLead` (lead variant) | `/api/household/member` |
 | **Program relationship** | Person ↔ **Program** | **"participant"** | `programParticipant` | `ProgramParticipant` | — |
 
-Rules:
-1. **No bare member/Member/Membership.** Qualify with the target — **Org** or **Household** — every time, in code and UI.
-2. **`participant` means ONLY a program enrollee** (`ProgramParticipant` / the Program relationship). It is NOT the person model and NOT a generic word for "any person." The umbrella person model is **`Person`**. **Admin and volunteers are never "participants."**
-3. **Anything showing MIXED people uses the umbrella, not "participant."** A screen or API listing volunteers/youth/leads together is `Person`/"person"/"people", or an explicit role bucket — never "participants".
-4. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, program participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
-5. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
-6. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row** — the enrollee sense they are NOT; they rename *with* the model (→ person projection).
+Rules (the no-bare-member rule above applies throughout):
+1. **`participant` means ONLY a program enrollee** (`ProgramParticipant` / the Program relationship). It is NOT the person model and NOT a generic word for "any person." The umbrella person model is **`Person`**. **Admin and volunteers are never "participants."**
+2. **Anything showing MIXED people uses the umbrella, not "participant."** A screen or API listing volunteers/youth/leads together is `Person`/"person"/"people", or an explicit role bucket — never "participants".
+3. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, program participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
+4. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
+5. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row** — the enrollee sense they are NOT; they rename *with* the model (→ person projection).
 
 ## People — sub-classifications
 

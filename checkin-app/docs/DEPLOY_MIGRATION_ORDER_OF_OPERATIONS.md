@@ -2,9 +2,9 @@
 
 ## Why this exists
 
-PR #917's review found a critical, deploy-sequencing bug that no test could have caught: the PR's `DROP TABLE "HouseholdLead"` migration shipped in the **same release** as the backfill it depended on, while `origin/main`'s JWT callback reads `householdLeads` on every authenticated request. Migrations finish *before* the rolling deploy starts, so for the entire multi-minute drain window, old code would have run against a schema it can't read — site-wide 500s, plus any lead change old code wrote between backfill and drop silently destroyed. See [comment on #917](https://github.com/innovationtreehouse/checkin/pull/917#issuecomment-4889400528).
+PR #917's review found a critical deploy-sequencing bug no test could catch: its `DROP TABLE "HouseholdLead"` migration shipped in the **same release** as the backfill it depended on, while `origin/main`'s JWT callback reads `householdLeads` on every authenticated request. Migrations finish *before* the rolling deploy starts, so for the entire multi-minute drain window old code runs against a schema it can't read — site-wide 500s, plus any lead change old code wrote between backfill and drop silently destroyed. See [comment on #917](https://github.com/innovationtreehouse/checkin/pull/917#issuecomment-4889400528).
 
-Two more incidents in the same week (#791/#792, below) came from the same root cause in different clothes: nobody had written down what order migrations, code, and deploys actually happen in, so every PR re-derived it from scratch and some got it wrong. This doc is that missing reference. Read it before writing a migration; `.claude/skills/migration-safety/SKILL.md` turns it into a checklist that fires automatically when one's being built.
+Two more incidents that same week (#791/#792, below) shared the root cause: nobody had written down what order migrations, code, and deploys actually happen in, so every PR re-derived it and some got it wrong. This doc is that missing reference. Read it before writing a migration; `.claude/skills/migration-safety/SKILL.md` turns it into a checklist that fires automatically when one's being built.
 
 ## The deploy sequence
 
