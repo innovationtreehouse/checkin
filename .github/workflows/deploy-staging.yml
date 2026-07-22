@@ -312,20 +312,35 @@ jobs:
             # undiagnosed for a day (same reasoning as deploy-dev.yml's migrate step).
             TASK_ID="${TASK_ARN##*/}"
             echo "--- copy task logs (/ecs/$COPY_TASK_FAMILY), attempt $attempt ---"
-            aws logs get-log-events \
-              --log-group-name "/ecs/$COPY_TASK_FAMILY" \
-              --log-stream-name "ecs/checkin-stg-copy/$TASK_ID" \
-              --start-from-head --limit 200 \
-              --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+            ./scripts/dump-task-logs.sh "/ecs/$COPY_TASK_FAMILY" "ecs/checkin-stg-copy/$TASK_ID"
             echo "--- end copy task logs ---"
 
-            [ "$EXIT_CODE" = "0" ] && break
-            echo "Copy task failed (exit $EXIT_CODE) — DB may be resuming from auto-pause; retrying in 20s"
-            sleep 20
+            # Retry only what a retry can clear. The entrypoint runs under
+            # `set -e`, so a failing psql IS the container's exit status:
+            #   2        connection went bad — the Aurora auto-pause resume this
+            #            loop exists for.
+            #   None     no exit code reported: placement or image-pull failure.
+            #   1 / 3    deterministic. 3 is a SQL error under ON_ERROR_STOP; 1 is
+            #            the entrypoint's own FATAL asserts (STG_DB outside the
+            #            checkin_stg* namespace, target database missing,
+            #            classification row-count floor). Re-running reproduces
+            #            them exactly — infra #150's first staging deploy burned
+            #            5 attempts on an identical exit 3.
+            case "$EXIT_CODE" in
+              0) break ;;
+              2 | None | null | "")
+                echo "Copy task exit $EXIT_CODE — connection/placement failure (Aurora may be resuming); retrying in 20s"
+                sleep 20
+                ;;
+              *)
+                echo "Copy task exit $EXIT_CODE is deterministic — not retrying."
+                break
+                ;;
+            esac
           done
 
           if [ "$EXIT_CODE" != "0" ]; then
-            echo "::error::Staging DB copy failed after 5 attempts (exit $EXIT_CODE) — see copy task logs above"
+            echo "::error::Staging DB copy failed (exit $EXIT_CODE) after $attempt attempt(s) — see the copy task logs above"
             exit 1
           fi
 
@@ -393,11 +408,7 @@ jobs:
 
             TASK_ID="${TASK_ARN##*/}"
             echo "--- $label logs (/ecs/checkin-migrate-stg) ---"
-            aws logs get-log-events \
-              --log-group-name /ecs/checkin-migrate-stg \
-              --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
-              --start-from-head --limit 200 \
-              --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+            ./scripts/dump-task-logs.sh /ecs/checkin-migrate-stg "ecs/checkin-migrate/$TASK_ID"
             echo "--- end $label logs ---"
 
             if [ "$EXIT_CODE" != "0" ]; then
@@ -463,11 +474,7 @@ jobs:
 
             TASK_ID="${TASK_ARN##*/}"
             echo "--- repoint task logs (/ecs/$COPY_TASK_FAMILY), attempt $attempt ---"
-            aws logs get-log-events \
-              --log-group-name "/ecs/$COPY_TASK_FAMILY" \
-              --log-stream-name "ecs/checkin-stg-copy/$TASK_ID" \
-              --start-from-head --limit 200 \
-              --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+            ./scripts/dump-task-logs.sh "/ecs/$COPY_TASK_FAMILY" "ecs/checkin-stg-copy/$TASK_ID"
             echo "--- end repoint task logs ---"
 
             [ "$EXIT_CODE" = "0" ] && break
