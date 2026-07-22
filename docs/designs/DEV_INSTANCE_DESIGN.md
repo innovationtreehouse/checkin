@@ -7,7 +7,8 @@
 `src/lib/auth-options.ts` + `src/lib/impersonation.ts` (`evaluateMint`); the
 shared server-action fence is `src/lib/dev/guard.ts` (`assertDevActor`). The
 old `NEXT_PUBLIC_DEV_AUTH` mock-login and the `NODE_ENV` kiosk fallback are
-gone. **The dashboard UI deliverable has its own record: `DEV_DASHBOARD_DESIGN.md`.**
+gone. **The dashboard UI deliverable (§7) has its own record: `DEV_DASHBOARD_DESIGN.md`.**
+*(The §4/§5/§7 anchors below are kept — source files cite them by number.)*
 
 ## The problem this solved
 
@@ -39,14 +40,14 @@ because adding `'staging'` to the union would flip every `!== 'prod'` mock gate
 ON in staging — the opposite of what a prod-data-copy env wants. See the
 ops-stg design.
 
-**Site-wide gate is app middleware, not ALB OIDC.** On `CHECKIN_ENV=dev` every
+**Site-wide gate is app middleware, not ALB OIDC (§4).** On `CHECKIN_ENV=dev` every
 page route requires a session whose Google **hosted-domain (`hd`)** claim is
 `ORG_DOMAIN` with `emailVerified` — one rule that delivers both "reachable by
 any org member" and "not world-readable". Chosen over ALB OIDC so the app owns
 its identity and the same OAuth already in place is reused. Inert in `prod`;
 relaxed in `local` (offline work needs no Google).
 
-**Impersonation = mint the session AS the persona.** Picking a persona mints a
+**Impersonation = mint the session AS the persona (§5).** Picking a persona mints a
 real JWT for that persona — you *become* them; authz sees only the persona and
 stays impersonation-unaware. *Rejected: "view as"* (keep your identity, thread an
 effective-participant through authz) — it forces **every** authz layer to become

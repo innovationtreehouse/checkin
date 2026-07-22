@@ -38,9 +38,10 @@ Verified against the tree; each is greppable:
 
 ## Still open (terse)
 
-- **#3 Extract reusable UI components.** Glass card, alert banner, modal overlay,
-  role badge, person card, form field, safety warning are still inlined per page.
-  None of `AlertBanner/Modal/RoleBadge/PersonCard/FormField` exist.
+- **#3 Extract reusable UI components (partially done).** `AlertBanner`
+  (`src/components/admin/AlertBanner.tsx`) has since shipped; glass card, modal
+  overlay, role badge, person card, form field, safety warning are still inlined
+  per page — none of `Modal/RoleBadge/PersonCard/FormField` exist.
 - **#4 CSS tokens / modules over inline styles.** Most styling is still inline
   `style={{…}}` with magic `rgba()` values; no design-token layer. Blocks
   `:hover`/`:focus`, media queries, and re-creates style objects per render.

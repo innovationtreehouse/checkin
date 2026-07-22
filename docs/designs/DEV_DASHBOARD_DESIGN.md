@@ -63,7 +63,7 @@ it from truncation (§5). Written from the `persona-mint` flow (login vs.
 impersonate, from `evaluateMint`) and from each server action; read by the
 dashboard's last-activity line and the reset confirm dialog.
 
-## Component & non-goals
+## 7. Component & non-goals
 
 `DevDashboard` renders only when `isDevInstance()` **and** signed in (the guard
 the bar uses); server-only `config` never crosses to the client (it flows via

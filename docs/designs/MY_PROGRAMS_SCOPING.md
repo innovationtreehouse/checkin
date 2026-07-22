@@ -56,7 +56,9 @@ architect them out (today's schema has a single `leadMentorId`).
 - **Post-MVP roadmap, unbuilt:** per-program roster view, upcoming sessions +
   RSVPs together, enrollment requests surfaced **view-only** (PENDING
   participants; approval stays board), all-programs↔per-program tabs. The layout
-  ships only Attendance + Conflicts today.
+  ships only Attendance + Conflicts today. When informational items (sessions/
+  RSVPs) join the badge, keep them gray so the green count stays "must act"
+  (mirror `navBadgeFor`'s green/gray split).
 - **Attendee-tab name collision (open):** `/my-activities/programs` is still
   titled "My Programs" too. The staff name was confirmed; renaming the attendee
   tab (e.g. "Enrolled") is unresolved.
