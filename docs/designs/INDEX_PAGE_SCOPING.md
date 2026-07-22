@@ -1,10 +1,8 @@
 # "Index" — Searchable Page Directory: Scoping Document
 
-**Status:** Scoping / discovery. No code written. Working name: **Index**.
+**Status:** MVP shipped (`/index` + `src/components/pageRegistry.ts` + the drift-guard test). This is the scoping record — decisions, route inventory, and the deferred/roadmap items below.
 **Date:** 2026-06-29
-**Purpose:** Give every signed-in user a single page that lists *every app page they are allowed to reach*, with a search box at the top to filter, so they can jump anywhere without hunting through the sidebar. Sits in the nav directly **below "Settings"**.
-
-This doc is written so a follow-up implementation session can pick it up cold. Read "Current State" for what's true today, then "MVP" for the first slice.
+**Purpose:** Give every signed-in user a single page that lists *every app page they are allowed to reach*, with a search box to filter, so they can jump anywhere without hunting through the sidebar. Sits in the nav directly **below "Settings"**.
 
 ---
 

@@ -1,11 +1,11 @@
 # Design: The Dev Dashboard
 
-**Status:** Proposed (for review)
-**Audience:** checkin maintainers + AI contributors (see `CONSTITUTION.md`)
-**Builds on:** `DEV_INSTANCE_DESIGN.md` — this implements **§7 (the dev dashboard)**, the last
-unbuilt deliverable of the dev-instance rework. The single-flag model (`CHECKIN_ENV`), the org
-middleware gate, and impersonation (mint-as-persona + inert `impersonatedBy`) are already shipped
-(commits `ea13ff4`, `e86a11e`).
+**Status:** Shipped — `DevDashboard.tsx`, `src/lib/dev/{seed-helpers,ledger,guard}.ts`, and the
+`DevLedger` model exist (macros/reset landed in `src/lib/dev/actions.ts` rather than separate
+`macros.ts`/`reset.ts`). This is the design record.
+**Builds on:** `DEV_INSTANCE_DESIGN.md` — implements its **§7 (the dev dashboard)**. The single-flag
+model (`CHECKIN_ENV`), the org middleware gate, and impersonation (mint-as-persona + inert
+`impersonatedBy`) shipped earlier (commits `ea13ff4`, `e86a11e`).
 
 ---
 

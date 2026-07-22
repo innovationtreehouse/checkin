@@ -161,14 +161,12 @@ A slide-up panel, rendered **only** when `CHECKIN_ENV` is `dev`/`local`, for the
 ╚════════════════════════════════════════════════════════════╝
 ```
 
-- **Persona picker** → calls the mint endpoint (§5). "+ new persona" creates a throwaway participant.
-- **Macros** → one-click scenario seeding (create program / family / event / check-ins). Reuse the
-  existing seed logic: `prisma/seed.ts`, `prisma/seed_20_users.ts`, and the personas created by
-  `scripts/full_reset_and_dev_init.sh`. Expose them as dev-only server actions.
-- **🔴 Reset** → re-seed `checkin_dev` to the baseline (truncate + seed). Confirm dialog surfaces the
-  ledger ("alice was testing 14 min ago — reset anyway?").
-- **Dev ledger** → a small table in `checkin_dev` recording last login / last reset, **by real
-  identity** (from `impersonatedBy` or the real session), with timestamps (principle 6).
+- **Persona picker** → mint endpoint (§5). **Macros** → one-click scenario seeding. **🔴 Reset** →
+  truncate + reseed `checkin_dev` to baseline, behind a ledger-surfacing confirm dialog. **Dev
+  ledger** → a `checkin_dev` table recording last login / reset **by real identity** (principle 6).
+
+The dashboard's build design (server-action security fence, the four macros, reset, and the
+`DevLedger` model) is specified in `DEV_DASHBOARD_DESIGN.md`.
 
 ---
 

@@ -1,10 +1,8 @@
 # "My Programs" — Program-Staff Home: Scoping Document
 
-**Status:** Scoping / discovery. No code written. Working name: **My Programs**.
+**Status:** MVP shipped — `/my-programs/` (landing + attendance + conflicts) and the `lead` bucket in `/api/nav/todo-counts`. This is the scoping record: interview decisions, the recommended structure, and the post-MVP roadmap / open questions below.
 **Date:** 2026-06-28
-**Purpose:** Give a program lead mentor (and, later, lesser staff roles) a navigation home and an in-app pending-work surface. Today they have responsibility but no home: `/program-ops` is gated to board, `/my-activities` is the attendee view.
-
-This doc is written so a follow-up implementation session can pick it up cold. Read "Current State" for context, then "MVP" for the first slice.
+**Purpose:** Give a program lead mentor (and, later, lesser staff roles) a navigation home and an in-app pending-work surface. Before this, they had responsibility but no home: `/program-ops` is gated to board, `/my-activities` is the attendee view.
 
 ---
 

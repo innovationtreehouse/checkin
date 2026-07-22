@@ -344,6 +344,15 @@ Create a `src/lib/config.ts` that:
 
 ---
 
+## Additional opportunities (second review — merged from `ARCHITECT_IDEAS_g3.md`, not yet in the matrix)
+
+17. **Service layer + Zod validation.** Move complex business logic out of Route Handlers into dedicated `src/services/*.service.ts` (e.g. `attendance.service.ts`, `household.service.ts`); routes only parse, call the service, and return. Parse incoming payloads with **Zod** so malformed data never reaches the service. (Broader than #7, which extracts only `/api/scan`.)
+18. **Response caching.** Cache read-heavy, low-churn routes (Tools, historical Events, active Programs) via Next.js `unstable_cache` or cache headers.
+19. **Telemetry offload / retention.** `ErrorLog`/`AuditLog`/`SystemMetric` grow unbounded — prune old rows (>90d) with a cron, or offload high-volume telemetry to Sentry/Datadog to keep it off the relational DB.
+20. **Edge middleware for `/admin/*` auth.** Reject unauthorized `/admin/*` in `middleware.ts` at the Edge, before the Node runtime spins up or the DB is queried (saves resources + tightens security). Complements #1/#13.
+21. **RSC vs client boundaries.** Push `"use client"` down to the smallest interactive leaves so pages stay Server Components — smaller bundles, no fetch waterfalls, faster loads on heavy views like the Admin Dashboard.
+22. **Vertical-slice structure.** Group by feature domain (`src/features/Attendance/`, `Households/`, `Programs/`) with each folder owning its components/hooks/services/types, instead of splitting strictly by technical concern.
+
 ## Priority Matrix
 
 | Priority | Idea | Effort | Impact |

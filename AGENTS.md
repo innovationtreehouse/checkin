@@ -106,7 +106,7 @@ Read these before changing the relevant area — start here, then follow links.
 - `CUJS.md` — **critical user journeys** (the basis for flow tests).
 - `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
 - `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
-- `PRODUCTION_PLAN.md`, `implementation_plan.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
+- `PRODUCTION_PLAN.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
 - `SECURITY-POLICY.md` — the response-stripper / `@sensitivity` registry rules (read before adding API responses or schema fields).
