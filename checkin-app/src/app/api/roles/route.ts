@@ -96,6 +96,13 @@ export const PATCH = withAuth(
                 }
             }
 
+            // ponytail: presence-gated, not change-gated — a non-sysadmin who echoes an
+            // unchanged canAccessStaging (e.g. false==false) still 403s, taking any valid
+            // role edits in the same request down with it. Fail-closed, and no client hits
+            // it: RolesEditModal only sends the key on a real sysadmin-driven change. If a
+            // whole-form client (mobile/bulk/rewrite) ever PATCHes the full object, move
+            // this check next to the in-tx change detection below (compare vs
+            // target.canAccessStaging) so a no-op echo is harmless.
             const settingStaging = canAccessStaging !== undefined;
             if (settingStaging && !actor.isSysadmin) {
                 return apiError("Only Sysadmins can modify staging access", 403);
