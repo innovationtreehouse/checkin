@@ -78,8 +78,9 @@ export async function sendNotification(userId: number, eventType: NotificationEv
  * covers the program's FULL DURATION (#1061 rule, reused verbatim), respecting each
  * person's notifyNewPrograms / email prefs (default ON). Paced at 5/sec (#1154).
  *
- * The announceOnOpen opt-in gate lives at the CALL SITE (programs/[id] PATCH) — this
- * only runs when a leader has enabled it. Best-effort: fire-and-forget from the route.
+ * The announceOnOpen opt-in gate lives at the CALL SITES — programs/[id] PATCH and
+ * programs/[id]/settings PATCH both fire this on the transition into UPCOMING+OPEN —
+ * this only runs when a leader has enabled it. Best-effort: fire-and-forget from the route.
  */
 export async function notifyNewProgramAnnounced(
     program: { name: string; startAt: Date | null; endAt: Date | null },

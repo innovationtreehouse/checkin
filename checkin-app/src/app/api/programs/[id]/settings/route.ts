@@ -6,6 +6,7 @@ import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 import { notifyNewProgramAnnounced } from "@/lib/notifications";
+import { ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -48,6 +49,19 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             maxParticipants,
             leadMentorNotificationSettings
         } = body;
+
+        // Validate the three announce-relevant fields up front: bad values would
+        // otherwise surface as Prisma validation errors → generic 500, and
+        // announceOnOpen now gates an email blast (#1164 review, finding 5).
+        if (announceOnOpen !== undefined && typeof announceOnOpen !== "boolean") {
+            return apiError("announceOnOpen must be a boolean", 400);
+        }
+        if (phase !== undefined && !Object.values(ProgramPhase).includes(phase)) {
+            return apiError("Invalid phase", 400);
+        }
+        if (enrollmentStatus !== undefined && !Object.values(EnrollmentStatus).includes(enrollmentStatus)) {
+            return apiError("Invalid enrollmentStatus", 400);
+        }
 
         // Age range sanity. Use effective values (body overrides current) so a
         // one-sided edit can't leave minAge > maxAge or exceed the 25+ ceiling.
@@ -115,20 +129,27 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
         // save while already there, and not when only one of the two is set.
         // ponytail: duplicated verbatim from programs/[id] PATCH rather than
-        // extracted — a shared helper in @/lib/notifications would need mock
-        // plumbing in every suite that stubs that module, for six lines.
-        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
-        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
-        if (!wasAnnounced && nowAnnounced) {
-            if (updatedProgram.announceOnOpen) {
-                // Fire-and-forget: paced send is ~(recipients/5) seconds — must not block
-                // the PATCH response. notifyNewProgramAnnounced swallows its own errors;
-                // .catch is belt-and-suspenders, matching the best-effort idiom.
-                void notifyNewProgramAnnounced(updatedProgram).catch((e) =>
-                    logger.error("notifyNewProgramAnnounced failed:", e));
-            } else {
-                logger.info(`[announce] Program ${updatedProgram.id} reached UPCOMING+OPEN; announceOnOpen off — skipping.`);
+        // extracted — the extraction travels with the announcedAt idempotency
+        // follow-up (#1164 review, findings 2/3/6/7), which rewrites this block.
+        // Own try/catch: the program update + audit log above are committed — a
+        // synchronous throw here (e.g. a partially mocked notifications module)
+        // must not turn a successful write into a 500 (#1164 review, finding 1).
+        try {
+            const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
+            const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
+            if (!wasAnnounced && nowAnnounced) {
+                if (updatedProgram.announceOnOpen) {
+                    // Fire-and-forget: paced send is ~(recipients/5) seconds — must not block
+                    // the PATCH response. notifyNewProgramAnnounced swallows its own errors;
+                    // .catch is belt-and-suspenders, matching the best-effort idiom.
+                    void notifyNewProgramAnnounced(updatedProgram).catch((e) =>
+                        logger.error("notifyNewProgramAnnounced failed:", e));
+                } else {
+                    logger.info(`[announce] Program ${updatedProgram.id} reached UPCOMING+OPEN; announceOnOpen off — skipping.`);
+                }
             }
+        } catch (announceError) {
+            logger.error("announce trigger failed:", announceError);
         }
 
         return NextResponse.json({ success: true, program: updatedProgram });
