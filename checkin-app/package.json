@@ -17,7 +17,6 @@
     "test:coverage:unit": "jest --ci --coverage --testPathIgnorePatterns \"/node_modules/|/\\.next/|/\\.claude/worktrees/|\\.flow\\.test\\.|\\.integration\\.test\\.\"",
     "test:coverage:integration": "INTEGRATION_DB=1 jest --ci --runInBand --coverage --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
     "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
-    "import:zoho": "tsx scripts/import-zoho.ts",
     "shopify:webhook": "tsx scripts/register-shopify-webhook.ts",
     "coalesce-migrations": "tsx scripts/coalesce-migrations.ts",
     "generate:lifecycle-artifacts": "tsx src/lib/lifecycle/generate.ts"
