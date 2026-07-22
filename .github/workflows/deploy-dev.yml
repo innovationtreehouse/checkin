@@ -92,6 +92,7 @@ jobs:
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_GIT_BRANCH="main" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" .
           docker push "$IMAGE"

@@ -16,6 +16,10 @@ export type RolesEditTarget = {
   isKeyholder?: boolean;
   isBackgroundCheckReviewer?: boolean;
   isOperations?: boolean;
+  // ops-stg access gate escape hatch. NOT one of the five ROLE_FLAGS above —
+  // sysadmin-settable only (see PATCH /api/roles), so it is edited separately
+  // below rather than folded into the ROLE_FLAGS loop's board-symmetric switches.
+  canAccessStaging?: boolean;
 };
 
 /** The subset of the session actor this modal needs to compute the client-side authority matrix. */
@@ -48,11 +52,15 @@ function flagsFromTarget(t: RolesEditTarget | null): Record<RoleFlag, boolean> {
  */
 export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalProps) {
   const [rolesForm, setRolesForm] = useState<Record<RoleFlag, boolean>>(() => flagsFromTarget(null));
+  // Tracked separately from rolesForm: canAccessStaging is not a ROLE_FLAGS entry
+  // (see RolesEditTarget) — it has its own sysadmin-only rule, not the board-symmetric matrix.
+  const [stagingForm, setStagingForm] = useState(false);
   const [savingRoles, setSavingRoles] = useState(false);
 
   useEffect(() => {
     if (!target) return;
     setRolesForm(flagsFromTarget(target));
+    setStagingForm(!!target.canAccessStaging);
   }, [target]);
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
@@ -73,7 +81,9 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
     return { disabled: true, reason: 'You do not have permission to edit roles' };
   };
 
-  const saveRoles = async (t: RolesEditTarget, delta: Partial<Record<RoleFlag, boolean>>) => {
+  type Delta = Partial<Record<RoleFlag, boolean>> & { canAccessStaging?: boolean };
+
+  const saveRoles = async (t: RolesEditTarget, delta: Delta) => {
     setSavingRoles(true);
     try {
       const res = await fetch('/api/roles', {
@@ -90,6 +100,7 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
         const data = await res.json().catch(() => ({}));
         // Revert the form to the target's last-known-good state.
         setRolesForm(flagsFromTarget(t));
+        setStagingForm(!!t.canAccessStaging);
         showNotification(data.error || "Failed to update roles", "error");
       }
     } catch (err) {
@@ -103,17 +114,26 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
   const handleSaveRoles = () => {
     if (!target) return;
     const current = flagsFromTarget(target);
-    const delta: Partial<Record<RoleFlag, boolean>> = {};
+    const delta: Delta = {};
     for (const field of ROLE_FLAGS) {
       if (rolesForm[field] !== current[field]) delta[field] = rolesForm[field];
+    }
+    // Sysadmin-only, and only rendered for a sysadmin actor (see the switch below) —
+    // but re-derive from target rather than trust the rendered-or-not state, so a
+    // stale `me` prop can never smuggle a delta the server would reject anyway.
+    if (me?.isSysadmin && stagingForm !== !!target.canAccessStaging) {
+      delta.canAccessStaging = stagingForm;
     }
     if (Object.keys(delta).length === 0) {
       onClose();
       return;
     }
-    const deltaText = (Object.keys(delta) as RoleFlag[])
-      .map((f) => `${delta[f] ? 'Grant' : 'Revoke'} ${roleLabel(f)}`)
-      .join('; ');
+    const deltaText = [
+      ...(Object.keys(delta) as (RoleFlag | 'canAccessStaging')[])
+        .filter((f): f is RoleFlag => f !== 'canAccessStaging')
+        .map((f) => `${delta[f] ? 'Grant' : 'Revoke'} ${roleLabel(f)}`),
+      ...(delta.canAccessStaging !== undefined ? [`${delta.canAccessStaging ? 'Grant' : 'Revoke'} staging access`] : []),
+    ].join('; ');
     modals.openConfirmModal({
       title: "Update roles?",
       children: (
@@ -152,6 +172,17 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
             </div>
           );
         })}
+        {/* canAccessStaging: sysadmin-only, not one of ROLE_FLAGS above — hidden
+            entirely for a board-only actor rather than shown disabled, since they
+            have no path to grant it regardless (mirrors the PATCH route's guard). */}
+        {me?.isSysadmin && (
+          <Switch
+            label="Staging access (ops-stg)"
+            description="Admits this person to ops-stg even though they are not a verified org member."
+            checked={stagingForm}
+            onChange={(e) => setStagingForm(e.currentTarget.checked)}
+          />
+        )}
       </Stack>
       <Group justify="flex-end" mt="lg">
         <Button variant="default" onClick={onClose} disabled={savingRoles}>Cancel</Button>

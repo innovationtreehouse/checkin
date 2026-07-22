@@ -144,6 +144,18 @@ model Person {
   /// @sensitivity:internal
   isBackgroundCheckReviewer Boolean @default(false)
 
+  /// Admits this person past the ops-stg access gate (middleware +
+  /// authenticateRequest + resolveAccess) even though they are not a verified
+  /// innovationtreehouse.org member — the escape hatch for an outside
+  /// collaborator a sysadmin explicitly admits to staging. NOT one of the five
+  /// PersonRole-backed flags in lib/roles.ts: it is sysadmin-settable only (a
+  /// board member without isSysadmin may not grant it — see /api/roles), unlike
+  /// the board-symmetric role matrix. Forced false whenever the household is
+  /// DENIED (assignParticipantClaims), same as the role flags. Inert outside
+  /// staging (isStaging()) — see lib/config.ts.
+  /// @sensitivity:internal
+  canAccessStaging Boolean @default(false)
+
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
   personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")

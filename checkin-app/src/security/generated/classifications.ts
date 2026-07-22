@@ -26,6 +26,7 @@ export const classifications = {
         isBoardMember: 'public',
         isKeyholder: 'internal',
         isBackgroundCheckReviewer: 'internal',
+        canAccessStaging: 'internal',
     },
     PersonRole: {
         personId: 'internal',
