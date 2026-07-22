@@ -59,6 +59,12 @@ No react-query/SWR/tanstack installed, none used anywhere in `src`.
 
 ## Recommendation: adopt SWR, don't hand-roll
 
+> The concrete hook design that implements this decision — the status-aware `useLoad`
+> hook, fetcher, retry/backoff, and a resilience-focused migration sequence — lives in
+> [`resilient-load-swr.md`](./resilient-load-swr.md). This doc is the audit + engine
+> choice; that doc is the build.
+
+
 Every bug found above (race conditions on stale response, no abort, inconsistent error state, silent swallow, no request dedup) is what SWR/react-query solve by default — dedup, cache, `mutate()` for refetch, revalidate-on-focus, built-in error object. A hand-rolled `useFetch` would just reinvent SWR badly and still need someone to remember AbortController every time.
 
 SWR over react-query: smaller (~4kb), simpler API, fits fetch-only use case here — no complex mutation/optimistic-update framework needed beyond what SWR's `mutate` gives.

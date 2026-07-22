@@ -1,215 +1,184 @@
 # Shopify Development Store + Webhooks in Dev/Local
 
-**Status:** Implemented in part — the in-process mock (§6) landed via #730; mock hardening + the §3 registration script via #740. The real dev store (§2–§5) remains ops work, blocked on O1/O2.
-**Author:** design pass, 2026-07-02 (revised 2026-07-02 after grepping prod deploy + `src/`)
+**Status:** Implemented in part — the in-process mock (§6) landed via #730; mock hardening + the §2 registration script via #740. The real dev store (§2–§5) remains ops work, blocked on O1/O2. (The former separate implementation-plan doc was folded into this one; its runbook lives in §2 and §9.)
+**Author:** design pass, 2026-07-02 (revised after grepping prod deploy + `src/`)
 **Related:** [`ZOHO_SIGN_DEV_MOCK.md`](./ZOHO_SIGN_DEV_MOCK.md) (#669, in-process sign mock), #665 (email dev inbox), #278 (checkout-token honor-system TODO), #624/#625 (order-amount / price-alignment safety), #683 (Shopify env routed through `config.ts`)
-**Implementation plan:** [`SHOPIFY_DEV_STORE_WEBHOOK_PLAN.md`](./SHOPIFY_DEV_STORE_WEBHOOK_PLAN.md) (concrete steps + two prod-grounded corrections folded back into §2/§4 below).
 
 ## 0. Scope check — what already exists
 
-Confirmed by `git log` + grep before writing this: **no Shopify dev-store or webhook-mock work has landed or is in flight.** The only recent Shopify commits are #683 (route env through `config.ts`), #624 (validate order amount before activating), and #466 (fetch timeouts). The two sibling dev-integration features — Zoho Sign mock (#669) and email inbox (#665) — do **not** touch Shopify. So this is greenfield; nothing to redesign.
+Confirmed by `git log` + grep before writing: **no Shopify dev-store or webhook-mock work had landed or was in flight.** Recent Shopify commits were #683 (route env through `config.ts`), #624 (validate order amount), #466 (fetch timeouts); the sibling dev features (Zoho mock #669, email inbox #665) don't touch Shopify. Greenfield.
 
-Unlike Zoho (which got a fully in-process mock), the ask here is to connect to a **real Shopify development store** so genuine `orders/paid` webhooks fire against the dev instance and drive `PENDING_PAYMENT → ACTIVE` end-to-end. An in-process mock is also proposed as the zero-infra fallback (§6). **Prod behavior is unchanged** — every dev-only path is env-gated the same way Zoho's is.
+Unlike Zoho (fully in-process mock), the ask here is a **real Shopify development store** so genuine `orders/paid` webhooks drive `PENDING_PAYMENT → ACTIVE` end-to-end. An in-process mock is the zero-infra fallback (§6). Every dev-only path is env-gated the same way Zoho's is — **prod behavior is unchanged**.
+
+The prod path itself is **already built and correct** (verified in `src/`): the inbound route + timing-safe HMAC verify (`api/webhooks/shopify/route.ts`), the `withWebhook` wrapper (`webhookAuth.ts`), the env getters and the `shopifyMockActive()` switch (`config.ts`). Making it "real" = store setup + secret wiring + (maybe) one registration script. **No new prod route, no touching verify, no new config getters.**
 
 ---
 
 ## 1. Current flow (as wired today)
 
-Trace from checkout link to activation:
-
 1. **Build the checkout link** — [`payment.ts › ensurePaymentLink`](../../src/lib/membership/payment.ts) reads `BoardSettings.orgMembershipVariantId` + `config.shopifyStoreDomain()` and calls `buildMembershipCheckoutUrl`, producing a Shopify **cart permalink**:
    ```
    https://{SHOPIFY_STORE_DOMAIN}/cart/{variantId}:1?discount={code}&attributes[Membership_Process_ID]={processId}
    ```
-   Volunteer households get `discount=<BoardSettings.volunteerDiscountCode>` appended. The process id rides along as a **cart attribute** so the webhook can match the payment back. If domain or variant is unset, the link is `null`.
-
-2. **Applicant pays on Shopify** — hosted checkout on the store. Shopify maps cart-attribute `attributes[Membership_Process_ID]` onto the Order's `note_attributes`.
-
-3. **`orders/paid` webhook fires** → [`api/webhooks/shopify/route.ts`](../../src/app/api/webhooks/shopify/route.ts), wrapped by `withWebhook({ provider: "shopify", verify: verifyShopifyHmac })` ([`webhookAuth.ts`](../../src/lib/webhookAuth.ts)): per-IP rate-limit → HMAC verify → JSON parse → handler.
-
-4. **HMAC verify** — `verifyShopifyHmac` computes `HMAC-SHA256(rawBody, config.shopifyWebhookSecret())` in base64 and `timingSafeEqual`s it against `x-shopify-hmac-sha256`. Unset secret → **500** (config error); missing/wrong sig → **401**. Verified over the exact raw bytes before parse.
-
-5. **Match by cart attribute** — handler scans `note_attributes` for `Membership_Process_ID`, then checks the order's `line_items` actually contain a known membership variant (`orgMembershipVariantId` / `shopifyNormalVariantId` / `shopifyVolunteerVariantId` from `BoardSettings`) — the #624/H2 guard against paying for an unrelated item that totals the same.
-
-6. **`activate()`** ([`payment.ts`](../../src/lib/membership/payment.ts), via `activateByProcessId`) — `FOR UPDATE` row lock, idempotent on webhook retry. Flips `ACTIVE` if the background check already cleared (else holds `PENDING_BG_CLEARANCE`); handles paid-while-`BLOCKED` and no-membership-item as board-alerted anomalies rather than silent no-ops. On `ACTIVE`, sends the one congrats email.
+   Volunteer households get `discount=<BoardSettings.volunteerDiscountCode>`. The process id rides as a **cart attribute** so the webhook can match the payment back. Domain or variant unset → link is `null`.
+2. **Applicant pays** on the hosted store checkout. Shopify maps `attributes[Membership_Process_ID]` onto the Order's `note_attributes`.
+3. **`orders/paid` fires** → [`api/webhooks/shopify/route.ts`](../../src/app/api/webhooks/shopify/route.ts), wrapped by `withWebhook({ provider: "shopify", verify: verifyShopifyHmac })` ([`webhookAuth.ts`](../../src/lib/webhookAuth.ts)): per-IP rate-limit → HMAC verify → JSON parse → handler.
+4. **HMAC verify** — `verifyShopifyHmac` computes `HMAC-SHA256(rawBody, config.shopifyWebhookSecret())` in base64 and `timingSafeEqual`s against `x-shopify-hmac-sha256`, over the exact raw bytes before parse. Unset secret → **500**; missing/wrong sig → **401**.
+5. **Match by cart attribute** — handler scans `note_attributes` for `Membership_Process_ID`, then checks the order's `line_items` actually contain a known membership variant (`orgMembershipVariantId` / `shopifyNormalVariantId` / `shopifyVolunteerVariantId`) — the #624/H2 guard against paying for an unrelated item of the same total.
+6. **`activate()`** ([`payment.ts`](../../src/lib/membership/payment.ts), via `activateByProcessId`) — `FOR UPDATE` lock, idempotent on retry. Flips `ACTIVE` if the background check cleared (else holds `PENDING_BG_CLEARANCE`); paid-while-`BLOCKED` and no-membership-item become board-alerted anomalies, not silent no-ops. On `ACTIVE`, sends the one congrats email.
 
 ### What's missing in dev today
 
-Everything upstream of the handler. Concretely:
-
 | Gap | Symptom in dev |
 |-----|----------------|
-| No `SHOPIFY_STORE_DOMAIN/CLIENT_ID/CLIENT_SECRET` set | `shopify.ts` logs "integration disabled"; no Admin API; product/variant creation is a no-op |
-| No `BoardSettings.orgMembershipVariantId` (seed does **not** set it — grep of `prisma/seed.ts` is empty) | `ensurePaymentLink` returns `checkoutUrl: null`; nothing to click |
-| No `SHOPIFY_WEBHOOK_SECRET` | inbound webhook 500s (`verifyShopifyHmac` config-error branch) |
+| No `SHOPIFY_STORE_DOMAIN/CLIENT_ID/CLIENT_SECRET` | `shopify.ts` logs "integration disabled"; no Admin API; variant creation is a no-op |
+| No `BoardSettings.orgMembershipVariantId` (seed does **not** set it) | `ensurePaymentLink` returns `checkoutUrl: null`; nothing to click |
+| No `SHOPIFY_WEBHOOK_SECRET` | inbound webhook 500s (config-error branch) |
 | No public URL | even a real store can't reach `localhost:4000` |
 
-So the payment leg of membership is **untestable locally** end-to-end right now. This proposal closes those four gaps.
+So the payment leg is **untestable locally** end-to-end. §2/§6 close these gaps.
 
 ---
 
-## 2. Dev store setup
+## 2. Dev store setup (ops runbook)
 
-Per [Shopify's development-stores docs](https://shopify.dev/docs/apps/build/dev-dashboard/stores/development-stores):
+Per [Shopify's dev-store docs](https://shopify.dev/docs/apps/build/dev-dashboard/stores/development-stores). **Hard blocker: O1 — do we own a Shopify Partner org?** Needs an owner before any of this.
 
-**Create the store**
-1. Shopify [Dev Dashboard](https://dev.shopify.com/dashboard/) → **Stores** → **Create store**.
-2. Name it (e.g. `treehouse-checkin-dev`), pick a plan tier, confirm, log in.
-3. Requires a **Shopify Partner account** (or a merchant store with developer permissions). → *see open question O1.*
+**Create the store** — Dev Dashboard → Stores → Create store → name it (`treehouse-checkin-dev`), pick a plan, log in. Requires a Partner account (or merchant dev-permissions) → O1. Dev-store limitations that matter:
+- **No real transactions** — payment testing uses the **Bogus Gateway** / test mode, which still fires a real `orders/paid` (real webhook, fake money — the whole point).
+- **Password page can't be removed** — checkout link works but testers need the storefront password (note in runbook).
+- **Non-transferable throwaway** — not a future prod store.
 
-**Dev-store limitations that matter to us** (from the docs):
-- **Cannot process real transactions.** Payment testing uses the **Bogus Gateway** / test mode — fine for us: a Bogus-Gateway checkout still fires a real `orders/paid` webhook. This is the whole point (real webhook, fake money).
-- Only free / partner-friendly apps are installable — irrelevant, our app is a custom app.
-- The store **password page can't be removed** — the checkout link works, but testers need the storefront password. Document it in the runbook.
-- Dev stores are **non-transferable** — a throwaway, not a future prod store.
+**Install a custom app** — the client uses the **Client Credentials Grant** (`shopify.ts › getAccessToken`, API version `2026-01`), so a custom app with client id/secret, not a legacy private-app token. Develop apps → Create app → install to the store (install is what makes the token grant work). Admin API scopes: `read/write_products` (variant creation), `read/write_orders` (webhook order data), `read/write_inventory` (`inventory_levels/set` for capped programs), `read/write_discounts` (volunteer code). No Storefront scopes — checkout is the hosted cart permalink. **No OAuth redirect URL** — Client Credentials Grant is server-to-server; the only URL Shopify calls into is the webhook callback.
 
-**Install a custom app + Admin API access**
-Our client uses the **Client Credentials Grant** (`shopify.ts › getAccessToken`, API version `2026-01`), so we need a custom app with client id/secret, not a legacy private-app token:
-1. In the dev store admin: **Settings → Apps and sales channels → Develop apps → Create an app** (or create it in the Dev Dashboard and install to this store).
-2. **Admin API scopes:** `write_products`, `read_products` (product/variant creation in `shopify.ts`), `read_orders` / `write_orders` (order data on the webhook), `read_inventory` / `write_inventory` (the `inventory_levels/set` call for capped programs), `write_discounts` / `read_discounts` (volunteer discount code). Storefront scopes not needed — checkout is the hosted cart permalink.
-3. Grab **Client ID** and **Client secret** → env `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET`; the `*.myshopify.com` domain → `SHOPIFY_STORE_DOMAIN`.
+**Get the four values:**
 
-**Webhook subscription(s)**
-Subscribe **`orders/paid`** (primary; the handler also tolerates `orders/create`) pointed at `{instance}/api/webhooks/shopify`. Two ways:
-- Admin **Settings → Notifications → Webhooks** (manual, per-store) — **recommended, mirrors prod**, or
-- Admin API via `npm run shopify:webhook -- --url <callback> [--commit]` (shipped in #740, primarily for the §3 local-tunnel churn; dry-run by default). **Caveat:** Shopify signs deliveries to an API-created subscription with the **app client secret**, so pairing it with the store signing secret in `SHOPIFY_WEBHOOK_SECRET` 401s every delivery — pick one path and keep the matching secret.
+| Env var | Where in Shopify | Notes |
+|---------|------------------|-------|
+| `SHOPIFY_STORE_DOMAIN` | Settings → Domains | the raw `*.myshopify.com`, not a pretty domain |
+| `SHOPIFY_CLIENT_ID` | app → API credentials | shown directly |
+| `SHOPIFY_CLIENT_SECRET` | app → API credentials | reveal-once, copy now |
+| `SHOPIFY_WEBHOOK_SECRET` | Settings → Notifications → Webhooks (bottom: "signed with…") | store-admin path, matches prod. **If instead created via the §2 script, use the app client secret** — Shopify signs API-created subscriptions with it |
 
-> **Prod precedent (verified by grep):** there is **no webhook-registration code anywhere in `src/`** — `grep webhooks.json` returns zero hits, and `shopify.ts` only creates product variants. So prod's `orders/paid` subscription was **registered by hand in the store admin**, meaning prod uses the **store webhook signing secret** path. Mirror it for the dev store: register manually, paste the store's signing secret into `SHOPIFY_WEBHOOK_SECRET`. Build the Admin-API script (§3) **only** if O2 shows cloud-dev's URL rotates and needs unattended re-registration.
+Verify the creds before trusting them:
+```
+curl -X POST https://{STORE_DOMAIN}/admin/oauth/access_token \
+  -d grant_type=client_credentials -d client_id={ID} -d client_secret={SECRET}
+```
+200 + `access_token` = good; 401 = wrong creds or app not installed.
 
-Shopify shows the **webhook signing secret** once per store → env `SHOPIFY_WEBHOOK_SECRET` (§4). Note: an app-level `webhookSubscriptions` uses the **app's** API secret to sign; a store-admin-created webhook uses the store's **webhook signing secret**. Pick one path and keep the matching secret — mismatched secret is the #1 cause of 401s here. (We pick the store-admin path, per the prod precedent above.)
+**Register the `orders/paid` subscription** — subscribe `orders/paid` (primary; the handler also tolerates `orders/create`) pointed at `{instance}/api/webhooks/shopify`. Two ways:
+- Admin **Settings → Notifications → Webhooks** — manual, per-store, **recommended (mirrors prod)**, or
+- `npm run shopify:webhook -- --url <callback> [--commit]` (shipped in #740; idempotent Admin-API upsert reusing `getAccessToken`/`shopifyFetch`, dry-run by default) — built primarily for the §3 local-tunnel churn.
 
-**Membership product + variant + discount**
-- Create one **product** ("Treehouse Membership") with a variant per tier (normal / volunteer), or a single variant if the discount code covers volunteers.
-- Create the **volunteer discount code** in the store; set its code string.
+**Secret pairing is the #1 cause of 401s here:** a store-admin-created webhook is signed with the **store's webhook signing secret**; an Admin-API-created one is signed with the **app client secret**. Pick one path, put the matching value in `SHOPIFY_WEBHOOK_SECRET`. The Admin API also only lists subscriptions this app created — a manually registered webhook is invisible to the script and keeps firing on its own. **Prod precedent (grep):** no webhook-registration code in `src/` (`grep webhooks.json` → 0 hits), so prod's subscription was registered by hand → prod uses the store signing secret. Mirror it for the dev store; build/rely on the script only if O2 shows cloud-dev's URL rotates.
+
+**Membership product** — one product ("Treehouse Membership") with a variant per tier (normal / volunteer), plus the volunteer discount code. Record the variant ids.
 
 **Where each value lives** (mirrors prod, don't hardcode):
 
 | Value | Home | Why |
 |-------|------|-----|
-| `SHOPIFY_CLIENT_ID`, `_CLIENT_SECRET`, `_WEBHOOK_SECRET`, `SHOPIFY_STORE_DOMAIN` | **AWS Secrets Manager → ECS task-def `secrets:`** (see §4) | prod/dev run on ECS; `config.ts` reads them from `process.env` at runtime — this app repo stores nothing. `SHOPIFY_STORE_DOMAIN` is the **single** store-domain var: the client-side checkout link reads it too, via the server (root layout → `EnvProvider` → `useShopifyStoreDomain`), so there is no build-time `NEXT_PUBLIC_` copy to keep in sync |
-| `orgMembershipVariantId`, `volunteerDiscountCode`, `normalDuesCents`, `volunteerDuesCents` | **`BoardSettings`** (row id 1) | admin-editable via [`settings/membership`](../../src/app/settings/membership/page.tsx). (`shopifyNormalVariantId` / `shopifyVolunteerVariantId` are also matched by the webhook's H2 check but have **no UI writer** — DB-only legacy fields) |
-| dev defaults for those `BoardSettings` | **none — deliberately not seeded** (O4, §6) | a placeholder id seeded into the shared `BoardSettings` would land on cloud-dev via the dev-dashboard reset and silently fail the real store's H2 variant check; set once per environment via `settings/membership` |
+| `SHOPIFY_*` secrets + `SHOPIFY_STORE_DOMAIN` | **AWS Secrets Manager → ECS task-def `secrets:`** (see §4) | `config.ts` reads them from `process.env` at runtime. `SHOPIFY_STORE_DOMAIN` is the **single** store-domain var — the client checkout link reads it via the server (root layout → `EnvProvider` → `useShopifyStoreDomain`), so there's no build-time `NEXT_PUBLIC_` copy |
+| `orgMembershipVariantId`, `volunteerDiscountCode`, `normalDuesCents`, `volunteerDuesCents` | **`BoardSettings`** (row id 1) | admin-editable via [`settings/membership`](../../src/app/settings/membership/page.tsx). (`shopifyNormalVariantId` / `shopifyVolunteerVariantId` are matched by the webhook's H2 check but have **no UI writer** — DB-only legacy) |
+| dev defaults for those `BoardSettings` | **none — not seeded** (O4, §6) | a placeholder id seeded into the shared `BoardSettings` lands on cloud-dev via the dev-dashboard reset and silently fails the real store's H2 variant check; set once per environment via `settings/membership` |
 
-> **No OAuth redirect/callback URL to configure.** The client uses the Client Credentials Grant (server-to-server, `shopify.ts › getAccessToken`), so custom-app setup needs no redirect URI. The only URL Shopify calls into is the webhook callback `{host}/api/webhooks/shopify`; checkout is an async cart permalink with no return-to-app URL.
-
-> Seed can't know a real store's variant ids ahead of time. Options: (a) seed leaves them null and the dev runbook says "set them once in `settings/membership` after creating the store," or (b) seed reads them from env (`SHOPIFY_DEV_MEMBERSHIP_VARIANT_ID` etc.) if present. **(a) is lazier and matches how prod is configured** — recommend (a).
+Seed can't know a real store's variant ids ahead of time. **(a) seed leaves them null; the runbook sets them once in `settings/membership`** — lazier and matches how prod is configured. (Recommended over (b) read-from-env.)
 
 ---
 
-## 3. Webhook routing / reachability (the hard part)
+## 3. Webhook routing / reachability
 
-Shopify must POST to a **publicly reachable** URL. Two environments, two answers:
+Shopify must POST to a **publicly reachable** URL.
 
-### Cloud-dev instance — easy
-Already public. Subscribe `{cloud-dev-host}/api/webhooks/shopify` in the dev store (or via Admin API). Nothing else. The URL is stable as long as the host is (→ open question O2).
+- **Cloud-dev** — already public. Subscribe `{cloud-dev-host}/api/webhooks/shopify`. Stable as long as the host is (→ O2).
+- **Local laptop** — `localhost:4000` isn't reachable; put a tunnel in front (Cloudflare `cloudflared tunnel --url http://localhost:4000` or `ngrok http 4000`). **The URL changes each restart** (unless you pay for a reserved subdomain) → re-register the subscription each session; the `npm run shopify:webhook` helper keeps that a one-liner (mind the app-client-secret caveat, §2). The app port is fixed at 4000 regardless of the worktree-port convention — point the tunnel there.
 
-### Local laptop — needs a tunnel
-`localhost:4000` isn't reachable. Put a tunnel in front:
-- **Cloudflare Tunnel** (`cloudflared tunnel --url http://localhost:4000`) or **ngrok** (`ngrok http 4000`). Either yields an `https://<random>.trycloudflare.com` / `.ngrok-free.app` URL.
-- Register that URL as the store's `orders/paid` subscription. **The URL changes each tunnel restart** (unless you pay for a reserved subdomain / named Cloudflare tunnel) → re-register the subscription each session. The `npm run shopify:webhook -- --url <url> [--commit]` helper (shipped in #740) upserts the subscription via the Admin API and keeps it a one-liner — mind the app-client-secret caveat in §2.
-- **Worktree note:** local dev binds `4000`; per the worktree-port convention throwaway services get a suffix, but the app port itself is fixed at 4000 — point the tunnel there.
-
-### Recommended split
-**Cloud-dev = real dev store** (stable public URL, shared team store, real webhooks). **Local laptop = in-process mock by default** (§6), with the tunnel as an opt-in for anyone who needs to exercise the *actual* Shopify checkout UI. Rationale: tunnels are fiddly and the URL churns; most local work only needs "a paid webhook lands and activates the process," which the mock delivers with zero infra. Reserve the real-store-over-tunnel path for checkout-fidelity work.
+**Recommended split:** cloud-dev = real dev store (stable public URL, shared team store); local = in-process mock by default (§6), tunnel opt-in only for exercising the *actual* Shopify checkout UI. Tunnels are fiddly and the URL churns; most local work only needs "a paid webhook lands and activates the process," which the mock delivers with zero infra.
 
 ---
 
 ## 4. HMAC / secret handling
 
-**Verification stays real and unchanged** — `verifyShopifyHmac` already does a timing-safe HMAC over raw bytes. We do **not** weaken it in dev. The only per-env variable is the *value* of `SHOPIFY_WEBHOOK_SECRET`:
+**Verification stays real and unchanged** — timing-safe HMAC over raw bytes. The only per-env variable is the *value* of `SHOPIFY_WEBHOOK_SECRET`:
+- **Prod** — the prod store's real signing secret (already wired).
+- **Cloud-dev / local-with-tunnel** — the **dev store's own real signing secret**, so verification is genuinely end-to-end (the same code path prod runs).
+- **In-process mock (§6)** — a **fixed dev secret**, exactly like Zoho, since the mock self-signs.
 
-- **Prod:** prod store's real webhook signing secret (already wired).
-- **Cloud-dev / local-with-tunnel:** the **dev store's own real signing secret**. Because a real Shopify store signs each webhook with a real secret, verification is genuinely end-to-end — the same code path prod runs, exercised for real.
+**Why not copy Zoho's fixed-secret trick to the real store.** Zoho's mock generates and self-fires its own payload, so its `DEV_MOCK_WEBHOOK_SECRET` "guards nothing real; it exists only so the timing-safe compare has a value." A real dev store signs with a secret **we don't choose**, so a fixed constant would 401 every real webhook. Clean rule: **fixed secret ⇔ self-fired mock; real secret ⇔ real store.** `shopifyWebhookSecret()` returns `null` when unset (→ handler 500) — no `config.ts` fallback for the real path; leave it.
 
-### Why NOT copy the Zoho fixed-dev-secret trick here
-Zoho's mock uses a **fixed** `DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret'` ([`config.ts:54`](../../src/lib/config.ts)) because the mock **generates and self-fires its own payload** — the secret "guards nothing real; it exists only so the timing-safe compare has a value." That's correct *for a self-fired mock*.
-
-A **real dev store is different**: Shopify signs with a secret **we don't choose**, so verification only passes if `SHOPIFY_WEBHOOK_SECRET` holds the store's *actual* secret. Substituting a fixed constant would make every real webhook 401. So:
-- **Real dev store → real per-store secret in env** (no fallback in `config.ts` — `shopifyWebhookSecret()` already returns `null` when unset, which the handler surfaces as 500. Good; leave it).
-- **In-process mock (§6) → fixed dev secret**, exactly like Zoho, since the mock self-signs. This is the one place the Zoho pattern transfers.
-
-This gives a clean rule: *fixed secret ⇔ self-fired mock; real secret ⇔ real store.*
-
-### Where the real secret is actually stored (AWS, not this repo)
-`config.ts` only ever reads `process.env.SHOPIFY_WEBHOOK_SECRET` — it neither knows nor cares where that came from. In prod/dev the value is **injected at runtime by the ECS task definition's `secrets:` block from AWS Secrets Manager / SSM**, defined in Terraform at `~/projects/treehouse/aws/infra/modules/checkin/` (external infra repo; the deploy workflows assume the `checkin-deploy-{dev,prod}` roles there). It is **not** in `.env`, `docker-compose*.yml`, or the GitHub workflow. The store domain follows the same runtime path: `SHOPIFY_STORE_DOMAIN` is the one var, injected by the task-def `secrets:` block, and the client reads it via the server (`EnvProvider` → `useShopifyStoreDomain`) rather than a build-time `NEXT_PUBLIC_` copy.
-
-So wiring the dev store's secrets = **an infra-repo change** (add the dev-store values to Secrets Manager + map them in the task-def `secrets:`), then redeploy cloud-dev so `shopifyConfiguredEnv()` flips true. **This app repo needs no change for secret wiring** — the getters already read `process.env`. (Exact Secrets Manager keys / task-def entry names live in that external repo, not visible from this checkout.)
+**Where the real secret lives (AWS, not this repo).** `config.ts` only reads `process.env.SHOPIFY_WEBHOOK_SECRET`; prod/dev run on **AWS ECS (`us-east-2`), deployed via GitHub OIDC (`deploy-dev.yml`)**, and the value is injected at runtime by the **ECS task-def `secrets:` block from AWS Secrets Manager / SSM**, defined in Terraform at `~/projects/treehouse/aws/infra/modules/checkin/` (external repo; not in `.env`, compose, or the GitHub workflow). So wiring the dev store = an **infra-repo change** (add the values to Secrets Manager + map them in the task-def) then redeploy cloud-dev so `shopifyConfiguredEnv()` flips true. **This app repo needs no change** — the getters already read `process.env`. (Exact Secrets Manager keys / task-def entry names live in that external repo.)
 
 ---
 
 ## 5. Shared vs. per-developer store
 
-**Recommend: one shared team dev store.**
+**One shared team dev store.**
 
 | | Shared team store | Per-developer store |
 |--|--|--|
 | Setup cost | once | every dev repeats §2 |
-| Credentials | one set in AWS Secrets Manager → cloud-dev task-def (§4) | each dev manages their own Partner org |
-| Webhook URL contention | **real** — a store has *one* `orders/paid` subscription URL; two devs tunnelling at once fight over it | none (each store independent) |
+| Credentials | one set in Secrets Manager → cloud-dev task-def | each dev's own Partner org |
+| Webhook URL contention | a store has **one** `orders/paid` URL — two devs tunnelling at once clobber each other | none |
 | Test-order pollution | shared order history gets noisy | isolated |
 
-The contention point cuts the decision: a single store can only point `orders/paid` at **one** URL at a time, so two developers each running a tunnel would clobber each other's subscription. But the §3 recommendation already sends **local dev to the in-process mock**, not the tunnel — so local devs never contend for the store's subscription. The shared store's single subscription is owned by **cloud-dev** (stable URL, set once). Order pollution on a throwaway dev store is a non-issue.
-
-Net: **one shared dev store, its webhook subscription owned by cloud-dev; locals use the mock.** Per-dev stores only if someone genuinely needs isolated real-checkout testing — rare.
+Contention decides it, but §3 already sends local dev to the **mock**, not the tunnel — so locals never contend, and the shared store's single subscription is owned by **cloud-dev** (stable URL, set once). Order pollution on a throwaway store is a non-issue. Per-dev stores only for someone who genuinely needs isolated real-checkout testing — rare.
 
 ---
 
-## 6. Mock alternative (zero-infra fallback)
+## 6. Mock alternative (zero-infra fallback) — shipped #730 (the original `claude/wonderful-tesla-621492` branch is superseded — don't merge it)
 
-Mirror Zoho #669 exactly. Add a dev-only route — `POST /api/dev/shopify/orders-paid` — that:
-1. 404s unless a `config.shopifyMockActive()` gate is true (non-prod + Shopify real creds unset), same shape as `zohoMockActive`.
-2. Takes a `processId`, synthesizes a realistic `orders/paid` payload (`note_attributes[Membership_Process_ID]`, `line_items` with the configured membership variant id, an `id`), signs it with a **fixed dev webhook secret** (§4), and **fires the REAL inbound webhook** `POST /api/webhooks/shopify` — so it drives the exact verify → match → `activate()` path prod runs.
-3. Surfaced from a dev UI ("Simulate membership payment" button) alongside the existing `/dev` tools ([`src/app/dev`](../../src/app/dev)).
+Mirror Zoho #669: a dev-only route `POST /api/dev/shopify/orders-paid` that:
+1. 404s unless `config.shopifyMockActive()` (non-prod + Shopify real creds unset), same shape as `zohoMockActive`.
+2. Takes a `processId`, synthesizes a realistic `orders/paid` payload (`note_attributes[Membership_Process_ID]`, `line_items` with the configured membership variant id, an `id`), signs it with a **fixed dev webhook secret** (§4), and **fires the REAL inbound webhook** — driving the exact verify → match → `activate()` path prod runs.
+3. Surfaced from the dev UI ("Simulate membership payment") alongside `/dev`.
 
-`config.ts` gains a `shopifyMockActive()` gate + a fixed `DEV_MOCK_SHOPIFY_WEBHOOK_SECRET` fallback in `shopifyWebhookSecret()` (a constant, not an env var), both structured identically to the Zoho ones ([`config.ts`](../../src/lib/config.ts)).
+`config.ts` gains a `shopifyMockActive()` gate + a fixed `DEV_MOCK_SHOPIFY_WEBHOOK_SECRET` fallback in `shopifyWebhookSecret()`, both structured like the Zoho ones. The gate is the entire mock↔real switch: setting real creds opts an instance out of the mock automatically — no code branch.
 
-### The variant id is configuration, never hardcoded
+**The variant id is configuration, never hardcoded.** A recurring review question — "how can variant ids in our code align with a real store's?" — is moot: the id is never in code, it lives in `BoardSettings.orgMembershipVariantId`, set once per environment.
+- **Mock (local, no creds):** just a **correlation token** — the mock echoes it in the synthesized `line_items`, the inbound handler matches it against the *same* `BoardSettings`. A closed loop; any string works.
+- **Real dev store (cloud-dev, creds):** the **store's actual variant id**, set by a human after creating the product.
 
-A recurring confusion (raised in review): *"how can variant ids in our code align with a real Shopify dev store's variant ids?"* They can't — and they never need to, because **the membership variant id is never in code. It lives in `BoardSettings.orgMembershipVariantId`** (admin-editable via Settings → Membership), set once per environment to whatever that environment needs:
-
-- **In-process mock (local, no Shopify creds):** the value is just a **correlation token**. The mock reads it, echoes it in the synthesized `line_items`, and the inbound handler matches it against the *same* `BoardSettings` — a closed loop. Any string works; it never touches Shopify. Set it once locally (the dev tool's empty-state points you to Settings → Membership).
-- **Real dev store (cloud-dev, real creds):** the value must be the **store's actual variant id**, set once by a human after creating the membership product. A real `orders/paid` then carries that id and the inbound H2 check matches it.
-
-Because both environments read the id from `BoardSettings` (not from code), there is nothing to "align." We deliberately do **not** seed a placeholder id (see O4): a fake id seeded into the shared `BoardSettings` would land on cloud-dev via the dev-dashboard reset and then silently fail the real store's H2 variant check. The one-time "set the variant id" step is identical in shape for both paths — only the *value* differs.
-
-### Real dev store vs in-process mock
+Because both read the id from `BoardSettings`, there's nothing to "align." We deliberately don't seed a placeholder (O4).
 
 | | Real dev store | In-process mock |
 |--|--|--|
-| Fidelity | **high** — real checkout UI, real Shopify payload shape, real discount application, real HMAC from Shopify | medium — we author the payload; drift from Shopify's real schema is possible |
-| Setup cost | Partner account, store, app, scopes, tunnel-or-public-URL, secret provisioning | **~zero** — a route + a gate, no external anything |
-| Exercises checkout-link build (`ensurePaymentLink`) | yes | only if the mock UI reuses the real link build |
-| Catches Shopify-side surprises (attribute mapping, discount edge cases) | yes | no |
+| Fidelity | **high** — real checkout UI + payload shape, real discount application, real HMAC | medium — we author the payload; drift from Shopify's schema possible |
+| Setup cost | Partner account, store, app, scopes, tunnel-or-public-URL, secrets | **~zero** — a route + a gate |
+| Exercises `ensurePaymentLink` | yes | only if the mock UI reuses the real link build |
+| Catches Shopify-side surprises | yes | no |
 
-**Build order: mock first, real store second. They coexist.** The mock unblocks every local dev immediately (matches the Zoho precedent, zero infra, deterministic tests) and is the default local experience. The real dev store on cloud-dev then adds true end-to-end fidelity for the checkout UI and Shopify's real payload — valuable but not blocking. The `shopifyMockActive()` gate means setting real Shopify creds automatically opts an instance *out* of the mock and *into* the real store, so cloud-dev runs real while locals run mock, no code branch beyond the gate.
+**Build order: mock first, real store second; they coexist.** The mock unblocks every local dev immediately (Zoho precedent, zero infra, deterministic tests) and is the default local experience; the real store on cloud-dev adds true end-to-end fidelity — valuable but not blocking.
 
 ---
 
 ## 7. Prod safety
 
-Same posture as Zoho:
-- **Every dev-only surface is env-gated.** `/api/dev/shopify/*` 404s unless `config.shopifyMockActive()` (which is `false` in prod by construction: `readCheckinEnv() === 'local'`, failing safe to prod when unset — the `NODE_ENV` fuse was eliminated in the #951 review).
-- **No dev store domain hardcoded.** `SHOPIFY_STORE_DOMAIN` stays env-only; the dev store's `*.myshopify.com` never appears in source or seed defaults.
-- **Fixed dev webhook secret is unreachable in prod** — only returned by `shopifyWebhookSecret()` when the mock is active, never in prod (same guard as `DEV_MOCK_WEBHOOK_SECRET`).
-- **Prod webhook path is byte-for-byte unchanged** — real secret, real HMAC, real store. This proposal adds env values and a gated dev route; it touches no prod branch.
+- **Every dev-only surface is env-gated.** `/api/dev/shopify/*` 404s unless `shopifyMockActive()`, which is `false` in prod by construction: `readCheckinEnv() === 'local'`, failing safe to prod when unset (the `NODE_ENV` fuse was eliminated in the #951 review — every deployed instance runs the production image, so it never distinguished prod from cloud-dev).
+- **No dev store domain hardcoded** — `SHOPIFY_STORE_DOMAIN` stays env-only.
+- **Fixed dev webhook secret unreachable in prod** — only returned by `shopifyWebhookSecret()` when the mock is active.
+- **Prod webhook path is byte-for-byte unchanged** — real secret, real HMAC, real store. This proposal only adds env values and a gated dev route.
 
 ---
 
 ## 8. Open questions / decisions before implementation
 
-- **O1.** Do we already own a **Shopify Partner org**? Creating a dev store needs one (or merchant dev-permissions). If not, someone must create it — blocks §2. *(decision + owner needed)*
-- **O2.** Is **cloud-dev's URL stable** enough to hold a standing `orders/paid` subscription, or does it rotate on redeploy? If it rotates, cloud-dev also needs the Admin-API re-register helper from §3. *(needs infra answer)*
-- **O3.** **Build the mock (§6) first and defer the real store** — confirm this ordering. Recommendation: yes.
-- **O4.** Seed `BoardSettings` variant/discount: leave null + document manual one-time setup (recommended), or read from env? *(§2 note)*
-- **O5.** Volunteer discount / per-process checkout token (#278) is still honor-system. A dev store lets us *test* the flow but doesn't fix the token gap — confirm that's out of scope here (it is; #278 tracks it).
-- **O6.** Bogus Gateway acceptable for all dev payment testing, or do we need a real (test-mode) gateway for any card-level fidelity? Bogus is almost certainly enough.
+- **O1.** Do we own a **Shopify Partner org**? Creating a dev store needs one — hard blocker on §2. *(decision + owner needed)*
+- **O2.** Is **cloud-dev's URL stable** across redeploy, or does it rotate? If it rotates, cloud-dev also needs the Admin-API re-register helper (§2/§3) run on deploy. *(needs infra answer)*
+- **O3.** Build the mock first, defer the real store — confirmed: yes.
+- **O4.** Seed `BoardSettings` variant/discount: leave null + document manual one-time setup (recommended), or read from env?
+- **O5.** Volunteer discount / per-process checkout token (#278) is still honor-system; a dev store lets us *test* the flow but doesn't fix the token gap — out of scope here (#278 tracks it).
+- **O6.** Bogus Gateway enough for all dev payment testing? Almost certainly yes.
 
 ---
 
-## Recommendation summary
+## 9. Verify + net work
 
-1. **Build the in-process `orders/paid` mock first** (§6) — mirror Zoho #669: a gated `/api/dev/shopify/orders-paid` that self-signs and fires the *real* inbound webhook. Zero infra, unblocks all local dev, becomes the default local experience.
-2. **Stand up one shared dev store** (§5) and subscribe **cloud-dev's** stable public URL to `orders/paid` (§3). Real end-to-end fidelity where it's cheap (already public).
-3. **Locals default to the mock**, tunnel is opt-in only for real-checkout-UI work — avoids webhook-subscription contention entirely.
-4. **Keep HMAC verification real** (§4): fixed dev secret *only* for the self-fired mock; the real dev store uses its own real per-store secret. `fixed ⇔ mock, real ⇔ store`.
-5. **Prod untouched** — everything gated on `shopifyMockActive()` / `CHECKIN_ENV`, no hardcoded dev domain, no prod branch modified.
+**Acceptance test (cloud-dev):** create a `PENDING_PAYMENT` process → click the real permalink → pay via **Bogus Gateway** → confirm HMAC passes → `activate()` → `ACTIVE` + congrats email. The first `workflow_dispatch`/manual run is the acceptance test.
+
+**Net new work:**
+- **This repo:** shipped in #740 — the registration script + unit tests, dev `orders/paid` route hardening + integration suite, the Shopify config-fuse tests. Nothing else; the mock stays the local default via the gate that already ships.
+- **Infra repo:** add dev-store secrets to Secrets Manager + task-def `secrets:` mapping.
+- **Ops:** Partner org → dev store → app → product/variant/discount → manual `orders/paid` subscription.
+
+Prod byte-for-byte unchanged.

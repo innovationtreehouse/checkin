@@ -28,9 +28,8 @@ are identical.
 | 8 | Timestamps read sanely (UTC casts; #1042) | line renders but freshness is nonsense ("just now" for old runs) | negative computed age |
 | 9 | Trigger side: `S_READ_TRIGGER_FUNCTION` set, IAM `lambda:InvokeFunction` granted, function exists | POST 503 or red "Failed to start" toast | env presence / AWS error class |
 
-Links 2–6 are one opaque 500. Links 1 and 7 render identically. That is the whole
-problem, and it is why "it's not doing its job and I can't tell why" is the
-expected experience, not an anomaly.
+Links 2–6 are one opaque 500; links 1 and 7 render identically. That is the whole
+problem — "it's not doing its job and I can't tell why" is the expected experience.
 
 configHealth cannot fix this: it is presence-only **by design** — it runs on every
 nav-badge poll, and anything that touches the mirror wakes the scale-to-zero Aurora
@@ -141,9 +140,8 @@ report reads as "first broken link", not six cascading reds.
 
 ### Deliberately out of scope
 
-- **No scheduled/continuous monitoring.** Every probe wakes Aurora; the daily
-  sync cadence exists *because* of that cost (infra#129). Diagnostics are a
-  human-clicked tool.
+- **No scheduled/continuous monitoring.** Every probe wakes Aurora; the daily sync
+  cadence exists *because* of that cost (infra#129). Diagnostics are a human-clicked tool.
 - **No result persistence / history.** Run it, read it, fix the link, run again.
 - **No s-read-side changes.** `sync_run` (with `status`, `error`, `counts`) *is*
   s-read's telemetry; the gap was only that checkin never displayed it.

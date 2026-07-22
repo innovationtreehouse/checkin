@@ -5,8 +5,6 @@
 **Addresses:** #270 (member-segment allowlist for program pricing), and by extension #278 (volunteer discount honor-system — its own "long-term fix" checklist is what this doc designs)
 **Related:** #739 (webhook variant-match guard this proposal simplifies — see §3), #625 (dues/price-alignment drift, referenced in `payment.ts`), [`SHOPIFY_DEV_STORE_WEBHOOK.md`](./SHOPIFY_DEV_STORE_WEBHOOK.md) (dev-store setup + mock architecture this proposal reuses and extends), a parallel companion effort making Shopify inventory the source of truth for program capacity (context for §3's single-variant consequence)
 
-> A note on naming, since the sibling doc above got called out for it: the status line above is accurate. This document proposes nothing has landed; it is not implemented in part, and no PR against `main` should claim otherwise until code exists.
-
 > **Update (PR #930, single-pool capacity):** the companion effort referenced above
 > shipped single-pool capacity + per-enrollee, server-minted single-use discount codes
 > as the **interim** member-pricing mechanism (see
@@ -167,7 +165,7 @@ No variant surgery is needed here (unlike §3) — membership already checks out
 
 ## 5. The identity-at-checkout problem — options
 
-Restating the constraint from §1.3: a segment-gated discount only fires for a checkout Shopify can attribute to a tagged customer. Cart permalinks alone don't do that. Options, in the order the ladder favors them:
+The §1.3 constraint: a segment-gated discount only fires for a checkout Shopify can attribute to a tagged customer, which a bare cart permalink can't do. Options, in the order the ladder favors them:
 
 **(a) Require Shopify customer sign-in at checkout (Shopify's "new customer accounts" — email + one-time code, no password).** The buyer logs into (or creates) a Shopify customer account using their org-known email — the same email this proposal already tags in §2. Once signed in, Shopify recognizes them as the segment member and the automatic discount applies natively — this is exactly the feature segment-gated discounts are built for.
 - *Cost:* near-zero new app code — §2's tag sync is the only thing this needs, plus enabling account-required checkout and defining the discount in Shopify's admin. No new Admin API surface, no new scope beyond what §2/§3 already add.

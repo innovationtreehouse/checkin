@@ -36,9 +36,10 @@ wrong (it was a network blip, not a permission problem) and dead-ended (no way
 to recover but a full reload).
 
 This replaces all of them with **one** loader hook, `useLoad`, built on **SWR**
-(the engine is already decided and not re-litigated here). `useLoad` is *loads
-only*: GET-on-mount page/section data. Action errors (POST/PATCH/DELETE) keep
-their existing toast/`AlertBanner` pattern and are out of scope.
+(the engine was chosen in [`data-fetching-hook-migration.md`](./data-fetching-hook-migration.md)
+and is not re-litigated here). `useLoad` is *loads only*: GET-on-mount page/section
+data. Action errors (POST/PATCH/DELETE) keep their existing toast/`AlertBanner` pattern
+and are out of scope.
 
 Status-aware behavior, the whole point:
 
@@ -414,12 +415,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
 }
 ```
 
-**Non-obvious-for-this-app defaults, flagged for review:**
-- `revalidateOnFocus: false` — SWR defaults **true**; leaving it on would refetch
-  sensitive endpoints on every tab-focus, behavior the app has never had.
-- `revalidateOnReconnect: true` — kept on precisely because it's the transient
-  recovery path, not just a nicety.
-- `dedupingInterval: 5000` — up from 2000 because multiple pages share endpoints.
+The three non-obvious-for-this-app defaults (`revalidateOnFocus:false`,
+`revalidateOnReconnect:true`, `dedupingInterval:5000`) and their rationale are Decisions
+#1 and #10 — flagged there for review.
 
 ---
 

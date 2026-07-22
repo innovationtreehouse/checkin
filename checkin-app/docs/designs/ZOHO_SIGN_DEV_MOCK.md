@@ -1,10 +1,10 @@
 # Zoho Sign — Dev/Local Mock for Membership Contract Signing
 
-**Status:** Proposal (design only — no implementation). Direction chosen — see §7.
+**Status:** Proposal (design only — no implementation). Direction chosen — see the implementer-spec pointer at the end of the doc.
 **Scope:** Zoho Sign e-signing seam of the membership EXTERNAL phase. Not S3, not Shopify (noted as sibling gaps in §6).
 **Audience:** maintainer review before any code is written.
 
-**Decisions locked (maintainer, this round):** Option A (provider seam) · skip PDF load when mock active · interstitial page (not instant-bounce) · single `zohoAvailable()` predicate · mock active on both `dev` and `local` · the mock doubles as the test seam · **the interstitial fires the real webhook path in dev** (Q3 resolved — see §4a & §7).
+**Decisions locked (maintainer, this round):** Option A (provider seam) · skip PDF load when mock active · interstitial page (not instant-bounce) · single `zohoAvailable()` predicate · mock active on both `dev` and `local` · the mock doubles as the test seam · **the interstitial fires the real webhook path in dev** (Q3 resolved — see §4a).
 
 ---
 
@@ -132,20 +132,17 @@ It is surfaced under a **single left-nav "Debug" item** → `/dev`, a tab sectio
 
 ## 4. Fidelity — what the mock does and doesn't reproduce
 
-**Reproduces (identical to prod):**
-- The full state transition: `PENDING_EXTERNAL_ACTION` → (contract signed via `markContractSigned`) → `advanceExternalIfComplete` → `PENDING_PAYMENT`.
-- `SYSTEM_ACTOR = 0` audit-log rows, idempotent conditional `updateMany` guards, reviewer notification on advance.
-- The applicant round-trip shape: click Sign → redirect → interstitial "Complete signing (DEV)" → back to `/membership?signed=1`.
-- **The inbound webhook path** — `verifyZohoToken` (real timing-safe compare against the dev secret), `parseZohoWebhook`, `findProcessByEnvelope`, `withWebhook` (§4a).
-- Both completion paths coexisting (webhook + `?signed=1` sync) with idempotent single-write semantics.
-- The "not binding" framing — no real signature is ever produced; interstitial + request name carry the DEV/NOT-BINDING labelling.
+**Reproduces (identical to prod):** everything from webhook receipt through state transition —
+the full `PENDING_EXTERNAL_ACTION` → `markContractSigned` → `advanceExternalIfComplete` →
+`PENDING_PAYMENT` path, `SYSTEM_ACTOR = 0` audit rows, idempotent conditional `updateMany`
+guards, reviewer notification, the inbound webhook path (`verifyZohoToken`/`parseZohoWebhook`/
+`findProcessByEnvelope`/`withWebhook`, §4a), both completion paths coexisting, and the
+DEV/NOT-BINDING framing (no real signature).
 
 **Does NOT reproduce:**
-- **Embedded sign UX** — no real Zoho signing ceremony; the interstitial stands in for it.
-- **Real Zoho HTTP + OAuth** — `getAccessToken`/`createRequest`/`submitRequest`/`getEmbeddedSignUrl`/`getRequestStatus` network calls, `ZohoError`/timeout paths, token caching, the 20s fetch deadline.
-- **Real envelope/action ids** — synthetic `dev-*` strings; no real Zoho request exists.
-
-The design deliberately keeps the mock *below* `markContractSigned` and *routes completion through the real webhook*, so the transition logic **and** webhook-receipt logic that tests and workflows care about are the real thing.
+- **Embedded sign UX** — no real Zoho ceremony; the interstitial stands in.
+- **Real Zoho HTTP + OAuth** — the five network calls, `ZohoError`/timeout paths, token caching, the 20s fetch deadline.
+- **Real envelope/action ids** — synthetic `dev-*` strings.
 
 ---
 
@@ -180,15 +177,4 @@ A shared "dev-mock external provider" convention could eventually cover all thre
 ### Remaining open items
 - None blocking. Dev webhook secret = **hardcoded dev default** in `config.zohoWebhookSecret()` (no env, guards nothing real in dev; prod uses the real env value). Interstitial ships **both** "Complete signing (DEV)" and "Decline (DEV)".
 
----
-
-## 7. Chosen direction (summary for the implementer)
-
-1. **`ZohoSignProvider` interface** (5 methods) + `RealZohoSignProvider` (thin wrapper over today's `zohoClient.ts`, prod-unchanged) + `MockZohoSignProvider`. Select the mock only under `isDevInstance() && NODE_ENV !== 'production'`; real adapter otherwise.
-2. **`external.ts`** calls the provider, not `zohoClient` directly. When the mock is active, **skip `loadAgreementPdf()`** (pass a placeholder buffer — the mock ignores bytes).
-3. **`config.zohoAvailable()`** replaces the two `zohoConfigured()` gates (Walls 1 & 3). In mock mode `zohoWebhookSecret()` returns a **hardcoded dev default**; prod uses the real env value.
-4. **Interstitial page** (dev-only) is the mock's `getEmbeddedSignUrl` target, with two buttons: **"Complete signing (DEV)"** POSTs a dev-only **server** endpoint that synthesizes the Zoho completion payload and **fires the real webhook path**, then redirects to `?signed=1`; **"Decline (DEV)"** just navigates to `?declined=1` (no endpoint — mirrors prod's `sign_declined`).
-5. **Mock doubles as the test seam** for membership state-machine tests.
-6. Prod safety: mock, PDF-skip, dev webhook secret, and interstitial route are all behind `isDevInstance() && NODE_ENV !== 'production'`; `zohoAvailable()`/`zohoWebhookSecret()` collapse to their real values in prod. Add a selector unit test asserting the real adapter + real secret under `CHECKIN_ENV=prod` and `NODE_ENV=production`.
-
-**Left unmocked by design:** real Zoho HTTP + OAuth only. Everything from webhook receipt → state transition is real code.
+*Implementer spec = §2 Option A (seam) + §4a (interstitial/webhook) + §5 (PDF skip) + §3 (prod safety, incl. the selector unit test) + the §6 decisions. Left unmocked by design: real Zoho HTTP + OAuth only.*
