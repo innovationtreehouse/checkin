@@ -42,13 +42,13 @@ describe("buildLabel", () => {
   });
 
   it("prefixes the branch when both branch and describe are set", () => {
-    expect(buildLabel("0123456", null, "v1.0.8-0-ge790e17", "rel/1.0")).toBe(
-      "rel/1.0 v1.0.8-0-ge790e17",
+    expect(buildLabel("0123456", null, "v1.0.8-2-g0123456", "rel/1.0")).toBe(
+      "rel/1.0 v1.0.8-2-g0123456",
     );
   });
 
   it("renders describe alone when the branch is unknown (nothing sets it yet)", () => {
-    expect(buildLabel("0123456", null, "v1.0.8-0-ge790e17")).toBe("v1.0.8-0-ge790e17");
+    expect(buildLabel("0123456", null, "v1.0.8-2-g0123456")).toBe("v1.0.8-2-g0123456");
   });
 
   it("falls back to tag+sha for an image built before describe existed", () => {
@@ -61,11 +61,34 @@ describe("buildLabel", () => {
 
   it("still labels a describe-only build when the sha is somehow unset", () => {
     // describe is self-contained; it should not require the sha var too.
-    expect(buildLabel(undefined, null, "v1.0.8-0-ge790e17")).toBe("v1.0.8-0-ge790e17");
+    expect(buildLabel(undefined, null, "v1.0.8-2-g0123456")).toBe("v1.0.8-2-g0123456");
   });
 
   it("branches the label even with no describe, using the fallback version", () => {
     expect(buildLabel("0123456789abcdef", "v1.0.0", null, "main")).toBe("main v1.0.0 0123456");
+  });
+
+  it("renders the tag ALONE when the commit is the tag (distance 0)", () => {
+    expect(buildLabel("e790e173", null, "v1.0.8-0-ge790e17")).toBe("v1.0.8");
+  });
+
+  it("keeps distance and hash when the commit is PAST the tag", () => {
+    expect(buildLabel("0123456", null, "v1.0.8-2-g0123456")).toBe("v1.0.8-2-g0123456");
+  });
+
+  it("still prefixes the branch on an exact tag", () => {
+    expect(buildLabel("e790e173", null, "v1.0.8-0-ge790e17", "rel/1.0")).toBe("rel/1.0 v1.0.8");
+  });
+
+  it("leaves a bare sha alone (no reachable tag, --always fallback)", () => {
+    expect(buildLabel("e790e173", null, "e790e17")).toBe("e790e17");
+  });
+
+  it("does not mangle a tag whose own name contains -0-g", () => {
+    // Only a trailing "-0-g<sha>" is the distance suffix; an interior one is
+    // part of the tag name and must survive.
+    expect(buildLabel("0123456", null, "v1.0.8-0-gamma-3-g0123456")).toBe("v1.0.8-0-gamma-3-g0123456");
+    expect(buildLabel("0123456", null, "v1.0.8-0-gamma-0-g0123456")).toBe("v1.0.8-0-gamma");
   });
 
   it("ignores the tag when there is no sha", () => {
