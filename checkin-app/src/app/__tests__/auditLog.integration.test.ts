@@ -254,7 +254,7 @@ describe('AuditLog Integration Tests', () => {
     });
 
     it('should generate an AuditLog when an Admin edits participant PII', async () => {
-        await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Person' } });
 
         const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}`, {
             method: 'PUT',
@@ -265,7 +265,7 @@ describe('AuditLog Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const logs = await prisma.auditLog.findMany({
-            where: { tableName: 'Participant', affectedEntityId: testParticipantId }
+            where: { tableName: 'Person', affectedEntityId: testParticipantId }
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].action).toBe('EDIT');
@@ -275,7 +275,7 @@ describe('AuditLog Integration Tests', () => {
     });
 
     it('should generate an AuditLog when an Admin reassigns a participant household', async () => {
-        await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Person' } });
 
         const newHousehold = await prisma.household.create({ data: { name: 'Audit Target Household' } });
 
@@ -288,7 +288,7 @@ describe('AuditLog Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const logs = await prisma.auditLog.findMany({
-            where: { tableName: 'Participant', affectedEntityId: testParticipantId }
+            where: { tableName: 'Person', affectedEntityId: testParticipantId }
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].action).toBe('EDIT');

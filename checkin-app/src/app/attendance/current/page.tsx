@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { usePolling, POLL_IDLE_STOP_MS } from "@/hooks/usePolling";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
@@ -114,39 +115,43 @@ function KioskDisplayInner() {
     if (canCheckInHousehold) fetchHousehold();
   }, [canCheckInHousehold, currentUserHouseholdId]);
 
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      try {
-        const headers: Record<string, string> = {};
-        const sigParamsUrl = searchParams.get("sig");
-        const tsParamsUrl = searchParams.get("ts");
-        const nonceParamsUrl = searchParams.get("nonce");
-        if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-          headers["x-kiosk-signature"] = sigParamsUrl;
-          headers["x-kiosk-timestamp"] = tsParamsUrl;
-          headers["x-kiosk-nonce"] = nonceParamsUrl;
-        }
+  // A signed kiosk display (sig/ts/nonce present) is unattended, so it must not
+  // idle-stop — only the interactive staff view does. Either way the visibility
+  // gate applies; a cookieless kiosk poll can't wake a slept env anyway.
+  const isSignedKiosk = !!(searchParams.get("sig") && searchParams.get("ts") && searchParams.get("nonce"));
 
-        const res = await fetch("/api/attendance", { headers });
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && (json.access === "full" || json.access === "limited")) {
-          setData(json);
-          setError(null);
-          if (json.signedRequest === true) setIsKioskMode(true);
-        } else if (!res.ok) {
-          setError(json.error || "Failed to load attendance");
-        }
-      } catch (error) {
-        console.error("Failed to fetch attendance:", error);
-        notifications.show({ color: "red", message: "Network error", autoClose: false });
-      } finally {
-        setLoading(false);
+  const fetchAttendance = useCallback(async () => {
+    try {
+      const headers: Record<string, string> = {};
+      const sigParamsUrl = searchParams.get("sig");
+      const tsParamsUrl = searchParams.get("ts");
+      const nonceParamsUrl = searchParams.get("nonce");
+      if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+        headers["x-kiosk-signature"] = sigParamsUrl;
+        headers["x-kiosk-timestamp"] = tsParamsUrl;
+        headers["x-kiosk-nonce"] = nonceParamsUrl;
       }
-    };
 
-    fetchAttendance();
-    const interval = setInterval(fetchAttendance, 60000);
+      const res = await fetch("/api/attendance", { headers });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && (json.access === "full" || json.access === "limited")) {
+        setData(json);
+        setError(null);
+        if (json.signedRequest === true) setIsKioskMode(true);
+      } else if (!res.ok) {
+        setError(json.error || "Failed to load attendance");
+      }
+    } catch (error) {
+      console.error("Failed to fetch attendance:", error);
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
+    } finally {
+      setLoading(false);
+    }
+  }, [searchParams]);
 
+  usePolling(fetchAttendance, 60000, { idleStopMs: isSignedKiosk ? undefined : POLL_IDLE_STOP_MS });
+
+  useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (typeof event.data === "object" && event.data?.type === "refresh-attendance" && event.data.attendance) {
         setData({ access: "full", attendance: event.data.attendance, counts: event.data.counts, safety: event.data.safety });
@@ -157,12 +162,8 @@ function KioskDisplayInner() {
       }
     };
     window.addEventListener("message", handleMessage);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [searchParams]);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [fetchAttendance]);
 
   useEffect(() => {
     const performSearch = async () => {

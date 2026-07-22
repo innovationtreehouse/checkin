@@ -158,7 +158,7 @@ function allMatches(scopeMap: Partial<Record<Scope, Match>>): Match[] {
 const SCOPABLE_FIELDS = new Set([
     'householdId',
     'programId',
-    'participantId',
+    'personId',
     'userId',
     'actorId',
     'createdById',

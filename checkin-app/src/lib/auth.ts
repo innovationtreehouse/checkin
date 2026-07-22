@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
 import { getKioskPublicKeys, verifyKioskSignature } from './verify-kiosk';
-import { config } from './config';
+import { config, isStagingAccessAllowed } from './config';
 import { apiError } from './api-response';
 import type { SessionUser } from '@/types/participant';
 import type { BusinessRole, AuthResult } from '@/types/auth';
 
 /**
- * Authenticate a request — tries kiosk signature first, then session.
+ * Authenticate a request — tries kiosk signature first, then session. Resolves the
+ * "raw" auth result; the ops-stg gate below is applied uniformly to whatever this
+ * resolves to.
  */
-export async function authenticateRequest(
+async function resolveAuthResult(
     req: NextRequest,
     body?: string
 ): Promise<AuthResult> {
@@ -54,6 +56,34 @@ export async function authenticateRequest(
     }
 
     return { type: 'unauthenticated' };
+}
+
+/**
+ * Authenticate a request — the API trust-boundary chokepoint every `withAuth` route
+ * and `security/handler.ts` route (including `authorize: 'public'`) calls through.
+ *
+ * ops-stg ACCESS GATE: on staging, anything that isn't a verified org member or an
+ * explicitly canAccessStaging-flagged account is downgraded to `unauthenticated` here
+ * — regardless of what it actually resolved to (session, kiosk, or already
+ * unauthenticated). This is deliberately unconditional, not scoped to `session` results
+ * only: a kiosk auth carries no org/flag claims either, so it fails the same predicate
+ * and must not get a pass. Fails closed by construction — isStagingAccessAllowed
+ * denies on any falsy/missing claim.
+ */
+export async function authenticateRequest(
+    req: NextRequest,
+    body?: string
+): Promise<AuthResult> {
+    const result = await resolveAuthResult(req, body);
+
+    if (config.isStaging()) {
+        const claims = result.type === 'session' ? result.user : null;
+        if (!isStagingAccessAllowed(claims)) {
+            return { type: 'unauthenticated' };
+        }
+    }
+
+    return result;
 }
 
 /**

@@ -26,6 +26,7 @@ export const classifications = {
         isBoardMember: 'public',
         isKeyholder: 'internal',
         isBackgroundCheckReviewer: 'internal',
+        canAccessStaging: 'internal',
     },
     PersonRole: {
         personId: 'internal',
@@ -206,6 +207,8 @@ export const classifications = {
         phase: 'public',
         enrollmentStatus: 'public',
         orgMemberOnly: 'public',
+        announceOnOpen: 'public',
+        announcedAt: 'internal',
         minAge: 'public',
         maxAge: 'public',
         maxParticipants: 'public',

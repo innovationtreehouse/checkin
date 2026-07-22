@@ -18,6 +18,7 @@ describe('Household Lead API Integration Tests', () => {
     let testLeadId: number;
     let testAdultId: number;
     let testChildId: number;
+    let testYouthId: number;
     let testOtherLeadId: number;
     let testOtherMemberId: number;
     let householdId: number;
@@ -63,8 +64,11 @@ describe('Household Lead API Integration Tests', () => {
 
         await prisma.person.update({ where: { id: leadUser.id }, data: { isHouseholdLead: true } });
 
+        // Adult DOB (30 years ago) — promoting them to lead must succeed.
+        const adultDob = new Date();
+        adultDob.setFullYear(adultDob.getFullYear() - 30);
         const adultUser = await prisma.person.create({
-            data: { email: 'adult-lead-api-test@example.com', name: 'Adult User', householdId: household.id }
+            data: { email: 'adult-lead-api-test@example.com', name: 'Adult User', householdId: household.id, dateOfBirth: adultDob }
         });
         testAdultId = adultUser.id;
 
@@ -72,6 +76,14 @@ describe('Household Lead API Integration Tests', () => {
             data: { email: 'child-lead-api-test@example.com', name: 'Child User', householdId: household.id }
         });
         testChildId = childUser.id;
+
+        // Clearly a youth (DOB 10 years ago) — server must refuse promoting them to lead.
+        const youthDob = new Date();
+        youthDob.setFullYear(youthDob.getFullYear() - 10);
+        const youthUser = await prisma.person.create({
+            data: { email: 'youth-lead-api-test@example.com', name: 'Youth User', householdId: household.id, dateOfBirth: youthDob }
+        });
+        testYouthId = youthUser.id;
 
         const otherHousehold = await prisma.household.create({
             data: { name: 'Other Lead Test Household' }
@@ -92,7 +104,7 @@ describe('Household Lead API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const currentIds = [testLeadId, testAdultId, testChildId, testOtherLeadId, testOtherMemberId];
+        const currentIds = [testLeadId, testAdultId, testChildId, testYouthId, testOtherLeadId, testOtherMemberId];
         const validHouseholdIds = [householdId, otherHouseholdId];
 
         await prisma.orgMembership.deleteMany({
@@ -153,6 +165,27 @@ describe('Household Lead API Integration Tests', () => {
             expect(data.error).toBe('Only household leads, board members, or sysadmins can promote members');
         });
 
+        it('should reject promoting a youth to lead (server-side youth exclusion)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
+
+            const req = new Request('http://localhost:4000/api/household/lead', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: testYouthId })
+            });
+
+            const res = await POST(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('A youth cannot be a household lead.');
+
+            // The youth must not have been flagged as a lead.
+            const notLead = await prisma.person.findFirst({
+                where: { id: testYouthId, householdId, isHouseholdLead: true },
+                select: { id: true }
+            });
+            expect(notLead).toBeNull();
+        });
+
         it('should return successfully when user is already a lead', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
              
@@ -190,7 +223,7 @@ describe('Household Lead API Integration Tests', () => {
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
-                where: { actorId: testLeadId, action: 'CREATE', tableName: 'Person', secondaryAffectedEntity: testAdultId }
+                where: { actorId: testLeadId, action: 'CREATE', tableName: 'Person', affectedEntityId: testAdultId }
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });

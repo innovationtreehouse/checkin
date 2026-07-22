@@ -138,7 +138,6 @@ const ALLOWLIST: Record<string, string> = {
     'app/api/auth/dev-personas/route.ts': 'Dev-only persona picker (config.isDevInstance() gated), scoped to `email: { endsWith: "@example.com" }` — a merge tombstone\'s email is always rewritten to merged-*@deleted.checkme.in (merge/route.ts step 1 CAS), so it can never match this domain filter.',
     'app/api/dev/shopify/orders-paid/route.ts': 'Dev-only mock-webhook firer (config.isDevInstance() gated). Both join reads pin `personId: { in: participantIds }` from the request body and are echoed back to the dev UI — no production or user-facing effect.',
     'lib/dev/seed-helpers.ts': 'Dev seed helper: picks an arbitrary sample of existing persons for local macro/demo flows. No production or user-facing effect.',
-    'lib/dev/zoho-import.ts': 'One-time legacy Zoho data importer (scripts/import-zoho.ts) — not part of the running application.',
 };
 
 // ── scanner (walk / captureObject copied from lifecycleStatusLiteralAllowlist.test.ts) ──

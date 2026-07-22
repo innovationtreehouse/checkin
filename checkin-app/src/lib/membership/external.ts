@@ -399,7 +399,13 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         // (CHECKIN_ENV), not editable by the applicant. Prod stays clean. The
         // create/submit/embed flow is otherwise identical across envs. (Mock mode
         // skips the watermark — the empty placeholder PDF is never rendered.)
-        const isProd = config.isProd();
+        //
+        // ops-stg is a SEPARATE exclusion, not a CheckinEnv value: CHECKIN_ENV=stg
+        // falls back to 'prod' (readCheckinEnv), so config.isProd() alone would
+        // call ops-stg's signing flow "prod" and produce a watermark-free document
+        // indistinguishable from a real binding agreement the moment a Zoho
+        // credential is ever wired to staging to rehearse signing.
+        const isProd = config.isProd() && !config.isStaging();
         const pdf = isProd || signingMock ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
         const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
 

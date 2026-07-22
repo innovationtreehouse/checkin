@@ -421,6 +421,8 @@ export const authOptions: NextAuthOptions = {
                 // re-verify the caller is a verified org member without re-decoding the JWT.
                 session.user.hd = token.hd ?? null;
                 session.user.emailVerified = token.emailVerified ?? false;
+                // ops-stg access gate escape hatch — see lib/config.ts isStagingAccessAllowed.
+                session.user.canAccessStaging = token.canAccessStaging ?? false;
             }
             return session;
         }

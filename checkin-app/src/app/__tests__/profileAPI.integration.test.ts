@@ -150,7 +150,7 @@ describe('Profile API Integration Tests', () => {
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
-                where: { actorId: testUserId, action: 'EDIT', tableName: 'Participant', affectedEntityId: testUserId }
+                where: { actorId: testUserId, action: 'EDIT', tableName: 'Person', affectedEntityId: testUserId }
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });

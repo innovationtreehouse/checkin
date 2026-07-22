@@ -5,6 +5,7 @@ import { sendNotification } from "@/lib/notifications";
 import { createShopifySingleVariantProgram } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
+import { config } from "@/lib/config";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
@@ -26,6 +27,7 @@ const PUBLIC_PROGRAM_SELECT = {
     phase: true,
     enrollmentStatus: true,
     orgMemberOnly: true,
+    announceOnOpen: true,
     minAge: true,
     maxAge: true,
     maxParticipants: true,
@@ -46,6 +48,19 @@ const PUBLIC_PROGRAM_SELECT = {
 // reveal (P0-C).
 export async function GET(req: Request) {
     const user = await getOptionalSessionUser(req);
+
+    // ops-stg ACCESS GATE (finding 2026-07-20): getOptionalSessionUser collapses a
+    // gate-rejected caller (denied household, or on staging a non-org/
+    // non-canAccessStaging caller) to `undefined` — the SAME shape as a genuinely
+    // anonymous visitor, which is exactly the intended "public catalog" happy path
+    // in prod/dev. On staging this route serves the full prod-copied catalog
+    // (names, dates, prices, Shopify ids, live enrollment counts), so without this
+    // explicit check an anonymous curl reads it straight through the "public
+    // visitor" branch below. See tests/security/routeAuthDrift.test.ts rule 4,
+    // which fails any future getOptionalSessionUser caller that forgets this.
+    if (config.isStaging() && !user) {
+        return apiError("Unauthorized", 401);
+    }
 
     try {
         const { searchParams } = new URL(req.url);
