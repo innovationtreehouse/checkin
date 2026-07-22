@@ -26,7 +26,7 @@ import AdminMembershipPage from "../page";
 // reconciling, losing the page's already-fetched rows state.
 const rewrapped = () => (
     <MantineProvider>
-        <EnvProvider value={{ checkinEnv: "prod", shopifyStoreDomain: null }}>
+        <EnvProvider value={{ checkinEnv: "prod", shopifyStoreDomain: null, isStaging: false }}>
             <AdminMembershipPage />
         </EnvProvider>
     </MantineProvider>
