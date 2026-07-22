@@ -170,9 +170,8 @@ order status transitions (cancellation/refund), and watermark advancement.
   `now − (latest COMPLETED sync_run.finishedAt)` exceeding a couple of cron intervals.
   This advances on every successful run, including empty ones, so it does **not**
   false-fire on a quiet store. (Watermark lag — `now − sync_state.lastUpdatedAtProcessed`
-  — is **not** a good primary signal: the watermark only moves when real records arrive,
-  so a genuinely quiet store looks "stale." Use watermark lag only where you have an
-  expected per-store activity cadence.)
+  — only moves when real records arrive, so use it only as a secondary per-store signal
+  where there's a known activity cadence. Rationale: [MONITORING-PRD.md](MONITORING-PRD.md) §4.1.)
 
 ## Deployment (Terraform)
 
