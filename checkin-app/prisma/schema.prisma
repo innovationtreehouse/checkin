@@ -831,6 +831,10 @@ model Program {
   enrollmentStatus               EnrollmentStatus @default(CLOSED)
   /// @sensitivity:public
   orgMemberOnly                  Boolean          @default(false)
+  /// Opt-in (#1153): when true, reaching UPCOMING+OPEN emails covered members once.
+  /// Default false — no program announces unless a leader enables it.
+  /// @sensitivity:public
+  announceOnOpen                 Boolean          @default(false)
   /// @sensitivity:public
   minAge                         Int?
   /// @sensitivity:public
