@@ -13,7 +13,7 @@ Status: **DRAFT v2 for discussion** (folds in chip H — 9 more policies).
 
 **In-scope clusters (post-probe):**
 - **GC-INVENTORY** — parts/consumables full port, receipt-seeded, staged. Mission #1 candidate (Q19/21/22/23) — priority not settled; staying high-level.
-- **GC-PROGRAM-FINANCE** — just the hours→QB expense allocation (painful-ish, automatable). Rest parked.
+- **GC-PROGRAM-FINANCE** — just the hours→QB expense allocation (painful-ish, automatable). Rest parked. **Concretized (Q49 → FE7):** base per-hour shop fee charged to programs (+ surplus for shop-users) hits each program's P&L as real QB inter-class journals; checkin has the hours, needs rates + application rules to initiate.
 - **GC-QB** — QuickBooks integration foundation, all net-new, reconcile 3yr history. Underpins expense/allocation/donations. **Settle first.**
 - **GC-FIN-CONTROL** — flags low-volume (keep lightweight), but the **expense process is high-volume** (hundreds of card receipts/yr → port the expense-app).
 - **GC-DONOR** — multi-channel donation intake (in-kind design surface + Benevity + Shopify multi-SKU + cash) + receipt-sending. In-kind touches inventory.
