@@ -524,8 +524,13 @@ jobs:
           set -euo pipefail
           # Real probe of the deployed service (mirrors deploy-prod.yml). The
           # app answers 200 or an auth redirect; retries cover target
-          # registration + first boot after scale-up.
-          for i in $(seq 1 12); do
+          # registration + first boot after scale-up. 10 minutes, measured, not
+          # guessed: on run 29925037763 task-start -> waker rule promote took
+          # 4m22s and the old 2-minute window expired 68s before the promote —
+          # a succeeded deploy reported as failed. The 503s during the wait are
+          # the ops-stg-waker's holding page; each probe also drives the
+          # waker's health poll, so keep the 10s cadence.
+          for i in $(seq 1 60); do
             CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
             echo "attempt $i: $APP_URL -> HTTP $CODE"
             case "$CODE" in
