@@ -14,6 +14,7 @@
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
 import prisma from '@/lib/prisma';
+import { config, isStagingAccessAllowed } from '@/lib/config';
 import type { AuthResult } from '@/types/auth';
 import type { Authorize, CtxNeeds, Role } from './core';
 import { LIVE_PERSON } from '@/lib/person/filters';
@@ -207,12 +208,33 @@ export interface ResolverContext {
  * Admission gate — the per-route `authorize` check. Returns whether the
  * caller is even allowed to *invoke* the endpoint (401/403 if not). View
  * resolution (orderedView) is downstream.
+ *
+ * ops-stg ACCESS GATE, checked FIRST, ahead of every `authorize` branch below —
+ * including `'public'`. This is the surface that made the pre-gate design
+ * dangerous: `authenticateRequest` (lib/auth.ts) already downgrades a
+ * non-org/non-flagged caller to `unauthenticated` on staging, but
+ * `authorize: 'public'` unconditionally returns `{ allowed: true }` regardless
+ * of `auth` — so without this check, an anonymous `curl` of
+ * `GET /api/programs/[id]` (registered `authorize: 'public'`, returning real
+ * enrolled minors' names/household/emergency contacts) would sail straight
+ * through on a copy of prod data. Re-derives the predicate independently
+ * (not just `auth.type !== 'unauthenticated'`) as belt-and-suspenders: even if
+ * a future caller ever constructs an `AuthResult` without going through
+ * `authenticateRequest`, this still fails closed on its own.
  */
 export async function resolveAccess(
     authorize: Authorize,
     ctx: ResolverContext,
 ): Promise<{ allowed: boolean }> {
     const { auth, params, callerContext } = ctx;
+
+    if (config.isStaging()) {
+        const claims = auth.type === 'session' ? auth.user : null;
+        if (!isStagingAccessAllowed(claims)) {
+            return { allowed: false };
+        }
+    }
+
     const isAdmin = auth.type === 'session' && (auth.user.isSysadmin || auth.user.isBoardMember);
 
     if (typeof authorize === 'string') {

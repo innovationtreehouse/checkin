@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { withAuth } from '@/lib/auth';
 import { getServerSession } from 'next-auth/next';
 import { getKioskPublicKeys, verifyKioskSignature } from '@/lib/verify-kiosk';
+import { ORG_DOMAIN } from '@/lib/config';
 import type { SessionUser } from '@/types/participant';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
@@ -99,6 +100,97 @@ describe('withAuth', () => {
     it('invokes the handler for a session holding a required role', async () => {
         mockSession.mockResolvedValue({ user: user({ isBoardMember: true }) });
         const route = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(200);
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+});
+
+/**
+ * ops-stg ACCESS GATE — the API trust-boundary chokepoint (authenticateRequest, which
+ * every withAuth route calls through). ops-stg runs a scrubbed copy of PRODUCTION data
+ * behind PROD's Google OAuth client, deliberately unrestricted to the org workspace, so
+ * ANY Google account can complete sign-in — canAccessStaging is the sysadmin-settable
+ * escape hatch for an explicitly-admitted outside collaborator. This is applied
+ * UNCONDITIONALLY inside authenticateRequest (not just for `withAuth` routes with a
+ * `roles` list), so even a route with no role requirement at all is covered.
+ */
+describe('withAuth — ops-stg access gate', () => {
+    const ORIGINAL_ENV = process.env.CHECKIN_ENV;
+    beforeEach(() => { process.env.CHECKIN_ENV = 'stg'; });
+    afterEach(() => {
+        if (ORIGINAL_ENV === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = ORIGINAL_ENV;
+    });
+
+    it('401s an anonymous request, never reaching the handler', async () => {
+        const route = withAuth({}, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(401);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('401s an authenticated non-org session with canAccessStaging unset (false), even with no role requirement', async () => {
+        mockSession.mockResolvedValue({ user: user({ hd: 'gmail.com', emailVerified: true }) });
+        const route = withAuth({}, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(401);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('401s an org email whose emailVerified is false', async () => {
+        mockSession.mockResolvedValue({ user: user({ hd: ORG_DOMAIN, emailVerified: false }) });
+        const route = withAuth({}, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(401);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('admits an authenticated non-org session with canAccessStaging=true', async () => {
+        mockSession.mockResolvedValue({ user: user({ hd: 'gmail.com', emailVerified: true, canAccessStaging: true }) });
+        const route = withAuth({}, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(200);
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('admits a verified org member', async () => {
+        mockSession.mockResolvedValue({ user: user({ hd: ORG_DOMAIN, emailVerified: true }) });
+        const route = withAuth({}, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(200);
+        expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('canAccessStaging alone does not satisfy a route role requirement — the gate only widens WHO gets in, not WHAT they can do', async () => {
+        mockSession.mockResolvedValue({ user: user({ hd: 'gmail.com', emailVerified: true, canAccessStaging: true, isSysadmin: false }) });
+        const route = withAuth({ roles: ['isSysadmin'] }, handler);
+        const res = await route(sessionReq());
+
+        expect(res.status).toBe(403);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('denies a kiosk request too (no org/flag claims to satisfy the predicate)', async () => {
+        mockPubKeys.mockReturnValue(['key']);
+        mockVerify.mockReturnValue({ ok: true });
+        const route = withAuth({ allowKiosk: true }, handler);
+        const res = await route(kioskReq());
+
+        expect(res.status).toBe(401);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('is inert outside staging: the same non-org session that was 401d above now succeeds once CHECKIN_ENV is not stg', async () => {
+        process.env.CHECKIN_ENV = 'prod';
+        mockSession.mockResolvedValue({ user: user({ hd: 'gmail.com', emailVerified: true }) });
+        const route = withAuth({}, handler);
         const res = await route(sessionReq());
 
         expect(res.status).toBe(200);
