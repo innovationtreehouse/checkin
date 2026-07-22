@@ -65,6 +65,9 @@ Legend of drops: see [§ Dropped — confirmed built](#dropped--confirmed-built-
 | P18 | Dead routes: wire-or-delete `/publish` (#476) + `/settings` (#477); port lost validation/guards | FIX | READY-FOR-DEV | S | ? | F | #476, #477 (open) |
 | P19 | Program-date **time display** off-by-one (UTC/local) | FIX | READY-FOR-DEV | S | ? | F | #1149 (open) |
 | P20 | **My-Programs roster surface** for leads — roster + contact, attendance summary, stats, CSV (net-new read surface beyond the inbox; ties GC-ROLES/PL duties; parked partial PR #964, scope source) | CREATE | NEEDS-DESIGN | M | ? | PR#964 | #964 |
+| P21 | **T-shirt size on Person** — size field for participants + adults (some parents too), with **staleness/refresh policy** (size set too long ago → re-confirm reminder; refresh window likely age-based since youth grow — open design Q) | CREATE | NEEDS-DESIGN | S–M | collect sizes by hand (forms/spreadsheet) | owner | none |
+| P22 | **Program "issues t-shirts" flag + missing-size ops surface** — program attribute; flag gaps to families; dashboard for ops/program leads (+assistant leads) of students in shirt-issuing programs with no/stale size (fits the existing compliance-dashboard `peopleMissingDob` + nav todo-count pattern) | CREATE | NEEDS-DESIGN | M | chase sizes over email | owner | none |
+| P23 | **Program shirt offer → Shopify checkout** — program offers shirts, family buys N by a deadline via Shopify; students AND adults; **N comped shirts per student + paid extras** (comp count/policy TBD). Reuses program↔Shopify variant + webhook activation plumbing | CREATE | NEEDS-DESIGN | M–L | manual order collection + side spreadsheet to vendor | owner | none |
 
 ## 3. Attendance & Facility  (prefix AT)
 
