@@ -44,11 +44,12 @@ on completion-sync. Three shapes were considered:
 | 1 | Interstitial vs. instant-advance | **Interstitial** — a dev-only "Complete signing (DEV)" / "Decline (DEV)" page stands in for the Zoho ceremony, so there's a visible signing step. |
 | 2 | Predicate shape | **Single `config.zohoAvailable()`** replaces the two `zohoConfigured()` gates; the same dev disjunct supplies the dev `ZOHO_WEBHOOK_SECRET`. |
 | 3 | Webhook fidelity | **Fire the real webhook** from the interstitial's *server* endpoint, not the sync path — see rationale below. |
-| 4 | PDF concession | **Accept the one-line `loadAgreementPdf` bypass** in dev-mock mode (§ below). Full S3 dev-PDF stays a sibling proposal. |
+| 4 | PDF concession | **Accept the one-line `loadAgreementPdf` bypass** in dev-mock mode (§5 below). Full S3 dev-PDF stays a sibling proposal. |
 | 5 | `local` vs `dev` parity | **Both** — selected via the dev instance fuse. |
 | 6 | Test seam | **Reuse** — the mock provider doubles as the injection seam for membership tests. |
 
-**Why fire the webhook, not the sync path (Q3).** The interstitial's "Complete"
+**§4a — Why fire the webhook, not the sync path (Q3).** *(§4a is cited from
+`external.ts`, `app/dev/zoho-sign`, and the dev routes — keep the anchor.)* The interstitial's "Complete"
 button POSTs to a dev *server* endpoint that synthesizes a `completed` payload and
 self-fires the real webhook, because that exercises `verifyZoho`'s timing-safe
 compare, `parseZohoWebhook`, `findProcessByEnvelope`, and the `withWebhook`
@@ -71,7 +72,7 @@ repo-wide in the #951 review — every deployed instance runs the production ima
 so it never distinguished a misconfigured prod box from cloud-dev. Keep the unit
 test asserting the selector returns the real adapter under `CHECKIN_ENV=prod`.
 
-## The S3 PDF coupling (Wall 2) — a required tiny concession
+## §5 — The S3 PDF coupling (Wall 2): a required tiny concession
 
 The Zoho mock alone does **not** unblock dev: `getOrCreateContractSigningUrl`
 calls `loadAgreementPdf()` (S3) *before* the client, and that 503s in dev too.

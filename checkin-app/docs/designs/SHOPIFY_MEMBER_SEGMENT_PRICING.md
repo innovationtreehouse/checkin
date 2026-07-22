@@ -100,6 +100,6 @@ pricing change (lowest risk, fully reversible).
   eligible purchase. Worth a "give it a few minutes" note in the confirmation email.
 - **The mock cannot model this feature** — the in-process Shopify mock self-fires
   a synthesized `orders/paid` and never touches Shopify's real checkout/discount
-  engine, which is exactly where §5's core question lives. Promote real-dev-store
+  engine, which is exactly where the identity-at-checkout question lives. Promote real-dev-store
   checkout testing (currently valuable-but-not-blocking in `SHOPIFY_DEV_STORE_WEBHOOK.md`)
   to **required** before phase 2 — the one place the mock's zero-infra runs out.

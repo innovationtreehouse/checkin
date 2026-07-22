@@ -9,7 +9,8 @@ unbuilt, blocked on O1/O2 below. The prod inbound path was already built and
 correct — `api/webhooks/shopify/route.ts` + `withWebhook`/`verifyShopifyHmac`
 (`webhookAuth.ts`) + the `config.ts` getters — so "make it real" is store setup +
 secret wiring, not new prod code. (This folds in the former separate
-implementation-plan doc; its runbook is §1 and §4 here.)
+implementation-plan doc; its runbook is §2 below. §2/§4/§6 anchors are kept
+because code comments and PRODUCTION_PLAN.md cite them.)
 
 **Related:** `ZOHO_SIGN_DEV_MOCK.md` (sibling in-process mock), #278
 (checkout-token honor-system TODO), #624/#625 (order-amount / price-alignment
@@ -17,7 +18,7 @@ safety), #683 (Shopify env routed through `config.ts`).
 
 ## Load-bearing decisions (the reasons not to undo this)
 
-**Secret pairing — the #1 cause of 401s, and the decision that governs it.** A
+**Secret pairing (§4) — the #1 cause of 401s, and the decision that governs it.** A
 store-admin-created webhook is signed with the **store's webhook signing
 secret**; an Admin-API-created one (what `shopify:webhook` creates) is signed
 with the **app client secret**. Pick one path, put the matching value in
@@ -28,7 +29,8 @@ and rely on the script only if O2 shows cloud-dev's URL rotates. The Admin API
 lists only subscriptions *this app* created, so a hand-registered webhook is
 invisible to the script and keeps firing on its own.
 
-**Fixed secret ⇔ self-fired mock; real secret ⇔ real store.** The mock generates
+**Fixed secret ⇔ self-fired mock; real secret ⇔ real store (§6 — the shipped
+in-process mock).** The mock generates
 and self-fires its own payload, so `DEV_MOCK_SHOPIFY_WEBHOOK_SECRET` guards
 nothing real — it exists only so the timing-safe compare has a value (exactly
 Zoho's trick). A real dev store signs with a secret we don't choose, so a fixed
@@ -47,7 +49,7 @@ variant-match guard.
 
 **One shared team dev store, owned by cloud-dev** — not per-developer. A store
 has one `orders/paid` URL, so two devs tunnelling at once clobber each other;
-locals default to the mock (§ below) and never contend, so the single
+locals default to the mock (§6 above) and never contend, so the single
 subscription belongs to cloud-dev's stable URL. Per-dev stores only for someone
 who genuinely needs isolated real-checkout testing — rare.
 
@@ -58,7 +60,7 @@ the #951 review — every deployed instance runs the production image, so it nev
 distinguished prod from cloud-dev. The prod webhook path is byte-for-byte
 unchanged; this work only adds env values and a gated dev route.
 
-## Real dev store — what ops has to do (unbuilt)
+## §2 — Real dev store: what ops has to do (unbuilt)
 
 Create a Shopify development store, install a **custom app** using the **Client
 Credentials Grant** (server-to-server, so **no OAuth redirect URL** — the only
