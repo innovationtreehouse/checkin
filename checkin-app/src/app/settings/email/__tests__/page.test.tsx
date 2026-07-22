@@ -6,6 +6,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
+import { DEFAULT_ACK_MEMBERSHIP_BODY, DEFAULT_ACK_PROGRAM_BODY } from "@/lib/scholarshipAckCopy";
 import EmailSettingsPage from "../page";
 
 beforeEach(() => resetRtl());
@@ -30,6 +31,9 @@ describe("EmailSettingsPage", () => {
       emailFromAddress: "Org <no-reply@org.test>",
       emailReplyToAddress: "board@org.test",
       scholarshipNotifyEmail: null,
+      scholarshipAckSubject: null,
+      scholarshipAckMembershipBody: null,
+      scholarshipAckProgramBody: null,
     });
   });
 
@@ -63,6 +67,9 @@ describe("EmailSettingsPage", () => {
       emailFromAddress: null,
       emailReplyToAddress: "info@org.test, ops@org.test",
       scholarshipNotifyEmail: null,
+      scholarshipAckSubject: null,
+      scholarshipAckMembershipBody: null,
+      scholarshipAckProgramBody: null,
     });
   });
 
@@ -99,6 +106,44 @@ describe("EmailSettingsPage", () => {
       emailFromAddress: null,
       emailReplyToAddress: null,
       scholarshipNotifyEmail: "board@org.test, ops@org.test",
+      scholarshipAckSubject: null,
+      scholarshipAckMembershipBody: null,
+      scholarshipAckProgramBody: null,
+    });
+  });
+
+  it("Scholarship ACK fields: render with default-copy placeholders, load configured values, and trim into the PUT body", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      "/api/settings/email": {
+        settings: {
+          emailFromAddress: null, emailReplyToAddress: null,
+          scholarshipAckSubject: "Custom subject", scholarshipAckMembershipBody: null, scholarshipAckProgramBody: null,
+        },
+      },
+    });
+    renderWithProviders(<EmailSettingsPage />);
+
+    const subject = await screen.findByLabelText(/Scholarship ACK subject/i);
+    expect(subject).toHaveValue("Custom subject");
+    const membershipBody = screen.getByLabelText(/Scholarship ACK body — membership dues request/i);
+    expect(membershipBody).toHaveValue("");
+    expect(membershipBody).toHaveAttribute("placeholder", DEFAULT_ACK_MEMBERSHIP_BODY);
+    const programBody = screen.getByLabelText(/Scholarship ACK body — program request/i);
+    expect(programBody).toHaveAttribute("placeholder", DEFAULT_ACK_PROGRAM_BODY);
+
+    fireEvent.change(programBody, { target: { value: "  Thanks for applying to {{programName}}!  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/email", expect.objectContaining({ method: "PUT" })));
+    const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
+    expect(JSON.parse(putOpts!.body as string)).toEqual({
+      emailFromAddress: null,
+      emailReplyToAddress: null,
+      scholarshipNotifyEmail: null,
+      scholarshipAckSubject: "Custom subject",
+      scholarshipAckMembershipBody: null,
+      scholarshipAckProgramBody: "Thanks for applying to {{programName}}!",
     });
   });
 
