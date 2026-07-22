@@ -135,11 +135,7 @@ jobs:
           # Surface the container's own output either way, same as deploy-dev.
           TASK_ID="${TASK_ARN##*/}"
           echo "--- reconcile container logs (/ecs/checkin-migrate-dev) ---"
-          aws logs get-log-events \
-            --log-group-name /ecs/checkin-migrate-dev \
-            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
-            --start-from-head --limit 200 \
-            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          ./scripts/dump-task-logs.sh /ecs/checkin-migrate-dev "ecs/checkin-migrate/$TASK_ID"
           echo "--- end reconcile container logs ---"
 
           if [ "$EXIT_CODE" != "0" ]; then

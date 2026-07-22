@@ -183,11 +183,7 @@ jobs:
           # undiagnosed for a day.
           TASK_ID="${TASK_ARN##*/}"
           echo "--- migrate container logs (/ecs/checkin-migrate-dev) ---"
-          aws logs get-log-events \
-            --log-group-name /ecs/checkin-migrate-dev \
-            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
-            --start-from-head --limit 200 \
-            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          ./scripts/dump-task-logs.sh /ecs/checkin-migrate-dev "ecs/checkin-migrate/$TASK_ID"
           echo "--- end migrate container logs ---"
 
           if [ "$EXIT_CODE" != "0" ]; then
