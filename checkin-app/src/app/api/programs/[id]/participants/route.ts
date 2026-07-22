@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { checkProgramAge } from "@/lib/programAge";
+import { adjustProgramInventory } from "@/lib/shopify";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
@@ -146,7 +147,38 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // Trigger notification
         await sendNotification(participantId, 'PROGRAM_ENROLLMENT', { programName: currentProgram.name });
 
-        return NextResponse.json({ success: true, enrollment });
+        // A board/sysadmin comp (external admin, confirmed override) seats a
+        // participant WITHOUT a Shopify checkout, so unlike a normal PENDING
+        // enrollment nothing ever fires Shopify's own sale-time -1. Reconcile it
+        // here: -1 on the pool, exactly like a paid sale and like scholarship
+        // apply (request-payment-plan -1). Without it the roster takes a seat
+        // the storefront still shows as available (oversell).
+        //
+        // A comp is ACTIVE, so it deliberately does NOT use the inventoryHeldAt
+        // hold-ledger: invariants I1/I2/I3 (enrollmentState.ts) make a held seat
+        // PENDING-and-scholarship only, and the lifecycle reconciler auto-heals
+        // an ACTIVE+held row by releasing +1 — which would silently undo this
+        // decrement. A comp is a permanent consumption like a paid seat, and
+        // like a paid seat it is not auto-restocked on withdrawal (that stays a
+        // manual Shopify action, same as a refund). Uncapped programs track no
+        // inventory (inventory_management=null), so only capped programs adjust;
+        // adjustProgramInventory additionally no-ops when no variant is wired.
+        let warning: string | undefined;
+        if (isExternalAdmin && override && currentProgram.maxParticipants !== null) {
+            // Enrollment already committed above; on Shopify failure keep it and
+            // warn (adjustProgramInventory has logged + emailed sysadmins),
+            // mirroring the cap-edit and withdraw siblings. There is no stamp to
+            // roll back — deleting the just-created comp would be the worse
+            // half-commit.
+            const ok = await adjustProgramInventory(currentProgram, -1);
+            if (!ok) {
+                warning = "Participant added, but the Shopify inventory decrement failed. Capacity may be out of sync — check System Status > Link Status.";
+            }
+        }
+
+        const responseObj: Record<string, unknown> = { success: true, enrollment };
+        if (warning) responseObj.warning = warning;
+        return NextResponse.json(responseObj);
     } catch (error) {
         if (error instanceof ProgramCapacityError) {
             return NextResponse.json({ error: "Program has reached maximum capacity.", requiresOverride: true }, { status: 400 });
