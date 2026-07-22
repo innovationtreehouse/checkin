@@ -6,6 +6,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
+import { DEFAULT_ACK_MEMBERSHIP_BODY, DEFAULT_ACK_PROGRAM_BODY } from "@/lib/scholarshipAckCopy";
 import EmailSettingsPage from "../page";
 
 beforeEach(() => resetRtl());
@@ -127,9 +128,9 @@ describe("EmailSettingsPage", () => {
     expect(subject).toHaveValue("Custom subject");
     const membershipBody = screen.getByLabelText(/Scholarship ACK body — membership dues request/i);
     expect(membershipBody).toHaveValue("");
-    expect(membershipBody).toHaveAttribute("placeholder", expect.stringContaining("Treehouse membership dues"));
+    expect(membershipBody).toHaveAttribute("placeholder", DEFAULT_ACK_MEMBERSHIP_BODY);
     const programBody = screen.getByLabelText(/Scholarship ACK body — program request/i);
-    expect(programBody).toHaveAttribute("placeholder", expect.stringContaining("{{programName}}"));
+    expect(programBody).toHaveAttribute("placeholder", DEFAULT_ACK_PROGRAM_BODY);
 
     fireEvent.change(programBody, { target: { value: "  Thanks for applying to {{programName}}!  " } });
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));

@@ -7,17 +7,7 @@ import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
-
-// Mirrors the DEFAULT_ACK_* constants in lib/scholarshipEmails.ts, shown here only
-// as placeholder text. Not imported directly: that module pulls in prisma (server-only)
-// at the top level, which a "use client" page must never bundle.
-const DEFAULT_ACK_SUBJECT = "We received your scholarship / payment-plan request";
-const DEFAULT_ACK_MEMBERSHIP_BODY =
-  "Hi — we've received your household's scholarship / payment-plan request for your Treehouse membership dues. "
-  + "The Scholarship Review Team will review it and follow up.";
-const DEFAULT_ACK_PROGRAM_BODY =
-  "Hi — we've received your scholarship / payment-plan request for {{programName}}. "
-  + "The Scholarship Review Team will review it and follow up. Your spot is held while they do.";
+import { DEFAULT_ACK_SUBJECT, DEFAULT_ACK_MEMBERSHIP_BODY, DEFAULT_ACK_PROGRAM_BODY } from "@/lib/scholarshipAckCopy";
 
 interface Settings {
   emailFromAddress: string | null;
@@ -201,7 +191,7 @@ export default function EmailSettingsPage() {
             />
             <TextInput
               label="Scholarship ACK subject"
-              description="Subject line for the applicant's request-received email. Blank = default shown below."
+              description={'Subject line for the applicant\'s request-received email. "{{programName}}" is replaced with the program\'s name. Blank = default shown below.'}
               placeholder={DEFAULT_ACK_SUBJECT}
               w={440}
               value={ackSubject}

@@ -174,6 +174,23 @@ describe("resolveAckCopy", () => {
         );
         expect(result.body).toBe("<p>Save your seat in Robotics!</p>");
     });
+
+    it("a configured subject substitutes {{programName}}, unescaped (plain text)", () => {
+        const result = resolveAckCopy(
+            { scholarshipAckSubject: 'Save your seat in {{programName}} — "Camp Fun"', scholarshipAckMembershipBody: null, scholarshipAckProgramBody: null },
+            "program",
+            { programName: "Robotics" },
+        );
+        expect(result.subject).toBe('Save your seat in Robotics — "Camp Fun"');
+    });
+
+    it("a configured subject with {{programName}} but no value given falls back to empty string, same as the body", () => {
+        const result = resolveAckCopy(
+            { scholarshipAckSubject: "Re: {{programName}} request", scholarshipAckMembershipBody: null, scholarshipAckProgramBody: null },
+            "membership",
+        );
+        expect(result.subject).toBe("Re:  request");
+    });
 });
 
 describe("notifyReviewTeam", () => {
