@@ -34,6 +34,15 @@ ENV NEXT_PUBLIC_GIT_SHA=${NEXT_PUBLIC_GIT_SHA}
 # "<tag> <sha>" on prod. Empty on dev/local builds -> footer shows the hash alone.
 ARG NEXT_PUBLIC_RELEASE_TAG
 ENV NEXT_PUBLIC_RELEASE_TAG=${NEXT_PUBLIC_RELEASE_TAG}
+# `git describe --tags --long --abbrev=7 --always` of the built commit, e.g.
+# "v1.0.8-0-ge790e17" — the tag it descends from, how many commits past it, and
+# the commit itself. Answers "what is running" in one string for a build that is
+# NOT itself a release: a bare SHA can't tell you it is 2 commits past v1.0.7,
+# and the release tag alone is empty on every non-prod build. Requires the deploy
+# workflow to check out with fetch-depth: 0 (a shallow clone has no tags, and
+# describe silently degrades to the bare SHA).
+ARG NEXT_PUBLIC_GIT_DESCRIBE
+ENV NEXT_PUBLIC_GIT_DESCRIBE=${NEXT_PUBLIC_GIT_DESCRIBE}
 # Branch, passed by deploy-dev.yml (main) and deploy-staging.yml (the rel/*
 # branch being deployed) -> footer shows "<branch> <sha>" on those envs. NOT
 # passed by deploy-prod.yml: on prod, github.ref_name IS the tag, so passing it
