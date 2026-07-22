@@ -68,6 +68,22 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ steps.vars.outputs.sha }}
+          # Full history + tags: `git describe` below needs them. The default
+          # shallow clone has neither, and describe degrades SILENTLY to a bare
+          # SHA rather than failing, so a missing fetch-depth shows up only as a
+          # footer that quietly stopped carrying its version.
+          fetch-depth: 0
+
+      - name: Resolve build describe
+        id: describe
+        run: |
+          set -euo pipefail
+          # --long so an exact tag still reports its distance ("-0-g"), keeping
+          # the shape identical for tagged and untagged builds; --always so a
+          # repo with no reachable tag yields the SHA instead of failing the run.
+          DESCRIBE=$(git describe --tags --long --abbrev=7 --always)
+          echo "describe=$DESCRIBE" >> "$GITHUB_OUTPUT"
+          echo "build describe: $DESCRIBE"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -92,6 +108,7 @@ jobs:
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_GIT_DESCRIBE="${{ steps.describe.outputs.describe }}" \
             --build-arg NEXT_PUBLIC_GIT_BRANCH="main" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" .
