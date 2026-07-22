@@ -154,7 +154,7 @@ export const ROW_SCOPE_KEY: Record<string, string> = {
 export const OPT_OUT_PENDING_ROUTE = new Set<string>([
     'OrgMembershipProcess', // board/admin today; a household-facing status route is plausible
     'BackgroundCheckAttestation', // bind their_own at migration, keep notes `internal`
-    'Corporation', // has leads→participantId; a corp-lead view is plausible
+    'Corporation', // has leads→personId; a corp-lead view is plausible
     'VolunteerDesignation', // has createdById; confirm whether a self view is warranted
     // Lands ahead of the model itself (#1031, the Shopify payment reconciler), so the
     // boundary change ships alone and reviewable — inert until that PR adds the model
@@ -162,6 +162,25 @@ export const OPT_OUT_PENDING_ROUTE = new Set<string>([
     // served via withAuth on finance-ops/payments; a household-facing "your payment
     // problem" route is plausible later, and that is when this earns a real binding.
     'PaymentException',
+    // Surfaced by the personId fix to SCOPABLE_FIELDS (the Participant→Person rename
+    // left `participantId` in that list, so every personId-only model silently took
+    // the "un-scopable, admin-only by construction" exemption instead of being made
+    // to declare itself here). Both below are that backlog, not new models.
+    //
+    // Read today only by GET/PATCH /api/roles (withAuth isSysadmin|isBoardMember) and,
+    // as a derived boolean set via rolesToFlags, by GET /api/people/search (board/
+    // sysadmin/ops) — the rows themselves are never serialized into a member-facing
+    // bag. auth-options.ts also reads them, but that is session assembly, not a served
+    // response. A self-facing "your roles/permissions" view is the plausible future
+    // reader; that is when this earns `their_own: { field: 'personId', eqCtx: 'selfId' }`.
+    'PersonRole',
+    // Admin outreach ledger: read only by GET /api/outreach/status and the
+    // process-batch drain job, both withAuth board/sysadmin/operations. The model's
+    // own schema comment makes the same call for its `email` field ("only ever read
+    // by board/ops on the admin send panel, never serialized through a member-facing
+    // bag"). If a self-serve "emails we sent you" / suppression-audit view ever ships,
+    // it earns `their_own: { field: 'personId', eqCtx: 'selfId' }`.
+    'BulkSendItem',
     // Same shape as PaymentException above: the model (ProgramSlackAuth — the
     // isolated Slack-bot-token table, group-slack-sync PR1) ships schema-only,
     // fully inert, with no route yet. `programId` makes it isScopable(); its
