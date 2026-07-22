@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { withKiosk } from '@/lib/kioskAuth';
 import { getServerSession } from 'next-auth/next';
 import { getKioskPublicKeys, verifyKioskSignature } from '@/lib/verify-kiosk';
+import { config } from '@/lib/config';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/auth-options', () => ({ authOptions: {} }));
@@ -22,12 +23,18 @@ jest.mock('@/lib/verify-kiosk', () => ({
     verifyKioskSignature: jest.fn(),
 }));
 // Non-local: disables authenticateRequest's keyless local-dev kiosk fallback so
-// an unsigned request must fail closed, exactly like prod/dev.
-jest.mock('@/lib/config', () => ({ config: { isLocal: () => false, isProd: () => false } }));
+// an unsigned request must fail closed, exactly like prod/dev. isStaging is a
+// jest.fn (default false, per beforeEach below) so the "ops-stg" describe below
+// can flip it per-test — every OTHER case in this file runs with the gate off.
+jest.mock('@/lib/config', () => ({
+    config: { isLocal: () => false, isProd: () => false, isStaging: jest.fn(() => false) },
+    isStagingAccessAllowed: jest.requireActual('@/lib/config').isStagingAccessAllowed,
+}));
 
 const mockSession = getServerSession as jest.Mock;
 const mockPubKeys = getKioskPublicKeys as jest.Mock;
 const mockVerify = verifyKioskSignature as jest.Mock;
+const mockIsStaging = config.isStaging as jest.Mock;
 
 const handler = jest.fn(async () => NextResponse.json({ ok: true }, { status: 200 }));
 const route = withKiosk({ rateLimit: { name: 'kiosk-test', limit: 300 } }, handler);
@@ -40,6 +47,7 @@ beforeEach(() => {
     mockPubKeys.mockReturnValue([]);
     mockVerify.mockReturnValue({ ok: false });
     mockSession.mockResolvedValue(null);
+    mockIsStaging.mockReturnValue(false);
 });
 
 describe('withKiosk', () => {
@@ -76,5 +84,43 @@ describe('withKiosk', () => {
 
         expect(res.status).toBe(401);
         expect(handler).not.toHaveBeenCalled();
+    });
+});
+
+// Coverage gap named by review (2026-07-20): every case above ran with the gate
+// off (isStaging: () => false), so this is the only place the kiosk path is
+// exercised WITH ops-stg active. A kiosk credential carries no org/canAccessStaging
+// claim, so authenticateRequest's staging check must deny it same as any other
+// non-session caller.
+describe('withKiosk — ops-stg access gate', () => {
+    beforeEach(() => {
+        mockIsStaging.mockReturnValue(true);
+    });
+
+    it('denies an otherwise-valid kiosk signature on staging', async () => {
+        mockPubKeys.mockReturnValue(['key']);
+        mockVerify.mockReturnValue({ ok: true });
+
+        const res = await post({
+            headers: { 'x-kiosk-signature': 'sig' },
+            body: JSON.stringify({ participantId: 5 }),
+        });
+
+        expect(res.status).toBe(401);
+        expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('is inert once isStaging is false again — the same valid signature is admitted', async () => {
+        mockIsStaging.mockReturnValue(false);
+        mockPubKeys.mockReturnValue(['key']);
+        mockVerify.mockReturnValue({ ok: true });
+
+        const res = await post({
+            headers: { 'x-kiosk-signature': 'sig' },
+            body: JSON.stringify({ participantId: 5 }),
+        });
+
+        expect(res.status).toBe(200);
+        expect(handler).toHaveBeenCalledTimes(1);
     });
 });

@@ -27,6 +27,9 @@ declare module "next-auth" {
       // Not secrets — anyone able to load the dev app is already org-verified by the middleware.
       hd?: string | null;
       emailVerified?: boolean;
+      // ops-stg access gate escape hatch — sysadmin-settable, NOT one of the
+      // five PersonRole flags above. See lib/config.ts isStagingAccessAllowed.
+      canAccessStaging?: boolean;
     };
   }
 
@@ -64,5 +67,7 @@ declare module "next-auth/jwt" {
     householdLead?: boolean;
     programsLed?: number[];
     toolStatuses?: { toolId: number; level: string }[];
+    // ops-stg access gate escape hatch — see Session.user.canAccessStaging above.
+    canAccessStaging?: boolean;
   }
 }

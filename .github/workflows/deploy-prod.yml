@@ -4,22 +4,29 @@ name: Deploy prod
 # published in this repo. Mirrors deploy-dev.yml step-for-step (build an ARM64
 # image, run DB migrations, roll out the ECS service) with these differences:
 #   - trigger: a published GitHub release instead of a merge to main
-#   - guard:   RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
+#   - guard 1: the released commit must live on the rel/* branch matching its
+#              own version — see the `release-branch-match` job. Prod ships
+#              only from release branches; a release cut from main (or any
+#              other ref) fails fast here, before any CI or human approval is
+#              spent on it.
+#   - guard 2: RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
 #              against the released tag — see the `validate` job. A release can
-#              be cut from ANY commit, and stale or partial check status on that
-#              commit is not trustworthy, so we revalidate from scratch rather
-#              than querying past check-runs. `deploy` needs `validate`.
-#   - gate:    `deploy` targets the `production` GitHub Environment, which holds
-#              the human-approval rule (required reviewers — one approval). The
-#              validate job runs first (no environment), so the reviewer approves
-#              a release that has already gone green on its own tag.
+#              be cut from any commit ON a rel/* branch, and stale or partial
+#              check status on that commit is not trustworthy, so we revalidate
+#              from scratch rather than querying past check-runs.
+#   - gate:    `deploy` (needs both guards) targets the `production` GitHub
+#              Environment, which holds the human-approval rule (required
+#              reviewers — one approval). The guards run first (no
+#              environment), so the reviewer approves a release that has
+#              already proven its branch origin and gone green on its own tag.
 #   - report:  a run step summary (releases have no comment thread to post to)
 #
 # Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-prod
 # role defined in ~/projects/treehouse/aws/infra/modules/checkin/iam.tf.
 #
 # Cutting a release:
-#   gh release create v1.2.3 --target main --generate-notes
+#   git push origin main:refs/heads/rel/1.2       # or fast-forward an existing rel/*
+#   gh release create v1.2.3 --target rel/1.2 --generate-notes
 # Publishing (not drafting) is what fires this. Re-publishing a draft works;
 # pre-releases deploy too — don't mark a release pre if it shouldn't ship.
 
@@ -68,11 +75,9 @@ env:
 
 jobs:
   # A release must ship from its OWN release line: v1.1.x may only be cut from
-  # rel/1.1. The version and the branch are two independent claims about "which
-  # line is this", and nothing previously made them agree — so v1.1.0 could be
-  # tagged on rel/1.0, or on main, and deploy to prod carrying a version number
-  # that lies about its lineage. That is worst exactly when it matters: during an
-  # incident, when the version string is what people reason about.
+  # rel/1.1. Supersedes the old branch-guard job (any rel/* branch) — matching
+  # the specific line implies containment in some rel/* line, so running both
+  # was redundant.
   #
   # Checks ANCESTRY, not `release.target_commitish`. That field can be a branch
   # name OR a bare SHA, is chosen by whoever cut the release, and is re-taggable —
@@ -98,6 +103,8 @@ jobs:
   # released tag. This is the H1 fix: a release tag can point at any commit, and
   # we no longer trust whatever check status happened to exist there — we prove
   # the released code green from scratch before a human is even asked to approve.
+  # Needs release-branch-match so a mis-cut release fails with ONE error
+  # instead of burning a full CI pass in parallel with the rejection.
   validate:
     name: Revalidate CI on the released tag
     needs: [release-branch-match]   # never burn a CI pass on a mis-cut release
@@ -172,6 +179,16 @@ jobs:
           # -f: there is no root Dockerfile — the app image builds from
           # checkin-app/Dockerfile with the repo root as context, exactly like
           # deploy-dev.yml (the release-scrub found this job would die here).
+          # Deliberately NOT passing --build-arg NEXT_PUBLIC_GIT_BRANCH here:
+          # this job checks out github.event.release.tag_name, so github.ref_name
+          # IS the tag, not a branch — passing it through would just duplicate
+          # NEXT_PUBLIC_RELEASE_TAG in the footer ("v1.1.0 v1.1.0 abc1234").
+          # release.target_commitish is sometimes a branch name, but it's the
+          # branch the tag was CUT from, not necessarily anything meaningful by
+          # release time, and resolving "the real branch a commit belongs to" is
+          # itself ambiguous (a commit can be on several, or on none once a
+          # branch is deleted post-release). Left unset -> the footer omits the
+          # branch part and shows "<tag> <sha7>", which is what prod wants anyway.
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
             --build-arg NEXT_PUBLIC_RELEASE_TAG="${{ steps.vars.outputs.tag }}" \
