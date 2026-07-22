@@ -18,7 +18,8 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 ## Part A — Persona journeys
 
 ### A1. Prospective family → active member (onboarding)  [bucket M/SA]  — validated V1
-0. ❌ Pre-membership: prospect logs in, subscribes to newsletter, gets program notifications; open house on public calendar (`CM14`) · ❌ preview the membership agreement as view-only PDF without triggering Zoho Sign (`M20`)
+0a. ❌ Pre-membership: prospect logs in, subscribes to newsletter, gets program notifications; open house on public calendar (`CM14`)
+0b. ❌ Preview the membership agreement as view-only PDF without triggering Zoho Sign (`M20`)
 1. ✅ Intake application incl "anything else" note (captured + surfaced to reviewers)
 2. ✅ Board pre-designation of volunteer household — but drives **dues only**, NOT skip-review→payment (that's a separate `bgFresh` path; a designated vol WITH an intake note is still held at review)
 3. ✅ Contract sent + signed (Zoho, embedded)
@@ -48,7 +49,10 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 6. 🟡 BLOCKED recovery (`M16` — left-rail alert only, no right-column card)
 7. n/a household-merge (doesn't exist; M18 is the **person/record merge** #1103, confirmed)
 8. ❌ Archive family (`M4`/#959 parked; `archive.ts` archives *applications* not families; `M19` moot until M4)
-9. ❌ Set/maintain each person's t-shirt size (+staleness re-confirm, `P21`) · ❌ see own family's tool certs (`SA9`) · ❌ re-read agreement PDF (`M20`) · ❌ policy library (`CM13`)
+9. ❌ Set/maintain each person's t-shirt size (+staleness re-confirm, `P21`)
+10. ❌ See own family's tool certs (`SA9`)
+11. ❌ Re-read the membership agreement PDF (`M20`)
+12. ❌ Policy library — policies/bylaws linked in-app (`CM13`)
 
 ### A4. Program leader  [bucket P/GC-ROLES]  — validated V2
 1. ✅ Assigned to program — `Program.leadMentorId` FK + `ProgramVolunteer{isCore}` join
@@ -60,9 +64,18 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 7. 🟡 Attendance **inbox** ✅ (`my-programs/attendance`, bare `/my-programs` lands here) — full **roster+contact+CSV** read surface ❌ (`P20`, parked PR #964)
 8. 🟡 Volunteer hours = residual present-but-not-enrolled, **not** derived from `VolunteerDesignation` (`AT4`); no leader hour surface
 9. ❓ Approve expenses (household-COI flag) — finance domain, deferred to V5
-10. ❌ Copy program year-to-year (`P9`) — no copy/duplicate route; manual recreate. For TEAMS: ❌ year-over-year rollover — auto-carryover + first-dibs window + board reprices (`P25`)
+10. ❌ Copy program year-to-year (`P9`) — no copy/duplicate route; manual recreate
 11. ❌ Archive/un-archive program (`P5`) — no `archivedAt` col, no archive route (#954 not in base; `ProgramPhase` has no ARCHIVED)
-12. _Extraction adds (2026-07-22, all ❌):_ shirt-gap dashboard for shirt-issuing programs (`P22`) · add-on offers w/ deadline — shirts/comp meals (`P23`) · cross-program org events (`P24`) · FIRST external-registration tracking incl NH+TX (`P26`) · trip mode — time-boxed roster/emergency/allergy access (`P27`) · "requires waiver" enrollment gate (`P28`) · budget-vs-actual view (`FE8`) · publish to public Google Calendar w/ cancellation display rules (`P14`)
+_Extraction adds (2026-07-22):_
+12. ❌ Shirt-gap dashboard for shirt-issuing programs (`P22`)
+13. ❌ Add-on offers w/ deadline — shirts, comp meals (`P23`)
+14. ❌ Cross-program org events on multiple calendars (`P24`)
+15. ❌ FIRST external-registration tracking incl NH+TX (`P26`)
+16. ❌ Trip mode — time-boxed roster/emergency/allergy access (`P27`)
+17. ❌ "Requires waiver" enrollment gate (`P28`)
+18. ❌ Budget-vs-actual per-program view (`FE8`)
+19. ❌ Publish to public Google Calendar w/ cancellation/move display rules (`P14`)
+20. ❌ Team year-over-year rollover — auto-carryover + first-dibs window + board reprices (`P25`)
 
 ### A5. Volunteer  [bucket AT]  — validated V3
 1. 🟡 Designated (`VolunteerDesignation` model exists but **not consulted for hours**)
@@ -78,7 +91,8 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 3. ✅ Check-in / out
 4. ✅ Insert own past visit — `attendance/manual` forces `personId=self` (never from body), backdate allowed by design, audit-logged CREATE
 5. 🟡 Edit an inserted visit (`AT3` — **now fully mapped**): **user self-edit ⛔ none** (manual route INSERT-only) · **staff edit ✅** board/sysadmin PATCH/DELETE `facility/visits` (⚠️ UI page gates sysadmin-only but API allows board too — role discrepancy) · **lead/ops add-for-others ✅ scoped** (event-roster synthetic visit via `events/[id]/attendance`, or live `scan`) — but **no arbitrary-past-time insert for others** exists
-6. ❌ Waiver-gated enrollment where the program requires one — camps (`P28`) · ❌ age-out → alumni pipeline (`M21`; SA1 BG trigger already covers the mentor return)
+6. ❌ Waiver-gated enrollment where the program requires one — camps (`P28`)
+7. ❌ Age-out → alumni pipeline (`M21`; SA1 BG trigger already covers the mentor return)
 
 ### A7. Keyholder / front-desk (kiosk)  [bucket AT]  — validated V3
 1. ✅ Open facility — non-keyholder check-in blocked when `activeKeyholders===0` (scan + manual paths)
@@ -95,7 +109,7 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 3. ❌ Certifier ∈ member-family (`M15` HIGH-RISK) — **NOT ENFORCED**: no member-family predicate on actor **or** target `personId` (cert-of-non-member/archived possible); matches #164. Only gate is not-denied + holds-cert
 4. ✅ Cert display in shop
 5. 🟡 Oversight: no revoke/expiry review surface — downgrade is just a lower-level POST + audit; certs never expire (**deliberate** — Q72)
-6. ❌ Cert-upgrade request queue — member proposes upgrade, tool's certifiers tagged to review (`SA10`); member-facing cert visibility is `SA9` (A3-9)
+6. ❌ Cert-upgrade request queue — member proposes upgrade, tool's certifiers tagged to review (`SA10`); member-facing cert visibility is `SA9` (A3-10)
 
 ### A9. Board / admin (oversight)  [bucket M/RB/PL]  — validated V7
 1. ✅ Review applications + override — board/sysadmin queue (PII field-stripped per role); `review-override` → `overrideBlocked()`
@@ -118,7 +132,8 @@ _**But payment-reconciliation is NOT a gap** — V5 found checkin already ships 
 3. ❌ OCR extract lines/price/qty/supplier/tax/shipping (ocr-function; interim = manual entry) → exception: **retry-OCR**
 4. ❌ Financial approve/reject queue + submitter review + reimbursement + discard/resubmit/restart-flow
 5. ❌ Carried Inventory-UNFINISHED gaps: no manager-notify on new receipt (#3); **no upload size / line-count cap = DoS surface** (#7)
-6. ❌ **Card-statement ↔ receipt reconciliation** — "which transactions still lack a receipt" chase list (`FR8`, NOT in the port; today by hand + QB reconcile) · submitter-visible reimbursement status must survive the port (`FR3` req)
+6. ❌ **Card-statement ↔ receipt reconciliation** — "which transactions still lack a receipt" chase list (`FR8`, NOT in the port; today by hand + QB reconcile)
+7. ❌ Submitter-visible reimbursement status ("did I get paid back?") — must survive the port (`FR3` requirement)
 
 ### A11. Catalog identify  (global-catalog-app)
 1. ❌ Item/GTIN catalog + categories (archive/unarchive lifecycle)
@@ -148,8 +163,9 @@ _**But payment-reconciliation is NOT a gap** — V5 found checkin already ships 
 3. ❌ Comment-rule engine (auto-classify by comment)
 4. ❌ **Disbursement holds + resubmit** (exception screen); GL AccountMap
 5. ❌ In-kind / cash / Shopify-donation intake — design surface still open
-6. ❌ Donation-receipt send (acknowledgement) · ❌ year-end per-donor giving statement (`FD7`)
-7. ❌ **Team sponsorship intake** — company sponsors a specific team, often by check; record + receipt + allocate to that team (`FD6`)
+6. ❌ Donation-receipt send (acknowledgement)
+7. ❌ Year-end per-donor giving statement (`FD7`)
+8. ❌ **Team sponsorship intake** — company sponsors a specific team, often by check; record + receipt + allocate to that team (`FD6`)
 
 ### A15. Income reconcile  — ✅ SUBSTANTIALLY BUILT (checkin-native, not a port) — validated V5
 _Exists as membership/program **payment** reconciliation, not generic income/GL._
@@ -177,7 +193,9 @@ _For each loop: does the whole thing close, and can staff SEE/FIX it? These over
   - ❌ expense **holds / MULTIPLE_MATCHES / resolve-unknown queue** · ❌ **QB sync-failure/ambiguity queue** · ❌ capital/depreciation review
   - ❌ donations **unassigned queue** · ❌ **disbursement-hold queue** (bulkdonation)
   - ✅ **payment reconciliation is BUILT** (checkin-native, not port): `finance/reconcile.ts` runReconcile → 11-kind `PaymentException` (PAID_WHILE_BLOCKED, NO_ITEM, UNMATCHED_ORDER, AMOUNT_MISMATCH, REFUND, CHARGEBACK, ACTIVE_WITHOUT_PAYMENT, …) → board-alert (`notifyBoardPaymentException`: CRITICAL=immediate email, WARN=red-dot) → **resolution screen** `finance-ops/payments`; reversal webhooks (`webhooks/shopify/reversals`); match-audit completeness (UNCLAIMED_PAID / ACTIVE_WITHOUT_PAYMENT); PENDING_HOLD_FAILED handled at `finance-ops/shopify-holds`. Gap within: **Shopify payout import ❌** (order-truth only)
-  - ❌ **rent / recurring non-receipt expense path** (no receipt to OCR) · ❌ audit trail on every step · ❌ card-statement↔receipt chase list (`FR8`) · ❌ budget-vs-actual per-program view, semi-rolling (`FE8`)
+  - ❌ **rent / recurring non-receipt expense path** (no receipt to OCR) · ❌ audit trail on every step
+  - ❌ card-statement↔receipt chase list (`FR8`)
+  - ❌ budget-vs-actual per-program view, semi-rolling (`FE8`)
 - Reframe (owner): receipt toil = **inventory cataloging** (thousands of receipts) NOT reimbursement (~10/yr) → the high-volume driver is card-receipt intake, so #7 upload/line-count cap is a real throughput+DoS concern, not theoretical.
 
 ### B2. Membership lifecycle loop  [M/SA]  — validated V1
@@ -207,7 +225,10 @@ _For each loop: does the whole thing close, and can staff SEE/FIX it? These over
   - ❌ **event-cancel notifies registrants (`CM11`) — silent data loss**: cancel txn `deleteMany` RSVPs + deletes event, **no email** (#472)
   - ❌ staleness auto-notification (`PL14` parked #958) — only a login-time in-app `RenewalBanner`; no nudge cron, no board digest
   - ❌ **renewal-reminder engine (`CM5`) CONFIRMED GUTTED (write-never)** — `cron/membership-renewals` opens PENDING_RENEWAL but sends zero email (test asserts "the machine never emails"); A2.1's ~Jul-15 reminder does NOT send. _(owner: out-of-scope, external fix underway)_
-  - ❌ per-program Google Groups auto-managed (3 lists: team/parents/mentors; Slack variant) — group addresses as Program fields (`CM6`) · ❌ checkin→public Google Calendar feed w/ **cancellation/move display rules** (`P14`) · ❌ policy library (`CM13`) · ❌ prospect newsletter/program-notify path (`CM14`)
+  - ❌ per-program Google Groups auto-managed (3 lists: team/parents/mentors; Slack variant) — group addresses as Program fields (`CM6`)
+  - ❌ checkin→public Google Calendar feed w/ **cancellation/move display rules** (`P14`)
+  - ❌ policy library (`CM13`)
+  - ❌ prospect newsletter/program-notify path (`CM14`)
 
 ### B5. Safety / BG loop  [SA]  — validated V4
 - Happy chain **FULLY BUILT**: obligation-open (per-person PERSON_BG triggers, idempotent+locked) ✅ → consent (self-attest OR board-record, both paths) ✅ → **2-of-N distinct-reviewer review with anti-collusion** (not-own-household, no double-attest, no shared-household co-reviewer; system never sees the check) ✅ → REJECT→BLOCKED (never activates) ✅ → clearance (2nd APPROVE, per-adult, one check never satisfies another) ✅ → board override w/ COI gate ✅ → renewal re-check (`SA5`, 29mo, enforced at renewal) ✅
