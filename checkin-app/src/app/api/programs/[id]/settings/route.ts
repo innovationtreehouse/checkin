@@ -5,7 +5,7 @@ import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
-import { notifyNewProgramAnnounced } from "@/lib/notifications";
+import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
 import { ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
@@ -126,31 +126,15 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             }
         });
 
-        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
-        // save while already there, and not when only one of the two is set.
-        // ponytail: duplicated verbatim from programs/[id] PATCH rather than
-        // extracted — the extraction travels with the announcedAt idempotency
-        // follow-up (#1164 review, findings 2/3/6/7), which rewrites this block.
-        // Own try/catch: the program update + audit log above are committed — a
-        // synchronous throw here (e.g. a partially mocked notifications module)
-        // must not turn a successful write into a 500 (#1164 review, finding 1).
-        try {
-            const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
-            const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
-            if (!wasAnnounced && nowAnnounced) {
-                if (updatedProgram.announceOnOpen) {
-                    // Fire-and-forget: paced send is ~(recipients/5) seconds — must not block
-                    // the PATCH response. notifyNewProgramAnnounced swallows its own errors;
-                    // .catch is belt-and-suspenders, matching the best-effort idiom.
-                    void notifyNewProgramAnnounced(updatedProgram).catch((e) =>
-                        logger.error("notifyNewProgramAnnounced failed:", e));
-                } else {
-                    logger.info(`[announce] Program ${updatedProgram.id} reached UPCOMING+OPEN; announceOnOpen off — skipping.`);
-                }
-            }
-        } catch (announceError) {
-            logger.error("announce trigger failed:", announceError);
-        }
+        // Announce trigger — transition rule, once-per-lifetime claim, audit row,
+        // and fire-without-await all live in the helper. Never throws (the F1
+        // committed-write-cant-500 guarantee moved into the helper's own try/catch).
+        await maybeAnnounceOnOpen({
+            programId,
+            before: currentProgram,
+            after: updatedProgram,
+            actorId: currentUserId,
+        });
 
         return NextResponse.json({ success: true, program: updatedProgram });
     } catch (error) {

@@ -406,5 +406,32 @@ describe('Program Settings API Integration Tests', () => {
             expect(res.status).toBe(200);
             expect(mockNotify).not.toHaveBeenCalled();
         });
+
+        // #1164 review F2/F6: the announcedAt claim is once-per-lifetime and the
+        // blast is audited — same helper as programs/[id], asserted here so the
+        // settings surface can't regress independently.
+        it('does NOT re-fire after closing and reopening enrollment, and audits the one blast (F2/F6)', async () => {
+            const program = await prisma.program.create({
+                data: { name: 'Settings API Test announce reopen', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
+            });
+
+            expect((await patchSettings(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' })).status).toBe(200);
+            expect(mockNotify).toHaveBeenCalledTimes(1);
+
+            expect((await patchSettings(program.id, { enrollmentStatus: 'CLOSED' })).status).toBe(200);
+            expect((await patchSettings(program.id, { enrollmentStatus: 'OPEN' })).status).toBe(200);
+            expect(mockNotify).toHaveBeenCalledTimes(1);
+
+            const persisted = await prisma.program.findUnique({ where: { id: program.id } });
+            expect(persisted?.announcedAt).not.toBeNull();
+
+            const rows = await prisma.auditLog.findMany({
+                where: { tableName: 'Program', affectedEntityId: program.id, actorId: adminId },
+            });
+            const blastRows = rows.filter(
+                (r) => (r.newData as { event?: string } | null)?.event === 'PROGRAM_ANNOUNCE_BLAST',
+            );
+            expect(blastRows).toHaveLength(1);
+        });
     });
 });

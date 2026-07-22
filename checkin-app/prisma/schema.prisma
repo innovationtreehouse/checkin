@@ -835,6 +835,11 @@ model Program {
   /// Default false — no program announces unless a leader enables it.
   /// @sensitivity:public
   announceOnOpen                 Boolean          @default(false)
+  /// Once-per-lifetime announce marker: set by the conditional claim in
+  /// lib/programAnnounce.ts when the announce blast fires. Never reset — a
+  /// program that announced once never auto-announces again.
+  /// @sensitivity:internal
+  announcedAt                    DateTime?
   /// @sensitivity:public
   minAge                         Int?
   /// @sensitivity:public

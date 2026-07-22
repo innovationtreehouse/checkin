@@ -4,16 +4,19 @@
 /**
  * Integration tests for the "new program announced" notification trigger.
  *
- * The PATCH route fires notifyNewProgramAnnounced ONLY on the transition INTO
- * (phase=UPCOMING && enrollmentStatus=OPEN) — see src/app/api/programs/[id]/route.ts.
- * These guard: it fires on the edge, does NOT re-fire while already announced,
- * and does NOT fire when only one of the two conditions flips.
+ * Both program-edit PATCH routes fire notifyNewProgramAnnounced through
+ * maybeAnnounceOnOpen (src/lib/programAnnounce.ts): ONLY on the transition INTO
+ * (phase=UPCOMING && enrollmentStatus=OPEN), and at most once per program
+ * lifetime (the announcedAt claim). These guard: it fires on the edge, does NOT
+ * re-fire (already-open edit, close-and-reopen, stale-pre-state race), does NOT
+ * fire when only one of the two conditions flips, and audits the blast.
  */
 
 import { PATCH } from '@/app/api/programs/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { notifyNewProgramAnnounced } from '@/lib/notifications';
+import { maybeAnnounceOnOpen } from '@/lib/programAnnounce';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -126,5 +129,66 @@ describe('New-program announce notification trigger', () => {
         const res = await patch(program.id, { enrollmentStatus: 'OPEN' });
         expect(res.status).toBe(200);
         expect(mockNotify).not.toHaveBeenCalled();
+    });
+
+    // #1164 review F2/F3/F6: announcedAt is a once-per-program-lifetime claim.
+    describe('once-per-lifetime announcedAt claim', () => {
+        it('sets announcedAt on the first fire, and closing + reopening enrollment does NOT re-fire (F2)', async () => {
+            const name = `${PROGRAM_NAME_TAG} reopen`;
+            const program = await prisma.program.create({
+                data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
+            });
+
+            expect((await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' })).status).toBe(200);
+            expect(mockNotify).toHaveBeenCalledTimes(1);
+
+            const announced = await prisma.program.findUnique({ where: { id: program.id } });
+            expect(announced?.announcedAt).not.toBeNull();
+
+            // Close, then reopen — the old row-compare logic would fire again here.
+            expect((await patch(program.id, { enrollmentStatus: 'CLOSED' })).status).toBe(200);
+            expect((await patch(program.id, { enrollmentStatus: 'OPEN' })).status).toBe(200);
+            expect(mockNotify).toHaveBeenCalledTimes(1);
+
+            // announcedAt unchanged by the reopen.
+            const after = await prisma.program.findUnique({ where: { id: program.id } });
+            expect(after?.announcedAt).toEqual(announced?.announcedAt);
+        });
+
+        it('two callers with the same stale pre-state send only once (F3 — conditional-write contract)', async () => {
+            const name = `${PROGRAM_NAME_TAG} race`;
+            const program = await prisma.program.create({
+                data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
+            });
+            const after = await prisma.program.update({
+                where: { id: program.id },
+                data: { phase: 'UPCOMING', enrollmentStatus: 'OPEN' },
+            });
+
+            // Both calls hold the SAME pre-update snapshot — exactly what two
+            // concurrent PATCHes observe. Only the updateMany claim may win once.
+            await maybeAnnounceOnOpen({ programId: program.id, before: program, after, actorId: adminId });
+            await maybeAnnounceOnOpen({ programId: program.id, before: program, after, actorId: adminId });
+
+            expect(mockNotify).toHaveBeenCalledTimes(1);
+        });
+
+        it('writes an AuditLog row for the blast with the triggering actor (F6)', async () => {
+            const name = `${PROGRAM_NAME_TAG} audit`;
+            const program = await prisma.program.create({
+                data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
+            });
+
+            expect((await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' })).status).toBe(200);
+
+            const rows = await prisma.auditLog.findMany({
+                where: { tableName: 'Program', affectedEntityId: program.id, actorId: adminId },
+            });
+            const blastRows = rows.filter(
+                (r) => (r.newData as { event?: string } | null)?.event === 'PROGRAM_ANNOUNCE_BLAST',
+            );
+            expect(blastRows).toHaveLength(1);
+            expect((blastRows[0].newData as { announcedAt?: string }).announcedAt).toBeDefined();
+        });
     });
 });
