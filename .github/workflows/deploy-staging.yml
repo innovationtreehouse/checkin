@@ -312,11 +312,7 @@ jobs:
             # undiagnosed for a day (same reasoning as deploy-dev.yml's migrate step).
             TASK_ID="${TASK_ARN##*/}"
             echo "--- copy task logs (/ecs/$COPY_TASK_FAMILY), attempt $attempt ---"
-            aws logs get-log-events \
-              --log-group-name "/ecs/$COPY_TASK_FAMILY" \
-              --log-stream-name "ecs/checkin-stg-copy/$TASK_ID" \
-              --start-from-head --limit 200 \
-              --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+            ./scripts/dump-task-logs.sh "/ecs/$COPY_TASK_FAMILY" "ecs/checkin-stg-copy/$TASK_ID"
             echo "--- end copy task logs ---"
 
             # Retry only what a retry can clear. The entrypoint runs under
@@ -412,11 +408,7 @@ jobs:
 
             TASK_ID="${TASK_ARN##*/}"
             echo "--- $label logs (/ecs/checkin-migrate-stg) ---"
-            aws logs get-log-events \
-              --log-group-name /ecs/checkin-migrate-stg \
-              --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
-              --start-from-head --limit 200 \
-              --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+            ./scripts/dump-task-logs.sh /ecs/checkin-migrate-stg "ecs/checkin-migrate/$TASK_ID"
             echo "--- end $label logs ---"
 
             if [ "$EXIT_CODE" != "0" ]; then
@@ -482,11 +474,7 @@ jobs:
 
             TASK_ID="${TASK_ARN##*/}"
             echo "--- repoint task logs (/ecs/$COPY_TASK_FAMILY), attempt $attempt ---"
-            aws logs get-log-events \
-              --log-group-name "/ecs/$COPY_TASK_FAMILY" \
-              --log-stream-name "ecs/checkin-stg-copy/$TASK_ID" \
-              --start-from-head --limit 200 \
-              --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+            ./scripts/dump-task-logs.sh "/ecs/$COPY_TASK_FAMILY" "ecs/checkin-stg-copy/$TASK_ID"
             echo "--- end repoint task logs ---"
 
             [ "$EXIT_CODE" = "0" ] && break
