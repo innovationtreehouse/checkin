@@ -205,6 +205,7 @@ export const classifications = {
         enrollmentStatus: 'public',
         orgMemberOnly: 'public',
         announceOnOpen: 'public',
+        announcedAt: 'internal',
         minAge: 'public',
         maxAge: 'public',
         maxParticipants: 'public',

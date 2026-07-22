@@ -4,7 +4,7 @@ import { withAuth, authenticateRequest } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { isActiveOrgMember, isActiveOrgMemberThrough, programCoverageDate } from "@/lib/orgMembership";
-import { notifyNewProgramAnnounced } from "@/lib/notifications";
+import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
@@ -214,21 +214,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             }
         });
 
-        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
-        // save while already there, and not when only one of the two is set.
-        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
-        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
-        if (!wasAnnounced && nowAnnounced) {
-            if (updatedProgram.announceOnOpen) {
-                // Fire-and-forget: paced send is ~(recipients/5) seconds — must not block
-                // the PATCH response. notifyNewProgramAnnounced swallows its own errors;
-                // .catch is belt-and-suspenders, matching the best-effort idiom.
-                void notifyNewProgramAnnounced(updatedProgram).catch((e) =>
-                    logger.error("notifyNewProgramAnnounced failed:", e));
-            } else {
-                logger.info(`[announce] Program ${updatedProgram.id} reached UPCOMING+OPEN; announceOnOpen off — skipping.`);
-            }
-        }
+        // Announce trigger — transition rule, once-per-lifetime claim, audit row,
+        // and fire-without-await all live in the helper. Never throws.
+        await maybeAnnounceOnOpen({
+            programId: updatedProgram.id,
+            before: currentProgram,
+            after: updatedProgram,
+            actorId: auth.user.id,
+        });
 
         // Shopify is the source of truth for program capacity (product decision
         // 2026-07-06): cap edits propagate as relative inventory adjustments.
