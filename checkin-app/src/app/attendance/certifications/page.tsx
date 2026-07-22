@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Alert, Badge, Box, Card, Center, Group, Loader, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useAutoCycle } from "../../../hooks/useAutoCycle";
+import { usePolling } from "@/hooks/usePolling";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { ToolLevelBadge, toToolLevel, toolLevelDot } from "@/components/ToolLevelBadge";
 
@@ -87,11 +88,10 @@ function KioskCertificationsInner() {
     }
   }, [searchParams, limitToPresent]);
 
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
+  // Visibility gate only, NO idle-stop: this is an unattended wall display, so
+  // idle-stop would freeze it. It's also cookieless (kiosk signature, not a
+  // session), so it can't wake a slept env and can't defeat the overnight curfew.
+  usePolling(fetchData, 10000);
 
   const getColorForLevel = (level: ToolStatusLevel | undefined) =>
     level ? toolLevelDot(toToolLevel(level)) : "transparent";
