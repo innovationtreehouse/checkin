@@ -16,10 +16,8 @@ const RELEASE_TAG = process.env.NEXT_PUBLIC_RELEASE_TAG;
 // Strictly more informative than the bare SHA — it carries the ancestor tag and
 // the distance from it — so it WINS over the tag/sha pair when present.
 const GIT_DESCRIBE = process.env.NEXT_PUBLIC_GIT_DESCRIBE;
-// Branch the image was built from. Read defensively: nothing sets this yet on
-// main. It is deliberately NOT introduced here — the staging deploy PR adds the
-// build arg, and this reads it the moment that lands, with no further change.
-// Until then it is undefined and the label is simply the describe string.
+// Branch (e.g. "main", "rel/1.2"), set by deploy-dev.yml and deploy-staging.yml.
+// NOT set by deploy-prod.yml (its ref IS the tag — see the Dockerfile comment).
 const GIT_BRANCH = process.env.NEXT_PUBLIC_GIT_BRANCH;
 
 /**

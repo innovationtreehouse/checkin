@@ -1,0 +1,70 @@
+name: PR target label
+
+# Label every PR `target:<base>` (target:main, target:rel/1.0, ...) so the PR
+# list shows at a glance which branch each PR ships to — worth surfacing now
+# that prod releases cut only from rel/* and hotfix PRs may target those
+# branches directly. rel/* targets get a loud color; everything else neutral.
+#
+# `edited` fires on base-branch retargets (and on title/body edits, which the
+# job-level `if` filters out); labels self-heal on retarget by dropping stale
+# target:* labels. The manual `workflow_dispatch` sweep backfills PRs that
+# were already open when this workflow landed.
+#
+# Fork PRs: GITHUB_TOKEN is read-only there, so labeling would fail — fine for
+# this repo, where all PRs come from in-repo branches. Do not "fix" that by
+# switching to pull_request_target without thinking about its checkout risks.
+
+on:
+  pull_request:
+    types: [opened, reopened, edited]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write  # add/remove PR labels
+  issues: write         # create the target:* labels themselves
+
+concurrency:
+  group: pr-target-label-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    # Skip `edited` events that didn't change the base — title/body edits are
+    # frequent and the label can't have gone stale without a retarget.
+    if: github.event_name == 'workflow_dispatch' || github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync target:* label(s)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          sync_one() {
+            local pr="$1" base="$2" want color current l
+            want="target:$base"
+            case "$base" in
+              rel/*) color="D93F0B" ;;  # ships to the prod release line
+              *)     color="BFDADC" ;;
+            esac
+            gh label create "$want" --repo "$REPO" --color "$color" \
+              --description "PR targets $base" --force
+            current=$(gh pr view "$pr" --repo "$REPO" --json labels \
+              --jq '.labels[].name | select(startswith("target:"))')
+            for l in $current; do
+              [ "$l" = "$want" ] || gh pr edit "$pr" --repo "$REPO" --remove-label "$l"
+            done
+            gh pr edit "$pr" --repo "$REPO" --add-label "$want"
+            echo "PR #$pr -> $want"
+          }
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            gh pr list --repo "$REPO" --state open --limit 200 \
+              --json number,baseRefName --jq '.[] | "\(.number) \(.baseRefName)"' \
+            | while read -r pr base; do sync_one "$pr" "$base"; done
+          else
+            sync_one "$PR" "${{ github.event.pull_request.base.ref }}"
+          fi

@@ -17,6 +17,9 @@ export type ClaimSourceParticipant = {
     // Drives the client-side program-ops row gate; mirrors access-resolvers' programsLed.
     programsLed?: { id: number }[];
     household?: { orgMembership?: { status: OrgMembershipStatus } | null } | null;
+    // ops-stg access gate escape hatch — a plain Person column, NOT one of the
+    // PersonRole-backed flags above (sysadmin-settable only; see lib/roles.ts).
+    canAccessStaging: boolean;
 };
 
 /**
@@ -40,4 +43,6 @@ export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): 
     token.householdLead = denied ? false : p.isHouseholdLead;
     token.toolStatuses = denied ? [] : p.toolStatuses;
     token.programsLed = denied ? [] : (p.programsLed?.map((prog) => prog.id) ?? []);
+    // ops-stg access gate escape hatch — forced false on DENIED, same as every role flag.
+    token.canAccessStaging = denied ? false : p.canAccessStaging;
 }

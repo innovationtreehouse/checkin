@@ -4,22 +4,28 @@ name: Deploy prod
 # published in this repo. Mirrors deploy-dev.yml step-for-step (build an ARM64
 # image, run DB migrations, roll out the ECS service) with these differences:
 #   - trigger: a published GitHub release instead of a merge to main
-#   - guard:   RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
+#   - guard 1: the released commit must live on a rel/* release branch — see
+#              the `branch-guard` job. Prod ships only from release branches;
+#              a release cut from main (or any other ref) fails fast here,
+#              before any CI or human approval is spent on it.
+#   - guard 2: RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
 #              against the released tag — see the `validate` job. A release can
-#              be cut from ANY commit, and stale or partial check status on that
-#              commit is not trustworthy, so we revalidate from scratch rather
-#              than querying past check-runs. `deploy` needs `validate`.
-#   - gate:    `deploy` targets the `production` GitHub Environment, which holds
-#              the human-approval rule (required reviewers — one approval). The
-#              validate job runs first (no environment), so the reviewer approves
-#              a release that has already gone green on its own tag.
+#              be cut from any commit ON a rel/* branch, and stale or partial
+#              check status on that commit is not trustworthy, so we revalidate
+#              from scratch rather than querying past check-runs.
+#   - gate:    `deploy` (needs both guards) targets the `production` GitHub
+#              Environment, which holds the human-approval rule (required
+#              reviewers — one approval). The guards run first (no
+#              environment), so the reviewer approves a release that has
+#              already proven its branch origin and gone green on its own tag.
 #   - report:  a run step summary (releases have no comment thread to post to)
 #
 # Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-prod
 # role defined in ~/projects/treehouse/aws/infra/modules/checkin/iam.tf.
 #
 # Cutting a release:
-#   gh release create v1.2.3 --target main --generate-notes
+#   git push origin main:refs/heads/rel/1.2       # or fast-forward an existing rel/*
+#   gh release create v1.2.3 --target rel/1.2 --generate-notes
 # Publishing (not drafting) is what fires this. Re-publishing a draft works;
 # pre-releases deploy too — don't mark a release pre if it shouldn't ship.
 
@@ -67,13 +73,47 @@ env:
   APP_URL: https://ops.innovationtreehouse.org
 
 jobs:
+  # Prod publishes come only from release branches. The released tag's commit
+  # must be contained in some rel/* branch — not "target_commitish says rel/*"
+  # (that field can name a branch OR be a bare SHA and is trivially spoofable
+  # by re-tagging), but actual ancestry against the fetched rel/* refs. Runs
+  # first and cheap so an off-branch release dies with one clear error before
+  # any CI minutes or reviewer attention are spent.
+  branch-guard:
+    name: Release must come from rel/*
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout released tag (full history)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+      - name: Verify the released commit is on a rel/* branch
+        run: |
+          set -euo pipefail
+          # fetch-depth: 0 already brings all branches; this explicit fetch
+          # pins the guard's correctness to itself rather than to checkout's
+          # default refspec staying that way.
+          git fetch --quiet origin '+refs/heads/rel/*:refs/remotes/origin/rel/*'
+          SHA=$(git rev-parse HEAD)
+          CONTAINING=$(git branch -r --contains "$SHA" --list 'origin/rel/*' | sed 's/^ *//')
+          if [ -z "$CONTAINING" ]; then
+            echo "::error::Release ${{ github.event.release.tag_name }} points at $SHA, which is not on any rel/* branch. Prod publishes come only from release branches — fast-forward or cut one (e.g. git push origin <sha>:refs/heads/rel/1.2) and re-publish."
+            exit 1
+          fi
+          echo "Release commit $SHA is contained in:"
+          echo "$CONTAINING"
+
   # Re-run the FULL CI pipeline (lint, type-check, migration-drift, Jest, the
   # security contract tests, AND the deploy build + boot/smoke) against the exact
   # released tag. This is the H1 fix: a release tag can point at any commit, and
   # we no longer trust whatever check status happened to exist there — we prove
   # the released code green from scratch before a human is even asked to approve.
+  # Needs branch-guard so an off-branch release fails with ONE error instead of
+  # burning a full CI pass in parallel with the rejection.
   validate:
     name: Revalidate CI on the released tag
+    needs: [branch-guard]
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ github.event.release.tag_name }}
@@ -96,7 +136,9 @@ jobs:
 
   deploy:
     name: Build, migrate, roll out
-    needs: [validate]   # do not build/migrate/roll out unless the tag re-passed all of CI
+    # branch-guard is transitively required via validate; listed explicitly so
+    # the prod gate never silently loosens if validate's needs are refactored.
+    needs: [branch-guard, validate]   # rel/* origin proven AND the tag re-passed all of CI
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production
@@ -150,6 +192,16 @@ jobs:
           # -f: there is no root Dockerfile — the app image builds from
           # checkin-app/Dockerfile with the repo root as context, exactly like
           # deploy-dev.yml (the release-scrub found this job would die here).
+          # Deliberately NOT passing --build-arg NEXT_PUBLIC_GIT_BRANCH here:
+          # this job checks out github.event.release.tag_name, so github.ref_name
+          # IS the tag, not a branch — passing it through would just duplicate
+          # NEXT_PUBLIC_RELEASE_TAG in the footer ("v1.1.0 v1.1.0 abc1234").
+          # release.target_commitish is sometimes a branch name, but it's the
+          # branch the tag was CUT from, not necessarily anything meaningful by
+          # release time, and resolving "the real branch a commit belongs to" is
+          # itself ambiguous (a commit can be on several, or on none once a
+          # branch is deleted post-release). Left unset -> the footer omits the
+          # branch part and shows "<tag> <sha7>", which is what prod wants anyway.
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
             --build-arg NEXT_PUBLIC_GIT_DESCRIBE="${{ steps.vars.outputs.describe }}" \

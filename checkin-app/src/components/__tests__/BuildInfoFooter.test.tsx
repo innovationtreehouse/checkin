@@ -71,6 +71,28 @@ describe("buildLabel", () => {
   it("ignores the tag when there is no sha", () => {
     expect(buildLabel(undefined, "v1.0.0")).toBe("dev");
   });
+
+  const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+  it("branch only: prefixes the branch, no tag", () => {
+    expect(buildLabel(SHA, undefined, undefined, "rel/1.2")).toBe("rel/1.2 0123456");
+  });
+
+  it("tag only: prefixes the tag, no branch", () => {
+    expect(buildLabel(SHA, "v1.0.0", undefined, undefined)).toBe("v1.0.0 0123456");
+  });
+
+  it("both branch and tag: branch then tag then sha", () => {
+    expect(buildLabel(SHA, "v1.0.0", undefined, "rel/1.2")).toBe("rel/1.2 v1.0.0 0123456");
+  });
+
+  it("neither branch nor tag: sha alone", () => {
+    expect(buildLabel(SHA, undefined, undefined, undefined)).toBe("0123456");
+  });
+
+  it("ignores branch when there is no sha", () => {
+    expect(buildLabel(undefined, undefined, undefined, "main")).toBe("dev");
+  });
 });
 
 describe("BuildInfoFooter", () => {
