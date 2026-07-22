@@ -44,8 +44,8 @@ cutover date).
 
 ## Deployment
 
-A **separate** Lambda from `s-read-function` (so admin ops don't contend with the
-scheduled sync's reserved concurrency = 1). **Invoke-only** — no EventBridge schedule and
+A **separate** deployable from `s-read-function` (its own IAM boundary and failure
+domain). **Invoke-only** — no EventBridge schedule and
 **no public endpoint**; triggered by `aws lambda invoke` under an IAM ops role. Runtime DB
 creds are **DML-only** — it never migrates. See `../s-read-function/FUTUREWORK.md` for the
 full security model and `../s-read-function/MONITORING-PRD.md` for the broader picture.

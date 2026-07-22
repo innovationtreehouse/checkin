@@ -88,8 +88,8 @@ set up.
 
 ## 3. Monitoring — alarm wiring
 
-The stale-run reaper (`reapStaleRuns`, called at handler startup) and reserved-concurrency
-= 1 are **done** (README "Operations & monitoring"). What remains is wiring the alarms in
+The stale-run reaper (`reapStaleRuns`, called at handler startup) and the per-store run
+lock are **done** (README "Operations & monitoring"). What remains is wiring the alarms in
 deployment: emit both the freshness heartbeat and watermark lag as CloudWatch metrics,
 alarm on the **heartbeat** (not watermark lag). Full design — including why heartbeat over
 watermark lag — in [MONITORING-PRD.md](MONITORING-PRD.md) §4.1. No auto-reprojection; a dead
@@ -97,23 +97,22 @@ run self-heals on the next scheduled run.
 
 ---
 
-## 4. Schema migrations in deployment — realized in [DEPLOY.md](DEPLOY.md)
+## 4. Schema migrations — why the split (mechanics in [DEPLOY.md](DEPLOY.md))
 
-The design (now shipped as the s-read migrate task): `s-ingest-core` owns `schema.prisma` +
-migrations; **applying** them is a separate step, **not** Terraform and **not** the app
-functions.
+[DEPLOY.md](DEPLOY.md) records **how** migrations run (the `s-read-<env>-migrate` task, the
+`migrate-and-code` workflow ordering, expand/contract). The durable reasons behind that
+shape, code-independent:
 
-- **Terraform** provisions the RDS instance and a **migrate-runner** (holding DDL creds) but
-  does **not** run the migration — mixing declarative reconciliation with an ordered schema
-  sequence is an anti-pattern (avoid the `null_resource` + `local-exec "prisma migrate
-  deploy"` hack). It *creates the thing that can migrate*.
-- **CI/CD** runs `prisma migrate deploy` via the migrate-runner **before** releasing code
-  that expects the new schema; use **expand/contract** ordering so a rolling deploy never
-  runs code ahead of its schema.
-- **App functions** (`s-read`, `s-replay`) run **DML-only** and never migrate; only the
-  migrate-runner has DDL. **Locally:** by hand — `npm run db:deploy` from `s-ingest-core`.
+- **Terraform provisions the migrate task but never runs the migration.** Mixing
+  declarative reconciliation with an ordered, stateful schema sequence is an anti-pattern
+  (the `null_resource` + `local-exec "prisma migrate deploy"` hack: not idempotent in
+  Terraform's model, runs whatever's on the runner). Terraform *creates the thing that can
+  migrate*; CI runs it.
+- **DML/DDL split.** App functions (`s-read`, `s-replay`) run with **DML-only** creds and
+  never migrate; only the migrate task holds DDL. Enforced at the task level — which secret
+  each task-def references — and infra `modules/s-read` points back here for this invariant.
 
-## 5. Token acquisition for deployed Lambda — done (#237)
+## 5. Token acquisition for the deployed sync — done (#237)
 `shopify/client.ts` (`shopify/token.ts`) mints the short-lived (~24h) Admin token from
 `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` via the client-credentials grant, caching it
 in memory across warm invocations; `SHOPIFY_ADMIN_TOKEN` remains the local/legacy static
