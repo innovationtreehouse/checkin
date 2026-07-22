@@ -133,6 +133,9 @@ describe('Admin Roles API Integration Tests', () => {
             expect(student).not.toHaveProperty('dateOfBirth');
             // isOperations now rides along with the other four flags.
             expect(adult).toHaveProperty('isOperations');
+            // canAccessStaging is a plain column, not a ROLE_FLAGS/PersonRole-backed
+            // flag, but GET still surfaces it alongside the five.
+            expect(adult).toHaveProperty('canAccessStaging', false);
         });
     });
 
@@ -334,6 +337,121 @@ describe('Admin Roles API Integration Tests', () => {
 
             const row = await prisma.person.findUnique({ where: { id: plainTargetId } });
             expect(row?.isBoardMember).toBe(true);
+        });
+    });
+
+    describe('PATCH /api/roles — canAccessStaging (ops-stg gate escape hatch, sysadmin-only, NOT board-symmetric)', () => {
+        let stagingTargetId: number;
+        let stagingBoardActorId: number;
+
+        beforeAll(async () => {
+            const target = await prisma.person.create({
+                data: { email: `staging-target-${TAG}@example.com`, name: 'Staging Target', household: { create: { name: "Test HH" } } },
+            });
+            stagingTargetId = target.id;
+            // A board member who is NOT a sysadmin — the case the board-symmetric matrix
+            // would otherwise wave through for the five ROLE_FLAGS.
+            const boardActor = await prisma.person.create({
+                data: {
+                    email: `staging-board-actor-${TAG}@example.com`, name: 'Staging Board Actor', isBoardMember: true,
+                    household: { create: { name: "Test HH" } },
+                    roles: { create: [{ role: 'BOARD' }] },
+                },
+            });
+            stagingBoardActorId = boardActor.id;
+        });
+
+        afterAll(async () => {
+            await prisma.auditLog.deleteMany({ where: { actorId: { in: [stagingTargetId, stagingBoardActorId] } } });
+            await prisma.person.deleteMany({ where: { id: { in: [stagingTargetId, stagingBoardActorId] } } });
+        });
+
+        it('a board member (non-sysadmin) cannot set canAccessStaging -> 403, target unchanged', async () => {
+            asSession({ id: stagingBoardActorId, isBoardMember: true });
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: true }));
+            expect(res.status).toBe(403);
+            const data = await res.json();
+            expect(data.error).toContain('Sysadmin');
+
+            const row = await prisma.person.findUnique({ where: { id: stagingTargetId } });
+            expect(row?.canAccessStaging).toBe(false);
+        });
+
+        it('a sysadmin sets canAccessStaging -> 200, persisted, and audited', async () => {
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: true }));
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.user.canAccessStaging).toBe(true);
+
+            const row = await prisma.person.findUnique({ where: { id: stagingTargetId } });
+            expect(row?.canAccessStaging).toBe(true);
+
+            const audit = await prisma.auditLog.findFirst({
+                where: { actorId: testSysAdminId, affectedEntityId: stagingTargetId, action: 'EDIT' },
+                orderBy: { id: 'desc' },
+            });
+            expect(audit?.newData).toMatchObject({ canAccessStaging: true });
+            expect(audit?.oldData).toMatchObject({ canAccessStaging: false });
+            // canAccessStaging is a column on Person, NOT a PersonRole row. Filing it
+            // under "PersonRole" would hide the staging grant from anyone querying the
+            // audit log by table.
+            expect(audit?.tableName).toBe('Person');
+        });
+
+        it('a sysadmin can also revoke it -> 200, persisted', async () => {
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: false }));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.person.findUnique({ where: { id: stagingTargetId } });
+            expect(row?.canAccessStaging).toBe(false);
+        });
+
+        it('setting it to its current value is a no-op (still 200, no audit row written)', async () => {
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const auditCountBefore = await prisma.auditLog.count({ where: { actorId: testSysAdminId, affectedEntityId: stagingTargetId } });
+
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: false }));
+            expect(res.status).toBe(200);
+
+            const auditCountAfter = await prisma.auditLog.count({ where: { actorId: testSysAdminId, affectedEntityId: stagingTargetId } });
+            expect(auditCountAfter).toBe(auditCountBefore);
+        });
+
+        it('combined with a ROLE_FLAGS update in one request: sysadmin may set both', async () => {
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: true, isOperations: true }));
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.user.canAccessStaging).toBe(true);
+            expect(data.user.isOperations).toBe(true);
+        });
+
+        it('one request touching both tables writes TWO audit rows, each under its own tableName', async () => {
+            // Reset so this request changes both at once.
+            await prisma.person.update({ where: { id: stagingTargetId }, data: { canAccessStaging: false } });
+            await prisma.personRole.deleteMany({ where: { personId: stagingTargetId, role: 'OPERATIONS' } });
+            const before = await prisma.auditLog.count({ where: { affectedEntityId: stagingTargetId } });
+
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: stagingTargetId, canAccessStaging: true, isOperations: true }));
+            expect(res.status).toBe(200);
+
+            const rows = await prisma.auditLog.findMany({
+                where: { affectedEntityId: stagingTargetId },
+                orderBy: { id: 'desc' },
+                take: 2,
+            });
+            expect(await prisma.auditLog.count({ where: { affectedEntityId: stagingTargetId } })).toBe(before + 2);
+
+            const person = rows.find((r) => r.tableName === 'Person');
+            const personRole = rows.find((r) => r.tableName === 'PersonRole');
+            expect(person?.newData).toMatchObject({ canAccessStaging: true });
+            expect(personRole?.newData).toMatchObject({ isOperations: true });
+            // The role row must not carry the column change — that was the drift.
+            expect(personRole?.newData).not.toHaveProperty('canAccessStaging');
+            expect(person?.newData).not.toHaveProperty('isOperations');
         });
     });
 

@@ -4,13 +4,21 @@ on:
   push:
     branches:
       - main
+      # Deliberately NOT rel/** here: deploy-staging.yml calls this workflow
+      # directly via workflow_call (`validate`, mirroring how deploy-prod.yml
+      # revalidates a release tag) to gate the deploy on the exact commit being
+      # deployed. Also listing rel/** as a push trigger would run the entire
+      # pipeline a SECOND time on every rel/ push (once via this trigger, once
+      # via that workflow_call) for no benefit — the workflow_call already
+      # covers it. PRs targeting a rel/ branch still get checked below.
   pull_request:
     branches:
       - main
-      # pull_request triggers evaluate against the BASE branch's workflow
-      # file, so this must exist on both main (every future rel/* cut
-      # inherits it) and rel/1.0 (so current release-line PRs get checks).
-      - 'rel/**'
+      # A PR targeting a rel/ branch (e.g. a hotfix landing before a redeploy)
+      # gets the same lint/typecheck/test/migration-drift gate as one
+      # targeting main — this is the check staging exists to catch bad
+      # migrations with, so a rel/ branch can't merge changes around it.
+      - "rel/**"
   merge_group:
   # Callable so the prod release flow can RE-RUN the full pipeline (tests + the
   # deploy build/smoke) against the exact released tag before shipping — see

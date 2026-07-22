@@ -80,3 +80,17 @@ describe("SectionTabs guarded onChange", () => {
     expect(push).not.toHaveBeenCalled();
   });
 });
+
+// #1155: without min-width:max-content the tab row shrinks to the ScrollArea instead of
+// overflowing it, and the count Badge (overflow:hidden, so its automatic minimum size is
+// 0) collapses to zero width — the pill renders as an empty capsule. jsdom does no
+// layout, so this asserts the style that prevents it rather than the resulting width.
+describe("SectionTabs tab row sizing", () => {
+  it("sizes the tab list to its content so count pills can't be squeezed to zero", () => {
+    confirmNav.mockReturnValue(true);
+    const { container } = renderTabs();
+    const list = container.querySelector(".mantine-Tabs-list") as HTMLElement;
+    expect(list.style.minWidth).toBe("max-content");
+    expect(list.style.flexWrap).toBe("nowrap");
+  });
+});
