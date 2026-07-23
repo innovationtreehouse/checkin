@@ -323,6 +323,22 @@ defineRoute({
     ],
 });
 
+// Raw badge scan log (latest 200) — admin surface, registered ahead of its
+// handler() conversion (inert until then). RawBadgeLog rows are
+// internal/personal tier; nested person name/email for display. Near-raw
+// response, so the declared everyones band is exact.
+defineRoute({
+    endpoint: 'GET /api/facility/badges',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'badges',
+    // Bag: { RawBadgeLog } with person (Person).
+    returns: ['RawBadgeLog', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
