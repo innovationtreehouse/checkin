@@ -44,12 +44,17 @@ export const POST = withAuth({}, async (req, auth) => {
 
         if (process.isPaymentPlanRequested) {
             // Idempotent re-request: no transition, no emails, still success.
-            return NextResponse.json({ success: true, process });
+            // Return only res.ok — never echo the raw process row (internal-tier
+            // zoho/shopify ids and stage timestamps) to the lead.
+            return NextResponse.json({ success: true });
         }
 
-        const updated = await prisma.orgMembershipProcess.update({
+        // select: the UI reads only res.ok — never echo the raw process row
+        // (internal-tier zoho/shopify ids and stage timestamps) to the lead.
+        await prisma.orgMembershipProcess.update({
             where: { id: processId },
             data: { isPaymentPlanRequested: true },
+            select: { id: true },
         });
 
         const base = config.baseUrl();
@@ -68,7 +73,7 @@ export const POST = withAuth({}, async (req, auth) => {
         const ack = resolveAckCopy(ackSettings, "membership");
         await sendScholarshipAck(recipients, ack.subject, ack.body);
 
-        return NextResponse.json({ success: true, process: updated });
+        return NextResponse.json({ success: true });
     } catch (error) {
         logger.error("Membership payment plan request error:", error);
         return apiError("Failed to request payment plan", 500);
