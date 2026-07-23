@@ -50,14 +50,12 @@ Three actors reach `activate()`:
 1. **Shopify `orders/paid` webhook** (`app/api/webhooks/shopify/route.ts`) — the low-latency path,
    activates in real time when the family pays.
 2. **Backup s-read reconciler** (`app/api/cron/reconcile-shopify` → `lib/finance/reconcile.ts`,
-   `runReconcile`) — the **guaranteed backstop for a missed webhook**. Daily at 09:15 UTC, ~15 min
-   behind s-read's 09:00 sync so it reads a fresh Shopify mirror. Forward pass: a paid order whose
-   family is still `PENDING_PAYMENT` is a dropped webhook → recover it via `activate()`. Idempotent
-   (`activate()` stores `shopifyOrderId` and short-circuits on `paidAt`). Reversal pass: refund /
-   chargeback / cancel on an already-activated order is raised to the board (never auto-reversed).
-   Daily-not-hourly is a scale-to-zero Aurora constraint (infra#129), not taste — the trade is a
-   missed webhook recovered in ~24h instead of ~1h. No-op when the mirror isn't wired
-   (`config.shopifyReadDatabaseUrl()` null).
+   `runReconcile`) — the **guaranteed backstop for a missed webhook**. Forward pass recovers a paid
+   order still stuck at `PENDING_PAYMENT` via `activate()` (idempotent — stores `shopifyOrderId`,
+   short-circuits on `paidAt`); reversal pass raises a refund/chargeback on an already-activated
+   order to the board (never auto-reversed). The route comment owns the exact cadence; the *decision*
+   is daily-not-hourly, a scale-to-zero Aurora constraint (infra#129), trading ~1h recovery for ~24h.
+   No-op when the mirror isn't wired.
 3. **Manual board action** (membership-ops) — the human override.
 
 This is distinct from `app/api/cron/lifecycle-reconcile` (see *Detection & healing*), which heals
