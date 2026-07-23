@@ -323,6 +323,76 @@ defineRoute({
     ],
 });
 
+// Server error log (latest 100) — admin surface, all internal tier. Registered
+// ahead of its handler() conversion (inert until then).
+defineRoute({
+    endpoint: 'GET /api/system-status/errors',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['ErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Integration error log (latest 200) — admin surface, all internal tier.
+// Registered ahead of its handler() conversion (inert until then). The response
+// key is `errors` for back-compat with the existing UI.
+defineRoute({
+    endpoint: 'GET /api/system-status/links',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['IntegrationErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Volunteer designations (dues-discount allowlist; email is pii) — admin
+// surface, registered ahead of its handler() conversion (inert until then). GET
+// is a pure findMany (create/delete live on other HTTP methods).
+defineRoute({
+    endpoint: 'GET /api/settings/membership/volunteer-designations',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'designations',
+    returns: ['VolunteerDesignation'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// The caller's own visit history (±7-day window). Registered ahead of its
+// handler() conversion (inert until then). their_own:personal delivers
+// arrivedAt/departedAt on the caller's rows — the Visit binding keys on
+// row.personId, so the conversion PR's select MUST include personId or the
+// scope fails closed and the timestamps strip (#1137 finding 1). Nested event
+// name is public.
+defineRoute({
+    endpoint: 'GET /api/profile/visits',
+    authorize: 'authenticated',
+    envelope: 'visits',
+    // Bag: { Visit } with event (Event).
+    returns: ['Visit', 'Event'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+// Server error log (latest 100) — admin surface, all internal tier. Registered
+// ahead of its handler() conversion (inert until then).
+defineRoute({
+    endpoint: 'GET /api/system-status/errors',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['ErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
