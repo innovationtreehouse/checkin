@@ -1,11 +1,13 @@
 import prisma from "@/lib/prisma";
-import { eligibleReviewProcessIds } from "@/lib/membership/review";
+import { canReviewBackgroundChecks, eligibleReviewProcessIds } from "@/lib/membership/review";
 
 export interface MembershipNotifications {
     /** Applications this background-check reviewer may currently attest. */
     pendingReviews: number;
-    /** Applications stuck at BLOCKED (board/sysadmin). */
+    /** Applications stuck at BLOCKED (board/isSysadmin). */
     blocked: number;
+    /** Open payment-reconciliation problems needing board action (board/isSysadmin). */
+    openPaymentExceptions: number;
 }
 
 /**
@@ -15,14 +17,15 @@ export interface MembershipNotifications {
  */
 export async function getMembershipNotifications(user: {
     id: number;
-    backgroundCheckReviewer?: boolean;
-    sysadmin?: boolean;
-    boardMember?: boolean;
+    isBackgroundCheckReviewer?: boolean;
+    isSysadmin?: boolean;
+    isBoardMember?: boolean;
 }): Promise<MembershipNotifications> {
-    const pendingReviews = user.backgroundCheckReviewer ? (await eligibleReviewProcessIds(user.id)).length : 0;
-    const blocked =
-        user.sysadmin || user.boardMember
-            ? await prisma.membershipProcess.count({ where: { status: "BLOCKED" } })
-            : 0;
-    return { pendingReviews, blocked };
+    const pendingReviews = canReviewBackgroundChecks(user) ? (await eligibleReviewProcessIds(user.id)).length : 0;
+    const forBoard = !!(user.isSysadmin || user.isBoardMember);
+    const blocked = forBoard ? await prisma.orgMembershipProcess.count({ where: { status: "BLOCKED" } }) : 0;
+    const openPaymentExceptions = forBoard
+        ? await prisma.paymentException.count({ where: { status: { in: ["OPEN", "ACKNOWLEDGED"] } } })
+        : 0;
+    return { pendingReviews, blocked, openPaymentExceptions };
 }

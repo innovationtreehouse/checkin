@@ -54,11 +54,11 @@ function scanRequest(participantId: number) {
 }
 
 async function openVisitCount(participantId: number) {
-    return prisma.visit.count({ where: { participantId, departed: null } });
+    return prisma.visit.count({ where: { personId: participantId, departedAt: null } });
 }
 
 describe('POST /api/scan concurrency (advisory lock)', () => {
-    let keeperId: number;       // keyholder kept checked in so the facility stays open
+    let keeperId: number;       // isKeyholder kept checked in so the facility stays open
     let checkinSubjectId: number;
     let checkoutSubjectId: number;
 
@@ -67,53 +67,53 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
         (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
 
         // Clean any leaked state from a prior run.
-        const leaked = await prisma.participant.findMany({
+        const leaked = await prisma.person.findMany({
             where: { email: { contains: EMAIL_TAG } },
             select: { id: true, householdId: true },
         });
         const leakedIds = leaked.map(p => p.id);
         const leakedHouseholdIds = leaked.map(p => p.householdId);
-        await prisma.visit.deleteMany({ where: { participantId: { in: leakedIds } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: leakedIds } } });
-        await prisma.participant.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: leakedIds } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: leakedIds } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
         await prisma.household.deleteMany({ where: { id: { in: leakedHouseholdIds } } });
 
-        const keeper = await prisma.participant.create({
-            data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', keyholder: true, household: { create: {} } },
+        const keeper = await prisma.person.create({
+            data: { email: `keeper-${EMAIL_TAG}@example.com`, name: 'Keeper', isKeyholder: true, household: { create: { name: "Test HH" } } },
         });
         keeperId = keeper.id;
-        // Keep the keyholder checked in so non-keyholder check-ins are allowed
-        // and non-keyholder check-outs skip the last-keyholder force-close path.
-        await prisma.visit.create({ data: { participantId: keeperId, arrived: new Date() } });
+        // Keep the isKeyholder checked in so non-isKeyholder check-ins are allowed
+        // and non-isKeyholder check-outs skip the last-isKeyholder force-close path.
+        await prisma.visit.create({ data: { personId: keeperId, arrivedAt: new Date() } });
 
-        const checkinSubject = await prisma.participant.create({
-            data: { email: `checkin-${EMAIL_TAG}@example.com`, name: 'Checkin Subject', household: { create: {} } },
+        const checkinSubject = await prisma.person.create({
+            data: { email: `checkin-${EMAIL_TAG}@example.com`, name: 'Checkin Subject', household: { create: { name: "Test HH" } } },
         });
         checkinSubjectId = checkinSubject.id;
 
-        const checkoutSubject = await prisma.participant.create({
-            data: { email: `checkout-${EMAIL_TAG}@example.com`, name: 'Checkout Subject', household: { create: {} } },
+        const checkoutSubject = await prisma.person.create({
+            data: { email: `checkout-${EMAIL_TAG}@example.com`, name: 'Checkout Subject', household: { create: { name: "Test HH" } } },
         });
         checkoutSubjectId = checkoutSubject.id;
     });
 
     afterAll(async () => {
         const ids = [keeperId, checkinSubjectId, checkoutSubjectId].filter(id => id !== undefined);
-        const households = (await prisma.participant.findMany({
+        const households = (await prisma.person.findMany({
             where: { id: { in: ids } },
             select: { householdId: true },
         })).map(p => p.householdId);
-        await prisma.visit.deleteMany({ where: { participantId: { in: ids } } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: { in: ids } } });
-        await prisma.participant.deleteMany({ where: { id: { in: ids } } });
+        await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: ids } } });
+        await prisma.person.deleteMany({ where: { id: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: households } } });
     });
 
     it('two concurrent check-in scans → exactly one open visit, one checkin + one debounce', async () => {
         // Fresh state: no open visit, no recent badge event (so neither scan is
         // pre-debounced before the race even begins).
-        await prisma.visit.deleteMany({ where: { participantId: checkinSubjectId } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: checkinSubjectId } });
+        await prisma.visit.deleteMany({ where: { personId: checkinSubjectId } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: checkinSubjectId } });
         expect(await openVisitCount(checkinSubjectId)).toBe(0);
 
         const [resA, resB] = await Promise.all([
@@ -135,9 +135,9 @@ describe('POST /api/scan concurrency (advisory lock)', () => {
 
     it('two concurrent check-out scans → exactly one successful checkout, no 500, zero open visits', async () => {
         // Fresh state: exactly one open visit, no recent badge event.
-        await prisma.visit.deleteMany({ where: { participantId: checkoutSubjectId } });
-        await prisma.rawBadgeEvent.deleteMany({ where: { participantId: checkoutSubjectId } });
-        await prisma.visit.create({ data: { participantId: checkoutSubjectId, arrived: new Date() } });
+        await prisma.visit.deleteMany({ where: { personId: checkoutSubjectId } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: checkoutSubjectId } });
+        await prisma.visit.create({ data: { personId: checkoutSubjectId, arrivedAt: new Date() } });
         expect(await openVisitCount(checkoutSubjectId)).toBe(1);
 
         const [resA, resB] = await Promise.all([

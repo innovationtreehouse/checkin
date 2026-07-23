@@ -1,35 +1,29 @@
-import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
-import { authenticateRequest } from "@/lib/auth";
+import { logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
-import { processCheckin, processCheckout } from "@/lib/scan-service";
-import { logBackendError } from "@/lib/logger";
+import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { config } from "@/lib/config";
+import { withKiosk } from "@/lib/kioskAuth";
 
-export async function POST(req: NextRequest) {
+// A merged-away badge should still get its owner through the door — an admin
+// tidying up dupes must not be the reason a member gets rejected at the
+// scanner. Chains this long are pathological (real merges are 1 hop); cap so
+// a corrupt/cyclic chain can't loop the lookup forever, and reissue instead.
+const MAX_MERGE_HOPS = 5;
+
+// High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
+// reads the raw body, authenticates it (kiosk signature OR session), rejects
+// unauthenticated, and hands us the parsed body + actor. We own authorization.
+export const POST = withKiosk(
+    { rateLimit: { name: "scan", limit: 300 } },
+    async (_req, body: { participantId?: unknown }, auth) => {
     const startTime = Date.now();
+
     try {
-        const rawBody = await req.text();
-
-        // 1. Authenticate
-        const auth = await authenticateRequest(req, rawBody);
-
-        let body;
-        try {
-            body = JSON.parse(rawBody);
-        } catch {
-            return apiError("Invalid JSON payload.", 400);
-        }
-
         const participantId = body.participantId;
 
         if (!participantId || typeof participantId !== 'number') {
             return apiError("A valid numeric participantId is required.", 400);
-        }
-
-        // 2. Authorization
-        if (auth.type === 'unauthenticated') {
-            return apiError("Unauthorized: Missing kiosk signature or invalid session", 401);
         }
 
         // Web session: check if user can scan this participant
@@ -37,7 +31,7 @@ export async function POST(req: NextRequest) {
         if (auth.type === 'session') {
             const user = auth.user;
             const isSelf = participantId === Number(user.id);
-            const isAdmin = user.sysadmin || user.keyholder || user.boardMember;
+            const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
             // In production, only privileged users may self-check-in via web.
             // Everyone else must use the kiosk badge scanner.
@@ -55,12 +49,38 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Lookup participant
-        const participant = await prisma.participant.findUnique({
+        const badgeRecord = await prisma.person.findUnique({
             where: { id: participantId },
         });
 
-        if (!participant) {
+        if (!badgeRecord) {
             return apiError(`Participant ${participantId} not found.`, 404);
+        }
+
+        // A badge still encoding a tombstone's id must not reject its owner at the
+        // door — walk mergedIntoId to the live survivor and scan as them. Capped
+        // at MAX_MERGE_HOPS; a chain that deep can't be resolved with confidence,
+        // so fall back to the reissue message instead of chasing it further.
+        let participant = badgeRecord;
+        let mergeHops = 0;
+        while (participant.mergedIntoId != null) {
+            mergeHops++;
+            if (mergeHops > MAX_MERGE_HOPS) {
+                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+            }
+            const next: typeof participant | null = await prisma.person.findUnique({ where: { id: participant.mergedIntoId } });
+            if (!next) {
+                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+            }
+            participant = next;
+        }
+        if (mergeHops > 0) {
+            logger.info("Scan forwarded from merged record", {
+                badgeId: badgeRecord.id,
+                tombstoneId: badgeRecord.mergedIntoId,
+                survivorId: participant.id,
+                hops: mergeHops,
+            });
         }
 
         // Household lead check: verify participant is in the same household
@@ -83,7 +103,7 @@ export async function POST(req: NextRequest) {
         // and branches correctly. The lock auto-releases on commit/rollback.
         const authType = auth.type;
 
-        return await prisma.$transaction(async (tx) => {
+        const res = await prisma.$transaction(async (tx) => {
             // Per-participant lock. Serializes only same-participant scans;
             // different participants get different lock keys and never block.
             // $executeRaw (not $queryRaw): pg_advisory_xact_lock returns `void`,
@@ -93,10 +113,10 @@ export async function POST(req: NextRequest) {
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = await tx.rawBadgeEvent.findFirst({
+            const recentScan = await tx.rawBadgeLog.findFirst({
                 where: {
-                    participantId: participant.id,
-                    time: {
+                    personId: participant.id,
+                    timestamp: {
                         gte: threeSecondsAgo
                     }
                 }
@@ -111,9 +131,9 @@ export async function POST(req: NextRequest) {
             }
 
             // 5. Record raw badge event
-            await tx.rawBadgeEvent.create({
+            await tx.rawBadgeLog.create({
                 data: {
-                    participantId: participant.id,
+                    personId: participant.id,
                     location: "Main Entrance",
                 },
             });
@@ -121,10 +141,10 @@ export async function POST(req: NextRequest) {
             // 6. Check-in or check-out
             const activeVisit = await tx.visit.findFirst({
                 where: {
-                    participantId: participant.id,
-                    departed: null,
+                    personId: participant.id,
+                    departedAt: null,
                 },
-                orderBy: { arrived: "desc" },
+                orderBy: { arrivedAt: "desc" },
             });
 
             if (activeVisit) {
@@ -139,17 +159,24 @@ export async function POST(req: NextRequest) {
             maxWait: 5000,
             timeout: 15000,
         });
-    } catch (error) {
-        console.error("Scan processing error:", error);
-        await logBackendError(error, "POST /api/scan");
-        return apiError("Internal Server Error while processing scan.", 500);
+
+        // Facility-wide close runs here, AFTER the per-participant transaction
+        // commits and the advisory lock is released. Keeping the sweep + email
+        // kick out of the locked section means a last-isKeyholder close no longer
+        // blocks concurrent scans for other participants. No-op unless the
+        // response reports facilityClosed.
+        await finalizeFacilityClose(res);
+
+        return res;
     } finally {
+        // Errors propagate to withKiosk's top-level catch/500; this finally only
+        // records the metric. Times the handler body (post-auth), not rate-limit.
         const durationMs = Date.now() - startTime;
-        prisma.systemMetric.create({
+        prisma.systemMetricLog.create({
             data: {
                 metric: "scan_response_time",
                 value: durationMs,
             }
-        }).catch((err: unknown) => console.error("Failed to log scan_response_time metric:", err));
+        }).catch((err: unknown) => logger.error("Failed to log scan_response_time metric:", err));
     }
-}
+});

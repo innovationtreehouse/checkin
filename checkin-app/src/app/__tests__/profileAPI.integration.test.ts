@@ -20,7 +20,7 @@ describe('Profile API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'profile-api-test' } },
             select: { id: true, householdId: true }
         });
@@ -29,7 +29,7 @@ describe('Profile API Integration Tests', () => {
         const existingHouseholdIds = existingUsers.map(u => u.householdId).filter((id): id is number => id !== null);
 
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.auditLog.deleteMany({
@@ -37,7 +37,7 @@ describe('Profile API Integration Tests', () => {
         });
 
         // RESTRICT: delete participants before their households
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -46,12 +46,12 @@ describe('Profile API Integration Tests', () => {
         });
 
         // Setup mock database records
-        const user = await prisma.participant.create({
+        const user = await prisma.person.create({
             data: {
                 email: 'user-profile-api-test@example.com',
                 name: 'Profile Tester',
-                dob: new Date('1990-01-01'),
-                household: { create: {} }
+                dateOfBirth: new Date('1990-01-01'),
+                household: { create: { name: "Test HH" } }
             }
         });
         testUserId = user.id;
@@ -60,22 +60,24 @@ describe('Profile API Integration Tests', () => {
         // Create visits for history testing
         await prisma.visit.createMany({
             data: [
-                { participantId: testUserId, arrived: new Date(Date.now() - 3600000) },
-                { participantId: testUserId, arrived: new Date(Date.now() - 7200000) }
+                // Closed (departedAt set): a participant may have only one OPEN visit
+                // (Visit_one_open_per_participant partial unique index); these are history.
+                { personId: testUserId, arrivedAt: new Date(Date.now() - 3600000), departedAt: new Date(Date.now() - 3000000) },
+                { personId: testUserId, arrivedAt: new Date(Date.now() - 7200000), departedAt: new Date(Date.now() - 6600000) }
             ]
         });
     });
 
     afterAll(async () => {
         await prisma.visit.deleteMany({
-            where: { participantId: testUserId }
+            where: { personId: testUserId }
         });
 
         await prisma.auditLog.deleteMany({
             where: { actorId: testUserId }
         });
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: testUserId }
         });
 
@@ -148,7 +150,7 @@ describe('Profile API Integration Tests', () => {
 
             // Verify Audit Trail is populated
             const auditLogs = await prisma.auditLog.findMany({
-                where: { actorId: testUserId, action: 'EDIT', tableName: 'Participant', affectedEntityId: testUserId }
+                where: { actorId: testUserId, action: 'EDIT', tableName: 'Person', affectedEntityId: testUserId }
             });
             expect(auditLogs.length).toBeGreaterThan(0);
         });

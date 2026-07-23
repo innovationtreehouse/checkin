@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { config } from "@/lib/config";
 
 /**
  * Zoho Sign contract webhook helpers.
@@ -16,11 +17,14 @@ export const ZOHO_WEBHOOK_HEADER = "x-zoho-webhook-token";
 
 /** Timing-safe shared-secret check. Returns false if the secret is unset. */
 export function verifyZohoToken(headerToken: string | null | undefined): boolean {
-    const secret = process.env.ZOHO_WEBHOOK_SECRET;
+    const secret = config.zohoWebhookSecret();
     if (!secret || !headerToken) return false;
-    const a = Buffer.from(headerToken);
-    const b = Buffer.from(secret);
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
+
+    // Hash both values to ensure fixed length before comparison to avoid leaking the secret length
+    const a = crypto.createHash('sha256').update(headerToken).digest();
+    const b = crypto.createHash('sha256').update(secret).digest();
+
+    return crypto.timingSafeEqual(a, b);
 }
 
 export interface ZohoWebhookResult {

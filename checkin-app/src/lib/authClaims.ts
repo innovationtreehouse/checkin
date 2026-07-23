@@ -1,17 +1,25 @@
 import type { JWT } from "next-auth/jwt";
-import type { MembershipStatus } from "@/generated/prisma/client";
-import { membershipStatusBlocksLogin } from "@/lib/membership";
+import type { OrgMembershipStatus, PersonRoleKind } from "@/generated/prisma/client";
+import { orgMembershipStatusBlocksLogin } from "@/lib/orgMembership";
+import { ROLE_FLAGS, rolesToFlags } from "@/lib/roles";
 
 /** The participant fields the JWT carries, plus the household membership the login gate reads. */
 export type ClaimSourceParticipant = {
     id: number;
-    sysadmin: boolean;
-    keyholder: boolean;
-    boardMember: boolean;
-    backgroundCheckReviewer: boolean;
+    // Source of truth for the five authority booleans (see lib/roles.ts rolesToFlags).
+    roles: { role: PersonRoleKind }[];
     householdId: number;
     toolStatuses: { toolId: number; level: string }[];
-    household?: { membership?: { status: MembershipStatus } | null } | null;
+    // Leadership of their own household. Single source of truth (a1) — supersedes
+    // the former HouseholdLead join.
+    isHouseholdLead: boolean;
+    // Programs this participant is the lead mentor of (Program.leadMentorId === id).
+    // Drives the client-side program-ops row gate; mirrors access-resolvers' programsLed.
+    programsLed?: { id: number }[];
+    household?: { orgMembership?: { status: OrgMembershipStatus } | null } | null;
+    // ops-stg access gate escape hatch — a plain Person column, NOT one of the
+    // PersonRole-backed flags above (sysadmin-settable only; see lib/roles.ts).
+    canAccessStaging: boolean;
 };
 
 /**
@@ -23,14 +31,18 @@ export type ClaimSourceParticipant = {
  * authority flag is forced false and tool statuses are cleared, so nothing downstream honors it.
  */
 export function assignParticipantClaims(token: JWT, p: ClaimSourceParticipant): void {
-    const denied = membershipStatusBlocksLogin(p.household?.membership?.status);
+    const denied = orgMembershipStatusBlocksLogin(p.household?.orgMembership?.status);
+    const f = rolesToFlags(p.roles);
 
     token.id = p.id;
     token.denied = denied;
-    token.sysadmin = denied ? false : p.sysadmin;
-    token.keyholder = denied ? false : p.keyholder;
-    token.boardMember = denied ? false : p.boardMember;
-    token.backgroundCheckReviewer = denied ? false : p.backgroundCheckReviewer;
+    for (const flag of ROLE_FLAGS) {
+        token[flag] = denied ? false : f[flag];
+    }
     token.householdId = p.householdId;
+    token.householdLead = denied ? false : p.isHouseholdLead;
     token.toolStatuses = denied ? [] : p.toolStatuses;
+    token.programsLed = denied ? [] : (p.programsLed?.map((prog) => prog.id) ?? []);
+    // ops-stg access gate escape hatch — forced false on DENIED, same as every role flag.
+    token.canAccessStaging = denied ? false : p.canAccessStaging;
 }

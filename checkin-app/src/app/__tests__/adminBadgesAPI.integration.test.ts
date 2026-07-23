@@ -3,10 +3,10 @@
  */
 /**
  * Integration Tests for Admin Badges API
- * Tests GET /api/admin/badges for fetching raw badge scan events
+ * Tests GET /api/facility/badges for fetching raw badge scan events
  */
 
-import { GET } from '@/app/api/admin/badges/route';
+import { GET } from '@/app/api/facility/badges/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -22,29 +22,29 @@ describe('Admin Badges API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        await prisma.rawBadgeEvent.deleteMany({
+        await prisma.rawBadgeLog.deleteMany({
             where: {
-                participant: { email: { contains: 'badges-api-test' } }
+                person: { email: { contains: 'badges-api-test' } }
             }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { email: { contains: 'badges-api-test' } }
         });
 
         // Setup mock database records
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-badges-api-test@example.com', name: 'Admin Badges Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 
-        const user = await prisma.participant.create({
-            data: { email: 'user-badges-api-test@example.com', name: 'User Badges Test', household: { create: {} } }
+        const user = await prisma.person.create({
+            data: { email: 'user-badges-api-test@example.com', name: 'User Badges Test', household: { create: { name: "Test HH" } } }
         });
         testUserId = user.id;
 
-        const badgeEvent = await prisma.rawBadgeEvent.create({
+        const badgeEvent = await prisma.rawBadgeLog.create({
             data: {
-                participantId: testUserId,
+                personId: testUserId,
                 location: 'Front Door'
             }
         });
@@ -53,19 +53,19 @@ describe('Admin Badges API Integration Tests', () => {
 
     afterAll(async () => {
         // Clean up
-        await prisma.rawBadgeEvent.deleteMany({
+        await prisma.rawBadgeLog.deleteMany({
             where: { id: testBadgeEventId }
         });
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: [testAdminId, testUserId] } }
         });
     });
 
-    describe('GET /api/admin/badges', () => {
+    describe('GET /api/facility/badges', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const req = new Request('http://localhost:4000/api/admin/badges', {
+             const req = new Request('http://localhost:4000/api/facility/badges', {
                  method: 'GET'
              });
 
@@ -75,10 +75,10 @@ describe('Admin Badges API Integration Tests', () => {
 
         it('should return 403 Forbidden for non-admin users', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({
-                 user: { id: testUserId, sysadmin: false, boardMember: false }
+                 user: { id: testUserId, isSysadmin: false, isBoardMember: false }
              });
 
-             const req = new Request('http://localhost:4000/api/admin/badges', {
+             const req = new Request('http://localhost:4000/api/facility/badges', {
                  method: 'GET'
              });
 
@@ -88,10 +88,10 @@ describe('Admin Badges API Integration Tests', () => {
 
         it('should successfully return recent raw badge events for admins', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
-                user: { id: testAdminId, sysadmin: true, boardMember: false }
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            const req = new Request('http://localhost:4000/api/admin/badges', {
+            const req = new Request('http://localhost:4000/api/facility/badges', {
                 method: 'GET'
             });
 
@@ -106,9 +106,9 @@ describe('Admin Badges API Integration Tests', () => {
             const foundEvent = data.badges.find((b: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => b.id === testBadgeEventId);
             expect(foundEvent).toBeDefined();
             expect(foundEvent.location).toBe('Front Door');
-            expect(foundEvent.participant).toBeDefined();
-            expect(foundEvent.participant.name).toBe('User Badges Test');
-            expect(foundEvent.participant.email).toBe('user-badges-api-test@example.com');
+            expect(foundEvent.person).toBeDefined();
+            expect(foundEvent.person.name).toBe('User Badges Test');
+            expect(foundEvent.person.email).toBe('user-badges-api-test@example.com');
         });
     });
 });

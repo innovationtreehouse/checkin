@@ -15,11 +15,11 @@ async function main() {
     for (let i = 1; i <= 20; i++) {
         // Create household
         const household = await prisma.household.create({
-            data: { name: `Test Family ${i}`, address: `123 Test St ${i}` }
+            data: { name: `Test Family ${i}`, line1: `123 Test St ${i}` }
         })
 
         // Create participant
-        const participant = await prisma.participant.create({
+        const participant = await prisma.person.create({
             data: {
                 email: `testmember${i}@example.com`,
                 name: `Test Member ${i}`,
@@ -27,27 +27,25 @@ async function main() {
             }
         })
 
-        // Make HouseholdLead
-        await prisma.householdLead.create({
-            data: {
-                householdId: household.id,
-                participantId: participant.id,
-            }
+        // Make household lead (a1: flag on the person).
+        await prisma.person.update({
+            where: { id: participant.id },
+            data: { isHouseholdLead: true },
         });
 
         // Create membership
-        await prisma.membership.create({
+        await prisma.orgMembership.create({
             data: {
                 status: 'ACTIVE',
                 householdId: household.id
             }
         })
 
-        // Mark them as arrived so they show up as "present" just in case limitToPresent is true
+        // Mark them as arrivedAt so they show up as "present" just in case limitToPresent is true
         await prisma.visit.create({
             data: {
-                participantId: participant.id,
-                arrived: new Date()
+                personId: participant.id,
+                arrivedAt: new Date()
             }
         })
         

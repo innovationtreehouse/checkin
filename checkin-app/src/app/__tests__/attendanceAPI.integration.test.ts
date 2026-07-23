@@ -10,6 +10,7 @@ import { GET, POST, DELETE } from '@/app/api/attendance/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as verifyKiosk from '@/lib/verify-kiosk';
+import { ORG_DOMAIN } from '@/lib/config';
 
 // Mock Kiosk util
 jest.mock('@/lib/verify-kiosk', () => ({
@@ -27,23 +28,21 @@ describe('General Attendance API Integration Tests', () => {
     let householdLeadId: number;
     let householdChildId: number;
     let boardMemberId: number;
-    
+    let keyholderId: number;
+
     let activeVisitId: number;
     let childActiveVisitId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'attend-api-test' } },
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
         
-        await prisma.householdLead.deleteMany({
-            where: { participantId: { in: existingUserIds } }
-        });
         await prisma.visit.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.auditLog.deleteMany({
@@ -52,12 +51,12 @@ describe('General Attendance API Integration Tests', () => {
 
         // Capture households before participants are removed (RESTRICT requires
         // participants to be deleted before their household).
-        const existingHouseholdIds = (await prisma.participant.findMany({
+        const existingHouseholdIds = (await prisma.person.findMany({
             where: { id: { in: existingUserIds } },
             select: { householdId: true }
         })).map(p => p.householdId);
 
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
@@ -70,20 +69,20 @@ describe('General Attendance API Integration Tests', () => {
         });
 
         // Create Admin
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-attend-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
         // Create Board Member
-        const boardMember = await prisma.participant.create({
-            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', boardMember: true, household: { create: {} } }
+        const isBoardMember = await prisma.person.create({
+            data: { email: 'board-attend-api-test@example.com', name: 'Board Member', isBoardMember: true, household: { create: { name: "Test HH" } } }
         });
-        boardMemberId = boardMember.id;
+        boardMemberId = isBoardMember.id;
 
         // Create Common User
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-attend-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
@@ -92,17 +91,17 @@ describe('General Attendance API Integration Tests', () => {
             data: { name: 'Attend API Household Test' }
         });
 
-        const householdLead = await prisma.participant.create({
+        const householdLead = await prisma.person.create({
             data: { 
                 email: 'lead-attend-api-test@example.com', 
                 name: 'Household Lead',
                 household: { connect: { id: household.id } },
-                householdLeads: { create: { householdId: household.id } }
+                isHouseholdLead: true
             }
         });
         householdLeadId = householdLead.id;
 
-        const householdChild = await prisma.participant.create({
+        const householdChild = await prisma.person.create({
             data: { 
                 email: 'child-attend-api-test@example.com', 
                 name: 'Household Child',
@@ -111,39 +110,46 @@ describe('General Attendance API Integration Tests', () => {
         });
         householdChildId = householdChild.id;
 
+        // Keyholder present + checked in: the facility-open guard requires an
+        // active keyholder before any non-keyholder MANUAL_CHECKIN succeeds.
+        const keyholder = await prisma.person.create({
+            data: { email: 'keyholder-attend-api-test@example.com', name: 'Keyholder', isKeyholder: true, household: { create: { name: "Test HH" } } }
+        });
+        keyholderId = keyholder.id;
+        await prisma.visit.create({
+            data: { personId: keyholderId, arrivedAt: new Date() }
+        });
+
         // Create initial active visits
         const commonVisit = await prisma.visit.create({
-            data: { participantId: commonId, arrived: new Date() }
+            data: { personId: commonId, arrivedAt: new Date() }
         });
         activeVisitId = commonVisit.id;
 
         const childVisit = await prisma.visit.create({
-            data: { participantId: householdChildId, arrived: new Date() }
+            data: { personId: householdChildId, arrivedAt: new Date() }
         });
         childActiveVisitId = childVisit.id;
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId, keyholderId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
-            await prisma.householdLead.deleteMany({
-                where: { participantId: { in: existingUserIds } }
-            });
             await prisma.visit.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: existingUserIds } }
             });
 
             // RESTRICT: delete participants before their households.
-            const existingHouseholdIds = (await prisma.participant.findMany({
+            const existingHouseholdIds = (await prisma.person.findMany({
                 where: { id: { in: existingUserIds } },
                 select: { householdId: true }
             })).map(p => p.householdId);
 
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
             await prisma.household.deleteMany({
@@ -189,7 +195,7 @@ describe('General Attendance API Integration Tests', () => {
         });
 
         it('should fetch active visits with an authenticated admin session', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
              const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
@@ -199,9 +205,102 @@ describe('General Attendance API Integration Tests', () => {
              expect(data.access).toBe('full');
              expect(data.counts).toBeDefined();
              expect(data.counts.total).toBeGreaterThanOrEqual(2);
-             const emails = data.attendance.map((v: { participant: { email: string } }) => v.participant.email);
-             expect(emails).toContain('common-attend-api-test@example.com');
-             expect(emails).toContain('child-attend-api-test@example.com');
+             // email is deliberately not returned on this route (M1 PII minimization) —
+             // assert on name, the field the response actually carries.
+             const names = data.attendance.map((v: { participant: { name: string } }) => v.participant.name);
+             expect(names).toContain('Common');
+             expect(names).toContain('Household Child');
+        });
+    });
+
+    // ── ops-stg ACCESS GATE regression (Finding 2, 2026-07-20) ──────────────────
+    // This route re-verifies kiosk auth DIRECTLY via verifyKioskSignature rather
+    // than through authenticateRequest — the one place that happens outside the
+    // chokepoint. Without the explicit gate check ahead of that branch, a caller
+    // presenting a VALID kiosk signature would still set isKiosk=true, reach
+    // isAdmin, and get the full roster + safety data even after the ops-stg gate
+    // rejected the caller's session.
+    describe('GET /api/attendance — ops-stg access gate', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES a caller presenting a VALID kiosk signature — the regression case for Finding 2', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
+            (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, {
+                method: 'GET',
+                headers: new Headers({
+                    'x-kiosk-signature': 'sig',
+                    'x-kiosk-timestamp': Date.now().toString(),
+                }),
+            });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+            const data = await res.json();
+            expect(data.attendance).toBeUndefined();
+            expect(data.safety).toBeUndefined();
+        });
+
+        it('DENIES a plain anonymous caller (no session, no kiosk headers)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([]);
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+        });
+
+        it('ALLOWS an authenticated admin who is ALSO a verified org member', async () => {
+            // isSysadmin alone does NOT bypass the staging gate — only a verified
+            // innovationtreehouse.org member or canAccessStaging does (see
+            // isStagingAccessAllowed). Both claims must be on the mocked session.
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: adminId, isSysadmin: true, hd: ORG_DOMAIN, emailVerified: true },
+            });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(200);
+        });
+
+        it('DENIES an authenticated admin who is NOT a verified org member and has no canAccessStaging flag', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+        });
+
+        it('is inert outside staging: the SAME valid-kiosk-signature request that was denied above succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
+            (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, {
+                method: 'GET',
+                headers: new Headers({
+                    'x-kiosk-signature': 'sig',
+                    'x-kiosk-timestamp': Date.now().toString(),
+                }),
+            });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(200);
         });
     });
 
@@ -238,7 +337,7 @@ describe('General Attendance API Integration Tests', () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: householdLeadId, householdId: 1, householdLead: true } });
 
              // Note: First we must clear the child's visit to simulate checking them back in
-             await prisma.visit.update({ where: { id: childActiveVisitId }, data: { departed: new Date() } });
+             await prisma.visit.update({ where: { id: childActiveVisitId }, data: { departedAt: new Date() } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, {
                  method: 'POST',
@@ -247,7 +346,7 @@ describe('General Attendance API Integration Tests', () => {
 
              // We actually have to mock the user having the *correct* householdId matching the child in the DB
              // The mock user object should have the actual household.id
-             const childRecord = await prisma.participant.findUnique({ where: { id: householdChildId } });
+             const childRecord = await prisma.person.findUnique({ where: { id: householdChildId } });
              (getServerSession as jest.Mock).mockResolvedValue({ 
                  user: { id: householdLeadId, householdId: childRecord!.householdId, householdLead: true } 
              });
@@ -257,11 +356,11 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.participantId).toBe(householdChildId);
+             expect(data.visit.personId).toBe(householdChildId);
         });
 
         it('should allow an admin to check in any user', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/attendance`, {
                  method: 'POST',
@@ -273,7 +372,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.participantId).toBe(householdLeadId);
+             expect(data.visit.personId).toBe(householdLeadId);
         });
     });
 
@@ -291,7 +390,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.notified).toBeGreaterThanOrEqual(1); // There is 1 boardMember setup in beforeAll
+             expect(data.notified).toBeGreaterThanOrEqual(1); // There is 1 isBoardMember setup in beforeAll
 
              // Prove debounce log was created
              const logs = await prisma.auditLog.findMany({ where: { tableName: 'SYSTEM_NOTIFY' } });
@@ -320,7 +419,7 @@ describe('General Attendance API Integration Tests', () => {
         it('should block a common user from checking out another user', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             // Admin hasn't departed
+             // Admin hasn't departedAt
              const req = new Request(`http://localhost:4000/api/attendance`, {
                  method: 'DELETE',
                  body: JSON.stringify({ visitId: childActiveVisitId }) // the child's visit
@@ -346,7 +445,7 @@ describe('General Attendance API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.visit.departed).not.toBeNull();
+             expect(data.visit.departedAt).not.toBeNull();
         });
     });
 });

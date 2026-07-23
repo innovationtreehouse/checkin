@@ -1,11 +1,52 @@
-import { Prisma } from "@/generated/prisma/client";
-import type { PrismaClient } from "@/generated/prisma/client";
+import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
+import prisma from "@/lib/prisma";
+import { LIVE_PERSON } from "@/lib/person/filters";
+import { isYouth } from "@/lib/time";
+
+/**
+ * Shared household-lead ownership check (audit P1-2). Loads the person and
+ * decides whether they may manage their household. `canManage` folds in the
+ * sysadmin override, matching every call site's `!isLead && !isSysadmin` guard.
+ * Returns null when the user has no household. Callers own the error strings
+ * (they differ per route), so this returns facts, not responses.
+ */
+export async function householdLeadship(
+    userId: number,
+): Promise<{ householdId: number; canManage: boolean } | null> {
+    const user = await prisma.person.findUnique({
+        where: { id: userId },
+        select: { householdId: true, isHouseholdLead: true, isSysadmin: true },
+    });
+    if (!user?.householdId) return null;
+    return { householdId: user.householdId, canManage: user.isHouseholdLead || user.isSysadmin };
+}
+
+/**
+ * Emergency-contacts flavour of {@link householdLeadship}: the householdId on
+ * success, or an `{error,status}` the route can return directly.
+ */
+export async function leadHousehold(
+    userId: number,
+): Promise<number | { error: string; status: number }> {
+    const hh = await householdLeadship(userId);
+    if (!hh) return { error: "You must create a household first.", status: 400 };
+    if (!hh.canManage) return { error: "Only household leads can manage emergency contacts.", status: 403 };
+    return hh.householdId;
+}
 
 /**
  * Maximum number of leads a single household may have (issue #269).
  * This is policy, not schema shape — change it here, not in a migration.
  */
 export const MAX_HOUSEHOLD_LEADS = 2;
+
+/**
+ * The canonical "leads of household X" Prisma filter (a1). Single source of truth
+ * for the `{ householdId, isHouseholdLead: true }` predicate that would otherwise
+ * be hand-spelled at every count/list/stamp call site — keeps them from drifting.
+ */
+export const householdLeadsWhere = (householdId: number) =>
+    ({ householdId, isHouseholdLead: true }) as const;
 
 /** Thrown by {@link addHouseholdLead} when the per-household lead cap is reached. */
 export class HouseholdLeadLimitError extends Error {
@@ -15,21 +56,44 @@ export class HouseholdLeadLimitError extends Error {
     }
 }
 
-// Accepts either the prisma singleton or a $transaction client. The singleton
-// has `$transaction`; a transaction client does not (it's in the ITX deny list),
-// which is how we tell them apart at runtime.
-type TxClient = Prisma.TransactionClient;
-type DbClient = PrismaClient | TxClient;
-
-function isRootClient(db: DbClient): db is PrismaClient {
-    return "$transaction" in db;
+/**
+ * Thrown when a leader whose household is passed to a lead helper does not actually
+ * belong to that household — the invariant `Person.householdId === householdId` that
+ * makes `isHouseholdLead` mean "lead of their OWN household". Callers pass the
+ * person's own household, so this is a guard against a future miswire, not a
+ * user-facing case.
+ */
+export class HouseholdLeadMismatchError extends Error {
+    constructor(public readonly householdId: number, public readonly personId: number) {
+        super(`Person ${personId} is not a member of household ${householdId}.`);
+        this.name = "HouseholdLeadMismatchError";
+    }
 }
 
 /**
- * The count-then-create core, run inside a transaction. Takes a row lock on the
+ * Thrown by {@link addHouseholdLead} when the promotion target is a youth. The UI
+ * hides "Make Lead" for youth, but that's client-side only — this is the server
+ * enforcement so a direct POST can't flag a youth as a household lead. A null/unknown
+ * DOB is NOT a youth ({@link isYouth} returns false), matching the UI which shows the
+ * control for null-DOB members.
+ */
+export class HouseholdLeadYouthError extends Error {
+    constructor(public readonly householdId: number, public readonly personId: number) {
+        super("A youth cannot be a household lead.");
+        this.name = "HouseholdLeadYouthError";
+    }
+}
+
+/**
+ * The count-then-flag core, run inside a transaction. Takes a row lock on the
  * household first so concurrent promotions are serialized: a second caller
  * blocks on the lock, then sees the updated count and is rejected — closing the
- * check-then-act (TOCTOU) race that a bare count+create would leave open.
+ * check-then-act (TOCTOU) race that a bare count+update would leave open.
+ *
+ * Leadership is `Person.isHouseholdLead` (a1, HOUSEHOLD_LEAD_MODEL.md): a person
+ * leads their OWN household ({@link Person.householdId}), so the cap counts
+ * flagged members of `householdId`. Caller guarantees `householdId` is the
+ * participant's household.
  */
 async function addHouseholdLeadTx(
     tx: TxClient,
@@ -38,20 +102,32 @@ async function addHouseholdLeadTx(
 ): Promise<{ created: boolean }> {
     // FOR UPDATE serializes lead additions for this household. Postgres' default
     // Read Committed isolation does NOT prevent two transactions from both
-    // counting N and both inserting — the explicit lock is what does.
+    // counting N and both flagging — the explicit lock is what does.
     await tx.$queryRaw`SELECT id FROM "Household" WHERE id = ${householdId} FOR UPDATE`;
 
-    const existing = await tx.householdLead.findUnique({
-        where: { householdId_participantId: { householdId, participantId } },
+    const person = await tx.person.findUnique({
+        where: { id: participantId },
+        select: { isHouseholdLead: true, householdId: true, dateOfBirth: true },
     });
-    if (existing) return { created: false };
+    // Invariant: isHouseholdLead means "lead of their OWN household". Flagging a
+    // person whose householdId != the counted/locked household would create a
+    // divergence the a1 model exists to prevent — reject instead of silently
+    // flagging the wrong household (would also make the cap count meaningless).
+    if (person && person.householdId !== householdId) {
+        throw new HouseholdLeadMismatchError(householdId, participantId);
+    }
+    if (person?.isHouseholdLead) return { created: false };
+    // Youth exclusion (server-side; UI also filters). null/unknown DOB is allowed.
+    if (person && isYouth(person.dateOfBirth)) {
+        throw new HouseholdLeadYouthError(householdId, participantId);
+    }
 
-    const count = await tx.householdLead.count({ where: { householdId } });
+    const count = await tx.person.count({ where: { ...householdLeadsWhere(householdId), ...LIVE_PERSON } });
     if (count >= MAX_HOUSEHOLD_LEADS) {
         throw new HouseholdLeadLimitError(householdId);
     }
 
-    await tx.householdLead.create({ data: { householdId, participantId } });
+    await tx.person.update({ where: { id: participantId }, data: { isHouseholdLead: true } });
     return { created: true };
 }
 
@@ -78,9 +154,58 @@ export async function addHouseholdLead(
     householdId: number,
     participantId: number,
 ): Promise<{ created: boolean }> {
-    if (isRootClient(db)) {
-        return db.$transaction((tx) => addHouseholdLeadTx(tx, householdId, participantId));
+    return withTx(db, (tx) => addHouseholdLeadTx(tx, householdId, participantId));
+}
+
+/** Result of a demote attempt. `not_lead`: wasn't a lead. `last_lead`: refused —
+ *  removing them would leave the household with zero leads (a "broken" household). */
+export type RemoveLeadResult =
+    | { removed: true }
+    | { removed: false; reason: "not_lead" | "last_lead" };
+
+/**
+ * The count-then-clear core, the demote mirror of {@link addHouseholdLeadTx}. Takes
+ * the SAME Household row lock FIRST, so two concurrent demotes of a 2-lead household
+ * serialize: the second blocks, then sees count === 1 and is refused — closing the
+ * TOCTOU race where both read count === 2, both pass the last-lead guard, and both
+ * clear, leaving the household with zero leads. Under Read Committed the lock is the
+ * only thing that prevents this; a bare count+update does not.
+ */
+async function removeHouseholdLeadTx(
+    tx: TxClient,
+    householdId: number,
+    participantId: number,
+): Promise<RemoveLeadResult> {
+    await tx.$queryRaw`SELECT id FROM "Household" WHERE id = ${householdId} FOR UPDATE`;
+
+    const person = await tx.person.findUnique({
+        where: { id: participantId },
+        select: { isHouseholdLead: true, householdId: true },
+    });
+    if (person && person.householdId !== householdId) {
+        throw new HouseholdLeadMismatchError(householdId, participantId);
     }
-    // Already inside a transaction — the caller owns atomicity; just join it.
-    return addHouseholdLeadTx(db, householdId, participantId);
+    if (!person?.isHouseholdLead) return { removed: false, reason: "not_lead" };
+
+    const count = await tx.person.count({ where: { ...householdLeadsWhere(householdId), ...LIVE_PERSON } });
+    if (count <= 1) return { removed: false, reason: "last_lead" };
+
+    await tx.person.update({ where: { id: participantId }, data: { isHouseholdLead: false } });
+    return { removed: true };
+}
+
+/**
+ * Remove a household lead, refusing to drop the household's last lead, atomically.
+ *
+ * Pass the prisma singleton to run in its own transaction, or a tx client to join
+ * an existing one. Either way the last-lead check and the clear are serialized
+ * against concurrent demotes/promotes for the same household via the Household row
+ * lock — see {@link removeHouseholdLeadTx}. Does not write an audit log — callers own that.
+ */
+export async function removeHouseholdLead(
+    db: DbClient,
+    householdId: number,
+    participantId: number,
+): Promise<RemoveLeadResult> {
+    return withTx(db, (tx) => removeHouseholdLeadTx(tx, householdId, participantId));
 }

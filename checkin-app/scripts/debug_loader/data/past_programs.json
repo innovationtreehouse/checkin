@@ -1,0 +1,126 @@
+{
+  "type": "programs",
+  "programs": [
+    {
+      "program": {
+        "name": "Spring Woodworking",
+        "leadMentorName": "Board Member",
+        "startAt": "2026-04-07",
+        "endAt": "2026-05-26",
+        "phase": "FINISHED",
+        "enrollmentStatus": "CLOSED",
+        "orgMemberOnly": false,
+        "minAge": 13,
+        "maxAge": 18,
+        "memberPrice": "25.00",
+        "nonMemberPrice": "40.00"
+      },
+      "sessions": [
+        {
+          "name": "Spring Woodworking \u2014 Session",
+          "startDate": "2026-04-07",
+          "startTime": "16:00",
+          "endTime": "18:00",
+          "recurrence": {
+            "daysOfWeek": [
+              2
+            ],
+            "until": "2026-05-26"
+          }
+        }
+      ],
+      "_expectedSessions": 8
+    },
+    {
+      "program": {
+        "name": "April Robotics",
+        "leadMentorName": "Keyholder One",
+        "startAt": "2026-04-06",
+        "endAt": "2026-04-22",
+        "phase": "FINISHED",
+        "enrollmentStatus": "CLOSED",
+        "orgMemberOnly": false,
+        "minAge": 11,
+        "maxAge": 17,
+        "memberPrice": null,
+        "nonMemberPrice": null
+      },
+      "sessions": [
+        {
+          "name": "April Robotics \u2014 Session",
+          "startDate": "2026-04-06",
+          "startTime": "16:00",
+          "endTime": "18:00",
+          "recurrence": {
+            "daysOfWeek": [
+              1,
+              3
+            ],
+            "until": "2026-04-22"
+          }
+        }
+      ],
+      "_expectedSessions": 6
+    },
+    {
+      "program": {
+        "name": "May Electronics",
+        "leadMentorName": "Certified Adult",
+        "startAt": "2026-05-05",
+        "endAt": "2026-06-02",
+        "phase": "FINISHED",
+        "enrollmentStatus": "CLOSED",
+        "orgMemberOnly": false,
+        "minAge": 12,
+        "maxAge": 18,
+        "memberPrice": null,
+        "nonMemberPrice": null
+      },
+      "sessions": [
+        {
+          "name": "May Electronics \u2014 Session",
+          "startDate": "2026-05-05",
+          "startTime": "17:00",
+          "endTime": "19:00",
+          "recurrence": {
+            "daysOfWeek": [
+              2
+            ],
+            "until": "2026-06-02"
+          }
+        }
+      ],
+      "_expectedSessions": 5
+    },
+    {
+      "program": {
+        "name": "June Ceramics",
+        "leadMentorName": "Tool Certifier",
+        "startAt": "2026-06-04",
+        "endAt": "2026-06-25",
+        "phase": "FINISHED",
+        "enrollmentStatus": "CLOSED",
+        "orgMemberOnly": false,
+        "minAge": 12,
+        "maxAge": 18,
+        "memberPrice": "28.00",
+        "nonMemberPrice": "42.00"
+      },
+      "sessions": [
+        {
+          "name": "June Ceramics \u2014 Session",
+          "startDate": "2026-06-04",
+          "startTime": "18:00",
+          "endTime": "20:00",
+          "recurrence": {
+            "daysOfWeek": [
+              4
+            ],
+            "until": "2026-06-25"
+          }
+        }
+      ],
+      "_expectedSessions": 4
+    }
+  ]
+}

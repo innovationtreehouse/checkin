@@ -1,0 +1,51 @@
+{
+  "type": "certifications",
+  "_note": "Reference participant and tool by name (participantName / toolName) or by id (participantId / toolId); id wins if both are present. Names must match exactly (case-insensitive) and uniquely — an ambiguous name errors, telling you to use the id. Load tools.json first so the tools exist. level is one of: BASIC, DOF, CERTIFIED, INSTRUCTOR, MAY_CERTIFY_OTHERS.",
+  "certifications": [
+    {
+      "participantName": "Board Member",
+      "toolName": "Hand Tools",
+      "level": "MAY_CERTIFY_OTHERS"
+    },
+    {
+      "participantName": "Board Member",
+      "toolName": "3D Printer",
+      "level": "DOF"
+    },
+    {
+      "participantName": "Parent Family",
+      "toolName": "Hand Tools",
+      "level": "CERTIFIED"
+    },
+    {
+      "participantName": "Parent2 Family",
+      "toolName": "Hand Tools",
+      "level": "CERTIFIED"
+    },
+    {
+      "participantName": "Child Family",
+      "toolName": "Hand Tools",
+      "level": "CERTIFIED"
+    },
+    {
+      "participantName": "Child Family",
+      "toolName": "3D Printer",
+      "level": "CERTIFIED"
+    },
+    {
+      "participantName": "Child Family",
+      "toolName": "Horizontal Band Saw",
+      "level": "DOF"
+    },
+    {
+      "participantName": "Child Family",
+      "toolName": "Jigsaw",
+      "level": "INSTRUCTOR"
+    },
+    {
+      "participantName": "Child Family",
+      "toolName": "Soldering Iron",
+      "level": "DOF"
+    }
+  ]
+}

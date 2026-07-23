@@ -3,8 +3,10 @@
  *
  * Flow:
  *   1. Look up the registry entry for endpointKey.
- *   2. Authenticate the request + build the per-request CallerContext (one
- *      DB-heavy prefetch: caller's programs, household, active visitors).
+ *   2. Authenticate the request + build the per-request CallerContext. The
+ *      prefetch is scoped to spec.ctxNeeds (derived from the route's grants
+ *      at registration) — a route whose policy never consults program or
+ *      visitor scopes pays zero context queries.
  *   3. Run the admission gate (`authorize`). 401/403 if it fails.
  *   4. Walk `orderedView` top-to-bottom; pick the first role the caller
  *      satisfies. Its tokens become the view.
@@ -71,7 +73,7 @@ export function handler<P extends Record<string, string> = Record<string, string
 
         const params = (ctx?.params ? await ctx.params : ({} as P)) ?? ({} as P);
         const auth = await authenticateRequest(req);
-        const callerCtx = await buildCallerContext(auth);
+        const callerCtx = await buildCallerContext(auth, spec.ctxNeeds);
 
         const { allowed } = await resolveAccess(spec.authorize, {
             auth,

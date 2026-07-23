@@ -57,10 +57,11 @@ export function collectFieldKeys(
 export function tierIsGrantable(tier: Tier, tokens: readonly Token[]): boolean {
     if (tier === 'secret') return false;
     if (tier === 'public') return tokens.includes('public');
+    if (tier === 'member') return tokens.includes('member');
     for (const tok of tokens) {
-        if (tok === 'public') continue;
+        if (tok === 'public' || tok === 'member') continue;
         const parsed = parseToken(tok);
-        if (parsed && parsed !== 'public' && parsed.tier === tier) return true;
+        if (parsed && parsed !== 'public' && parsed !== 'member' && parsed.tier === tier) return true;
     }
     return false;
 }

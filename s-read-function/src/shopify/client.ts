@@ -11,12 +11,19 @@
  * Uses the global `fetch` (Node 18+); no SDK dependency, so the bundle stays small.
  */
 import { type ShopifyConfig, logger } from "@inventory/s-ingest-core";
+import { getShopifyToken, invalidateShopifyToken } from "./token.js";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const MAX_ATTEMPTS = 8;
 export const BASE_DELAY_MS = 500;
 export const MAX_DELAY_MS = 30_000;
+/**
+ * Hard per-request deadline (mirrors bulk.ts's BULK_DOWNLOAD_TIMEOUT_MS). A hung TCP
+ * connection (established, no response) must trip the abort and retry, not run the whole
+ * invocation into the Lambda timeout (which leaves a dangling RUNNING sync_run).
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
 /** Shopify's minimal fallback wait when no cost info is available. */
 export const MIN_THROTTLE_WAIT_MS = 1_000;
 /** Small cushion added to the computed throttle wait to avoid retrying a hair early. */
@@ -92,24 +99,48 @@ export interface ShopifyClient {
 export function createShopifyClient(cfg: ShopifyConfig): ShopifyClient {
   async function request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
     let attempt = 0;
-    // eslint-disable-next-line no-constant-condition
+    // A warm Lambda can hold a token that's since expired/been rotated; allow exactly one
+    // invalidate-and-remint retry per request, not a loop (see token.ts / #237).
+    let authRetried = false;
+
     while (true) {
       attempt++;
+      const token = await getShopifyToken(cfg);
       let res: Response;
+      // Per-attempt deadline INSIDE the loop so a hang aborts and retries (not a single
+      // failure that runs to the Lambda timeout). Timer cleared in finally so it can't leak.
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
         res = await fetch(cfg.endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "X-Shopify-Access-Token": cfg.adminToken,
+            "X-Shopify-Access-Token": token,
           },
           body: JSON.stringify({ query, variables }),
+          signal: controller.signal,
         });
       } catch (err) {
-        if (attempt >= MAX_ATTEMPTS) throw err;
+        const timedOut = controller.signal.aborted;
+        if (attempt >= MAX_ATTEMPTS) {
+          if (timedOut) throw new Error(`Shopify request timed out after ${REQUEST_TIMEOUT_MS}ms (${attempt} attempts)`);
+          throw err;
+        }
         const waitMs = jitteredBackoffMs(attempt);
-        logger.warn("shopify retry (network error)", { attempt, waitMs });
+        logger.warn("shopify retry (network error)", { attempt, waitMs, timedOut });
         await sleep(waitMs);
+        continue;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      // Stale cached token → invalidate and re-mint once, then retry immediately (no backoff;
+      // this isn't a rate limit). If it 401s again, fall through to the generic !res.ok throw.
+      if (res.status === 401 && !authRetried) {
+        authRetried = true;
+        invalidateShopifyToken();
+        logger.warn("shopify 401; invalidating cached token and retrying once", { attempt });
         continue;
       }
 

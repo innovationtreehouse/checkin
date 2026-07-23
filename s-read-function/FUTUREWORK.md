@@ -39,23 +39,12 @@ fix is almost always a code change + batch replay, never per-record hand-editing
 
 ---
 
-## 2. Replay / reset-watermark as admin operations
+## 2. Secure invocation of the admin operations (deploy-time)
 
-Two recovery primitives, both **idempotent** (safe to run repeatedly) thanks to
-`(store_id, GID)` upserts + the append-only log:
-
-- **`replay`** — re-project raw events from the log (`--errored` / `--gid` /
-  `--since --object`). No Shopify calls. Fully safe.
-- **`reset-watermark`** — move or clear `sync_state` so the next sync re-pulls a range
-  from Shopify. Not data-destructive (re-pull is idempotent), but operationally
-  significant — it costs API budget and time.
-
-Both are the *same idea* — replay over a range — one from the log, one from the source.
-Expose as CLI commands and/or as handler modes (`{"mode":"replay", ...}`). Neither needs
-a UI; for a read pipeline, a CloudWatch alarm + a `list-errors` query is the whole
-operator surface.
-
-### Secure invocation (the important part)
+The operations themselves — `replay` / `reset-watermark` / `reingest-bulk`, all idempotent
+via `(store_id, GID)` upserts + the append-only log — are **built** in
+[`s-replay-function`](../s-replay-function). What's still deferred is the deployment security
+model for invoking them.
 
 **A Lambda has no public surface by default.** `aws lambda invoke` and EventBridge hit
 the AWS control plane, authenticated by **IAM (SigV4)** — there is no open HTTP endpoint.
@@ -97,53 +86,35 @@ set up.
 
 ---
 
-## 3. Monitoring (the reaper itself is now built in)
+## 3. Monitoring — alarm wiring
 
-> Full monitoring/alerting design is in [MONITORING-PRD.md](MONITORING-PRD.md). Summary below.
-
-
-The stale-run reaper (`reapStaleRuns`, called at handler startup) and the
-reserved-concurrency = 1 requirement are **done** — see the README "Operations &
-monitoring" section. What remains is wiring the actual alarms in deployment:
-
-- **Primary: freshness heartbeat.** Alarm on `now − (latest COMPLETED
-  sync_run.finishedAt)` exceeding a couple of cron intervals. Advances on every
-  successful run including empty ones, so it does not false-fire on a quiet store. This
-  is the signal that catches "job stopped / keeps dying."
-- **Do NOT make watermark lag the primary alarm.** `now − sync_state.lastUpdatedAtProcessed`
-  only moves when real records arrive, so a genuinely quiet store reads as "stale." Use
-  it only as a secondary, per-store signal where there's a known activity cadence.
-- Emit both as CloudWatch metrics; alarm on the heartbeat. No auto-reprojection — a dead
-  run needs no data recovery; the next scheduled run catches up via the watermark.
+The stale-run reaper (`reapStaleRuns`, called at handler startup) and the per-store run
+lock are **done** (README "Operations & monitoring"). What remains is wiring the alarms in
+deployment: emit both the freshness heartbeat and watermark lag as CloudWatch metrics,
+alarm on the **heartbeat** (not watermark lag). Full design — including why heartbeat over
+watermark lag — in [MONITORING-PRD.md](MONITORING-PRD.md) §4.1. No auto-reprojection; a dead
+run self-heals on the next scheduled run.
 
 ---
 
-## 4. Schema migrations in deployment
+## 4. Schema migrations — why the split (mechanics in [DEPLOY.md](DEPLOY.md))
 
-The core package (`s-ingest-core`) owns `schema.prisma`, the migration files, and
-`prisma generate`. **Applying** migrations to a deployed database is a separate,
-deliberate step — **not** Terraform, and **not** the app Lambdas:
+[DEPLOY.md](DEPLOY.md) records **how** migrations run (the `s-read-<env>-migrate` task, the
+`migrate-and-code` workflow ordering, expand/contract). The durable reasons behind that
+shape, code-independent:
 
-- **Terraform** provisions the RDS instance, the Lambdas, and a **migrate-runner** — a
-  CodeBuild project / one-off Fargate task / dedicated migrate Lambda **inside the VPC**,
-  holding DDL credentials. Terraform does **not** run the migration itself: mixing
-  declarative infra reconciliation with an ordered, stateful schema sequence is an
-  anti-pattern (avoid the `null_resource` + `local-exec "prisma migrate deploy"` hack —
-  not idempotent in Terraform's model, runs whatever's on the runner, poor error handling).
-  Terraform *creates the thing that can migrate*; it doesn't migrate.
-- **CI/CD** invokes the migrate-runner to `prisma migrate deploy` **before** releasing the
-  function code that expects the new schema. Use **expand/contract** ordering (add a column
-  before code reads it; drop it only after code stops) so a rolling deploy never runs code
-  ahead of its schema.
-- **App Lambdas** (`s-read`, `s-replay`) run with **DML-only** runtime creds and never
-  migrate. Only the migrate-runner has DDL rights. Exactly one actor applies migrations,
-  never at runtime.
-- **Locally (today):** migrations are applied by hand — `npm run db:deploy` from
-  `s-ingest-core`, pointed at the dev DB.
+- **Terraform provisions the migrate task but never runs the migration.** Mixing
+  declarative reconciliation with an ordered, stateful schema sequence is an anti-pattern
+  (the `null_resource` + `local-exec "prisma migrate deploy"` hack: not idempotent in
+  Terraform's model, runs whatever's on the runner). Terraform *creates the thing that can
+  migrate*; CI runs it.
+- **DML/DDL split.** App functions (`s-read`, `s-replay`) run with **DML-only** creds and
+  never migrate; only the migrate task holds DDL. Enforced at the task level — which secret
+  each task-def references — and infra `modules/s-read` points back here for this invariant.
 
-## 5. Token acquisition for deployed Lambda
-Dev Dashboard apps issue a short-lived (~24h) Admin API token via the client-credentials
-grant (see README "Getting the token"). For the deployed Lambda, fetch the token
-programmatically each run from `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` (a small
-addition to `shopify/client.ts`) instead of storing a static `SHOPIFY_ADMIN_TOKEN` that
-expires. Cache it in memory across warm invocations; refresh on 401.
+## 5. Token acquisition for the deployed sync — done (#237)
+`shopify/client.ts` (`shopify/token.ts`) mints the short-lived (~24h) Admin token from
+`SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` via the client-credentials grant, caching it
+in memory across warm invocations; `SHOPIFY_ADMIN_TOKEN` remains the local/legacy static
+path (static-token precedence). No refresh-token / encrypted-DB layer — the grant issues
+none. Full behaviour: README "Getting the token".

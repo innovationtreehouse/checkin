@@ -26,39 +26,39 @@ describe('Program Lifecycle Integration Tests', () => {
         // Setup initial db state for test scope
         
         // 1. Create a board member
-        const adminUser = await prisma.participant.create({
+        const adminUser = await prisma.person.create({
             data: {
                 name: "Board Tester",
                 email: "board@test.com",
                 googleId: "test-auth-board",
-                sysadmin: false,
-                boardMember: true,
-                dob: new Date('1990-01-01'),
-                household: { create: {} }
+                isSysadmin: false,
+                isBoardMember: true,
+                dateOfBirth: new Date('1990-01-01'),
+                household: { create: { name: "Test HH" } }
             }
         });
         boardAdminId = adminUser.id;
 
         // 2. Create a Lead Mentor
-        const mentorUser = await prisma.participant.create({
+        const mentorUser = await prisma.person.create({
             data: {
                 name: "Mentor Tester",
                 email: "mentor@test.com",
                 googleId: "test-auth-mentor",
-                dob: new Date('1985-01-01'),
-                household: { create: {} }
+                dateOfBirth: new Date('1985-01-01'),
+                household: { create: { name: "Test HH" } }
             }
         });
         leadMentorId = mentorUser.id;
 
         // 3. Create a standard participant
-        const standardUser = await prisma.participant.create({
+        const standardUser = await prisma.person.create({
             data: {
                 name: "Standard Tester",
                 email: "participant@test.com",
                 googleId: "test-auth-std",
-                dob: new Date('2000-01-01'),
-                household: { create: {} }
+                dateOfBirth: new Date('2000-01-01'),
+                household: { create: { name: "Test HH" } }
             }
         });
         testParticipantId = standardUser.id;
@@ -68,11 +68,11 @@ describe('Program Lifecycle Integration Tests', () => {
             data: {
                 name: "Integration Test Program",
                 leadMentorId,
-                memberPrice: 50,
-                nonMemberPrice: 100,
+                orgMemberPriceCents: 50,
+                nonOrgMemberPriceCents: 100,
                 shopifyProductId: "test-prod",
-                shopifyMemberVariantId: "test-mem-var",
-                shopifyNonMemberVariantId: "test-non-var",
+                shopifyOrgMemberVariantId: "test-mem-var",
+                shopifyNonOrgMemberVariantId: "test-non-var",
                 enrollmentStatus: "OPEN"
             }
         });
@@ -88,7 +88,7 @@ describe('Program Lifecycle Integration Tests', () => {
 
         const idsToDelete = [testParticipantId, leadMentorId, boardAdminId].filter(id => id);
         if (idsToDelete.length > 0) {
-            await prisma.participant.deleteMany({ where: { id: { in: idsToDelete } } });
+            await prisma.person.deleteMany({ where: { id: { in: idsToDelete } } });
         }
     });
 
@@ -105,20 +105,20 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const data = await res.json();
         expect(data.success).toBe(true);
 
         const dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        
+
         expect(dbRecord).toBeDefined();
         expect(dbRecord?.status).toBe('PENDING');
         expect(dbRecord?.pendingSince).toBeInstanceOf(Date);
-        expect(dbRecord?.paymentPlanRequested).toBe(false);
+        expect(dbRecord?.isPaymentPlanRequested).toBe(false);
     });
 
     it('Should block Lead Mentors from manually adding participants', async () => {
@@ -129,19 +129,19 @@ describe('Program Lifecycle Integration Tests', () => {
             body: JSON.stringify({ participantId: testParticipantId }) // Adding someone else
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(403);
     });
 
     it('Should require a Board Member to supply override=true when bypassing payment flows', async () => {
-        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
+        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
             body: JSON.stringify({ participantId: testParticipantId }) // No override flag
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(400);
         
         const data = await res.json();
@@ -149,23 +149,23 @@ describe('Program Lifecycle Integration Tests', () => {
     });
 
     it('Should allow a Board Member to override and add a participant, defaulting to ACTIVE', async () => {
-        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, boardMember: true } });
+        mockGetSession.mockResolvedValue({ user: { id: boardAdminId, isBoardMember: true } });
 
         // Clean previous runs
-        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, participantId: testParticipantId } });
+        await prisma.programParticipant.deleteMany({ where: { programId: testProgramId, personId: testParticipantId } });
 
         const req = new Request(`http://localhost/api/programs/${testProgramId}/participants`, {
             method: 'POST',
             body: JSON.stringify({ participantId: testParticipantId, override: true })
         });
 
-        const res = await ParticipantPost(req, { params: Promise.resolve({ id: String(testProgramId) }) });
+        const res = await ParticipantPost(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testProgramId) }) });
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        
+
         // Overrides by board default to ACTIVE
         expect(dbRecord?.status).toBe('ACTIVE'); 
     });
@@ -174,14 +174,17 @@ describe('Program Lifecycle Integration Tests', () => {
         // 1. Reset user to PENDING state manually to simulate self-enroll flow
         // First, recreate or ensure it exists from the previous test
         await prisma.programParticipant.upsert({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } },
             update: { status: 'PENDING', pendingSince: new Date() },
-            create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
+            create: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: new Date() }
         });
 
-        // 2. Build Shopify webhook payload
+        // 2. Build Shopify webhook payload. line_items must contain the program's
+        // own Shopify variant (shopifyNonOrgMemberVariantId set in beforeAll) —
+        // the route now verifies this before activating (see route.ts).
         const payload = JSON.stringify({
             id: 12345,
+            line_items: [{ variant_id: "test-non-var" }],
             note_attributes: [
                 { name: "CheckMeIn_Account_ID", value: String(testParticipantId) },
                 { name: "Program_ID", value: String(testProgramId) }
@@ -205,14 +208,14 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        
-        expect(dbRecord?.status).toBe('ACTIVE'); 
-        expect(dbRecord?.pendingSince).toBeNull(); 
+
+        expect(dbRecord?.status).toBe('ACTIVE');
+        expect(dbRecord?.pendingSince).toBeNull();
     });
 
-     it('Cron job should remove PENDING participants after 7 days, unless paymentPlanRequested is true', async () => {
+     it('Cron flags overdue PENDING participants after 7 days without removing them; requested rows are excluded', async () => {
         process.env.CRON_SECRET = 'cron_test_secret';
 
         // 1. Set user to 8 days old PENDING
@@ -220,9 +223,9 @@ describe('Program Lifecycle Integration Tests', () => {
         eightDaysAgo.setDate(eightDaysAgo.getDate() - 8);
 
         await prisma.programParticipant.upsert({
-             where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } },
-             update: { status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false },
-             create: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: false }
+             where: { programId_personId: { programId: testProgramId, personId: testParticipantId } },
+             update: { status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false },
+             create: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: false }
         });
 
         let req = new Request(`http://localhost/api/cron/pending-participants`, {
@@ -233,17 +236,24 @@ describe('Program Lifecycle Integration Tests', () => {
         let data = await res.json();
         
         expect(res.status).toBe(200);
-        expect(data.kicked).toBe(1);
+        // The cron NEVER removes (reviewer decision, PR #1094): the row is flagged
+        // overdue and left for the board. >= because the sweep is global and other
+        // suites' rows may share the DB in a full CI run.
+        expect(data.kicked).toBeUndefined();
+        expect(data.overdue).toBeGreaterThanOrEqual(1);
 
-        // Verify Delete
+        // Verify the row SURVIVES the sweep.
         let dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        expect(dbRecord).toBeNull();
+        expect(dbRecord?.status).toBe('PENDING');
 
-        // 2. Recreate, set to 8 days old PENDING, but paymentPlanRequested = true
-        await prisma.programParticipant.create({
-            data: { programId: testProgramId, participantId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, paymentPlanRequested: true}
+        // 2. Flip the surviving row to isPaymentPlanRequested = true — the sweep
+        // excludes requested rows entirely (scholarship applicants are the grace
+        // flow's business, not the non-payment sweep's).
+        await prisma.programParticipant.update({
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } },
+            data: { isPaymentPlanRequested: true }
         });
 
          req = new Request(`http://localhost/api/cron/pending-participants`, {
@@ -253,11 +263,10 @@ describe('Program Lifecycle Integration Tests', () => {
         res = await CronPending(req);
         data = await res.json();
         expect(res.status).toBe(200);
-        expect(data.kicked).toBe(0); // Should be saved!
 
          // Verify Still there
         dbRecord = await prisma.programParticipant.findUnique({
-            where: { programId_participantId: { programId: testProgramId, participantId: testParticipantId } }
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
         expect(dbRecord).toBeDefined();
     });

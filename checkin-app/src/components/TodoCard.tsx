@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { Card, Group, Stack, Text, ThemeIcon, Badge, Anchor } from "@mantine/core";
+import { Card, Group, Stack, Text, ThemeIcon, Anchor } from "@mantine/core";
 import { IconChecklist, IconChevronRight } from "@tabler/icons-react";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
+import { CountBadge } from "@/components/ui/CountBadge";
 
 /**
  * "Things to do" — the member's open todo items, each with a direct link to the
@@ -21,17 +22,17 @@ export default function TodoCard() {
     if (items.length === 0) return null;
 
     return (
-        <Card withBorder radius="md" padding="md">
+        <Card withBorder radius="lg" padding="xl" bg="yellow.2" c="black" style={{ borderColor: "var(--mantine-color-yellow-5)", borderWidth: 2 }}>
             <Group justify="space-between" mb="sm">
                 <Group gap="xs">
-                    <ThemeIcon color="treehouseGreen" variant="light" radius="md">
+                    <ThemeIcon color="dark" variant="filled" radius="xl">
                         <IconChecklist size={18} />
                     </ThemeIcon>
-                    <Text fw={700}>Things to do</Text>
+                    <Text fw={700} c="black">Things to do</Text>
                 </Group>
-                <Badge color="treehouseGreen" variant="filled">
+                <CountBadge intent="action">
                     {items.length}
-                </Badge>
+                </CountBadge>
             </Group>
             <Stack gap="xs">
                 {items.map((item) => (
@@ -41,9 +42,21 @@ export default function TodoCard() {
                         href={item.href}
                         underline="never"
                         c="inherit"
+                        onClick={(e) => {
+                            // Same-page hash link: if the URL is already at that hash,
+                            // Next/the browser fires no navigation, so the second click
+                            // wouldn't scroll. Scroll the target ourselves when it's
+                            // already in the DOM (cross-page links fall through to Link).
+                            const hash = item.href.split("#")[1];
+                            const el = hash && document.getElementById(hash);
+                            if (el) {
+                                e.preventDefault();
+                                el.scrollIntoView({ behavior: "smooth" });
+                            }
+                        }}
                     >
                         <Group justify="space-between" wrap="nowrap" gap="sm">
-                            <Text size="sm">{item.label}</Text>
+                            <Text size="sm" c="black">{item.label}</Text>
                             <IconChevronRight size={16} style={{ flexShrink: 0, opacity: 0.6 }} />
                         </Group>
                     </Anchor>

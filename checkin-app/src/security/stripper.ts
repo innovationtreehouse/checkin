@@ -10,11 +10,12 @@
  *
  * For each scalar field, visibility is decided by `fieldVisible(tier, tokens,
  * scopes)` where `scopes = scopesHeld(modelName, row, callerCtx)` — the
- * per-row predicate. Relations are recursed into; `_count` is preserved.
+ * per-row predicate. Relations are recursed into; each `_count` key is gated
+ * to relations the view can see (see relationVisible).
  *
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
-import { fieldVisible, type Tier, type Token } from './core';
+import { fieldVisible, type Scope, type Tier, type Token } from './core';
 import { classifications, relations } from './generated/classifications';
 import { scopesHeld, type CallerContext } from './access-resolvers';
 
@@ -67,7 +68,17 @@ export function stripValue(
     }
 
     if ('_count' in obj && typeof obj._count === 'object' && obj._count !== null) {
-        result._count = obj._count;
+        // Gate each relation count like a field: a count is in the whitelist only
+        // for relations this view can actually see. Unknown relation keys drop
+        // (fail-closed). Without this, `_count: { select: { rel: true } }` would
+        // leak aggregate counts of relations the caller has no grant on.
+        const counts = obj._count as Record<string, unknown>;
+        const gated: Record<string, unknown> = {};
+        for (const [relName, count] of Object.entries(counts)) {
+            const rel = rels[relName];
+            if (rel && relationVisible(rel.model, tokens, scopes)) gated[relName] = count;
+        }
+        if (Object.keys(gated).length > 0) result._count = gated;
     }
 
     for (const [relName, relInfo] of Object.entries(rels)) {
@@ -75,4 +86,27 @@ export function stripValue(
         result[relName] = stripValue(relInfo.model, obj[relName], tokens, callerCtx);
     }
     return result;
+}
+
+/**
+ * Whether the caller can see a relation at all — true iff at least one field of
+ * the target model is visible under these tokens/scopes. A `_count` reveals no
+ * more than the existence of the relation's rows, so it rides the same
+ * visibility as the relation's least-sensitive visible field. Evaluated with the
+ * parent row's scopes (an aggregate has no per-child row to resolve). Unknown
+ * model → false (fail-closed).
+ */
+function relationVisible(
+    targetModel: string,
+    tokens: readonly Token[],
+    scopes: ReadonlySet<Scope>,
+): boolean {
+    const tiers = classifications[targetModel as keyof typeof classifications] as
+        | Record<string, Tier>
+        | undefined;
+    if (!tiers) return false;
+    for (const tier of Object.values(tiers)) {
+        if (fieldVisible(tier, tokens, scopes)) return true;
+    }
+    return false;
 }

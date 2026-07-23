@@ -1,51 +1,58 @@
 import { NextResponse } from 'next/server';
+import { logger } from "@/lib/logger";
 import prisma from '@/lib/prisma';
 import { withAuth } from "@/lib/auth";
 import { upsertPrimaryContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth(
     {},
     async (req, auth) => {
-        if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        if (auth.type !== 'session') return apiError("Unauthorized", 401);
         const userId = auth.user.id;
 
         try {
             const body = await req.json();
-            const { phone, emergencyContactName, emergencyContactPhone } = body;
+            const { phone, emergencyContactName, emergencyContactPhone, emergencyContactEmail } = body;
 
-            const user = await prisma.participant.findUnique({
+            const user = await prisma.person.findUnique({
                 where: { id: userId },
-                include: { householdLeads: true }
+                select: { householdId: true, isHouseholdLead: true }
             });
 
             if (!user) {
-                return NextResponse.json({ error: "User not found" }, { status: 404 });
+                return apiError("User not found", 404);
             }
 
             if (phone !== undefined) {
-                await prisma.participant.update({
+                if (phone !== "" && !isValidPhone(phone)) {
+                    return apiError(PHONE_ERROR, 400);
+                }
+                await prisma.person.update({
                     where: { id: userId },
-                    data: { phone }
+                    data: { phone: phone === "" ? null : formatPhone(phone) }
                 });
             }
 
-            const isLead = user.householdId && user.householdLeads.some((lead: { id?: number; email?: string; name?: string; participantId?: number; level?: string; status?: string; role?: string; type?: string; [key: string]: unknown }) => lead.householdId === user.householdId);
-            if (isLead && user.householdId && (emergencyContactName !== undefined || emergencyContactPhone !== undefined)) {
+            const isLead = user.isHouseholdLead;
+            if (isLead && user.householdId && (emergencyContactName !== undefined || emergencyContactPhone !== undefined || emergencyContactEmail !== undefined)) {
                 // Emergency contact is a separate entity; onboarding edits the
                 // household's primary contact. Rejects a member as the contact.
                 await upsertPrimaryContact(prisma, user.householdId, {
                     name: emergencyContactName,
                     phone: emergencyContactPhone,
+                    email: emergencyContactEmail,
                 });
             }
 
             return NextResponse.json({ success: true });
         } catch (error) {
             if (error instanceof EmergencyContactError) {
-                return NextResponse.json({ error: error.message }, { status: 400 });
+                return apiError(error.message, 400);
             }
-            console.error("Error saving onboarding details:", error);
-            return NextResponse.json({ error: "Failed to save data" }, { status: 500 });
+            logger.error("Error saving onboarding details:", error);
+            return apiError("Failed to save data", 500);
         }
     }
 );

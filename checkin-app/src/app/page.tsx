@@ -5,14 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useSession, signIn } from "next-auth/react";
 import {
   Alert,
-  Anchor,
   Button,
   Card,
   Container,
   Divider,
   Group,
-  Loader,
-  Modal,
   Paper,
   Stack,
   Text,
@@ -23,16 +20,18 @@ import {
   IconAddressBook,
   IconUrgent,
 } from '@tabler/icons-react';
+import { notifications } from "@mantine/notifications";
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
-import type { SessionUser, BoardMember } from '@/types/participant';
+import { PageLoader } from '@/components/ui/PageLoader';
+import type { SessionUser } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const isDevInstance = useIsDevInstance();
   const isLocalInstance = useIsLocalInstance();
   const [loading, setLoading] = useState(false);
@@ -41,11 +40,8 @@ export default function Home() {
 
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
-  const [isMember, setIsMember] = useState<boolean | null>(null);
-
-  const [showBoardDirectory, setShowBoardDirectory] = useState(false);
-  const [boardMembers, setBoardMembers] = useState<BoardMember[]>([]);
-  const [loadingBoard, setLoadingBoard] = useState(false);
+  // null = not loaded yet; once loaded, status/processStatus drive the join banner.
+  const [membership, setMembership] = useState<{ status: string | null; processStatus: string | null } | null>(null);
 
   const checkAttendanceStatus = useCallback(async () => {
     if (!session?.user) return;
@@ -68,7 +64,7 @@ export default function Home() {
 
       // Use server-computed safety flags
       if (data.safety) {
-        const userIsKeyholder = (session.user as SessionUser)?.keyholder;
+        const userIsKeyholder = (session.user as SessionUser)?.isKeyholder;
         setIsLastKeyholder(data.safety.isLastKeyholder && userIsKeyholder);
         setIsTwoDeepViolation(data.safety.isTwoDeepViolation);
       } else {
@@ -81,23 +77,33 @@ export default function Home() {
   }, [session]);
 
   useEffect(() => {
+    // Async fetch that syncs React state from the server; state is set in the
+    // promise continuation, not synchronously in this effect body.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     checkAttendanceStatus();
   }, [checkAttendanceStatus]);
 
   useEffect(() => {
     if (!session?.user) {
-      setIsMember(null);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMembership(null);
       return;
     }
     let cancelled = false;
     fetch('/api/membership')
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (!cancelled && data) setIsMember(data.membershipStatus === 'ACTIVE');
+        if (!cancelled && data) {
+          setMembership({ status: data.membershipStatus ?? null, processStatus: data.process?.status ?? null });
+        }
       })
       .catch(() => { /* non-blocking: leave banner hidden on error */ });
     return () => { cancelled = true; };
   }, [session]);
+
+  // While the session is still resolving, `session` is undefined — rendering the
+  // ternary below as-is would flash the signed-out landing at a signed-in user.
+  if (status === "loading") return <PageLoader />;
 
   const handleToggleCheckin = async () => {
     if (!session?.user) return;
@@ -110,7 +116,7 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId })
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessage(`${data.type === 'checkin' ? 'Successfully checked in!' : 'Successfully checked out!'}`);
         await checkAttendanceStatus(); // Re-fetch the status securely
@@ -118,39 +124,21 @@ export default function Home() {
         setMessage(`Error: ${data.error || 'Failed to update attendance'}`);
       }
     } catch {
-      setMessage("Failed to connect to API");
+      notifications.show({ color: "red", message: "Failed to connect to API", autoClose: false });
     }
     setLoading(false);
   };
 
-  const fetchBoardDirectory = async () => {
-    setShowBoardDirectory(true);
-    setLoadingBoard(true);
-    try {
-      const res = await fetch('/api/directory/board');
-      if (res.ok) {
-        const data = await res.json();
-        setBoardMembers(data.boardMembers);
-      } else {
-        setMessage("Failed to load board directory.");
-      }
-    } catch {
-      setMessage("Network error loading directory.");
-    } finally {
-      setLoadingBoard(false);
-    }
-  };
-
   const user = session?.user as SessionUser | undefined;
   const canSelfCheckin =
-    !!user?.sysadmin || !!user?.boardMember || !!user?.keyholder || isDevInstance;
-  const isPrivileged = !!user?.sysadmin || !!user?.keyholder;
+    !!user?.isSysadmin || !!user?.isBoardMember || !!user?.isKeyholder || isDevInstance;
+  const isPrivileged = !!user?.isSysadmin || !!user?.isKeyholder;
 
   return (
     <Container size="sm" py="xl">
       <Card withBorder shadow="sm" radius="md" padding="xl">
         <Stack align="center" gap="xs" mb="lg">
-          <Title order={1}>{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
+          <Title order={1} tt="lowercase">{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
           <Text c="dimmed" size="lg">
             The next-generation facility check-in system.
           </Text>
@@ -163,16 +151,18 @@ export default function Home() {
                 <Text ta="center">
                   Welcome back, <strong>{session.user?.name || session.user?.email}</strong>!
                 </Text>
-                {(user?.sysadmin || user?.keyholder) && (
+                {(user?.isSysadmin || user?.isKeyholder) && (
                   <Group justify="center" gap="xs" mt="xs">
-                    {user?.sysadmin && <RoleBadge role="sysadmin" />}
-                    {user?.keyholder && <RoleBadge role="keyholder" />}
+                    {user?.isSysadmin && <RoleBadge role="isSysadmin" />}
+                    {user?.isKeyholder && <RoleBadge role="isKeyholder" />}
                   </Group>
                 )}
               </Paper>
 
-              {/* Visitor call-to-action — only for non-members */}
-              {isMember === false && <JoinTreehouseBanner />}
+              {/* Visitor call-to-action — only for non-members; copy reflects in-flight state */}
+              {membership && membership.status !== 'ACTIVE' && (
+                <JoinTreehouseBanner processStatus={membership.processStatus} />
+              )}
 
               {/* In-app red-dot indicators (membership reviewer queue / blocked apps, …) */}
               <Notifications />
@@ -180,7 +170,7 @@ export default function Home() {
               {/* Operational Warnings */}
               {isTwoDeepViolation && (
                 <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Critical Warning">
-                  Two-Deep Compliance is failing. An unaccompanied student is present without
+                  Two-Deep Compliance is failing. An unaccompanied youth is present without
                   sufficient adult supervision.
                 </Alert>
               )}
@@ -197,7 +187,7 @@ export default function Home() {
                   <Button
                     size="lg"
                     fullWidth
-                    color={isCheckedIn ? 'red' : 'green'}
+                    color={isCheckedIn ? 'red' : 'treehouseGreen'}
                     onClick={handleToggleCheckin}
                     loading={loading}
                   >
@@ -216,7 +206,7 @@ export default function Home() {
                     variant="default"
                     fullWidth
                     leftSection={<IconAddressBook size={18} />}
-                    onClick={fetchBoardDirectory}
+                    onClick={() => router.push('/safety/board-contacts')}
                   >
                     View Board Directory
                   </Button>
@@ -225,7 +215,7 @@ export default function Home() {
                     color="red"
                     fullWidth
                     leftSection={<IconUrgent size={18} />}
-                    onClick={() => router.push('/admin/emergency-contacts')}
+                    onClick={() => router.push('/safety')}
                   >
                     Emergency Contacts
                   </Button>
@@ -239,7 +229,6 @@ export default function Home() {
               </Text>
 
               <Button
-                color="green"
                 size="md"
                 onClick={() => router.push('/programs')}
                 style={{ maxWidth: 300, width: '100%' }}
@@ -267,38 +256,6 @@ export default function Home() {
           </Alert>
         )}
       </Card>
-
-      <Modal
-        opened={showBoardDirectory}
-        onClose={() => setShowBoardDirectory(false)}
-        title={<Title order={4}>Board Directory</Title>}
-        centered
-      >
-        {loadingBoard ? (
-          <Group justify="center" py="md">
-            <Loader size="sm" />
-            <Text c="dimmed">Loading contacts...</Text>
-          </Group>
-        ) : boardMembers.length === 0 ? (
-          <Text c="dimmed">No board members found.</Text>
-        ) : (
-          <Stack>
-            {boardMembers.map((member) => (
-              <Paper key={member.id} withBorder radius="md" p="md">
-                <Text fw={600}>{member.name || 'Unnamed'}</Text>
-                <Text size="sm">
-                  ✉️ <Anchor href={`mailto:${member.email}`}>{member.email}</Anchor>
-                </Text>
-                {member.phone && (
-                  <Text size="sm">
-                    📞 <Anchor href={`tel:${member.phone.replace(/\D/g, '')}`}>{member.phone}</Anchor>
-                  </Text>
-                )}
-              </Paper>
-            ))}
-          </Stack>
-        )}
-      </Modal>
     </Container>
   );
 }

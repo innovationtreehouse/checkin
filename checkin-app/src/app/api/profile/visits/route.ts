@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
+import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
     {},
     async (req, auth) => {
         try {
-            if (auth.type !== 'session') return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+            if (auth.type !== 'session') return apiError("Unauthorized", 401);
             const userId = auth.user.id;
 
             const { searchParams } = new URL(req.url);
@@ -29,25 +31,25 @@ export const GET = withAuth(
 
             const visits = await prisma.visit.findMany({
                 where: {
-                    participantId: userId,
-                    arrived: {
+                    personId: userId,
+                    arrivedAt: {
                         gte: startDate,
                         lte: endDate
                     }
                 },
-                orderBy: { arrived: 'desc' },
+                orderBy: { arrivedAt: 'desc' },
                 select: {
                     id: true,
-                    arrived: true,
-                    departed: true,
+                    arrivedAt: true,
+                    departedAt: true,
                     event: { select: { name: true } }
                 }
             });
 
             return NextResponse.json({ visits }, { status: 200 });
         } catch (error) {
-            console.error("Profile Visits GET Error:", error);
-            return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+            logger.error("Profile Visits GET Error:", error);
+            return apiError("Internal Server Error", 500);
         }
     }
 );

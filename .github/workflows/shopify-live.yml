@@ -1,0 +1,70 @@
+name: Shopify live contract tests (dev store)
+
+# Runs the shopify-live suite (checkin-app/shopify-live/, see
+# docs/designs/SHOPIFY_LIVE_TESTS.md) against the REAL dev store — catches
+# Admin-API contract drift the mocked suites structurally cannot. Nightly +
+# manual; NEVER part of PR CI or pre-commit.
+#
+# DEV STORE ONLY, by construction:
+#   - SHOPIFY_STORE_DOMAIN is pinned to the dev store below;
+#   - the suite's guard (shopify-live/guard.ts, unit-tested in normal CI)
+#     additionally requires the SHOPIFY_LIVE_ALLOWED_DOMAIN repo variable to
+#     match, and hard-refuses the production domain no matter what.
+#
+# Dormant until provisioned (all in repo Settings):
+#   variables: SHOPIFY_LIVE_ENABLED=true,
+#              SHOPIFY_LIVE_ALLOWED_DOMAIN=treehouse-dev-4folhtgx.myshopify.com
+#   secrets:   SHOPIFY_LIVE_CLIENT_ID / SHOPIFY_LIVE_CLIENT_SECRET — the DEV
+#              store app's credentials (same app the ops-dev deploy uses).
+
+on:
+  schedule:
+    - cron: "17 8 * * *" # nightly, off-peak for the org
+  workflow_dispatch:
+
+concurrency:
+  group: shopify-live # serialize against the dev store's rate budget
+  cancel-in-progress: false
+
+jobs:
+  live:
+    if: vars.SHOPIFY_LIVE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CHECKIN_ENV: dev # real-store code paths; never the local mock
+      SHOPIFY_STORE_DOMAIN: treehouse-dev-4folhtgx.myshopify.com
+      SHOPIFY_LIVE_ALLOWED_DOMAIN: ${{ vars.SHOPIFY_LIVE_ALLOWED_DOMAIN }}
+      SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_LIVE_CLIENT_ID }}
+      SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_LIVE_CLIENT_SECRET }}
+    defaults:
+      run:
+        working-directory: checkin-app
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        working-directory: .
+        run: npm ci
+
+      # Sweep leftovers from any previously-crashed run BEFORE testing, so
+      # stale citest resources can't confuse this run's assertions.
+      - name: Janitor (pre)
+        run: npx tsx scripts/shopify-live-janitor.ts
+
+      - name: Run live contract suite
+        run: npm run test:shopify-live
+
+      # Sweep again even on failure — a red run must not leak catalog objects.
+      # 0-hour cutoff: everything citest-tagged goes, including this run's.
+      - name: Janitor (post)
+        if: always()
+        env:
+          SHOPIFY_LIVE_JANITOR_MAX_AGE_HOURS: "0"
+        run: npx tsx scripts/shopify-live-janitor.ts

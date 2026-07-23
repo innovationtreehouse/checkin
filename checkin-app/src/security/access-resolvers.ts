@@ -3,7 +3,7 @@
  *
  * Two layers of resolution:
  *   1. CallerContext — built once per request: caller's identity, household,
- *      programs led/coreVol'd in, active visitors in the building (if keyholder).
+ *      programs led/coreVol'd in, active visitors in the building (if isKeyholder).
  *   2. scopesHeld(modelName, row, ctx) — called once per row in the response:
  *      returns the set of Scopes the caller holds for that particular row.
  *
@@ -14,8 +14,10 @@
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
 import prisma from '@/lib/prisma';
+import { config, isStagingAccessAllowed } from '@/lib/config';
 import type { AuthResult } from '@/types/auth';
-import type { Authorize, Role, Scope } from './core';
+import type { Authorize, CtxNeeds, Role } from './core';
+import { LIVE_PERSON } from '@/lib/person/filters';
 
 export interface CallerContext {
     selfId?: number;
@@ -29,11 +31,24 @@ export interface CallerContext {
     /** Household IDs of those participants — i.e. households with a child in a
      *  program the caller leads/core-vols. Drives the 'their_program_households' scope. */
     householdIdsInScopePrograms: Set<number>;
-    /** Participant IDs with an un-departed Visit. Only populated for keyholders. */
+    /** Event IDs whose Event.programId is in programsLed ∪ programsCoreVolIn.
+     *  RSVP has no programId column (PK [eventId, participantId]); it reaches a
+     *  program only via eventId → Event.programId. Drives 'their_program_participants'
+     *  on RSVP. */
+    eventIdsInScopePrograms: Set<number>;
+    /** Person IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
 }
 
-export async function buildCallerContext(auth: AuthResult): Promise<CallerContext> {
+/**
+ * Build the per-request context, fetching ONLY what `needs` says this route's
+ * policy can consume (see deriveCtxNeeds in core.ts). An unfetched field stays
+ * an empty set — strictly fewer scopes than a full fetch, and provably
+ * output-identical for any scope the route's tokens don't grant (the
+ * ctxNeeds equivalence test asserts this per registered route). Session-derived
+ * fields (selfId/householdId/isKeyholder) are always populated.
+ */
+export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Promise<CallerContext> {
     const ctx: CallerContext = {
         selfId: undefined,
         householdId: undefined,
@@ -43,6 +58,7 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
         programsCoreVolIn: new Set(),
         participantIdsInScopePrograms: new Set(),
         householdIdsInScopePrograms: new Set(),
+        eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
     };
 
@@ -50,185 +66,96 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
 
     ctx.selfId = auth.user.id;
     ctx.householdId = auth.user.householdId;
-    ctx.isKeyholder = auth.user.keyholder;
+    ctx.isKeyholder = auth.user.isKeyholder;
 
-    const ledPrograms = await prisma.program.findMany({
-        where: { leadMentorId: auth.user.id },
-        select: { id: true, participants: { select: { participantId: true } } },
-    });
+    const [ledPrograms, coreVols, visits] = await Promise.all([
+        needs.programs
+            ? prisma.program.findMany({
+                  where: { leadMentorId: auth.user.id },
+                  select: { id: true, participants: { select: { personId: true } } },
+              })
+            : [],
+        needs.programs
+            ? prisma.programVolunteer.findMany({
+                  where: { personId: auth.user.id, isCore: true, person: LIVE_PERSON },
+                  select: {
+                      programId: true,
+                      program: { select: { participants: { select: { personId: true } } } },
+                  },
+              })
+            : [],
+        needs.activeVisitors && ctx.isKeyholder
+            ? prisma.visit.findMany({
+                  where: { departedAt: null },
+                  select: { personId: true },
+              })
+            : [],
+    ]);
+
     for (const p of ledPrograms) {
         ctx.programsLed.add(p.id);
-        for (const pp of p.participants) ctx.participantIdsInScopePrograms.add(pp.participantId);
+        for (const pp of p.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
-
-    const coreVols = await prisma.programVolunteer.findMany({
-        where: { participantId: auth.user.id, isCore: true },
-        select: {
-            programId: true,
-            program: { select: { participants: { select: { participantId: true } } } },
-        },
-    });
     for (const v of coreVols) {
         ctx.programsCoreVolIn.add(v.programId);
-        for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.participantId);
+        for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
+    for (const v of visits) ctx.activeVisitorIds.add(v.personId);
 
-    // Households of the children in the caller's programs — for Trusted Adult
-    // pickup-note visibility (program leads see operational notes for the
-    // households whose kids they oversee).
-    if (ctx.participantIdsInScopePrograms.size) {
-        const members = await prisma.participant.findMany({
-            where: { id: { in: [...ctx.participantIdsInScopePrograms] } },
-            select: { householdId: true },
-        });
-        for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
-    }
-
-    if (ctx.isKeyholder) {
-        const visits = await prisma.visit.findMany({
-            where: { departed: null },
-            select: { participantId: true },
-        });
-        for (const v of visits) ctx.activeVisitorIds.add(v.participantId);
-    }
+    const scopePrograms = [...ctx.programsLed, ...ctx.programsCoreVolIn];
+    await Promise.all([
+        // Households of the children in the caller's programs — for Trusted Adult
+        // pickup-note visibility (program leads see operational notes for the
+        // households whose kids they oversee).
+        needs.programHouseholds && ctx.participantIdsInScopePrograms.size
+            ? prisma.person
+                  .findMany({
+                      where: { id: { in: [...ctx.participantIdsInScopePrograms] }, ...LIVE_PERSON },
+                      select: { householdId: true },
+                  })
+                  .then(members => {
+                      for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
+                  })
+            : undefined,
+        // Events belonging to the caller's programs — RSVP reaches a program only via
+        // eventId → Event.programId (RSVP has no programId column). Drives the
+        // 'their_program_participants' scope on RSVP rows.
+        needs.programEvents && scopePrograms.length
+            ? prisma.event
+                  .findMany({
+                      where: { programId: { in: scopePrograms } },
+                      select: { id: true },
+                  })
+                  .then(events => {
+                      for (const e of events) ctx.eventIdsInScopePrograms.add(e.id);
+                  })
+            : undefined,
+    ]);
 
     return ctx;
 }
 
 /**
- * Per-row scope resolver. Returns the set of Scopes the caller holds on the
- * given row. `'everyones'` is always included (unconditional scope).
+ * Per-row scope resolver. The imperative `switch (modelName)` that used to live
+ * here is now a declarative `SCOPE_BINDINGS` table interpreted by one engine
+ * (scopes.ts), so the bindings can be checked in CI (field typos, forgotten
+ * models, route-grant seam). Behavior is identical — proved by the S1
+ * equivalence test (tests/security/scopeBindingsEquivalence.test.ts) which
+ * asserted set-equality with the old switch across every persona × model × row
+ * before this swap. Re-exported here so existing call sites
+ * (`import { scopesHeld } from './access-resolvers'`) are unchanged.
+ *
+ * The old `ROW_SCOPE_KEY` fail-closed map moved to scopeBindings.ts (it gates
+ * EmergencyContact: a key-less row yields NO scopes, not even `everyones`).
  */
-export function scopesHeld(
-    modelName: string,
-    row: Record<string, unknown> | null | undefined,
-    ctx: CallerContext,
-): Set<Scope> {
-    const scopes = new Set<Scope>(['everyones']);
-    if (!row || typeof row !== 'object') return scopes;
+export { scopesHeld } from './scopeBindings';
 
-    const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
-
-    switch (modelName) {
-        case 'Participant': {
-            const id = num(row.id);
-            const householdId = num(row.householdId);
-            if (id !== undefined && id === ctx.selfId) scopes.add('their_own');
-            if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
-            if (id !== undefined && ctx.participantIdsInScopePrograms.has(id)) {
-                scopes.add('their_program_participants');
-            }
-            if (id !== undefined && ctx.isKeyholder && ctx.activeVisitorIds.has(id)) {
-                scopes.add('all_current_visitors');
-            }
-            break;
-        }
-        case 'Household': {
-            const id = num(row.id);
-            if (id !== undefined && id === ctx.householdId) scopes.add('their_households');
-            break;
-        }
-        case 'HouseholdLead': {
-            const householdId = num(row.householdId);
-            const participantId = num(row.participantId);
-            if (householdId !== undefined && householdId === ctx.householdId) {
-                scopes.add('their_households');
-            }
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'Membership': {
-            const householdId = num(row.householdId);
-            if (householdId !== undefined && householdId === ctx.householdId) {
-                scopes.add('their_households');
-            }
-            break;
-        }
-        case 'Program': {
-            const id = num(row.id);
-            if (id !== undefined && (ctx.programsLed.has(id) || ctx.programsCoreVolIn.has(id))) {
-                scopes.add('their_program_participants');
-            }
-            break;
-        }
-        case 'ProgramParticipant':
-        case 'ProgramVolunteer':
-        case 'Fee':
-        case 'RSVP': {
-            const programId = num(row.programId);
-            const participantId = num(row.participantId);
-            if (
-                programId !== undefined &&
-                (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))
-            ) {
-                scopes.add('their_program_participants');
-            }
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'Event': {
-            const programId = num(row.programId);
-            if (
-                programId !== undefined &&
-                (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))
-            ) {
-                scopes.add('their_program_participants');
-            }
-            break;
-        }
-        case 'FeePayment': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (participantId !== undefined && ctx.participantIdsInScopePrograms.has(participantId)) {
-                scopes.add('their_program_participants');
-            }
-            break;
-        }
-        case 'Visit': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (ctx.isKeyholder && row.departed == null) {
-                scopes.add('all_current_visitors');
-            }
-            break;
-        }
-        case 'RawBadgeEvent': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'ToolStatus':
-        case 'Account':
-        case 'Session': {
-            const userId = num(row.userId);
-            if (userId !== undefined && userId === ctx.selfId) scopes.add('their_own');
-            break;
-        }
-        case 'TrustedAdult':
-        case 'TrustedAdultReview': {
-            // A Trusted Adult belongs to a household. householdId is denormalized
-            // onto review rows so nested rows resolve the same scopes.
-            //   their_households         → the household's own members/leads (sees
-            //                              familyContext[pii] + notes[personal]).
-            //   their_program_households → a program lead of the household's kids
-            //                              (sees personal-tier notes, NOT pii).
-            //   keyholders               → any keyholder, global (personal-tier notes).
-            // The board's familyContext (pii) and decisionNote (internal) are never
-            // granted to the program/keyholder scopes.
-            const householdId = num(row.householdId);
-            if (householdId !== undefined && householdId === ctx.householdId) scopes.add('their_households');
-            if (householdId !== undefined && ctx.householdIdsInScopePrograms.has(householdId)) {
-                scopes.add('their_program_households');
-            }
-            if (ctx.isKeyholder) scopes.add('keyholders');
-            break;
-        }
-        // Corporation, CorporationLead, CorporationMember, AuditLog,
-        // VerificationToken, ErrorLog, SystemMetric, Tool — no per-row
-        // scopes beyond 'everyones' in this version. Admin (sysadmin/
-        // boardMember) views grant 'everyones:*' so they still get through.
-    }
-    return scopes;
+/** A certifier holds at least one MAY_CERTIFY_OTHERS toolStatus on the session. */
+function isCertifier(auth: AuthResult): boolean {
+    return (
+        auth.type === 'session' &&
+        (auth.user.toolStatuses ?? []).some(ts => ts.level === 'MAY_CERTIFY_OTHERS')
+    );
 }
 
 export function callerHoldsRole(
@@ -246,14 +173,18 @@ export function callerHoldsRole(
             return auth.type === 'session';
         case 'kiosk':
             return auth.type === 'kiosk';
-        case 'sysadmin':
-            return auth.type === 'session' && auth.user.sysadmin;
-        case 'boardMember':
-            return auth.type === 'session' && auth.user.boardMember;
-        case 'keyholder':
-            return auth.type === 'session' && auth.user.keyholder;
-        case 'backgroundCheckReviewer':
-            return auth.type === 'session' && auth.user.backgroundCheckReviewer;
+        case 'isSysadmin':
+            return auth.type === 'session' && auth.user.isSysadmin;
+        case 'isBoardMember':
+            return auth.type === 'session' && auth.user.isBoardMember;
+        case 'isKeyholder':
+            return auth.type === 'session' && auth.user.isKeyholder;
+        case 'isBackgroundCheckReviewer':
+            return auth.type === 'session' && auth.user.isBackgroundCheckReviewer;
+        case 'isOperations':
+            return auth.type === 'session' && auth.user.isOperations;
+        case 'certifier':
+            return isCertifier(auth);
         case 'householdLead':
             return auth.type === 'session' && !!auth.user.householdLead;
         case 'programLeadMentor': {
@@ -277,23 +208,56 @@ export interface ResolverContext {
  * Admission gate — the per-route `authorize` check. Returns whether the
  * caller is even allowed to *invoke* the endpoint (401/403 if not). View
  * resolution (orderedView) is downstream.
+ *
+ * ops-stg ACCESS GATE, checked FIRST, ahead of every `authorize` branch below —
+ * including `'public'`. This is the surface that made the pre-gate design
+ * dangerous: `authenticateRequest` (lib/auth.ts) already downgrades a
+ * non-org/non-flagged caller to `unauthenticated` on staging, but
+ * `authorize: 'public'` unconditionally returns `{ allowed: true }` regardless
+ * of `auth` — so without this check, an anonymous `curl` of
+ * `GET /api/programs/[id]` (registered `authorize: 'public'`, returning real
+ * enrolled minors' names/household/emergency contacts) would sail straight
+ * through on a copy of prod data. Re-derives the predicate independently
+ * (not just `auth.type !== 'unauthenticated'`) as belt-and-suspenders: even if
+ * a future caller ever constructs an `AuthResult` without going through
+ * `authenticateRequest`, this still fails closed on its own.
  */
 export async function resolveAccess(
     authorize: Authorize,
     ctx: ResolverContext,
 ): Promise<{ allowed: boolean }> {
     const { auth, params, callerContext } = ctx;
-    const isAdmin = auth.type === 'session' && (auth.user.sysadmin || auth.user.boardMember);
+
+    if (config.isStaging()) {
+        const claims = auth.type === 'session' ? auth.user : null;
+        if (!isStagingAccessAllowed(claims)) {
+            return { allowed: false };
+        }
+    }
+
+    const isAdmin = auth.type === 'session' && (auth.user.isSysadmin || auth.user.isBoardMember);
 
     if (typeof authorize === 'string') {
         switch (authorize) {
             case 'public':
                 return { allowed: true };
             case 'authenticated':
-            case 'self':
                 return { allowed: auth.type === 'session' };
+            case 'self': {
+                if (auth.type !== 'session') return { allowed: false };
+                // Bind to the resource id param. No id param (e.g. GET /api/profile)
+                // → 'self' just means authenticated; the handler scopes to
+                // auth.user.id itself. Present-but-mismatched → fail closed.
+                const target = params.id ?? params.participantId;
+                if (target === undefined) return { allowed: true };
+                const targetId = parseInt(target, 10);
+                return { allowed: !isNaN(targetId) && targetId === auth.user.id };
+            }
             case 'kiosk':
                 return { allowed: auth.type === 'kiosk' };
+            case 'certifier':
+                // Certifiers see the shop member roster; admins always may too.
+                return { allowed: isCertifier(auth) || isAdmin };
             case 'program-lead-mentor': {
                 const id = parseInt(params.id ?? '', 10);
                 if (isNaN(id)) return { allowed: false };

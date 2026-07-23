@@ -25,14 +25,14 @@ describe('Program Volunteers API Integration Tests', () => {
 
     beforeAll(async () => {
         // Clean up any leaked state
-        const existingUsers = await prisma.participant.findMany({
+        const existingUsers = await prisma.person.findMany({
             where: { email: { contains: 'volun-api-test' } },
             select: { id: true }
         });
         const existingUserIds = existingUsers.map(u => u.id);
         
         await prisma.programVolunteer.deleteMany({
-            where: { participantId: { in: existingUserIds } }
+            where: { personId: { in: existingUserIds } }
         });
 
         await prisma.program.deleteMany({
@@ -43,33 +43,33 @@ describe('Program Volunteers API Integration Tests', () => {
             where: { actorId: { in: existingUserIds } }
         });
         
-        await prisma.participant.deleteMany({
+        await prisma.person.deleteMany({
             where: { id: { in: existingUserIds } }
         });
 
         // Create Roles
-        const admin = await prisma.participant.create({
-            data: { email: 'admin-volun-api-test@example.com', name: 'Admin', sysadmin: true, household: { create: {} } }
+        const admin = await prisma.person.create({
+            data: { email: 'admin-volun-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
         });
         adminId = admin.id;
 
-        const lead = await prisma.participant.create({
-            data: { email: 'lead-volun-api-test@example.com', name: 'Lead', household: { create: {} } }
+        const lead = await prisma.person.create({
+            data: { email: 'lead-volun-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
-        const commonUser = await prisma.participant.create({
-            data: { email: 'common-volun-api-test@example.com', name: 'Common', household: { create: {} } }
+        const commonUser = await prisma.person.create({
+            data: { email: 'common-volun-api-test@example.com', name: 'Common', household: { create: { name: "Test HH" } } }
         });
         commonId = commonUser.id;
 
-        const candidate = await prisma.participant.create({
-            data: { email: 'candidate-volun-api-test@example.com', name: 'Candidate', household: { create: {} } }
+        const candidate = await prisma.person.create({
+            data: { email: 'candidate-volun-api-test@example.com', name: 'Candidate', household: { create: { name: "Test HH" } } }
         });
         candidateId = candidate.id;
 
-        const existingVol = await prisma.participant.create({
-            data: { email: 'existing-volun-api-test@example.com', name: 'Existing Volunteer', household: { create: {} } }
+        const existingVol = await prisma.person.create({
+            data: { email: 'existing-volun-api-test@example.com', name: 'Existing Volunteer', household: { create: { name: "Test HH" } } }
         });
         existingVolunteerId = existingVol.id;
 
@@ -80,7 +80,7 @@ describe('Program Volunteers API Integration Tests', () => {
                 phase: 'RUNNING', 
                 leadMentorId: leadId,
                 volunteers: {
-                    create: { participantId: existingVolunteerId, isCore: false }
+                    create: { personId: existingVolunteerId, isCore: false }
                 }
             }
         });
@@ -92,7 +92,7 @@ describe('Program Volunteers API Integration Tests', () => {
 
         if (existingUserIds.length > 0) {
             await prisma.programVolunteer.deleteMany({
-                where: { participantId: { in: existingUserIds } }
+                where: { personId: { in: existingUserIds } }
             });
         }
 
@@ -107,7 +107,7 @@ describe('Program Volunteers API Integration Tests', () => {
                 where: { actorId: { in: existingUserIds } }
             });
             
-            await prisma.participant.deleteMany({
+            await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
         }
@@ -150,11 +150,66 @@ describe('Program Volunteers API Integration Tests', () => {
              });
              const res = await POST(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
              expect(res.status).toBe(200);
-             
+
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.assignment.isCore).toBe(false); // Default logic
-             expect(data.assignment.participantId).toBe(candidateId);
+             expect(data.assignment.personId).toBe(candidateId);
+
+             // Persisted: a ProgramVolunteer row now exists for this pair.
+             const row = await prisma.programVolunteer.findUnique({
+                 where: { programId_personId: { programId: targetProgramId, personId: candidateId } }
+             });
+             expect(row).not.toBeNull();
+        });
+
+        it('should return 409, not 500, when assigning an already-assigned volunteer', async () => {
+             // candidateId was assigned by the previous test; re-assigning is a
+             // duplicate (P2002).
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: candidateId })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(409);
+        });
+
+        it('should return 400 when participantId is missing', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
+                 method: 'POST',
+                 body: JSON.stringify({})
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+        });
+
+        it('should return a clean 400, not 500, for a non-existent participant', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: 2147483647 }) // no such Participant row
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(targetProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+             expect(res.status).not.toBe(500);
+        });
+
+        it('documents intent: any participant is assignable (no age/membership gate)', async () => {
+             // The candidate has no dateOfBirth and is not a program member, yet
+             // assignment succeeded above. Volunteers are staff, not enrollees —
+             // there is intentionally no eligibility rule. If product adds one,
+             // this test should change deliberately.
+             const candidate = await prisma.person.findUnique({ where: { id: candidateId } });
+             expect(candidate?.dateOfBirth).toBeNull();
+             const row = await prisma.programVolunteer.findUnique({
+                 where: { programId_personId: { programId: targetProgramId, personId: candidateId } }
+             });
+             expect(row).not.toBeNull();
         });
     });
 
@@ -171,7 +226,7 @@ describe('Program Volunteers API Integration Tests', () => {
         });
 
         it('should require isCore and participantId', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
                  method: 'PATCH',
@@ -185,7 +240,7 @@ describe('Program Volunteers API Integration Tests', () => {
         });
 
         it('should allow admins to toggle the isCore flag of a volunteer', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, sysadmin: true } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/volunteers`, {
                  method: 'PATCH',
@@ -223,7 +278,7 @@ describe('Program Volunteers API Integration Tests', () => {
              
              const data = await res.json();
              expect(data.success).toBe(true);
-             expect(data.assignment.participantId).toBe(existingVolunteerId);
+             expect(data.assignment.personId).toBe(existingVolunteerId);
         });
     });
 });

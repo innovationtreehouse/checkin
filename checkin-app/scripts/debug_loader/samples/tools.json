@@ -1,0 +1,17 @@
+{
+  "type": "tools",
+  "tools": [
+    {
+      "name": "Table Saw",
+      "safetyGuide": "Always use the blade guard and push stick. No loose sleeves."
+    },
+    {
+      "name": "Drill Press",
+      "safetyGuide": "Clamp your workpiece. Eye protection required."
+    },
+    {
+      "name": "3D Printer",
+      "safetyGuide": "Do not touch the heated bed or nozzle during a print."
+    }
+  ]
+}

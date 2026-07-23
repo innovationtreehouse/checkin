@@ -3,88 +3,60 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Alert, Anchor, Button, Card, Center, Checkbox, Container, Group, Loader, Paper, Stack, Text, TextInput, Title } from '@mantine/core';
-import { formatDate, formatTime, formatDateTime } from '@/lib/time';
+import { Anchor, Button, Card, Stack, Text, TextInput, Title } from '@mantine/core';
+import { PageContainer } from '@/components/ui/PageContainer';
+import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
+import { notifications } from '@mantine/notifications';
+import { isYouth } from '@/lib/time';
 
-type ProfileVisit = {
-  id: number;
-  arrived: string;
-  departed?: string | null;
-  event?: { name?: string | null } | null;
-};
-
+import { PageLoader } from "@/components/ui/PageLoader";
 export default function ProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState<{ text: string; tone: AlertTone } | null>(null);
 
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
-    dob: "",
-    emailCheckinReceipts: false,
-    emailNewsletter: false,
-    notifyNewPrograms: true,
-    notifyEventReminders: true
+    dob: ""
   });
-  const [visits, setVisits] = useState<ProfileVisit[]>([]);
-  const [filterDate, setFilterDate] = useState("");
-
   const fetchProfile = useCallback(async () => {
     try {
       const res = await fetch('/api/profile');
       if (res.ok) {
         const data = await res.json();
-        const settings = data.profile.notificationSettings || {};
         setForm({
           name: data.profile.name || "",
           email: data.profile.email || "",
           phone: data.profile.phone || "",
-          dob: data.profile.dob ? new Date(data.profile.dob).toISOString().split('T')[0] : "",
-          emailCheckinReceipts: settings.emailCheckinReceipts || false,
-          emailNewsletter: settings.emailNewsletter || false,
-          notifyNewPrograms: settings.notifyNewPrograms !== undefined ? settings.notifyNewPrograms : true,
-          notifyEventReminders: settings.notifyEventReminders !== undefined ? settings.notifyEventReminders : true
+          dob: data.profile.dateOfBirth ? new Date(data.profile.dateOfBirth).toISOString().split('T')[0] : ""
         });
       } else {
-        setMessage("Failed to load profile.");
+        setMessage({ text: "Failed to load profile.", tone: "error" });
       }
     } catch {
-      setMessage("Network error loading profile.");
+      notifications.show({ color: "red", message: "Network error loading profile.", autoClose: false });
     } finally {
       setLoading(false);
     }
   }, []);
-
-  const fetchVisits = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/profile/visits?date=${filterDate}`);
-      if (res.ok) {
-        const data = await res.json();
-        setVisits(data.visits || []);
-      }
-    } catch (error) {
-      console.error("Error fetching visits:", error);
-    }
-  }, [filterDate]);
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push('/');
     } else if (status === "authenticated") {
       fetchProfile();
-      fetchVisits();
     }
-  }, [status, router, fetchProfile, fetchVisits]);
+  }, [status, router, fetchProfile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setMessage("");
+    setMessage(null);
 
     try {
       const res = await fetch('/api/profile', {
@@ -93,135 +65,62 @@ export default function ProfilePage() {
         body: JSON.stringify({
           name: form.name,
           phone: form.phone,
-          dob: form.dob || null,
-          notificationSettings: {
-            emailCheckinReceipts: form.emailCheckinReceipts,
-            emailNewsletter: form.emailNewsletter,
-            notifyNewPrograms: form.notifyNewPrograms,
-            notifyEventReminders: form.notifyEventReminders
-          }
+          dob: form.dob || null
         })
       });
 
       if (res.ok) {
-        setMessage("Profile updated successfully!");
+        notifications.show({ message: "Profile updated successfully!" });
       } else {
-        setMessage("Failed to update profile.");
+        const data = await res.json().catch(() => ({}));
+        setMessage({ text: data.error || "Failed to update profile.", tone: "error" });
       }
     } catch {
-      setMessage("Network error saving profile.");
+      notifications.show({ color: "red", message: "Network error saving profile.", autoClose: false });
     } finally {
       setSaving(false);
     }
   };
 
   if (loading || status === "loading") {
-    return <Center mih="60vh"><Loader /></Center>;
+    return <PageLoader />;
   }
 
   if (!session) return null; // Fallback while router redirects
 
+  const readOnly = isYouth(form.dob);
+
   return (
-    <Container size="sm" py="md">
-      <Stack>
-        <Card withBorder radius="md" padding="lg">
-          <Title order={1}>My Profile</Title>
-          <Text c="dimmed" mb="lg">Manage your personal information and contact details.</Text>
+    <PageContainer>
+      <Card withBorder radius="md" padding="lg" maw={620}>
+        <Title order={1}>My Profile</Title>
+          <Text c="dimmed" mb="lg">
+            {readOnly
+              ? "View your personal information. Ask a parent or staff member to make changes."
+              : "Manage your personal information and contact details."}
+          </Text>
 
           <form onSubmit={handleSubmit}>
             <Stack>
               <TextInput label="Email Address" value={form.email} disabled title="Email cannot be changed here." />
-              <TextInput label="Full Name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" />
-              <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" />
-              <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} />
+              <TextInput label="Full Name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" disabled={readOnly} />
+              <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" disabled={readOnly} />
+              <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} disabled={readOnly} />
 
               <Text size="sm" c="dimmed">
-                Your address is managed on the <Anchor href="/household">Household</Anchor> page.
+                Your address is managed on the <Anchor href="/my-household">Household</Anchor> page.
               </Text>
 
-              <Button type="submit" disabled={saving} loading={saving} mt="sm">
-                Save Profile &amp; Settings
-              </Button>
+              {!readOnly && (
+                <Button type="submit" disabled={saving} loading={saving} mt="sm">
+                  Save Profile
+                </Button>
+              )}
             </Stack>
           </form>
 
-          {message && <Alert color={message.includes('success') ? 'green' : 'red'} mt="md">{message}</Alert>}
-        </Card>
-
-        <Card withBorder radius="md" padding="lg">
-          <Title order={2} mb="md">Personal Settings</Title>
-          <Stack>
-            <Checkbox
-              checked={form.emailCheckinReceipts}
-              onChange={(e) => setForm({ ...form, emailCheckinReceipts: e.currentTarget.checked })}
-              label="Email me when I check in or out"
-            />
-            <Checkbox
-              checked={form.emailNewsletter}
-              onChange={(e) => setForm({ ...form, emailNewsletter: e.currentTarget.checked })}
-              label="Subscribe to the weekly newsletter"
-            />
-            <Checkbox
-              checked={form.notifyNewPrograms}
-              onChange={(e) => setForm({ ...form, notifyNewPrograms: e.currentTarget.checked })}
-              label="Notify me when a new program is announced"
-            />
-            <Checkbox
-              checked={form.notifyEventReminders}
-              onChange={(e) => setForm({ ...form, notifyEventReminders: e.currentTarget.checked })}
-              label="Notify me before my events start"
-            />
-          </Stack>
-          <Button onClick={handleSubmit} disabled={saving} loading={saving} fullWidth mt="lg" color="green">
-            Update Settings
-          </Button>
-        </Card>
-
-        <Card withBorder radius="md" padding="lg">
-          <Group justify="space-between" align="center" wrap="wrap" mb="xs">
-            <Title order={2}>Recent Check-ins</Title>
-            <TextInput
-              type="date"
-              label="Lookup Date"
-              value={filterDate || new Date().toISOString().split('T')[0]}
-              onChange={(e) => setFilterDate(e.currentTarget.value)}
-              size="xs"
-            />
-          </Group>
-
-          <Text size="sm" c="dimmed" mb="lg">
-            {filterDate ? (
-              <>Showing activity from <strong>{formatDate(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000)}</strong> to <strong>{formatDate(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000)}</strong></>
-            ) : (
-              <>Showing activity for the <strong>past 7 days</strong></>
-            )}
-          </Text>
-
-          {visits.length === 0 ? (
-            <Text c="dimmed">No historical visits found.</Text>
-          ) : (
-            <Stack gap="xs">
-              {visits.map((v) => (
-                <Paper key={v.id} withBorder radius="md" p="md">
-                  <Group justify="space-between" wrap="wrap">
-                    <div>
-                      <Text fw={600}>{v.event?.name || 'General Facility Visit'}</Text>
-                      <Text size="sm" c="dimmed">{formatDateTime(v.arrived)}</Text>
-                    </div>
-                    <Text size="sm">
-                      {v.departed ? (
-                        <Text component="span" c="green">Departed {formatTime(v.departed)}</Text>
-                      ) : (
-                        <Text component="span" c="yellow">Active Visit</Text>
-                      )}
-                    </Text>
-                  </Group>
-                </Paper>
-              ))}
-            </Stack>
-          )}
-        </Card>
-      </Stack>
-    </Container>
+          <AlertBanner message={message?.text} tone={message?.tone} mb="md" />
+      </Card>
+    </PageContainer>
   );
 }

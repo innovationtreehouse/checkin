@@ -165,7 +165,16 @@ export async function withSyncRun<T extends Record<string, unknown>>(
       });
       logger.error("sync run failed", { runId: run.id.toString(), kind, objectScope, partialCounts, err });
       if (heartbeat) {
-        await pushHeartbeat(heartbeat, { storeId, kind, status: SyncStatus.FAILED, finishedAt, error: message });
+        // Forward partialCounts (e.g. a bulk export's badLineCount) so the watchdog sees how far
+        // a failed run got, not just that it failed.
+        await pushHeartbeat(heartbeat, {
+          storeId,
+          kind,
+          status: SyncStatus.FAILED,
+          finishedAt,
+          error: message,
+          ...(partialCounts ? { counts: partialCounts } : {}),
+        });
       }
       throw err;
     }

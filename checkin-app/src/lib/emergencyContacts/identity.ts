@@ -8,15 +8,23 @@
  * (20260612000000_emergency_contact_entity) so stored keys stay comparable.
  */
 
-/** Strip everything but digits. `"(555) 010-0"` -> `"5550100"`. */
-export function normalizePhone(phone: string | null | undefined): string {
-    return (phone ?? "").replace(/\D/g, "");
-}
+/** Strip everything but digits. Shared with the app-wide phone validator. */
+import { normalizePhone } from "@/lib/phone";
+export { normalizePhone };
 
 /** Lowercase + trim; empty -> null. */
-export function normalizeEmail(email: string | null | undefined): string | null {
+export function cleanEmail(email: string | null | undefined): string | null {
     const e = (email ?? "").trim().toLowerCase();
     return e || null;
+}
+
+// ponytail: shallow shape check, not deliverability. Good enough for a contact
+// field a human reads; swap for a real validator only if bounce rate matters.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** True if the (trimmed) string looks like a well-formed email address. */
+export function isValidEmail(email: string | null | undefined): boolean {
+    return EMAIL_RE.test((email ?? "").trim());
 }
 
 /** Lowercase, trim, collapse internal whitespace; empty -> "". */
@@ -33,7 +41,7 @@ export interface IdentityKeys {
 export function identityKeys(person: { name?: string | null; phone?: string | null; email?: string | null }): IdentityKeys {
     return {
         phoneDigits: normalizePhone(person.phone),
-        emailNorm: normalizeEmail(person.email),
+        emailNorm: cleanEmail(person.email),
         nameNorm: normalizeName(person.name),
     };
 }
@@ -44,8 +52,13 @@ export function identityKeys(person: { name?: string | null; phone?: string | nu
  * product decision (phone + email + name).
  */
 export function sameIdentity(a: IdentityKeys, b: IdentityKeys): boolean {
-    if (a.phoneDigits && b.phoneDigits && a.phoneDigits === b.phoneDigits) return true;
-    if (a.emailNorm && b.emailNorm && a.emailNorm === b.emailNorm) return true;
-    if (a.nameNorm && b.nameNorm && a.nameNorm === b.nameNorm) return true;
-    return false;
+    return identityMatchReason(a, b) !== null;
+}
+
+/** Which key matched (phone wins, then email, then name), or null. */
+export function identityMatchReason(a: IdentityKeys, b: IdentityKeys): "phone" | "email" | "name" | null {
+    if (a.phoneDigits && b.phoneDigits && a.phoneDigits === b.phoneDigits) return "phone";
+    if (a.emailNorm && b.emailNorm && a.emailNorm === b.emailNorm) return "email";
+    if (a.nameNorm && b.nameNorm && a.nameNorm === b.nameNorm) return "name";
+    return null;
 }

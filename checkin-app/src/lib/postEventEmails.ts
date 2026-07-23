@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { config } from "@/lib/config";
 import { postEventTemplate } from "@/lib/email-templates/post-event";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 interface ProcessPostEventEmailsOptions {
     /**
@@ -35,7 +36,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
     while (true) {
         // Find events that have ended before the cutoff, haven't had an email sent yet, and attendance is not confirmed.
         const whereClause: Prisma.EventWhereInput = {
-            end: { lte: cutoffTime },
+            endAt: { lte: cutoffTime },
             postEventEmailSent: false,
             attendanceConfirmedAt: null,
             programId: { not: null },
@@ -48,8 +49,8 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
                 program: {
                     include: {
                         volunteers: {
-                            where: { isCore: true },
-                            include: { participant: true }
+                            where: { isCore: true, person: LIVE_PERSON },
+                            include: { person: true }
                         }
                     }
                 },
@@ -74,9 +75,10 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
         // Batch fetch all lead mentors at once
         const leadMentorsMap = new Map<number, string | null>();
         if (leadMentorIds.length > 0) {
-            const leadMentors = await prisma.participant.findMany({
+            const leadMentors = await prisma.person.findMany({
                 where: {
-                    id: { in: leadMentorIds }
+                    id: { in: leadMentorIds },
+                    ...LIVE_PERSON,
                 },
                 select: {
                     id: true,
@@ -100,7 +102,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
                 recipientEmail = leadMentorsMap.get(leadMentorId);
             } else {
                 // Try to fallback to a core volunteer
-                const coreVolunteer = program.volunteers[0]?.participant;
+                const coreVolunteer = program.volunteers[0]?.person;
                 recipientEmail = coreVolunteer?.email;
             }
 
@@ -113,7 +115,7 @@ export async function processPostEventEmails(options: ProcessPostEventEmailsOpti
             const actualVisits = event.visits.length;
 
             const baseUrl = config.baseUrl();
-            const eventLink = `${baseUrl}/admin/events/${event.id}`;
+            const eventLink = `${baseUrl}/program-ops/sessions/${event.id}`;
 
             const emailHtml = postEventTemplate({
                 eventName: event.name,
