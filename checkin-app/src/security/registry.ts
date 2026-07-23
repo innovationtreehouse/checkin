@@ -323,6 +323,26 @@ defineRoute({
     ],
 });
 
+// Standalone (one-time) events list — admin surface. Registered ahead of its
+// handler() conversion (inert until then; AGENTS.md boundary-isolation rule).
+// The handler selects only public-tier Event columns (id/name/startAt/endAt/
+// description). Declared public-only ON PURPOSE: the response is exact, not
+// aspirational. If the select later grows to an internal field
+// (attendanceConfirmedAt/ById, postEventEmailSent) the strip fails closed and
+// forces a boundary PR + CODEOWNERS review, instead of the field shipping
+// silently under a pre-granted band.
+defineRoute({
+    endpoint: 'GET /api/events',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { Event } — bare-array response (envelope null + single-key bag).
+    returns: ['Event'],
+    orderedView: [
+        ['isSysadmin',    ['public']],
+        ['isBoardMember', ['public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
