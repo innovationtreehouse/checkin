@@ -323,6 +323,23 @@ defineRoute({
     ],
 });
 
+// The caller's own visit history (±7-day window). Registered ahead of its
+// handler() conversion (inert until then). their_own:personal delivers
+// arrivedAt/departedAt on the caller's rows — the Visit binding keys on
+// row.personId, so the conversion PR's select MUST include personId or the
+// scope fails closed and the timestamps strip (#1137 finding 1). Nested event
+// name is public.
+defineRoute({
+    endpoint: 'GET /api/profile/visits',
+    authorize: 'authenticated',
+    envelope: 'visits',
+    // Bag: { Visit } with event (Event).
+    returns: ['Visit', 'Event'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
