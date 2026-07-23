@@ -78,6 +78,19 @@ describe('Membership settings + volunteer designations API', () => {
         expect(settings.volunteerDuesCents).toBe(3000);
     });
 
+    it('saves and clears the membership product URL', async () => {
+        asBoard(boardId);
+        const url = 'https://test-store.myshopify.com/products/annual-membership';
+        const putRes = await SETTINGS_PUT(jsonReq('PUT', { orgMembershipProductUrl: `  ${url}  ` }));
+        expect(putRes.status).toBe(200);
+        expect((await putRes.json()).settings.orgMembershipProductUrl).toBe(url); // trimmed
+
+        const cleared = await SETTINGS_PUT(jsonReq('PUT', { orgMembershipProductUrl: null }));
+        expect(cleared.status).toBe(200);
+        expect((await cleared.json()).settings.orgMembershipProductUrl).toBeNull();
+    });
+
+
     it('rejects negative dues and keeps the previous value', async () => {
         asBoard(boardId);
         // Establish a known good value.

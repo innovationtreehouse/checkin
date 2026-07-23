@@ -1,39 +1,43 @@
 name: Deploy s-read
 
-# Manual deploy of the s-read-function ECS image (v1: workflow_dispatch only, no
-# auto-trigger — run it deliberately after the change has merged and CI is green
-# on main). Builds the container image, pushes it to ghcr.io, registers new
+# Thin wrapper around the reusable `.github/actions/deploy-s-read` composite
+# action (which holds all the build/register/migrate logic). Two entry points:
+#
+#   • workflow_dispatch — ad-hoc deploy of one env (dev | prod), run deliberately
+#     after the change has merged and CI is green on main. A prod dispatch keeps
+#     its own `environment: production` approval gate below.
+#   • workflow_call — used by deploy-dev.yml (environment: dev) so every DEV app
+#     deploy also ships its s-read counterpart. PROD does NOT call this workflow:
+#     deploy-prod.yml runs the same composite action inside its already-approved
+#     app-deploy job, so a prod release takes ONE approval, not two (that was the
+#     whole point of extracting the composite).
+#
+# Builds the container image, pushes it to ghcr.io (ONE image repo shared by both
+# envs — envs differ only in config/secrets, never in code), registers new
 # revisions of BOTH task-def families, and (in migrate-and-code mode) runs the
 # migration task in between. There is no ECS service to roll: the schedule runs
-# tasks against the revision-less s-read-sync family ARN, so it uses the latest
-# ACTIVE revision on its next tick — no terraform involved.
+# tasks against the revision-less s-read-<env>-sync family ARN, so it uses the
+# latest ACTIVE revision on its next tick — no terraform involved.
 #
-# Ordering (migrate-and-code): migrations run BEFORE the new sync revision is
-# registered — expand/contract, same as deploy-dev.yml. The previous code keeps
-# running against the migrated schema until the next scheduled tick.
-#
-# Registry is ghcr.io with the GITHUB_TOKEN login/push pattern from deploy-dev.yml
-# (one pipeline convention, no registry credentials to manage). The package stays
-# PRIVATE — the task defs pull it via repositoryCredentials -> the shared
-# ghcr-pull-credentials secret (infra modules/shared-iam), like every other ECS
-# workload in this account. We push a unique :<git-sha> tag, never :latest.
-#
-# AWS auth (GitHub OIDC, checkin-deploy-dev role) is still needed for the
-# register-task-definition / run-task steps. That role's trust policy is pinned
-# to refs/heads/main, so this workflow MUST be dispatched from the main branch;
-# a dispatch from any other ref fails at the credentials step.
-#
-# Infra preconditions (NOT done here — innovationtreehouse/infra#112, whose PR
-# body is the authoritative contract for every resource name used below):
-#   - cluster `s-read`, task-def families `s-read-sync` / `s-read-migrate` (with
-#     the ghcr repositoryCredentials), the s-read-trigger Lambda + its schedule,
-#     secret shells + IAM applied.
-#   - init.sql run by hand + secret VALUES set (see s-read-function/DEPLOY.md).
-#   - Repo variable S_READ_NETWORK_CONFIG set (see the migrate step).
+# AWS auth (GitHub OIDC) uses the per-env checkin-deploy-<env> role; infra wires
+# PassRole on both envs' s-read task roles onto both checkin deploy roles. The
+# dev role's trust is pinned to refs/heads/main, so a dev dispatch/call MUST come
+# from main; the prod role additionally requires `environment: production` (the
+# gate below). Infra preconditions (per env: cluster, both task-def families with
+# ghcr repositoryCredentials, the trigger Lambda + schedule, secret shells + IAM;
+# secret VALUES via the bootstrap task + Shopify creds by hand; repo variable
+# S_READ_NETWORK_CONFIG set) are unchanged — see s-read-function/DEPLOY.md.
 
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "s-read environment"
+        type: choice
+        options:
+          - dev
+          - prod
+        default: dev
       mode:
         description: "Deploy mode"
         type: choice
@@ -41,6 +45,20 @@ on:
           - migrate-and-code
           - code-only
         default: migrate-and-code
+  workflow_call:
+    inputs:
+      environment:
+        description: "s-read environment (dev | prod)"
+        type: string
+        required: true
+      mode:
+        description: "Deploy mode (migrate-and-code | code-only)"
+        type: string
+        default: migrate-and-code
+      ref:
+        description: "Commit/tag to build; empty = the triggering commit"
+        type: string
+        default: ""
 
 permissions:
   id-token: write   # assume the deploy role via OIDC
@@ -48,175 +66,31 @@ permissions:
   packages: write   # push the image to ghcr.io
 
 concurrency:
-  group: s-read-deploy
-  cancel-in-progress: false  # serialize deploys; never abandon one mid-flight
-
-env:
-  AWS_REGION: us-east-2
-  IMAGE_REPO: ghcr.io/innovationtreehouse/s-read
-  ECS_CLUSTER: s-read
-  SYNC_TASK_FAMILY: s-read-sync
-  MIGRATE_TASK_FAMILY: s-read-migrate
-  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-dev
+  group: s-read-deploy-${{ inputs.environment }}
+  cancel-in-progress: false  # serialize deploys per env; never abandon one mid-flight
 
 jobs:
   deploy:
-    name: Build, push, migrate, register
+    name: Build, push, migrate, register (${{ inputs.environment }})
     runs-on: ubuntu-24.04-arm  # native ARM64 — the task defs are arm64 (runtime_platform)
+    # prod dispatch rides the production environment gate (human approval + the
+    # OIDC sub the prod role trusts). dev: no environment — the dev role's trust
+    # is the bare main-ref sub, so the dev path must carry NO environment (an
+    # empty name means none).
+    environment: ${{ inputs.environment == 'prod' && 'production' || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Resolve commit
-        id: vars
-        run: |
-          SHA=$(git rev-parse HEAD)
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ env.DEPLOY_ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
+          # Empty on dispatch = the triggering commit; deploy-dev passes the
+          # deployed app commit so app and s-read ship the same tree. Checked
+          # out here so the local composite action is on disk and builds the
+          # right ref.
+          ref: ${{ inputs.ref || '' }}
 
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v4
+      - name: Deploy s-read
+        uses: ./.github/actions/deploy-s-read
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push image
-        id: build
-        env:
-          IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
-        run: |
-          set -euo pipefail
-          # Repo-root build context (workspace install) — see s-read-function/Dockerfile.
-          docker build -f s-read-function/Dockerfile -t "$IMAGE" .
-          docker push "$IMAGE"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
-      # Both families get a new revision pointing at the new image (infra#112's
-      # deploy contract) — the migrate one first, since migrations ship in the image.
-      - name: Register new migrate task definition
-        id: register_migrate
-        env:
-          IMAGE: ${{ steps.build.outputs.image }}
-        run: |
-          set -euo pipefail
-          # New revision with the new image, keeping only the fields
-          # register-task-definition accepts. Goes through a real temp file:
-          # the runner's aws CLI cannot read file:///dev/stdin.
-          aws ecs describe-task-definition \
-            --task-definition "$MIGRATE_TASK_FAMILY" \
-            --query taskDefinition --output json \
-            | jq --arg IMG "$IMAGE" '
-                .containerDefinitions[0].image = $IMG
-                | {family, taskRoleArn, executionRoleArn, networkMode,
-                   containerDefinitions, requiresCompatibilities, cpu, memory,
-                   runtimePlatform}' > "$RUNNER_TEMP/migrate-taskdef.json"
-          MIGRATE_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "file://$RUNNER_TEMP/migrate-taskdef.json" \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          CONTAINER_NAME=$(jq -r '.containerDefinitions[0].name' "$RUNNER_TEMP/migrate-taskdef.json")
-          echo "Registered migrate task def: $MIGRATE_ARN (container: $CONTAINER_NAME)"
-          echo "migrate_arn=$MIGRATE_ARN" >> "$GITHUB_OUTPUT"
-          echo "container_name=$CONTAINER_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Run database migrations
-        if: inputs.mode == 'migrate-and-code'
-        env:
-          MIGRATE_ARN: ${{ steps.register_migrate.outputs.migrate_arn }}
-          CONTAINER_NAME: ${{ steps.register_migrate.outputs.container_name }}
-          # Full run-task networkConfiguration JSON from the infra#112 outputs
-          # (`s_read_compute_sg_id` + the three default-VPC public subnets), e.g.
-          #   {"awsvpcConfiguration":{"subnets":["subnet-0597513f1c0c3173e","subnet-0a67d72908bffbcd4","subnet-0c84ac2840be3a2bc"],"securityGroups":["sg-..."],"assignPublicIp":"ENABLED"}}
-          # Set as a repo variable (Settings > Variables) — there is no ECS service
-          # here to copy placement from (deploy-dev.yml reads its service's; this
-          # fleet's tasks are schedule/run-task only).
-          NETWORK_CONFIG: ${{ vars.S_READ_NETWORK_CONFIG }}
-        run: |
-          set -euo pipefail
-          if [ -z "$NETWORK_CONFIG" ]; then
-            echo "::error::Repo variable S_READ_NETWORK_CONFIG is not set (subnets/SG for run-task) — see the workflow comments."
-            exit 1
-          fi
-
-          # Same command the migrate task-def bakes (npm run db:deploy — container-safe,
-          # prisma reads SHOPIFY_READ_DATABASE_URL from the ECS-injected DDL secret),
-          # wrapped in the house retry loop: the shared Aurora Serverless v2 cluster has
-          # min-capacity-0 auto-pause, and the first connection races the ~30s resume
-          # (Prisma fails fast with P1001).
-          jq -n --arg NAME "$CONTAINER_NAME" '
-            {containerOverrides: [{name: $NAME, command: ["sh", "-c",
-              "for i in 1 2 3 4 5; do npm run db:deploy -w @inventory/s-ingest-core && exit 0; echo \"attempt $i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"
-            ]}]}' > "$RUNNER_TEMP/migrate-overrides.json"
-
-          TASK_ARN=$(aws ecs run-task \
-            --cluster "$ECS_CLUSTER" \
-            --task-definition "$MIGRATE_ARN" \
-            --launch-type FARGATE \
-            --network-configuration "$NETWORK_CONFIG" \
-            --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
-            --query 'tasks[0].taskArn' --output text)
-          echo "Migration task: $TASK_ARN (logs: /ecs/s-read-migrate)"
-
-          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
-
-          EXIT_CODE=$(aws ecs describe-tasks \
-            --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
-            --query 'tasks[0].containers[0].exitCode' --output text)
-          echo "Migration exit code: $EXIT_CODE"
-          if [ "$EXIT_CODE" != "0" ]; then
-            echo "::error::Database migration failed (exit $EXIT_CODE) — sync task def NOT updated; the schedule keeps running the previous revision."
-            exit 1
-          fi
-
-      - name: Register new sync task definition
-        id: register_sync
-        env:
-          IMAGE: ${{ steps.build.outputs.image }}
-        run: |
-          set -euo pipefail
-          # New revision with the new image; the s-read-trigger Lambda RunTasks the
-          # revision-less family ARN, so the next hourly tick runs this revision —
-          # no service update, no terraform.
-          aws ecs describe-task-definition \
-            --task-definition "$SYNC_TASK_FAMILY" \
-            --query taskDefinition --output json \
-            | jq --arg IMG "$IMAGE" '
-                .containerDefinitions[0].image = $IMG
-                | {family, taskRoleArn, executionRoleArn, networkMode,
-                   containerDefinitions, requiresCompatibilities, cpu, memory,
-                   runtimePlatform}' > "$RUNNER_TEMP/sync-taskdef.json"
-          SYNC_ARN=$(aws ecs register-task-definition \
-            --cli-input-json "file://$RUNNER_TEMP/sync-taskdef.json" \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "Registered sync task def: $SYNC_ARN"
-          echo "sync_arn=$SYNC_ARN" >> "$GITHUB_OUTPUT"
-
-      - name: Report result
-        if: always()
-        env:
-          IMAGE: ${{ steps.build.outputs.image }}
-          STATUS: ${{ job.status }}
-          MODE: ${{ inputs.mode }}
-          SYNC_ARN: ${{ steps.register_sync.outputs.sync_arn }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          if [ "$STATUS" = "success" ]; then
-            {
-              echo "### ✅ s-read deployed (\`$MODE\`)"
-              echo "- Image: \`$IMAGE\`"
-              echo "- Sync task def: \`$SYNC_ARN\` (the hourly schedule picks it up on its next tick)"
-              if [ "$MODE" = "migrate-and-code" ]; then echo "- Migrations: applied before the sync task-def update"; fi
-              echo "- [Deploy run]($RUN_URL)"
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            {
-              echo "### ❌ s-read deploy failed (status: \`$STATUS\`, mode: \`$MODE\`)"
-              echo "- [Deploy run]($RUN_URL) — check the logs (migrate task logs: \`/ecs/s-read-migrate\`)."
-              echo "- The schedule keeps running the previous task-def revision."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
+          environment: ${{ inputs.environment }}
+          mode: ${{ inputs.mode }}
+          network-config: ${{ vars.S_READ_NETWORK_CONFIG }}

@@ -62,4 +62,14 @@ describe("membership-ops/volunteer-memberships page", () => {
       ),
     );
   });
+
+  it("renders nothing for a background-check reviewer who navigates directly", async () => {
+    setSession({ id: 9, isBackgroundCheckReviewer: true });
+    mockFetchJson({ "/api/settings/membership/volunteer-designations": designations });
+    renderWithProviders(<VolunteerMembershipsPage />);
+
+    // The load effect still fires before the guard's early return — let it settle.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument());
+    expect(screen.queryByText("Volunteer-only designated emails")).not.toBeInTheDocument();
+  });
 });

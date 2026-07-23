@@ -46,6 +46,9 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
     const isKeyholder = await ensure('isKeyholder', { name: 'Key Holder', isKeyholder: true });
     const bgReviewer = await ensure('bg-reviewer', { name: 'BG Reviewer', isBackgroundCheckReviewer: true });
 
+    // isOperations is table-only (PersonRole, no Person column) and none of these
+    // fixtures hold it — no 'isOperations' persona exists below, so the generic
+    // contract test skips any route that gates on it (`if (!persona) return;`).
     const mkUser = (p: {
         id: number;
         email: string | null;
@@ -62,6 +65,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         isBoardMember: p.isBoardMember,
         isKeyholder: p.isKeyholder,
         isBackgroundCheckReviewer: p.isBackgroundCheckReviewer,
+        isOperations: false,
     });
 
     cached = {

@@ -215,7 +215,7 @@ describe('Program Lifecycle Integration Tests', () => {
         expect(dbRecord?.pendingSince).toBeNull();
     });
 
-     it('Cron job should remove PENDING participants after 7 days, unless isPaymentPlanRequested is true', async () => {
+     it('Cron flags overdue PENDING participants after 7 days without removing them; requested rows are excluded', async () => {
         process.env.CRON_SECRET = 'cron_test_secret';
 
         // 1. Set user to 8 days old PENDING
@@ -236,17 +236,24 @@ describe('Program Lifecycle Integration Tests', () => {
         let data = await res.json();
         
         expect(res.status).toBe(200);
-        expect(data.kicked).toBe(1);
+        // The cron NEVER removes (reviewer decision, PR #1094): the row is flagged
+        // overdue and left for the board. >= because the sweep is global and other
+        // suites' rows may share the DB in a full CI run.
+        expect(data.kicked).toBeUndefined();
+        expect(data.overdue).toBeGreaterThanOrEqual(1);
 
-        // Verify Delete
+        // Verify the row SURVIVES the sweep.
         let dbRecord = await prisma.programParticipant.findUnique({
             where: { programId_personId: { programId: testProgramId, personId: testParticipantId } }
         });
-        expect(dbRecord).toBeNull();
+        expect(dbRecord?.status).toBe('PENDING');
 
-        // 2. Recreate, set to 8 days old PENDING, but isPaymentPlanRequested = true
-        await prisma.programParticipant.create({
-            data: { programId: testProgramId, personId: testParticipantId, status: 'PENDING', pendingSince: eightDaysAgo, isPaymentPlanRequested: true}
+        // 2. Flip the surviving row to isPaymentPlanRequested = true — the sweep
+        // excludes requested rows entirely (scholarship applicants are the grace
+        // flow's business, not the non-payment sweep's).
+        await prisma.programParticipant.update({
+            where: { programId_personId: { programId: testProgramId, personId: testParticipantId } },
+            data: { isPaymentPlanRequested: true }
         });
 
          req = new Request(`http://localhost/api/cron/pending-participants`, {
@@ -256,7 +263,6 @@ describe('Program Lifecycle Integration Tests', () => {
         res = await CronPending(req);
         data = await res.json();
         expect(res.status).toBe(200);
-        expect(data.kicked).toBe(0); // Should be saved!
 
          // Verify Still there
         dbRecord = await prisma.programParticipant.findUnique({

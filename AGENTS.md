@@ -67,6 +67,13 @@ routes, auth, and DB together.
   reseeds every run). Don't rely on re-running against the same DB locally.
 - `*.flow.test.ts` is excluded from the unit/integration runs (it needs a live
   server) — keep it that way; run it only via `npm run test:flow`.
+- `*.shopify-live.ts` (`checkin-app/shopify-live/`) hits the REAL Shopify
+  dev store — excluded from every local/CI run; executed only by
+  `.github/workflows/shopify-live.yml` (`npm run test:shopify-live`). Dev-store-only
+  by a triple guard; see `checkin-app/docs/designs/SHOPIFY_LIVE_TESTS.md`.
+  Deliberately NOT named `*.test.ts`: that keeps them structurally invisible to
+  every other jest invocation, including scripts that override ignore patterns
+  on the CLI (the test:coverage class).
 - **No test tier exercises real Google OAuth.** Flow tests authenticate via
   persona-mint (a credentials sign-in), which — with JWT sessions — never
   touches the NextAuth **PrismaAdapter**; the adapter's user methods run only
@@ -99,15 +106,16 @@ Read these before changing the relevant area — start here, then follow links.
 - `CUJS.md` — **critical user journeys** (the basis for flow tests).
 - `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
 - `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
-- `PRODUCTION_PLAN.md`, `implementation_plan.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
+- `PRODUCTION_PLAN.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
 - `SECURITY-POLICY.md` — the response-stripper / `@sensitivity` registry rules (read before adding API responses or schema fields).
 - `pentest_findings_2026-04-21.md` — prior findings.
+- **Boundary isolation rule**: the handler/registry layer (`checkin-app/src/security/`) exists to make the data policy easy to AUDIT — it is not a substitute for careful route management (tight selects, deliberate response shapes). Any change to the boundary itself — registry grants, token grammar, handler/stripper, scope bindings, or a re-tier of an existing field's `@sensitivity` — must ship **in its own PR** (tests/docs/schema annotations may accompany; no app/feature code). New registered route: land the registry entry PR first (an unused `defineRoute` is inert), then the route PR. CI-enforced by `.github/workflows/security-boundary-isolation.yml`.
 
 **Deploy & migrations** (`checkin-app/docs/`)
 - `DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` — infra rules + order of operations for schema migrations vs. deploys (read before writing a migration); `.claude/skills/migration-safety/` fires this as a checklist whenever a migration is being built.
-- `MIGRATION_COALESCE_FLOW.md` — the pre-release migration-coalesce policy + script (`scripts/coalesce-migrations.ts`), the release gate (at most 1 new migration per release), and the dev/prod ledger-reconcile procedure.
+- `MIGRATION_COALESCE_FLOW.md` — the pre-release migration-coalesce policy + script (`scripts/coalesce-migrations.ts`), the manual migration-count policy, and the dev/prod ledger-reconcile procedure.
 - `PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` — single-pool Shopify capacity model + the scholarship hold-ledger state machine (read before touching `Program`/`ProgramParticipant` capacity or payment-plan logic).
 
 **Subprojects** (each has its own `README.md`)

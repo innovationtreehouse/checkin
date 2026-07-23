@@ -1,4 +1,5 @@
 import type { OrgMembershipProcess, OrgMembershipProcessStatus } from "@/generated/prisma/client";
+import { IN_FLIGHT_INITIAL } from "@/lib/membership/lifecycle";
 
 /**
  * Applicant-facing phases of an INITIAL membership application, in order.
@@ -34,6 +35,9 @@ export function stepperActiveIndex(status: OrgMembershipProcessStatus | null): n
     switch (status) {
         case "INTAKE": return 0;
         case "PENDING_EXTERNAL_ACTION": return 1;
+        // Held for review (household intake note): external actions are done and
+        // Payment is the pending step — it just won't open until the review clears.
+        case "PENDING_BG_REVIEW": return 2;
         case "PENDING_PAYMENT": return 2;
         case "PENDING_BG_CLEARANCE": return 3;
         case "ACTIVE": return 4;
@@ -42,18 +46,13 @@ export function stepperActiveIndex(status: OrgMembershipProcessStatus | null): n
 }
 
 /**
- * Statuses where an application is still open (work remains). Excludes the
- * terminal ACTIVE and the off-track BLOCKED. Renewal-specific statuses are not
- * part of the INITIAL flow. PENDING_BG_REVIEW is retained for any legacy rows;
- * the live flow uses PENDING_BG_CLEARANCE for the paid-awaiting-check state.
+ * Statuses where an INITIAL application is still open (work remains). The list
+ * itself is now defined ONCE in lib/membership/lifecycle (`IN_FLIGHT_INITIAL`,
+ * fix #2) — the single source the `membership_one_inflight_initial` partial index
+ * is verified against. This is a back-compat mutable alias for existing consumers
+ * (intake.ts, the intakeConcurrency suite) that pass it straight to Prisma's `in`.
  */
-export const IN_FLIGHT_INITIAL_STATUSES: OrgMembershipProcessStatus[] = [
-    "INTAKE",
-    "PENDING_EXTERNAL_ACTION",
-    "PENDING_BG_REVIEW",
-    "PENDING_PAYMENT",
-    "PENDING_BG_CLEARANCE",
-];
+export const IN_FLIGHT_INITIAL_STATUSES: OrgMembershipProcessStatus[] = [...IN_FLIGHT_INITIAL];
 
 /**
  * The latest process awaiting applicant external action (contract signing).

@@ -6,6 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
+import { MAX_VISIT_MS } from "@/lib/visitTimes";
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -28,6 +29,7 @@ export default function ManualAttendance() {
       const dep = new Date(departedAt);
       if (isNaN(dep.getTime())) fe.departedAt = "Invalid departure time";
       else if (dep.getTime() <= arr.getTime()) fe.departedAt = "Departure time must be after arrival time";
+      else if (dep.getTime() - arr.getTime() > MAX_VISIT_MS) fe.departedAt = "A visit cannot be longer than 24 hours.";
     } else if (arrivedAt && !fe.arrivedAt) {
       const withinSixHours = now - arr.getTime() <= 6 * 60 * 60 * 1000;
       const sameDay = arr.toDateString() === new Date(now).toDateString();
@@ -53,14 +55,19 @@ export default function ManualAttendance() {
       const res = await fetch("/api/attendance/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ arrivedAt, departedAt }),
+        // datetime-local gives a naive "YYYY-MM-DDTHH:mm" (no offset). Send a real
+        // instant so the server doesn't reparse it in ITS timezone (UTC in prod).
+        body: JSON.stringify({
+          arrivedAt: new Date(arrivedAt).toISOString(),
+          departedAt: departedAt ? new Date(departedAt).toISOString() : "",
+        }),
       });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Failed to record manual visit.");
       } else {
-        notifications.show({ color: "green", message: "Visit recorded successfully." });
+        notifications.show({ message: "Visit recorded successfully." });
         setArrived("");
         setDeparted("");
         // Building occupancy badges (attendance nav) count this new visit — refresh them.

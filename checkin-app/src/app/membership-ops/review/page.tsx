@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Title } from "@mantine/core";
+import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Textarea, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { type AlertTone } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -32,6 +32,7 @@ export default function MembershipReviewPage() {
   const [forbidden, setForbidden] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [volunteer, setVolunteer] = useState<Record<number, boolean>>({});
+  const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
   // Tagged with the acting row's processId so the result renders in that card, not off-screen at page top.
   const [message, setMessage] = useState<{ processId: number; text: string; tone: AlertTone } | undefined>();
 
@@ -58,17 +59,18 @@ export default function MembershipReviewPage() {
   }, [sessionStatus, load]);
 
   const submit = async (processId: number, result: "APPROVE" | "REJECT") => {
+    if (result === "REJECT" && !reviewNotes[processId]?.trim()) return;
     setBusyId(processId);
     setMessage(undefined);
     try {
       const res = await fetch("/api/membership/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId] }),
+        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId], note: reviewNotes[processId]?.trim() || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
+        notifications.show({ message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
         await load();
         notifyNavRefresh();
       } else if (data.code === "already_attested") {
@@ -157,17 +159,27 @@ export default function MembershipReviewPage() {
                 />
               )}
 
-              <Group gap="sm" wrap="wrap" mt={subject ? "md" : undefined}>
-                <Button color="green" disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
+              <Textarea
+                mt="md"
+                label="Notes"
+                placeholder="Optional for approval, required for rejection"
+                value={reviewNotes[item.id] ?? ""}
+                onChange={(e) => { const value = e.currentTarget.value; setReviewNotes((n) => ({ ...n, [item.id]: value })); }}
+                autosize
+                minRows={2}
+              />
+
+              <Group gap="sm" wrap="wrap" mt="md">
+                <Button disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
                   Attest — check is clean
                 </Button>
-                <Button color="red" variant="light" disabled={busyId === item.id} onClick={() => submit(item.id, "REJECT")}>
+                <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => submit(item.id, "REJECT")}>
                   Reject
                 </Button>
               </Group>
 
               {message?.processId === item.id && (
-                <Alert color={message.tone === "success" ? "green" : "red"} variant="light" mt="md">
+                <Alert color={message.tone === "success" ? "treehouseGreen" : "red"} variant="light" mt="md">
                   {message.text}
                 </Alert>
               )}

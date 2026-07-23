@@ -14,9 +14,9 @@ beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); })
 const attendanceData = {
   access: "full",
   attendance: [
-    { id: 201, arrivedAt: "2026-07-01T14:00:00.000Z", participant: { id: 50, email: "karen@example.com", name: "Karen Keyholder", isKeyholder: true, isSysadmin: false, isYouth: false, householdId: 6 } },
-    { id: 202, arrivedAt: "2026-07-01T14:05:00.000Z", participant: { id: 60, email: "val@example.com", name: "Val Volunteer", isKeyholder: false, isSysadmin: false, isYouth: false, householdId: 7 } },
-    { id: 203, arrivedAt: "2026-07-01T14:10:00.000Z", participant: { id: 70, email: "stu@example.com", name: "Stu Student", isKeyholder: false, isSysadmin: false, isYouth: true, householdId: 8 } },
+    { id: 201, arrivedAt: "2026-07-01T14:00:00.000Z", participant: { id: 50, email: "karen@example.com", name: "Karen Keyholder", isKeyholder: true, isSysadmin: false, dateOfBirth: "1985-01-01", householdId: 6 } },
+    { id: 202, arrivedAt: "2026-07-01T14:05:00.000Z", participant: { id: 60, email: "val@example.com", name: "Val Volunteer", isKeyholder: false, isSysadmin: false, dateOfBirth: "1990-01-01", householdId: 7 } },
+    { id: 203, arrivedAt: "2026-07-01T14:10:00.000Z", participant: { id: 70, email: "stu@example.com", name: "Stu Student", isKeyholder: false, isSysadmin: false, dateOfBirth: "2012-01-01", householdId: 8 } },
   ],
   counts: { keyholders: 1, volunteers: 1, youth: 1, total: 3 },
   safety: { isLastKeyholder: false, isTwoDeepViolation: false },
@@ -167,7 +167,7 @@ describe("attendance/current page", () => {
         safety: { isLastKeyholder: false, isTwoDeepViolation: false },
         self: null,
         household: [
-          { id: 301, arrivedAt: "2026-07-01T14:00:00.000Z", participant: { id: 8801, email: "kid@example.com", name: "Kid Eight", isKeyholder: false, isSysadmin: false, isYouth: true, householdId: 8 } },
+          { id: 301, arrivedAt: "2026-07-01T14:00:00.000Z", participant: { id: 8801, email: "kid@example.com", name: "Kid Eight", isKeyholder: false, isSysadmin: false, dateOfBirth: "2015-01-01", householdId: 8 } },
         ],
       },
     });
@@ -449,7 +449,7 @@ describe("attendance/current page", () => {
             id: 201, arrivedAt: "2026-07-01T14:00:00.000Z",
             participant: {
               id: 50, email: "karen@example.com", name: "Karen Keyholder", isKeyholder: true, isSysadmin: false,
-              isYouth: false, householdId: 6, phone: "5551234567",
+              dateOfBirth: "1985-01-01", householdId: 6, phone: "5551234567",
               household: { emergencyContacts: [
                 { id: 1, name: "Con A", phone: "5559990001", relationship: "Parent" },
                 { id: 2, name: "Con B", phone: "5559990002", relationship: null },
@@ -458,7 +458,7 @@ describe("attendance/current page", () => {
           },
           {
             id: 202, arrivedAt: "2026-07-01T14:05:00.000Z",
-            participant: { id: 60, email: "val@example.com", name: "Val Volunteer", isKeyholder: false, isSysadmin: false, isYouth: false, householdId: 7, household: null },
+            participant: { id: 60, email: "val@example.com", name: "Val Volunteer", isKeyholder: false, isSysadmin: false, dateOfBirth: "1990-01-01", householdId: 7, household: null },
           },
           {
             id: 203, arrivedAt: "2026-07-01T14:10:00.000Z",
@@ -466,7 +466,7 @@ describe("attendance/current page", () => {
             // modal header — with exactly one contact, exercising the singular
             // "Emergency Contact" (no trailing "s") label.
             participant: {
-              id: 70, email: "nona@example.com", name: null, isKeyholder: false, isSysadmin: false, isYouth: false, householdId: 9,
+              id: 70, email: "nona@example.com", name: null, isKeyholder: false, isSysadmin: false, dateOfBirth: "1990-01-01", householdId: 9,
               household: { emergencyContacts: [{ id: 3, name: "Con C", phone: "5559990003", relationship: null }] },
             },
           },
@@ -529,11 +529,11 @@ describe("attendance/current page", () => {
         attendance: [
           {
             id: 201, arrivedAt: "2026-07-01T14:00:00.000Z", event: { program: { id: 9, name: "Robotics Club" } },
-            participant: { id: 50, email: "karen@example.com", name: "Karen Keyholder", isKeyholder: true, isSysadmin: false, isYouth: false, householdId: 6, phone: "5551234567" },
+            participant: { id: 50, email: "karen@example.com", name: "Karen Keyholder", isKeyholder: true, isSysadmin: false, dateOfBirth: "1985-01-01", householdId: 6, phone: "5551234567" },
           },
           {
             id: 202, arrivedAt: "2026-07-01T14:05:00.000Z",
-            participant: { id: 60, email: "val@example.com", name: null, isKeyholder: false, isSysadmin: false, isYouth: false, householdId: 7 },
+            participant: { id: 60, email: "val@example.com", name: null, isKeyholder: false, isSysadmin: false, dateOfBirth: "1990-01-01", householdId: 7 },
           },
         ],
         counts: { keyholders: 1, volunteers: 1, students: 0, total: 2 },
@@ -570,7 +570,7 @@ describe("attendance/current page", () => {
           json: async () => ({
             access: "full",
             attendance: [
-              { id: 999, arrivedAt: "2026-07-01T14:00:00.000Z", participant: { id: 1, email: "admin@example.com", name: "Admin Self", isKeyholder: true, isSysadmin: true, isYouth: false, householdId: 5 } },
+              { id: 999, arrivedAt: "2026-07-01T14:00:00.000Z", participant: { id: 1, email: "admin@example.com", name: "Admin Self", isKeyholder: true, isSysadmin: true, dateOfBirth: "1980-01-01", householdId: 5 } },
             ],
             counts: { keyholders: 1, volunteers: 0, students: 0, total: 1 },
             safety: { isLastKeyholder: false, isTwoDeepViolation: false },

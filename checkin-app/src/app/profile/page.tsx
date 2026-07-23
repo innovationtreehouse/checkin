@@ -70,7 +70,7 @@ export default function ProfilePage() {
       });
 
       if (res.ok) {
-        notifications.show({ color: "green", message: "Profile updated successfully!" });
+        notifications.show({ message: "Profile updated successfully!" });
       } else {
         const data = await res.json().catch(() => ({}));
         setMessage({ text: data.error || "Failed to update profile.", tone: "error" });

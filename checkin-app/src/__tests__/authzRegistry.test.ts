@@ -59,13 +59,31 @@ const AUTHZ_TESTED = new Set<string>([
     'finance-ops/payment-plans',
     // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
     'finance-ops/payment-plans/refuse',
+    // POST deny-path (401 anon / 403 non-board) in programPaymentPlansAPI.integration.test.ts.
+    'finance-ops/payment-plans/manual-hold',
     // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
     'finance-ops/membership-payment-plans',
+    // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
+    'finance-ops/membership-payment-plans/refuse',
     'admin/settings/localization',
     'events',
     'facility/badges',
     'facility/trends',
     'facility/visits',
+    'finance-ops/payments',
+    'finance-ops/payments/[id]',
+    // POST + GET deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,
+    // which also assert a denied request never invokes the Lambda or reads the mirror.
+    'finance-ops/s-read/sync',
+    // GET deny-path (401 anon / 403 non-board) in s-read/diagnose/__tests__/route.test.ts,
+    // which also asserts a denied request never probes the mirror or the Lambda.
+    'finance-ops/s-read/diagnose',
+    // GET deny-path (401 anon / 403 non-board) in s-read/match-audit/__tests__/route.test.ts,
+    // which also asserts a denied request never runs the audit.
+    'finance-ops/s-read/match-audit',
+    // POST deny-path (401 anon / 403 non-board) in s-read/match-audit/track/__tests__/route.test.ts,
+    // which also asserts a denied request never raises a PaymentException.
+    'finance-ops/s-read/match-audit/track',
     'kioskdisplay/certifications',
     'membership-audit/compliance',
     // POST deny-path (403 non-board) in personBgManualSubmit.integration.test.ts.
@@ -73,9 +91,13 @@ const AUTHZ_TESTED = new Set<string>([
     'membership-audit/households-missing-contact',
     'membership-audit/unclaimed-households',
     'membership-ops/applications/archive',
+    'membership-ops/applications/unarchive',
     'membership-ops/applications/certify-payment',
     'membership-ops/applications/external',
     'membership-ops/applications/review-override',
+    // POST deny-path (401 anon / 403 plain / 403 sysadmin-excluded) in
+    // membership-ops/contacts/__tests__/route.integration.test.ts.
+    'membership-ops/contacts',
     'membership-ops/households',
     'membership-ops/households/[id]',
     'membership-ops/participants',
@@ -91,20 +113,28 @@ const AUTHZ_TESTED = new Set<string>([
     // POST deny-path (401 anon / 403 non-board) in authzRoleRejection.integration.test.ts.
     'programs/[id]/sync-shopify',
     'roles',
-    'safety/board-contacts',
     'safety/emergency-contacts',
     'safety/trusted-adults/decision',
     'safety/trusted-adults/override',
     'settings/email',
     'settings/membership',
     'settings/membership/bulk-open-renewals',
+    // POST deny-path (401 anon / 403 non-board) in its colocated unit test,
+    // api/settings/membership/extract-variant/__tests__/route.test.ts (no DB —
+    // the route never touches Prisma, only the pinned Shopify fetch).
+    'settings/membership/extract-variant',
     'settings/membership/volunteer-designations',
+    // GET deny-path (401 anon / 403 non-board) unit-tested through the real
+    // withAuth in api/settings/shopify-webhook/__tests__/route.test.ts.
+    'settings/shopify-webhook',
     'shop/tools/[id]',
     'system-status/audit-log',
     'system-status/errors',
     'system-status/health',
     'system-status/links',
     'system-status/links/[id]',
+    // GET deny-path (401 anon / 403 non-board) in lifecycleReconcile.integration.test.ts.
+    'system-status/lifecycle',
 ]);
 
 // Role-gated routes deliberately WITHOUT a negative-authz test. Each entry must

@@ -24,10 +24,9 @@ All three are safe to run repeatedly and are recorded as `sync_run` rows with ki
 ### Idempotency & delivery
 
 Every projection is an **idempotent upsert** keyed on `(store_id, shopify_gid)` (refunds on
-`(store_id, refund_gid)`), over an append-only raw log, projected newest-last. So replay /
-reingest / a re-invoke after a crash all re-process the same nodes and converge to the same
-live state — at-least-once processing is safe by construction. (No external egress here; the
-one non-idempotent hop in the fleet is the monitoring relay's SNS publish.)
+`(store_id, refund_gid)`) over the append-only log — the same at-least-once-safe model as the
+read path ([`s-read-function`](../s-read-function/README.md#how-it-works)). No external egress
+here; the one non-idempotent hop in the fleet is the monitoring relay's SNS publish.
 
 ## Local
 
@@ -45,8 +44,8 @@ cutover date).
 
 ## Deployment
 
-A **separate** Lambda from `s-read-function` (so admin ops don't contend with the
-scheduled sync's reserved concurrency = 1). **Invoke-only** — no EventBridge schedule and
+A **separate** deployable from `s-read-function` (its own IAM boundary and failure
+domain). **Invoke-only** — no EventBridge schedule and
 **no public endpoint**; triggered by `aws lambda invoke` under an IAM ops role. Runtime DB
 creds are **DML-only** — it never migrates. See `../s-read-function/FUTUREWORK.md` for the
 full security model and `../s-read-function/MONITORING-PRD.md` for the broader picture.

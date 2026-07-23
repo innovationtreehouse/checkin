@@ -30,6 +30,67 @@ function readCheckinEnv(): CheckinEnv {
     return value === 'dev' || value === 'local' ? value : 'prod';
 }
 
+/**
+ * True on the ops-stg staging environment. ops-stg deploys with CHECKIN_ENV=stg
+ * and NOTHING ELSE — no separate CHECKIN_STAGING variable to wire or forget.
+ *
+ * 'stg' is deliberately NOT a member of the CheckinEnv union: readCheckinEnv()
+ * collapses the unrecognized value to 'prod', keeping every mock
+ * (Zoho/Shopify/background-check) off and persona-mint unregistered — a
+ * prod-data copy needs that. Adding 'staging' to CheckinEnv would flip every
+ * `readCheckinEnv() !== 'prod'` mock gate ON in staging, the opposite of what
+ * we want. So this predicate reads the RAW process.env.CHECKIN_ENV, not
+ * checkinEnv(), to see the un-collapsed 'stg' that the mock path throws away.
+ *
+ * Exact `=== 'stg'`, not a truthy/substring check, so a stray value can't
+ * accidentally engage the gate — it only ever widens the surface that runs a
+ * stricter check (isStagingAccessAllowed below), so failing inert on any
+ * ambiguous value is the safe default.
+ *
+ * Derived as well as declared: a missing/blank/malformed CHECKIN_ENV fails
+ * readCheckinEnv() SAFE to prod, which fails THIS predicate OPEN — the gate
+ * goes inert exactly when it matters most. So CHECKIN_ENV is not the only
+ * signal: the ops-stg host (config.baseUrl(), sourced from NEXTAUTH_URL) is a
+ * second, independent one that can't be silently forgotten — Google OAuth
+ * callbacks don't work without NEXTAUTH_URL pointed at the real host, so it is
+ * set correctly by construction, not by a task-def author remembering it.
+ */
+function isStagingEnv(): boolean {
+    if (process.env.CHECKIN_ENV === 'stg') return true;
+    try {
+        return new URL(config.baseUrl()).hostname.startsWith('ops-stg.');
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * ops-stg trust-boundary predicate (see docs on the staging access gate).
+ * ops-stg runs a scrubbed copy of PRODUCTION data behind PROD's Google OAuth
+ * client, deliberately NOT restricted to the org Google Workspace (a
+ * sysadmin-settable exception must be able to admit an outside collaborator).
+ * That means any Google account on the internet can complete sign-in and
+ * NextAuth auto-creates a Person row for them — this predicate is the ONLY
+ * thing standing between that stranger and copied prod data, so it is applied
+ * at all three surfaces that can serve a response: middleware (pages),
+ * authenticateRequest (the API auth chokepoint), and resolveAccess (the
+ * `authorize: 'public'` path, which reaches authenticateRequest but does not
+ * gate on its result by default).
+ *
+ * Fails closed: missing/undefined claims (no token, anonymous caller, a
+ * caller whose claims didn't decode) deny.
+ */
+export type StagingGateClaims = {
+    hd?: string | null;
+    emailVerified?: boolean;
+    canAccessStaging?: boolean;
+};
+
+export function isStagingAccessAllowed(claims: StagingGateClaims | null | undefined): boolean {
+    if (!claims) return false;
+    return (claims.hd === ORG_DOMAIN && claims.emailVerified === true) || claims.canAccessStaging === true;
+}
+
 /** True only when all three Zoho OAuth secrets are present. */
 function zohoConfiguredEnv(): boolean {
     return !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
@@ -37,13 +98,15 @@ function zohoConfiguredEnv(): boolean {
 
 /**
  * The dev/local Zoho Sign MOCK is active when the real integration is unconfigured
- * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md). Two
- * server-only fuses — CHECKIN_ENV (fails safe to prod) and NODE_ENV — so no mock
- * path is reachable in prod by construction. Setting real Zoho secrets in dev opts
- * back into the real client (zohoConfigured wins).
+ * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md).
+ * CHECKIN_ENV is the single, server-only fuse (see the note above
+ * shopifyMockActiveEnv for why NODE_ENV was eliminated as a second fuse) — it
+ * fails safe to prod, so no mock path is reachable in prod by construction.
+ * Setting real Zoho secrets in dev opts back into the real client
+ * (zohoConfigured wins).
  */
 function zohoMockActiveEnv(): boolean {
-    return !zohoConfiguredEnv() && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+    return !zohoConfiguredEnv() && readCheckinEnv() !== 'prod';
 }
 
 /**
@@ -70,13 +133,18 @@ export const DEV_MOCK_WEBHOOK_SECRET = 'dev-zoho-mock-webhook-secret';
  * from a laptop, run as CHECKIN_ENV=dev with real creds — CHECKIN_ENV=local is always
  * the mock, regardless of whether creds happen to be set.
  *
- * Gated on the explicit env, NOT on cred presence. The `NODE_ENV !== 'production'`
- * clause is a hard security backstop, not a feature toggle: the mock hands out a
- * FIXED webhook secret (anyone could forge orders/paid), so it must be impossible in
- * a production build even if CHECKIN_ENV were misconfigured to 'local' there.
+ * Gated on the explicit env, NOT on cred presence — and on CHECKIN_ENV ALONE.
+ * NODE_ENV was deliberately ELIMINATED as a second "build-level fuse" across this
+ * file (#951 review): every deployed instance runs the same production image
+ * (Dockerfile sets NODE_ENV=production), so the clause could never distinguish a
+ * misconfigured prod box from a legitimate deployment — it only broke dev-instance
+ * features (the Debug-nav 404 class) while "protecting" against exactly one thing:
+ * a human explicitly setting CHECKIN_ENV=local on prod infra. That misconfig class
+ * belongs to CHECKIN_ENV itself, which fails safe to prod for any unset or
+ * unrecognized value (readCheckinEnv). One fuse, honestly owned.
  */
 function shopifyMockActiveEnv(): boolean {
-    return readCheckinEnv() === 'local' && process.env.NODE_ENV !== 'production';
+    return readCheckinEnv() === 'local';
 }
 
 
@@ -108,15 +176,16 @@ export const DEV_MOCK_MEMBERSHIP_VARIANT_ID = 'dev-mock-variant-membership';
 /**
  * The dev/local background-check MOCK is active when the real Averity consent link
  * is unconfigured (AVERITY_CONSENT_URL unset) AND we're on a non-prod instance.
- * Same two server-only fuses as the Zoho/Shopify mocks — CHECKIN_ENV (fails safe to
- * prod) and NODE_ENV — so no mock path is reachable in prod by construction. It hands
- * the applicant an in-app consent link (/dev/bg-consent) instead of Averity's hosted
- * page, so the check can be started in debug mode; board members then sign off through
- * the normal two-reviewer attestation. Setting AVERITY_CONSENT_URL opts back into the
- * real link. See docs/designs/BG_CHECK_DEV_MOCK.md.
+ * CHECKIN_ENV is the single fuse, same as the Zoho/Shopify mocks (see the note
+ * above shopifyMockActiveEnv) — it fails safe to prod, so no mock path is reachable
+ * in prod by construction. It hands the applicant an in-app consent link
+ * (/dev/bg-consent) instead of Averity's hosted page, so the check can be started
+ * in debug mode; board members then sign off through the normal two-reviewer
+ * attestation. Setting AVERITY_CONSENT_URL opts back into the real link.
+ * See docs/designs/BG_CHECK_DEV_MOCK.md.
  */
 function bgMockActiveEnv(): boolean {
-    return !process.env.AVERITY_CONSENT_URL && readCheckinEnv() !== 'prod' && process.env.NODE_ENV !== 'production';
+    return !process.env.AVERITY_CONSENT_URL && readCheckinEnv() !== 'prod';
 }
 
 export const config = {
@@ -185,6 +254,45 @@ export const config = {
     // Cron — shared secret gating the session-less cron routes (see cronAuth.ts).
     cronSecret: (): string | null => process.env.CRON_SECRET || null,
 
+    // s-read mirror — read-only connection string to the `shopify_read` Postgres
+    // (the s-read-function's Shopify order/refund/payout mirror). Null when not
+    // wired → the reconciler (lib/finance/reconcile.ts) short-circuits as "not
+    // wired" instead of throwing, so an env without the mirror simply runs no
+    // reconciliation.
+    //
+    // In AWS there is NO mirror connection string of its own: the app's DML role
+    // is a member of the mirror's SELECT-only NOLOGIN grant-holder (infra
+    // modules/checkin-bootstrap/bootstrap.sh), so the URL is DATABASE_URL with the
+    // database name swapped to SHOPIFY_READ_DB ("shopify_read_<env>", a plain task
+    // env — see infra modules/checkin/overview.tf, incl. why it is explicit per
+    // env rather than derived from checkinEnv()). SHOPIFY_READ_DATABASE_URL stays
+    // as a full-URL override for local dev, where the mirror may live anywhere.
+    shopifyReadDatabaseUrl: (): string | null => {
+        if (process.env.SHOPIFY_READ_DATABASE_URL) return process.env.SHOPIFY_READ_DATABASE_URL;
+        const db = process.env.SHOPIFY_READ_DB;
+        const base = process.env.DATABASE_URL;
+        if (!db || !base) return null;
+        try {
+            const url = new URL(base);
+            url.pathname = `/${db}`;
+            return url.toString();
+        } catch {
+            return null;
+        }
+    },
+
+    // s-read sync trigger — name of the `s-read-<env>-trigger` Lambda that RunTasks
+    // the sync family (s-read-function/DEPLOY.md). Null when unset → the board's
+    // manual-sync route reports "not wired" (503) rather than throwing, matching the
+    // mirror accessor above.
+    //
+    // Named EXPLICITLY per env rather than derived from checkinEnv(): that predicate
+    // fails safe to 'prod' for any unset/unrecognized value, which is right for the
+    // Zoho/Shopify mocks (a misconfigured box must not get the mock) but exactly
+    // backwards here — it would point an unconfigured box at PROD's sync trigger. An
+    // explicit name fails to null, i.e. to doing nothing.
+    sReadTriggerFunction: (): string | null => process.env.S_READ_TRIGGER_FUNCTION || null,
+
     // Shopify — Client Credentials Grant integration (see shopify.ts). All three
     // null when unset (integration "off").
     shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,
@@ -211,8 +319,22 @@ export const config = {
     isProd: (): boolean => readCheckinEnv() === 'prod',
     // True on the cloud dev instance OR a local laptop (i.e. not prod). Server-only.
     isDevInstance: (): boolean => readCheckinEnv() !== 'prod',
+    // Gate for the /dev tools + their capture paths (sent-mail inbox, email
+    // capture). The design docs paired isDevInstance() with a
+    // `NODE_ENV !== 'production'` build fuse (the persona-mint idiom), but every
+    // DEPLOYED instance — cloud-dev included — runs the same production image
+    // (checkin-app/Dockerfile sets NODE_ENV=production), so that clause made the
+    // tools 404 on the very instance they exist for. Prod safety rests on
+    // CHECKIN_ENV, which is server-only and FAILS SAFE to 'prod' for any
+    // unset/unrecognized value (readCheckinEnv); cloud-dev pages are additionally
+    // behind the org-member login gate. Use this — not a hand-rolled
+    // NODE_ENV check — to gate any future dev tool.
+    devToolsActive: (): boolean => readCheckinEnv() !== 'prod',
     // True only on a developer laptop. Gates offline credential login + keyless kiosk.
     isLocal: (): boolean => readCheckinEnv() === 'local',
+    // True on ops-stg (CHECKIN_ENV=stg; see isStagingEnv) — gates the access
+    // gate's staging branch (middleware/authenticateRequest/resolveAccess).
+    isStaging: (): boolean => isStagingEnv(),
     baseUrl: (): string => {
         if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
         return process.env.NEXTAUTH_URL || 'http://localhost:4000';

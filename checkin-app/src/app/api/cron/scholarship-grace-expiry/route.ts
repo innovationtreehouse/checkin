@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { withdrawAndReleaseHold } from "@/lib/program/capacity";
+import { STATES } from "@/lib/programs/enrollmentState";
 
 const SYSTEM_ACTOR = 0;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -32,9 +33,9 @@ export const GET = withCron(async () => {
     const cutoff = new Date(Date.now() - graceDays * DAY_MS);
     const expired = await prisma.programParticipant.findMany({
         where: {
-            status: 'PENDING',
-            isPaymentPlanRequested: false,
-            inventoryHeldAt: { not: null },
+            // This sweep owns exactly the PENDING_HELD_DENIED state (enrollmentState
+            // §3); consume its `where` and add the grace cutoff onto the denial stamp.
+            ...STATES.PENDING_HELD_DENIED.where,
             paymentPlanDeniedAt: { not: null, lte: cutoff },
         },
         include: { program: true, person: true },

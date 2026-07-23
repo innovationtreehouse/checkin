@@ -11,10 +11,14 @@ export const dynamic = "force-dynamic";
  * full applicant PII; anyone else admitted would be stripped to public). The bag
  * is keyed by the model name so the stripper can classify it; the 'processes'
  * envelope preserves the response shape consumers expect.
+ *
+ * ?archived=1 flips to the board's recovery view: only ARCHIVED rows, so a
+ * wrongly-archived application can be found and restored (unarchive route).
  */
-export const GET = handler("GET /api/membership-ops/applications", async () => {
+export const GET = handler("GET /api/membership-ops/applications", async ({ req }) => {
+    const archived = new URL(req.url).searchParams.get("archived") === "1";
     const processes = await prisma.orgMembershipProcess.findMany({
-        where: { status: { notIn: ["ACTIVE", "ARCHIVED"] } },
+        where: archived ? { status: "ARCHIVED" } : { status: { notIn: ["ACTIVE", "ARCHIVED"] } },
         orderBy: { createdAt: "desc" },
         select: {
             id: true,

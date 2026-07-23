@@ -7,6 +7,7 @@ import { sendEmail } from "@/lib/email";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logIntegrationError } from "@/lib/logger";
 import { config } from "@/lib/config";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -94,12 +95,114 @@ export async function getAccessToken(): Promise<string | null> {
   }
 }
 
+/** Thrown by fetchStorefrontProductVariants; status maps straight onto the API response. */
+export class ProductUrlError extends Error {
+    constructor(message: string, public readonly status: number) {
+        super(message);
+        this.name = "ProductUrlError";
+    }
+}
+
+export interface StorefrontVariant {
+    id: string;
+    title: string;
+    /** The public product JSON reports prices in cents; null when the shape is unexpected. */
+    priceCents: number | null;
+}
+
+/**
+ * Resolve the variants of a membership product from its storefront URL via
+ * Shopify's public product JSON (`https://<store>/products/<handle>.js`).
+ * Backs the "Extract variant from URL" action in membership settings: for a
+ * single-variant product the Shopify admin UI hides the lone "Default Title"
+ * variant entirely, so the product ID is the only number an admin can see —
+ * and pasting THAT into the variant-ID field 410s the cart permalink checkout
+ * (lib/membership/payment.ts builds https://<store>/cart/<variantId>:1).
+ *
+ * SSRF pinning — this is a server-side fetch of an admin-supplied URL, so the
+ * URL is pinned hard before any request goes out: https only, host must
+ * EXACTLY equal the configured SHOPIFY_STORE_DOMAIN, path must match
+ * /products/<handle> after normalization (query, hash, and trailing slash
+ * stripped), and redirects are refused rather than followed. Everything else
+ * is a 400 before fetch.
+ *
+ * Shopify bot-throttles the .js endpoint for non-browser callers (429s
+ * observed from server IPs), so the request carries a browser User-Agent and
+ * retries twice with a short backoff; a still-throttled request surfaces as
+ * "try again in a minute", not a generic failure. The Admin API would be the
+ * throttle-proof alternative if this keeps biting.
+ */
+export async function fetchStorefrontProductVariants(productUrl: string): Promise<StorefrontVariant[]> {
+    const storeDomain = config.shopifyStoreDomain();
+    if (!storeDomain) throw new ProductUrlError("SHOPIFY_STORE_DOMAIN is not configured on this instance, so the URL cannot be verified.", 400);
+
+    let parsed: URL;
+    try {
+        parsed = new URL(productUrl.trim());
+    } catch {
+        throw new ProductUrlError("That is not a valid URL.", 400);
+    }
+    if (parsed.protocol !== "https:") throw new ProductUrlError("The product URL must start with https://.", 400);
+    // URL lowercases the hostname and drops a default :443, so an exact host
+    // comparison also rejects any explicit non-default port.
+    if (parsed.host !== storeDomain.toLowerCase()) {
+        throw new ProductUrlError(`The product URL must be on the store domain ${storeDomain}.`, 400);
+    }
+    const productPath = parsed.pathname.replace(/\/+$/, "");
+    if (!/^\/products\/[a-z0-9-]+$/.test(productPath)) {
+        throw new ProductUrlError(`The URL must be a product page: https://${storeDomain}/products/<product-handle>.`, 400);
+    }
+
+    let res: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        try {
+            res = await fetch(`https://${storeDomain}${productPath}.js`, {
+                headers: {
+                    // Browser User-Agent: see the throttling note in the doc comment.
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    Accept: "application/json",
+                },
+                redirect: "error", // any redirect could leave the pinned host — refuse it
+                signal: AbortSignal.timeout(10_000),
+            });
+        } catch (err) {
+            if (err instanceof DOMException && (err.name === "TimeoutError" || err.name === "AbortError")) {
+                throw new ProductUrlError("Shopify did not answer within 10 seconds — try again.", 504);
+            }
+            // undici surfaces a refused redirect (and any network failure) as a TypeError.
+            throw new ProductUrlError("Could not fetch the product from Shopify — the request failed or was redirected.", 502);
+        }
+        if (res.status !== 429) break;
+    }
+    if (!res || res.status === 429) throw new ProductUrlError("Shopify throttled the request — try again in a minute.", 429);
+    if (res.status === 404) throw new ProductUrlError("Shopify has no product at that URL — check the link.", 404);
+    if (!res.ok) throw new ProductUrlError(`Shopify returned ${res.status} for the product URL — check the link and try again.`, 502);
+
+    let product: { variants?: Array<{ id?: number | string; title?: string; price?: unknown }> };
+    try {
+        product = await res.json();
+    } catch {
+        throw new ProductUrlError("Shopify's response was not product JSON — check that the URL is the product page.", 502);
+    }
+    if (!Array.isArray(product?.variants)) {
+        throw new ProductUrlError("Shopify's response has no variant list — check that the URL is the product page.", 502);
+    }
+    return product.variants
+        .filter((v) => v?.id !== undefined && v?.id !== null)
+        .map((v) => ({
+            id: String(v.id),
+            title: v.title || "Default Title",
+            priceCents: typeof v.price === "number" ? v.price : null,
+        }));
+}
+
 /**
  * Shared failure path for Shopify write operations: log to IntegrationErrorLog
  * (System Status > Link Status) and best-effort email admins/board. Never
  * throws — callers return false/null regardless of whether this succeeds.
  */
-async function reportShopifyFailure(
+export async function reportShopifyFailure(
     operation: string,
     error: unknown,
     context: Record<string, unknown>,
@@ -111,7 +214,8 @@ async function reportShopifyFailure(
         const admins = await prisma.person.findMany({
             where: {
                 OR: [{ isSysadmin: true }, { isBoardMember: true }],
-                email: { not: null }
+                email: { not: null },
+                ...LIVE_PERSON,
             },
             select: { email: true }
         });
@@ -136,48 +240,97 @@ async function reportShopifyFailure(
 }
 
 /**
- * Best-effort: resolve the store's primary location, then set an absolute
- * inventory level for one inventory_item_id. Used at variant-creation time
- * (both the legacy two-variant path and the single-variant path) where
- * `available` should be exactly maxParticipants. Never throws — a failure
- * here doesn't undo the variant that was just created successfully.
+ * Set the initial absolute inventory (== maxParticipants) for one variant's
+ * inventory_item_id. A capped program's variant is created inline with
+ * inventory_management='shopify' + inventory_policy='deny' and Shopify's default
+ * 0 available, so WITHOUT this the storefront immediately shows "Sold out". This
+ * call is the only thing that lifts it off zero.
+ *
+ * Hardened against the two real-store failure modes that previously left products
+ * silently sold out:
+ *   - `/locations.json` returns deactivated + fulfillment-service locations in an
+ *     arbitrary order; setting at an inactive one 422s. We pick an ACTIVE location,
+ *     not blindly `locations[0]`.
+ *   - a freshly-created inventory item is often not stocked at that location yet,
+ *     so REST `set` 422s ("not stocked at location"). We `connect` it, then retry.
+ *
+ * Still never throws (a failure must not undo the created variant), but now RETURNS
+ * whether stock was actually set and SURFACES failures to IntegrationErrorLog
+ * (System Status → Link Status) — a sold-out product is visible instead of silent.
  */
 async function setInitialShopifyInventory(
     storeDomain: string,
     accessToken: string,
-    inventoryItemId: number,
+    inventoryItemId: number | undefined,
     quantity: number,
     label: string,
-): Promise<void> {
+): Promise<boolean> {
+    const jsonHeaders = { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': accessToken };
     try {
+        if (!inventoryItemId) {
+            // The product-create response carried no inventory_item_id for this tracked
+            // variant, so we can't set stock — it would ship sold out. Surface it.
+            await logIntegrationError("shopify", new Error(`Variant '${label}' has no inventory_item_id; cannot set initial stock (product would be sold out)`), { operation: "setInitialShopifyInventory", label, quantity });
+            return false;
+        }
+
         const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/locations.json`, {
             headers: { 'X-Shopify-Access-Token': accessToken },
         }, "Shopify get locations");
-        if (locRes.ok) {
-            const locData = await locRes.json();
-            const locationId = locData.locations?.[0]?.id;
-            if (locationId) {
-                const invRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Shopify-Access-Token': accessToken,
-                    },
-                    body: JSON.stringify({
-                        location_id: locationId,
-                        inventory_item_id: inventoryItemId,
-                        available: quantity,
-                    })
-                }, "Shopify set inventory");
-                if (invRes.ok) {
-                    console.log(`[SHOPIFY] Set inventory for variant ${label} to ${quantity} at location ${locationId}`);
-                } else {
-                    console.error(`[SHOPIFY] Failed to set inventory: ${invRes.status}`, await invRes.text());
-                }
-            }
+        if (!locRes.ok) {
+            await logIntegrationError("shopify", new Error(`locations.json returned ${locRes.status}`), { operation: "setInitialShopifyInventory", label, quantity });
+            return false;
         }
+
+        const locData = await locRes.json();
+        const locations: Array<{ id?: number; active?: boolean }> = locData.locations ?? [];
+        // Prefer an active location; `locations[0]` may be a deactivated or
+        // fulfillment-service location that `set` can't write to.
+        const locationId = (locations.find((l) => l.active !== false) ?? locations[0])?.id;
+        if (!locationId) {
+            await logIntegrationError("shopify", new Error("no Shopify location available to set inventory"), { operation: "setInitialShopifyInventory", label, quantity });
+            return false;
+        }
+
+        // CONNECT FIRST, unconditionally (credit: @dkaygithub, #985). A variant freshly
+        // minted with inventory_management:'shopify' is tracked but not yet *stocked* at
+        // any location, and `set` does NOT reliably auto-connect it — it 422s ("not
+        // stocked at the location"). Connecting first creates the inventory level (at 0)
+        // so the `set` below can write the absolute quantity.
+        //
+        // Deliberately not "optimistic set, connect+retry on 422": that costs an extra
+        // round trip on every capped create (the 422 is the norm for a new item, not the
+        // exception) and, worse, makes the whole fix hinge on Shopify returning exactly
+        // 422 — a different status and the product silently ships sold out again.
+        // A 422 HERE just means the level already exists (e.g. a re-sync) → fall through.
+        const connectRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/connect.json`, {
+            method: 'POST',
+            headers: jsonHeaders,
+            body: JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId }),
+        }, "Shopify connect inventory");
+        if (!connectRes.ok && connectRes.status !== 422) {
+            const connectBody = await connectRes.text();
+            console.error(`[SHOPIFY] Failed to connect inventory item to location: ${connectRes.status}`, connectBody);
+            await logIntegrationError("shopify", new Error(`inventory_levels/connect returned ${connectRes.status}: ${connectBody}`), { operation: "setInitialShopifyInventory", label, quantity, locationId });
+            return false;
+        }
+
+        const setUrl = `https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/set.json`;
+        const setBody = JSON.stringify({ location_id: locationId, inventory_item_id: inventoryItemId, available: quantity });
+        const invRes = await shopifyFetch(setUrl, { method: 'POST', headers: jsonHeaders, body: setBody }, "Shopify set inventory");
+
+        if (invRes.ok) {
+            console.log(`[SHOPIFY] Set inventory for variant ${label} to ${quantity} at location ${locationId}`);
+            return true;
+        }
+        const errBody = await invRes.text();
+        console.error(`[SHOPIFY] Failed to set inventory: ${invRes.status}`, errBody);
+        await logIntegrationError("shopify", new Error(`inventory_levels/set returned ${invRes.status}: ${errBody}`), { operation: "setInitialShopifyInventory", label, quantity, locationId });
+        return false;
     } catch (invErr) {
         console.error("Failed to set Shopify inventory level:", invErr);
+        await logIntegrationError("shopify", invErr, { operation: "setInitialShopifyInventory", label, quantity });
+        return false;
     }
 }
 
@@ -211,9 +364,36 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
 
   try {
     // Determine product title
-    const productTitle = `Program Enrollment: ${name}`;
+    const productTitle = `${name} Program Enrollment`;
 
-    // 1. Create Product
+    // Variants go INLINE in the product-create call. Creating the product bare
+    // makes Shopify mint a "Default Title" variant (price $0, requires_shipping
+    // true), which then collides with any follow-up POST /variants.json that
+    // doesn't set a distinct option1 (422 "The variant 'Default Title' already
+    // exists") AND leaves a physical $0 variant on the product so checkout asks
+    // for a shipping address. Inline variants replace the default entirely.
+    const variants = [];
+
+    if (orgMemberPriceCents !== null && orgMemberPriceCents > 0) {
+        variants.push({
+            option1: "Member",
+            price: (orgMemberPriceCents / 100).toFixed(2),
+            requires_shipping: false,
+            inventory_management: maxParticipants ? 'shopify' : null,
+            inventory_policy: maxParticipants ? 'deny' : 'continue',
+        });
+    }
+
+    if (nonOrgMemberPriceCents !== null && nonOrgMemberPriceCents > 0) {
+        variants.push({
+            option1: "Non-Member",
+            price: (nonOrgMemberPriceCents / 100).toFixed(2),
+            requires_shipping: false,
+            inventory_management: maxParticipants ? 'shopify' : null,
+            inventory_policy: maxParticipants ? 'deny' : 'continue',
+        });
+    }
+
     const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`, {
       method: 'POST',
       headers: {
@@ -225,7 +405,7 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
           title: productTitle,
           status: 'active',
           product_type: "Educational Services",
-          options: [{ name: "Membership Type" }]
+          ...(variants.length > 0 ? { options: [{ name: "Membership Type" }], variants } : {}),
         }
       })
     }, "Shopify create product");
@@ -239,60 +419,21 @@ export async function createShopifyProgramVariants(name: string, orgMemberPriceC
     const productData = await productRes.json();
     productId = productData.product.id;
 
-    // 2. Create Variants
-    const variants = [];
-
-    if (orgMemberPriceCents !== null && orgMemberPriceCents > 0) {
-        variants.push({
-            product_id: productId,
-            option1: "Member",
-            price: (orgMemberPriceCents / 100).toFixed(2),
-            requires_shipping: false,
-            inventory_management: maxParticipants ? 'shopify' : null,
-            inventory_policy: maxParticipants ? 'deny' : 'continue',
-        });
-    }
-
-    if (nonOrgMemberPriceCents !== null && nonOrgMemberPriceCents > 0) {
-        variants.push({
-            product_id: productId,
-            option1: "Non-Member",
-            price: (nonOrgMemberPriceCents / 100).toFixed(2),
-            requires_shipping: false,
-            inventory_management: maxParticipants ? 'shopify' : null,
-            inventory_policy: maxParticipants ? 'deny' : 'continue',
-        });
-    }
-
     let memberVariantId: string | null = null;
     let nonMemberVariantId: string | null = null;
 
-    if (variants.length > 0) {
-        for (const variant of variants) {
-            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}/variants.json`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Shopify-Access-Token': accessToken,
-                },
-                body: JSON.stringify({ variant })
-            }, "Shopify create variant");
+    for (const created of productData.product.variants ?? []) {
+        if (created.option1 === "Member") {
+            memberVariantId = created.id.toString();
+        } else if (created.option1 === "Non-Member") {
+            nonMemberVariantId = created.id.toString();
+        } else {
+            continue; // e.g. a default variant on the no-priced-tiers path — nothing to track
+        }
 
-            if (variantRes.ok) {
-                const variantData = await variantRes.json();
-                if (variant.option1 === "Member") {
-                    memberVariantId = variantData.variant.id.toString();
-                } else {
-                    nonMemberVariantId = variantData.variant.id.toString();
-                }
-
-                // Set inventory level if maxParticipants is configured
-                if (maxParticipants && variantData.variant.inventory_item_id) {
-                    await setInitialShopifyInventory(storeDomain, accessToken, variantData.variant.inventory_item_id, maxParticipants, variant.option1);
-                }
-            } else {
-                console.error("Failed to create Shopify variant:", await variantRes.text());
-            }
+        // Set inventory level if maxParticipants is configured
+        if (maxParticipants) {
+            await setInitialShopifyInventory(storeDomain, accessToken, created.inventory_item_id, maxParticipants, created.option1);
         }
     }
 
@@ -359,6 +500,13 @@ export async function createShopifySingleVariantProgram(
     let productId: string | number | null = null;
 
     try {
+        // The variant goes INLINE in the product-create call. Creating the
+        // product bare makes Shopify mint a "Default Title" variant (price $0,
+        // requires_shipping true), and the follow-up POST /variants.json —
+        // which has no option1 either — collides with it (422 "The variant
+        // 'Default Title' already exists"). Net effect of the old two-call
+        // shape: no variant id ever stored, and the orphaned product kept its
+        // physical $0 default variant so checkout demanded a shipping address.
         const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`, {
             method: 'POST',
             headers: {
@@ -367,9 +515,15 @@ export async function createShopifySingleVariantProgram(
             },
             body: JSON.stringify({
                 product: {
-                    title: `Program Enrollment: ${name}`,
+                    title: `${name} Program Enrollment`,
                     status: 'active',
                     product_type: "Educational Services",
+                    variants: [{
+                        price: (basePriceCents / 100).toFixed(2),
+                        requires_shipping: false,
+                        inventory_management: maxParticipants ? 'shopify' : null,
+                        inventory_policy: maxParticipants ? 'deny' : 'continue',
+                    }],
                 }
             })
         }, "Shopify create product");
@@ -383,34 +537,17 @@ export async function createShopifySingleVariantProgram(
         const productData = await productRes.json();
         productId = productData.product.id;
 
-        const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products/${productId}/variants.json`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Shopify-Access-Token': accessToken,
-            },
-            body: JSON.stringify({
-                variant: {
-                    product_id: productId,
-                    price: (basePriceCents / 100).toFixed(2),
-                    requires_shipping: false,
-                    inventory_management: maxParticipants ? 'shopify' : null,
-                    inventory_policy: maxParticipants ? 'deny' : 'continue',
-                }
-            })
-        }, "Shopify create variant");
-
-        if (!variantRes.ok) {
-            const errorData = await variantRes.text();
-            console.error("Failed to create Shopify variant:", errorData);
-            throw new Error(`Shopify API responded with status: ${variantRes.status}`);
+        // Unlike the legacy path, the single variant is the whole point here —
+        // without its id the program can never match a webhook line-item, so a
+        // missing variant is a hard failure (the catch names the orphan).
+        const variant = productData.product.variants?.[0];
+        if (!variant?.id) {
+            throw new Error("Shopify product creation response is missing the created variant");
         }
+        const variantId = variant.id.toString();
 
-        const variantData = await variantRes.json();
-        const variantId = variantData.variant.id.toString();
-
-        if (maxParticipants && variantData.variant.inventory_item_id) {
-            await setInitialShopifyInventory(storeDomain, accessToken, variantData.variant.inventory_item_id, maxParticipants, "Standard");
+        if (maxParticipants) {
+            await setInitialShopifyInventory(storeDomain, accessToken, variant.inventory_item_id, maxParticipants, "Standard");
         }
 
         return {
@@ -556,9 +693,17 @@ export async function adjustProgramInventory(
  * discount (its §5) is the planned upgrade once checkout identity is solved;
  * this mints one real Shopify object per checkout in the meantime.
  *
- * ponytail: one Price Rule + Discount Code per enrollee/checkout — fine at
- * Treehouse's program-enrollment volume. Upgrade to the segment design above
- * if that stops being true.
+ * Implemented via GraphQL `discountCodeBasicCreate` (scope: write_discounts).
+ * NOT the legacy REST price_rules API: that needs the separate
+ * write_price_rules scope that neither store's app grants (the dev store
+ * 403'd every mint until 2026-07-14), and Shopify has deprecated it anyway.
+ * `appliesOnEachItem: true` carries the load-bearing 'each' semantics: a
+ * member household enrolling N kids buys quantity N of the variant and every
+ * seat gets the member price (amount-off-once would overcharge N-1 seats).
+ *
+ * ponytail: one discount code per enrollee/checkout — fine at Treehouse's
+ * program-enrollment volume. Upgrade to the segment design above if that
+ * stops being true.
  *
  * Never throws: a failure returns null so the caller falls back to an
  * undiscounted checkout link rather than blocking it (member pays full price
@@ -591,51 +736,47 @@ export async function mintMemberDiscountCode(
         const startsAt = new Date();
         const endsAt = new Date(startsAt.getTime() + 48 * 60 * 60 * 1000); // ~48h, per design
 
-        const priceRuleRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/price_rules.json`, {
+        const mutation = `
+            mutation MintMemberDiscount($discount: DiscountCodeBasicInput!) {
+                discountCodeBasicCreate(basicCodeDiscount: $discount) {
+                    codeDiscountNode { id }
+                    userErrors { field message }
+                }
+            }`;
+        const res = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-Shopify-Access-Token': accessToken,
             },
             body: JSON.stringify({
-                price_rule: {
-                    title: code,
-                    target_type: 'line_item',
-                    target_selection: 'entitled',
-                    entitled_variant_ids: [Number(variantId)],
-                    // 'each' applies the amount PER UNIT: a member household enrolling
-                    // N kids buys quantity N of the variant, and each seat gets the
-                    // member price ('across' would subtract the amount once from the
-                    // whole line, overcharging N-1 seats).
-                    allocation_method: 'each',
-                    value_type: 'fixed_amount',
-                    value: `-${(amountOffCents / 100).toFixed(2)}`,
-                    customer_selection: 'all',
-                    usage_limit: 1,
-                    once_per_customer: true,
-                    starts_at: startsAt.toISOString(),
-                    ends_at: endsAt.toISOString(),
+                query: mutation,
+                variables: {
+                    discount: {
+                        title: code,
+                        code,
+                        startsAt: startsAt.toISOString(),
+                        endsAt: endsAt.toISOString(),
+                        usageLimit: 1,
+                        appliesOncePerCustomer: true,
+                        customerSelection: { all: true },
+                        customerGets: {
+                            // appliesOnEachItem: the 'each' semantics (see doc comment).
+                            value: { discountAmount: { amount: (amountOffCents / 100).toFixed(2), appliesOnEachItem: true } },
+                            items: { products: { productVariantsToAdd: [`gid://shopify/ProductVariant/${variantId}`] } },
+                        },
+                    },
                 },
             }),
-        }, "Shopify create price rule");
-        if (!priceRuleRes.ok) {
-            throw new Error(`Shopify price rule creation failed: ${priceRuleRes.status} ${await priceRuleRes.text()}`);
+        }, "Shopify mint member discount");
+        if (!res.ok) {
+            throw new Error(`Shopify discount create failed: ${res.status} ${await res.text()}`);
         }
-        const priceRuleData = await priceRuleRes.json();
-        const priceRuleId = priceRuleData.price_rule?.id;
-        if (!priceRuleId) throw new Error("Shopify price rule response missing id");
-
-        const codeRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/price_rules/${priceRuleId}/discount_codes.json`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Shopify-Access-Token': accessToken,
-            },
-            body: JSON.stringify({ discount_code: { code } }),
-        }, "Shopify create discount code");
-        if (!codeRes.ok) {
-            throw new Error(`Shopify discount code creation failed: ${codeRes.status} ${await codeRes.text()}`);
-        }
+        const data = await res.json();
+        if (data.errors) throw new Error(`Shopify discount create GraphQL errors: ${JSON.stringify(data.errors)}`);
+        const result = data.data?.discountCodeBasicCreate;
+        if (result?.userErrors?.length) throw new Error(`Shopify discount create userErrors: ${JSON.stringify(result.userErrors)}`);
+        if (!result?.codeDiscountNode?.id) throw new Error("Shopify discount create response missing codeDiscountNode id");
 
         console.log(`[SHOPIFY] Minted single-use discount code ${code} for program ${programId} (-$${(amountOffCents / 100).toFixed(2)}, expires ${endsAt.toISOString()})`);
         return code;

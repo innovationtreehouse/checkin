@@ -3,7 +3,10 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
+import { ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -40,11 +43,25 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             phase,
             enrollmentStatus,
             orgMemberOnly,
+            announceOnOpen,
             minAge,
             maxAge,
             maxParticipants,
             leadMentorNotificationSettings
         } = body;
+
+        // Validate the three announce-relevant fields up front: bad values would
+        // otherwise surface as Prisma validation errors → generic 500, and
+        // announceOnOpen now gates an email blast (#1164 review, finding 5).
+        if (announceOnOpen !== undefined && typeof announceOnOpen !== "boolean") {
+            return apiError("announceOnOpen must be a boolean", 400);
+        }
+        if (phase !== undefined && !Object.values(ProgramPhase).includes(phase)) {
+            return apiError("Invalid phase", 400);
+        }
+        if (enrollmentStatus !== undefined && !Object.values(EnrollmentStatus).includes(enrollmentStatus)) {
+            return apiError("Invalid enrollmentStatus", 400);
+        }
 
         // Age range sanity. Use effective values (body overrides current) so a
         // one-sided edit can't leave minAge > maxAge or exceed the 25+ ceiling.
@@ -62,7 +79,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
             if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
                 return apiError("maxParticipants must be a positive integer", 400);
             }
-            const enrolled = await prisma.programParticipant.count({ where: { programId } });
+            const enrolled = await prisma.programParticipant.count({ where: { programId, person: LIVE_PERSON } });
             if (maxParticipants < enrolled) {
                 return apiError(`maxParticipants cannot be set below the current enrollment of ${enrolled}`, 400);
             }
@@ -76,6 +93,7 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         if (phase !== undefined) updateData.phase = phase;
         if (enrollmentStatus !== undefined) updateData.enrollmentStatus = enrollmentStatus;
         if (orgMemberOnly !== undefined) updateData.orgMemberOnly = orgMemberOnly;
+        if (announceOnOpen !== undefined) updateData.announceOnOpen = announceOnOpen;
         if (minAge !== undefined) updateData.minAge = minAge;
         if (maxAge !== undefined) updateData.maxAge = maxAge;
         if (maxParticipants !== undefined) updateData.maxParticipants = maxParticipants;
@@ -106,6 +124,16 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
                 affectedEntityId: programId,
                 newData: updateData
             }
+        });
+
+        // Announce trigger — transition rule, once-per-lifetime claim, audit row,
+        // and fire-without-await all live in the helper. Never throws (the F1
+        // committed-write-cant-500 guarantee moved into the helper's own try/catch).
+        await maybeAnnounceOnOpen({
+            programId,
+            before: currentProgram,
+            after: updatedProgram,
+            actorId: currentUserId,
         });
 
         return NextResponse.json({ success: true, program: updatedProgram });

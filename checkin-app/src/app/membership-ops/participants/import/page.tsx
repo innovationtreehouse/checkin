@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Alert, Badge, Box, Button, Card, FileInput, Group, List, Stack, Table, Text, Title } from "@mantine/core";
 import { AdminPageHeader } from "@/components/admin/AdminPageHeader";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { PageLoader } from "@/components/ui/PageLoader";
 
 type RowStatus = "ready" | "update" | "warning" | "error";
 
@@ -33,13 +35,14 @@ type ImportResult = { success?: boolean; message?: string; errors?: string[] };
 
 const STATUS_META: Record<RowStatus | "all", { label: string; icon: string; color: string }> = {
   all: { label: "All", icon: "📋", color: "gray" },
-  ready: { label: "New", icon: "✅", color: "green" },
+  ready: { label: "New", icon: "✅", color: "treehouseGreen" },
   update: { label: "Update", icon: "🔄", color: "blue" },
   warning: { label: "Warning", icon: "⚠️", color: "yellow" },
   error: { label: "Error", icon: "❌", color: "red" },
 };
 
 export default function BulkImportParticipants() {
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const [file, setFile] = useState<File | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -48,6 +51,14 @@ export default function BulkImportParticipants() {
   const [statusFilter, setStatusFilter] = useState<RowStatus | "all">("all");
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+
+  if (authLoading) {
+    return <PageLoader />;
+  }
+
+  if (!ready) {
+    return null;
+  }
 
   const handleFileChange = (f: File | null) => {
     setFile(f);
@@ -257,7 +268,7 @@ export default function BulkImportParticipants() {
       {/* Step 3: Import Result */}
       {importResult && (
         <Stack>
-          <Alert color={importResult.success ? 'green' : 'red'} title={importResult.success ? "✅ Import Successful" : "❌ Import Failed"}>
+          <Alert color={importResult.success ? 'treehouseGreen' : 'red'} title={importResult.success ? "✅ Import Successful" : "❌ Import Failed"}>
             <Text>{importResult.message}</Text>
             {importResult.errors && importResult.errors.length > 0 && (
               <Box mt="md">

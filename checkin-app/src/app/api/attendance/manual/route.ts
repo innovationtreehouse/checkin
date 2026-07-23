@@ -6,6 +6,7 @@ import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTra
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { withinMaxDuration } from "@/lib/visitTimes";
 
 // Self-service manual visit entry. INTENTIONAL by design: a member records a
 // visit for THEMSELVES only (participantId is forced to auth.user.id, never taken
@@ -50,6 +51,10 @@ export const POST = withAuth({}, async (req, auth) => {
 
         if (departureTime && departureTime <= arrivalTime) {
             return apiError("Departure time must be after arrival time", 400);
+        }
+
+        if (departureTime && !withinMaxDuration(arrivalTime, departureTime)) {
+            return apiError("A visit cannot be longer than 24 hours.", 400);
         }
 
         // Blank departure means "still in the building" → an open visit. Only allow

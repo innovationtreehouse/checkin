@@ -97,7 +97,7 @@ export default function CompliancePage() {
       });
       if (res.ok) {
         setSubmittedIds((s) => new Set(s).add(personId));
-        notifications.show({ color: "green", message: "Submitted for background-check review." });
+        notifications.show({ message: "Submitted for background-check review." });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: "red", message: data.error || "Could not submit for review." });
@@ -205,7 +205,7 @@ export default function CompliancePage() {
         people={peopleNeedingBgCheck}
         renderAction={(p) =>
           submittedIds.has(p.personId) ? (
-            <Badge color="green" variant="light">Submitted for review</Badge>
+            <Badge variant="light">Submitted for review</Badge>
           ) : (
             <Button size="xs" variant="light" loading={busyId === p.personId} disabled={busyId === p.personId} onClick={() => submitBg(p.personId)}>
               Record external check &amp; submit

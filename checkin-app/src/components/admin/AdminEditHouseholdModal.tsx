@@ -1,20 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Text, TextInput } from "@mantine/core";
+import { Alert, Button, Divider, Group, Loader, Modal, SimpleGrid, Stack, Switch, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isYouth } from "@/lib/time";
+
+// Per-household lead cap (issue #269). Server enforces it atomically in
+// lib/household/leads.ts (MAX_HOUSEHOLD_LEADS); hardcoded here — that module
+// pulls in prisma and can't be imported into a client bundle. Mirrors the
+// last-lead guard below, also hardcoded client-side.
+const MAX_HOUSEHOLD_LEADS = 2;
 
 export type AdminHousehold = {
   id: number;
   name: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
+  householdMembers?: Array<{ id: number; name: string | null; email: string | null; dateOfBirth?: string | null }>;
   householdLeads?: Array<{ personId: number }>;
-  orgMembership?: { memberSince: string | null } | null;
+  orgMembership?: { memberSince: string | null; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress>;
 
 type FormState = {
@@ -27,9 +34,10 @@ type FormState = {
   emergencyContactName: string;
   emergencyContactPhone: string;
   memberSince: string;
+  isVolunteer: boolean;
 };
 
-const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: "" };
+const EMPTY: FormState = { name: "", line1: "", line2: "", city: "", state: "", postalCode: "", emergencyContactName: "", emergencyContactPhone: "", memberSince: "", isVolunteer: false };
 
 /** Deep-compares flat string form state. Exported for unit test. */
 export function isFormDirty(a: FormState, b: FormState): boolean {
@@ -63,6 +71,7 @@ export function AdminEditHouseholdModal({
   const [members, setMembers] = useState<NonNullable<AdminHousehold["householdMembers"]>>([]);
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
+  const [promotingLead, setPromotingLead] = useState<number | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ memberSince?: string }>({});
   const [hasMembership, setHasMembership] = useState(false);
   // Modal-local notice for save-error / lead-remove results, so feedback lands
@@ -85,6 +94,7 @@ export function AdminEditHouseholdModal({
           emergencyContactPhone: h.emergencyContactPhone || "",
           // date-only slice of the membership's join date (ISO → YYYY-MM-DD)
           memberSince: h.orgMembership?.memberSince ? h.orgMembership.memberSince.slice(0, 10) : "",
+          isVolunteer: !!h.orgMembership?.isVolunteer,
         };
         setForm(loaded);
         setInitial(loaded);
@@ -121,7 +131,7 @@ export function AdminEditHouseholdModal({
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Lead removed." });
+        notifications.show({ message: "Lead removed." });
         await loadHousehold();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -131,6 +141,30 @@ export function AdminEditHouseholdModal({
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setRemovingLead(null);
+    }
+  };
+
+  const handleMakeLead = async (participantId: number) => {
+    if (leadIds.length >= MAX_HOUSEHOLD_LEADS) return; // cap also enforced server-side
+    setNotice(null);
+    setPromotingLead(participantId);
+    try {
+      const res = await fetch(`/api/household/lead`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId }),
+      });
+      if (res.ok) {
+        notifications.show({ message: "Lead added." });
+        await loadHousehold();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setNotice({ color: "red", message: data.error || "Failed to add lead." });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setPromotingLead(null);
     }
   };
 
@@ -179,11 +213,13 @@ export function AdminEditHouseholdModal({
       const res = await fetch(`/api/membership-ops/households/${householdId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        // Membership fields are hidden without a membership; don't submit them
+        // either, or the server rejects the whole edit as membership-less.
+        body: JSON.stringify(hasMembership ? form : { ...form, memberSince: undefined, isVolunteer: undefined }),
       });
       if (res.ok) {
         const data = await res.json();
-        notifications.show({ color: "green", message: "Household updated." });
+        notifications.show({ message: "Household updated." });
         onSaved?.(data.household);
         onClose();
       } else {
@@ -259,14 +295,22 @@ export function AdminEditHouseholdModal({
               />
             </SimpleGrid>
             {hasMembership ? (
-              <TextInput
-                type="date"
-                label="Member since"
-                description="Household's membership start date. Editing this is recorded in the audit log."
-                value={form.memberSince}
-                onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
-                error={fieldErrors.memberSince}
-              />
+              <>
+                <TextInput
+                  type="date"
+                  label="Member since"
+                  description="Household's membership start date. Editing this is recorded in the audit log."
+                  value={form.memberSince}
+                  onChange={(e) => { update({ memberSince: e.currentTarget.value }); setFieldErrors({}); }}
+                  error={fieldErrors.memberSince}
+                />
+                <Switch
+                  label="Volunteer-only household"
+                  description="Reduced-fee volunteer family (no youth enrolled). Editing this is recorded in the audit log."
+                  checked={form.isVolunteer}
+                  onChange={(e) => update({ isVolunteer: e.currentTarget.checked })}
+                />
+              </>
             ) : (
               <Text size="sm" c="dimmed">This household isn&apos;t an org member — no membership date.</Text>
             )}
@@ -299,6 +343,34 @@ export function AdminEditHouseholdModal({
               {leadIds.length === 1 && (
                 <Text size="xs" c="dimmed">A household must keep at least one lead.</Text>
               )}
+
+              {/* Promote a non-lead member. Youth excluded (mirrors
+                  membership-audit/broken); cap of 2 hides the controls once full. */}
+              {leadIds.length < MAX_HOUSEHOLD_LEADS && (() => {
+                const promotable = members.filter((m) => !leadIds.includes(m.id) && !isYouth(m.dateOfBirth));
+                if (promotable.length === 0) return null;
+                return (
+                  <>
+                    <Text size="xs" c="dimmed" mt="xs">Add another lead:</Text>
+                    {promotable.map((m) => (
+                      <Group key={m.id} justify="space-between" wrap="nowrap">
+                        <div>
+                          <Text size="sm">{m.name || `#${m.id}`}</Text>
+                          {m.email && <Text size="xs" c="dimmed">{m.email}</Text>}
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          loading={promotingLead === m.id}
+                          onClick={() => handleMakeLead(m.id)}
+                        >
+                          Make lead
+                        </Button>
+                      </Group>
+                    ))}
+                  </>
+                );
+              })()}
             </Stack>
 
             <Alert color="orange" mt="md">

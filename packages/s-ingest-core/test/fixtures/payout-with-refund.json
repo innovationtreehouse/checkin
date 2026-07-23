@@ -10,7 +10,7 @@
       "summary": {
         "chargesGross": { "amount": "100.00", "currencyCode": "USD" },
         "chargesFee": { "amount": "3.00", "currencyCode": "USD" },
-        "refundsGross": { "amount": "-20.00", "currencyCode": "USD" },
+        "refundsFeeGross": { "amount": "-20.00", "currencyCode": "USD" },
         "refundsFee": { "amount": "0.00", "currencyCode": "USD" },
         "adjustmentsGross": { "amount": "0.00", "currencyCode": "USD" },
         "adjustmentsFee": { "amount": "0.00", "currencyCode": "USD" },

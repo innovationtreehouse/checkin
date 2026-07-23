@@ -9,8 +9,9 @@ import { findMissingPartialIndexes, splicePartialIndexes, type IndexRow } from "
  * Coalesces the accumulated migrations on main into a single baseline
  * migration, ahead of a release — see checkin-app/docs/MIGRATION_COALESCE_FLOW.md
  * for the policy this implements (migrations accumulate between releases;
- * they're coalesced via this script before a release; a release applies at
- * most one new migration, enforced by the release gate in deploy-prod.yml).
+ * they're usually coalesced via this script before a release; how many
+ * migrations a release actually carries is a manual per-release call — no
+ * CI gate enforces a count).
  *
  *   npx tsx scripts/coalesce-migrations.ts --scratch-url <postgres-url> [--commit]
  *   DATABASE_URL_SCRATCH=<postgres-url> npx tsx scripts/coalesce-migrations.ts [--commit]
@@ -230,10 +231,10 @@ Two honest paths (full commands in checkin-app/docs/MIGRATION_COALESCE_FLOW.md):
      job/workflow run. Its migrate step now finds the ledger already at this
      baseline and applies nothing new.
 
-Prod deploys are gated behind the release gate (deploy-prod.yml), which
-blocks a release carrying more than one new migration directory — the
-coalesce PR's baseline ships as that release's one new migration. Reconcile
-prod the same way, in the window between merging and cutting that release.
+No CI gate checks migration count on a prod release anymore (manual team
+call per MIGRATION_COALESCE_FLOW.md) — but if you've run this script, land
+the coalesce PR and reconcile prod the same way, in the window between
+merging and cutting that release.
 `;
 }
 

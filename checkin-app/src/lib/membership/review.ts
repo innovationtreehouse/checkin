@@ -1,6 +1,7 @@
 import { Prisma, type OrgMembershipProcessStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { logger } from "@/lib/logger";
 import { sendCongrats } from "@/lib/membership/payment";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
@@ -9,12 +10,17 @@ import { canonicalizeEmail } from "@/lib/emailNormalize";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
 import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest";
 import { type DbClient, type TxClient } from "@/lib/db-client";
+import { awaitingBgReview } from "@/lib/membership/lifecycle";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Background-check review — now a PARALLEL track, not a blocking phase.
  *
  * After intake the application advances to PENDING_PAYMENT regardless of the
- * check; the review happens while the applicant pays. Two DISTINCT eligible
+ * check; the review happens while the applicant pays. Exception: a household
+ * intake note (#900) holds the application at PENDING_BG_REVIEW until the review
+ * completes, so a note like "treat us as a volunteer household" can settle dues
+ * before payment opens (#907). Two DISTINCT eligible
  * reviewers (role isBackgroundCheckReviewer) must each attest independently. A
  * reviewer may not share a household with the applicant or the other reviewer,
  * and may not attest twice.
@@ -61,48 +67,30 @@ export class ReviewError extends Error {
 }
 
 /**
- * Whether a process is currently awaiting background-check review. The check is
- * a parallel track keyed off bgClearedAt (not status): a process needs review
- * when it hasn't cleared and is past consent —
- *   - PENDING_BG_REVIEW / RENEWAL_PENDING_BG: the (legacy/renewal) review states.
- *   - PENDING_PAYMENT / PENDING_BG_CLEARANCE: the INITIAL parallel states, once
- *     consent has been recorded (bgConsentAt set).
- */
-function isAwaitingBgReview(p: { status: OrgMembershipProcessStatus; bgConsentAt: Date | null; bgClearedAt: Date | null }): boolean {
-    if (p.bgClearedAt) return false;
-    if (p.status === "PENDING_BG_REVIEW" || p.status === "RENEWAL_PENDING_BG") return true;
-    if ((p.status === "PENDING_PAYMENT" || p.status === "PENDING_BG_CLEARANCE") && p.bgConsentAt) return true;
-    return false;
-}
-
-/**
+ * "Awaiting background-check review" now lives as ONE definition — the
+ * `awaitingBgReview` StateSet in lib/membership/lifecycle (fix #1). `.has(row)` is
+ * the in-tx / client predicate, `.where` the reviewer-queue Prisma fragment; both
+ * derive from the same status lists so they can't drift. Formerly three hand-kept
+ * encodings (this function, AWAITING_BG_WHERE, applications/page.tsx).
+ *
  * A PERSON_BG surfaces in the reviewer queue only once it's been SUBMITTED — i.e.
  * bgConsentAt is set (the board recorded that an external check exists via
  * submitPersonBgForReview). This mirrors how the household parallel track gates on
- * bgConsentAt in AWAITING_BG_WHERE. An unsubmitted PERSON_BG (bgConsentAt == null)
- * stays out: not listed, not counted, no reviewer ping — its subject isn't ready to
- * approve yet, and the queue GET now renders the subject once it is. A single `NOT`
- * key so it spreads cleanly alongside AWAITING_BG_WHERE's own `OR` (two spread
- * objects sharing an `OR` key would clobber it).
+ * bgConsentAt in awaitingBgReview.where. An unsubmitted PERSON_BG (bgConsentAt ==
+ * null) stays out: not listed, not counted, no reviewer ping — its subject isn't
+ * ready to approve yet, and the queue GET now renders the subject once it is. A
+ * single `NOT` key so it spreads cleanly alongside awaitingBgReview.where's own
+ * `OR` (two spread objects sharing an `OR` key would clobber it).
  */
 const QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG: Prisma.OrgMembershipProcessWhereInput = {
     NOT: { kind: "PERSON_BG", bgConsentAt: null },
-};
-
-/** Prisma `where` matching the same predicate as isAwaitingBgReview, for queue queries. */
-export const AWAITING_BG_WHERE: Prisma.OrgMembershipProcessWhereInput = {
-    bgClearedAt: null,
-    OR: [
-        { status: { in: ["PENDING_BG_REVIEW", "RENEWAL_PENDING_BG"] } },
-        { status: { in: ["PENDING_PAYMENT", "PENDING_BG_CLEARANCE"] }, bgConsentAt: { not: null } },
-    ],
 };
 
 /** Email every background-check reviewer that an application awaits review. */
 export async function notifyReviewers(): Promise<void> {
     try {
         const reviewers = await prisma.person.findMany({
-            where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }] },
+            where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }], ...LIVE_PERSON },
             select: { email: true },
         });
         const base = config.baseUrl();
@@ -160,7 +148,7 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return [];
 
     const processes = await prisma.orgMembershipProcess.findMany({
-        where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG },
+        where: { ...awaitingBgReview.where, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG },
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
@@ -195,7 +183,7 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return { canActOn: 0, approvedAwaitingSecond: 0 };
     const [canActOnIds, approvedAwaitingSecond] = await Promise.all([
         eligibleReviewProcessIds(reviewerId),
-        prisma.orgMembershipProcess.count({ where: { ...AWAITING_BG_WHERE, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } } } }),
+        prisma.orgMembershipProcess.count({ where: { ...awaitingBgReview.where, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } } } }),
     ]);
     return { canActOn: canActOnIds.length, approvedAwaitingSecond };
 }
@@ -208,7 +196,7 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
 export async function attest(
     reviewerId: number,
     processId: number,
-    input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean },
+    input: { result: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean; note?: string },
 ) {
     const reviewer = await loadReviewer(reviewerId);
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) throw new ReviewError("not_reviewer", "You are not a background-check reviewer.");
@@ -218,7 +206,11 @@ export async function attest(
     // concurrent attestations AND the payment path (payment.ts › activate takes the
     // same lock) — so the payment/clearance race can't lose an update: whoever commits
     // second sees the other's field set and flips ACTIVE. Mirrors leads.ts.
-    const result = await prisma.$transaction(async (tx) => {
+    type AttestOutcome =
+        | { status: "BLOCKED"; notifyPaidReject: boolean }
+        | { status: OrgMembershipProcessStatus; activated: boolean; householdId: number | null; isInitial: boolean }
+        | { status: OrgMembershipProcessStatus; approvals: number };
+    const result = await prisma.$transaction<AttestOutcome>(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
 
         const process = await tx.orgMembershipProcess.findUnique({
@@ -226,19 +218,19 @@ export async function attest(
             include: { attestations: { include: { reviewer: { select: { householdId: true } } } } },
         });
         if (!process) throw new ReviewError("not_found", "Application not found.");
-        if (!isAwaitingBgReview(process)) throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
+        if (!awaitingBgReview.has({ status: process.status, bgConsentAt: !!process.bgConsentAt, bgClearedAt: !!process.bgClearedAt })) throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
         const applicantHouseholdId = await applicantHousehold(tx, process);
         if (sharesHousehold(reviewer.householdId, applicantHouseholdId)) throw new ReviewError("same_household_applicant", "You cannot review an applicant in your own household.");
         if (process.attestations.some((a) => a.reviewerId === reviewerId)) throw new ReviewError("already_attested", "You have already reviewed this application.");
         if (process.attestations.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
 
         await tx.backgroundCheckAttestation.create({
-            data: { processId, reviewerId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer },
+            data: { processId, reviewerId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer, note: input.note ?? null },
         });
 
         if (input.result === "REJECT") {
             await tx.orgMembershipProcess.update({ where: { id: processId }, data: { status: "BLOCKED", stageEnteredAt: new Date() } });
-            await audit(tx, reviewerId, processId, { status: process.status }, { status: "BLOCKED", reason: "reviewer reject" });
+            await audit(tx, reviewerId, processId, { status: process.status }, { status: "BLOCKED", reason: "reviewer reject", ...(input.note ? { note: input.note } : {}) });
             // A paid household that fails review needs a manual refund — flag the board (post-tx).
             return { status: "BLOCKED" as const, notifyPaidReject: !!process.paidAt };
         }
@@ -255,11 +247,17 @@ export async function attest(
     });
 
     // Side effects outside the transaction (a slow/failed send must not roll it back).
-    if ("activated" in result && result.activated) {
-        await sendCongrats(result.householdId!);
-        // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
-        // for any program-attached ≥18 person in the household (as-of activation).
-        if (result.isInitial) await openPersonBgForNewMember(result.householdId!, new Date());
+    if ("activated" in result) {
+        if (result.activated) {
+            await sendCongrats(result.householdId!);
+            // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
+            // for any program-attached ≥18 person in the household (as-of activation).
+            if (result.isInitial) await openPersonBgForNewMember(result.householdId!, new Date());
+        } else if (result.householdId) {
+            // Household process cleared into PENDING_PAYMENT (a PERSON_BG has no
+            // household/payment) — tell the family payment is open (#907).
+            await notifyPaymentOpen(result.householdId);
+        }
     }
     if ("notifyPaidReject" in result && result.notifyPaidReject) await notifyBoardPaidReject(processId);
 
@@ -333,12 +331,15 @@ export function matchesVolunteerDesignation(parentEmails: string[], designationE
 /**
  * Sticky/additive volunteer status: set Membership.isVolunteer = true if ANY
  * reviewer marked the family volunteer-only OR a household parent's email is pre-
- * designated. Never clears it here.
+ * designated. Never clears it here. Runs at every PENDING_PAYMENT transition
+ * (external advance, fresh-check intake shortcut, fresh-check renewal) so the
+ * allowlist drives dues BEFORE the check clears (#874), and again at clearance
+ * with the reviewers' volunteer marks.
  */
 export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number, householdId: number, markedByReviewer: boolean) {
     let isVolunteer = markedByReviewer;
     if (!isVolunteer) {
-        const parents = await db.person.findMany({ where: { householdId, isHouseholdLead: true, email: { not: null } }, select: { email: true } });
+        const parents = await db.person.findMany({ where: { householdId, isHouseholdLead: true, email: { not: null }, ...LIVE_PERSON }, select: { email: true } });
         const designations = await db.volunteerDesignation.findMany({ select: { email: true } });
         isVolunteer = matchesVolunteerDesignation(parents.map((p) => p.email!), designations.map((d) => d.email));
     }
@@ -349,7 +350,10 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
 
 /** Board override on a BLOCKED application: reset for re-review, or force-clear the check. */
 export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve", opts?: { isSysadmin?: boolean }) {
-    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+    const process = await prisma.orgMembershipProcess.findUnique({
+        where: { id: processId },
+        include: { orgMembership: { select: { household: { select: { intakeNotes: true } } } } },
+    });
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
@@ -363,12 +367,21 @@ export async function overrideBlocked(processId: number, actorId: number, action
 
     if (action === "reset") {
         // Restore the review state that matches the cycle. The check runs in parallel,
-        // so an initial application returns to PENDING_BG_CLEARANCE if it had already
-        // paid, else PENDING_PAYMENT; renewals go back to RENEWAL_PENDING_BG.
+        // so a household process returns to PENDING_BG_CLEARANCE if it had already
+        // paid, else PENDING_PAYMENT. An unpaid one with a household intake note
+        // re-holds at PENDING_BG_REVIEW — the reset restarts review, and a note keeps
+        // payment gated on it (#907). Renewals follow the same household path, except
+        // one blocked BEFORE consent was recorded (only legacy RENEWAL_PENDING_BG
+        // rows — every current renewal path records consent before review can block)
+        // restarts at the external step itself — the parallel queue only lists
+        // PENDING_PAYMENT/PENDING_BG_CLEARANCE rows WITH consent, so parking an
+        // unconsented renewal there would strand it.
         const reviewStatus: OrgMembershipProcessStatus =
             process.kind === "PERSON_BG" ? "PENDING_BG_REVIEW"
-            : process.kind === "RENEWAL" ? "RENEWAL_PENDING_BG"
-            : process.paidAt ? "PENDING_BG_CLEARANCE" : "PENDING_PAYMENT";
+            : process.kind === "RENEWAL" && !process.bgConsentAt ? "PENDING_EXTERNAL_ACTION"
+            : process.paidAt ? "PENDING_BG_CLEARANCE"
+            : process.orgMembership?.household.intakeNotes?.trim() ? "PENDING_BG_REVIEW"
+            : "PENDING_PAYMENT";
         await prisma.backgroundCheckAttestation.deleteMany({ where: { processId } });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: reviewStatus, bgClearedAt: null, stageEnteredAt: new Date() } });
         await audit(prisma, actorId, processId, { status: "BLOCKED" }, { status: reviewStatus, action: "board reset" });
@@ -388,10 +401,29 @@ export async function overrideBlocked(processId: number, actorId: number, action
         // Trigger C: a board force-clear can be the first activation of a brand-new
         // (INITIAL) member — open PERSON_BG for the household's program-attached adults.
         if (isInitial) await openPersonBgForNewMember(householdId!, new Date());
+    } else if (householdId) {
+        // Household process cleared into PENDING_PAYMENT — payment just opened (#907).
+        await notifyPaymentOpen(householdId);
     }
     // A cleared PERSON_BG resolves to ACTIVE; a household process gates on PENDING_PAYMENT.
     const status: OrgMembershipProcessStatus = activated ? "ACTIVE" : process.subjectPersonId ? "ACTIVE" : "PENDING_PAYMENT";
     return { status };
+}
+
+/**
+ * The check cleared but dues aren't paid — the process just (re)entered
+ * PENDING_PAYMENT. For an application that was held for review (intake note,
+ * renewal re-check) this is the moment payment first opens, and the status
+ * cards/banner promise an email at clearance. Best-effort (send failures log).
+ */
+async function notifyPaymentOpen(householdId: number) {
+    const base = config.baseUrl();
+    await emailHouseholdLeads(
+        householdId,
+        "Background check complete — you can now pay your membership dues",
+        `<p>Good news — your household's background-check review is complete. The last step is paying your membership dues: <a href="${base}/membership">${base}/membership</a></p>`,
+        "Payment-open notice failed:",
+    );
 }
 
 function audit(db: DbClient, actorId: number, processId: number, oldData: object, newData: object) {

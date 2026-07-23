@@ -9,6 +9,7 @@
 import { GET, PATCH } from '@/app/api/programs/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { ORG_DOMAIN } from '@/lib/config';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -271,6 +272,148 @@ describe('Individual Program API Integration Tests', () => {
              const data = await res.json();
              expect(Array.isArray(data.participants)).toBe(true);
              expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
+        });
+    });
+
+    // ── ops-stg ACCESS GATE regression (the defect that killed the prior staging
+    // design) ─────────────────────────────────────────────────────────────────
+    // GET /api/programs/[id] is registered `authorize: 'public'` (security/registry.ts)
+    // and returns real enrolled participants' names/household/emergency-contact data —
+    // exactly the surface an anonymous `curl` against a copy of PRODUCTION data must
+    // never reach. `authorize: 'public'` unconditionally admits every caller regardless
+    // of session state, so the gate has to be enforced ahead of that check
+    // (resolveAccess in security/access-resolvers.ts), not only in authenticateRequest —
+    // this describe is that regression test, run against the REAL route (handler() ->
+    // registry -> resolveAccess -> stripBag), not a mock of the gate.
+    describe('GET /api/programs/[id] — ops-stg access gate (regression: authorize:"public" must not bypass staging)', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES an anonymous caller — the regression case for the defect that shipped real minors\' data to curl', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).not.toBe(200);
+            expect(res.status).toBe(401);
+            // Belt-and-suspenders: even if the status assertion above were wrong, the
+            // roster identity must never appear in the body.
+            const text = await res.text();
+            expect(text).not.toContain(ENROLLED_NAME);
+        });
+
+        it('DENIES an authenticated non-org caller with canAccessStaging unset (false)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: 'gmail.com', emailVerified: true, canAccessStaging: false } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('DENIES an authenticated non-org caller whose emailVerified is false, even with the right hd', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: ORG_DOMAIN, emailVerified: false } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('ALLOWS an authenticated non-org caller with canAccessStaging=true (the sysadmin-settable escape hatch)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: 'gmail.com', emailVerified: true, canAccessStaging: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('ALLOWS a verified org member', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: ORG_DOMAIN, emailVerified: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('is inert outside staging (CHECKIN_ENV not stg): the same anonymous request that gets denied above still succeeds', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+    });
+
+    // viewerIsMember / viewerMemberPricingEligible: additive, session-only fields
+    // computed AFTER the registry response (see route.ts) — membership pricing
+    // applies only when the buyer's membership covers the program's whole run.
+    describe('GET /api/programs/[id] — viewer membership-pricing fields', () => {
+        let prevBoardSettings: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number } | null = null;
+        let pastBoundaryProgramId: number;
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        // Inside the 2-month renewal lead window relative to "now" — irrelevant
+        // here (memberId's household has no renewal process, so it's never
+        // "settled"), but kept consistent with the other duration tests.
+        const boundary = new Date(Date.now() + 45 * DAY_MS);
+
+        beforeAll(async () => {
+            const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+            prevBoardSettings = existing
+                ? { orgMembershipYearBoundary: existing.orgMembershipYearBoundary, bgRecheckMonths: existing.bgRecheckMonths }
+                : null;
+            await prisma.boardSettings.upsert({
+                where: { id: 1 },
+                create: { id: 1, orgMembershipYearBoundary: boundary, bgRecheckMonths: existing?.bgRecheckMonths ?? 12 },
+                update: { orgMembershipYearBoundary: boundary },
+            });
+
+            const pastBoundaryProgram = await prisma.program.create({
+                data: { name: 'Past Boundary Prog ID API Test', phase: 'UPCOMING', endAt: new Date(boundary.getTime() + 10 * DAY_MS) },
+            });
+            pastBoundaryProgramId = pastBoundaryProgram.id;
+        });
+
+        afterAll(async () => {
+            await prisma.program.delete({ where: { id: pastBoundaryProgramId } });
+            if (prevBoardSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: prevBoardSettings });
+        });
+
+        it('an unrenewed member sees viewerIsMember: true and viewerMemberPricingEligible: false for a program past their boundary', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pastBoundaryProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(pastBoundaryProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.viewerIsMember).toBe(true);
+            expect(data.viewerMemberPricingEligible).toBe(false);
+        });
+
+        it('omits both fields for an anonymous caller', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${pastBoundaryProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(pastBoundaryProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.viewerIsMember).toBeUndefined();
+            expect(data.viewerMemberPricingEligible).toBeUndefined();
         });
     });
 

@@ -10,6 +10,7 @@ import { openConfigIssues } from "@/lib/configHealth";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
 import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -73,7 +74,10 @@ export type TodoCounts = {
     // the Settings nav + Membership Settings tab — checkout is broken until both are set.
     // `programsMisconfig` = how many programs have a price but no matching Shopify variant
     // (paid enrollment silently can't check out). Red pill on the Program Ops Programs tab.
-    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; brokenEmails: number; settingsMisconfig: number; programsMisconfig: number };
+    // `openPaymentExceptions` = reconciler-detected payment problems (OPEN or
+    // ACKNOWLEDGED) awaiting board action — green pill on the Finance Ops Payment
+    // problems tab. Same count as getMembershipNotifications.openPaymentExceptions.
+    admin?: { membership: number; applicationsTotal: number; paymentPlanPending: number; membershipPaymentPlanPending: number; trustedAdults: number; householdsMissingContact: number; unclaimedHouseholds: number; brokenHouseholds: number; brokenEmails: number; settingsMisconfig: number; programsMisconfig: number; openPaymentExceptions: number };
     // Config-health gaps (admins + board only): number of failing system-config checks
     // (e.g. Zoho e-sign unconfigured). Drives the red System Status nav badge; the full
     // list lives at /api/system-status/config-health. See lib/configHealth.ts.
@@ -133,7 +137,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     if (user.householdId) {
         const householdId = user.householdId;
         const members = await prisma.person.findMany({
-            where: { householdId },
+            where: { householdId, ...LIVE_PERSON },
             select: { id: true },
         });
         const memberIds = members.map((m) => m.id);
@@ -171,7 +175,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // page highlights the member box; this drives the nav badge count.
             isLead
                 ? prisma.person.findMany({
-                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }] },
+                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }], ...LIVE_PERSON },
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
@@ -179,7 +183,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // on the household page; the lead must add one or the other.
             isLead
                 ? prisma.person.findMany({
-                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
+                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false, ...LIVE_PERSON },
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
@@ -198,7 +202,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 },
             }),
             prisma.programParticipant.findMany({
-                where: { personId: { in: memberIds }, status: "PENDING" },
+                where: { personId: { in: memberIds }, status: "PENDING", person: LIVE_PERSON },
                 select: { programId: true, isPaymentPlanRequested: true, program: { select: { name: true } } },
             }),
         ]);
@@ -276,7 +280,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // "Total Enrolled" = active (not PENDING) participants per program.
             prisma.programParticipant.groupBy({
                 by: ["programId"],
-                where: { programId: { in: ledIds }, status: "ACTIVE" },
+                where: { programId: { in: ledIds }, status: "ACTIVE", person: LIVE_PERSON },
                 _count: { personId: true },
             }),
             // All upcoming sessions, ascending; we keep the next 3 per program below.
@@ -287,7 +291,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             // Volunteer roster per program — used to split RSVP tallies by role.
             prisma.programVolunteer.findMany({
-                where: { programId: { in: ledIds } },
+                where: { programId: { in: ledIds }, person: LIVE_PERSON },
                 select: { programId: true, personId: true },
             }),
             getLeadConflicts(user.id),
@@ -325,7 +329,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         for (const [programId, evs] of upcomingByProgram) for (const e of evs) eventProgram.set(e.id, programId);
         const rsvpRows = upcomingEventIds.length
             ? await prisma.rSVP.findMany({
-                  where: { eventId: { in: upcomingEventIds } },
+                  where: { eventId: { in: upcomingEventIds }, person: LIVE_PERSON },
                   select: { eventId: true, personId: true, status: true },
               })
             : [];
@@ -361,7 +365,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, programsMisconfig, boardSettings] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, programsMisconfig, openPaymentExceptions, boardSettings] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -369,8 +373,13 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.orgMembershipProcess.count({
                 where: { status: { not: "ACTIVE" } },
             }),
+            // Scholarship-queue count: mirror GET /api/finance-ops/payment-plans'
+            // default filter exactly so the nav badge can't over-count. Excludes
+            // PENDING_HOLD_FAILED rows (inventoryHeldAt null) — those live in the
+            // Shopify reconciliation queue, and the board is already emailed when a
+            // hold fails, so they don't need a green "approval pending" pill.
             prisma.programParticipant.count({
-                where: { status: "PENDING", isPaymentPlanRequested: true },
+                where: { status: "PENDING", isPaymentPlanRequested: true, inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null, person: LIVE_PERSON },
             }),
             // Households awaiting board approval of a membership-dues payment plan.
             prisma.orgMembershipProcess.count({
@@ -395,12 +404,15 @@ export const GET = withAuth({}, async (_req, auth) => {
             // People Resend has reported as undeliverable (bounce/complaint), not since
             // cleared by a later delivery. See Person.emailUndeliverableAt / webhooks/resend.
             prisma.person.count({
-                where: { emailUndeliverableAt: { not: null } },
+                where: { emailUndeliverableAt: { not: null }, ...LIVE_PERSON },
             }),
             // Programs priced on a tier with no matching Shopify variant — paid enrollment
             // silently can't check out. Same condition as the list/detail UI, shared via
             // PROGRAM_CHECKOUT_BROKEN_WHERE (see lib/programCheckout.ts).
             prisma.program.count({ where: PROGRAM_CHECKOUT_BROKEN_WHERE }),
+            // Reconciler-detected payment problems still needing board action
+            // (OPEN or ACKNOWLEDGED). Green pill on the Finance Ops Payment problems tab.
+            prisma.paymentException.count({ where: { status: { in: ["OPEN", "ACKNOWLEDGED"] } } }),
             // Required membership settings — count how many are still unset so the board
             // sees a red pill until all are configured. Empty string counts as unset for
             // the Shopify fields; bgRecheckMonths <= 0 means the re-check interval is unset;
@@ -415,7 +427,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             (boardSettings?.volunteerDiscountCode ? 0 : 1) +
             ((boardSettings?.bgRecheckMonths ?? 0) > 0 ? 0 : 1) +
             (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
-        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, settingsMisconfig, programsMisconfig };
+        result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, settingsMisconfig, programsMisconfig, openPaymentExceptions };
         // System-config health (env-var/deploy gaps). Synchronous, no DB — just presence
         // checks. Same admin+board gate as the rest of this block.
         result.configHealth = { openIssues: openConfigIssues() };

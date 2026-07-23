@@ -1,11 +1,24 @@
 import { getConfigHealth, openConfigIssues, type ConfigCheck } from "@/lib/configHealth";
 
 // config.ts reads process.env live through getters, so these tests just set/clear
-// env vars — no module mocking needed. NODE_ENV is "test" under jest, so the Zoho
-// mock's NODE_ENV !== "production" fuse is always satisfied; CHECKIN_ENV drives prod.
+// env vars — no module mocking needed. CHECKIN_ENV is the single fuse for the
+// mocks (NODE_ENV was eliminated as a fuse, #951); CHECKIN_ENV drives prod.
 
 const ZOHO_KEYS = ["ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN"];
-const ALL_KEYS = [...ZOHO_KEYS, "ZOHO_WEBHOOK_SECRET", "AGREEMENT_PDF_S3_BUCKET", "RESEND_API_KEY", "CHECKIN_ENV"];
+// The mirror check reads a RESOLVED url, so BOTH of its inputs have to be cleared:
+// SHOPIFY_READ_DB (+ DATABASE_URL) feed the derived path and SHOPIFY_READ_DATABASE_URL
+// the override. Miss one and an ambient value silently turns the "nothing configured"
+// case green — the check would then never be able to fail here.
+const MIRROR_KEYS = ["SHOPIFY_READ_DATABASE_URL", "SHOPIFY_READ_DB", "DATABASE_URL"];
+const ALL_KEYS = [
+    ...ZOHO_KEYS,
+    ...MIRROR_KEYS,
+    "ZOHO_WEBHOOK_SECRET",
+    "AGREEMENT_PDF_S3_BUCKET",
+    "RESEND_API_KEY",
+    "S_READ_TRIGGER_FUNCTION",
+    "CHECKIN_ENV",
+];
 
 const saved: Record<string, string | undefined> = {};
 beforeEach(() => {
@@ -36,7 +49,11 @@ describe("getConfigHealth — prod, nothing configured", () => {
         expect(c["zoho-webhook-secret"].detail).toContain("ZOHO_WEBHOOK_SECRET");
         expect(c["resend-email"].ok).toBe(false);
         expect(c["resend-email"].detail).toContain("RESEND_API_KEY");
-        expect(openConfigIssues(checks)).toBe(4);
+        expect(c["s-read-trigger"].ok).toBe(false);
+        expect(c["s-read-trigger"].detail).toContain("S_READ_TRIGGER_FUNCTION");
+        expect(c["s-read-mirror"].ok).toBe(false);
+        expect(c["s-read-mirror"].detail).toContain("SHOPIFY_READ_DB");
+        expect(openConfigIssues(checks)).toBe(6);
     });
 });
 
@@ -49,6 +66,11 @@ describe("getConfigHealth — prod, all configured", () => {
         process.env.ZOHO_WEBHOOK_SECRET = "whsecret";
         process.env.AGREEMENT_PDF_S3_BUCKET = "bucket";
         process.env.RESEND_API_KEY = "re_key";
+        process.env.S_READ_TRIGGER_FUNCTION = "s-read-prod-trigger";
+        // The mirror the way AWS actually wires it: no connection string of its own,
+        // just the app's own credential pointed at the mirror's database name.
+        process.env.DATABASE_URL = "postgresql://checkin_prod_dml:pw@host:5432/checkin_prod?sslmode=verify-full";
+        process.env.SHOPIFY_READ_DB = "shopify_read_prod";
         expect(openConfigIssues(getConfigHealth())).toBe(0);
     });
 });

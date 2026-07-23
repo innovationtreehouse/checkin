@@ -10,13 +10,16 @@
     "test": "jest --runInBand",
     "test:ci": "jest --ci --runInBand",
     "test:flow": "jest --config jest.flow.config.js --ci --runInBand --forceExit",
+    "test:shopify-live": "jest --config jest.shopify-live.config.js --ci --runInBand",
     "test:flow:standalone": "docker compose -f ../deploy/docker-compose.flow.yml up -d --wait --wait-timeout 600 && docker compose -f ../deploy/docker-compose.flow.yml exec -T app sh -lc \"cd checkin-app && npm run test:flow\"; ec=$?; docker compose -f ../deploy/docker-compose.flow.yml down -v; exit $ec",
-    "test:integration": "INTEGRATION_DB=1 jest --ci --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
-    "test:coverage": "INTEGRATION_DB=1 jest --ci --coverage --testPathIgnorePatterns \"/node_modules/|/\\.next/|/\\.claude/worktrees/|\\.flow\\.test\\.\"",
+    "test:integration": "INTEGRATION_DB=1 jest --ci --runInBand --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
+    "test:coverage": "INTEGRATION_DB=1 jest --ci --runInBand --coverage --testPathIgnorePatterns \"/node_modules/|/\\.next/|/\\.claude/worktrees/|\\.flow\\.test\\.\"",
+    "test:coverage:unit": "jest --ci --coverage --testPathIgnorePatterns \"/node_modules/|/\\.next/|/\\.claude/worktrees/|\\.flow\\.test\\.|\\.integration\\.test\\.\"",
+    "test:coverage:integration": "INTEGRATION_DB=1 jest --ci --runInBand --coverage --testPathIgnorePatterns=/node_modules/ --testRegex \"\\.integration\\.test\\.[jt]sx?$\"",
     "check-route-coverage": "ts-node --project scripts/tsconfig.json scripts/check-route-coverage.ts",
-    "import:zoho": "tsx scripts/import-zoho.ts",
     "shopify:webhook": "tsx scripts/register-shopify-webhook.ts",
-    "coalesce-migrations": "tsx scripts/coalesce-migrations.ts"
+    "coalesce-migrations": "tsx scripts/coalesce-migrations.ts",
+    "generate:lifecycle-artifacts": "tsx src/lib/lifecycle/generate.ts"
   },
   "engines": {
     "node": ">=24"
@@ -26,6 +29,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
+    "@aws-sdk/client-lambda": "^3.1075.0",
     "@aws-sdk/client-s3": "^3.1075.0",
     "@inventory/money": "*",
     "@mantine/core": "^7.17.8",

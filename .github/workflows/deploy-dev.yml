@@ -68,6 +68,22 @@ jobs:
         uses: actions/checkout@v5
         with:
           ref: ${{ steps.vars.outputs.sha }}
+          # Full history + tags: `git describe` below needs them. The default
+          # shallow clone has neither, and describe degrades SILENTLY to a bare
+          # SHA rather than failing, so a missing fetch-depth shows up only as a
+          # footer that quietly stopped carrying its version.
+          fetch-depth: 0
+
+      - name: Resolve build describe
+        id: describe
+        run: |
+          set -euo pipefail
+          # --long so an exact tag still reports its distance ("-0-g"), keeping
+          # the shape identical for tagged and untagged builds; --always so a
+          # repo with no reachable tag yields the SHA instead of failing the run.
+          DESCRIBE=$(git describe --tags --long --abbrev=7 --always)
+          echo "describe=$DESCRIBE" >> "$GITHUB_OUTPUT"
+          echo "build describe: $DESCRIBE"
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
@@ -86,16 +102,14 @@ jobs:
         id: build
         env:
           IMAGE: ${{ env.IMAGE_REPO }}:${{ steps.vars.outputs.sha }}
-          # Public store domain baked into the client bundle (NEXT_PUBLIC_*, build-time).
-          # Set as a repo variable (Settings > Variables); empty is harmless.
-          NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN: ${{ vars.SHOPIFY_STORE_DOMAIN }}
         run: |
           set -euo pipefail
           # Native arm64 runner -> a plain build produces the arm64 image the
           # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
           docker build \
-            --build-arg NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN="$NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN" \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_GIT_DESCRIBE="${{ steps.describe.outputs.describe }}" \
+            --build-arg NEXT_PUBLIC_GIT_BRANCH="main" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" .
           docker push "$IMAGE"
@@ -143,10 +157,14 @@ jobs:
           }
           EOF
 
+          # FARGATE_SPOT (associated on the cluster) instead of on-demand
+          # --launch-type FARGATE: matches prod's migrate path; a Spot reclaim
+          # mid-run fails the step loudly and a re-run is safe (one small
+          # migration per release, retry loop below handles DB wake-up).
           TASK_ARN=$(aws ecs run-task \
             --cluster "$ECS_CLUSTER" \
             --task-definition "$MIGRATE_ARN" \
-            --launch-type FARGATE \
+            --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
             --network-configuration "$NETWORK_CONFIG" \
             --overrides "file://$RUNNER_TEMP/migrate-overrides.json" \
             --query 'tasks[0].taskArn' --output text)
@@ -165,11 +183,7 @@ jobs:
           # undiagnosed for a day.
           TASK_ID="${TASK_ARN##*/}"
           echo "--- migrate container logs (/ecs/checkin-migrate-dev) ---"
-          aws logs get-log-events \
-            --log-group-name /ecs/checkin-migrate-dev \
-            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
-            --start-from-head --limit 200 \
-            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          ./scripts/dump-task-logs.sh /ecs/checkin-migrate-dev "ecs/checkin-migrate/$TASK_ID"
           echo "--- end migrate container logs ---"
 
           if [ "$EXIT_CODE" != "0" ]; then
@@ -198,9 +212,14 @@ jobs:
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered app task def: $APP_ARN"
 
+          # --desired-count 1: with scale-to-zero (infra#107) dev normally sits at
+          # desired 0, where services-stable is vacuously true and a crash-looping
+          # image would deploy "green". Booting one task makes the wait real; the
+          # scaler tears it back down after the idle window.
           aws ecs update-service \
             --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
-            --task-definition "$APP_ARN" >/dev/null
+            --task-definition "$APP_ARN" \
+            --desired-count 1 >/dev/null
 
           echo "Waiting for the service to reach steady state..."
           aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
@@ -239,3 +258,14 @@ jobs:
 
           gh pr comment "$PR" --body "$BODY"
           echo "Posted result on PR #$PR"
+
+  # s-read rides every dev deploy (issue #235's decision: the checkin pipeline
+  # owns s-read deploys; deploy-s-read.yml's manual dispatch remains for ad-hoc
+  # runs). Runs after the app is out; same commit; migrate-and-code mode.
+  s-read:
+    name: Deploy s-read (dev)
+    needs: deploy
+    uses: ./.github/workflows/deploy-s-read.yml
+    with:
+      environment: dev
+      ref: ${{ github.event.workflow_run.head_sha }}

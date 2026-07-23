@@ -8,6 +8,7 @@ import { Notifications } from '@mantine/notifications';
 import AuthProvider from '@/components/AuthProvider';
 import { EnvProvider } from '@/components/EnvProvider';
 import DevImpersonationBar from '@/components/DevImpersonationBar';
+import StagingBar from '@/components/StagingBar';
 import DevDashboard from '@/components/DevDashboard';
 import OnboardingGate from '@/components/OnboardingGate';
 import RenewalBanner from '@/components/RenewalBanner';
@@ -22,7 +23,7 @@ import { config } from '@/lib/config';
 export const dynamic = 'force-dynamic';
 
 export const metadata: Metadata = {
-  title: 'CheckMeIn Next',
+  title: 'Innovation Treehouse',
   description: 'The Innovation Treehouse next-generation check-in system',
 };
 
@@ -40,9 +41,10 @@ export default function RootLayout({
         <MantineProvider theme={brand.theme} defaultColorScheme="auto">
           <ModalsProvider>
             <Notifications />
-            <EnvProvider value={config.checkinEnv()}>
+            <EnvProvider value={{ checkinEnv: config.checkinEnv(), shopifyStoreDomain: config.shopifyStoreDomain(), isStaging: config.isStaging() }}>
               <AuthProvider>
                 <OnboardingGate>
+                  <StagingBar />
                   <DevImpersonationBar />
                   <UnsavedChangesProvider>
                     <AppFrame>

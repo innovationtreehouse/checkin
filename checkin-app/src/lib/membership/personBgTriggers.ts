@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 import { nextBoundary } from "@/lib/membership/renewal";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Triggers that OPEN a per-person background-check obligation (PERSON_BG process,
@@ -46,6 +47,11 @@ export async function openPersonBg(personId: number, asOf: Date, threshold: Date
         });
         if (!person) return null;
         if (personBgVerdict(person, asOf, threshold) !== "NEEDED") return null; // (b)
+        // Left literal on purpose (#1080): this is NOT a transition from-state — the
+        // PERSON_BG edge is ∅→PENDING_BG_REVIEW (no from-row). This `{in:…}` is an
+        // idempotency EXISTENCE set ("a PERSON_BG is already open or blocked for this
+        // person → skip"), broader than any single from-state, so it can't be sourced
+        // from `fromWhere` without misrepresenting it.
         const existing = await tx.orgMembershipProcess.findFirst({
             where: { kind: "PERSON_BG", subjectPersonId: personId, status: { in: ["PENDING_BG_REVIEW", "BLOCKED"] } },
             select: { id: true },
@@ -81,7 +87,7 @@ export async function runPersonBgAnnualSweep(now: Date) {
 
     const boundary = nextBoundary(settings.orgMembershipYearBoundary, now);
     const threshold = bgFreshThreshold(boundary, months);
-    const people = await prisma.person.findMany({ where: PROGRAM_ATTACHED_WHERE, select: { id: true } });
+    const people = await prisma.person.findMany({ where: { ...PROGRAM_ATTACHED_WHERE, ...LIVE_PERSON }, select: { id: true } });
 
     let opened = 0;
     for (const p of people) {
@@ -107,7 +113,7 @@ export async function openPersonBgForNewMember(householdId: number, asOf: Date) 
     if (months <= 0) return;
     const threshold = bgFreshThreshold(asOf, months);
     const people = await prisma.person.findMany({
-        where: { householdId, ...PROGRAM_ATTACHED_WHERE },
+        where: { householdId, ...PROGRAM_ATTACHED_WHERE, ...LIVE_PERSON },
         select: { id: true },
     });
     for (const p of people) await openPersonBg(p.id, asOf, threshold);

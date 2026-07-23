@@ -66,7 +66,7 @@ function RsvpRow({ label, tally }: { label: string; tally: RsvpTally }) {
     <Group justify="space-between" wrap="nowrap" mt={4}>
       <Text size="xs" c="dimmed" w={90}>{label}</Text>
       <Group gap="xs" wrap="nowrap">
-        <Badge color="green" variant="light">Yes {tally.yes}</Badge>
+        <Badge variant="light">Yes {tally.yes}</Badge>
         <Badge color="yellow" variant="light">Maybe {tally.maybe}</Badge>
         <Badge color="red" variant="light">No {tally.no}</Badge>
       </Group>

@@ -66,7 +66,7 @@ describe("safety/trusted-adults page", () => {
         }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Recorded: APPROVED." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Recorded: APPROVED." })));
   });
 
   it("redirects a caller without board/sysadmin role, and shows a loader while resolving", () => {
@@ -95,7 +95,7 @@ describe("safety/trusted-adults page", () => {
         expect.objectContaining({ method: "POST", body: JSON.stringify({ reviewId: 9, decision: "DENY" }) }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Recorded: DENIED." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Recorded: DENIED." })));
 
     // Cancelling the modal must NOT fire a decision (the old window.prompt returned null,
     // which `?? ""` swallowed into an empty-note REQUEST_INFO).

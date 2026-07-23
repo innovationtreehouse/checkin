@@ -6,14 +6,27 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { STATES, fromWhere } from "@/lib/programs/enrollmentState";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
-export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
+// Two DISJOINT board queues over PENDING + isPaymentPlanRequested rows, split on
+// whether a Shopify seat is actually held (inventoryHeldAt):
+//   default            → the scholarship queue: genuine held-and-awaiting requests
+//                        (inventoryHeldAt set, paymentPlanDeniedAt null). Approve/deny act here.
+//   ?queue=holds       → the Shopify reconciliation queue: PENDING_HOLD_FAILED rows
+//                        (inventoryHeldAt null) — the apply-time -1 failed, so no seat
+//                        was ever removed. The board resolves these via manual-hold.
+// One endpoint (one security-boundary entry, one stripper policy) returning two
+// non-overlapping sets — NOT one list with both mixed in.
+export const GET = handler('GET /api/finance-ops/payment-plans', async ({ req }) => {
+    const holdsQueue = new URL(req.url).searchParams.get('queue') === 'holds';
     const [requests, boardSettings] = await Promise.all([
         prisma.programParticipant.findMany({
-            where: {
-                isPaymentPlanRequested: true,
-                status: 'PENDING'
-            },
+            // The two queues ARE two lifecycle states (enrollmentState §3): the
+            // scholarship queue is PENDING_HELD, the reconciliation queue is
+            // PENDING_HOLD_FAILED. Consume the definition's `where` so the split
+            // can't drift from the state table.
+            where: { ...(holdsQueue ? STATES.PENDING_HOLD_FAILED.where : STATES.PENDING_HELD.where), person: LIVE_PERSON },
             include: {
                 // Nests household->orgMembership (same shape as ACTIVE_ORG_MEMBER_INCLUDE)
                 // so the board can see CURRENT membership while a request is still
@@ -38,7 +51,7 @@ export const GET = handler('GET /api/finance-ops/payment-plans', async () => {
 });
 
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
@@ -81,7 +94,8 @@ export const POST = withAuth(
             // Scope to the pending request so approving a non-pending/nonexistent
             // request is a no-op error, mirroring the GET queue's filter.
             const { count } = await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, isPaymentPlanRequested: true, status: 'PENDING' },
+                // T5 approve CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
+                where: { programId, personId: participantId, isPaymentPlanRequested: true, ...fromWhere('PENDING_HELD') },
                 data
             });
 

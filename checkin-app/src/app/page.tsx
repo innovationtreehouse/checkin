@@ -26,11 +26,12 @@ import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
+import { PageLoader } from '@/components/ui/PageLoader';
 import type { SessionUser } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const isDevInstance = useIsDevInstance();
   const isLocalInstance = useIsLocalInstance();
   const [loading, setLoading] = useState(false);
@@ -99,6 +100,10 @@ export default function Home() {
       .catch(() => { /* non-blocking: leave banner hidden on error */ });
     return () => { cancelled = true; };
   }, [session]);
+
+  // While the session is still resolving, `session` is undefined — rendering the
+  // ternary below as-is would flash the signed-out landing at a signed-in user.
+  if (status === "loading") return <PageLoader />;
 
   const handleToggleCheckin = async () => {
     if (!session?.user) return;
@@ -182,7 +187,7 @@ export default function Home() {
                   <Button
                     size="lg"
                     fullWidth
-                    color={isCheckedIn ? 'red' : 'green'}
+                    color={isCheckedIn ? 'red' : 'treehouseGreen'}
                     onClick={handleToggleCheckin}
                     loading={loading}
                   >
@@ -224,7 +229,6 @@ export default function Home() {
               </Text>
 
               <Button
-                color="green"
                 size="md"
                 onClick={() => router.push('/programs')}
                 style={{ maxWidth: 300, width: '100%' }}

@@ -136,7 +136,8 @@ describe('AuditLog Integration Tests', () => {
                 name: 'Audit Test Program',
                 enrollmentStatus: 'OPEN',
                 startAt: new Date(),
-                leadMentorId: testAdminId
+                leadMentorId: testAdminId,
+                maxParticipants: 50
             })
         });
 
@@ -253,7 +254,7 @@ describe('AuditLog Integration Tests', () => {
     });
 
     it('should generate an AuditLog when an Admin edits participant PII', async () => {
-        await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Person' } });
 
         const req = new Request(`http://localhost:4000/api/membership-ops/participants/${testParticipantId}`, {
             method: 'PUT',
@@ -264,7 +265,7 @@ describe('AuditLog Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const logs = await prisma.auditLog.findMany({
-            where: { tableName: 'Participant', affectedEntityId: testParticipantId }
+            where: { tableName: 'Person', affectedEntityId: testParticipantId }
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].action).toBe('EDIT');
@@ -274,7 +275,7 @@ describe('AuditLog Integration Tests', () => {
     });
 
     it('should generate an AuditLog when an Admin reassigns a participant household', async () => {
-        await prisma.auditLog.deleteMany({ where: { tableName: 'Participant' } });
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Person' } });
 
         const newHousehold = await prisma.household.create({ data: { name: 'Audit Target Household' } });
 
@@ -287,7 +288,7 @@ describe('AuditLog Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const logs = await prisma.auditLog.findMany({
-            where: { tableName: 'Participant', affectedEntityId: testParticipantId }
+            where: { tableName: 'Person', affectedEntityId: testParticipantId }
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].action).toBe('EDIT');
@@ -313,7 +314,7 @@ describe('AuditLog Integration Tests', () => {
         expect(res.status).toBe(200);
 
         const logs = await prisma.auditLog.findMany({
-            where: { action: 'EDIT', tableName: 'Participant', affectedEntityId: target.id },
+            where: { action: 'EDIT', tableName: 'PersonRole', affectedEntityId: target.id },
         });
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);
@@ -326,7 +327,10 @@ describe('AuditLog Integration Tests', () => {
 
         const req = new Request('http://localhost:4000/api/membership-ops/participants/merge', {
             method: 'POST',
-            body: JSON.stringify({ keepId: keep.id, mergeId: merge.id }),
+            // name/email differ between the two fixtures (real conflicts) — resolve
+            // both to "keep" so this audit-log assertion doesn't depend on the
+            // field-picker's validation, which is exercised by its own suite.
+            body: JSON.stringify({ keepId: keep.id, mergeId: merge.id, fieldChoices: { name: 'keep', email: 'keep' } }),
         });
 
         const res = await mergeParticipants(req as never);
@@ -337,7 +341,7 @@ describe('AuditLog Integration Tests', () => {
         const logs = await prisma.auditLog.findMany({
             where: {
                 action: 'DELETE',
-                tableName: 'Participant',
+                tableName: 'Person',
                 affectedEntityId: keep.id,
                 secondaryAffectedEntity: merge.id,
             },
@@ -379,9 +383,10 @@ describe('AuditLog Integration Tests', () => {
         createdVisitIds.push(visit.id);
 
         const newArrived = new Date('2020-01-01T10:00:00.000Z');
+        const newDeparted = new Date('2020-01-01T12:00:00.000Z');
         const req = new Request('http://localhost:4000/api/facility/visits', {
             method: 'PATCH',
-            body: JSON.stringify({ visitId: visit.id, arrivedAt: newArrived.toISOString() }),
+            body: JSON.stringify({ visitId: visit.id, arrivedAt: newArrived.toISOString(), departedAt: newDeparted.toISOString() }),
         });
 
         const res = await updateVisit(req as never);

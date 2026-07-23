@@ -9,6 +9,7 @@
 import { GET as CRON } from '@/app/api/cron/membership-renewals/route';
 import { runRenewalSweep, beginRenewal, nextBoundary } from '@/lib/membership/renewal';
 import { attest } from '@/lib/membership/review';
+import { markBgConsent, markContractSigned } from '@/lib/membership/external';
 import prisma from '@/lib/prisma';
 
 jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
@@ -101,13 +102,11 @@ describe('Membership renewal', () => {
         expect(res.opened).toBe(0);
     });
 
-    it('opens a PENDING_RENEWAL process within the window, once', async () => {
+    it('opens a PENDING_RENEWAL process within the window, once, without emailing (PR-2: the machine never emails)', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1))); // Aug 1
         const m = await makeActiveMembership('Due', null, `due-lead-${TAG}@example.com`);
         const now = new Date(Date.UTC(2026, 6, 1)); // Jul 1 — within 2 months before Aug 1
 
-        // sendEmail is mocked (top of file), so the reminder is recorded on the spy,
-        // not devSentEmail. Clear it so the assertion sees only this scenario's sweep.
         const { sendEmail } = jest.requireMock('@/lib/email') as { sendEmail: jest.Mock };
         sendEmail.mockClear();
 
@@ -117,8 +116,8 @@ describe('Membership renewal', () => {
         expect(proc?.status).toBe('PENDING_RENEWAL');
         expect(proc?.kind).toBe('RENEWAL');
 
-        // Opening the renewal also reminds the household lead by email.
-        expect(sendEmail).toHaveBeenCalledWith(m.leadEmail, 'Time to renew your Treehouse membership', expect.any(String));
+        // The sweep no longer reminds — the settings/outreach page is the only send surface.
+        expect(sendEmail).not.toHaveBeenCalled();
 
         const second = await runRenewalSweep(now);
         const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
@@ -126,22 +125,61 @@ describe('Membership renewal', () => {
         expect(second).toBeDefined();
     });
 
-    it('beginRenewal goes straight to payment when a parent BG is fresh', async () => {
-        await setBoundary(new Date(Date.UTC(2000, 7, 1)));
-        const m = await makeActiveMembership('Fresh', new Date()); // recent BG
-        const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
-        const out = await beginRenewal(proc.id);
-        expect(out.status).toBe('PENDING_PAYMENT');
+    it('does not re-open for a household already renewed this cycle (terminal RENEWAL in-window)', async () => {
+        await setBoundary(new Date(Date.UTC(2000, 7, 1))); // Aug 1
+        const now = new Date(Date.UTC(2026, 6, 1)); // Jul 1 — within the window
+        const m = await makeActiveMembership('Renewed', null, `renewed-lead-${TAG}@example.com`);
+        // A completed renewal this cycle (early finisher, or the admin coming-year
+        // override): terminal ACTIVE RENEWAL with stageEnteredAt inside the window.
+        await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'ACTIVE', stageEnteredAt: now },
+        });
+
+        await runRenewalSweep(now);
+
+        // No fresh PENDING_RENEWAL opened — the terminal row counts as handled.
+        const opened = await prisma.orgMembershipProcess.findFirst({
+            where: { orgMembershipId: m.orgMembershipId, status: 'PENDING_RENEWAL' },
+        });
+        expect(opened).toBeNull();
+        const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
+        expect(count).toBe(1);
     });
 
-    it('beginRenewal requires re-review when BG is stale', async () => {
+    it('beginRenewal with a valid parent background check: re-sign only — bgClearedAt stamped, signature opens payment', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1)));
-        const m = await makeActiveMembership('Stale', null); // no BG on record
+        const m = await makeActiveMembership('Fresh', new Date()); // recent background check
         const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
         const out = await beginRenewal(proc.id);
-        expect(out.status).toBe('RENEWAL_PENDING_BG');
+        // A fresh agreement is signed every cycle; the still-valid background check is
+        // pre-cleared, so the signature alone opens payment.
+        expect(out.status).toBe('PENDING_EXTERNAL_ACTION');
+        expect(out.bgClearedAt).not.toBeNull();
 
-        // The 2-of-N review flow handles renewal BG too: 2 approvals -> PENDING_PAYMENT.
+        await markContractSigned(proc.id);
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: proc.id } }))?.status).toBe('PENDING_PAYMENT');
+    });
+
+    it('beginRenewal with an expired background check requires signature + consent; payment opens; review clears in parallel', async () => {
+        await setBoundary(new Date(Date.UTC(2000, 7, 1)));
+        const m = await makeActiveMembership('Stale', null); // no background check on record
+        const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
+        const out = await beginRenewal(proc.id);
+        // Same external step as a new applicant — the member must sign a fresh
+        // agreement AND consent on Averity; nothing sits in the review queue yet.
+        expect(out.status).toBe('PENDING_EXTERNAL_ACTION');
+        expect(out.bgClearedAt).toBeNull();
+        await expect(attest(rev1, proc.id, { result: 'APPROVE' })).rejects.toMatchObject({ code: 'wrong_phase' });
+
+        // Consent alone is not enough — the renewal re-signs the agreement too.
+        await markBgConsent(proc.id, rev1);
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: proc.id } }))?.status).toBe('PENDING_EXTERNAL_ACTION');
+
+        // Signature lands → payment opens; the 2-of-N review runs in parallel:
+        // 2 approvals keep it at PENDING_PAYMENT (unpaid) rather than blocking it.
+        await markContractSigned(proc.id);
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: proc.id } }))?.status).toBe('PENDING_PAYMENT');
+
         await attest(rev1, proc.id, { result: 'APPROVE' });
         const final = await attest(rev2, proc.id, { result: 'APPROVE' });
         expect(final.status).toBe('PENDING_PAYMENT');

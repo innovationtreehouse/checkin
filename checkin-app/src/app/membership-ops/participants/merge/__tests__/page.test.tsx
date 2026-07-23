@@ -49,9 +49,32 @@ describe("membership-ops/participants/merge page", () => {
     await selectBoth();
 
     expect(await screen.findByText("Keep and augment")).toBeInTheDocument();
-    expect(screen.getByText("Merge and delete")).toBeInTheDocument();
+    expect(screen.getByText("Merge and tombstone")).toBeInTheDocument();
     // Alice scores higher (visits + googleId) so she's recommended to keep.
     expect(screen.getByRole("button", { name: "Proceed to Preview" })).toBeInTheDocument();
+  });
+
+  it("renders multiple search results fully, not clipped to a sliver", async () => {
+    // Regression test for the merge page's search dropdown being clipped by an
+    // ancestor Card's default overflow:hidden (only a sliver of the first result
+    // was visible). All results must render, not just the first.
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/people/search?q=Sam": {
+        people: [
+          { id: 50, name: "Sam One", email: "sam1@example.com" },
+          { id: 51, name: "Sam Two", email: "sam2@example.com" },
+          { id: 52, name: "Sam Three", email: "sam3@example.com" },
+        ],
+      },
+    });
+    renderWithProviders(<MergeParticipants />);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Sam" } });
+
+    expect(await screen.findByText("Sam One", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Sam Two", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("Sam Three", { exact: false })).toBeInTheDocument();
   });
 
   it("previews and confirms the merge", async () => {
@@ -65,12 +88,15 @@ describe("membership-ops/participants/merge page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
     expect(await screen.findByText("Preview & Confirm Merge")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/membership-ops/participants/merge",
-        expect.objectContaining({ method: "POST", body: JSON.stringify({ keepId: 1, mergeId: 2 }) }),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", email: "keep" } }),
+        }),
       ),
     );
     expect(await screen.findByText("Merge Successful!")).toBeInTheDocument();
@@ -112,13 +138,13 @@ describe("membership-ops/participants/merge page", () => {
     expect(within(belleCard).getByText(/Google Auth: Yes/)).toBeInTheDocument();
 
     const zackCard = screen.getByText("Zack Zero (ID: 30)").closest(".mantine-Card-root") as HTMLElement;
-    expect(within(zackCard).getByText("Merge and delete")).toBeInTheDocument();
+    expect(within(zackCard).getByText("Merge and tombstone")).toBeInTheDocument();
     expect(within(zackCard).getByText(/Household: None/)).toBeInTheDocument();
     expect(within(zackCard).getByText(/Google Auth: No/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Swap Kept / Merged" }));
     expect(within(zackCard).getByText("Keep and augment")).toBeInTheDocument();
-    expect(within(belleCard).getByText("Merge and delete")).toBeInTheDocument();
+    expect(within(belleCard).getByText("Merge and tombstone")).toBeInTheDocument();
   });
 
   it("lets you change a selected participant back to search", async () => {
@@ -219,18 +245,18 @@ describe("membership-ops/participants/merge page", () => {
     await screen.findByText("Preview & Confirm Merge");
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Cannot merge." }) })) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     expect(await screen.findByText("Cannot merge.")).toBeInTheDocument();
 
     // Network failure surfaces as a persistent toast, and never leaks the raw JS error text.
     global.fetch = jest.fn(() => Promise.reject(new Error("Connection lost"))) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(
       expect.objectContaining({ color: "red", message: "Network error", autoClose: false })));
     expect(screen.queryByText("Connection lost")).not.toBeInTheDocument();
 
     global.fetch = jest.fn(() => Promise.reject("not an Error")) as unknown as typeof fetch;
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     await waitFor(() => expect(notifications.show).toHaveBeenCalledTimes(2));
   });
 
@@ -242,7 +268,7 @@ describe("membership-ops/participants/merge page", () => {
     await screen.findByText("Keep and augment");
     fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
     await screen.findByText("Preview & Confirm Merge");
-    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
     await screen.findByText("Merge Successful!");
 
     fireEvent.click(screen.getByRole("button", { name: "Merge More" }));
@@ -260,5 +286,145 @@ describe("membership-ops/participants/merge page", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText("Keep and augment")).toBeInTheDocument();
+  });
+
+  // Matrix 19
+  it("renders a radio group only for true conflicts (shared null phone gets no radio)", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+    await selectBoth();
+    await screen.findByText("Keep and augment");
+
+    // Alice/Bob differ on name+email; both share phone: null.
+    const picker = screen.getByText("Resolve conflicting fields").closest(".mantine-Card-root") as HTMLElement;
+    expect(within(picker).getByText("Name")).toBeInTheDocument();
+    expect(within(picker).getByText("Email")).toBeInTheDocument();
+    expect(within(picker).queryByText("Phone")).not.toBeInTheDocument();
+    expect(within(picker).queryByText("Google Account")).not.toBeInTheDocument();
+    expect(within(picker).queryByText("Date of Birth")).not.toBeInTheDocument();
+  });
+
+  // Matrix 20
+  it("defaults each conflict radio to the keeper's value; swapping resets defaults to the new keeper", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+    await selectBoth();
+    await screen.findByText("Keep and augment");
+
+    // Alice out-scores Bob (visits + googleId), so she's the default keeper.
+    expect(screen.getByRole("radio", { name: "Alice Adams" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "alice@example.com" })).toBeChecked();
+
+    fireEvent.click(screen.getByRole("button", { name: "Swap Kept / Merged" }));
+
+    expect(screen.getByRole("radio", { name: "Bob Adams" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "bob@example.com" })).toBeChecked();
+  });
+
+  // Matrix 21
+  it("includes the chosen fieldChoices in the merge POST body", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+    await selectBoth();
+    await screen.findByText("Keep and augment");
+
+    // Pick the tombstone's (Bob's) email instead of the keeper's default.
+    fireEvent.click(screen.getByRole("radio", { name: "bob@example.com" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
+    await screen.findByText("Preview & Confirm Merge");
+    fireEvent.click(screen.getByRole("button", { name: "Confirm Merge & Tombstone" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/merge",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", email: "merge" } }),
+        }),
+      ),
+    );
+  });
+
+  // Matrix 22
+  it("shows each side's own identity for a googleId conflict instead of 'Connected' on both", async () => {
+    const gia = {
+      id: 60, name: "Gia Google", email: "gia@example.com", phone: null, googleId: "g-gia-000000",
+      _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    const gary = {
+      id: 61, name: "Gary Gmail", email: null, phone: null, googleId: "g-gary-111111",
+      _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/participants/merge/analyze": { participants: [gia, gary] },
+      "/api/people/search?q=Gia": { people: [gia] },
+      "/api/people/search?q=Gary": { people: [gary] },
+    });
+    renderWithProviders(<MergeParticipants />);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Gia" } });
+    fireEvent.click(await screen.findByText("Gia Google", { exact: false }));
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Gary" } });
+    fireEvent.click(await screen.findByText("Gary Gmail", { exact: false }));
+
+    await screen.findByText("Keep and augment");
+    const picker = screen.getByText("Resolve conflicting fields").closest(".mantine-Card-root") as HTMLElement;
+    // Gia has an email, so her radio shows it; Gary has none, so his falls back
+    // to the googleId tail — neither says the uninformative "Connected".
+    expect(within(picker).getByText("gia@example.com")).toBeInTheDocument();
+    expect(within(picker).getByText("…111111")).toBeInTheDocument();
+    expect(within(picker).queryByText("Connected")).not.toBeInTheDocument();
+  });
+
+  // Matrix 23
+  it("wraps a dateOfBirth conflict in a warning alert instead of a plain radio", async () => {
+    const dan = {
+      id: 70, name: "Dan Date", email: "dan@example.com", phone: null, googleId: "g70",
+      dateOfBirth: "1990-01-01",
+      _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    const dot = {
+      id: 71, name: "Dot Different", email: "dot@example.com", phone: null, googleId: null,
+      dateOfBirth: "2005-06-15",
+      _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
+      household: null,
+    };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/participants/merge/analyze": { participants: [dan, dot] },
+      "/api/people/search?q=Dan": { people: [dan] },
+      "/api/people/search?q=Dot": { people: [dot] },
+    });
+    renderWithProviders(<MergeParticipants />);
+
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Dan" } });
+    fireEvent.click(await screen.findByText("Dan Date", { exact: false }));
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Dot" } });
+    fireEvent.click(await screen.findByText("Dot Different", { exact: false }));
+
+    await screen.findByText("Keep and augment");
+    const warningText = await screen.findByText(/Different birth dates may mean these are NOT the same person/);
+    const alertBox = warningText.closest(".mantine-Alert-root") as HTMLElement;
+    expect(alertBox).toBeInTheDocument();
+    // Still resolvable via the radio, just nested inside the warning — exact date
+    // text is locale/timezone-formatted (toLocaleDateString), so just count them.
+    expect(within(alertBox).getAllByRole("radio")).toHaveLength(2);
+  });
+
+  it("renders nothing for a background-check reviewer who navigates directly", () => {
+    setSession({ id: 9, isBackgroundCheckReviewer: true });
+    mockRoutes();
+    renderWithProviders(<MergeParticipants />);
+
+    expect(screen.queryByPlaceholderText("Search by name or email...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Keep and augment")).not.toBeInTheDocument();
   });
 });

@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth";
 import * as xlsx from "xlsx";
 import { parseImportDob } from "@/lib/importDob";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 type RowStatus = "ready" | "update" | "warning" | "error";
 
@@ -190,7 +191,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 }
                 if (!found) {
                     const byName = await prisma.person.findFirst({
-                        where: { name: { equals: sameHouseholdAs, mode: 'insensitive' } },
+                        where: { name: { equals: sameHouseholdAs, mode: 'insensitive' }, ...LIVE_PERSON },
                         select: { id: true, name: true, householdId: true }
                     });
                     if (byName) {
@@ -232,7 +233,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 if (parent) {
                     if (parent.householdId) {
                         const existingChild = await prisma.person.findFirst({
-                            where: { householdId: parent.householdId, name: fullName },
+                            where: { householdId: parent.householdId, name: fullName, ...LIVE_PERSON },
                             select: { id: true, name: true },
                         });
                         if (existingChild) {
@@ -255,7 +256,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 if (parsedDob) matchQuery.dateOfBirth = parsedDob;
 
                 const existing = await prisma.person.findFirst({
-                    where: matchQuery,
+                    where: { ...matchQuery, ...LIVE_PERSON },
                     select: { id: true, name: true },
                 });
                 if (existing) {

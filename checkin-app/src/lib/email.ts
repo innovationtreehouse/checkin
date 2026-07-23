@@ -20,10 +20,11 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
     if (!resend) {
         console.log(`[Email (no RESEND_API_KEY)] To: ${to} | Subject: ${subject}`);
         // Dev/local: capture the email so link/token flows are retrievable at /dev/sent-mail,
-        // and report success so gating callers follow the prod happy-path. Guarded with the
-        // persona-mint idiom (see auth-options.ts) so it is impossible in prod: a prod box that
-        // somehow lost its key still falls through to `return false` (fail loud, not fake success).
-        if (config.isDevInstance() && process.env.NODE_ENV !== 'production') {
+        // and report success so gating callers follow the prod happy-path. Gated on
+        // devToolsActive (CHECKIN_ENV, fails safe to prod — NOT a NODE_ENV fuse, which is
+        // 'production' on every deployed instance incl. cloud-dev): a prod box that somehow
+        // lost its key still falls through to `return false` (fail loud, not fake success).
+        if (config.devToolsActive()) {
             return captureSentEmail(from, to, subject, html);
         }
         return false;
@@ -53,4 +54,26 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
         await logIntegrationError('email', err, { to, subject });
         return false;
     }
+}
+
+/**
+ * Run async tasks in chunks, pausing `gapMs` between chunks — a crude client-side
+ * rate limiter for provider fan-out (#1154, chunks of 5 @ 1/s). Best-effort: assumes
+ * each task already swallows its own errors (sendEmail resolves false, never rejects),
+ * so nothing is caught here. Order of results matches order of tasks.
+ */
+export async function runPaced<T>(
+    tasks: Array<() => Promise<T>>,
+    chunkSize = 5,
+    gapMs = 1000,
+): Promise<T[]> {
+    const results: T[] = [];
+    for (let i = 0; i < tasks.length; i += chunkSize) {
+        const chunk = tasks.slice(i, i + chunkSize);
+        results.push(...await Promise.all(chunk.map((t) => t())));
+        if (i + chunkSize < tasks.length) {
+            await new Promise((r) => setTimeout(r, gapMs));
+        }
+    }
+    return results;
 }

@@ -5,9 +5,39 @@ import { sendNotification } from "@/lib/notifications";
 import { createShopifySingleVariantProgram } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
+import { config } from "@/lib/config";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
+import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+
+// Public catalog projection: every Program column whose `/// @sensitivity:` tier
+// is `public` per src/security/generated/classifications.ts, in schema order.
+// Deliberately omits `leadMentorNotificationSettings` (tier `personal`) — GET is
+// anonymous-readable and its rows are shared through a 60s cache, so a bare
+// findMany shipped that column to every signed-out visitor. Keep this in sync
+// with the classifications Program block when columns are added.
+const PUBLIC_PROGRAM_SELECT = {
+    id: true,
+    name: true,
+    leadMentorId: true,
+    startAt: true,
+    endAt: true,
+    phase: true,
+    enrollmentStatus: true,
+    orgMemberOnly: true,
+    announceOnOpen: true,
+    minAge: true,
+    maxAge: true,
+    maxParticipants: true,
+    orgMemberPriceCents: true,
+    nonOrgMemberPriceCents: true,
+    shopifyProductId: true,
+    shopifyOrgMemberVariantId: true,
+    shopifyNonOrgMemberVariantId: true,
+    shopifyVariantId: true,
+} as const;
 
 // GET is the PUBLIC program catalog — anonymous callers legitimately get the
 // non-draft, non-orgMemberOnly list (asserted by programsAPI.integration.test.ts),
@@ -18,6 +48,19 @@ import { validateProgramAgeBounds } from "@/lib/programAge";
 // reveal (P0-C).
 export async function GET(req: Request) {
     const user = await getOptionalSessionUser(req);
+
+    // ops-stg ACCESS GATE (finding 2026-07-20): getOptionalSessionUser collapses a
+    // gate-rejected caller (denied household, or on staging a non-org/
+    // non-canAccessStaging caller) to `undefined` — the SAME shape as a genuinely
+    // anonymous visitor, which is exactly the intended "public catalog" happy path
+    // in prod/dev. On staging this route serves the full prod-copied catalog
+    // (names, dates, prices, Shopify ids, live enrollment counts), so without this
+    // explicit check an anonymous curl reads it straight through the "public
+    // visitor" branch below. See tests/security/routeAuthDrift.test.ts rule 4,
+    // which fails any future getOptionalSessionUser caller that forgets this.
+    if (config.isStaging() && !user) {
+        return apiError("Unauthorized", 401);
+    }
 
     try {
         const { searchParams } = new URL(req.url);
@@ -71,25 +114,51 @@ export async function GET(req: Request) {
             }
         }
 
-        const programs = await prisma.program.findMany({
+        const fetchPrograms = () => prisma.program.findMany({
             where: andClauses.length > 0 ? { AND: andClauses } : undefined,
             orderBy: { startAt: 'asc' },
-            // The catalog is public (anonymous callers): every other Program
-            // scalar is public-tier, but the lead's notification prefs are
-            // personal-tier and belong only to the lead/admin settings view.
-            omit: { leadMentorNotificationSettings: true },
-            include: {
+            select: {
+                ...PUBLIC_PROGRAM_SELECT,
                 _count: {
                     select: {
-                        participants: true,
-                        volunteers: true,
+                        participants: { where: { person: LIVE_PERSON } },
+                        volunteers: { where: { person: LIVE_PERSON } },
                         events: true
                     }
                 }
             }
         });
 
-        return NextResponse.json(programs);
+        // ANONYMOUS-ONLY cache (lib/staleCache): the where-clause is identical for
+        // every signed-out caller, so one entry serves them all — and a session
+        // (draft/mentor visibility varies the payload) never touches it, which is
+        // what makes the cache leak-proof by construction.
+        //
+        // ONLY the static rows are cached — never enrollment figures. The counts
+        // come from a separate LIVE query raced against a short timeout: merged in
+        // when the database answers, omitted entirely when it doesn't (resume).
+        // Stale program names are fine; stale "spots taken" numbers are not.
+        if (!userId && !canSeeDrafts) {
+            const { value: staticRows } = await staleWhileRevalidate(
+                "programs:public:static",
+                60_000,
+                () => prisma.program.findMany({
+                    where: andClauses.length > 0 ? { AND: andClauses } : undefined,
+                    orderBy: { startAt: 'asc' },
+                    select: PUBLIC_PROGRAM_SELECT,
+                }),
+            );
+            const counts = await Promise.race([
+                prisma.program.findMany({
+                    where: { id: { in: staticRows.map((prg) => prg.id) } },
+                    select: { id: true, _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } }, events: true } } },
+                }).catch(() => null),
+                new Promise<null>((resolve) => { const t = setTimeout(() => resolve(null), 2_500); t.unref?.(); }),
+            ]);
+            const countById = new Map((counts ?? []).map((c) => [c.id, c._count]));
+            return NextResponse.json(staticRows.map((prg) => ({ ...prg, _count: countById.get(prg.id) })));
+        }
+        return NextResponse.json(await fetchPrograms());
     } catch (error) {
         await logBackendError(error, "GET /api/programs");
         return apiError("Failed to fetch programs", 500);
@@ -114,6 +183,11 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             return apiError("Lead Mentor is required", 400);
         }
 
+        const maxPart = maxParticipants != null ? parseInt(maxParticipants, 10) : null;
+        if (maxPart == null || isNaN(maxPart) || maxPart < 1) {
+            return apiError("Max participants is required and must be at least 1", 400);
+        }
+
         const ageErr = validateProgramAgeBounds(minAge, maxAge);
         if (ageErr) {
             return apiError(ageErr, 400);
@@ -122,7 +196,6 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         // Client sends a raw dollar string; tolerate a number too. Convert to cents here.
         const mPrice = dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined);
         const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
-        const maxPart = maxParticipants ? parseInt(maxParticipants, 10) : null;
 
         // Single-pool model (product decision 2026-07-06): ONE Shopify variant,
         // priced at the base/non-member rate — replaces the two-variant model for

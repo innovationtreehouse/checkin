@@ -29,6 +29,22 @@ export function formatDateTime(date: Date | string | number | null | undefined, 
 }
 
 /**
+ * Coarse "how long ago" for freshness lines ("just now", "12 min ago", "3 hr ago",
+ * "2 d ago"). No timezone involved — it's a difference, not a wall-clock reading.
+ * Deliberately coarse: it answers "is this stale?", not "exactly when?" — pair it
+ * with formatDateTime when the precise instant matters.
+ */
+export function relTime(when: string | Date, now: Date | number = Date.now()): string {
+    const ms = new Date(now).getTime() - new Date(when).getTime();
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return "just now";
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} hr ago`;
+    return `${Math.floor(hr / 24)} d ago`;
+}
+
+/**
  * Visit time range for display: "1:35 PM-2:19 PM (44 minutes)" once departed,
  * or "1:35 PM-" while still active (no end time, no length — too dynamic).
  * Times are shown without seconds.

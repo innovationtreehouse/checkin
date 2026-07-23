@@ -30,7 +30,7 @@ jest.mock('@/lib/prisma', () => ({
     },
 }));
 
-jest.mock('@/lib/membership/external', () => ({ getExternalStatus: jest.fn() }));
+jest.mock('@/lib/membership/external', () => ({ getExternalStatus: jest.fn(), advanceExternalIfComplete: jest.fn() }));
 jest.mock('@/lib/emergencyContacts/service', () => ({
     upsertPrimaryContact: jest.fn(),
     reconcileHouseholdConflicts: jest.fn(),
@@ -43,6 +43,7 @@ jest.mock('@/lib/membership/renewal', () => ({
     householdBgIsFresh: jest.fn(),
     nextBoundary: jest.fn(),
 }));
+jest.mock('@/lib/membership/review', () => ({ applyVolunteerStatus: jest.fn() }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const prisma = require('@/lib/prisma').default;
@@ -54,6 +55,10 @@ const { upsertPrimaryContact, reconcileHouseholdConflicts } = require('@/lib/eme
 const { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } = require('@/lib/household/leads');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { householdBgIsFresh } = require('@/lib/membership/renewal');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { applyVolunteerStatus } = require('@/lib/membership/review');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { advanceExternalIfComplete } = require('@/lib/membership/external');
 
 const user = {
     id: 1,
@@ -356,7 +361,7 @@ describe('submitIntake', () => {
             postalCode: '78701',
             emergencyContacts: [{ conflictParticipantId: null, name: 'Aunt May', phone: '555-555-2000' }],
             householdMembers: [{ id: 1, name: 'Primary' }],
-            orgMembership: { processes: [{ id: 11, kind: 'INITIAL', status: 'INTAKE' }] },
+            orgMembership: { processes: [{ id: 11, orgMembershipId: 42, kind: 'INITIAL', status: 'INTAKE' }] },
         },
     };
 
@@ -387,7 +392,7 @@ describe('submitIntake', () => {
         });
     });
 
-    it('complete + bgFresh=false → no bgClearedAt stamp', async () => {
+    it('complete + bgFresh=false → no bgClearedAt stamp, allowlist deferred to the external advance', async () => {
         householdBgIsFresh.mockResolvedValue(false);
 
         await submitIntake(1);
@@ -396,9 +401,10 @@ describe('submitIntake', () => {
             where: { id: 11 },
             data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
         });
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
 
-    it('complete + bgFresh=true → stamps bgClearedAt and advances to PENDING_EXTERNAL_ACTION', async () => {
+    it('complete + bgFresh=true → stamps bgClearedAt, advances, and matches the volunteer allowlist (#874)', async () => {
         householdBgIsFresh.mockResolvedValue(true);
 
         const result = await submitIntake(1);
@@ -408,6 +414,50 @@ describe('submitIntake', () => {
             data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION', bgClearedAt: expect.any(Date) }),
         });
         expect(prisma.auditLog.create).toHaveBeenCalled();
+        // Fresh-check shortcut skips clearBackgroundCheck for the whole cycle, so
+        // the designation allowlist must be matched here or never.
+        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
         expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
+    });
+
+    it('re-runs the external advance after landing at PENDING_EXTERNAL_ACTION and returns its result (#878)', async () => {
+        householdBgIsFresh.mockResolvedValue(false);
+        // Board pre-marked contract + BG consent on the INTAKE row, so the gate is
+        // already met when we arrive — the advance carries the process to PENDING_PAYMENT.
+        advanceExternalIfComplete.mockResolvedValue({ id: 11, status: 'PENDING_PAYMENT' });
+
+        const result = await submitIntake(1);
+
+        expect(advanceExternalIfComplete).toHaveBeenCalledWith(11);
+        expect(result).toEqual({ id: 11, status: 'PENDING_PAYMENT' });
+    });
+
+    it('falls back to the update result when the external advance is a no-op (#878)', async () => {
+        householdBgIsFresh.mockResolvedValue(false);
+        // Nothing pre-marked ⇒ advanceExternalIfComplete finds the gate unmet and
+        // returns the still-PENDING_EXTERNAL_ACTION process (here left undefined to
+        // exercise the fallback); submitIntake reports the phase it advanced to.
+        advanceExternalIfComplete.mockResolvedValue(undefined);
+
+        const result = await submitIntake(1);
+
+        expect(advanceExternalIfComplete).toHaveBeenCalledWith(11);
+        expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
+    });
+
+    it('complete + fresh check + intake note → shortcut disqualified: no bgClearedAt, review holds payment (#907)', async () => {
+        prisma.person.findUnique.mockResolvedValue({
+            ...inFlightUser,
+            household: { ...inFlightUser.household, intakeNotes: 'please treat us as a volunteer household' },
+        });
+        householdBgIsFresh.mockResolvedValue(true);
+
+        await submitIntake(1);
+
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({
+            where: { id: 11 },
+            data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
+        });
+        expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
 });

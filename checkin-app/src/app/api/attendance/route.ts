@@ -8,6 +8,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -18,6 +19,19 @@ export async function GET(req: NextRequest) {
         // denied-household gate (a denied member resolves to undefined), so even
         // on this kiosk-tolerant route a denied member can't read counts/safety.
         const user = await getOptionalSessionUser(req);
+
+        // ops-stg ACCESS GATE (finding 2026-07-20): must run BEFORE the kiosk
+        // branch below. This route re-verifies kiosk auth directly via
+        // verifyKioskSignature rather than through authenticateRequest — the one
+        // place that happens outside the chokepoint — so without this early
+        // return, a caller carrying a VALID kiosk signature would still set
+        // isKiosk=true, reach isAdmin, and get the full roster + safety data even
+        // after the gate rejected them. See
+        // tests/security/routeAuthDrift.test.ts rule 4.
+        if (config.isStaging() && !user) {
+            return apiError("Unauthorized", 401);
+        }
+
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
         const pubKeys = getKioskPublicKeys();
 
@@ -51,33 +65,23 @@ export async function GET(req: NextRequest) {
             return apiError("Unauthorized", 401);
         }
 
-        const { attendance, counts, safety } = await getFullAttendance();
+        // The kiosk is an unattended device in a public room and re-broadcasts this
+        // payload into an iframe with a wildcard postMessage target origin
+        // (client/client.py). It gets a display-only roster: no dateOfBirth
+        // (personal), no phone (pii), no emergency contacts (personal) — none of
+        // which it renders. A signed-in keyholder/board/sysadmin still gets the
+        // full payload: that grant is deliberate (registry.ts `keyholders:personal`,
+        // for pickup/emergency lookups) and unchanged here.
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: isKiosk });
 
         // Determine access level
         const isAdmin = isKiosk || user?.isSysadmin || user?.isBoardMember || user?.isKeyholder;
 
         if (isAdmin) {
-            // Full access: return all visits + counts. The anonymous kiosk device
-            // gets the roster + grouping flags but NOT the personal-tier band
-            // (phone / emergency contacts) — the kiosk UI can't render those
-            // anyway (the EC modal and phone line are session-gated), so they
-            // only ride the wire for authenticated keyholder/board/sysadmin
-            // sessions, matching the keyholders:personal front-desk grant.
-            const wireAttendance = isKiosk
-                ? attendance.map(({ participant, ...v }) => ({
-                    ...v,
-                    participant: {
-                        id: participant.id,
-                        name: participant.name,
-                        isKeyholder: participant.isKeyholder,
-                        isYouth: participant.isYouth,
-                        householdId: participant.householdId,
-                    },
-                }))
-                : attendance;
+            // Full roster access: all visits + counts (kiosk gets the reduced rows above)
             return NextResponse.json({
                 access: "full",
-                attendance: wireAttendance,
+                attendance,
                 counts,
                 safety,
                 signedRequest: isKiosk,
@@ -116,12 +120,9 @@ export const DELETE = withAuth({}, async (req, auth) => {
             return apiError("visitId is required", 400);
         }
 
-        // Only householdId is read (for the household-lead permission check).
-        // A full `person: true` include would ship the whole Person row (pii/
-        // personal/internal tiers) on the already-departed fallback path below.
         const visit = await prisma.visit.findUnique({
             where: { id: visitId },
-            include: { person: { select: { householdId: true } } }
+            include: { person: true }
         });
 
         if (!visit) {
@@ -141,19 +142,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
-        // Fallback (already-departed race): ship the bare Visit row. Pick the
-        // Visit scalars explicitly (allowlist) so the included person relation —
-        // and any future field added to the query — can never leak here.
-        const visitBare = {
-            id: visit.id,
-            personId: visit.personId,
-            arrivedAt: visit.arrivedAt,
-            departedAt: visit.departedAt,
-            arrivedVia: visit.arrivedVia,
-            departedVia: visit.departedVia,
-            associatedEventId: visit.associatedEventId,
-        };
-        const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visitBare;
+        const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
         // Fire-and-forget: send check-out notifications (mirrors /api/scan)
         sendCheckinNotifications(visit.personId, 'checkout').catch(err =>
@@ -282,7 +271,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
             // Find all board members
             const boardMembers = await prisma.person.findMany({
-                where: { isBoardMember: true },
+                where: { isBoardMember: true, ...LIVE_PERSON },
                 select: { email: true, name: true }
             });
 

@@ -9,13 +9,14 @@ import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { settingsMisconfigBadge } from "@/components/navBadges";
 import { CountBadge } from "@/components/ui/CountBadge";
 
-export type SettingsTab = "membership" | "roles" | "localization" | "email";
+export type SettingsTab = "membership" | "localization" | "email" | "shopify-webhook" | "outreach";
 
 // sysadminOnly tabs are hidden from board members (the /settings layout admits both).
 const TABS: { value: SettingsTab; label: string; href: string; sysadminOnly?: boolean }[] = [
   { value: "membership", label: "Membership Settings", href: "/settings/membership" },
-  { value: "roles", label: "Role Assignment", href: "/settings/roles" },
   { value: "email", label: "Email", href: "/settings/email" },
+  { value: "outreach", label: "Outreach", href: "/settings/outreach" },
+  { value: "shopify-webhook", label: "Shopify Webhook", href: "/settings/shopify-webhook" },
   { value: "localization", label: "Localization", href: "/settings/localization", sysadminOnly: true },
 ];
 

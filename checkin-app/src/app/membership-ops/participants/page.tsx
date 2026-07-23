@@ -2,11 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Alert, Box, Button, Card, Group, Modal, Paper, Stack, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
+import Link from "next/link";
+import { Alert, Badge, Box, Button, Card, Group, Modal, Paper, Stack, Switch, Table, Text, TextInput, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronUp, IconSelector } from "@tabler/icons-react";
 import { EntityPicker } from "@/components/admin/EntityPicker";
 import { AdminEditHouseholdModal } from "@/components/admin/AdminEditHouseholdModal";
+import { RoleBadge } from "@/components/ui/RoleBadge";
+import { ROLE_FLAGS } from "@/lib/roles";
+import { useRequireRole } from "@/hooks/useRequireRole";
 
 type HouseholdRef = {
   id: number;
@@ -19,7 +23,16 @@ type PersonRow = {
   name: string | null;
   email: string | null;
   phone: string | null;
+  dateOfBirth?: string | null;
+  isDeclaredAdult?: boolean;
+  lastBackgroundCheck?: string | null;
   household?: HouseholdRef | null;
+  isSysadmin?: boolean;
+  isBoardMember?: boolean;
+  isKeyholder?: boolean;
+  isBackgroundCheckReviewer?: boolean;
+  isOperations?: boolean;
+  emailSuppressed?: boolean;
 };
 
 export default function AdminParticipantsIndex() {
@@ -29,6 +42,14 @@ export default function AdminParticipantsIndex() {
   const [sortBy, setSortBy] = useState<"id" | "name" | "email" | "household">("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const router = useRouter();
+  // Client-side mirror of the write-verb matrix (UX only — the endpoints are the
+  // real guard). isStaff = full read/write access (household assign, edit-details,
+  // bulk import, new person, roles). Operations gets the read-only directory
+  // plus add-contact (canAddContact mirrors POST /api/membership-ops/contacts'
+  // role gate: board + operations, sysadmin deliberately excluded there).
+  const { user: me } = useRequireRole([]);
+  const isStaff = !!me?.isBoardMember || !!me?.isSysadmin;
+  const canAddContact = !!me?.isBoardMember || !!me?.isOperations;
 
   const toggleSort = (col: "id" | "name" | "email" | "household") => {
     if (sortBy === col) {
@@ -87,11 +108,18 @@ export default function AdminParticipantsIndex() {
   // Edit Participant State
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingParticipant, setEditingParticipant] = useState<PersonRow | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
+  const [editForm, setEditForm] = useState({ name: "", email: "", phone: "", isDeclaredAdult: false, lastBackgroundCheck: "" });
   const [savingDetails, setSavingDetails] = useState(false);
 
   // Admin edit of household's own info (name, address, emergency contact)
   const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
+
+  // Add-contact modal state (board + operations — see canAddContact above).
+  const [addContactOpen, setAddContactOpen] = useState(false);
+  const [addContactName, setAddContactName] = useState("");
+  const [addContactEmail, setAddContactEmail] = useState("");
+  const [addContactSaving, setAddContactSaving] = useState(false);
+  const [addContactFieldErrors, setAddContactFieldErrors] = useState<{ email?: string }>({});
 
   const showNotification = (message: string, type: 'success' | 'error' = 'success') => {
     notifications.show({ message, color: type === 'error' ? 'red' : 'green', autoClose: type === 'error' ? false : 4000 });
@@ -170,6 +198,41 @@ export default function AdminParticipantsIndex() {
     }
   };
 
+  const closeAddContact = () => {
+    setAddContactOpen(false);
+    setAddContactName("");
+    setAddContactEmail("");
+    setAddContactFieldErrors({});
+  };
+
+  const handleAddContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddContactSaving(true);
+    setAddContactFieldErrors({});
+    try {
+      const res = await fetch('/api/membership-ops/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: addContactName, email: addContactEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setResults((r) => [data.participant, ...r]);
+        showNotification("Contact added.");
+        closeAddContact();
+      } else if (data.fields?.includes("email")) {
+        setAddContactFieldErrors({ email: data.error });
+      } else {
+        showNotification(data.error || "Failed to add contact", "error");
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification("Network error", "error");
+    } finally {
+      setAddContactSaving(false);
+    }
+  };
+
   const canSubmitAssign = !selectedParticipant?.household || (selectedParticipant.household.householdMembers.length > 1);
   const canChangeHousehold = selectedParticipant?.household && selectedParticipant.household.householdMembers.length === 1 && householdId;
 
@@ -180,8 +243,9 @@ export default function AdminParticipantsIndex() {
           <Text c="dimmed">Search and manage system people and households.</Text>
         </div>
         <Group>
-          <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>
-          <Button color="green" onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>
+          {isStaff && <Button variant="light" onClick={() => router.push('/membership-ops/participants/import')}>Bulk Import</Button>}
+          {isStaff && <Button onClick={() => router.push('/membership-ops/participants/new')}>+ New Person</Button>}
+          {canAddContact && <Button variant="outline" onClick={() => setAddContactOpen(true)}>+ Add contact</Button>}
         </Group>
       </Group>
 
@@ -217,7 +281,13 @@ export default function AdminParticipantsIndex() {
                         </Table.Th>
                       );
                     })}
-                    <Table.Th>Actions</Table.Th>
+                    <Table.Th>
+                      <Group gap={4} wrap="nowrap">
+                        Roles
+                        {isStaff && <Text component={Link} href="/membership-ops/roles" size="xs" c="blue">Manage</Text>}
+                      </Group>
+                    </Table.Th>
+                    {isStaff && <Table.Th>Actions</Table.Th>}
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
@@ -225,28 +295,42 @@ export default function AdminParticipantsIndex() {
                     <Table.Tr key={p.id}>
                       <Table.Td c="dimmed">{p.id}</Table.Td>
                       <Table.Td fw={600}>{p.name}</Table.Td>
-                      <Table.Td>{p.email || <Text span c="dimmed">No email</Text>}</Table.Td>
-                      <Table.Td>{p.household?.name || <Text span c="dimmed">No household</Text>}</Table.Td>
                       <Table.Td>
-                        <Group gap="xs" wrap="nowrap">
-                          {p.household ? (
-                            <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
-                              Household
-                            </Button>
-                          ) : (
-                            <Button size="xs" fz={15} variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
-                              Assign
-                            </Button>
-                          )}
-                          <Button size="xs" fz={15} variant="default" onClick={() => {
-                            setEditingParticipant(p);
-                            setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "" });
-                            setEditModalOpen(true);
-                          }}>
-                            Details
-                          </Button>
+                        <Group gap={6} wrap="nowrap">
+                          {p.email || <Text span c="dimmed">No email</Text>}
+                          {p.emailSuppressed && <Badge size="xs" color="gray" variant="light">Unsubscribed</Badge>}
                         </Group>
                       </Table.Td>
+                      <Table.Td>{p.household?.name || <Text span c="dimmed">No household</Text>}</Table.Td>
+                      <Table.Td>
+                        <Group gap={4} wrap="wrap">
+                          {ROLE_FLAGS.filter((f) => p[f]).map((f) => (
+                            <RoleBadge key={f} role={f} size="sm" />
+                          ))}
+                        </Group>
+                      </Table.Td>
+                      {isStaff && (
+                        <Table.Td>
+                          <Group gap="xs" wrap="nowrap">
+                            {p.household ? (
+                              <Button size="xs" fz={15} variant="light" onClick={() => setEditHouseholdId(p.household!.id)}>
+                                Household
+                              </Button>
+                            ) : (
+                              <Button size="xs" fz={15} variant="light" onClick={() => { setSelectedParticipant(p); setAssignModalOpen(true); }}>
+                                Assign
+                              </Button>
+                            )}
+                            <Button size="xs" fz={15} variant="default" onClick={() => {
+                              setEditingParticipant(p);
+                              setEditForm({ name: p.name || "", email: p.email || "", phone: p.phone || "", isDeclaredAdult: !!p.isDeclaredAdult, lastBackgroundCheck: p.lastBackgroundCheck ? p.lastBackgroundCheck.slice(0, 10) : "" });
+                              setEditModalOpen(true);
+                            }}>
+                              Details
+                            </Button>
+                          </Group>
+                        </Table.Td>
+                      )}
                     </Table.Tr>
                   ))}
                 </Table.Tbody>
@@ -257,6 +341,32 @@ export default function AdminParticipantsIndex() {
           ) : null}
         </Box>
       </Card>
+
+      {/* Add contact modal (board + operations) — email-only create, POST /api/membership-ops/contacts */}
+      <Modal opened={addContactOpen} onClose={closeAddContact} title={<Text span fw={700} fz="lg">Add Contact</Text>}>
+        <form onSubmit={handleAddContact}>
+          <Stack>
+            <TextInput
+              label="Name"
+              required
+              value={addContactName}
+              onChange={(e) => { const value = e.currentTarget.value; setAddContactName(value); }}
+            />
+            <TextInput
+              type="email"
+              label="Email"
+              required
+              value={addContactEmail}
+              error={addContactFieldErrors.email}
+              onChange={(e) => { const value = e.currentTarget.value; setAddContactEmail(value); setAddContactFieldErrors({}); }}
+            />
+          </Stack>
+          <Group justify="flex-end" mt="lg">
+            <Button type="button" variant="default" onClick={closeAddContact} disabled={addContactSaving}>Cancel</Button>
+            <Button type="submit" disabled={addContactSaving} loading={addContactSaving}>Add</Button>
+          </Group>
+        </form>
+      </Modal>
 
       {/* Assign household modal */}
       <Modal opened={assignModalOpen} onClose={closeAssign} title={<Text span fw={700} fz="lg">Assign Household to {selectedParticipant?.name}</Text>} size="lg">
@@ -305,7 +415,7 @@ export default function AdminParticipantsIndex() {
             <Group justify="flex-end" mt="lg">
               <Button type="button" variant="default" onClick={closeAssign} disabled={assigning}>Cancel</Button>
               {canSubmitAssign && (
-                <Button type="submit" color="green" disabled={assigning} loading={assigning}>
+                <Button type="submit" disabled={assigning} loading={assigning}>
                   {householdId ? "Add to Household" : (selectedParticipant?.household ? "Pull from household and start a new one" : "Create New Household")}
                 </Button>
               )}
@@ -329,6 +439,23 @@ export default function AdminParticipantsIndex() {
             <TextInput label="Name" required value={editForm.name} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, name: value })); }} />
             <TextInput type="email" label="Email Address" value={editForm.email} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, email: value })); }} />
             <TextInput type="tel" label="Phone Number" value={editForm.phone} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, phone: value })); }} placeholder="(555) 123-4567" />
+            {editingParticipant?.dateOfBirth ? (
+              <Text size="sm" c="dimmed">Age is derived from date of birth on file; the adult declaration doesn&apos;t apply.</Text>
+            ) : (
+              <Switch
+                label="Adult (25 or older)"
+                description="Set this when there's no date of birth on file so the person shows as 'Adult' instead of 'Age Unavailable'."
+                checked={editForm.isDeclaredAdult}
+                onChange={(e) => { const checked = e.currentTarget.checked; setEditForm(f => ({ ...f, isDeclaredAdult: checked })); }}
+              />
+            )}
+            <TextInput
+              type="date"
+              label="Last Background Check Review"
+              description="Date the board last reviewed this person's background check. Clear the field to remove it."
+              value={editForm.lastBackgroundCheck}
+              onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, lastBackgroundCheck: value })); }}
+            />
             {editingParticipant?.household && (
               <div>
                 <Text fw={500} size="sm" mb={4}>Household</Text>

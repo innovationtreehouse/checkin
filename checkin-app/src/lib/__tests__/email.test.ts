@@ -1,4 +1,4 @@
-let mockIsDevInstance = false;
+let mockDevToolsActive = false;
 const mockCapture = jest.fn();
 let mockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
 
@@ -7,7 +7,7 @@ jest.mock('../config.ts', () => ({
     config: {
         resendApiKey: () => null,
         emailFrom: () => 'test@test.com',
-        isDevInstance: () => mockIsDevInstance,
+        devToolsActive: () => mockDevToolsActive,
     },
 }));
 jest.mock('../dev/sentMail', () => ({
@@ -18,6 +18,7 @@ jest.mock('../emailIdentity', () => ({
 }));
 
 import { sendEmail } from '../email';
+import { runPaced } from '../email';
 
 // process.env.NODE_ENV is typed read-only; tests need to vary it at runtime
 const setNodeEnv = (value: string | undefined) => {
@@ -32,7 +33,7 @@ describe('sendEmail no-key logging + capture', () => {
         originalConsoleLog = console.log;
         console.log = jest.fn();
         originalEnv = process.env.NODE_ENV;
-        mockIsDevInstance = false;
+        mockDevToolsActive = false;
         mockCapture.mockReset();
         mockIdentity = { from: 'test@test.com' };
     });
@@ -44,7 +45,7 @@ describe('sendEmail no-key logging + capture', () => {
 
     it('logs the To/Subject line but never the body (no body logging in any env)', async () => {
         setNodeEnv('development');
-        mockIsDevInstance = true;
+        mockDevToolsActive = true;
         mockCapture.mockResolvedValue(true);
         const html = 'Sensitive body <a href="reset">Link</a>';
 
@@ -56,7 +57,7 @@ describe('sendEmail no-key logging + capture', () => {
 
     it('captures and returns true on a dev instance (gating callers get the happy-path)', async () => {
         setNodeEnv('development');
-        mockIsDevInstance = true;
+        mockDevToolsActive = true;
         mockCapture.mockResolvedValue(true);
         const html = '<p>Confirm <a href="/x">here</a></p>';
 
@@ -68,7 +69,7 @@ describe('sendEmail no-key logging + capture', () => {
 
     it('returns false when the dev capture itself fails (does not mask a broken dev DB)', async () => {
         setNodeEnv('development');
-        mockIsDevInstance = true;
+        mockDevToolsActive = true;
         mockCapture.mockResolvedValue(false);
 
         const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
@@ -76,19 +77,22 @@ describe('sendEmail no-key logging + capture', () => {
         expect(result).toBe(false);
     });
 
-    it('does NOT capture and returns false in production even without a key (fail loud)', async () => {
+    it('captures on a dev instance even under a production BUILD (cloud-dev runs the prod image)', async () => {
+        // Regression: the old NODE_ENV fuse made capture (and /dev/sent-mail) dead on
+        // cloud-dev, whose container sets NODE_ENV=production exactly like prod's.
         setNodeEnv('production');
-        mockIsDevInstance = true; // guard still fails on NODE_ENV === 'production'
+        mockDevToolsActive = true;
+        mockCapture.mockResolvedValue(true);
 
         const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
 
-        expect(result).toBe(false);
-        expect(mockCapture).not.toHaveBeenCalled();
+        expect(result).toBe(true);
+        expect(mockCapture).toHaveBeenCalled();
     });
 
     it('does NOT capture and returns false when not a dev instance', async () => {
         setNodeEnv('test');
-        mockIsDevInstance = false;
+        mockDevToolsActive = false;
 
         const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
 
@@ -228,5 +232,46 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         expect((error as Error).message).toBe('network down');
         expect(context).toEqual({ to: 'bounced@test.com', subject: 'Subject' });
         expect(JSON.stringify(context)).not.toContain(html);
+    });
+});
+
+describe('runPaced pacing', () => {
+    beforeEach(() => {
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('runs 12 thunks in chunks of 5/5/2 with 2 gaps, preserving order', async () => {
+        const started: number[] = [];
+        const tasks = Array.from({ length: 12 }, (_, i) => async () => {
+            started.push(i);
+            return i;
+        });
+        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+        const resultsPromise = runPaced(tasks);
+
+        // Before advancing any timers, only the first chunk (5) has run.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(started).toEqual([0, 1, 2, 3, 4]);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+        const results = await resultsPromise;
+        expect(results).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+        // Exactly 2 gaps (between chunk 1→2 and chunk 2→3); no gap after the last chunk.
+        expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+
+        setTimeoutSpy.mockRestore();
     });
 });

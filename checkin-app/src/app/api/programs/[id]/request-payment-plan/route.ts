@@ -4,6 +4,10 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { adjustProgramInventory } from "@/lib/shopify";
+import { fromWhere } from "@/lib/programs/enrollmentState";
+import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck, resolveAckCopy } from "@/lib/scholarshipEmails";
+import { config } from "@/lib/config";
+import { escapeHtml } from "@/lib/email-templates/base";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -83,20 +87,27 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // time, and without this a concurrent approval (ACTIVE, hold consumed
         // to null) would match branch 1, re-stamp the hold, fire a second -1,
         // and reopen a resolved scholarship.
+        const wasRequested = participant.isPaymentPlanRequested; // pre-image (findUnique above)
         const holdResult = await prisma.programParticipant.updateMany({
-            where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: null },
+            // T3 apply CAS from-state (PENDING_UNPAID); flag narrowing stays literal (#1080).
+            where: { programId, personId: participantId, ...fromWhere('PENDING_UNPAID'), inventoryHeldAt: null },
             data: { isPaymentPlanRequested: true, inventoryHeldAt: new Date(), paymentPlanDeniedAt: null },
         });
+        let reCount = 0;
         if (holdResult.count === 0) {
-            await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, status: 'PENDING', inventoryHeldAt: { not: null } },
+            const re = await prisma.programParticipant.updateMany({
+                // T3 re-apply CAS from-state (PENDING_HELD_DENIED); status clause shared with UNPAID.
+                where: { programId, personId: participantId, ...fromWhere('PENDING_HELD_DENIED'), inventoryHeldAt: { not: null } },
                 data: { isPaymentPlanRequested: true, paymentPlanDeniedAt: null },
             });
+            reCount = re.count;
         }
-
-        // Send email to finances
-        // In a real implementation this would trigger an actual email via SendGrid, NodeMailer, etc.
-        logger.info(`[EMAIL DISPATCH] To: finance@innovationtreehouse.org, Subject: Scholarship / Payment Plan Request for ${participant.person?.name || 'User'} in ${participant.program?.name || 'Program'}`);
+        // fromWhere only narrows on `status` (PENDING) — both branches' where also match an
+        // already-PENDING_HELD no-op re-POST, so a bare count>0 check would over-notify. Key
+        // on the pre-image flag instead: true for exactly the two real transitions (fresh hold,
+        // re-request after denial), false for both non-transitions (no-op re-POST, hold-failed
+        // retry whose request was already recorded).
+        const transitioned = !wasRequested && (holdResult.count > 0 || reCount > 0);
 
         let warning: string | undefined;
         if (holdResult.count > 0 && participant.program) {
@@ -104,15 +115,50 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             if (!ok) {
                 // The seat was never taken out of Shopify — leaving inventoryHeldAt
                 // set would be a phantom hold whose later release (+1) credits a
-                // seat that was never removed (oversell). Roll the stamp back so
-                // the ledger stays true; a re-submit retries the -1 via the
-                // inventoryHeldAt:null branch above. (adjustProgramInventory has
-                // already emailed sysadmins/board via reportShopifyFailure.)
+                // seat that was never removed (oversell). Roll the stamp back to
+                // null. The row now sits at PENDING_HOLD_FAILED { status: PENDING,
+                // inventoryHeldAt: null, isPaymentPlanRequested: true,
+                // paymentPlanDeniedAt: null } — a legitimate state, NOT a bug: the
+                // applicant's request STANDS and it is the board's job to finish
+                // placing the hold (Shopify Hold Reconciliation queue → Confirm
+                // manual hold). isPaymentPlanRequested stays true, so the 7-day
+                // non-payment sweep (which filters isPaymentPlanRequested:false)
+                // never auto-kicks it. adjustProgramInventory has already emailed
+                // sysadmins/board via reportShopifyFailure.
                 await prisma.programParticipant.updateMany({
                     where: { programId, personId: participantId, inventoryHeldAt: { not: null } },
                     data: { inventoryHeldAt: null },
                 });
-                warning = "Payment plan requested and finance notified, but the Shopify seat hold failed and was rolled back. Re-submit to retry, or check System Status > Link Status.";
+                // Applicant-facing: never tell them to retry — the request is
+                // recorded and the board finalizes it. Nothing is required of them.
+                warning = "Your scholarship / payment-plan request has been recorded and the board notified. A seat-reservation step needs a board member to finish it — nothing more is required from you.";
+            }
+        }
+
+        if (transitioned) {
+            const base = config.baseUrl();
+            const personName = participant.person?.name || 'A household member';
+            const programName = participant.program?.name || 'a program';
+            await notifyReviewTeam(
+                `New scholarship / payment-plan request: ${personName} — ${programName}`,
+                `<p>The Scholarship Review Team has a new request to review.</p>`
+                + `<p><strong>${escapeHtml(personName)}</strong> requested a scholarship / payment plan for <strong>${escapeHtml(programName)}</strong>.</p>`
+                + `<p>Review it here: <a href="${base}/finance-ops/payment-plan">${base}/finance-ops/payment-plan</a></p>`,
+                "Scholarship review-team notify failed (program request):",
+            );
+            // A participant with no household can't have leads to ack — skip the
+            // ack, review-team notify above still fired.
+            if (participant.person?.householdId) {
+                const recipients = await resolveScholarshipRecipients(participant.person.householdId, participantId);
+                const ackSettings = await prisma.boardSettings.findUnique({
+                    where: { id: 1 },
+                    select: { scholarshipAckSubject: true, scholarshipAckProgramBody: true },
+                });
+                const ack = resolveAckCopy(ackSettings, "program", { programName });
+                // Shopify-failure branch: the operational-incident copy is deliberately
+                // hard-coded (not configurable) — the configured subject still applies.
+                const ackBody = warning ? `<p>${escapeHtml(warning)}</p>` : ack.body;
+                await sendScholarshipAck(recipients, ack.subject, ackBody);
             }
         }
 

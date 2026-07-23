@@ -1,24 +1,59 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
-import { withAuth } from "@/lib/auth";
+import { withAuth, authenticateRequest } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
-import { isActiveOrgMember } from "@/lib/orgMembership";
-import { notifyNewProgramAnnounced } from "@/lib/notifications";
+import { isActiveOrgMember, isActiveOrgMemberThrough, programCoverageDate } from "@/lib/orgMembership";
+import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 
-export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
+// ORDER MATTERS: this export sits ABOVE getProgram so the routeAuthDrift
+// guard attributes getProgram's edge-model reads to the nearest preceding
+// exported METHOD (this GET) — moving it below silently un-attributes them.
+// The registry stripper (security/stripper.ts) is a strict allowlist over each
+// model's CLASSIFIED schema fields (see security/generated/classifications.ts,
+// generated from /// @sensitivity comments) — it has no channel for a
+// viewer-computed scalar that isn't a real Program column, and adding one
+// would mean a schema change this feature doesn't get. So viewerIsMember /
+// viewerMemberPricingEligible are computed AFTER the registry response comes
+// back and merged on top, session callers only — the registry envelope above
+// (association gate, per-tier stripping) runs completely untouched first.
+// startAt/endAt are 'public' tier, so they always ride in `body` regardless of
+// caller privilege; re-authenticating here is the same cheap session read
+// authenticateRequest always does, just called a second time.
+export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+    const res = await getProgram(req, ctx);
+    if (res.status !== 200) return res;
+
+    const auth = await authenticateRequest(req);
+    if (auth.type !== 'session') return res;
+
+    const body = (await res.json()) as { startAt: string | null; endAt: string | null };
+    const coverageDate = programCoverageDate({
+        startAt: body.startAt ? new Date(body.startAt) : null,
+        endAt: body.endAt ? new Date(body.endAt) : null,
+    });
+    const [viewerIsMember, viewerMemberPricingEligible] = await Promise.all([
+        isActiveOrgMember(auth.user.id),
+        isActiveOrgMemberThrough(auth.user.id, coverageDate),
+    ]);
+    return NextResponse.json({ ...body, viewerIsMember, viewerMemberPricingEligible });
+}
+
+const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ auth, params }) => {
     const programId = parseInt(params.id, 10);
     if (isNaN(programId)) throw badRequest('Invalid program ID');
 
     const program = await prisma.program.findUnique({
         where: { id: programId },
         include: {
-            volunteers: { include: { person: true } },
+            volunteers: { where: { person: LIVE_PERSON }, include: { person: true } },
             participants: {
+                where: { person: LIVE_PERSON },
                 include: {
                     person: {
                         include: {
@@ -41,7 +76,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
             events: { orderBy: { startAt: 'asc' } },
             fees: true,
             leadMentor: true,
-            _count: { select: { participants: true, volunteers: true } },
+            _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } } } },
         },
     });
 
@@ -92,6 +127,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     return { Program: program };
 });
 
+
 // withAuth rejects unauthenticated AND denied households at admission (closes
 // GAP-1: this PATCH previously had no denied check), so a denied lead mentor can
 // no longer edit their program.
@@ -120,7 +156,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, announceOnOpen, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -143,6 +179,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
             ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
             ...(orgMemberOnly !== undefined && { orgMemberOnly }),
+            ...(announceOnOpen !== undefined && { announceOnOpen }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),
             ...(minAge !== undefined && { minAge }),
@@ -177,13 +214,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             }
         });
 
-        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
-        // save while already there, and not when only one of the two is set.
-        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
-        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
-        if (!wasAnnounced && nowAnnounced) {
-            await notifyNewProgramAnnounced(updatedProgram.name);
-        }
+        // Announce trigger — transition rule, once-per-lifetime claim, audit row,
+        // and fire-without-await all live in the helper. Never throws.
+        await maybeAnnounceOnOpen({
+            programId: updatedProgram.id,
+            before: currentProgram,
+            after: updatedProgram,
+            actorId: auth.user.id,
+        });
 
         // Shopify is the source of truth for program capacity (product decision
         // 2026-07-06): cap edits propagate as relative inventory adjustments.

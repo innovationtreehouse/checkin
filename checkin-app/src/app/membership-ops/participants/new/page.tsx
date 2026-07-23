@@ -98,7 +98,7 @@ function NewParticipantForm() {
       const data = await res.json().catch(() => ({}));
 
       if (res.ok) {
-        notifications.show({ color: "green", message: `Participant ${name || data.participant.email || 'created'} successfully!` });
+        notifications.show({ message: `Participant ${name || data.participant.email || 'created'} successfully!` });
         setName("");
         setEmail("");
         setParentEmail("");
@@ -123,7 +123,13 @@ function NewParticipantForm() {
   return (
     <Container size="md" pb="md">
       <Card withBorder radius="md" padding="lg">
-        <AdminPageHeader title="Register New User" back={{ href: '/membership-ops', label: '← Membership Ops' }} mb="md" />
+        <AdminPageHeader
+          title="Register New User"
+          back={queryHouseholdId
+            ? { href: '/membership-ops/households', label: '← Households' }
+            : { href: '/membership-ops', label: '← Membership Ops' }}
+          mb="md"
+        />
 
         <Text c="dimmed" mb="lg">
           System Administrators can manually register a new participant into the database. When they
@@ -205,7 +211,7 @@ function NewParticipantForm() {
               />
             )}
 
-            <Button type="submit" color="green" disabled={submitDisabled} loading={saving} mt="sm">
+            <Button type="submit" disabled={submitDisabled} loading={saving} mt="sm">
               Create Participant
             </Button>
           </Stack>

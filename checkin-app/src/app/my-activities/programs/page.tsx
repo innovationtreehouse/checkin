@@ -23,13 +23,15 @@ type UserProgram = {
 };
 
 // Payment pill: ACTIVE (paid/free) shows nothing; a still-owed enrollment is
-// either the household's to pay (green, actionable) or waiting on finance to
+// either the household's to pay (theme-primary, actionable) or waiting on finance to
 // approve a payment plan (gray, not actionable — don't imply it's settled).
+// ponytail: "Payment due" reads more like a warning than a success state — mechanical
+// off-palette-sweep target is theme-primary green; a maintainer may prefer gray/yellow here.
 function paymentPill(status: string, planRequested: boolean) {
   if (status === 'ACTIVE') return null;
   return planRequested
     ? <Badge color="gray" variant="filled">Awaiting finance approval</Badge>
-    : <Badge color="green" variant="filled">Payment due</Badge>;
+    : <Badge variant="filled">Payment due</Badge>;
 }
 
 export default function MyProgramsDashboard() {

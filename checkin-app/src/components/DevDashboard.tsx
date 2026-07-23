@@ -13,6 +13,7 @@ import {
     getRecentActivity,
     type ActionResult,
 } from "@/lib/dev/actions";
+import { relTime } from "@/lib/time";
 
 /**
  * The dev dashboard (DEV_DASHBOARD_DESIGN.md §7) — a slide-up drawer from the bottom of the
@@ -35,16 +36,6 @@ interface PersonaOption {
     email: string;
     name: string | null;
     isSysadmin?: boolean;
-}
-
-function relTime(when: string | Date): string {
-    const ms = Date.now() - new Date(when).getTime();
-    const min = Math.floor(ms / 60000);
-    if (min < 1) return "just now";
-    if (min < 60) return `${min} min ago`;
-    const hr = Math.floor(min / 60);
-    if (hr < 24) return `${hr} hr ago`;
-    return `${Math.floor(hr / 24)} d ago`;
 }
 
 function describe(e: Entry): string {

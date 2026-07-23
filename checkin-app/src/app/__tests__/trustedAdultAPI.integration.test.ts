@@ -20,7 +20,10 @@ import { getServerSession } from 'next-auth/next';
 import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 const TAG = 'trustedadult-api-test';
 const SHARED = 'Grandma may pick up the kids.';
@@ -148,7 +151,7 @@ describe('Trusted Adults API', () => {
         expect(row).toBeTruthy();
         expect(row.trustedAdultName).toBe('Grandma');
         expect(row.reviews[0].sharedNote).toBe(SHARED);
-        expect(row.familyContext).toBeUndefined(); // pii — never to keyholders
+        expect(row.familyContext).toBeUndefined(); // internal narrative band — never to keyholders
     });
 
     it('operational view: program lead of the household\'s child sees the shared note, not familyContext', async () => {
@@ -249,7 +252,7 @@ describe('Trusted Adults API', () => {
         const authorized = await pickupRow();
         expect(authorized).toBeTruthy();
         expect(authorized.reviews[0].sharedNote).toBe(NOTE);
-        expect(authorized.familyContext).toBeUndefined(); // pii — never on the pickup view
+        expect(authorized.familyContext).toBeUndefined(); // internal narrative band — never on the pickup view
 
         // 4a. 30 days out: the sweep warns the family once. A warning does NOT revoke —
         //     the adult stays an authorized pickup while the family is reminded to renew.

@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Alert, Badge, Button, Card, Center, Group, Loader, Stack, Text } from "@mantine/core";
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { useSession } from "next-auth/react";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 import { sharesHousehold } from "@/lib/conflictOfInterest";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { StatusFilterBadge, ActiveFilterNotice, useStatusFilter } from "@/components/StatusFilter";
+import { awaitingBgReview, type ProcessStatus } from "@/lib/membership/lifecycle";
 
 interface Person {
   id: number;
@@ -53,14 +57,20 @@ const statusColor = (status: string) => STATUS_COLORS[status] || "gray";
 const statusLabel = (status: string) => status.replace(/_/g, " ");
 
 // The background check is a parallel track: an application still needs review
-// when it hasn't cleared and is past consent (mirrors review.ts isAwaitingBgReview).
+// when it hasn't cleared and is past consent. ONE definition, shared with the
+// server (fix #1): awaitingBgReview.has — client-safe (booleans in, no Prisma).
 const awaitingBg = (r: ProcessRow) =>
-  !r.bgClearedAt &&
-  (r.status === "PENDING_BG_REVIEW" ||
-    r.status === "RENEWAL_PENDING_BG" ||
-    ((r.status === "PENDING_PAYMENT" || r.status === "PENDING_BG_CLEARANCE") && !!r.bgConsentAt));
+  awaitingBgReview.has({ status: r.status as ProcessStatus, bgConsentAt: !!r.bgConsentAt, bgClearedAt: !!r.bgClearedAt });
 
 export default function AdminMembershipPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <ApplicationsBoard />
+    </Suspense>
+  );
+}
+
+function ApplicationsBoard() {
   const { data: session } = useSession();
   const me = session?.user;
   // Conflict of interest: a board member may not certify/override their OWN household's
@@ -74,11 +84,16 @@ export default function AdminMembershipPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [messageId, setMessageId] = useState<number | null>(null);
+  const { active, toggle, clear } = useStatusFilter();
+  const [certifyOpened, { open: openCertify, close: closeCertify }] = useDisclosure(false);
+  const [pendingCertify, setPendingCertify] = useState<number | null>(null);
+  const [certifyReason, setCertifyReason] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (archived: boolean) => {
     setLoading(true);
     try {
-      const res = await fetch("/api/membership-ops/applications");
+      const res = await fetch(`/api/membership-ops/applications${archived ? "?archived=1" : ""}`);
       if (res.ok) {
         const data = await res.json();
         setRows(data.processes || []);
@@ -88,7 +103,7 @@ export default function AdminMembershipPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(showArchived); }, [load, showArchived]);
 
   const act = async (processId: number, action: string, extra?: Record<string, unknown>) => {
     setBusyId(processId);
@@ -102,8 +117,8 @@ export default function AdminMembershipPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Updated." });
-        await load();
+        notifications.show({ message: "Updated." });
+        await load(showArchived);
         notifyNavRefresh();
       } else {
         setMessage(data.error || "Action failed.");
@@ -127,12 +142,12 @@ export default function AdminMembershipPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
-        await load();
+        notifications.show({ message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
+        await load(showArchived);
         notifyNavRefresh();
       } else if (data.code === "wrong_phase") {
         notifications.show({ color: "red", message: data.error || "This application is no longer blocked.", autoClose: 4000 });
-        await load();
+        await load(showArchived);
       } else {
         setMessage(data.error || "Override failed.");
       }
@@ -155,8 +170,8 @@ export default function AdminMembershipPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Application archived." });
-        await load();
+        notifications.show({ message: "Application archived." });
+        await load(showArchived);
         notifyNavRefresh();
       } else {
         setMessage(data.error || "Archive failed.");
@@ -185,7 +200,34 @@ export default function AdminMembershipPage() {
     });
   };
 
-  const certify = async (processId: number) => {
+  // Board recovery of a wrongly-archived application — restores it to whatever
+  // in-flight status it was archived from (server-determined from the audit trail).
+  const unarchive = async (processId: number) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/unarchive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ message: "Application unarchived." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Unarchive failed.", autoClose: 4000 });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const certify = async (processId: number, reason: string) => {
     setBusyId(processId);
     setMessageId(processId);
     setMessage("");
@@ -193,16 +235,16 @@ export default function AdminMembershipPage() {
       const res = await fetch("/api/membership-ops/applications/certify-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId }),
+        body: JSON.stringify({ processId, reason }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Certified — membership activated." });
-        await load();
+        notifications.show({ message: "Certified — membership activated." });
+        await load(showArchived);
         notifyNavRefresh();
       } else if (data.code === "wrong_phase") {
         notifications.show({ color: "red", message: data.error || "This application is no longer awaiting payment.", autoClose: 4000 });
-        await load();
+        await load(showArchived);
       } else {
         setMessage(data.error || "Certification failed.");
       }
@@ -213,6 +255,21 @@ export default function AdminMembershipPage() {
     }
   };
 
+  const handleCertify = (processId: number) => {
+    setPendingCertify(processId);
+    setCertifyReason("");
+    openCertify();
+  };
+
+  const confirmCertify = async () => {
+    if (pendingCertify === null || !certifyReason.trim()) return;
+    closeCertify();
+    const processId = pendingCertify;
+    const reason = certifyReason.trim();
+    setPendingCertify(null);
+    await certify(processId, reason);
+  };
+
   const householdLabel = (r: ProcessRow) => {
     const hh = r.orgMembership?.household;
     if (!hh) return `Household #${r.orgMembership?.householdId ?? "?"}`;
@@ -221,6 +278,9 @@ export default function AdminMembershipPage() {
   };
 
   const statusCounts = rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+  // The status-filter badges/notice are meaningless on the archived view (every
+  // row is ARCHIVED) — the filter itself is ignored there too.
+  const visibleRows = rows.filter((r) => showArchived || !active || r.status === active);
 
   return (
     <Stack>
@@ -230,33 +290,57 @@ export default function AdminMembershipPage() {
         automatically once the Zoho webhook is configured.)
       </Text>
 
-      {!loading && rows.length > 0 && (
+      <Switch
+        label="Show archived"
+        checked={showArchived}
+        onChange={(e) => setShowArchived(e.currentTarget.checked)}
+      />
+
+      {!loading && rows.length > 0 && !showArchived && (
         <>
           {rows.some((r) => r.status === "BLOCKED") && (
-            <Alert color="red" variant="light" fw={600}>
+            <Alert
+              color="red"
+              variant="light"
+              fw={600}
+              onClick={() => toggle("BLOCKED")}
+              title="Click to filter to blocked applications"
+              style={{ cursor: "pointer" }}
+            >
               🚨 {rows.filter((r) => r.status === "BLOCKED").length} application(s) blocked at
               background review — board attention needed.
             </Alert>
           )}
           <Group gap="xs">
             {Object.entries(statusCounts).map(([status, count]) => (
-              <Badge key={status} color={statusColor(status)} variant="light">
+              <StatusFilterBadge key={status} value={status} active={active} onToggle={toggle} color={statusColor(status)}>
                 {statusLabel(status)}: {count}
-              </Badge>
+              </StatusFilterBadge>
             ))}
           </Group>
         </>
       )}
 
+      {!showArchived && <ActiveFilterNotice active={active} label={statusLabel} onClear={clear} />}
+
       {loading ? (
         <Center py="xl"><Loader /></Center>
       ) : rows.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
-          <Text c="dimmed">No in-flight membership applications.</Text>
+          <Text c="dimmed">{showArchived ? "No archived applications." : "No in-flight membership applications."}</Text>
+        </Card>
+      ) : visibleRows.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed">
+              No applications in {statusLabel(active as string)} — clear the filter to see everything.
+            </Text>
+            <Button size="xs" variant="light" onClick={clear}>Clear filter</Button>
+          </Stack>
         </Card>
       ) : (
         <Stack>
-          {rows.map((r) => (
+          {visibleRows.map((r) => (
             <Card key={r.id} withBorder radius="md" padding="lg">
               <Group justify="space-between" align="center" wrap="wrap">
                 <div>
@@ -266,7 +350,9 @@ export default function AdminMembershipPage() {
                     {r.orgMembership?.isVolunteer && <Text component="span" c="green"> · volunteer</Text>}
                   </Text>
                 </div>
-                <Badge color={statusColor(r.status)}>{statusLabel(r.status)}</Badge>
+                <StatusFilterBadge value={r.status} active={active} onToggle={toggle} color={statusColor(r.status)}>
+                  {statusLabel(r.status)}
+                </StatusFilterBadge>
               </Group>
 
               {r.status === "PENDING_EXTERNAL_ACTION" && (
@@ -303,7 +389,7 @@ export default function AdminMembershipPage() {
               {r.status === "PENDING_PAYMENT" && (
                 <Group mt="md" gap="md" wrap="wrap" align="center">
                   <Text size="sm" c="dimmed">Awaiting payment.</Text>
-                  <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => certify(r.id)}>
+                  <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => handleCertify(r.id)}>
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                   {ownHousehold(r) && (
@@ -329,7 +415,7 @@ export default function AdminMembershipPage() {
                     <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" fz={15} color="green" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
+                    <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
                       Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
@@ -344,14 +430,46 @@ export default function AdminMembershipPage() {
               )}
 
               <Group justify="flex-end" mt="md">
-                <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
-                  Archive
-                </Button>
+                {showArchived ? (
+                  <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => unarchive(r.id)}>
+                    Unarchive
+                  </Button>
+                ) : (
+                  <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
+                    Archive
+                  </Button>
+                )}
               </Group>
             </Card>
           ))}
         </Stack>
       )}
+
+      <Modal
+        opened={certifyOpened}
+        onClose={closeCertify}
+        title={<Text span fw={700} fz="lg">Certify Payment Plan</Text>}
+        centered
+      >
+        <Text mb="sm">
+          Certify this payment plan? This activates the household&apos;s membership without a
+          Shopify payment (holding for background clearance if it isn&apos;t done yet).
+        </Text>
+        <Textarea
+          value={certifyReason}
+          onChange={(e) => setCertifyReason(e.currentTarget.value)}
+          label="Reason"
+          placeholder="Why is this being certified?"
+          autosize
+          minRows={3}
+          mb="lg"
+          required
+        />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeCertify}>Cancel</Button>
+          <Button onClick={confirmCertify} disabled={!certifyReason.trim()}>Certify</Button>
+        </Group>
+      </Modal>
     </Stack>
   );
 }

@@ -1,15 +1,17 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { usePolling, POLL_IDLE_STOP_MS } from "@/hooks/usePolling";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
-import { formatTime } from "@/lib/time";
+import { formatTime, isYouth } from "@/lib/time";
+import { PageContainer } from "@/components/ui/PageContainer";
 import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -19,14 +21,14 @@ import { PageLoader } from "@/components/ui/PageLoader";
 import { CountBadge } from "@/components/ui/CountBadge";
 type Person = {
   id: number;
-  // Attendance participants never carry email/dateOfBirth on the wire (the
-  // server resolves the display name and the derived isYouth flag instead);
-  // other sources (roles search) may still include email.
-  email?: string | null;
+  email: string;
   name?: string | null;
   isKeyholder: boolean;
   isSysadmin: boolean;
+  // Server-computed youth classification. The kiosk payload carries this INSTEAD of
+  // dateOfBirth (personal tier); privileged payloads carry both.
   isYouth?: boolean;
+  dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
   household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
@@ -78,16 +80,20 @@ function KioskDisplayInner() {
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
+  // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
+  // fall back to the birth date the privileged payload still ships.
+  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth);
+
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !v.participant.isYouth);
-  const youthList = fullAttendance.filter(v => v.participant.isYouth);
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
+  const youthList = fullAttendance.filter(v => visitIsYouth(v));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !v.participant.isYouth);
-  const householdYouth = limitedHousehold.filter(v => v.participant.isYouth);
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
+  const householdYouth = limitedHousehold.filter(v => visitIsYouth(v));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
@@ -109,39 +115,43 @@ function KioskDisplayInner() {
     if (canCheckInHousehold) fetchHousehold();
   }, [canCheckInHousehold, currentUserHouseholdId]);
 
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      try {
-        const headers: Record<string, string> = {};
-        const sigParamsUrl = searchParams.get("sig");
-        const tsParamsUrl = searchParams.get("ts");
-        const nonceParamsUrl = searchParams.get("nonce");
-        if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-          headers["x-kiosk-signature"] = sigParamsUrl;
-          headers["x-kiosk-timestamp"] = tsParamsUrl;
-          headers["x-kiosk-nonce"] = nonceParamsUrl;
-        }
+  // A signed kiosk display (sig/ts/nonce present) is unattended, so it must not
+  // idle-stop — only the interactive staff view does. Either way the visibility
+  // gate applies; a cookieless kiosk poll can't wake a slept env anyway.
+  const isSignedKiosk = !!(searchParams.get("sig") && searchParams.get("ts") && searchParams.get("nonce"));
 
-        const res = await fetch("/api/attendance", { headers });
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && (json.access === "full" || json.access === "limited")) {
-          setData(json);
-          setError(null);
-          if (json.signedRequest === true) setIsKioskMode(true);
-        } else if (!res.ok) {
-          setError(json.error || "Failed to load attendance");
-        }
-      } catch (error) {
-        console.error("Failed to fetch attendance:", error);
-        notifications.show({ color: "red", message: "Network error", autoClose: false });
-      } finally {
-        setLoading(false);
+  const fetchAttendance = useCallback(async () => {
+    try {
+      const headers: Record<string, string> = {};
+      const sigParamsUrl = searchParams.get("sig");
+      const tsParamsUrl = searchParams.get("ts");
+      const nonceParamsUrl = searchParams.get("nonce");
+      if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+        headers["x-kiosk-signature"] = sigParamsUrl;
+        headers["x-kiosk-timestamp"] = tsParamsUrl;
+        headers["x-kiosk-nonce"] = nonceParamsUrl;
       }
-    };
 
-    fetchAttendance();
-    const interval = setInterval(fetchAttendance, 60000);
+      const res = await fetch("/api/attendance", { headers });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && (json.access === "full" || json.access === "limited")) {
+        setData(json);
+        setError(null);
+        if (json.signedRequest === true) setIsKioskMode(true);
+      } else if (!res.ok) {
+        setError(json.error || "Failed to load attendance");
+      }
+    } catch (error) {
+      console.error("Failed to fetch attendance:", error);
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
+    } finally {
+      setLoading(false);
+    }
+  }, [searchParams]);
 
+  usePolling(fetchAttendance, 60000, { idleStopMs: isSignedKiosk ? undefined : POLL_IDLE_STOP_MS });
+
+  useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (typeof event.data === "object" && event.data?.type === "refresh-attendance" && event.data.attendance) {
         setData({ access: "full", attendance: event.data.attendance, counts: event.data.counts, safety: event.data.safety });
@@ -152,12 +162,8 @@ function KioskDisplayInner() {
       }
     };
     window.addEventListener("message", handleMessage);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [searchParams]);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [fetchAttendance]);
 
   useEffect(() => {
     const performSearch = async () => {
@@ -276,7 +282,7 @@ function KioskDisplayInner() {
   const kioskDisplayNames = useMemo(() => {
     if (!isKioskMode) return new Map<number, string>();
     const allVisits = [...keyholderList, ...volunteerList, ...youthList];
-    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email ?? undefined })));
+    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email })));
   }, [isKioskMode, keyholderList, volunteerList, youthList]);
 
   const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);
@@ -294,7 +300,7 @@ function KioskDisplayInner() {
               style={{ cursor: canSeeNames ? 'pointer' : 'default' }}
               onClick={() => { if (canSeeNames) setSelectedParticipant(visit.participant); }}
             >
-              {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email?.split("@")[0] || "Unknown") : (visit.participant.name || visit.participant.email?.split("@")[0] || "Unknown")}
+              {isKioskMode ? (kioskDisplayNames.get(visit.participant.id) || visit.participant.name || visit.participant.email.split("@")[0]) : (visit.participant.name || visit.participant.email.split("@")[0])}
             </Text>
             <Group gap={6} align="center">
               <Text c="dimmed" size="xs">{formatTime(visit.arrivedAt)}</Text>
@@ -341,13 +347,9 @@ function KioskDisplayInner() {
 
   const userId = (session?.user as SessionUser)?.id;
 
-  return (
-    <Box style={isKioskMode ? { cursor: "none", marginTop: -25, paddingLeft: 8, display: "flow-root" } : { maxWidth: 1200, margin: "0 auto", marginTop: -25, paddingLeft: 8, display: "flow-root" }}>
-      {!isKioskMode && (
-        <Box style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <AttendanceTabs />
-        </Box>
-      )}
+  const pageBody = (
+    <>
+      {!isKioskMode && <AttendanceTabs />}
       <Card withBorder radius="md" padding="lg" style={{ width: "100%", maxWidth: 1200, margin: "0 auto" }}>
         {/* Check-in button — hidden in kiosk mode */}
         {!isKioskMode && (
@@ -482,7 +484,7 @@ function KioskDisplayInner() {
                 <Paper key={v.id} withBorder radius="md" p="sm">
                   <Group justify="space-between">
                     <div>
-                      <Text fw={500}>{v.participant.name || v.participant.email?.split('@')[0] || "Unknown"}</Text>
+                      <Text fw={500}>{v.participant.name || v.participant.email.split('@')[0]}</Text>
                       <Text size="xs" c="dimmed">Arrived: {formatTime(v.arrivedAt)}</Text>
                     </div>
                     <Button color="red" variant="light" onClick={() => handleForceCheckout(v.id)} disabled={checkingOut === v.id}>
@@ -505,7 +507,7 @@ function KioskDisplayInner() {
         {selectedParticipant && (
           <>
             <Stack align="center" gap={4} mb="lg">
-              <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email?.split('@')[0] || "Unknown"}</Text>
+              <Text fz="xl" fw={700}>{selectedParticipant.name || selectedParticipant.email.split('@')[0]}</Text>
               {selectedParticipant.phone && (
                 <Text c="dimmed">User Phone: <Anchor href={`tel:${selectedParticipant.phone.replace(/\D/g, '')}`} c="teal">{formatPhone(selectedParticipant.phone)}</Anchor></Text>
               )}
@@ -552,7 +554,18 @@ function KioskDisplayInner() {
           <Button color="red" onClick={confirmForceCheckout}>Force Checkout</Button>
         </Group>
       </Modal>
-    </Box>
+    </>
+  );
+
+  // Kiosk mode is a fullscreen board surface with its own chrome (cursor
+  // hidden, content pulled up under the header); the member-facing page rides
+  // the canonical PageContainer like every other page — no hand-rolled copy of
+  // its margins (PR #1026 review). A plain conditional (not a per-render
+  // wrapper component) so the subtree never remounts when state changes.
+  return isKioskMode ? (
+    <Box style={{ cursor: "none", marginTop: -25, paddingLeft: 8, display: "flow-root" }}>{pageBody}</Box>
+  ) : (
+    <PageContainer>{pageBody}</PageContainer>
   );
 }
 

@@ -26,6 +26,7 @@ export type ProgramDetail = {
   maxAge: number | null;
   maxParticipants: number | null;
   orgMemberOnly: boolean;
+  announceOnOpen: boolean;
   participants: {
     personId: number;
     status: string;
@@ -72,6 +73,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [phase, setPhase] = useState("PLANNING");
   const [enrollmentStatus, setEnrollmentStatus] = useState("CLOSED");
   const [orgMemberOnly, setMemberOnly] = useState(false);
+  const [announceOnOpen, setAnnounceOnOpen] = useState(false);
   const [leadMentorIdInput, setLeadMentorIdInput] = useState("");
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
@@ -107,6 +109,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setPhase(data.phase || "PLANNING");
         setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
         setMemberOnly(Boolean(data.orgMemberOnly));
+        setAnnounceOnOpen(Boolean(data.announceOnOpen));
         setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
         setMemberPrice(data.orgMemberPriceCents !== null ? String(data.orgMemberPriceCents / 100) : "");
         setNonMemberPrice(data.nonOrgMemberPriceCents !== null ? String(data.nonOrgMemberPriceCents / 100) : "");
@@ -153,14 +156,14 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
-          phase, enrollmentStatus, orgMemberOnly,
+          phase, enrollmentStatus, orgMemberOnly, announceOnOpen,
           leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null,
           memberPrice: memberPrice || null,
           nonMemberPrice: nonMemberPrice || null,
         })
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Saved." });
+        notifications.show({ message: "Saved." });
         notifyNavRefresh();
         fetchProgram();
       } else {
@@ -188,7 +191,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Shopify identifiers saved." });
+        notifications.show({ message: "Shopify identifiers saved." });
         notifyNavRefresh();
         fetchProgram();
       } else {
@@ -207,7 +210,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       const res = await fetch(`/api/programs/${id}/sync-shopify`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        notifications.show({ color: "green", message: "Shopify checkout configured." });
+        notifications.show({ message: "Shopify checkout configured." });
         notifyNavRefresh();
         fetchProgram();
       } else {
@@ -323,7 +326,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                     </Stack>
                   </Alert>
                 ) : program.shopifyProductId && (
-                  <Alert color="green" variant="light">✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})</Alert>
+                  <Alert variant="light">✓ Pre-configured for Shopify Checkout (Product ID: {program.shopifyProductId})</Alert>
                 )}
 
                 {isSysAdminOrBoard && (
@@ -400,13 +403,20 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 <Checkbox checked={isFree} disabled label="This is a free program (Pricing cannot be changed)" />
 
                 {!isFree && (
-                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                  <SimpleGrid cols={{ base: 1, sm: orgMemberOnly ? 1 : 2 }}>
                     <NumberInput label="Treehouse Member Price ($)" value={memberPrice} disabled />
-                    <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} disabled />
+                    {!orgMemberOnly && <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} disabled />}
                   </SimpleGrid>
                 )}
 
                 <Checkbox checked={orgMemberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Treehouse Members-Only Program" />
+
+                <Checkbox
+                  checked={announceOnOpen}
+                  onChange={e => setAnnounceOnOpen(e.currentTarget.checked)}
+                  label="Announce to members when enrollment opens"
+                  description="Off by default. When on, reaching Upcoming + Open emails members whose membership covers this program's dates (once)."
+                />
 
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <Select label="Program Phase" value={phase} onChange={v => setPhase(v ?? 'PLANNING')} allowDeselect={false}
@@ -425,7 +435,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
                 {saveError && <Alert color="red" variant="light">{saveError}</Alert>}
                 <Group gap="sm">
-                  <Button type="submit" color="green" disabled={saving || !leadMentorIdInput} loading={saving}>
+                  <Button type="submit" disabled={saving || !leadMentorIdInput} loading={saving}>
                     Save Settings
                   </Button>
                 </Group>

@@ -81,8 +81,8 @@ export const PATCH = withAuth(
                                     actorId: userId,
                                     action: "CREATE",
                                     tableName: "Person",
-                                    affectedEntityId: householdId,
-                                    secondaryAffectedEntity: participantId
+                                    affectedEntityId: participantId,
+                                    secondaryAffectedEntity: householdId
                                 }
                             });
                         } catch (e) {
@@ -103,8 +103,8 @@ export const PATCH = withAuth(
                                     actorId: userId,
                                     action: "DELETE",
                                     tableName: "Person",
-                                    affectedEntityId: householdId,
-                                    secondaryAffectedEntity: participantId
+                                    affectedEntityId: participantId,
+                                    secondaryAffectedEntity: householdId
                                 }
                             });
                         }
@@ -115,7 +115,7 @@ export const PATCH = withAuth(
                     data: {
                         actorId: userId,
                         action: "EDIT",
-                        tableName: "Participant",
+                        tableName: "Person",
                         affectedEntityId: targetHouseholdMember.id,
                         newData: updatedHouseholdMember
                     }

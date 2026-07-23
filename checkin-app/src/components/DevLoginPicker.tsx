@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { signIn } from "next-auth/react";
-import { Badge, Card, Center, Divider, Group, SimpleGrid, Stack, Text } from "@mantine/core";
+import { Card, Center, Divider, Group, SimpleGrid, Stack, Text } from "@mantine/core";
 import { useCheckinEnv } from "@/components/EnvProvider";
+import { RoleBadge } from "@/components/ui/RoleBadge";
 
 interface Persona {
   id: number;
@@ -60,22 +61,30 @@ export default function DevLoginPicker({ callbackUrl = "/" }: { callbackUrl?: st
     signIn("persona-mint", { personaId: String(personaId), mode: "impersonate", callbackUrl });
   };
 
-  const getRoleBadges = (p: Persona): { label: string; color: string }[] => {
-    const badges: { label: string; color: string }[] = [];
-    if (p.isSysadmin) badges.push({ label: "Sysadmin", color: "red" });
-    if (p.isBoardMember) badges.push({ label: "Board", color: "grape" });
-    if (p.isKeyholder) badges.push({ label: "Keyholder", color: "blue" });
-    if (p.isBackgroundCheckReviewer) badges.push({ label: "BG Reviewer", color: "teal" });
-    if (p.toolStatuses?.length > 0) badges.push({ label: "Certified", color: "green" });
-    if (p.householdId) badges.push({ label: "Household", color: "indigo" });
+  // The four participant-role badges render through the shared RoleBadge (its ROLE_META
+  // is the one source of truth for role colors). The three derived, non-role labels below
+  // (Certified/Household/Student) have no ROLE_META entry, so a fake `_`-prefixed role plus
+  // a label override renders them through the same component with the gray fallback.
+  const getRoleBadges = (p: Persona): { role: string; label?: string }[] => {
+    const badges: { role: string; label?: string }[] = [];
+    if (p.isSysadmin) badges.push({ role: "isSysadmin" });
+    if (p.isBoardMember) badges.push({ role: "isBoardMember" });
+    if (p.isKeyholder) badges.push({ role: "isKeyholder" });
+    if (p.isBackgroundCheckReviewer) badges.push({ role: "isBackgroundCheckReviewer" });
+    if (p.toolStatuses?.length > 0) badges.push({ role: "_certified", label: "Certified" });
+    if (p.householdId) badges.push({ role: "_household", label: "Household" });
     if (p.dateOfBirth && now !== null) {
       const age = Math.floor((now - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-      if (age < 18) badges.push({ label: `Student (${age})`, color: "pink" });
+      if (age < 18) badges.push({ role: "_student", label: `Student (${age})` });
     }
     return badges;
   };
 
-  if (process.env.NODE_ENV === 'production') return null;
+  // CHECKIN_ENV, not NODE_ENV: in a client bundle NODE_ENV is inlined at BUILD
+  // time, so the old check made the picker vanish in every production build —
+  // including a local `next build` — regardless of instance. checkinEnv comes
+  // from EnvProvider (server-resolved) and fails safe to 'prod' when unset.
+  if (checkinEnv === 'prod') return null;
 
   if (loading) {
     return (
@@ -111,9 +120,7 @@ export default function DevLoginPicker({ callbackUrl = "/" }: { callbackUrl?: st
             {getRoleBadges(p).length > 0 && (
               <Group gap={4} mt={4}>
                 {getRoleBadges(p).map((b) => (
-                  <Badge key={b.label} color={b.color} size="xs" variant="filled">
-                    {b.label}
-                  </Badge>
+                  <RoleBadge key={b.role} role={b.role} label={b.label} size="xs" />
                 ))}
               </Group>
             )}

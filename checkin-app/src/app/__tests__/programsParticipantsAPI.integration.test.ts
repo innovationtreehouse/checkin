@@ -339,6 +339,91 @@ describe('Program Participants API Integration Tests', () => {
              expect((await forceRes.json()).enrollment.status).toBe('ACTIVE'); // admin comp
         });
 
+        // A board/sysadmin comp seats a participant with NO Shopify
+        // checkout, so unlike a paid PENDING enrollment nothing ever fires
+        // Shopify's own sale-time -1. The comp path must reconcile it (-1),
+        // exactly like a paid sale and like scholarship apply — else the
+        // storefront keeps showing the taken seat as available (oversell).
+        it('comp-add decrements Shopify inventory (-1) for a capped Shopify program', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local'; // arms the adjustProgramInventory mock (logs the delta)
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const shopifyProgram = await prisma.program.create({
+                data: { name: 'Comp Shopify Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, orgMemberPriceCents: 1000, shopifyVariantId: 'dev-mock-variant-comp-partic' },
+            });
+            try {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+                const res = await POST(
+                    // CHECKIN_ENV=local arms the keyless-kiosk fallback — send a cookie so
+                    // the request isn't hijacked as `kiosk` before the session gate runs.
+                    new Request(`http://localhost:4000/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'POST',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: otherId, override: true }), // external admin comp
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(shopifyProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.enrollment.status).toBe('ACTIVE'); // comp
+                expect(data.warning).toBeUndefined();
+                // The comp took a seat out of the Shopify pool: relative -1 on the variant.
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-comp-partic'));
+                // Comp is ACTIVE and NOT a hold: I1/I2/I3 keep inventoryHeldAt PENDING-only.
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: otherId } },
+                });
+                expect(row?.inventoryHeldAt).toBeNull();
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        // Mirror the scholarship / cap-edit Shopify-failure discipline: the DB
+        // change stands, the failure is surfaced as a warning (adjustProgramInventory
+        // has already logged + emailed sysadmins), and the board reconciles. A comp
+        // that half-commits (enrollment rolled back) would be worse than the original gap.
+        //
+        // Real failure, no mock: with the Shopify mock OFF (env not `local`) and no
+        // SHOPIFY_STORE_DOMAIN/credentials configured, adjustProgramInventory returns
+        // false at its credential guard (before any network) — the exact non-fatal
+        // failure the warning branch handles.
+        it('comp-add keeps the enrollment and warns when the Shopify decrement fails', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            const prevDomain = process.env.SHOPIFY_STORE_DOMAIN;
+            delete process.env.CHECKIN_ENV;       // mock off → real adjust path
+            delete process.env.SHOPIFY_STORE_DOMAIN; // no creds → returns false (no network)
+            const shopifyProgram = await prisma.program.create({
+                data: { name: 'Comp Shopify Fail Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, orgMemberPriceCents: 1000, shopifyVariantId: 'dev-mock-variant-comp-fail' },
+            });
+            try {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+                const res = await POST(
+                    new Request(`http://localhost:4000/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'POST',
+                        body: JSON.stringify({ participantId: otherId, override: true }),
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(shopifyProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                expect((await res.json()).warning).toMatch(/out of sync/i);
+                // No half-commit: the comp enrollment still exists (ACTIVE).
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: otherId } },
+                });
+                expect(row?.status).toBe('ACTIVE');
+            } finally {
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                if (prevDomain === undefined) delete process.env.SHOPIFY_STORE_DOMAIN;
+                else process.env.SHOPIFY_STORE_DOMAIN = prevDomain;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
         it('should return 409 (not 500) when enrolling the same participant twice', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 

@@ -18,7 +18,7 @@ type ProgramSummary = {
   phase: string;
   enrollmentStatus: string;
   leadMentorId: number | null;
-  _count: {
+  _count?: {
     participants: number;
     volunteers: number;
     events: number;
@@ -29,6 +29,16 @@ export default function PublicProgramsDirectory() {
   const { data: session } = useSession();
   const [programs, setPrograms] = useState<ProgramSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  // A load that outlives a normal round trip is almost always the system waking
+  // (the retry extension rides it out server-side, up to ~45s) — tell the user
+  // something generic is happening rather than leaving a bare spinner. Same
+  // tone as the global DbWakeNotice banner.
+  const [slowLoad, setSlowLoad] = useState(false);
+  useEffect(() => {
+    if (!loading) { setSlowLoad(false); return; }
+    const t = setTimeout(() => setSlowLoad(true), 4000);
+    return () => clearTimeout(t);
+  }, [loading]);
   const [message, setMessage] = useState("");
   const [activeOnly, setActiveOnly] = useState(true);
 
@@ -57,7 +67,16 @@ export default function PublicProgramsDirectory() {
   }, [activeOnly, isAuthorized]);
 
   if (loading) {
-    return <PageLoader />;
+    return (
+      <Stack align="center" gap="sm" mt="xl">
+        <PageLoader />
+        {slowLoad && (
+          <Text size="sm" c="dimmed" ta="center">
+            Getting the system ready for you — this usually takes under a minute.
+          </Text>
+        )}
+      </Stack>
+    );
   }
 
   return (
@@ -77,7 +96,7 @@ export default function PublicProgramsDirectory() {
               checked={activeOnly}
               onChange={(e) => setActiveOnly(e.currentTarget.checked)}
             />
-            <Button component={Link} href="/program-ops/new" color="green" variant="light">
+            <Button component={Link} href="/program-ops/new" variant="light">
               + New Program
             </Button>
           </Group>
@@ -100,7 +119,7 @@ export default function PublicProgramsDirectory() {
                 <Group justify="space-between" align="flex-start" mb="sm">
                   <Title order={4}>{program.name}</Title>
                   <Group gap={4}>
-                    {isOwner && <Badge color="green">Yours</Badge>}
+                    {isOwner && <Badge>Yours</Badge>}
                     {program.orgMemberOnly && <Badge color="grape" variant="light">Treehouse Members Only</Badge>}
                     {program.phase === 'PLANNING' && <Badge color="yellow" variant="light">Planning</Badge>}
                     {program.enrollmentStatus === 'CLOSED' && <Badge color="red" variant="light">Closed</Badge>}
@@ -112,31 +131,35 @@ export default function PublicProgramsDirectory() {
                   {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
                 </Text>
 
-                <Card withBorder radius="sm" padding="xs" mb="md">
-                  <Group justify="space-around">
-                    <Stack gap={0} align="center">
-                      <Text fw={700}>{program._count.participants}</Text>
-                      <Text size="xs" c="dimmed">Enrolled</Text>
-                    </Stack>
-                    <Divider orientation="vertical" />
-                    <Stack gap={0} align="center">
-                      <Text fw={700}>{program._count.volunteers}</Text>
-                      <Text size="xs" c="dimmed">Volunteers</Text>
-                    </Stack>
-                    <Divider orientation="vertical" />
-                    <Stack gap={0} align="center">
-                      <Text fw={700}>{program._count.events}</Text>
-                      <Text size="xs" c="dimmed">Sessions</Text>
-                    </Stack>
-                  </Group>
-                </Card>
+                {/* Counts come live-only (never cached): while the system wakes,
+                    the API omits them and the card simply skips this block. */}
+                {program._count && (
+                  <Card withBorder radius="sm" padding="xs" mb="md">
+                    <Group justify="space-around">
+                      <Stack gap={0} align="center">
+                        <Text fw={700}>{program._count.participants}</Text>
+                        <Text size="xs" c="dimmed">Enrolled</Text>
+                      </Stack>
+                      <Divider orientation="vertical" />
+                      <Stack gap={0} align="center">
+                        <Text fw={700}>{program._count.volunteers}</Text>
+                        <Text size="xs" c="dimmed">Volunteers</Text>
+                      </Stack>
+                      <Divider orientation="vertical" />
+                      <Stack gap={0} align="center">
+                        <Text fw={700}>{program._count.events}</Text>
+                        <Text size="xs" c="dimmed">Sessions</Text>
+                      </Stack>
+                    </Group>
+                  </Card>
+                )}
 
                 <Group grow>
                   <Button component={Link} href={`/programs/${program.id}`} variant="light">
-                    View Details
+                    View details and enroll
                   </Button>
                   {canManage && (
-                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light" color="green">
+                    <Button component={Link} href={`/program-ops/programs/${program.id}`} variant="light">
                       Manage
                     </Button>
                   )}

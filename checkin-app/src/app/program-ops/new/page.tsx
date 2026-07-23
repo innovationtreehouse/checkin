@@ -28,7 +28,7 @@ export default function CreateProgramPage() {
   const [isFree, setIsFree] = useState(true);
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
-  const [maxParticipants, setMaxParticipants] = useState("");
+  const [maxParticipants, setMaxParticipants] = useState("50");
   const [orgMemberOnly, setMemberOnly] = useState(false);
   const [saving, setSaving] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -60,8 +60,8 @@ export default function CreateProgramPage() {
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           memberPrice: (!isFree && memberPrice) ? memberPrice : null,
-          nonMemberPrice: (!isFree && nonMemberPrice) ? nonMemberPrice : null,
-          maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
+          nonMemberPrice: (!isFree && !orgMemberOnly && nonMemberPrice) ? nonMemberPrice : null,
+          maxParticipants: parseInt(maxParticipants),
           leadMentorId: leadMentorId ? parseInt(leadMentorId) : null
         })
       });
@@ -85,7 +85,7 @@ export default function CreateProgramPage() {
   const isDirty =
     !submitted &&
     !shallowEqual(
-      { name: "", startAt: "", endAt: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "", orgMemberOnly: false, leadMentorId: "" },
+      { name: "", startAt: "", endAt: "", minAge: "", maxAge: "", isFree: true, memberPrice: "", nonMemberPrice: "", maxParticipants: "50", orgMemberOnly: false, leadMentorId: "" },
       { name, startAt, endAt, minAge, maxAge, isFree, memberPrice, nonMemberPrice, maxParticipants, orgMemberOnly, leadMentorId },
     );
   useUnsavedGuard(isDirty);
@@ -175,32 +175,27 @@ export default function CreateProgramPage() {
 
             {!isFree && (
               <>
-                <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <SimpleGrid cols={{ base: 1, sm: orgMemberOnly ? 1 : 2 }}>
                   <NumberInput label="Treehouse Member Price ($)" value={memberPrice} onChange={(v) => setMemberPrice(String(v))} min={0} placeholder="0" />
-                  <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} onChange={(v) => setNonMemberPrice(String(v))} min={0} placeholder="0" />
+                  {!orgMemberOnly && (
+                    <NumberInput label="Non-Member Price ($)" value={nonMemberPrice} onChange={(v) => setNonMemberPrice(String(v))} min={0} placeholder="0" />
+                  )}
                 </SimpleGrid>
                 <Text size="xs" c="dimmed">Setting a price automatically creates a checkout flow on Shopify.</Text>
-                {Number(memberPrice) > Number(nonMemberPrice) && (
+                {!orgMemberOnly && Number(memberPrice) > Number(nonMemberPrice) && (
                   <Alert color="yellow" variant="light">⚠️ Member price is higher than non-member price.</Alert>
                 )}
               </>
             )}
 
-            <div>
-              <NumberInput
-                label="Max Participants (Optional)"
-                value={maxParticipants}
-                onChange={(v) => setMaxParticipants(String(v))}
-                min={1}
-                placeholder="Leave blank for unlimited"
-                description="Sets the inventory limit on Shopify. Leave blank for unlimited enrollment."
-              />
-              {(memberPrice || nonMemberPrice) && !maxParticipants && (
-                <Alert color="yellow" variant="light" mt="xs">
-                  ⚠️ No max participants set — Shopify will allow unlimited purchases for this program.
-                </Alert>
-              )}
-            </div>
+            <NumberInput
+              label="Max Participants"
+              required
+              value={maxParticipants}
+              onChange={(v) => setMaxParticipants(String(v))}
+              min={1}
+              description="Sets the inventory limit on Shopify."
+            />
 
             <Checkbox
               checked={orgMemberOnly}
@@ -214,7 +209,7 @@ export default function CreateProgramPage() {
             )}
 
             <Group justify="flex-end">
-              <Button type="submit" color="green" disabled={saving || !name.trim() || !leadMentorId || datesInvalid} loading={saving}>
+              <Button type="submit" disabled={saving || !name.trim() || !leadMentorId || !maxParticipants || datesInvalid} loading={saving}>
                 Create Program
               </Button>
             </Group>

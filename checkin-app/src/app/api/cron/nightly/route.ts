@@ -4,6 +4,7 @@ import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const GET = withCron(async () => {
         const now = new Date();
@@ -40,7 +41,7 @@ export const GET = withCron(async () => {
             
             if (abandonedKeyholders.length > 0) {
                 const boardMembers = await prisma.person.findMany({
-                    where: { isBoardMember: true },
+                    where: { isBoardMember: true, ...LIVE_PERSON },
                     select: { email: true }
                 });
 

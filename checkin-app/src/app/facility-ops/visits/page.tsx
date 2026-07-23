@@ -8,6 +8,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
 import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { MAX_VISIT_MS } from '@/lib/visitTimes';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
@@ -43,7 +44,7 @@ type RowNoticeState = { id: number; text: string; tone: AlertTone } | null;
 const RowNotice = ({ notice, id, onClose }: { notice: RowNoticeState; id: number; onClose: () => void }) => {
   if (notice?.id !== id) return null;
   return (
-    <Alert py={4} px="xs" color={notice.tone === 'success' ? 'green' : 'red'} variant="light" withCloseButton onClose={onClose}>
+    <Alert py={4} px="xs" color={notice.tone === 'success' ? 'treehouseGreen' : 'red'} variant="light" withCloseButton onClose={onClose}>
       {notice.text}
     </Alert>
   );
@@ -78,6 +79,8 @@ export default function AdminVisitsPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
   const [confirmEditOpened, { open: openConfirmEdit, close: closeConfirmEdit }] = useDisclosure(false);
   const [pendingEditVisit, setPendingEditVisit] = useState<Visit | null>(null);
+  const [confirmDeleteOpened, { open: openConfirmDelete, close: closeConfirmDelete }] = useDisclosure(false);
+  const [pendingDeleteVisit, setPendingDeleteVisit] = useState<Visit | null>(null);
 
   const sortedVisits = useMemo(() => {
     return [...visits].sort((a, b) => {
@@ -153,6 +156,10 @@ export default function AdminVisitsPage() {
       setRowNotice({ id, text: "Departure time must be after arrival time", tone: "error" });
       return;
     }
+    if (editForm.arrivedAt && Date.parse(editForm.departedAt) - Date.parse(editForm.arrivedAt) > MAX_VISIT_MS) {
+      setRowNotice({ id, text: "A visit cannot be longer than 24 hours.", tone: "error" });
+      return;
+    }
     try {
       const res = await fetch(`/api/facility/visits`, {
         method: 'PATCH',
@@ -164,7 +171,7 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Visit updated successfully." });
+        notifications.show({ message: "Visit updated successfully." });
         setEditingVisitId(null);
         fetchVisits();
       } else {
@@ -173,6 +180,34 @@ export default function AdminVisitsPage() {
       }
     } catch {
       notifications.show({ color: "red", message: "Network error saving visit.", autoClose: false });
+    }
+  };
+
+  const handleDeleteClick = (visit: Visit) => {
+    setPendingDeleteVisit(visit);
+    openConfirmDelete();
+  };
+
+  const confirmDeleteClick = async () => {
+    if (!pendingDeleteVisit) return;
+    const id = pendingDeleteVisit.id;
+    closeConfirmDelete();
+    setPendingDeleteVisit(null);
+    try {
+      const res = await fetch(`/api/facility/visits`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitId: id })
+      });
+      if (res.ok) {
+        notifications.show({ message: "Visit deleted." });
+        fetchVisits();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Failed to delete visit.", autoClose: false });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error deleting visit.", autoClose: false });
     }
   };
 
@@ -226,7 +261,7 @@ export default function AdminVisitsPage() {
                     <Table.Td>
                       <Stack gap={6}>
                         <Group gap="xs" wrap="nowrap">
-                          <Button size="xs" fz={15} color="green" onClick={() => handleSaveEdit(v.id)}>Save</Button>
+                          <Button size="xs" fz={15} onClick={() => handleSaveEdit(v.id)}>Save</Button>
                           <Button size="xs" fz={15} variant="default" onClick={() => setEditingVisitId(null)}>Cancel</Button>
                         </Group>
                         <RowNotice notice={rowNotice} id={v.id} onClose={() => setRowNotice(null)} />
@@ -250,7 +285,10 @@ export default function AdminVisitsPage() {
                       ) : <Text component="span" c="yellow">Active</Text>}
                     </Table.Td>
                     <Table.Td>
-                      <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                      <Group gap="xs" wrap="nowrap">
+                        <Button size="xs" fz={15} variant="light" onClick={() => handleEditClick(v)}>Edit</Button>
+                        <Button size="xs" fz={15} variant="light" color="red" onClick={() => handleDeleteClick(v)}>Delete</Button>
+                      </Group>
                     </Table.Td>
                   </>
                 )}
@@ -272,6 +310,21 @@ export default function AdminVisitsPage() {
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmEdit}>Cancel</Button>
           <Button color="red" onClick={confirmEditClick}>Continue</Button>
+        </Group>
+      </Modal>
+
+      <Modal
+        opened={confirmDeleteOpened}
+        onClose={closeConfirmDelete}
+        title={<Text span fw={700} fz="lg">Delete Visit Record</Text>}
+        centered
+      >
+        <Text mb="lg">
+          Warning: You are permanently deleting a visit record using Admin overrides. This will be permanently logged.
+        </Text>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeConfirmDelete}>Cancel</Button>
+          <Button color="red" onClick={confirmDeleteClick}>Delete</Button>
         </Group>
       </Modal>
     </Stack>

@@ -111,6 +111,17 @@ describe('PrismaAdapter user-model shim (auth-options.ts)', () => {
         );
     });
 
+    // #292: Google hands NextAuth its own casing; the stored value is lowercased
+    // on write, so the lookup key must be lowercased too or a mixed-case sign-in
+    // misses the existing row and NextAuth mints a duplicate participant/household.
+    test('getUserByEmail lowercases the lookup key (#292 read normalization)', async () => {
+        mockPersonFindUnique.mockResolvedValue(null);
+        await adapter.getUserByEmail('John.Doe@Example.com');
+        expect(mockPersonFindUnique).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ email: 'john.doe@example.com' }) }),
+        );
+    });
+
     test('getUser resolves numeric ids against prisma.person', async () => {
         mockPersonFindUnique.mockResolvedValue({ id: 42, email: 'p@example.com' });
         const user = await adapter.getUser('42');
