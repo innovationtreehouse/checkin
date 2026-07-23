@@ -13,12 +13,16 @@ profile — and every surface inherits it.
 
 ## The surfaces and their contexts
 
+`INTAKE_PROFILES` defines two context profiles today:
+
 | Surface | Context profile | Writes via |
 |---|---|---|
 | Membership "Join the Treehouse" (initial) | `membership-initial` | `saveIntake` + `submitIntake` (advances the OrgMembershipProcess) |
-| Membership renewal | `membership-renewal` | same service |
-| Household self-service (my-household add/edit member) | `household-self-service` | `/api/household/*` |
 | First-time program registration (auth-first) | `program-first-time` | `saveIntake` only — **no** membership process |
+
+Other intake surfaces have no profile of their own: household self-service
+(`/api/household/intake`) reuses `saveIntake` as a context-free save with no submit gate;
+membership renewal does not go through the intake service at all (`renewal.ts`).
 
 New surface? Add a context + profile here first; don't invent a parallel form.
 
@@ -50,7 +54,5 @@ New surface? Add a context + profile here first; don't invent a parallel form.
 
 ## History
 
-This registry was extracted from the auth-first program-registration work
-(the old anonymous `public-register` form was the poorest of the four intakes and
-was removed). If you're tempted to hand-roll a new intake form, that's the smell
-this file exists to prevent.
+This registry was extracted from the auth-first program-registration work; the old
+anonymous `public-register` form was the poorest of the four intakes and was removed.
