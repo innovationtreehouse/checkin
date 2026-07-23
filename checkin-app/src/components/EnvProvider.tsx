@@ -16,9 +16,11 @@ type EnvContextValue = {
     checkinEnv: CheckinEnv;
     /** Public …myshopify.com domain from SHOPIFY_STORE_DOMAIN, or null when unconfigured. */
     shopifyStoreDomain: string | null;
+    /** True on ops-stg. Separate from checkinEnv, which staging deliberately collapses to 'prod' (see config.isStaging). */
+    isStaging: boolean;
 };
 
-const CheckinEnvContext = createContext<EnvContextValue>({ checkinEnv: 'prod', shopifyStoreDomain: null });
+const CheckinEnvContext = createContext<EnvContextValue>({ checkinEnv: 'prod', shopifyStoreDomain: null, isStaging: false });
 
 export function EnvProvider({
     value,
@@ -42,6 +44,11 @@ export function useIsDevInstance(): boolean {
 /** True only on a developer laptop — gates offline credential login UI. */
 export function useIsLocalInstance(): boolean {
     return useContext(CheckinEnvContext).checkinEnv === 'local';
+}
+
+/** True on ops-stg — gates the staging banner. NOT a mock gate; staging keeps checkinEnv 'prod'. */
+export function useIsStagingInstance(): boolean {
+    return useContext(CheckinEnvContext).isStaging;
 }
 
 /**
