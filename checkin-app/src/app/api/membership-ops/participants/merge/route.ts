@@ -165,7 +165,7 @@ export const POST = withAuth(
                     data: {
                         mergedIntoId: keepId,
                         googleId: null,
-                        email: `merged-${mergeId}@deleted.checkme.in`,
+                        email: `merged-${mergeId}@deleted.invalid`,
                         phone: null,
                         isHouseholdLead: false,
                         // NOTE: name is NOT mangled — mergedIntoId carries the semantics;

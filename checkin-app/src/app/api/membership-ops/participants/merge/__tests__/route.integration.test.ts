@@ -59,12 +59,12 @@ describe("Merge Participants API", () => {
         householdId = hh.id;
 
         const actor = await prisma.person.create({
-            data: { name: "Board Actor", email: "actor@checkme.in", householdId: hh.id, isBoardMember: true }
+            data: { name: "Board Actor", email: "actor@example.com", householdId: hh.id, isBoardMember: true }
         });
         actorId = actor.id;
 
         mockGetServerSession.mockResolvedValue({
-            user: { id: actorId, email: "actor@checkme.in", isBoardMember: true }
+            user: { id: actorId, email: "actor@example.com", isBoardMember: true }
         });
 
         const pKeep = await prisma.person.create({
@@ -129,7 +129,7 @@ describe("Merge Participants API", () => {
 
         const merged = await prisma.person.findUnique({ where: { id: pMergeId } });
         expect(merged?.email).toContain("merged-");
-        expect(merged?.email).toContain("@deleted.checkme.in");
+        expect(merged?.email).toContain("@deleted.invalid");
         expect(merged?.phone).toBeNull();
         // decision 5: tombstone identity keeps its ORIGINAL name — no mangling.
         expect(merged?.name).toBe("Merge User");
@@ -203,7 +203,7 @@ describe("Merge Participants API", () => {
         const merged = await prisma.person.findUnique({ where: { id: pMergeId } });
         expect(merged?.googleId).toBeNull();
         expect(merged?.email).toContain("merged-");
-        expect(merged?.email).toContain("@deleted.checkme.in");
+        expect(merged?.email).toContain("@deleted.invalid");
     });
 
     // Matrix 1: unique collision, both directions, across every loop-guarded relation.
