@@ -40,6 +40,10 @@ export const GET = withAuth(
                         email: true,
                         phone: true,
                         googleId: true,
+                        // Lets the merge picker label which side's identity is
+                        // verified/controlled (the login identity resolves as one
+                        // unit — see ../route.ts). Kept explicit, not a bare include.
+                        emailVerified: true,
                         dateOfBirth: true,
                         mergedIntoId: true,
                         household: {

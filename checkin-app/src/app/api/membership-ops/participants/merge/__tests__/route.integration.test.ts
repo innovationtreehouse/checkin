@@ -24,11 +24,12 @@ jest.mock("@/lib/shopifyRead/client", () => ({
 import { runMatchAudit } from "@/lib/finance/matchAudit";
 
 // Base fixture participants differ on name+email by design (realistic collision
-// data for the field-picker tests below), so a merge that doesn't care about that
-// conflict needs *some* resolution — default to "keep" for both; tests that
-// specifically exercise fieldChoices validation pass their own map (including
-// `{}` to deliberately hit the "missing choice" 400).
-function mergeReq(keepId: number, mergeId: number, fieldChoices: Record<string, string> = { name: "keep", email: "keep" }) {
+// data for the field-picker tests below). name is a per-field conflict and both
+// sides carry a login identity (an email), so a merge needs *some* resolution for
+// both — default to "keep" for name and the identity unit; tests that specifically
+// exercise fieldChoices validation pass their own map (including `{}` to
+// deliberately hit the "missing choice" 400).
+function mergeReq(keepId: number, mergeId: number, fieldChoices: Record<string, string> = { name: "keep", identity: "keep" }) {
     return new Request("http://localhost/api/membership-ops/participants/merge", {
         method: "POST",
         body: JSON.stringify({ keepId, mergeId, fieldChoices })
@@ -150,7 +151,7 @@ describe("Merge Participants API", () => {
         expect(log?.oldData).toMatchObject({ id: pMergeId, name: "Merge User", email: "merge@example.com" });
         const newData = log?.newData as { keepId: number; fieldChoices: Record<string, string>; moved: { visits: number; programParticipants: { migrated: number; left: number } } };
         expect(newData.keepId).toBe(pKeepId);
-        expect(newData.fieldChoices).toEqual({ name: "keep", email: "keep" });
+        expect(newData.fieldChoices).toEqual({ name: "keep", identity: "keep" });
         expect(newData.moved.visits).toBe(1);
         // Tallies use migrated/left, not the old `deleted` name.
         expect(newData.moved.programParticipants).toEqual({ migrated: 0, left: 0 });
@@ -453,15 +454,15 @@ describe("Merge Participants API", () => {
             expect(data.error).toContain("name");
         });
 
-        it("'merge' on email adopts the tombstone's email with no P2002 (clear-first ordering proven)", async () => {
-            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", email: "merge" }));
+        it("identity 'merge' adopts the tombstone's email with no P2002 (clear-first ordering proven)", async () => {
+            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", identity: "merge" }));
             expect(res.status).toBe(200);
             const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
             expect(kept?.email).toBe("merge@example.com");
         });
 
-        it("'keep' leaves the keeper's value", async () => {
-            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", email: "keep" }));
+        it("identity 'keep' leaves the keeper's value", async () => {
+            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", identity: "keep" }));
             expect(res.status).toBe(200);
             const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
             expect(kept?.email).toBe("keep@example.com");
@@ -469,22 +470,83 @@ describe("Merge Participants API", () => {
         });
     });
 
-    // Matrix 9 — see route.ts's null-strand guard comment: under the recompute-conflicts
-    // (never trust the client) + backfill-only-fills-empties design, a login identity
-    // that existed on EITHER side always survives onto the keeper (either it was already
-    // there, or backfill/choice adopts the other side's non-null value) — there is no
-    // client-reachable input that resolves both email and googleId to null while either
-    // side had one. That invariant IS the guard's job; this test proves it holds on the
-    // most adversarial-looking shape (both fields have real conflicts, and one choice
-    // points at the side that structurally can't be null).
+    // Matrix 9 — the login identity (email+googleId+emailVerified) resolves as ONE
+    // unit, so a merge can never strand it: picking either side keeps a whole,
+    // self-consistent identity. This proves it on the most adversarial shape — both
+    // sides carry a full email+googleId — where the OLD per-field design could have
+    // spliced keeper-email onto merge-googleId. Now `identity: "merge"` adopts the
+    // merge side wholesale.
     it("does not strand the login identity on a full email+googleId conflict", async () => {
         await prisma.person.update({ where: { id: pKeepId }, data: { googleId: "g-keep" } });
         await prisma.person.update({ where: { id: pMergeId }, data: { googleId: "g-merge" } });
-        const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", email: "merge", googleId: "merge" }));
+        const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", identity: "merge" }));
         expect(res.status).toBe(200);
         const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
         expect(kept?.email).toBe("merge@example.com");
         expect(kept?.googleId).toBe("g-merge");
+    });
+
+    // #1225 identity-unit: email/googleId/emailVerified resolve together, never split.
+    describe("login identity resolves as one unit (#1225)", () => {
+        it("both sides Google, identity 'merge': keeper takes merge's email+googleId+emailVerified together, no cross-side split", async () => {
+            const keepVerified = new Date("2026-01-01");
+            const mergeVerified = new Date("2026-05-05");
+            await prisma.person.update({ where: { id: pKeepId }, data: { googleId: "g-keep", emailVerified: keepVerified } });
+            await prisma.person.update({ where: { id: pMergeId }, data: { googleId: "g-merge", emailVerified: mergeVerified } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", identity: "merge" }));
+            expect(res.status).toBe(200);
+
+            const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
+            // Every identity field came from the merge side — no field left over from the keeper.
+            expect(kept?.email).toBe("merge@example.com");
+            expect(kept?.googleId).toBe("g-merge");
+            expect(kept?.emailVerified?.getTime()).toBe(mergeVerified.getTime());
+            // The stale keeper stamp must NOT ride along on the swapped-in address.
+            expect(kept?.emailVerified?.getTime()).not.toBe(keepVerified.getTime());
+
+            // Tombstone carries no verified stamp for the sentinel address.
+            const tomb = await prisma.person.findUnique({ where: { id: pMergeId } });
+            expect(tomb?.emailVerified).toBeNull();
+        });
+
+        it("magic-link keeper (email, no googleId) + Google merge, identity 'merge': all three move as a unit", async () => {
+            const mergeVerified = new Date("2026-06-06");
+            // keeper: magic-link/imported — email + emailVerified, NO googleId.
+            await prisma.person.update({ where: { id: pKeepId }, data: { googleId: null, emailVerified: new Date("2026-02-02") } });
+            await prisma.person.update({ where: { id: pMergeId }, data: { googleId: "g-merge", emailVerified: mergeVerified } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep", identity: "merge" }));
+            expect(res.status).toBe(200);
+
+            const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
+            expect(kept?.email).toBe("merge@example.com");
+            expect(kept?.googleId).toBe("g-merge");
+            expect(kept?.emailVerified?.getTime()).toBe(mergeVerified.getTime());
+        });
+
+        it("one-sided: empty keeper auto-adopts the merge side's email+googleId+emailVerified as a unit", async () => {
+            const mergeVerified = new Date("2026-07-07");
+            await prisma.person.update({ where: { id: pKeepId }, data: { email: null, googleId: null, emailVerified: null } });
+            await prisma.person.update({ where: { id: pMergeId }, data: { googleId: "g-merge", emailVerified: mergeVerified } });
+
+            // No identity choice needed (keeper has none); name is still a conflict.
+            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep" }));
+            expect(res.status).toBe(200);
+
+            const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
+            expect(kept?.email).toBe("merge@example.com");
+            expect(kept?.googleId).toBe("g-merge");
+            expect(kept?.emailVerified?.getTime()).toBe(mergeVerified.getTime());
+        });
+
+        it("400s when both sides have a login identity but fieldChoices.identity is missing", async () => {
+            // Base fixture: keeper and merge both have an email — an unavoidable identity conflict.
+            const res = await POST(mergeReq(pKeepId, pMergeId, { name: "keep" }));
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toContain("identity");
+        });
     });
 
     // Matrix 10
