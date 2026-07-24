@@ -238,7 +238,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         });
 
         if (newProgram.leadMentorId) {
-            await sendNotification(newProgram.leadMentorId, 'PROGRAM_ASSIGNMENT', { programName: newProgram.name });
+            await sendNotification(newProgram.leadMentorId, 'PROGRAM_ASSIGNMENT', { programName: newProgram.name, programId: newProgram.id });
         }
 
         const responseObj: Record<string, unknown> = { success: true, program: newProgram };
