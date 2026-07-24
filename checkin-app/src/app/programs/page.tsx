@@ -154,7 +154,7 @@ export default function PublicProgramsDirectory() {
                   </Card>
                 )}
 
-                <Group grow>
+                <Stack gap="xs">
                   <Button component={Link} href={`/programs/${program.id}`} variant="light">
                     View details and enroll
                   </Button>
@@ -163,7 +163,7 @@ export default function PublicProgramsDirectory() {
                       Manage
                     </Button>
                   )}
-                </Group>
+                </Stack>
               </Card>
             );
           })}
