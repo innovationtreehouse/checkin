@@ -5,6 +5,7 @@ import { withAuth } from "@/lib/auth";
 import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isYouth } from "@/lib/time";
+import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { apiError } from "@/lib/api-response";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
@@ -50,7 +51,9 @@ export const PATCH = withAuth(
                 data: {
                     name: name !== undefined ? name : undefined,
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
-                    dateOfBirth: dob ? new Date(dob) : undefined,
+                    // #1165: a self-entered DoB for a 26+ member is stripped and the
+                    // over-25 flag set instead. Empty dob leaves the field unchanged.
+                    ...(dob ? normalizeAdultDob(dob) : {}),
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
                     emailSuppressed: emailSuppressed !== undefined ? !!emailSuppressed : undefined,
                 },
