@@ -114,6 +114,34 @@ external integrations (Zoho/Shopify/Averity); use the board/admin manual-action
 routes to advance flows those would otherwise gate. Real journeys are catalogued
 in `docs/designs/CUJS.md` — start there when choosing what to cover.
 
+## Issue workflow (org project 1)
+
+Org **project 1** is the canonical triage surface; its Status field plus the
+issue's assignee are the claim-state machine. An assignment means exactly one
+thing: someone is actively working the issue *right now* — never leave one
+standing as a soft reservation, and never trust it as the only signal.
+
+- **Pick up**: choose an open issue that is unassigned **and** has no open
+  linked PR (check `closingIssuesReferences` on open PRs, or the issue's
+  Development panel). Assignment is dropped when a PR opens, so "unassigned"
+  alone does not mean free. Then assign yourself and set Status →
+  **In progress**.
+- **Re-verify before building**: issue bodies go stale — renames, moved files,
+  callers added since filing. Re-run the blast-radius search against current
+  `main` before implementing, and comment corrections on the issue (see #300:
+  filed against `isMinor`/3 callers, fixed as `isYouth`/10 callers).
+- **PR open** (an initial design or an implementation, same rule): body carries
+  `Fixes #NNN` — confirm the link registered via `closingIssuesReferences` —
+  set Status → **In review**, and **unassign the issue**. The next action
+  belongs to reviewers, not the author; a standing assignment would claim work
+  that isn't happening. The open linked PR is what marks the issue as taken.
+- **Merge**: nothing manual. The closing keyword closes the issue, and the
+  project's built-in workflows (Item closed / Pull request merged) set Status
+  → Done.
+
+Project-field writes need the `project` token scope; if GraphQL returns
+INSUFFICIENT_SCOPES, have the user run `gh auth refresh -s project`.
+
 ## Docs map
 
 Read these before changing the relevant area — start here, then follow links.
