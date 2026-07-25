@@ -64,7 +64,7 @@ export default function AdminProgramsIndex() {
         setLoading(false);
       })
       .catch(err => {
-        console.error(err);
+        console.error("Failed to load programs:", err);
         setLoading(false);
       });
   }, []);
