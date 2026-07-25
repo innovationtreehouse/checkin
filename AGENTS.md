@@ -13,6 +13,29 @@ After a `git merge`/`rebase`/`cherry-pick` (or any external write) touches a
 file you're about to edit, re-Read it first — it counts as modified since your
 last Read.
 
+## Comments
+
+A code comment describes what the code below it does and why it exists **now**,
+in the present tense. Keep it short — usually one line. Prefer making the code
+self-explanatory (better names, smaller functions) over explaining it.
+
+- **No history in comments.** Don't narrate how the code got here: no "used
+  to…", "previously…", "changed because…", "workaround for the old…", bug/PR
+  numbers, TODO-from-2023, or a log of past attempts. That context belongs in
+  the PR description and commit message, where it's linked to the diff and
+  reviewable — not stranded in the source where it rots.
+- **A "why" comment is fine when the reason is non-obvious and still true** —
+  an ordering constraint, an external-API quirk, a security invariant. State
+  the constraint, not the story of discovering it.
+- **Delete stale comments when you touch the code.** A comment that no longer
+  matches the code is worse than none.
+- If a comment needs multiple paragraphs to make sense, that's usually a signal
+  the code or its name should change instead.
+
+Design rationale, regressions-to-learn-from, and past approaches live in
+`docs/` and PR history — not in code comments. (This file's own flow-test
+section is an example: the failure stories sit in docs, not in the source.)
+
 ## Test classes
 
 There are **three** classes of tests. Run all commands from `checkin-app/`.
