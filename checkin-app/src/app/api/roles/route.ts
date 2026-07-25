@@ -12,6 +12,7 @@ import {
     LastBoardMemberError,
 } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { isYouth } from "@/lib/time";
 
 const PERSON_SELECT = {
     id: true,
@@ -29,9 +30,6 @@ export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
-            const eighteenYearsAgo = new Date();
-            eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
-
             const rows = await prisma.person.findMany({
                 where: LIVE_PERSON,
                 select: {
@@ -51,7 +49,7 @@ export const GET = withAuth(
             const people = rows.map(({ dateOfBirth, roles, ...p }) => ({
                 ...p,
                 ...rolesToFlags(roles),
-                isYouth: dateOfBirth != null && dateOfBirth > eighteenYearsAgo,
+                isYouth: isYouth(dateOfBirth),
             }));
             return NextResponse.json({ people });
         } catch (error) {
