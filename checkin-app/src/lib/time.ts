@@ -107,8 +107,16 @@ export function calculateAge(dob: Date | string, asOf: Date | string = new Date(
 /**
  * Returns true if the person with the given DOB is under 18 years old (youth).
  * Canonical implementation — use this everywhere instead of inline age checks.
+ *
+ * Unknown (null/undefined) DOB resolves to `unknownIs`, default 'adult': UI and
+ * household-lead callers rely on that (a null-DOB member stays promotable to
+ * lead, blank forms don't show youth fields). Safety checks must pass
+ * `{ unknownIs: 'youth' }` so missing data fails closed (#300).
  */
-export function isYouth(dob: Date | string | null | undefined): boolean {
-    if (!dob) return false;
+export function isYouth(
+    dob: Date | string | null | undefined,
+    opts?: { unknownIs?: 'youth' | 'adult' },
+): boolean {
+    if (!dob) return (opts?.unknownIs ?? 'adult') === 'youth';
     return calculateAge(dob) < 18;
 }

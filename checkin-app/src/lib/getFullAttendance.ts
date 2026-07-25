@@ -67,10 +67,12 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
         orderBy: { arrivedAt: "desc" },
     });
 
-    // Pre-compute isYouth once per visit to avoid repeated calculations
+    // Pre-compute isYouth once per visit to avoid repeated calculations.
+    // unknownIs:'youth' — this map feeds the two-deep safety calc, so an
+    // unknown DOB must fail closed (never count as a supervising adult), #300.
     const youthMap = new Map<number, boolean>();
     for (const v of activeVisits) {
-        youthMap.set(v.id, isYouth(v.person.dateOfBirth));
+        youthMap.set(v.id, isYouth(v.person.dateOfBirth, { unknownIs: 'youth' }));
     }
 
     const keyholderVisits = activeVisits.filter(v => v.person.isKeyholder);
