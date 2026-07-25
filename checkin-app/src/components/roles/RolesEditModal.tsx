@@ -104,7 +104,7 @@ export function RolesEditModal({ target, me, onClose, onSaved }: RolesEditModalP
         showNotification(data.error || "Failed to update roles", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to update roles:", err);
       showNotification("Network error updating roles", "error");
     } finally {
       setSavingRoles(false);
