@@ -52,6 +52,22 @@ describe('sendNotification return contract', () => {
         await expect(sendNotification(1, 'CHECKIN', {})).resolves.toBe(true);
         expect(mockSendEmail).not.toHaveBeenCalled();
     });
+
+    it('PROGRAM_ASSIGNMENT sends the welcome email with a manage link, not the generic "System Action" copy (#1220)', async () => {
+        mockFindUnique.mockResolvedValue({ email: 'lead@b.com', name: 'Lead', notificationSettings: {} });
+        mockSendEmail.mockResolvedValue(true);
+
+        await sendNotification(7, 'PROGRAM_ASSIGNMENT', { programName: 'FLL Team A', programId: 42 });
+
+        expect(mockSendEmail).toHaveBeenCalledTimes(1);
+        const [to, subject, html] = mockSendEmail.mock.calls[0];
+        expect(to).toBe('lead@b.com');
+        expect(subject).toBe('Your Innovation Treehouse Program has been Created!');
+        expect(html).not.toContain('System Action');
+        expect(html).toContain('FLL Team A');
+        expect(html).toContain('/program-ops/programs/42');
+        expect(html).toContain('href=');
+    });
 });
 
 describe('notifyNewProgramAnnounced opt-in filtering', () => {
