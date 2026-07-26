@@ -54,9 +54,11 @@ Two facts drove this shape:
    the schema (schema.prisma:85) intends to be *lead*-set, but which a member,
    as their own household lead, can set on themselves. A 15-year-old can hit the
    refusal, tick "over 25", satisfy the "known adult" definition, and self-enroll
-   + pay. Self-entered DOB is no different. **Do not claim this design stops a
-   determined minor; it does not.** What "fail closed" buys is that a member of
-   *unknown* age is refused by default — not that self-declared age is trusted.
+   + pay. Self-entered DOB is no different. **This design does not stop a
+   determined minor, and that is an accepted risk (see below).** What "fail
+   closed" buys is narrow but real: a member of *unknown* age is refused by
+   default. A member who *declares* adulthood — by DOB or the over-25 tick — is
+   taken at their word, by decision.
 
 Rejected alternatives (unchanged from first pass):
 - **Parent-notify + hold-a-slot-for-N-hours + parent-confirms** — a real
@@ -65,35 +67,23 @@ Rejected alternatives (unchanged from first pass):
   self-initiation is a product goal. Machinery without a customer for a small org.
 - **Allow-but-notify** — transparency without a limit; the issue asks to *limit*.
 
-## Residual risk — self-attestation (needs a decision)
+## Accepted residual risk — self-attestation
 
 Raised by review: no self-service age input is *verified*. Both the "over 25"
 checkbox (which self-sets `isDeclaredAdult`) and a self-entered DOB are
-unverified self-report, so a minor who is willing to misreport can clear the
-gate and self-enroll + pay. The only trustworthy age signal in the system is one
-set by *someone other than the subject* — a lead/board, or staff import. That
-trustworthy path already exists: **a lead enrolling the minor.**
+unverified self-report, so a minor willing to misreport can clear the gate and
+self-enroll + pay. The only trustworthy age signal is one set by *someone other
+than the subject* — a lead/board, or staff import.
 
-So the design has to pick where it sits on a spectrum it cannot escape:
-
-- **(a) Accept self-attestation as documented residual risk (recommended for a
-  small org).** Keep self-service, but (i) on the self-enroll path require a
-  *DOB* showing 18+ and **do not accept a self-set `isDeclaredAdult`** — the
-  over-25 checkbox stays valid only when a lead set it on someone else; (ii) log
-  the self-enrollment and notify the household lead(s). This raises the friction
-  from one click to a deliberate false DOB and gives a guardian a tripwire, but a
-  determined minor can still lie. Honest and cheap.
-- **(b) Real guarantee (heavier).** Self-enrollment requires an
-  independently-verified adult signal — DOB/`isDeclaredAdult` set by a lead or
-  staff, or an already-known 18+ roster record. A brand-new unverified sign-up
-  cannot self-enroll; a lead must. This is genuinely fail-closed but removes
-  self-service for new users and needs `isDeclaredAdult` provenance the schema
-  doesn't record today.
-
-Because self-report can't be closed by more self-report, (b) is really "minors
-can't self-enroll, a lead does" — the original Option-A instinct. **Which risk
-posture do you want?** The rest of this doc assumes (a); if you want (b), the
-"self-serviceable" reasoning above is dropped.
+**Decision: accept it.** A self-declared adult (DOB or the over-25 tick, whoever
+set it, including the member themselves) is trusted, and the possibility that a
+minor lies to bypass the gate is an accepted residual risk. We do **not** add a
+DOB-only self path, reject self-set `isDeclaredAdult`, require lead/staff
+verification, or mandate guardian notification. Rationale: this is a small,
+trust-based org; the gate's job is to stop the *accidental*/casual case (a minor
+who simply lands on the enroll page), not to defeat deliberate misrepresentation,
+which no self-service flow can. The trustworthy path (a lead enrolling the minor)
+remains available for anyone who wants the stronger guarantee.
 
 ## Open question — does the self-gate apply to admin overrides?
 
