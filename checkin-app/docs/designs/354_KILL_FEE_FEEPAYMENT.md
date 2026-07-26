@@ -77,6 +77,10 @@ Empty in prod (no write path ever ran), so data-safe. Two constraints shape the 
 
 > Fire the `migration-safety` and `safe-refactor-sweep` skills. `tsc` green is necessary-not-sufficient
 > here — mocks, security oracles, and generated classifications are tsc-blind.
+>
+> Same code-only-then-schema+drop sequencing as the sibling plan in
+> [#1327](https://github.com/innovationtreehouse/checkin/pull/1327) (`975-LEGACY_VARIANT_CONTRACT.md`).
+> That plan also needs a "Release 0 — close the write" step; this one doesn't (no writer exists).
 
 ### Release 1 — remove code references (schema + tables untouched)
 
