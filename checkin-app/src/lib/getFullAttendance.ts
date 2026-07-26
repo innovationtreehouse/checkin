@@ -43,6 +43,9 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
                     // dateOfBirth is read on both paths (it computes isYouth / the
                     // counts) but only SHIPS on the privileged path.
                     dateOfBirth: true,
+                    // Adults 26+ have their DoB deliberately stripped (#1165) and
+                    // carry this flag instead — the safety calc must honor it.
+                    isDeclaredAdult: true,
                     householdId: true,
                     phone: true,
                     household: kiosk ? false : {
@@ -68,11 +71,15 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
     });
 
     // Pre-compute isYouth once per visit to avoid repeated calculations.
-    // unknownIs:'youth' — this map feeds the two-deep safety calc, so an
-    // unknown DOB must fail closed (never count as a supervising adult), #300.
+    // This map feeds the two-deep safety calc: a declared adult (null DoB is
+    // the NORMAL state for 26+, #1165) counts as an adult; only a truly
+    // unknown person — no DoB, not declared — fails closed as youth (#300),
+    // never as a supervising adult.
     const youthMap = new Map<number, boolean>();
     for (const v of activeVisits) {
-        youthMap.set(v.id, isYouth(v.person.dateOfBirth, { unknownIs: 'youth' }));
+        youthMap.set(v.id, v.person.isDeclaredAdult
+            ? false
+            : isYouth(v.person.dateOfBirth, { unknownIs: 'youth' }));
     }
 
     const keyholderVisits = activeVisits.filter(v => v.person.isKeyholder);
