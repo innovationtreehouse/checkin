@@ -58,8 +58,8 @@ with **two incompatible conventions** for the same field (a third,
 
 | Convention | Where | Result |
 |---|---|---|
-| **UTC midnight** `new Date(dob)` | [intake.ts:221](checkin-app/src/lib/membership/intake.ts) (`toDate`, the shared signup/children/parents path), [profile/route.ts:53](checkin-app/src/app/api/profile/route.ts), [household/route.ts:107](checkin-app/src/app/api/household/route.ts) (add member), [membership-ops/participants/route.ts:83,93](checkin-app/src/app/api/membership-ops/participants/route.ts), [importDob.ts:22](checkin-app/src/lib/importDob.ts) | `2026-08-15T00:00:00Z` → displays as **Aug 14** in Chicago |
-| **UTC noon** `new Date(dob+"T12:00:00Z")` | [household/member/route.ts:54](checkin-app/src/app/api/household/member/route.ts) (edit member) | `2026-08-15T12:00:00Z` → displays as **Aug 15** everywhere west of UTC+12 — the only display-safe writer |
+| **UTC midnight** `new Date(dob)` | **shared choke-point** [`normalizeAdultDob` — adultDob.ts:28](checkin-app/src/lib/person/adultDob.ts) (#1165; its docstring mandates *every interactive DOB write* route through it), reached by [profile/route.ts:56](checkin-app/src/app/api/profile/route.ts), [household/route.ts:110](checkin-app/src/app/api/household/route.ts), [membership-ops/participants/route.ts:85,96](checkin-app/src/app/api/membership-ops/participants/route.ts). **Bypassing it:** [intake.ts:221](checkin-app/src/lib/membership/intake.ts) (`toDate`, the signup/children/parents path — a second interactive path *not* funneled through the guard) and [importDob.ts:22](checkin-app/src/lib/importDob.ts) (bulk import; docstring says the cron/backfill is its net, not the write guard) | `2026-08-15T00:00:00Z` → displays as **Aug 14** in Chicago |
+| **UTC noon** `new Date(dob+"T12:00:00Z")` | [household/member/route.ts:59](checkin-app/src/app/api/household/member/route.ts) (edit member) — note it passes the **noon** string *into* `normalizeAdultDob`, so the midnight/noon split now lives at the call sites feeding the shared helper | `2026-08-15T12:00:00Z` → displays as **Aug 15** everywhere west of UTC+12 — the only display-safe writer |
 
 **Concrete scenario:** a guardian's DOB entered at membership signup (midnight
 UTC) shows as one day earlier than intended on any `formatDate`/`toLocaleDateString`
@@ -155,6 +155,11 @@ one day out, which can flip:
   (`calculateAge(person.dateOfBirth, program.asOf)` → `age < minAge` / `age > maxAge`)
 - youth badge [getFullAttendance.ts:73](checkin-app/src/lib/getFullAttendance.ts)
   (`isYouth(v.person.dateOfBirth)`)
+- **DOB-write guard** [adultDob.ts:29](checkin-app/src/lib/person/adultDob.ts)
+  (`normalizeAdultDob`: `calculateAge(d) > MAX_PROGRAM_AGE` decides whether to
+  **strip the DOB** and set `isDeclaredAdult`) — the same local-field read decides
+  a *persisted* mutation, so on the 26th-birthday boundary it can wrongly keep or
+  drop a DOB. Highest-stakes `calculateAge` caller.
 
 **Scenario:** a program with `minAge: 18` evaluated on the applicant's 18th
 birthday can reject them on a Chicago-hosted server because age computes as 17
@@ -413,11 +418,19 @@ user sees and makes the class un-reintroducible:**
 2. **Sweep calendar-date readers → `formatDateOnly`:** F2 (the three program
    display sites), F4/F5 (DOB), F6 (BG), F3 (memberSince displays + the
    `getFullYear` read at my-household:378), F9 (filter label).
-3. **Sweep calendar-date writers → `parseDateOnly`** (one convention): F1 sites —
-   intake.ts:221, profile:53, household:107, membership-ops/participants:83/93,
-   importDob.ts, household/member:54.
-4. **Age → `getUTC*`:** F7 — programAge:37, getFullAttendance:73,
-   my-household:41/406, attendance/current:85, roles:54.
+3. **Route calendar-date writes through `parseDateOnly`** (one convention).
+   Interactive DOB already funnels through **`normalizeAdultDob` (adultDob.ts:28)**
+   — apply `parseDateOnly` **there** and the four delegating routes (profile,
+   household, household/member, participants) are fixed at once; also strip the
+   `+"T12:00:00Z"` from the household/member call site so all callers pass a bare
+   date string. Then the two paths that bypass the guard: `intake.ts:221` (`toDate`
+   — route it through `normalizeAdultDob` or at least `parseDateOnly`) and
+   `importDob.ts` (bulk). Other calendar-date writers: memberSince
+   (households/[id]:59), program dates, boundary.
+4. **Age → `getUTC*`:** F7 — time.ts:98 (`calculateAge`) itself, exercised via
+   programAge:37, getFullAttendance:73, my-household:41/406, attendance/current:85,
+   roles:54, **and `normalizeAdultDob` (adultDob.ts:29)** — the last decides a
+   *persisted* DOB strip, so it's the highest-stakes caller.
 5. **Wire org display tz to the client instant formatters** (Axis 2) — the
    AppSettings provider; `APP_TIMEZONE` becomes fallback only. Second-region
    readiness.
