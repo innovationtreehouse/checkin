@@ -71,7 +71,16 @@ describe('sendNotification return contract', () => {
 });
 
 describe('notifyNewProgramAnnounced opt-in filtering', () => {
-    beforeEach(() => jest.clearAllMocks());
+    // clearAllMocks() wipes call data but NOT implementations, so the
+    // mockRejectedValue('boom') set in the sendNotification describe above would
+    // leak in and make these sends reject — recording the calls these tests
+    // assert on while incidentally logging "Failed to send new-program
+    // notifications:". Reset sendEmail to succeed: these tests exercise the
+    // recipient-filtering logic, not the send failure path.
+    beforeEach(() => {
+        jest.clearAllMocks();
+        mockSendEmail.mockResolvedValue(true);
+    });
 
     const program = { name: 'Robotics', startAt: null, endAt: new Date('2026-12-01') };
 
