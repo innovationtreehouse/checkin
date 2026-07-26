@@ -64,7 +64,10 @@ interface TemplateSpec {
 export const REGISTRY: Record<string, TemplateSpec> = { ... }
 ```
 
-- `text` tokens are **HTML-escaped** and inserted as text.
+- `text` tokens are **HTML-escaped** and inserted as text — **in the body only**. The
+  **subject** is not HTML; it substitutes tokens **raw/unescaped** (see §4), so "Arts & Crafts"
+  and "O'Brien" arrive intact. (Escaping a subject is the existing outreach wart at
+  `outreach/render.ts:76` — this design fixes it rather than generalizing it to all 27 flows.)
 - `link` tokens render as `<a href="{value}">{label}</a>` — the URL is a system value in the
   send `ctx`, the anchor label lives in the registry. The editor places `{{actionLink}}` in the
   body; they never type a URL or an `<a>`. (Open sub-decision D-2 below: label in registry vs DB.)
@@ -74,18 +77,32 @@ export const REGISTRY: Record<string, TemplateSpec> = { ... }
 ### 4. Render + send — one door, `sendTemplated`
 
 ```
-sendTemplated(key, to, ctx) →
+sendTemplated(key, to, ctx) → Promise<boolean> {
   row   = EmailTemplate[key]  ?? REGISTRY[key].{defaultSubject,defaultBody}   // never blank
-  subj  = substitute(row.subject, ctx, REGISTRY[key])                         // escaped text tokens
-  body  = substitute(row.body, ctx, REGISTRY[key]) → split blank lines → <p>  // generalize renderAckBody
+  subj  = substitute(row.subject, ctx, REGISTRY[key], { escape: false })      // RAW — subject isn't HTML
+  body  = substitute(row.body,    ctx, REGISTRY[key], { escape: true }) → split blank lines → <p>
   html  = baseEmailLayout(body)                                               // branding for free
-  sendEmail(to, subj, html)                                                   // existing choke-point
+  return sendEmail(to, subj, html)                                            // existing choke-point, returns boolean
+}
 ```
 
 `substituteTokens` / `findUnknownTokens` change from a **fixed 4-token global switch** to
-**registry-driven per-key** substitution over a `Record<string,string>` ctx. Both existing
-consumers (outreach server render + `settings/outreach` client preview, and the scholarship
-preview) are updated to the new signature as part of the sweep (see §7).
+**registry-driven per-key** substitution over a `Record<string,string>` ctx, with an `escape`
+flag (body escapes, subject does not). Both existing consumers (outreach server render +
+`settings/outreach` client preview, and the scholarship preview) are updated to the new
+signature as part of the sweep (see §7).
+
+**Preference gate + retry contract (do NOT swallow into `sendTemplated`).** `sendNotification`
+today does two things beyond building copy: (a) checks the recipient's opt-out
+(`notificationSettings.email !== false`, plus per-flow flags like `emailCheckinReceipts`,
+`emailDependentCheckins`, `notifyNewPrograms`), and (b) returns a **boolean** its callers branch
+on for retry (`participants/route.ts:148`, `programs/route.ts:241`). Those pref checks are
+per-flow and recipient-specific, so they **stay at the call sites** — `sendTemplated` only owns
+copy→render→send. `sendTemplated` **returns the `sendEmail` boolean** so the retry contract is
+preserved; a caller must still gate on preferences before calling it. The enforcement test
+(§5) checks the door; it does **not** relieve callers of the opt-out check. Losing either (a)
+or (b) in the sweep = opted-out members get emailed / failed sends stop retrying — an explicit
+non-goal.
 
 ### 5. Enforcement — the template is the only path
 
@@ -136,13 +153,16 @@ Grouped by prefix. `link` tokens noted; everything else is `text`.
 | key | trigger | recipient | tokens |
 |-----|---------|-----------|--------|
 | `enrollment.confirm` | `sendNotification` PROGRAM_ENROLLMENT (`participants/route.ts:148`) | family | name, programName |
-| `program.assignment` | `sendNotification` PROGRAM_ASSIGNMENT (`programs/route.ts:241`) | lead mentor | name, programName |
+| `program.assignment` | `sendNotification` PROGRAM_ASSIGNMENT (`programs/route.ts:241`) | lead mentor | programName, `actionLink` |
 | `program.announced` | `notifyNewProgramAnnounced` | families | name, programName, `actionLink` |
 
-> Latent bug fixed by this work: `PROGRAM_ASSIGNMENT` currently falls through
-> `sendNotification`'s `switch` to the `default` branch and ships the literal body
-> `"System Action: PROGRAM_ASSIGNMENT"`. Giving it a real `program.assignment` template
-> replaces that garbage with proper copy.
+> `program.assignment` migrates the **already-shipped** `programAssignmentTemplate` (#1220,
+> `email-templates/program-assignment.ts`), which renders a `manageUrl` link
+> (`/program-ops/programs/{programId}`). That link is **required** — the seed body must include
+> the `{{actionLink}}` token so the sweep doesn't regress #1220's lead welcome email down to a
+> link-less version. (An earlier draft of this doc called PROGRAM_ASSIGNMENT a live "System
+> Action" bug — that was stale: #1220 fixed it on `main` before this design; the row above
+> mirrors the shipped template.)
 
 ### post-event — 1
 | key | trigger | recipient | tokens |
@@ -203,9 +223,10 @@ Grouped by prefix. `link` tokens noted; everything else is `text`.
 
 > Fold detail: the ACK copy currently lives in `BoardSettings.scholarshipAck{Subject,Membership
 > Body,ProgramBody}` and is edited on `settings/email`. The sweep migrates those values into the
-> two `scholarship.ack*` rows, moves editing to the new tab, and removes the three
-> `BoardSettings` columns + their controls from `settings/email` (that page keeps only sender
-> identity). The `scholarship.ackProgram` subject == `scholarship.ackMembership` subject at seed
+> two `scholarship.ack*` rows and moves editing to the new tab. The three `BoardSettings` columns
+> + their `settings/email` controls are **dropped in the follow-up contract release** (build
+> order step 8), not here — old pods still read them during the drain. The
+> `scholarship.ackProgram` subject == `scholarship.ackMembership` subject at seed
 > time; each row owns its own subject field going forward.
 
 ### outreach — 2 (flag D: folded in from `BoardSettings`)
@@ -219,8 +240,9 @@ Grouped by prefix. `link` tokens noted; everything else is `text`.
 > boundary-derived `{{deadline}}`. That render *wrapper* (`renderOutreachEmail`) stays; only the
 > **source of subject/body** moves from `BoardSettings` columns to the two `outreach.*` rows.
 > The unsubscribe footer and variant `actionWord` remain outreach-specific ctx, not editor-facing
-> copy. `settings/outreach` either redirects into the new tab or is retired; its sandboxed-iframe
-> preview is superseded by the plain-text preview (no HTML authoring → no iframe needed).
+> copy. The four `outreach*` `BoardSettings` columns + the `settings/outreach` page are removed in
+> the follow-up contract release (step 8), not here. Its sandboxed-iframe preview is superseded by
+> the plain-text preview (no HTML authoring → no iframe needed).
 
 ## Open sub-decisions
 
@@ -262,11 +284,18 @@ is one of the risks this work exists to kill. Flag if any flow must stay bare.
 2. `registry.ts` (27 specs) + generalize `substituteTokens`/`findUnknownTokens` to per-key.
 3. `sendTemplated` + generalized `renderAckBody`-style body→`<p>` + `baseEmailLayout` wrap.
 4. Sweep all call sites to `sendTemplated`; delete inline builders + hardcoded subjects.
-5. Fold outreach + scholarship: migrate `BoardSettings` copy → rows, update render wrappers +
-   both preview consumers, drop the moved `BoardSettings` columns + old controls.
+5. Fold outreach + scholarship — **expand only**: migrate `BoardSettings` copy → rows, update
+   render wrappers + both preview consumers to read from `EmailTemplate`. **Leave the old
+   `BoardSettings` columns in place and still populated** this release.
 6. Grep-to-zero enforcement test (`sendEmail(` only in `email.ts` + renderer).
 7. Admin tab: `settings/templates` page + API route (list/get/save + validate + send-to-self),
    add `"templates"` to `SettingsTabs`.
+8. **Follow-up release (contract): drop the moved `BoardSettings` columns + old
+   `settings/email`/`settings/outreach` controls** — only after step 5 has fully deployed and
+   the drain window has passed. Per `DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md`: during a rolling
+   deploy, old pods keep selecting those columns (`scholarshipEmails.ts`, `api/settings/email`,
+   the settings page, `outreach/render.ts`), so dropping them in the same release as the sweep
+   500s every scholarship-ack and outreach send/preview mid-drain. The DROP is a separate PR.
 
 ## Explicitly out of scope
 
