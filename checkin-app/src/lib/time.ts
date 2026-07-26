@@ -1,3 +1,5 @@
+import { fromZonedTime } from 'date-fns-tz';
+
 // ponytail: default/fallback timezone. The editable org timezone lives in AppSettings
 // (lib/appSettings.ts) and is honored server-side (event creation, trends). Client-side
 // display helpers below still use this constant — wire them to AppSettings via a layout
@@ -84,6 +86,29 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return '';
     return d.toISOString();
+}
+
+/**
+ * Parse an <input type="date"> value ("yyyy-MM-dd") as midnight in `timeZone`,
+ * so the calendar date the user picked is the one that reads back. Bare
+ * `new Date("2026-09-01")` means midnight UTC, which is the previous evening in
+ * any western zone. A value carrying an explicit offset is already an absolute
+ * instant and keeps it. Server callers pass `getAppSettings().timezone`.
+ */
+export function fromDateInput(value: string | null | undefined, timeZone: string): Date | null {
+    return value ? fromZonedTime(value, timeZone) : null;
+}
+
+/**
+ * Format an instant as the "yyyy-MM-dd" value an <input type="date"> expects,
+ * read in the app timezone. Inverse of fromDateInput. `en-CA` is the locale
+ * whose short date format is ISO order, so no manual part assembly is needed.
+ */
+export function toDateInput(date: Date | string | number | null | undefined): string {
+    if (!date) return '';
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
 }
 
 /**

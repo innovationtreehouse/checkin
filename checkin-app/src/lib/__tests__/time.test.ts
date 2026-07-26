@@ -1,4 +1,37 @@
-import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, isYouth } from '../time';
+import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, toDateInput, fromDateInput, isYouth } from '../time';
+
+describe('date-input helpers', () => {
+  it('anchors a picked date to midnight in the given zone, not UTC', () => {
+    expect(fromDateInput('2026-09-01', 'America/Chicago')!.toISOString()).toBe('2026-09-01T05:00:00.000Z');
+    // CST, not CDT — a fixed offset would be an hour off here
+    expect(fromDateInput('2026-01-15', 'America/Chicago')!.toISOString()).toBe('2026-01-15T06:00:00.000Z');
+    // ahead of UTC: org midnight lands on the previous UTC day
+    expect(fromDateInput('2026-09-01', 'Asia/Tokyo')!.toISOString()).toBe('2026-08-31T15:00:00.000Z');
+  });
+
+  it('keeps an explicit offset instead of re-anchoring it', () => {
+    expect(fromDateInput('2026-09-01T12:00:00.000Z', 'America/Chicago')!.toISOString()).toBe('2026-09-01T12:00:00.000Z');
+  });
+
+  it('round-trips a picked date back into the input, in the app timezone', () => {
+    for (const picked of ['2026-01-15', '2026-03-08', '2026-09-01', '2026-11-01']) {
+      expect(toDateInput(fromDateInput(picked, APP_TIMEZONE))).toBe(picked);
+    }
+  });
+
+  it('renders the picked calendar date, not the day before', () => {
+    expect(formatDate(fromDateInput('2026-09-01', APP_TIMEZONE))).toBe('9/1/2026');
+    // bare `new Date` on a date-only string means midnight UTC — a day early here
+    expect(formatDate(new Date('2026-09-01'))).toBe('8/31/2026');
+  });
+
+  it('returns empty/null for empty input', () => {
+    expect(fromDateInput('', 'America/Chicago')).toBeNull();
+    expect(fromDateInput(null, 'America/Chicago')).toBeNull();
+    expect(toDateInput(null)).toBe('');
+    expect(toDateInput('nonsense')).toBe('');
+  });
+});
 
 describe('isYouth', () => {
   it('classifies by age when DOB is known', () => {

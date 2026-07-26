@@ -11,6 +11,8 @@ import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { getAppSettings } from "@/lib/appSettings";
+import { fromDateInput } from "@/lib/time";
 
 // Public catalog projection: every Program column whose `/// @sensitivity:` tier
 // is `public` per src/security/generated/classifications.ts, in schema order.
@@ -210,12 +212,15 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             shopifyData = await createShopifySingleVariantProgram(name, basePriceCents, maxPart);
         }
 
+        // Start/end arrive as calendar dates from a date picker; anchor them to the org zone.
+        const { timezone } = await getAppSettings();
+
         const newProgram = await prisma.program.create({
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                startAt: startAt ? new Date(startAt) : null,
-                endAt: endAt ? new Date(endAt) : null,
+                startAt: fromDateInput(startAt, timezone),
+                endAt: fromDateInput(endAt, timezone),
                 orgMemberOnly: orgMemberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,

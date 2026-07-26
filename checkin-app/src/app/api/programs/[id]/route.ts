@@ -10,6 +10,8 @@ import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { getAppSettings } from "@/lib/appSettings";
+import { fromDateInput } from "@/lib/time";
 
 // ORDER MATTERS: this export sits ABOVE getProgram so the routeAuthDrift
 // guard attributes getProgram's edge-model reads to the nearest preceding
@@ -173,11 +175,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             return apiError(ageErr, 400);
         }
 
+        // Start/end arrive as calendar dates from a date picker; anchor them to the org zone.
+        const { timezone } = await getAppSettings();
+
         const updateData: Record<string, unknown> = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
-            ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
+            ...(startAt !== undefined && { startAt: fromDateInput(startAt, timezone) }),
+            ...(endAt !== undefined && { endAt: fromDateInput(endAt, timezone) }),
             ...(orgMemberOnly !== undefined && { orgMemberOnly }),
             ...(announceOnOpen !== undefined && { announceOnOpen }),
             ...(phase !== undefined && { phase }),
