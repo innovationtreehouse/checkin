@@ -63,33 +63,59 @@ schema.)
 
 ## 2. Delete `Fee` / `FeePayment` (FR7 kill)
 
-Empty in prod (no write path ever ran), so data-safe. But old code reads `fees: true` during the
-rolling-deploy drain window, so the table drop must be a **separate later release**.
+Empty in prod (no write path ever ran), so data-safe. Two constraints shape the sequencing:
+
+- **Rolling-deploy drain:** old pods keep running `include: { fees: true }`
+  ([programs/[id]/route.ts:77](../../src/app/api/programs/[id]/route.ts)) until Release 1 fully rolls
+  out, so the **models must stay in `schema.prisma` and the tables must exist** through Release 1.
+  Removing the models from the schema early creates schema-vs-DB drift, and the next unrelated
+  `prisma migrate dev` would auto-fold a `DROP TABLE` into a Release-1 migration → old pods 500. So
+  schema-model removal + drop migration land **together in Release 2**.
+- **Boundary isolation** ([AGENTS.md:114](../../AGENTS.md), CI `security-boundary-isolation.yml`):
+  changes to `src/security/registry.ts` / `scopeBindings.ts` must ship in **their own PR** with no
+  app/feature code. So Release 1 is **two PRs**.
 
 > Fire the `migration-safety` and `safe-refactor-sweep` skills. `tsc` green is necessary-not-sufficient
 > here — mocks, security oracles, and generated classifications are tsc-blind.
 
-### Release 1 — remove all code references (table still exists)
+### Release 1 — remove code references (schema + tables untouched)
 
-| # | File | Change |
-|---|---|---|
-| 1 | `prisma/schema.prisma:893` | remove `fees Fee[]` on `Program` |
-| 2 | `prisma/schema.prisma:167` | remove `feePayments FeePayment[]` on `Person` |
-| 3 | `prisma/schema.prisma:956-992` | remove `model Fee` + `model FeePayment` |
-| 4 | `src/app/api/programs/[id]/route.ts:77` | remove `fees: true` include |
-| 5 | `src/security/registry.ts:43` | drop `'Fee'` from `returns`; fix the `fees (Fee)` comment (line 41) |
-| 6 | `src/app/api/membership-ops/participants/merge/route.ts` | remove `feePayments: true` include (×2, lines 85/99), the `feePayments` counter (190), and the reconcile loop (248-258) |
-| 7 | `src/app/api/membership-ops/participants/merge/__tests__/route.integration.test.ts` | remove fee/feePayment fixtures + assertions (lines ~99, 109, 213-234, 281-303) — leave the non-fee merge cases |
-| 8 | `src/security/scopeBindings.ts:92-95` | remove the `FeePayment` binding; update the `Fee`/`RSVP` explainer comments (18-23, 74-77) |
-| 9 | `src/lib/dev/seed-helpers.ts:321` | remove the `prisma.fee.create` block |
-| 10 | `src/lib/dev/__tests__/seed-helpers.integration.test.ts:71` | remove `fees: true` from the include |
-| 11 | `prisma generate` | **regenerate** `src/security/generated/classifications.ts` — do NOT hand-edit; `check-route-coverage.ts` guards freshness |
-| 12 | `src/app/api/programs/price-cents.test.ts` | (optional) stale "Fee" mentions in comments only — no logic touches this model |
+**PR 1a — app/test code:**
 
-Gate: full `jest` (per `jest-run` skill), not just `tsc`. Watch `routeAuthDrift` (registry↔include
-must match after #5) and the merge integration test.
+| File | Change |
+|---|---|
+| `src/app/api/programs/[id]/route.ts:77` | remove `fees: true` include |
+| `src/app/api/membership-ops/participants/merge/route.ts` | remove `feePayments: true` include (×2, lines 85/99), the `feePayments` counter (190), and the reconcile loop (248-258) |
+| `src/app/api/membership-ops/participants/merge/__tests__/route.integration.test.ts` | remove fee/feePayment fixtures + assertions (~99, 109, 213-234, 281-303) — leave non-fee merge cases |
+| `src/lib/dev/seed-helpers.ts:321` | remove the `prisma.fee.create` block |
+| `src/lib/dev/__tests__/seed-helpers.integration.test.ts:71` | remove `fees: true` from the include |
+| `src/app/api/programs/price-cents.test.ts` | (optional) stale "Fee" mentions in comments only |
 
-### Release 2 — drop the tables (after Release 1 fully deployed)
+After 1a, `'Fee'` still sits in `registry.returns` — that's an **inert over-declaration** (`returns`
+is a grant list; nothing asserts it equals the actual include, and `Fee` is not an EDGE_MODEL, so
+`routeAuthDrift` is unaffected). It's cleaned up in 1b.
+
+**PR 1b — security boundary (own PR, per AGENTS.md:114):**
+
+| File | Change |
+|---|---|
+| `src/security/registry.ts:43` | drop `'Fee'` from `returns`; fix the `fees (Fee)` comment (line 41) |
+| `src/security/scopeBindings.ts:92-95` | remove the `FeePayment` binding; update the `Fee`/`RSVP` explainer comments (18-23, 74-77) |
+
+Both are now-unused grants → inert removals. No app code in this PR.
+
+Gate each PR: full `jest` (per `jest-run` skill), not just `tsc`. Watch the merge integration test (1a)
+and `routeAuthDrift` (1b).
+
+### Release 2 — schema removal + drop migration (own PR, after Release 1 fully deployed)
+
+| File | Change |
+|---|---|
+| `prisma/schema.prisma:893` | remove `fees Fee[]` on `Program` |
+| `prisma/schema.prisma:167` | remove `feePayments FeePayment[]` on `Person` |
+| `prisma/schema.prisma:956-992` | remove `model Fee` + `model FeePayment` |
+| `prisma/migrations/<new>/migration.sql` | the DROP below |
+| `src/security/generated/classifications.ts` | **regenerated** by `prisma generate` (schema-driven, not hand-edited); `check-route-coverage.ts` guards freshness. If `security-boundary-isolation.yml` flags `src/security/generated/`, split this regen into its own boundary PR |
 
 ```sql
 ALTER TABLE "FeePayment" DROP CONSTRAINT IF EXISTS "FeePayment_feeId_fkey";
