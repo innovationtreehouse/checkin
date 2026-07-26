@@ -88,6 +88,7 @@ export const GET = withAuth(
             const whereClause: Record<string, unknown> = {
                 arrivedAt: { gte: since },
                 departedAt: { not: null },
+                deletedAt: null,
                 // Exclude synthetic "marked present" visits (events attendance route): their
                 // arrivedAt/departedAt is the event window, not a measured duration. arrivedVia=SYSTEM
                 // is the marker — real visits use SCANNER/WEB on arrival.

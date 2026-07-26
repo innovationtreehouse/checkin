@@ -283,6 +283,8 @@ export const classifications = {
         arrivedVia: 'public',
         departedVia: 'public',
         associatedEventId: 'public',
+        deletedAt: 'internal',
+        deletedById: 'internal',
     },
     AuditLog: {
         id: 'internal',

@@ -19,6 +19,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
         const activeKeyholders = await db.visit.count({
             where: {
                 departedAt: null,
+                deletedAt: null,
                 person: { isKeyholder: true }
             }
         });
@@ -73,6 +74,7 @@ export async function processCheckout(
         const remainingKeyholders = await db.visit.count({
             where: {
                 departedAt: null,
+                deletedAt: null,
                 person: { isKeyholder: true },
                 id: { not: activeVisitId }
             }
@@ -82,6 +84,7 @@ export async function processCheckout(
             const remainingUsers = await db.visit.findMany({
                 where: {
                     departedAt: null,
+                    deletedAt: null,
                     id: { not: activeVisitId }
                 },
                 include: { person: true }

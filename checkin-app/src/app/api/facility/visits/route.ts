@@ -11,6 +11,7 @@ export const GET = withAuth(
         try {
             const visits = await prisma.visit.findMany({
                 take: 50,
+                where: { deletedAt: null },
                 orderBy: { arrivedAt: "desc" },
                 include: {
                     person: {
@@ -38,7 +39,7 @@ export const PATCH = withAuth(
             }
 
             const existing = await prisma.visit.findUnique({ where: { id: visitId } });
-            if (!existing) {
+            if (!existing || existing.deletedAt) {
                 return apiError("Visit not found.", 404); // also turns a bad id into a clean 404
             }
 
@@ -108,7 +109,7 @@ export const DELETE = withAuth(
             }
 
             const existing = await prisma.visit.findUnique({ where: { id: visitId } });
-            if (!existing) {
+            if (!existing || existing.deletedAt) {
                 return apiError("Visit not found.", 404);
             }
 
