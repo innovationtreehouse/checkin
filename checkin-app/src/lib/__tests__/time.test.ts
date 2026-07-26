@@ -1,4 +1,24 @@
-import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal } from '../time';
+import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, isYouth } from '../time';
+
+describe('isYouth', () => {
+  it('classifies by age when DOB is known', () => {
+    expect(isYouth(new Date('2020-01-01'))).toBe(true);
+    expect(isYouth(new Date('1980-01-01'))).toBe(false);
+  });
+
+  it('unknown DOB defaults to adult (UI/household-lead contract)', () => {
+    expect(isYouth(null)).toBe(false);
+    expect(isYouth(undefined)).toBe(false);
+    expect(isYouth('', { unknownIs: 'adult' })).toBe(false);
+  });
+
+  it('unknown DOB fails closed when the caller opts in (#300)', () => {
+    expect(isYouth(null, { unknownIs: 'youth' })).toBe(true);
+    expect(isYouth(undefined, { unknownIs: 'youth' })).toBe(true);
+    // known DOB is never overridden by the option
+    expect(isYouth(new Date('1980-01-01'), { unknownIs: 'youth' })).toBe(false);
+  });
+});
 
 describe('datetime-local helpers', () => {
   it('round-trips a datetime-local value', () => {
