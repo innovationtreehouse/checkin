@@ -50,14 +50,16 @@ instant/date distinction, so it can't enforce it. See Finding 12 and
 **Category:** 2 (new Date on date-only) + 3 (client/server tz divergence)
 **Severity:** bug (user-visible off-by-one; also feeds age gates — see #7)
 
-`Person.dateOfBirth` (`schema.prisma:84`, `DateTime?`) is written by many routes
-with **three incompatible conventions** for the same field:
+`Person.dateOfBirth` (`schema.prisma:84`, `DateTime?`) is written by its routes
+with **two incompatible conventions** for the same field (a third,
+`+"T00:00:00.000Z"`, appears for `OrgMembership.memberSince` at
+[households/[id]/route.ts:59](checkin-app/src/app/api/membership-ops/households/[id]/route.ts)
+— functionally identical to bare midnight, listed here for completeness):
 
 | Convention | Where | Result |
 |---|---|---|
-| **UTC midnight** `new Date(dob)` | [intake.ts:221](checkin-app/src/lib/membership/intake.ts) (`toDate`, the shared signup/children/parents path), [profile/route.ts:53](checkin-app/src/app/api/profile/route.ts), [household/route.ts:107](checkin-app/src/app/api/household/route.ts) (add member), [membership-ops/participants/route.ts:83](checkin-app/src/app/api/membership-ops/participants/route.ts), [importDob.ts:22](checkin-app/src/lib/importDob.ts) | `2026-08-15T00:00:00Z` → displays as **Aug 14** in Chicago |
+| **UTC midnight** `new Date(dob)` | [intake.ts:221](checkin-app/src/lib/membership/intake.ts) (`toDate`, the shared signup/children/parents path), [profile/route.ts:53](checkin-app/src/app/api/profile/route.ts), [household/route.ts:107](checkin-app/src/app/api/household/route.ts) (add member), [membership-ops/participants/route.ts:83,93](checkin-app/src/app/api/membership-ops/participants/route.ts), [importDob.ts:22](checkin-app/src/lib/importDob.ts) | `2026-08-15T00:00:00Z` → displays as **Aug 14** in Chicago |
 | **UTC noon** `new Date(dob+"T12:00:00Z")` | [household/member/route.ts:54](checkin-app/src/app/api/household/member/route.ts) (edit member) | `2026-08-15T12:00:00Z` → displays as **Aug 15** everywhere west of UTC+12 — the only display-safe writer |
-| — | — | — |
 
 **Concrete scenario:** a guardian's DOB entered at membership signup (midnight
 UTC) shows as one day earlier than intended on any `formatDate`/`toLocaleDateString`
@@ -356,9 +358,9 @@ contract in the helper layer: `parseDateOnly` on every write (one convention),
 **Model B — `@db.Date`.** Migrate the calendar-date columns to Postgres `date`.
 - **Pros:** the schema **enforces** the classification — a `date` can't carry a
   time or render zoned; all write conventions collapse at the DB (Finding 1 gone
-  by construction); the `USING (col AT TIME ZONE 'UTC')::date` type-change
-  **self-backfills** existing rows; exact-match dedup works honestly; pairs exactly
-  with `formatDateOnly` (Prisma reads `date` back as UTC-midnight).
+  by construction); the `USING (col::date)` type-change **self-backfills**
+  existing rows; exact-match dedup works honestly; pairs exactly with
+  `formatDateOnly` (Prisma reads `date` back as UTC-midnight).
 - **Cons:** a live migration per column (6 columns); **reads are still
   UTC-midnight, so `formatDateOnly` is still required** — B *adds to* the read
   layer, never replaces it; the read-value shift is **tsc-blind** (TS type stays
@@ -385,8 +387,15 @@ per-field decision inputs:
 > chosen, the read/write/age/tz-source layer (Sequencing steps 1-6) is the same.
 
 **`@db.Date` mechanics, if Model B or hybrid is chosen:** migration is
-`ALTER COLUMN … TYPE date USING (col AT TIME ZONE 'UTC')::date` — deterministic,
-preserves each row's calendar day, self-backfilling. Rolling-deploy drain is safe:
+`ALTER COLUMN … TYPE date USING (col::date)` — a direct date-part cast that
+preserves each row's calendar day, self-backfilling. **Do NOT write
+`USING (col AT TIME ZONE 'UTC')::date`:** these columns are `timestamp(3)` *without*
+time zone (Prisma's default `DateTime`; no `@db.Timestamptz` in the schema), so
+`AT TIME ZONE 'UTC'` reinterprets the naive value as a `timestamptz` instant and
+the `::date` then casts it in the **connection's** `TimeZone` — on any session west
+of UTC that silently decrements every row by a day. Plain `col::date` on a
+timestamp-without-tz takes the date part with no zone involved. Rolling-deploy
+drain is safe:
 old code reads the `date` column as the UTC-midnight `Date` it already handled, so
 reads stay backward-compatible. Do it **per column** (start with `boundary` or
 program dates as the low-risk proof), grep test fixtures for hardcoded
