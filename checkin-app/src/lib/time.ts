@@ -92,11 +92,12 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
  * Parse an <input type="date"> value ("yyyy-MM-dd") as midnight in `timeZone`,
  * so the calendar date the user picked is the one that reads back. Bare
  * `new Date("2026-09-01")` means midnight UTC, which is the previous evening in
- * any western zone. A value carrying an explicit offset is already an absolute
+ * any western zone. Anything other than a bare date is already an absolute
  * instant and keeps it. Server callers pass `getAppSettings().timezone`.
  */
 export function fromDateInput(value: string | null | undefined, timeZone: string): Date | null {
-    return value ? fromZonedTime(value, timeZone) : null;
+    if (!value) return null;
+    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? fromZonedTime(value, timeZone) : new Date(value);
 }
 
 /**
