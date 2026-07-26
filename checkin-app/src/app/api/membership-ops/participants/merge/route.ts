@@ -83,8 +83,11 @@ function resolveKeeperUpdate(
         data.email = merge.email;
         data.googleId = merge.googleId;
         data.emailVerified = merge.emailVerified;
+        // #1225: suppression is tied to the address, so it rides in with it.
+        data.emailSuppressed = merge.emailSuppressed;
     }
-    // Only-keeper-has-identity (or 'keep' choice, or neither side) -> no write.
+    // Only-keeper-has-identity (or 'keep' choice, or neither side) -> no write:
+    // the keeper's address stands, and so does its own emailSuppressed.
 
     // Compliance dates: always take the newer one. Same human — an older check
     // is never the right survivor. Never a radio.
