@@ -26,34 +26,44 @@ Designed apart, the matrix and the audit contract fragment. One doc.
 ## Terminology: the visit-source model
 
 Every `Visit` records *how* its arrival and departure were captured, in
-`arrivedVia` / `departedVia` (`VisitSource`). This design uses four sources with
-non-overlapping meaning:
+`arrivedVia` / `departedVia` (`VisitSource`). This design uses **five** sources
+with non-overlapping meaning:
 
-| source | on | meaning |
-|---|---|---|
-| `SCANNER` | both | physical kiosk badge — **measured** |
-| `WEB` | both | dashboard / self-service entry — **self-reported** |
-| `LEAD_MARKED` | both | staff asserted presence — a post-hoc roster mark that creates a **full** visit (arrival + departure at the event window), no badge involved |
-| `AUTO_CLOSE` | `departedVia` | automated close of a real (`SCANNER`/`WEB`) arrival the member never badged out of — nightly cron / facility-close sweep |
+| source | on | meaning | departure accuracy |
+|---|---|---|---|
+| `SCANNER` | both | physical kiosk badge — **measured** | exact |
+| `WEB` | both | dashboard / self-service entry — **self-reported** | member's own claim |
+| `LEAD_MARKED` | both | staff asserted presence — a post-hoc roster mark that creates a **full** visit (arrival + departure at the event window), no badge involved | event window, not real |
+| `FACILITY_CLOSE` | `departedVia` | the building closed (last keyholder badged out) while the member was still checked in — departure stamped at the **close moment** | plausible: bounded by building hours |
+| `AUTO_CLOSE` | `departedVia` | the nightly cron swept an abandoned open visit — departure stamped at **cron-run time** | poor: the member may have left hours earlier |
 
 Domains: `arrivedVia ∈ {SCANNER, WEB, LEAD_MARKED}`,
-`departedVia ∈ {SCANNER, WEB, LEAD_MARKED, AUTO_CLOSE}`.
+`departedVia ∈ {SCANNER, WEB, LEAD_MARKED, FACILITY_CLOSE, AUTO_CLOSE}`.
 
 `LEAD_MARKED` is not arrival-only: marking someone present has no badge times, so
 the writer fabricates a **closed** visit stamping *both* fields (a null departure
 would mark it "open" and trip the nightly auto-checkout + the one-open-visit
 index). Both fields are staff assertions, so both read `LEAD_MARKED`.
 
-**This renames today's overloaded `SYSTEM`.** Current code uses one value
-`SYSTEM` for two unrelated things: the post-hoc roster mark (→ `LEAD_MARKED`,
-which the writer sets on *both* `arrivedVia` and `departedVia`) and the automated
-departure-only close (→ `AUTO_CLOSE`, `departedVia` only). Splitting removes the
-overload and makes downstream rules self-documenting (the `trends` exclusion of
-synthetic visits becomes `arrivedVia != LEAD_MARKED`). `LEAD` is the accepted
-umbrella — the roster-mark gate is lead-mentor OR sysadmin/board/keyholder, and
-there is no "staff" concept in this codebase's vocabulary. The rename is a
-migration + reference sweep, folded into AT3 (§3); the rest of this doc is
-written in the target vocabulary.
+**This splits today's overloaded `SYSTEM`.** Current code collapses *three*
+unrelated events into one value `SYSTEM`:
+- the post-hoc roster mark (both fields) → `LEAD_MARKED`;
+- the keyholder building-close sweep (`closeAllOpenVisits`,
+  [scan-service.ts:159](../../src/lib/scan-service.ts)) → `FACILITY_CLOSE`;
+- the nightly-cron abandoned-visit sweep
+  (`processVisitCheckout(…, "SYSTEM")`, [cron/nightly:28](../../src/app/api/cron/nightly/route.ts))
+  → `AUTO_CLOSE`.
+
+Splitting `FACILITY_CLOSE` from `AUTO_CLOSE` is **not cosmetic** — no checkout
+path writes a `Visit` audit row, so `departedVia` is the *only* record of how a
+visit closed, and the two machine closers have opposite accuracy (see §2). A
+two-name rename would fuse them permanently; the third value is what lets the
+board tell "the building closed while you were badged in" from "you were still
+badged in at midnight", and lets the significance flag treat their corrections
+differently. `LEAD` is the accepted umbrella — the roster-mark gate is lead-mentor
+OR sysadmin/board/keyholder, and there is no "staff" concept in this codebase's
+vocabulary. The split is a migration + reference sweep, folded into AT3 (§3); the
+rest of this doc is written in the target vocabulary.
 
 ---
 
@@ -129,9 +139,13 @@ Audit coverage across visit-write paths (verified): the human correction routes
 all log a `Visit` audit row — manual `CREATE`, `facility/visits` `EDIT`/`DELETE`,
 events-attendance, `my-programs/conflicts/resolve`, `membership-ops/.../merge`.
 The automated / baseline paths do **not** — kiosk `scan`, the `attendance`
-check-in (writes only a `SYSTEM_NOTIFY` row), and `AUTO_CLOSE` via
-`processVisitCheckout`. That is acceptable: those are not corrections, and AT12
-aggregates corrections. The design commitment is that **every human edit path
+check-in (writes only a `SYSTEM_NOTIFY` row), and **both** machine closes
+(`FACILITY_CLOSE` via `closeAllOpenVisits`, `AUTO_CLOSE` via
+`processVisitCheckout`). That the closes are unaudited is exactly why
+`departedVia` must carry the close provenance itself — it is the only record of
+how a visit closed. Those paths aren't corrections, and AT12 aggregates
+corrections, so leaving them unaudited is fine. The design commitment is that
+**every human edit path
 logs** — including the new self and household-lead paths.
 
 ### Roles available
@@ -234,10 +248,11 @@ how authoritative the value it overwrote was*. Two inputs:
 
 - **Source trust-weight** — how much we trust the old value. Highest for
   `SCANNER` (a physical measurement), then `LEAD_MARKED` (another person's
-  observation of the member), then `WEB` (the member's own prior self-report),
-  lowest for `AUTO_CLOSE` (a machine-guessed placeholder the member is *meant* to
-  fix). Editing your own self-report is nearly free; overwriting a measurement or
-  someone else's observation is where scrutiny belongs.
+  observation of the member), then `WEB` (the member's own prior self-report).
+  Lowest — effectively *expected to be wrong* — for the machine closes
+  `FACILITY_CLOSE` and `AUTO_CLOSE`: those are placeholder departures the member
+  is *meant* to fix. Editing your own self-report is nearly free; overwriting a
+  measurement or someone else's observation is where scrutiny belongs.
 - **Magnitude** — the size of the change in counted hours / minutes shifted. A
   small delta is noise; a large one moves the numbers.
 
@@ -246,10 +261,24 @@ how authoritative the value it overwrote was*. Two inputs:
 member deleting a visit they themselves submitted still surfaces (we want to see
 that), and deleting a `SCANNER`/`LEAD_MARKED` visit flags strongly.
 
+**The machine-close exception (why the third enum value earns its keep).** A
+correction to a machine-stamped departure is expected *by construction*, so
+magnitude alone would invert the intent — `AUTO_CLOSE` (cron) stamps at cron-run
+time, so the member's real leave can be hours earlier and the correction is
+**large**, which under a plain magnitude rule would fire the *loudest* alert for
+the *least* trustworthy guess. That is backwards. Because `departedVia` now
+distinguishes the two closers, the rule is expressed on the **source**, not the
+size: **a correction whose overwritten departure was `AUTO_CLOSE` or
+`FACILITY_CLOSE` does not flag on magnitude** — we already know that time was a
+placeholder. (`FACILITY_CLOSE` corrections are small anyway — bounded by building
+hours — but keying on the source, not the delta, is what makes the `AUTO_CLOSE`
+case correct.) Fixing a machine close is the happy path, never a board alert.
+
 | change | weight of old value | flagged? |
 |---|---|---|
 | +5 min on own `WEB` arrival | low | no — noise |
-| fix an `AUTO_CLOSE` departure to the real leave time | lowest | no — expected, encouraged |
+| fix an `AUTO_CLOSE` (cron) departure to the real leave time | machine placeholder | **no — source-suppressed, even a 10 h correction** |
+| fix a `FACILITY_CLOSE` departure | machine placeholder | no — source-suppressed (and small anyway) |
 | shift a `LEAD_MARKED` visit by 15 min | high | no — small delta, not worth a human |
 | move a `SCANNER` arrival 2 h earlier | high | **yes** — overwriting a measurement, big delta |
 | delete a `LEAD_MARKED` or `SCANNER` visit | high | **yes** — strong |
@@ -257,7 +286,7 @@ that), and deleting a `SCANNER`/`LEAD_MARKED` visit flags strongly.
 
 Thresholds are **tunable config** (BoardSettings-style), not hardcoded — the
 right cutoffs are a judgment the board will calibrate against real volume; leave
-the knob (§6).
+the knob (§6). The machine-close suppression is a source rule, not a threshold.
 
 ### Mechanics (reuses what exists)
 - Add `PATCH`/`DELETE` to `/api/attendance/manual` (or a sibling
@@ -343,13 +372,31 @@ user surface — `trends`, the visit lists, the one-open-visit partial index
 (a tombstoned row must not count as "open") — filters `deletedAt: null`. Un-delete
 restores the row. Schema addition + migration, folded into this AT3 work.
 
-### The `VisitSource` rename
-The `SYSTEM → LEAD_MARKED` / `AUTO_CLOSE` split (Terminology) lands as part of
-AT3: schema `VisitSource`, the raw-SQL enum migration, the `arrivedVia` writer in
-events-attendance, every `departedVia: "SYSTEM"` writer (nightly cron,
-`closeAllOpenVisits` / `processVisitCheckout`), `security/generated/
-classifications.ts`, the `SOURCE_META` UI map, and the `trends` filter. It is a
-mechanical sweep; keep it in the AT3 PR rather than a standalone churn.
+### The `VisitSource` split
+The `SYSTEM → LEAD_MARKED` / `FACILITY_CLOSE` / `AUTO_CLOSE` split (Terminology)
+lands as part of AT3. It is a **3-way** split — the three current `SYSTEM` writers
+map to three different values, so the migration is a per-writer edit, not a blind
+rename:
+
+| writer | today | becomes |
+|---|---|---|
+| events-attendance roster mark ([route.ts:143](../../src/app/api/events/[id]/attendance/route.ts)) | `SYSTEM` (both fields) | `LEAD_MARKED` |
+| keyholder building-close `closeAllOpenVisits` ([scan-service.ts:159](../../src/lib/scan-service.ts)) | `departedVia: "SYSTEM"` | `FACILITY_CLOSE` |
+| nightly-cron sweep `processVisitCheckout(…, "SYSTEM")` ([cron/nightly:28](../../src/app/api/cron/nightly/route.ts)) | `departedVia: "SYSTEM"` | `AUTO_CLOSE` |
+
+`processVisitCheckout`'s `source` union widens to carry the new value from the
+cron call site (the SCANNER/WEB self-checkout callers are unchanged). The rest is
+mechanical: schema `VisitSource`, the raw-SQL enum migration, `security/generated/
+classifications.ts`, the `SOURCE_META` UI map, and the `trends` filter (which keys
+on `arrivedVia`, so it is unaffected by the departure-side split). Keep it in the
+AT3 PR rather than a standalone churn.
+
+Note the existing data: today's `departedVia = "SYSTEM"` rows are the *fused*
+history — they cannot be back-split into `FACILITY_CLOSE` vs `AUTO_CLOSE` after
+the fact (the discriminator was never stored). The migration maps legacy `SYSTEM`
+departures to one bucket (recommend `AUTO_CLOSE`, the conservative "don't trust
+this time" reading); only rows written after the split carry the true
+distinction.
 
 ---
 
@@ -405,7 +452,7 @@ add the group-by. Do not build a second generic audit browser.
   historical two-deep evaluation; corrections don't recompute past violations.
   AT10 (unknown-DOB fails open) is a separate live-path bug.
 - **AT9 / #254 (force-close race) — shared invariant.** The facility-close sweep
-  (`closeAllOpenVisits`, writing `AUTO_CLOSE`) is itself a bulk visit-write and
+  (`closeAllOpenVisits`, writing `FACILITY_CLOSE`) is itself a bulk visit-write and
   shares this surface's substrate: the one-open-visit invariant + per-participant
   advisory lock. AT9 is a race where a check-in survives the close. The correction
   surface's single-visit writes must take the **same advisory lock** so a manual
