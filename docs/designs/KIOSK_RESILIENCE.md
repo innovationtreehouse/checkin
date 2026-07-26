@@ -419,6 +419,8 @@ check-ins, manual visits, admin edits, force-close sweeps) occur during the
 same outage the kiosk queues through — has not been enumerated; analysis
 (possibly a small state-machine diagram) is owed before Phase 1 hardening.
 
+## 3. Health checking, recovery, and heartbeat
+
 ### 3.1 Layered health state machine
 
 A single background thread (`health_monitor`, sibling to the existing
@@ -1009,12 +1011,19 @@ stateDiagram-v2
     Pending --> Sending: drain (M0 Online), FIFO by scannedAt
     Sending --> Acked: 200 — event appended (projected|parked|duplicate)
     Sending --> Pending: transient (503 / 429 / 5xx / network) — backoff
-    Sending --> Dead: 400 malformed (rare)
+    Sending --> Dead: terminal — other 400 / 404 / 409 (malformed, unknown, merge-unresolvable) — per D4
     Acked --> [*]: DELETE from outbox
     Dead --> SendingDead: transmit as known-dead (inv. 3)
     SendingDead --> Acked: server parked it
     SendingDead --> Dead: retry
 ```
+
+The `Dead` edge matches today's server (D4/D6): unknown participant / merge
+chain → 404/409, dead-lettered, then retransmitted as known-dead so the server
+records + parks it (invariant 3, DEC-023). Once the unified substrate (§6.2)
+lands, the server appends+parks such events directly (M2 `ParkedIdentity`, a
+200) and this edge narrows to genuine 400-malformed — a `Dead` that shrinks as
+§5.22 is delivered.
 
 **M2 — server ingest + classify.** Append before classify is the point: the
 event is durable before any decision that could reject it. Every terminal
