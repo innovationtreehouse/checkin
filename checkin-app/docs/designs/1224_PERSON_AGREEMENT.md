@@ -77,6 +77,17 @@ Implementation snag: there is **no clean per-attachment timestamp**. `ProgramPar
 `[now − 12 months, now]`. This is a proxy, not exact per-person attachment history; a real
 per-attachment end date is a later investment only if precision proves to matter.
 
+**NULL-date rule (required — both fields are nullable).** A naive overlap predicate
+(`startAt <= now AND endAt >= yearAgo`) silently drops undated programs via SQL three-valued logic:
+an 18+ non-lead attached only to an ongoing program with **no `endAt`** would never get an
+obligation opened — a silent compliance gap. The predicate must treat NULLs as *open*, not
+*excluded*:
+- `endAt` NULL → program is still active → counts as attached (overlaps `now`).
+- `startAt` NULL → unbounded start → satisfies the "started before now" side.
+- both NULL → treat as currently attached.
+
+Concretely: attached iff `(endAt IS NULL OR endAt >= yearAgo) AND (startAt IS NULL OR startAt <= now)`.
+
 ### Triggers
 
 Clone `personBgTriggers.ts` into `personAgreementTriggers.ts`:
@@ -92,9 +103,13 @@ Clone `personBgTriggers.ts` into `personAgreementTriggers.ts`:
 - **Manual board buttons (new) — build both.** Off the membership boundary, because the automatic
   population can't catch every case (someone who becomes attached between runs, or a judgement call
   the board makes directly). Two buttons, same manual-open shape, different kind:
-  - "This person needs an **agreement** now" → opens a `PERSON_AGREEMENT` if none is open.
+  - "This person needs an **agreement** now" → opens a `PERSON_AGREEMENT` if none is open. **Must
+    carry the same NOT-`isHouseholdLead` guard as the automatic triggers** — a lead signs the
+    household agreement, and an open PERSON_AGREEMENT on a lead would wedge the household signing
+    flow (see the resolver rule below). Refuse (or no-op with a clear message) if the subject is a
+    lead.
   - "This person needs a **BG check** now" → opens a `PERSON_BG` if none is open (mirror of the
-    existing `submitPersonBgForReview` manual path).
+    existing `submitPersonBgForReview` manual path). No lead guard — leads *do* need BG checks.
 
 ### Signer + unblocking the lead-only gate
 
@@ -102,14 +117,31 @@ Clone `personBgTriggers.ts` into `personAgreementTriggers.ts`:
 on `isHouseholdLead || isSysadmin`, sets the recipient to the calling user.
 
 Change: **resolve which process to sign first.**
-- If the caller has an open `PERSON_AGREEMENT` with `subjectPersonId === userId`, sign *that*. The
-  recipient is already the caller (themselves), so the Zoho path is unchanged. The
+- **A household lead always signs the household INITIAL/RENEWAL process** — check `isHouseholdLead`
+  *first* and take the lead-gated path, exactly as today. This ordering is required: a stray open
+  `PERSON_AGREEMENT` on someone who is (or becomes) a lead must **never** shadow the household
+  process, or activation/renewal would stall with no UI explanation. (The NOT-lead guard on the
+  triggers/button should keep a lead from ever having one — this resolver order is the belt-and-
+  suspenders backstop.)
+- Otherwise, if the caller has an open `PERSON_AGREEMENT` with `subjectPersonId === userId`, sign
+  *that*. The recipient is already the caller (themselves), so the Zoho path is unchanged. The
   `isHouseholdLead` gate is **bypassed for this case only** — you are signing your own agreement.
-- Otherwise fall back to the household INITIAL/RENEWAL path, **lead-gated exactly as today**.
+- Otherwise fall back to the household INITIAL/RENEWAL path (a non-lead here → `not_lead`, as today).
 
 `markContractSigned` gains a kind branch: a `PERSON_AGREEMENT` flips straight to `ACTIVE` (reusing
 the existing terminal status — no new enum value) and **skips `advanceExternalIfComplete`** (it has
 no membership, no payment, no BG gate).
+
+**Return-from-signing sync must cover the new kind too.** `syncContractStatus`
+([external.ts:280](../../src/lib/membership/external.ts)) is the reliable completion leg — it runs on
+`?signed=1` when the signer returns, because the inbound Zoho webhook is documented as unreliable
+against a scale-to-zero instance. It resolves the process via
+`household.orgMembership.processes`, which **can never contain a `PERSON_AGREEMENT`** (its
+`orgMembershipId` is null). Left unchanged, an adult child who signs and returns completes *only* if
+the webhook happens to fire; otherwise the card keeps demanding a signature already executed and a
+re-click mints a second ceremony. `syncContractStatus` must resolve the subject's own open
+`PERSON_AGREEMENT` (by `subjectPersonId = userId`) with the same precedence as the signing resolver
+above.
 
 ### Rendering
 
@@ -146,5 +178,9 @@ Enforcement is manual to start.
 - The signing-gate change is a branch, not a rewrite — the household lead flow is untouched; only
   the self-signing case is newly permitted. Cover with a test that a non-lead **cannot** sign the
   household agreement but **can** sign their own PERSON_AGREEMENT.
-- `personAgreementTriggers.ts` reuses `PROGRAM_ATTACHED_WHERE` and the Person-row-lock idempotency
-  pattern from `personBgTriggers.ts`.
+- `personAgreementTriggers.ts` reuses the Person-row-lock idempotency pattern from
+  `personBgTriggers.ts`, but **derives-and-narrows** the population predicate rather than reusing
+  `PROGRAM_ATTACHED_WHERE` verbatim. That helper is *attached-to-any-program-ever* (no time bound);
+  this feature needs the **12-month Program-window** proxy above (with the NULL-date rule) plus the
+  NOT-`isHouseholdLead` exclusion. Reusing `PROGRAM_ATTACHED_WHERE` as-is would turn "flagged for one
+  cycle" into "flagged forever."
