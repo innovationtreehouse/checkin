@@ -29,6 +29,42 @@ describe("ProfilePage", () => {
         expect(fetchMock).toHaveBeenCalledWith("/api/profile", expect.objectContaining({ method: "PATCH" }));
     });
 
+    it("prefills the over-25 attestation and posts it without a DoB", async () => {
+        setSession({ id: 3 });
+        const fetchMock = mockFetchJson({
+            "/api/profile": { profile: { name: "Pat Declared", email: "pat@example.com", phone: "555-3333", dateOfBirth: null, isDeclaredAdult: true } },
+        });
+        renderWithProviders(<ProfilePage />);
+
+        const over25 = await screen.findByLabelText("I am over 25");
+        expect(over25).toBeChecked();
+        // With the attestation on, the DoB field is hidden entirely.
+        expect(screen.queryByLabelText("Date of Birth")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
+
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Profile updated successfully!" })));
+        const [, patchOpts] = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+        expect(JSON.parse(patchOpts!.body as string)).toMatchObject({ over25: true, dob: null });
+    });
+
+    it("checking over-25 clears and hides the DoB field", async () => {
+        setSession({ id: 4 });
+        const fetchMock = mockFetchJson({
+            "/api/profile": { profile: { name: "Sam Adult", email: "sam@example.com", phone: "555-4444", dateOfBirth: "1990-01-01" } },
+        });
+        renderWithProviders(<ProfilePage />);
+
+        expect(await screen.findByLabelText("Date of Birth")).toHaveValue("1990-01-01");
+        fireEvent.click(screen.getByLabelText("I am over 25"));
+        expect(screen.queryByLabelText("Date of Birth")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Profile updated successfully!" })));
+        const [, patchOpts] = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+        expect(JSON.parse(patchOpts!.body as string)).toMatchObject({ over25: true, dob: null });
+    });
+
     it("locks the form as read-only for a youth", async () => {
         setSession({ id: 2 });
         mockFetchJson({
