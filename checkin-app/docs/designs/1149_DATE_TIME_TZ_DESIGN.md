@@ -9,7 +9,23 @@ design covers the whole class and stands on its own. (No owning GitHub issue yet
 the worktree name `issue-354-…` refers to an unrelated dead-schema ticket; file a
 tracking issue if one is wanted.)
 
-**Status:** design — no product code, schema, or migration changed. **Date:** 2026-07-24.
+**Status:** design. **Date:** 2026-07-24.
+
+### Shipping progress
+
+- **#1366 (program dates, F2 — in review):** implements the program-date slice
+  with **this design's calendar-date model**, after an initial org-tz-instant
+  approach was reworked to align. It lands the two canonical helpers in
+  `lib/time.ts` — `parseDateOnly(value) = value ? new Date(value) : null`
+  (UTC-midnight write) and `formatDateOnly` (UTC-pinned read) — writes program
+  `startAt`/`endAt` via `parseDateOnly`, reads via `formatDateOnly` at all three
+  display sites, **no migration**. Closes #1149.
+- **Precedent set:** the calendar-date convention is now concrete —
+  **store UTC-midnight via `parseDateOnly`, read via `formatDateOnly`** (Model A).
+  The remaining calendar-date fields (DOB, `memberSince`, `lastBackgroundCheck`,
+  boundary) reuse these helpers rather than re-deciding. The `@db.Date` question
+  ([open decision](#open-decision-calendar-date-storage-model)) stays open as a
+  later schema-honesty pass; #1366 did **not** migrate.
 
 ## The defect class (recap)
 
@@ -88,8 +104,9 @@ Display: [programs/page.tsx:130](checkin-app/src/app/programs/page.tsx),
 The originally-reported case. The edit-form input read
 [program-ops/programs/[id]/page.tsx:104](checkin-app/src/app/program-ops/programs/[id]/page.tsx)
 uses `.split('T')[0]` (UTC slice), so the *input* round-trips; only the
-`formatDate` *display* is wrong. Fixed by this design: `formatDateOnly` at the
-three display sites (Sequencing step 2).
+`formatDate` *display* is wrong. **Resolved in #1366** (in review) with this
+design's model: `parseDateOnly` write + `formatDateOnly` at the three display
+sites, no migration.
 
 ### 3. `OrgMembership.memberSince` displayed in local tz, written in UTC — BUG
 
@@ -380,7 +397,7 @@ per-field decision inputs:
 | Field | Does `@db.Date` add a *functional* win beyond consistency? |
 |---|---|
 | `Person.dateOfBirth` | **Yes — strongest case.** Multiple disagreeing writers (F1) **and** an exact-match consumer: import dedup `where: { dateOfBirth: parsedDob }` (import/preview/route.ts:256, import/route.ts:242) silently misses a noon-stored DOB vs a midnight `parsedDob` → duplicate Person. |
-| `Program.startAt` / `endAt` | Consistency-only. Single writer; `{ endAt: { gte: new Date() } }` (programs/route.ts:86) behaves identically. Event `startAt/endAt` are a *different* model — stay `DateTime`. |
+| `Program.startAt` / `endAt` | **Shipped Model A in #1366** — `parseDateOnly` write + `formatDateOnly` read, no migration; `@db.Date` would be consistency-only. `{ endAt: { gte: new Date() } }` (programs/route.ts:86) behaves identically. Event `startAt/endAt` are a *different* model — stay `DateTime`. |
 | `OrgMembership.memberSince` | Consistency-only. Single writer; roundtrip guard (households/[id]/route.ts:70) already UTC-safe. |
 | `Person.lastBackgroundCheck` | Consistency-only. Single writer; `bgValidUntilBoundary` (renewal.ts:75-83) already truncates to a UTC day (a no-op under `@db.Date`). |
 | `BoardSettings.orgMembershipYearBoundary` | Consistency-only. All consumers already UTC (`nextBoundary` `getUTC*`, display `timeZone:'UTC'`). |
@@ -412,12 +429,13 @@ integration suites — `tsc` green is necessary, not sufficient.
 **Layer + symptoms — do regardless of the storage decision. Fixes everything a
 user sees and makes the class un-reintroducible:**
 
-1. **Establish the canonical layer** in `lib/time.ts`: add `formatDateOnly` and
-   `parseDateOnly`, move age to `getUTC*`, and source the instant formatters from
-   the resolved org tz.
+1. **Establish the canonical layer** in `lib/time.ts`: `formatDateOnly` +
+   `parseDateOnly` **land in #1366** — reuse them, don't re-add. Still to do here:
+   move age to `getUTC*`, and source the instant formatters from the resolved org tz.
 2. **Sweep calendar-date readers → `formatDateOnly`:** F2 (the three program
-   display sites), F4/F5 (DOB), F6 (BG), F3 (memberSince displays + the
-   `getFullYear` read at my-household:378), F9 (filter label).
+   display sites) **done in #1366**; remaining: F4/F5 (DOB), F6 (BG), F3
+   (memberSince displays + the `getFullYear` read at my-household:378), F9 (filter
+   label).
 3. **Route calendar-date writes through `parseDateOnly`** (one convention).
    Interactive DOB already funnels through **`normalizeAdultDob` (adultDob.ts:28)**
    — apply `parseDateOnly` **there** and the four delegating routes (profile,
