@@ -4,20 +4,16 @@
  * Verifies that POST /api/programs:
  * 1. Forwards `startAt` / `endAt` to prisma.program.create as Date objects
  *    (not null), and the response carries them back so the client can redirect.
- * 2. Anchors those date-only strings to midnight in the org timezone, so the
- *    calendar date an admin picks is the one every org-local view renders.
+ * 2. Stores those date-only strings at the calendar-date convention (UTC
+ *    midnight), which formatDateOnly renders back as the picked date.
  */
 
 import { POST } from '@/app/api/programs/route';
 import { getServerSession } from 'next-auth/next';
-import { formatDate, toDateInput } from '@/lib/time';
+import { formatDateOnly } from '@/lib/time';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
-}));
-
-jest.mock('@/lib/appSettings', () => ({
-    getAppSettings: jest.fn().mockResolvedValue({ timezone: 'America/Chicago', locale: 'en-US' }),
 }));
 
 jest.mock('@/lib/notifications', () => ({
@@ -101,9 +97,9 @@ describe('POST /api/programs — startAt/endAt date preservation', () => {
         const createArgs = mockProgramCreate.mock.calls[0][0] as { data: Record<string, unknown> };
         expect(createArgs.data.startAt).toBeInstanceOf(Date);
         expect(createArgs.data.endAt).toBeInstanceOf(Date);
-        // CDT in September, CST in December — org midnight, not midnight UTC
-        expect((createArgs.data.startAt as Date).toISOString()).toBe('2024-09-01T05:00:00.000Z');
-        expect((createArgs.data.endAt as Date).toISOString()).toBe('2024-12-15T06:00:00.000Z');
+        // Calendar-date convention: UTC midnight (design doc Axis 1)
+        expect((createArgs.data.startAt as Date).toISOString()).toBe('2024-09-01T00:00:00.000Z');
+        expect((createArgs.data.endAt as Date).toISOString()).toBe('2024-12-15T00:00:00.000Z');
 
         // Verify the response body includes program.startAt so the client can
         // read data.program.id and redirect to the detail page
@@ -138,9 +134,9 @@ describe('POST /api/programs — startAt/endAt date preservation', () => {
 
             const { data } = mockProgramCreate.mock.calls[0][0] as { data: Record<string, unknown> };
             const [y, m, d] = picked.split('-').map(Number);
-            expect(formatDate(data.startAt as Date)).toBe(`${m}/${d}/${y}`);
-            expect(toDateInput(data.startAt as Date)).toBe(picked);
-            expect(toDateInput(data.endAt as Date)).toBe(picked);
+            expect(formatDateOnly(data.startAt as Date)).toBe(`${m}/${d}/${y}`);
+            expect((data.startAt as Date).toISOString().split('T')[0]).toBe(picked);
+            expect((data.endAt as Date).toISOString().split('T')[0]).toBe(picked);
         },
     );
 

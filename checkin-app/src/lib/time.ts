@@ -1,5 +1,3 @@
-import { fromZonedTime } from 'date-fns-tz';
-
 // ponytail: default/fallback timezone. The editable org timezone lives in AppSettings
 // (lib/appSettings.ts) and is honored server-side (event creation, trends). Client-side
 // display helpers below still use this constant — wire them to AppSettings via a layout
@@ -89,27 +87,24 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 }
 
 /**
- * Parse an <input type="date"> value ("yyyy-MM-dd") as midnight in `timeZone`,
- * so the calendar date the user picked is the one that reads back. Bare
- * `new Date("2026-09-01")` means midnight UTC, which is the previous evening in
- * any western zone. Anything other than a bare date is already an absolute
- * instant and keeps it. Server callers pass `getAppSettings().timezone`.
+ * Format a calendar-date field (program dates, DOB, memberSince — stored at UTC
+ * midnight by convention) UTC-pinned, so the stored calendar day renders
+ * unshifted in every zone. Counterpart to formatDate, which is for instants.
+ * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
  */
-export function fromDateInput(value: string | null | undefined, timeZone: string): Date | null {
-    if (!value) return null;
-    return /^\d{4}-\d{2}-\d{2}$/.test(value) ? fromZonedTime(value, timeZone) : new Date(value);
+export function formatDateOnly(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+    if (!date) return '';
+    return new Date(date).toLocaleDateString(undefined, { timeZone: 'UTC', ...options });
 }
 
 /**
- * Format an instant as the "yyyy-MM-dd" value an <input type="date"> expects,
- * read in the app timezone. Inverse of fromDateInput. `en-CA` is the locale
- * whose short date format is ISO order, so no manual part assembly is needed.
+ * Parse an <input type="date"> value ("yyyy-MM-dd") into the calendar-date
+ * storage convention: UTC midnight (what `new Date` does to a bare date).
+ * The single write-side seam if the storage model ever changes (the design
+ * doc's open decision). A value already carrying a time parses as-is.
  */
-export function toDateInput(date: Date | string | number | null | undefined): string {
-    if (!date) return '';
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+export function parseDateOnly(value: string | null | undefined): Date | null {
+    return value ? new Date(value) : null;
 }
 
 /**

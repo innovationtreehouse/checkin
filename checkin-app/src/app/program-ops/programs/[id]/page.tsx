@@ -12,7 +12,6 @@ import { notifications } from '@mantine/notifications';
 import { ProgramEventsTab } from './ProgramEventsTab';
 import { isProgramCheckoutBroken } from '@/lib/programCheckout';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
-import { toDateInput } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 export type ProgramDetail = {
@@ -102,8 +101,8 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
       if (res.ok) {
         const data = await res.json();
         setProgram(data);
-        setStartAt(toDateInput(data.startAt));
-        setEndAt(toDateInput(data.endAt));
+        setStartAt(data.startAt ? data.startAt.split('T')[0] : "");
+        setEndAt(data.endAt ? data.endAt.split('T')[0] : "");
         setMinAge(data.minAge !== null ? String(data.minAge) : "");
         setMaxAge(data.maxAge !== null ? String(data.maxAge) : "");
         setMaxParticipants(data.maxParticipants !== null ? String(data.maxParticipants) : "");
