@@ -7,6 +7,7 @@ import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
 import { ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
+import { parseDateOnly } from "@/lib/time";
 
 export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -88,8 +89,8 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
         // Build data object for Prisma
         const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
         if (name !== undefined) updateData.name = name;
-        if (startAt !== undefined) updateData.startAt = startAt ? new Date(startAt) : null;
-        if (endAt !== undefined) updateData.endAt = endAt ? new Date(endAt) : null;
+        if (startAt !== undefined) updateData.startAt = parseDateOnly(startAt);
+        if (endAt !== undefined) updateData.endAt = parseDateOnly(endAt);
         if (phase !== undefined) updateData.phase = phase;
         if (enrollmentStatus !== undefined) updateData.enrollmentStatus = enrollmentStatus;
         if (orgMemberOnly !== undefined) updateData.orgMemberOnly = orgMemberOnly;

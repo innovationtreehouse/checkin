@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Container, Group, SimpleGrid, Text, Title } from '@mantine/core';
-import { formatDate } from '@/lib/time';
+import { formatDateOnly } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type UserProgram = {
@@ -106,8 +106,8 @@ export default function MyProgramsDashboard() {
               </Group>
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>
-                {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
-                {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
+                {program.startAt ? formatDateOnly(program.startAt) : 'Start Date TBD'}
+                {program.endAt ? ` - ${formatDateOnly(program.endAt)}` : ' (Ongoing)'}
               </Text>
               <Button component={Link} href={`/programs/${program.id}`} variant="light" fullWidth mt="md">
                 View Details

@@ -1,4 +1,36 @@
-import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, isYouth } from '../time';
+import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth } from '../time';
+
+describe('calendar-date helpers', () => {
+  it('stores a picked date at UTC midnight', () => {
+    expect(parseDateOnly('2026-09-01')!.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+  });
+
+  it('parses a value that already carries a time as-is', () => {
+    expect(parseDateOnly('2026-09-01T12:00:00.000Z')!.toISOString()).toBe('2026-09-01T12:00:00.000Z');
+  });
+
+  it('renders the stored calendar day unshifted, where the instant formatter shifts it', () => {
+    const stored = parseDateOnly('2026-09-01')!;
+    expect(formatDateOnly(stored)).toBe('9/1/2026');
+    // formatDate is for instants: UTC midnight rendered in Chicago is the day before
+    expect(formatDate(stored)).toBe('8/31/2026');
+  });
+
+  it('round-trips picked date → stored value → display and input value', () => {
+    for (const picked of ['2026-01-15', '2026-03-08', '2026-09-01', '2026-11-01']) {
+      const stored = parseDateOnly(picked)!;
+      expect(stored.toISOString().split('T')[0]).toBe(picked);
+      const [y, m, d] = picked.split('-').map(Number);
+      expect(formatDateOnly(stored)).toBe(`${m}/${d}/${y}`);
+    }
+  });
+
+  it('handles empty input', () => {
+    expect(parseDateOnly('')).toBeNull();
+    expect(parseDateOnly(null)).toBeNull();
+    expect(formatDateOnly(null)).toBe('');
+  });
+});
 
 describe('isYouth', () => {
   it('classifies by age when DOB is known', () => {

@@ -10,6 +10,7 @@ import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { parseDateOnly } from "@/lib/time";
 
 // ORDER MATTERS: this export sits ABOVE getProgram so the routeAuthDrift
 // guard attributes getProgram's edge-model reads to the nearest preceding
@@ -176,8 +177,8 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const updateData: Record<string, unknown> = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
-            ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
+            ...(startAt !== undefined && { startAt: parseDateOnly(startAt) }),
+            ...(endAt !== undefined && { endAt: parseDateOnly(endAt) }),
             ...(orgMemberOnly !== undefined && { orgMemberOnly }),
             ...(announceOnOpen !== undefined && { announceOnOpen }),
             ...(phase !== undefined && { phase }),
