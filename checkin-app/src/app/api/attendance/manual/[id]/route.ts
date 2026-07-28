@@ -6,6 +6,7 @@ import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 import { editSignificance, deleteSignificance } from "@/lib/visit/significance";
 import { emailBoardMembers } from "@/lib/emailRecipients";
+import { escapeHtml } from "@/lib/email-templates/base";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { formatDateTime } from "@/lib/time";
@@ -30,9 +31,11 @@ async function loadOwnVisit(id: number, userId: number) {
 function flagBoard(kind: "edit" | "delete", visitId: number, actorName: string, score: number, detail: string) {
     // Fire-and-forget (errors logged and swallowed inside the helper): the
     // flag is oversight, never a gate on the member's response.
+    // actorName is the member's self-editable profile name: escape it, it is
+    // untrusted markup in the board's inbox.
     void emailBoardMembers(
         `Attendance: significant self-${kind} of visit #${visitId}`,
-        `<p>${actorName} ${kind === "delete" ? "deleted" : "changed"} one of their own visits ` +
+        `<p>${escapeHtml(actorName)} ${kind === "delete" ? "deleted" : "changed"} one of their own visits ` +
         `(significance ${score}).</p><p>${detail}</p>` +
         `<p>Full before/after is in the audit trail (Visit #${visitId}).</p>`,
         "Self-correction board flag failed:",
@@ -46,7 +49,8 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const visitId = Number((await ctx.params).id);
         if (!Number.isInteger(visitId)) return apiError("Invalid visit id", 400);
 
-        const body = await req.json();
+        const body = await req.json().catch(() => null);
+        if (!body || typeof body !== "object") return apiError("Invalid JSON", 400);
         const { arrivedAt, departedAt } = body;
         if (!arrivedAt && !departedAt) return apiError("Nothing to change.", 400);
 
@@ -87,10 +91,18 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         // Same per-person advisory lock as every other visit write: an edit
         // must not race the kiosk, the sweep, or a concurrent submit. When the
         // edit CLOSES an open visit, only the arrival is written here — the
-        // departure goes through processVisitCheckout below (it refuses
-        // already-closed visits, and it owns the back-to-back event chunking).
+        // departure goes through processVisitCheckout below, outside this lock
+        // (as on the sibling POST); it refuses already-closed or tombstoned
+        // visits, and it owns the back-to-back event chunking.
         const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
+            // Ownership and liveness re-asserted under the lock: a DELETE that
+            // landed since the pre-check must not have its tombstone overwritten.
+            const live = await tx.visit.findFirst({
+                where: { id: visitId, personId: userId, deletedAt: null },
+                select: { id: true },
+            });
+            if (!live) return null;
             // An edited value is a self-report now, whatever captured it before.
             return tx.visit.update({
                 where: { id: visitId },
@@ -100,9 +112,16 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 },
             });
         });
+        if (!updated) return apiError("Visit not found.", 404);
 
+        // The checkout chunks a program-enrolled stay into per-event rows,
+        // replacing the original: the audit row and the response must name a row
+        // that survives. Empty means the close lost a race — nothing applied.
+        let surviving = updated;
         if (closingOpenVisit) {
-            await processVisitCheckout(visitId, nextDeparted!, undefined, "WEB");
+            const chunks = await processVisitCheckout(visitId, nextDeparted!, undefined, "WEB");
+            if (chunks.length === 0) return apiError("Visit not found.", 404);
+            surviving = chunks[chunks.length - 1];
         }
 
         await prisma.auditLog.create({
@@ -110,19 +129,19 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 actorId: userId,
                 action: "EDIT",
                 tableName: "Visit",
-                affectedEntityId: visitId,
+                affectedEntityId: surviving.id,
                 secondaryAffectedEntity: visit.personId,
-                oldData: { arrivedAt: visit.arrivedAt, departedAt: visit.departedAt, arrivedVia: visit.arrivedVia, departedVia: visit.departedVia },
+                oldData: { id: visit.id, arrivedAt: visit.arrivedAt, departedAt: visit.departedAt, arrivedVia: visit.arrivedVia, departedVia: visit.departedVia },
                 newData: { arrivedAt: nextArrived, departedAt: nextDeparted, type: "self_correction", significance },
             }
         });
 
         if (significance.flagged) {
-            flagBoard("edit", visitId, auth.user.name ?? `person #${userId}`, significance.score,
+            flagBoard("edit", surviving.id, auth.user.name ?? `person #${userId}`, significance.score,
                 `${formatDateTime(visit.arrivedAt)} → ${formatDateTime(nextArrived)}`);
         }
 
-        return NextResponse.json({ visit: updated, flagged: significance.flagged });
+        return NextResponse.json({ visit: surviving, flagged: significance.flagged });
     } catch (error: unknown) {
         await logBackendError(error, "PATCH /api/attendance/manual/[id]");
         return apiError("Internal Server Error", 500);
@@ -142,14 +161,17 @@ export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id
         const significance = deleteSignificance(visit);
 
         // Tombstone, never a row removal: the deletion is reviewable in AT12
-        // and reversible by clearing deletedAt. Same advisory lock as above.
-        await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        // and reversible by clearing deletedAt. Same advisory lock as above, and
+        // ownership/liveness re-asserted inside it so a racing second delete is
+        // a 404 rather than a re-stamped deletedAt.
+        const tombstoned = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
-            await tx.visit.update({
-                where: { id: visitId },
+            return tx.visit.updateMany({
+                where: { id: visitId, personId: userId, deletedAt: null },
                 data: { deletedAt: new Date(), deletedById: userId },
             });
         });
+        if (tombstoned.count === 0) return apiError("Visit not found.", 404);
 
         await prisma.auditLog.create({
             data: {

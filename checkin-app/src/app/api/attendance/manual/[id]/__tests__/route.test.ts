@@ -27,7 +27,7 @@ jest.mock("@/lib/emailRecipients", () => ({ emailBoardMembers: jest.fn().mockRes
 
 const tx = {
     $executeRaw: jest.fn(),
-    visit: { update: jest.fn() },
+    visit: { findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
 };
 jest.mock("@/lib/prisma", () => ({
     __esModule: true,
@@ -61,7 +61,10 @@ const ctx = { params: Promise.resolve({ id: "42" }) };
 beforeEach(() => {
     jest.clearAllMocks();
     mockSession.mockResolvedValue({ user: { id: OWN_ID } });
+    tx.visit.findFirst.mockResolvedValue({ id: 42 });
     tx.visit.update.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ ...baseVisit, ...args.data }));
+    tx.visit.updateMany.mockResolvedValue({ count: 1 });
+    (processVisitCheckout as jest.Mock).mockResolvedValue([{ ...baseVisit }]);
     auditCreate.mockResolvedValue({});
 });
 
@@ -79,6 +82,22 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         visitFindUnique.mockResolvedValueOnce({ ...baseVisit, deletedAt: new Date() });
         expect((await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never)).status).toBe(404);
         expect(tx.visit.update).not.toHaveBeenCalled();
+    });
+
+    it("400s a malformed JSON body instead of 500ing", async () => {
+        const bad = new Request("http://localhost/api/attendance/manual/42", {
+            method: "PATCH", headers: { "content-type": "application/json" }, body: "{oops",
+        }) as unknown as NextRequest;
+        expect((await PATCH(bad, ctx as never)).status).toBe(400);
+    });
+
+    it("404s when the visit is tombstoned between the pre-check and the lock", async () => {
+        visitFindUnique.mockResolvedValue(baseVisit);
+        tx.visit.findFirst.mockResolvedValue(null); // a DELETE won the race
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+        expect(res.status).toBe(404);
+        expect(tx.visit.update).not.toHaveBeenCalled();
+        expect(auditCreate).not.toHaveBeenCalled();
     });
 
     it("rejects a departure before the arrival", async () => {
@@ -115,6 +134,16 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         expect(emailBoardMembers).toHaveBeenCalledTimes(1);
     });
 
+    it("escapes the actor's self-editable name in the board email", async () => {
+        mockSession.mockResolvedValue({ user: { id: OWN_ID, name: '<a href="http://evil">Pay dues here</a>' } });
+        visitFindUnique.mockResolvedValue({ ...baseVisit, arrivedVia: "SCANNER", departedVia: "SCANNER" });
+        await PATCH(req("PATCH", { arrivedAt: "2026-07-20T12:00:00Z" }), ctx as never);
+
+        const html = (emailBoardMembers as jest.Mock).mock.calls[0][1];
+        expect(html).not.toContain("<a href");
+        expect(html).toContain("&lt;a href=&quot;http://evil&quot;&gt;");
+    });
+
     it("never reopens a closed visit", async () => {
         visitFindUnique.mockResolvedValue(baseVisit);
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z", departedAt: "" }), ctx as never);
@@ -137,6 +166,32 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         // Routine close of one's own open visit is not board-worthy.
         expect(emailBoardMembers).not.toHaveBeenCalled();
     });
+
+    // Chunking hard-deletes the original row and recreates per-event segments,
+    // so an audit row naming the original id would point at nothing.
+    it("audits and returns a surviving chunk when the close splits the visit", async () => {
+        visitFindUnique.mockResolvedValue({ ...baseVisit, departedAt: null, departedVia: null });
+        (processVisitCheckout as jest.Mock).mockResolvedValue([
+            { ...baseVisit, id: 101 },
+            { ...baseVisit, id: 102 },
+        ]);
+
+        const res = await PATCH(req("PATCH", { departedAt: "2026-07-20T17:00:00Z" }), ctx as never);
+
+        expect((await res.json()).visit.id).toBe(102);
+        const audit = auditCreate.mock.calls[0][0].data;
+        expect(audit.affectedEntityId).toBe(102);
+        expect(audit.oldData.id).toBe(42); // the replaced row stays traceable
+    });
+
+    it("404s a close that lost the race (checkout applied nothing)", async () => {
+        visitFindUnique.mockResolvedValue({ ...baseVisit, departedAt: null, departedVia: null });
+        (processVisitCheckout as jest.Mock).mockResolvedValue([]);
+
+        const res = await PATCH(req("PATCH", { departedAt: "2026-07-20T17:00:00Z" }), ctx as never);
+        expect(res.status).toBe(404);
+        expect(auditCreate).not.toHaveBeenCalled();
+    });
 });
 
 describe("DELETE /api/attendance/manual/[id]", () => {
@@ -146,10 +201,12 @@ describe("DELETE /api/attendance/manual/[id]", () => {
 
         expect(res.status).toBe(200);
         expect(await res.json()).toEqual({ success: true, flagged: true });
-        expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
-            where: { id: 42 },
+        // Ownership + liveness are re-asserted inside the lock, not just before it.
+        expect(tx.visit.updateMany).toHaveBeenCalledWith({
+            where: { id: 42, personId: OWN_ID, deletedAt: null },
             data: expect.objectContaining({ deletedAt: expect.any(Date), deletedById: OWN_ID }),
-        }));
+        });
+        expect(tx.visit.update).not.toHaveBeenCalled(); // never a row removal
         const audit = auditCreate.mock.calls[0][0].data;
         expect(audit).toMatchObject({ action: "DELETE", tableName: "Visit", affectedEntityId: 42 });
         expect(audit.newData.significance.flagged).toBe(true);
@@ -160,6 +217,15 @@ describe("DELETE /api/attendance/manual/[id]", () => {
         visitFindUnique.mockResolvedValue({ ...baseVisit, deletedAt: new Date() });
         const res = await DELETE(req("DELETE"), ctx as never);
         expect(res.status).toBe(404);
-        expect(tx.visit.update).not.toHaveBeenCalled();
+        expect(tx.visit.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("404s a delete that races another delete (nothing matched under the lock)", async () => {
+        visitFindUnique.mockResolvedValue(baseVisit);
+        tx.visit.updateMany.mockResolvedValue({ count: 0 });
+        const res = await DELETE(req("DELETE"), ctx as never);
+        expect(res.status).toBe(404);
+        expect(auditCreate).not.toHaveBeenCalled();
+        expect(emailBoardMembers).not.toHaveBeenCalled();
     });
 });
