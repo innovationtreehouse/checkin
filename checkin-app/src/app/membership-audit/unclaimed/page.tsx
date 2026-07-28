@@ -20,7 +20,7 @@ export default function UnclaimedHouseholdsIndex() {
         const data = await res.json();
         if (data.households) setHouseholds(data.households);
       } catch (err) {
-        console.error(err);
+        console.error("Failed to load unclaimed households:", err);
       } finally {
         setLoading(false);
       }

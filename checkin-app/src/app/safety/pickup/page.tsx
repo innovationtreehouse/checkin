@@ -33,7 +33,7 @@ export default function TrustedAdultPickupPage() {
         fetch("/api/trusted-adults/operational")
             .then((r) => r.json())
             .then((d) => setItems(d.trustedAdults ?? []))
-            .catch(console.error)
+            .catch((err) => console.error("Failed to load trusted adults for pickup:", err))
             .finally(() => setLoading(false));
     }, []);
 

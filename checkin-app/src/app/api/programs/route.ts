@@ -11,6 +11,7 @@ import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { parseDateOnly } from "@/lib/time";
 
 // Public catalog projection: every Program column whose `/// @sensitivity:` tier
 // is `public` per src/security/generated/classifications.ts, in schema order.
@@ -214,8 +215,8 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                startAt: startAt ? new Date(startAt) : null,
-                endAt: endAt ? new Date(endAt) : null,
+                startAt: parseDateOnly(startAt),
+                endAt: parseDateOnly(endAt),
                 orgMemberOnly: orgMemberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
@@ -238,7 +239,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         });
 
         if (newProgram.leadMentorId) {
-            await sendNotification(newProgram.leadMentorId, 'PROGRAM_ASSIGNMENT', { programName: newProgram.name });
+            await sendNotification(newProgram.leadMentorId, 'PROGRAM_ASSIGNMENT', { programName: newProgram.name, programId: newProgram.id });
         }
 
         const responseObj: Record<string, unknown> = { success: true, program: newProgram };

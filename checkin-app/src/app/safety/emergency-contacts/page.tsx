@@ -66,7 +66,7 @@ export default function EmergencyContactsPage() {
         setError("Failed to load emergency contacts. Ensure you have the proper authorizations.");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load emergency contacts:", e);
       notifications.show({ color: "red", message: "Network error loading contacts.", autoClose: false });
     } finally {
       setLoading(false);
