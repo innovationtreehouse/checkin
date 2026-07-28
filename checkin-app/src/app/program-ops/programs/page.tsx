@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Anchor, Badge, Button, Checkbox, Group, Stack, Text, Tooltip } from "@mantine/core";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import { isProgramCheckoutBroken } from "@/lib/programCheckout";
+import { formatDateOnly } from "@/lib/time";
 
 type Program = {
   id: number;
@@ -37,7 +38,7 @@ const PHASE_COLORS: Record<string, string> = {
 };
 
 const fmtDate = (d?: string | null) =>
-  d ? new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : null;
+  d ? formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" }) : null;
 
 const dateRange = (p: Program) => {
   const b = fmtDate(p.startAt);
@@ -64,7 +65,7 @@ export default function AdminProgramsIndex() {
         setLoading(false);
       })
       .catch(err => {
-        console.error(err);
+        console.error("Failed to load programs:", err);
         setLoading(false);
       });
   }, []);

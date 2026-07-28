@@ -1,3 +1,9 @@
+# Jules Security Sentinel Log
+
+> **Start with [AGENTS.md](../AGENTS.md)** — the shared, canonical orientation
+> for all agents in this repo. This file is Jules's running log of security
+> learnings, not general instructions; keep it cross-consistent with AGENTS.md.
+
 ## 2024-05-24 - [Timing Attack in Webhook Verification]
 **Vulnerability:** Found a timing attack vulnerability in `src/app/api/webhooks/shopify/route.ts` where the HMAC signature from Shopify (`headerSignature`) was being compared to the expected signature (`generatedSignature`) using a standard string equality operator (`!==`).
 **Learning:** Standard string comparisons fail early as soon as a mismatching character is found. This "fail-fast" behavior leaks timing information to an attacker, theoretically allowing them to guess the correct HMAC character by character and forge a valid Shopify webhook signature to bypass payment verification.

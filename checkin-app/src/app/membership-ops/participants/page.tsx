@@ -92,7 +92,7 @@ export default function AdminParticipantsIndex() {
         setResults(data.people);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
     } finally {
       setLoading(false);
     }
@@ -163,7 +163,7 @@ export default function AdminParticipantsIndex() {
         showNotification(data.error || "Failed to assign household", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
       showNotification("Network error", "error");
     } finally {
       setAssigning(false);
@@ -191,7 +191,7 @@ export default function AdminParticipantsIndex() {
         showNotification(data.error || "Failed to update person", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
       showNotification("Network error", "error");
     } finally {
       setSavingDetails(false);
@@ -226,7 +226,7 @@ export default function AdminParticipantsIndex() {
         showNotification(data.error || "Failed to add contact", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
       showNotification("Network error", "error");
     } finally {
       setAddContactSaving(false);

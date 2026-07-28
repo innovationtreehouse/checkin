@@ -230,7 +230,7 @@ function KioskDisplayInner() {
       if (res.ok) refreshAttendance();
       else notifications.show({ color: "red", message: isSelf ? "Failed to check out." : "Failed to force checkout.", autoClose: false });
     } catch (e) {
-      console.error(e);
+      console.error("Attendance action failed:", e);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingOut(null);
@@ -267,7 +267,7 @@ function KioskDisplayInner() {
         }
       }
     } catch (e) {
-      console.error(e);
+      console.error("Attendance action failed:", e);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingInId(null);

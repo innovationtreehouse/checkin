@@ -122,7 +122,7 @@ export default function CompliancePage() {
           setError("Failed to load compliance data. Ensure you have the proper authorizations.");
         }
       } catch (e) {
-        console.error(e);
+        console.error("Failed to load compliance data:", e);
         setError("Network error loading compliance data.");
       } finally {
         setLoading(false);
