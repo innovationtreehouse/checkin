@@ -12,12 +12,25 @@ describe("editSignificance", () => {
         expect(r.flagged).toBe(false);
     });
 
-    it("fixing an auto-closed departure (SYSTEM departure on a real arrival) is nearly free", () => {
+    // The nightly sweep stamps departedAt at CRON-RUN time, so the routine
+    // "forgot to check out" fix is a 10h+ correction. Suppression is by source,
+    // so no magnitude can push it over the threshold.
+    it("fixing a machine-closed departure never flags, however large the correction", () => {
+        const arrivedAt = new Date(Date.UTC(2026, 6, 1, 9));   // arrive 9am
+        const r = editSignificance(
+            { arrivedAt, departedAt: new Date(Date.UTC(2026, 6, 2, 2)), arrivedVia: "SCANNER", departedVia: "SYSTEM" },
+            { arrivedAt, departedAt: new Date(Date.UTC(2026, 6, 1, 13)) }, // really left 1pm
+        );
+        expect(r.score).toBe(0); // 780 min × 0
+        expect(r.flagged).toBe(false);
+    });
+
+    it("a small machine-close fix is free too", () => {
         const r = editSignificance(
             { arrivedAt: at(14), departedAt: at(20), arrivedVia: "SCANNER", departedVia: "SYSTEM" },
             { arrivedAt: at(14), departedAt: at(18) },
         );
-        expect(r.flagged).toBe(false); // 120 min × 0.25 = 30
+        expect(r.flagged).toBe(false);
     });
 
     it("15-min shift of a roster-marked (SYSTEM pair) visit — small delta, not flagged", () => {
