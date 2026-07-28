@@ -15,6 +15,10 @@ jest.mock("@/components/DevImpersonationBar", () => ({
   __esModule: true,
   default: () => null,
 }));
+jest.mock("@/components/StagingBar", () => ({
+  __esModule: true,
+  default: () => null,
+}));
 jest.mock("@/components/DevDashboard", () => ({
   __esModule: true,
   default: () => null,

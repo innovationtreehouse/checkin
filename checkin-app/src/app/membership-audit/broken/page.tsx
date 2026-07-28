@@ -24,7 +24,7 @@ export default function BrokenHouseholdsPage() {
       const data = await res.json();
       if (data.households) setHouseholds(data.households);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to load broken households:", err);
     } finally {
       setLoading(false);
     }

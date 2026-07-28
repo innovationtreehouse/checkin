@@ -7,9 +7,8 @@ schema change adds its own migration, same as always. **Before a release**,
 the accumulated migrations are *usually* coalesced into a single migration
 via a manual PR produced by `scripts/coalesce-migrations.ts` — but how many
 migrations a release actually carries is a **human judgment call at release
-time**, not something CI enforces. There is no advisory PR-time warning and
-no blocking release-time gate (both existed and were removed — see "Release
-gate" below); the team just weighs it per release.
+time**, not something CI enforces (the advisory and blocking gates that once
+did were removed — see "Release gate" below).
 
 ```
  PR merges to main            a coalesce PR                   a release
@@ -46,10 +45,9 @@ git diff --name-status <previous-release-tag>..origin/main -- checkin-app/prisma
 ```
 
 If that shows more than one new migration directory, run the coalesce script
-and land its PR before cutting the release. Nothing in CI enforces this
-anymore (see "Release gate" below) — it's a judgment call — but the
-mid-batch P3009 risk this flow exists to avoid doesn't go away just because
-the count is unchecked.
+and land its PR before cutting the release. CI no longer enforces this (see
+"Release gate" below) — it's a judgment call — but the mid-batch P3009 risk
+it avoids doesn't go away just because the count is unchecked.
 
 ## Running the script
 

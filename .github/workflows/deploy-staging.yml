@@ -1,0 +1,542 @@
+name: Deploy staging
+
+# Deploy a rel/** branch to the shared, disposable ops-stg environment: a
+# scrubbed, reseeded-per-deploy copy of prod's schema+data whose entire job is
+# catching a bad migration before it ever reaches a real release. See
+# STAGING_PLAN_v2.md for the full design (this workflow + the build-footer
+# branch plumbing in checkin-app/Dockerfile / BuildInfoFooter.tsx is PR-C;
+# the infra module and the checkin-app auth gate are separate, sibling PRs).
+#
+# Trigger 1 — push to a rel/** branch, NOT workflow_run. A workflow_run always
+# executes with github.ref pinned to the DEFAULT branch (confirmed against
+# this very repo: deploy-dev.yml's workflow_run trigger is exactly why its
+# OIDC role trust — live/mgmt/main.tf:130 in the infra repo — is pinned to
+# "ref:refs/heads/main" and not a rel/* pattern). A workflow_run-triggered run
+# here could therefore never satisfy this job's `environment: staging`, which
+# carries a rel/* deployment-branch policy: the policy would be evaluated
+# against main and every run would be rejected. A real `push` on rel/** makes
+# github.ref the actual rel/ branch, which the policy can actually match.
+#
+# CI gating without workflow_run: `validate` below calls ci.yml as a reusable
+# workflow (workflow_call) on the exact commit being deployed — the same
+# pattern deploy-prod.yml uses to revalidate a released tag from scratch
+# rather than trust a separate, already-completed run. This is also why
+# ci.yml's own push trigger deliberately does NOT include rel/** (see the
+# comment there) — that would run the whole pipeline a second time per push.
+#
+# Trigger 2 — workflow_dispatch, for the one case a rel/** push structurally
+# cannot cover: a tag push has no branch at all, and this job's `environment:
+# staging` carries a rel/* deployment-branch policy — a ref with no branch can
+# never satisfy a branch-name policy. Concretely: cut rel/1.2, discover a
+# problem, need to redeploy rel/1.1 as a hotfix — there is no NEW commit
+# landing on rel/1.1 to re-trigger a push, so manual dispatch (run FROM the
+# rel/1.1 branch, which does satisfy the branch policy same as a real push
+# would) is the only way back in.
+#
+# Does NOT deploy s-read: staging has no mirror database to sync (SHOPIFY_READ_DB
+# is unset for stg — see the infra PR), so there is nothing for s-read to read.
+#
+# Infra preconditions (NOT done here — delivered by the sibling infra PR):
+#   - Terraform applied: OIDC role checkin-deploy-stg (ECS/ECR/logs only — no
+#     Secrets Manager access; matches the existing checkin_deploy convention of
+#     keeping the deploy role narrow), ECR repo, ECS cluster/service, the app +
+#     migrate task defs, and the checkin-stg-copy task def with its OWN task
+#     role scoped to exactly checkin-stg/database-url* (both the DDL and DML
+#     secrets, nothing else — no master secret, no other env's secrets).
+#   - The checkin-stg-copy image/entrypoint: reads STG_DB + RESEED from its
+#     container environment (passed via containerOverrides below, never a
+#     command override — the operation is hardcoded in the entrypoint so a
+#     compromised/malicious run-task caller can't redirect it) and performs the
+#     atomic pg_dump/restore + `ALTER DATABASE ... RENAME`, then updates the
+#     checkin-stg/database-url-ddl secret to point at $STG_DB. A second
+#     environment flag, REPOINT_ONLY=true, is ASSUMED to make it skip the
+#     copy/reseed and only flip checkin-stg/database-url (the DML secret) to
+#     $STG_DB — this keeps the ability to write either secret confined to this
+#     one narrowly-scoped task role instead of handing the deploy role any
+#     Secrets Manager write access. This is this workflow's assumption about
+#     the sibling PR's contract; confirm it lines up with what that PR actually
+#     ships and adjust the "Repoint app DML secret" step below if not.
+#   - Secret VALUES set in Secrets Manager (checkin-stg/database-url*, ...).
+#   - GitHub Environment "staging": deployment branches = rel/*, required
+#     reviewers configured (approval gate) — this also pins the OIDC sub to
+#     repo:innovationtreehouse/checkin:environment:staging with no wildcard.
+#   - DNS + cert SAN for ops-stg.innovationtreehouse.org.
+
+on:
+  push:
+    branches: ["rel/**"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch to deploy (e.g. rel/1.2). Run this dispatch FROM that same branch — it's what satisfies the staging environment's rel/* branch policy."
+        type: string
+        required: true
+      reseed:
+        description: "Rebuild the staging DB from a fresh prod copy before migrating (unchecking preserves the current staging DB's data/state)"
+        type: boolean
+        default: true
+      resolve_rolled_back:
+        description: "Escape hatch for a P3009 wedge: migration name to mark rolled back (npx prisma migrate resolve --rolled-back <name>) BEFORE migrate deploy runs. A migration that fails mid-file commits its partial DDL and wedges every subsequent migrate deploy at P3009 permanently — this is the only way out short of hand-running a container with the Aurora master secret. Leave blank for a normal deploy."
+        type: string
+        default: ""
+
+permissions:
+  id-token: write   # assume the deploy role via OIDC (deploy job only)
+  contents: read    # checkout (vars + deploy jobs)
+  packages: write   # push the image to ghcr.io (deploy job)
+  # checks: write is not used by THIS workflow directly — it's the ceiling for
+  # the reusable ci.yml call below: its unit-tests/integration-tests jobs
+  # request checks: write (dorny/test-reporter), and a called job may never
+  # exceed the caller's grants. Without this line the validate call dies at
+  # startup_failure with zero jobs — exactly how v1.0.0's first prod deploy
+  # failed on 2026-07-14 (see deploy-prod.yml's identical comment/fix).
+  checks: write
+
+concurrency:
+  # CONSTANT group — deliberately NOT per-commit like deploy-dev.yml's group
+  # (see its comment at line 36, where per-commit is the whole point for dev).
+  # Here, two rel/ branches deploying at once would both be writing through the
+  # ONE shared checkin-stg credential pair / database-url secret: branch A's
+  # copy+migrate could land on branch B's half-restored database, or B's later
+  # DML repoint could clobber A's in-flight deploy. Serialize the whole
+  # environment; never run two of these at once.
+  group: checkin-deploy-staging
+  cancel-in-progress: false # never abandon a deploy mid-rollout
+
+env:
+  AWS_REGION: us-east-2
+  IMAGE_REPO: ghcr.io/innovationtreehouse/checkin-stg
+  ECS_CLUSTER: checkin-stg
+  ECS_SERVICE: checkin-stg
+  APP_TASK_FAMILY: checkin-stg
+  MIGRATE_TASK_FAMILY: checkin-migrate-stg
+  COPY_TASK_FAMILY: checkin-stg-copy
+  DEPLOY_ROLE: arn:aws:iam::639595353568:role/checkin-deploy-stg
+  APP_URL: https://ops-stg.innovationtreehouse.org
+
+jobs:
+  # Resolves ONE commit sha and uses it for BOTH validate and deploy below —
+  # deliberately NOT a branch name passed to each independently. A branch name
+  # is a moving pointer: if `validate` resolved "rel/1.2" itself and `deploy`
+  # later re-resolved "rel/1.2" at checkout time, a second push landing while
+  # validate is running would let deploy check out and ship a commit CI never
+  # saw (the constant concurrency group only serializes RUNS — it does not
+  # stop run N's deploy from picking up run N+1's commit). Same defect class
+  # deploy-prod.yml's H1 fix addresses for release tags, and the same reason
+  # deploy-dev.yml resolves workflow_run.head_sha explicitly instead of
+  # trusting a branch name.
+  #
+  # Also enforces the rel/* rule in code, not just in the environment's branch
+  # policy: that policy is checked against github.ref (the branch the run — or
+  # the workflow_dispatch — actually executes from), NOT against the
+  # workflow_dispatch `ref` input. Without this check, dispatching FROM an
+  # approved rel/1.1 (satisfies the policy, approval granted) while setting
+  # `ref: main` would deploy main into staging with no visible mismatch signal
+  # for the approver. Failing here whenever the RESOLVED branch (the one
+  # everything downstream actually uses) isn't rel/* closes that gap.
+  vars:
+    name: Resolve branch, commit, and staging DB name
+    runs-on: ubuntu-latest
+    outputs:
+      branch: ${{ steps.branch.outputs.branch }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      short_sha: ${{ steps.resolve.outputs.short_sha }}
+      stg_db: ${{ steps.resolve.outputs.stg_db }}
+    steps:
+      - name: Resolve and validate branch
+        id: branch
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BRANCH="${{ inputs.ref }}"
+          else
+            BRANCH="${{ github.ref_name }}"
+          fi
+          case "$BRANCH" in
+            rel/*) ;;
+            *) echo "::error::staging deploys only from rel/* branches (resolved '$BRANCH')"; exit 1 ;;
+          esac
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout resolved branch
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.branch.outputs.branch }}
+
+      - name: Resolve commit sha and staging DB name
+        id: resolve
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
+
+          # Slug the branch into a database name: rel/1.2 -> checkin_stg_rel_1_2.
+          # Lowercase, every char outside [a-z0-9] becomes _.
+          BRANCH="${{ steps.branch.outputs.branch }}"
+          SLUG=$(printf '%s' "$BRANCH" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]/_/g')
+          STG_DB="checkin_stg_${SLUG}"
+          # Hard-fail rather than truncate: two branches sharing the first 63
+          # chars would otherwise silently map to the SAME database, and
+          # branch B would deploy onto branch A's data with no warning. No
+          # legitimate rel/ branch name is long enough to hit this.
+          if [ "${#STG_DB}" -gt 63 ]; then
+            echo "::error::staging DB name '$STG_DB' is ${#STG_DB} chars, over Postgres' 63-byte identifier limit — shorten the branch name"
+            exit 1
+          fi
+          echo "stg_db=$STG_DB" >> "$GITHUB_OUTPUT"
+          echo "Deploying branch $BRANCH ($SHA) -> database $STG_DB"
+
+  # Reusable-call CI on the pinned commit above — same pattern as
+  # deploy-prod.yml's `validate` job. `deploy` below only runs if this
+  # succeeds (via `needs:`), so a rel/ branch can never deploy unlinted,
+  # untyped, untested, or migration-drift-unchecked.
+  validate:
+    name: Revalidate CI on the resolved commit
+    needs: [vars]
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.vars.outputs.sha }}
+    secrets: inherit
+
+  deploy:
+    name: Copy DB, migrate, roll out
+    needs: [vars, validate]
+    runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
+    environment:
+      name: staging
+      url: https://ops-stg.innovationtreehouse.org
+    steps:
+      # Pinned sha from `vars` — NOT the branch name — so this checks out
+      # exactly the commit `validate` just approved, even if the branch has
+      # moved on since.
+      - name: Checkout deployed commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.vars.outputs.sha }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        id: build
+        env:
+          SHA: ${{ needs.vars.outputs.sha }}
+          BRANCH: ${{ needs.vars.outputs.branch }}
+        run: |
+          set -euo pipefail
+          IMAGE="${IMAGE_REPO}:${SHA}"
+          # Native arm64 runner -> a plain build produces the arm64 image the
+          # ECS task defs require (runtime_platform.cpu_architecture = ARM64).
+          # All three NEXT_PUBLIC_* build args: SHA + BRANCH (this env's
+          # footer shows "<branch> <sha7>"); RELEASE_TAG is always empty here
+          # — staging never deploys a tag.
+          docker build \
+            --build-arg NEXT_PUBLIC_GIT_SHA="$SHA" \
+            --build-arg NEXT_PUBLIC_GIT_BRANCH="$BRANCH" \
+            --build-arg NEXT_PUBLIC_RELEASE_TAG="" \
+            -f checkin-app/Dockerfile \
+            -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Run staging DB copy
+        id: copy
+        env:
+          STG_DB: ${{ needs.vars.outputs.stg_db }}
+          # A plain push to rel/ always reseeds per D5; dispatch can opt out
+          # via the reseed input for the redeploy-a-hotfix path.
+          # NOTE the condition is negated (event_name != dispatch as the FIRST
+          # operand): `dispatch && inputs.reseed || 'true'` would break when
+          # inputs.reseed is boolean false — `true && false` is falsy, so `||`
+          # would incorrectly fall through to 'true'. Putting the always-truthy
+          # branch first avoids that trap.
+          RESEED: ${{ github.event_name != 'workflow_dispatch' && 'true' || inputs.reseed }}
+        run: |
+          set -euo pipefail
+          # Reuse the app service's own network config (subnets / SG / public
+          # IP), same as the migrate steps in deploy-dev.yml.
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          cat > "$RUNNER_TEMP/copy-overrides.json" <<EOF
+          {
+            "containerOverrides": [{
+              "name": "checkin-stg-copy",
+              "environment": [
+                { "name": "STG_DB", "value": "$STG_DB" },
+                { "name": "RESEED", "value": "$RESEED" }
+              ]
+            }]
+          }
+          EOF
+
+          # The shared Aurora cluster is Serverless v2, min-capacity 0, with
+          # auto-pause: the first connection after idle P1001s for ~30s (same
+          # as the migrate steps below and in deploy-dev.yml). This task's own
+          # entrypoint belongs to the sibling infra PR, so — unlike the migrate
+          # step, whose command this workflow owns and can retry internally —
+          # the retry has to wrap the whole run-task/wait/check-exit sequence.
+          EXIT_CODE=1
+          for attempt in 1 2 3 4 5; do
+            TASK_ARN=$(aws ecs run-task \
+              --cluster "$ECS_CLUSTER" \
+              --task-definition "$COPY_TASK_FAMILY" \
+              --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+              --network-configuration "$NETWORK_CONFIG" \
+              --overrides "file://$RUNNER_TEMP/copy-overrides.json" \
+              --query 'tasks[0].taskArn' --output text)
+            echo "Copy task (attempt $attempt): $TASK_ARN"
+
+            aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+            EXIT_CODE=$(aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+              --query 'tasks[0].containers[0].exitCode' --output text)
+            echo "Copy task exit code: $EXIT_CODE"
+
+            # Surface the container's own output either way — without this, a
+            # failure only shows the exit code here and the real error hides in
+            # CloudWatch, which is how the 2026-07-02 P3009 wedge went
+            # undiagnosed for a day (same reasoning as deploy-dev.yml's migrate step).
+            TASK_ID="${TASK_ARN##*/}"
+            echo "--- copy task logs (/ecs/$COPY_TASK_FAMILY), attempt $attempt ---"
+            ./scripts/dump-task-logs.sh "/ecs/$COPY_TASK_FAMILY" "ecs/checkin-stg-copy/$TASK_ID"
+            echo "--- end copy task logs ---"
+
+            # Retry only what a retry can clear. The entrypoint runs under
+            # `set -e`, so a failing psql IS the container's exit status:
+            #   2        connection went bad — the Aurora auto-pause resume this
+            #            loop exists for.
+            #   None     no exit code reported: placement or image-pull failure.
+            #   1 / 3    deterministic. 3 is a SQL error under ON_ERROR_STOP; 1 is
+            #            the entrypoint's own FATAL asserts (STG_DB outside the
+            #            checkin_stg* namespace, target database missing,
+            #            classification row-count floor). Re-running reproduces
+            #            them exactly — infra #150's first staging deploy burned
+            #            5 attempts on an identical exit 3.
+            case "$EXIT_CODE" in
+              0) break ;;
+              2 | None | null | "")
+                echo "Copy task exit $EXIT_CODE — connection/placement failure (Aurora may be resuming); retrying in 20s"
+                sleep 20
+                ;;
+              *)
+                echo "Copy task exit $EXIT_CODE is deterministic — not retrying."
+                break
+                ;;
+            esac
+          done
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Staging DB copy failed (exit $EXIT_CODE) after $attempt attempt(s) — see the copy task logs above"
+            exit 1
+          fi
+
+      - name: Run database migrations
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          # Same negated-condition idiom as RESEED above, for the same reason.
+          RESOLVE_ROLLED_BACK: ${{ github.event_name != 'workflow_dispatch' && '' || inputs.resolve_rolled_back }}
+        run: |
+          set -euo pipefail
+          # Register a new revision of the migrate task def pointing at the new
+          # image, keeping only the fields register-task-definition accepts.
+          # Same temp-file dance as deploy-dev.yml (no /dev/stdin on the runner).
+          aws ecs describe-task-definition \
+            --task-definition "$MIGRATE_TASK_FAMILY" \
+            --query taskDefinition --output json \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | {family, taskRoleArn, executionRoleArn, networkMode,
+                   containerDefinitions, requiresCompatibilities, cpu, memory,
+                   runtimePlatform}' > "$RUNNER_TEMP/migrate-taskdef.json"
+          MIGRATE_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/migrate-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered migrate task def: $MIGRATE_ARN"
+
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          # Runs one prisma subcommand as a one-off task, with the same
+          # DB-auto-pause retry loop deploy-dev.yml embeds in its migrate step
+          # (the shared Aurora cluster P1001s for ~30s on first connection after
+          # idle). Used both for the optional "resolve --rolled-back" escape
+          # hatch and for the real migrate deploy below — same task def (it
+          # already resolves DATABASE_URL from the checkin-stg/database-url-ddl
+          # secret; migrations are the one path allowed to touch schema, so
+          # this step never needs the DML secret at all).
+          run_migrate_step () {
+            local prisma_cmd="$1" label="$2"
+            cat > "$RUNNER_TEMP/migrate-overrides-$label.json" <<EOF
+          {
+            "containerOverrides": [{
+              "name": "checkin-migrate",
+              "command": ["sh", "-c",
+                "cd checkin-app && for i in 1 2 3 4 5; do $prisma_cmd && exit 0; echo \"attempt \$i failed — DB may be resuming from auto-pause; retrying in 20s\"; sleep 20; done; exit 1"]
+            }]
+          }
+          EOF
+            TASK_ARN=$(aws ecs run-task \
+              --cluster "$ECS_CLUSTER" \
+              --task-definition "$MIGRATE_ARN" \
+              --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+              --network-configuration "$NETWORK_CONFIG" \
+              --overrides "file://$RUNNER_TEMP/migrate-overrides-$label.json" \
+              --query 'tasks[0].taskArn' --output text)
+            echo "$label task: $TASK_ARN"
+
+            aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+            EXIT_CODE=$(aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+              --query 'tasks[0].containers[0].exitCode' --output text)
+            echo "$label exit code: $EXIT_CODE"
+
+            TASK_ID="${TASK_ARN##*/}"
+            echo "--- $label logs (/ecs/checkin-migrate-stg) ---"
+            ./scripts/dump-task-logs.sh /ecs/checkin-migrate-stg "ecs/checkin-migrate/$TASK_ID"
+            echo "--- end $label logs ---"
+
+            if [ "$EXIT_CODE" != "0" ]; then
+              echo "::error::$label failed (exit $EXIT_CODE) — see logs above"
+              exit 1
+            fi
+          }
+
+          if [ -n "$RESOLVE_ROLLED_BACK" ]; then
+            echo "Escape hatch: resolving migration '$RESOLVE_ROLLED_BACK' as rolled back before migrate deploy."
+            run_migrate_step "npx prisma migrate resolve --rolled-back '$RESOLVE_ROLLED_BACK'" "migrate-resolve"
+          fi
+
+          run_migrate_step "npx prisma migrate deploy" "migrate-deploy"
+
+      # Deliberately LAST, after migrate has already succeeded against the DDL
+      # secret: repointing the DML secret any earlier would let a crawler hit
+      # ops-stg mid-copy and boot an app task against a half-restored database.
+      - name: Repoint app DML secret
+        env:
+          STG_DB: ${{ needs.vars.outputs.stg_db }}
+        run: |
+          set -euo pipefail
+          NETWORK_CONFIG=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].networkConfiguration' --output json)
+
+          # Reuses the copy task (its role is the one scoped to
+          # checkin-stg/database-url* — both secrets); REPOINT_ONLY tells its
+          # entrypoint to only flip checkin-stg/database-url (the DML secret)
+          # to $STG_DB, without repeating the pg_dump/restore. See the header
+          # comment: this is this workflow's assumption about the sibling
+          # infra PR's contract — confirm it against what that PR actually ships.
+          cat > "$RUNNER_TEMP/repoint-overrides.json" <<EOF
+          {
+            "containerOverrides": [{
+              "name": "checkin-stg-copy",
+              "environment": [
+                { "name": "STG_DB", "value": "$STG_DB" },
+                { "name": "REPOINT_ONLY", "value": "true" }
+              ]
+            }]
+          }
+          EOF
+
+          EXIT_CODE=1
+          for attempt in 1 2 3 4 5; do
+            TASK_ARN=$(aws ecs run-task \
+              --cluster "$ECS_CLUSTER" \
+              --task-definition "$COPY_TASK_FAMILY" \
+              --capacity-provider-strategy capacityProvider=FARGATE_SPOT,weight=1 \
+              --network-configuration "$NETWORK_CONFIG" \
+              --overrides "file://$RUNNER_TEMP/repoint-overrides.json" \
+              --query 'tasks[0].taskArn' --output text)
+            echo "Repoint task (attempt $attempt): $TASK_ARN"
+
+            aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+            EXIT_CODE=$(aws ecs describe-tasks \
+              --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+              --query 'tasks[0].containers[0].exitCode' --output text)
+            echo "Repoint task exit code: $EXIT_CODE"
+
+            TASK_ID="${TASK_ARN##*/}"
+            echo "--- repoint task logs (/ecs/$COPY_TASK_FAMILY), attempt $attempt ---"
+            ./scripts/dump-task-logs.sh "/ecs/$COPY_TASK_FAMILY" "ecs/checkin-stg-copy/$TASK_ID"
+            echo "--- end repoint task logs ---"
+
+            [ "$EXIT_CODE" = "0" ] && break
+            echo "Repoint task failed (exit $EXIT_CODE) — DB may be resuming from auto-pause; retrying in 20s"
+            sleep 20
+          done
+
+          if [ "$EXIT_CODE" != "0" ]; then
+            echo "::error::Repointing the DML secret failed after 5 attempts (exit $EXIT_CODE) — see logs above"
+            exit 1
+          fi
+
+      - name: Deploy to ECS
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          # Register a new app task-def revision with the new image. Same
+          # temp-file dance as deploy-dev.yml.
+          aws ecs describe-task-definition \
+            --task-definition "$APP_TASK_FAMILY" \
+            --query taskDefinition --output json \
+            | jq --arg IMG "$IMAGE" '
+                .containerDefinitions[0].image = $IMG
+                | {family, taskRoleArn, executionRoleArn, networkMode,
+                   containerDefinitions, volumes, placementConstraints,
+                   requiresCompatibilities, cpu, memory, runtimePlatform}' > "$RUNNER_TEMP/app-taskdef.json"
+          APP_ARN=$(aws ecs register-task-definition \
+            --cli-input-json "file://$RUNNER_TEMP/app-taskdef.json" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered app task def: $APP_ARN"
+
+          # --desired-count 1: same reasoning as deploy-dev.yml — with
+          # scale-to-zero, a 0/0 service is vacuously "stable" and a
+          # crash-looping image would deploy "green" without this.
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+            --task-definition "$APP_ARN" \
+            --desired-count 1 >/dev/null
+
+          echo "Waiting for the service to reach steady state..."
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          echo "Service is stable."
+
+      - name: Smoke test the live app
+        run: |
+          set -euo pipefail
+          # Real probe of the deployed service (mirrors deploy-prod.yml). The
+          # app answers 200 or an auth redirect; retries cover target
+          # registration + first boot after scale-up. 10 minutes, measured, not
+          # guessed: on run 29925037763 task-start -> waker rule promote took
+          # 4m22s and the old 2-minute window expired 68s before the promote —
+          # a succeeded deploy reported as failed. The 503s during the wait are
+          # the ops-stg-waker's holding page; each probe also drives the
+          # waker's health poll, so keep the 10s cadence.
+          for i in $(seq 1 60); do
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
+            echo "attempt $i: $APP_URL -> HTTP $CODE"
+            case "$CODE" in
+              200|301|302|307|308) echo "Smoke OK."; exit 0 ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
+          exit 1

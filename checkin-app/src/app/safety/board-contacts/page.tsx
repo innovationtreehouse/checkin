@@ -31,7 +31,7 @@ export default function BoardContactInfoPage() {
         setError("Failed to load board contacts. Ensure you have the proper authorizations.");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load board contacts:", e);
       notifications.show({ color: "red", message: "Network error loading board contacts.", autoClose: false });
     } finally {
       setLoading(false);

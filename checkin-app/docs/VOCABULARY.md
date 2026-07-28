@@ -27,13 +27,12 @@ identifier that just says "member" is a bug against this dictionary.
 | **Household Membership (B)** | Person ↔ **Household** | "household member" | `householdMember` | `householdId` FK + `Person.isHouseholdLead` (lead variant) | `/api/household/member` |
 | **Program relationship** | Person ↔ **Program** | **"participant"** | `programParticipant` | `ProgramParticipant` | — |
 
-Rules:
-1. **No bare member/Member/Membership.** Qualify with the target — **Org** or **Household** — every time, in code and UI.
-2. **`participant` means ONLY a program enrollee** (`ProgramParticipant` / the Program relationship). It is NOT the person model and NOT a generic word for "any person." The umbrella person model is **`Person`**. **Admin and volunteers are never "participants."**
-3. **Anything showing MIXED people uses the umbrella, not "participant."** A screen or API listing volunteers/youth/leads together is `Person`/"person"/"people", or an explicit role bucket — never "participants".
-4. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, program participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
-5. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
-6. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row** — the enrollee sense they are NOT; they rename *with* the model (→ person projection).
+Rules (the no-bare-member rule above applies throughout):
+1. **`participant` means ONLY a program enrollee** (`ProgramParticipant` / the Program relationship). It is NOT the person model and NOT a generic word for "any person." The umbrella person model is **`Person`**. **Admin and volunteers are never "participants."**
+2. **Anything showing MIXED people uses the umbrella, not "participant."** A screen or API listing volunteers/youth/leads together is `Person`/"person"/"people", or an explicit role bucket — never "participants".
+3. **A person carries multiple relationship-names at once.** Same human, different relationship on different screens (household member here, program participant there, Treehouse Member elsewhere). Do not "reconcile" these into one word.
+4. **The `/api/household/member` route stays put.** The `/household/` path segment already qualifies "member" as the household relationship — do NOT move it to `/participant`.
+5. **`participantProjection.ts` / `HOUSEHOLD_PEER_SELECT` project a Person row** — the enrollee sense they are NOT; they rename *with* the model (→ person projection).
 
 ## People — sub-classifications
 
@@ -58,7 +57,7 @@ Rules:
 | Concept | Meaning | Code | UI |
 |---|---|---|---|
 | **Treehouse Volunteer** | umbrella: a BG-checked, board-approved adult who volunteers — **program-optional** (a bookkeeper is one, with no program) | — | "volunteer" |
-| **Volunteer Family** | a Member Family with **no youth/student enrolled**, whose adults volunteer → **reduced membership fee** | `Membership.isVolunteer` (rate) + `VolunteerDesignation` (email pre-auth) — **one concept** | "Volunteer-only family" |
+| **Volunteer Family** | a Member Family with **no youth/student enrolled**, whose adults volunteer → **reduced membership fee** | `OrgMembership.isVolunteer` (rate) + `VolunteerDesignation` (email pre-auth) — **one concept** | "Volunteer-only family" |
 | **Program Volunteer** | a Treehouse Volunteer assigned to a **specific program** | `ProgramVolunteer` (`isCore` → **Core Volunteer**) | "Volunteer" / "Core Volunteer" |
 | **(attendance) volunteer bucket** | courtesy label for present adults — **not a role**; deliberately loose, UI-safe | derived in attendance | "Volunteers/Adults" |
 
@@ -159,7 +158,7 @@ Both are non-household people attached to a household, and **may be the same per
 
 ### Membership application
 
-**`MembershipProcess` = the membership "application"** — technically an intake process, called an **"application"** because it includes a background check (vendor **Averity**) and **can be rejected**. One `MembershipProcess` = one cycle (`INITIAL` or `RENEWAL`); `INTAKE` is its first stage.
+**`OrgMembershipProcess` = the membership "application"** — technically an intake process, called an **"application"** because it includes a background check (vendor **Averity**) and **can be rejected**. One `OrgMembershipProcess` = one cycle (`INITIAL` or `RENEWAL`); `INTAKE` is its first stage.
 
 ### Corporation (aspirational)
 
@@ -183,7 +182,7 @@ Product-owner decision — **design to these; do not relitigate the names or sha
 
 - **Membership Year** = **Sept 1 – Aug 31** (policy); `membershipYearBoundary` stays configurable by design.
 - **Single facility** — check-in happens only at the one Treehouse Facility; multi-location is not on the roadmap (`RawBadgeLog.location` free-text is fine).
-- **Integration vendors** — **Averity** (background check; aka "VERITY"), **Zoho** (e-sign / import), **Shopify** (payment).
+- **Integration vendors** — **Averity** (background check; aka "VERITY"), **Zoho** (e-sign), **Shopify** (payment).
 - **Treehouse Card** — any corporate/business/debit/credit card opened on the Treehouse EIN (reserved for future financial rules).
 
 ## Coding conventions
@@ -198,15 +197,4 @@ The core term-by-term migration (person / member / participant / youth / OrgMemb
 
 > **Pattern for big Prisma model renames** (learned from `Participant`→`Person`): a model rename is *atomic* — tsc is red until every accessor/type flips, so it can't merge half-done. Pull everything NOT tied to the model name (local types, then per-model FK renames — Prisma allows `person Participant @relation(fields:[personId])`) into small green PRs first, leaving a final purely-mechanical name flip. See git history #680–#708 (Person) and #735 (OrgMembership).
 
-**✅ Shipped to `main`:**
-- **Youth** — `minor`/`isMinor` → `youth`/`isYouth`; `minor` fully scrubbed from src + tests (#670, #673, #676). `child` deliberately preserved.
-- **Student** — age-based `student` identifiers → `youth`, fixing BUG-1 (#679).
-- **householdMember** — sense-B bare `member` → `householdMember`; route kept at `/api/household/member` (#674).
-- **Person umbrella** — `model Participant` → `Person`, `participantId` FKs → `personId`, every mixed-people "participant" requalified to `people`/`Person`. Sliced: A0 #680 → A1a–f (#692/#691/#686/#690/#681/#684) → A2 atomic flip #708; B1 roles envelope #711, B2 `/api/people/search` #710, B3 `Household.householdMembers` #712, B4 cert grid #709. `ProgramParticipant.personId` is the accepted end-state.
-- **OrgMembership** — read-model (`lib/orgMembership.ts`, `isActiveOrgMember`, `ACTIVE_ORG_MEMBER_PERSON_WHERE`) + "Treehouse Member" copy (#729); price fields → `orgMember…` (#731); `/api/shop/members`→`/api/shop/org-members` (#732); **and the Prisma model rename** `Membership`→`OrgMembership`, `MembershipProcess`→`OrgMembershipProcess`, `MembershipStatus` enum + `membership-ops/*` (Phase 4d, #735). Complete.
-- **Trusted Adult** — `counterparty*` → `trustedAdult*` (audit P2-2, #734).
-
-**⬜ Remaining:** none in the *core* migration — it's done. What's left is the followup ledger: retire `dependent` (+BUG-2), the household/family split decision, Program Leader (`leadMentorId`→`programLeaderId`), retire "staff", money→fee (`dues`→membership fee), manual-payment rename, Tool Certifier label + explicit `ToolLevel` rank, `SessionUser` dedup, and the ⚠️ open **admin** / **review** questions. All in [designs/UNFINISHED.md](designs/UNFINISHED.md).
-
-**Closed:** attendance "volunteer = adult non-keyholder" / "youth = minor" buckets — **won't-change** (intended supervision signal, safety-load-bearing two-deep; do not enrollment-ify). Recorded in UNFINISHED.md "Considered and dismissed", along with the `facility/trends` age-proxy metric (fixed separately) and the two known bugs: **BUG-1** (student=age → fixed, #679) and **BUG-2** (`intake.ts` `children` bucket = non-lead → tracked with `dependent`).
-</content>
+The shipped-vs-pending status of each term is the dictionary itself: an entry with no *(rename pending)* tag is done. The remaining followups, and the decisions deliberately **not** taken (e.g. the attendance volunteer/youth buckets stay age-derived, not enrollment-derived), live in [designs/UNFINISHED.md](designs/UNFINISHED.md).

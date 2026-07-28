@@ -12,7 +12,10 @@ import prisma from "@/lib/prisma";
 import { runReconcile, raiseReversalByOrderId } from "@/lib/finance/reconcile";
 import type { MirrorOrder } from "@/lib/shopifyRead/client";
 
-jest.mock("@/lib/email", () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock("@/lib/email", () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 // Mocked mirror — each test sets what the read helpers return. Only the DB-backed
 // reads are stubbed; orderAttr stays REAL (it's a pure parse of the mirrored

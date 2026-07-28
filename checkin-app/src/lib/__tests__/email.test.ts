@@ -18,6 +18,7 @@ jest.mock('../emailIdentity', () => ({
 }));
 
 import { sendEmail } from '../email';
+import { runPaced } from '../email';
 
 // process.env.NODE_ENV is typed read-only; tests need to vary it at runtime
 const setNodeEnv = (value: string | undefined) => {
@@ -231,5 +232,46 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         expect((error as Error).message).toBe('network down');
         expect(context).toEqual({ to: 'bounced@test.com', subject: 'Subject' });
         expect(JSON.stringify(context)).not.toContain(html);
+    });
+});
+
+describe('runPaced pacing', () => {
+    beforeEach(() => {
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('runs 12 thunks in chunks of 5/5/2 with 2 gaps, preserving order', async () => {
+        const started: number[] = [];
+        const tasks = Array.from({ length: 12 }, (_, i) => async () => {
+            started.push(i);
+            return i;
+        });
+        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+        const resultsPromise = runPaced(tasks);
+
+        // Before advancing any timers, only the first chunk (5) has run.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(started).toEqual([0, 1, 2, 3, 4]);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+        const results = await resultsPromise;
+        expect(results).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+        // Exactly 2 gaps (between chunk 1→2 and chunk 2→3); no gap after the last chunk.
+        expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+
+        setTimeoutSpy.mockRestore();
     });
 });

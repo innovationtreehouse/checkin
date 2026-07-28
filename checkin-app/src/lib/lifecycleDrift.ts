@@ -160,8 +160,8 @@ async function healEnrollmentI1(): Promise<number> {
                     actorId: 0, // system — no session behind a cron sweep
                     action: "EDIT",
                     tableName: "ProgramParticipant",
-                    affectedEntityId: row.programId,
-                    secondaryAffectedEntity: row.personId,
+                    affectedEntityId: row.personId,
+                    secondaryAffectedEntity: row.programId,
                     oldData: {
                         status: "ACTIVE",
                         inventoryHeldAt: row.inventoryHeldAt?.toISOString() ?? null,

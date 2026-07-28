@@ -1,10 +1,18 @@
 import prisma from "./prisma";
 import { sendEmail } from "./email";
+import { runPaced } from "./email";
 import { formatTime, formatDate } from "./time";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
 import { escapeHtml, type VisitSource } from "./email-templates/base";
+import { programAssignmentTemplate } from "./email-templates/program-assignment";
+import { config } from "./config";
 import { LIVE_PERSON } from "./person/filters";
+import {
+    ACTIVE_ORG_MEMBER_PERSON_WHERE,
+    isActiveOrgMemberThrough,
+    programCoverageDate,
+} from "./orgMembership";
 
 /**
  * Service to handle sending notifications to users via their defined preferences.
@@ -30,14 +38,24 @@ export async function sendNotification(userId: number, eventType: NotificationEv
         // No user / no address: nothing can ever be sent here — treat as done, not retryable.
         if (!user || !user.email) return true;
 
-        // Construct message based on type
+        // Construct message based on type. `html`, when set, is sent verbatim as the
+        // email body (already-safe HTML from a template); otherwise `message` is
+        // escaped and wrapped in a <p>.
         let message = "";
         let subject = "Treehouse Notification";
+        let html: string | null = null;
 
         switch (eventType) {
             case 'PROGRAM_ENROLLMENT':
                 subject = `Confirmed: Enrollment in ${payload.programName}`;
                 message = `Hi ${user.name}, you have been successfully enrolled in ${payload.programName}.`;
+                break;
+            case 'PROGRAM_ASSIGNMENT':
+                subject = 'Your Innovation Treehouse Program has been Created!';
+                html = programAssignmentTemplate({
+                    programName: String(payload.programName ?? 'your program'),
+                    manageUrl: `${config.baseUrl()}/program-ops/programs/${payload.programId}`,
+                });
                 break;
             case 'CHECKIN':
                 subject = `✅ Checked In — ${user.name}`;
@@ -58,7 +76,7 @@ export async function sendNotification(userId: number, eventType: NotificationEv
         // Email disabled: return true so a user who opted out isn't retried forever.
         if (!wantsEmail) return true;
 
-        const ok = await sendEmail(user.email, subject, `<p>${escapeHtml(message)}</p>`);
+        const ok = await sendEmail(user.email, subject, html ?? `<p>${escapeHtml(message)}</p>`);
         return ok;
 
     } catch (error) {
@@ -68,30 +86,48 @@ export async function sendNotification(userId: number, eventType: NotificationEv
 }
 
 /**
- * Broadcast a "new program announced" email to every user opted into
- * notifyNewPrograms. Fired when a program first becomes BOTH phase=UPCOMING and
- * enrollmentStatus=OPEN. Respects the global `email` opt-out too. Both prefs
- * default ON — only an explicit `false` opts out.
+ * Broadcast a "new program announced" email to members whose household membership
+ * covers the program's FULL DURATION (#1061 rule, reused verbatim), respecting each
+ * person's notifyNewPrograms / email prefs (default ON). Paced at 5/sec (#1154).
+ *
+ * The single gate is maybeAnnounceOnOpen in @/lib/programAnnounce — it owns the
+ * announceOnOpen opt-in, the transition rule, and the once-per-lifetime announcedAt
+ * claim, and both program-edit PATCH routes call it. This only runs after that gate
+ * has fired. Best-effort: fire-and-forget from the helper.
  */
-export async function notifyNewProgramAnnounced(programName: string): Promise<void> {
+export async function notifyNewProgramAnnounced(
+    program: { name: string; startAt: Date | null; endAt: Date | null },
+): Promise<void> {
     try {
-        // ponytail: full scan of users-with-email, filtered in JS. This fires at
-        // most once per program (the UPCOMING+OPEN edge), so a table scan is fine;
-        // switch to a JSON-path where-filter if the person table grows large.
+        const coverageDate = programCoverageDate(program);
+
+        // Narrow to LIVE persons with an address in an ACTIVE-membership household
+        // (canonical ACTIVE_ORG_MEMBER_PERSON_WHERE). Class-1 person.findMany with
+        // LIVE_PERSON — drift guard stays green, no allowlist (human-facing).
         const users = await prisma.person.findMany({
-            where: { email: { not: null }, ...LIVE_PERSON },
-            select: { email: true, name: true, notificationSettings: true },
+            where: { email: { not: null }, ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
+            select: { id: true, email: true, name: true, notificationSettings: true },
         });
 
-        const subject = `New program: ${programName}`;
-        await Promise.all(users.map(u => {
-            if (!u.email) return;
+        const subject = `New program: ${program.name}`;
+        const tasks: Array<() => Promise<boolean>> = [];
+        for (const u of users) {
+            if (!u.email) continue;
             const s = u.notificationSettings as unknown as Record<string, boolean> | null;
-            if (s?.notifyNewPrograms === false) return; // opted out of this notice
-            if (s?.email === false) return;             // opted out of all email
-            const message = `Hi ${u.name}, a new program "${programName}" is now open for enrollment.`;
-            return sendEmail(u.email, subject, `<p>${escapeHtml(message)}</p>`);
-        }));
+            if (s?.notifyNewPrograms === false) continue; // opted out of this notice
+            if (s?.email === false) continue;              // opted out of all email
+            // ponytail: reuse isActiveOrgMemberThrough verbatim (#1061 — one definition of
+            // "covered for the program year"). N indexed reads over the active-member set;
+            // fires once per program, fire-and-forget — fine. If the member base grows,
+            // dedupe the horizon per householdId via membershipValidThrough.
+            if (!(await isActiveOrgMemberThrough(u.id, coverageDate))) continue;
+            const email = u.email;
+            const name = u.name;
+            const message = `Hi ${name}, a new program "${program.name}" is now open for enrollment.`;
+            tasks.push(() => sendEmail(email, subject, `<p>${escapeHtml(message)}</p>`));
+        }
+
+        await runPaced(tasks);
     } catch (error) {
         console.error("Failed to send new-program notifications:", error);
     }

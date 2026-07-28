@@ -25,7 +25,14 @@ const TAG = 'email-settings-test';
 
 describe('Email sender-identity settings API', () => {
     let boardId: number, plainId: number;
-    let prevSettings: { emailFromAddress: string | null; emailReplyToAddress: string | null; scholarshipNotifyEmail: string | null } | null = null;
+    let prevSettings: {
+        emailFromAddress: string | null;
+        emailReplyToAddress: string | null;
+        scholarshipNotifyEmail: string | null;
+        scholarshipAckSubject: string | null;
+        scholarshipAckMembershipBody: string | null;
+        scholarshipAckProgramBody: string | null;
+    } | null = null;
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -42,7 +49,14 @@ describe('Email sender-identity settings API', () => {
         plainId = (await prisma.person.create({ data: { name: 'Plain', household: { create: { name: `Plain HH ${TAG}` } } } })).id;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
         prevSettings = existing
-            ? { emailFromAddress: existing.emailFromAddress, emailReplyToAddress: existing.emailReplyToAddress, scholarshipNotifyEmail: existing.scholarshipNotifyEmail }
+            ? {
+                emailFromAddress: existing.emailFromAddress,
+                emailReplyToAddress: existing.emailReplyToAddress,
+                scholarshipNotifyEmail: existing.scholarshipNotifyEmail,
+                scholarshipAckSubject: existing.scholarshipAckSubject,
+                scholarshipAckMembershipBody: existing.scholarshipAckMembershipBody,
+                scholarshipAckProgramBody: existing.scholarshipAckProgramBody,
+            }
             : null;
     });
 
@@ -135,5 +149,45 @@ describe('Email sender-identity settings API', () => {
         const cleared = await EMAIL_PUT(jsonReq('PUT', { scholarshipNotifyEmail: '' }));
         expect(cleared.status).toBe(200);
         expect((await cleared.json()).settings.scholarshipNotifyEmail).toBeNull();
+    });
+
+    it('PUT round-trips the scholarship ACK subject + both bodies', async () => {
+        asBoard(boardId);
+        const put = await EMAIL_PUT(jsonReq('PUT', {
+            scholarshipAckSubject: 'Custom subject',
+            scholarshipAckMembershipBody: 'Custom membership body.',
+            scholarshipAckProgramBody: 'Custom program body for {{programName}}.',
+        }));
+        expect(put.status).toBe(200);
+        const saved = (await put.json()).settings;
+        expect(saved.scholarshipAckSubject).toBe('Custom subject');
+        expect(saved.scholarshipAckMembershipBody).toBe('Custom membership body.');
+        expect(saved.scholarshipAckProgramBody).toBe('Custom program body for {{programName}}.');
+
+        const after = (await (await EMAIL_GET(jsonReq('GET'))).json()).settings;
+        expect(after.scholarshipAckSubject).toBe('Custom subject');
+        expect(after.scholarshipAckMembershipBody).toBe('Custom membership body.');
+        expect(after.scholarshipAckProgramBody).toBe('Custom program body for {{programName}}.');
+    });
+
+    it('blank ACK fields clear back to null (default copy applies)', async () => {
+        asBoard(boardId);
+        await EMAIL_PUT(jsonReq('PUT', { scholarshipAckSubject: 'x', scholarshipAckMembershipBody: 'y', scholarshipAckProgramBody: 'z' }));
+        const cleared = await EMAIL_PUT(jsonReq('PUT', { scholarshipAckSubject: '', scholarshipAckMembershipBody: '  ', scholarshipAckProgramBody: '' }));
+        expect(cleared.status).toBe(200);
+        const s = (await cleared.json()).settings;
+        expect(s.scholarshipAckSubject).toBeNull();
+        expect(s.scholarshipAckMembershipBody).toBeNull();
+        expect(s.scholarshipAckProgramBody).toBeNull();
+    });
+
+    it('rejects an over-length ACK body and keeps the previous value', async () => {
+        asBoard(boardId);
+        await EMAIL_PUT(jsonReq('PUT', { scholarshipAckMembershipBody: 'Good body.' }));
+        const tooLong = 'x'.repeat(5001);
+        const bad = await EMAIL_PUT(jsonReq('PUT', { scholarshipAckMembershipBody: tooLong }));
+        expect(bad.status).toBe(400);
+        const after = (await (await EMAIL_GET(jsonReq('GET'))).json()).settings;
+        expect(after.scholarshipAckMembershipBody).toBe('Good body.');
     });
 });

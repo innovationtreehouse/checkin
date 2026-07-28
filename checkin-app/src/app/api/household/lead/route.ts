@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { addHouseholdLead, removeHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
+import { addHouseholdLead, removeHouseholdLead, HouseholdLeadLimitError, HouseholdLeadYouthError } from "@/lib/household/leads";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth(
@@ -51,8 +51,8 @@ export const POST = withAuth(
                     actorId: userId,
                     action: "CREATE",
                     tableName: "Person",
-                    affectedEntityId: targetHouseholdId,
-                    secondaryAffectedEntity: participantId,
+                    affectedEntityId: participantId,
+                    secondaryAffectedEntity: targetHouseholdId,
                     newData: { ...newLead, isHouseholdLead: true }
                 }
             });
@@ -61,6 +61,9 @@ export const POST = withAuth(
 
         } catch (error: unknown) {
             if (error instanceof HouseholdLeadLimitError) {
+                return apiError(error.message, 400);
+            }
+            if (error instanceof HouseholdLeadYouthError) {
                 return apiError(error.message, 400);
             }
             logger.error("Household Lead POST Error:", error);
@@ -125,8 +128,8 @@ export const DELETE = withAuth(
                     actorId: userId,
                     action: "DELETE",
                     tableName: "Person",
-                    affectedEntityId: targetHouseholdId,
-                    secondaryAffectedEntity: participantId,
+                    affectedEntityId: participantId,
+                    secondaryAffectedEntity: targetHouseholdId,
                     oldData: { householdId: targetHouseholdId, personId: participantId, isHouseholdLead: true }
                 }
             });

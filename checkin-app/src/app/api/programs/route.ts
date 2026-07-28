@@ -5,11 +5,13 @@ import { sendNotification } from "@/lib/notifications";
 import { createShopifySingleVariantProgram } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
 import { isActiveOrgMember } from "@/lib/orgMembership";
+import { config } from "@/lib/config";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { parseDateOnly } from "@/lib/time";
 
 // Public catalog projection: every Program column whose `/// @sensitivity:` tier
 // is `public` per src/security/generated/classifications.ts, in schema order.
@@ -26,6 +28,7 @@ const PUBLIC_PROGRAM_SELECT = {
     phase: true,
     enrollmentStatus: true,
     orgMemberOnly: true,
+    announceOnOpen: true,
     minAge: true,
     maxAge: true,
     maxParticipants: true,
@@ -46,6 +49,19 @@ const PUBLIC_PROGRAM_SELECT = {
 // reveal (P0-C).
 export async function GET(req: Request) {
     const user = await getOptionalSessionUser(req);
+
+    // ops-stg ACCESS GATE (finding 2026-07-20): getOptionalSessionUser collapses a
+    // gate-rejected caller (denied household, or on staging a non-org/
+    // non-canAccessStaging caller) to `undefined` — the SAME shape as a genuinely
+    // anonymous visitor, which is exactly the intended "public catalog" happy path
+    // in prod/dev. On staging this route serves the full prod-copied catalog
+    // (names, dates, prices, Shopify ids, live enrollment counts), so without this
+    // explicit check an anonymous curl reads it straight through the "public
+    // visitor" branch below. See tests/security/routeAuthDrift.test.ts rule 4,
+    // which fails any future getOptionalSessionUser caller that forgets this.
+    if (config.isStaging() && !user) {
+        return apiError("Unauthorized", 401);
+    }
 
     try {
         const { searchParams } = new URL(req.url);
@@ -199,8 +215,8 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                startAt: startAt ? new Date(startAt) : null,
-                endAt: endAt ? new Date(endAt) : null,
+                startAt: parseDateOnly(startAt),
+                endAt: parseDateOnly(endAt),
                 orgMemberOnly: orgMemberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,
@@ -223,7 +239,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         });
 
         if (newProgram.leadMentorId) {
-            await sendNotification(newProgram.leadMentorId, 'PROGRAM_ASSIGNMENT', { programName: newProgram.name });
+            await sendNotification(newProgram.leadMentorId, 'PROGRAM_ASSIGNMENT', { programName: newProgram.name, programId: newProgram.id });
         }
 
         const responseObj: Record<string, unknown> = { success: true, program: newProgram };

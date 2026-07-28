@@ -15,19 +15,41 @@ export const GET = withAuth(
         try {
             const url = new URL(req.url);
             const q = url.searchParams.get('q') || '';
+            // Only `adults` is recognized; any other value (or none) filters by age not at all.
+            const adultsOnly = url.searchParams.get('filter') === 'adults';
 
+            // DB-level 18-year boundary for the adults filter below. Mirrors the
+            // under-18 threshold in isYouth (lib/time.ts); kept inline because this
+            // is a Prisma `where` predicate, not an in-memory classification.
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 
             const people = await prisma.person.findMany({
+                // Both clauses below are ORs, so they go in an AND array rather than as
+                // two `OR:` keys — a second top-level OR would silently overwrite the
+                // first, and Prisma's recursive WhereInput accepts that without a type
+                // error. `?q=x&filter=adults` must apply both.
                 where: {
                     ...LIVE_PERSON,
-                    ...(q ? {
-                        OR: [
-                            { name: { contains: q, mode: 'insensitive' } },
-                            { email: { contains: q, mode: 'insensitive' } },
-                        ]
-                    } : {}),
+                    AND: [
+                        ...(q ? [{
+                            OR: [
+                                { name: { contains: q, mode: 'insensitive' as const } },
+                                { email: { contains: q, mode: 'insensitive' as const } },
+                            ]
+                        }] : []),
+                        // Adult = 18+. The isDeclaredAdult leg keeps members a lead marked
+                        // 25+ without a DoB (schema.prisma) in the picker; a null-DoB person
+                        // who was never declared adult is excluded, which is what a strict
+                        // 18+ rule means — the "mark 25+" control in the Details modal is
+                        // the affordance to fix that.
+                        ...(adultsOnly ? [{
+                            OR: [
+                                { dateOfBirth: { lte: eighteenYearsAgo } },
+                                { isDeclaredAdult: true },
+                            ]
+                        }] : []),
+                    ],
                 },
                 take: 200,
                 orderBy: { id: 'desc' },
@@ -59,10 +81,17 @@ export const GET = withAuth(
             // names, contact info (email/phone), and role pills (isBoardMember etc.
             // are @sensitivity:public org structure, not PII — not stripped). It is
             // denied background-check compliance dates (lastBackgroundCheck),
-            // membership/finance standing (isMember, Household.orgMembership), and
-            // every non-contact field on a household's OTHER members (see the
-            // explicit householdMembers select above). Board/sysadmin keep the full
-            // shape. See membership-ops/layout.tsx's Participants-only nav gate for ops.
+            // date of birth, and every non-contact field on a household's OTHER
+            // members (see the explicit householdMembers select above). Household
+            // orgMembership (and isMember, derived from it) IS shown to ops: every
+            // field on that row — memberSince/status/isVolunteer — is
+            // @sensitivity:public, so it is standing, not finance detail. The
+            // household itself is an explicit projection, not a row spread, so the
+            // Household's own home address (line1/line2/city/state/postalCode) and
+            // free-text intakeNotes (hardship/medical/family disclosures) reach
+            // nobody through this route — no consumer reads them off it. Board/
+            // sysadmin keep the full shape.
+            // See membership-ops/layout.tsx's Participants-only nav gate for ops.
             const opsOnly = auth.type === 'session' && auth.user.isOperations
                 && !auth.user.isSysadmin && !auth.user.isBoardMember;
 
@@ -71,15 +100,21 @@ export const GET = withAuth(
                 name: p.name,
                 email: p.email,
                 phone: p.phone,
-                dateOfBirth: p.dateOfBirth,
-                isDeclaredAdult: p.isDeclaredAdult,
                 // `undefined` drops the key on JSON serialization — a stripped
                 // response, not a null/zeroed one.
+                dateOfBirth: opsOnly ? undefined : p.dateOfBirth,
+                isDeclaredAdult: opsOnly ? undefined : p.isDeclaredAdult,
                 lastBackgroundCheck: opsOnly ? undefined : p.lastBackgroundCheck,
-                isMember: opsOnly ? undefined : personRecordIsActiveOrgMember(p),
+                isMember: personRecordIsActiveOrgMember(p),
                 ...rolesToFlags(p.roles),
                 emailSuppressed: p.emailSuppressed,
-                household: p.household ? { ...p.household, orgMembership: opsOnly ? undefined : p.household.orgMembership } : null,
+                household: p.household ? {
+                    id: p.household.id,
+                    name: p.household.name,
+                    householdMembers: p.household.householdMembers,
+                    // Every OrgMembership field is @sensitivity:public — ops sees it.
+                    orgMembership: p.household.orgMembership,
+                } : null,
             }));
 
             return NextResponse.json({ people: formatted });

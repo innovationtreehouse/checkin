@@ -48,6 +48,9 @@ export const GET = withAuth(
                         householdMembers: {
                             select: {
                                 id: true, name: true, email: true, isHouseholdLead: true, lastBackgroundCheck: true,
+                                // dateOfBirth: the Edit Info modal excludes youth from the
+                                // "Make lead" control (mirrors membership-audit/broken).
+                                dateOfBirth: true,
                                 // Program enrollments for the household detail view. Extra field the
                                 // Edit Info modal (same endpoint) simply ignores.
                                 programParticipants: {

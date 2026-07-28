@@ -19,6 +19,19 @@ export async function GET(req: NextRequest) {
         // denied-household gate (a denied member resolves to undefined), so even
         // on this kiosk-tolerant route a denied member can't read counts/safety.
         const user = await getOptionalSessionUser(req);
+
+        // ops-stg ACCESS GATE (finding 2026-07-20): must run BEFORE the kiosk
+        // branch below. This route re-verifies kiosk auth directly via
+        // verifyKioskSignature rather than through authenticateRequest — the one
+        // place that happens outside the chokepoint — so without this early
+        // return, a caller carrying a VALID kiosk signature would still set
+        // isKiosk=true, reach isAdmin, and get the full roster + safety data even
+        // after the gate rejected them. See
+        // tests/security/routeAuthDrift.test.ts rule 4.
+        if (config.isStaging() && !user) {
+            return apiError("Unauthorized", 401);
+        }
+
         const hasKioskHeaders = req.headers.get("x-kiosk-signature");
         const pubKeys = getKioskPublicKeys();
 

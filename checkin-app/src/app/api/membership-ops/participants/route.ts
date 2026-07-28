@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
@@ -80,7 +81,8 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 data: {
                     name,
                     ...(email && { email }),
-                    dateOfBirth: dob ? new Date(dob).toISOString() : null,
+                    // #1165: 26+ participants are stored declared-adult with no DoB.
+                    ...normalizeAdultDob(dob),
                     householdId: householdIdToAssign
                 }
             });
@@ -90,7 +92,8 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 data: {
                     name,
                     ...(email && { email }),
-                    dateOfBirth: dob ? new Date(dob).toISOString() : null,
+                    // #1165: 26+ participants are stored declared-adult with no DoB.
+                    ...normalizeAdultDob(dob),
                     household: {
                         create: { name: lastName ? `${lastName} Household` : "Household" }
                     }
