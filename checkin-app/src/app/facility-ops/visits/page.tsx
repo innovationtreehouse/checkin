@@ -63,7 +63,7 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 };
 
 export default function AdminVisitsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);

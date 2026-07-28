@@ -6,8 +6,13 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/trusted-adults/mine — the caller's household trusted adults and their
  * review history. Field visibility is governed by the security registry: the
- * household sees familyContext (pii band) + the board's shared note (personal) +
- * status/dates, but never the board's internal decision notes.
+ * household sees familyContext (internal — narrative band, granted via
+ * their_households:internal) + the board's shared note (personal) + status/
+ * dates. The board's private decision/decisionNote are ALSO internal-tier and
+ * therefore inside that grant on paper — this SELECT is what keeps them out.
+ * Do not add decision/decisionNote here (pinned by the integration test
+ * "the family sees familyContext + the board shared note, not internal
+ * fields").
  */
 export const GET = handler("GET /api/trusted-adults/mine", async ({ auth }) => {
     if (auth.type !== "session") throw unauthorized();

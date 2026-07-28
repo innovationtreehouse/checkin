@@ -26,6 +26,7 @@ export const baseTheme = createTheme({
 export const baseBrand: Brand = {
   id: 'base',
   appName: 'CheckMeIn',
+  home: { title: 'CheckMeIn', subtitle: 'the program and attendance system for your community' },
   theme: baseTheme,
   fontVariables: '',
   logo: null,

@@ -7,11 +7,20 @@ import { apiError } from "@/lib/api-response";
 
 export const dynamic = 'force-dynamic';
 
-// Fields eligible for a conflict radio: both sides non-null and different.
+// Fields eligible for a per-field conflict radio: both sides non-null and different.
 // `image` auto-backfills only (never a radio, decision 4) so it's a separate list below.
-const CONFLICT_FIELDS = ['name', 'email', 'phone', 'googleId', 'dateOfBirth'] as const;
-// Single-sided auto-backfill fields (today's semantics) — the 5 conflict fields plus image.
+// The login identity (email + googleId + emailVerified) is deliberately NOT here:
+// those three are minted together at sign-in and are resolved as ONE unit under
+// the `identity` key (see resolveKeeperUpdate), never split field-by-field —
+// splitting could seat one side's email on the other's googleId, or graft a stale
+// emailVerified onto a swapped-in address nobody proved they control (#1225).
+const CONFLICT_FIELDS = ['name', 'phone', 'dateOfBirth'] as const;
+// Single-sided auto-backfill fields (today's semantics) — the 3 conflict fields plus image.
 const AUTO_BACKFILL_FIELDS = [...CONFLICT_FIELDS, 'image'] as const;
+// The wholesale-choice key the client sends for the login identity conflict.
+const IDENTITY_CHOICE_KEY = 'identity';
+// Every valid fieldChoices key: the per-field radios plus the identity unit.
+const VALID_CHOICE_KEYS = [...CONFLICT_FIELDS, IDENTITY_CHOICE_KEY] as const;
 
 /** Thrown when the tombstone CAS loses the race (concurrent/repeat merge) — caught below and mapped to a 409. */
 class AlreadyMergedError extends Error {}
@@ -27,10 +36,16 @@ function valuesConflict(a: unknown, b: unknown): boolean {
     return a !== b;
 }
 
+/** A login identity is present iff email OR googleId is non-empty. */
+function hasIdentity(p: { email: string | null; googleId: string | null }): boolean {
+    return !isEmpty(p.email) || !isEmpty(p.googleId);
+}
+
 /**
  * Build the keeper's `person.update` data from: single-sided auto-backfill,
- * radio-resolved true conflicts (name/email/phone/googleId/dateOfBirth), and
- * the newer-date auto-pick for the two compliance dates (never a radio).
+ * radio-resolved true conflicts (name/phone/dateOfBirth), the login identity
+ * resolved as ONE unit (email + googleId + emailVerified), and the newer-date
+ * auto-pick for the two compliance dates (never a radio).
  */
 function resolveKeeperUpdate(
     keep: Person,
@@ -50,6 +65,29 @@ function resolveKeeperUpdate(
             data[field] = mergeVal;
         }
     }
+
+    // Login identity — email/googleId/emailVerified are minted together at
+    // sign-in, so they move together or not at all. A record holds only one of
+    // each (all @unique), so the only coherent outcomes are "keep the keeper's
+    // whole identity" or "adopt the merge side's" — never a cross-side split
+    // that would seat an address nobody proved they control (#1225).
+    const keepHasIdentity = hasIdentity(keep);
+    const mergeHasIdentity = hasIdentity(merge);
+    const adoptMergeIdentity =
+        // Both sides have one (always a true conflict — unique constraints):
+        // client picks via the `identity` radio.
+        (keepHasIdentity && mergeHasIdentity && choices[IDENTITY_CHOICE_KEY] === 'merge') ||
+        // Empty keeper, merge side has one: adopt it (single-sided backfill).
+        (!keepHasIdentity && mergeHasIdentity);
+    if (adoptMergeIdentity) {
+        data.email = merge.email;
+        data.googleId = merge.googleId;
+        data.emailVerified = merge.emailVerified;
+        // #1225: suppression is tied to the address, so it rides in with it.
+        data.emailSuppressed = merge.emailSuppressed;
+    }
+    // Only-keeper-has-identity (or 'keep' choice, or neither side) -> no write:
+    // the keeper's address stands, and so does its own emailSuppressed.
 
     // Compliance dates: always take the newer one. Same human — an older check
     // is never the right survivor. Never a radio.
@@ -131,7 +169,7 @@ export const POST = withAuth(
             }
             const choices: Partial<Record<string, 'keep' | 'merge'>> = {};
             for (const [key, value] of Object.entries(rawChoices)) {
-                if (!(CONFLICT_FIELDS as readonly string[]).includes(key)) {
+                if (!(VALID_CHOICE_KEYS as readonly string[]).includes(key)) {
                     return apiError(`Unknown field choice: ${key}`, 400);
                 }
                 if (value !== 'keep' && value !== 'merge') {
@@ -143,6 +181,12 @@ export const POST = withAuth(
                 if (valuesConflict(keepParticipant[field], mergeParticipant[field]) && !choices[field]) {
                     return apiError(`Choose a value for ${field}`, 400);
                 }
+            }
+            // Both sides carry a login identity => an unavoidable conflict (unique
+            // constraints guarantee they differ); the client must pick which whole
+            // identity survives.
+            if (hasIdentity(keepParticipant) && hasIdentity(mergeParticipant) && !choices[IDENTITY_CHOICE_KEY]) {
+                return apiError(`Choose a value for ${IDENTITY_CHOICE_KEY}`, 400);
             }
 
             // ---- Resolve the keeper's final field values, then guard against stranding login ----
@@ -165,7 +209,10 @@ export const POST = withAuth(
                     data: {
                         mergedIntoId: keepId,
                         googleId: null,
-                        email: `merged-${mergeId}@deleted.checkme.in`,
+                        email: `merged-${mergeId}@deleted.invalid`,
+                        // Null the verified stamp with the identity: no tombstone
+                        // row should carry a "verified" mark for the sentinel address.
+                        emailVerified: null,
                         phone: null,
                         isHouseholdLead: false,
                         // NOTE: name is NOT mangled — mergedIntoId carries the semantics;

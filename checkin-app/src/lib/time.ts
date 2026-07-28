@@ -87,6 +87,27 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 }
 
 /**
+ * Format a calendar-date field (program dates, DOB, memberSince — stored at UTC
+ * midnight by convention) UTC-pinned, so the stored calendar day renders
+ * unshifted in every zone. Counterpart to formatDate, which is for instants.
+ * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+ */
+export function formatDateOnly(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+    if (!date) return '';
+    return new Date(date).toLocaleDateString(undefined, { timeZone: 'UTC', ...options });
+}
+
+/**
+ * Parse an <input type="date"> value ("yyyy-MM-dd") into the calendar-date
+ * storage convention: UTC midnight (what `new Date` does to a bare date).
+ * The single write-side seam if the storage model ever changes (the design
+ * doc's open decision). A value already carrying a time parses as-is.
+ */
+export function parseDateOnly(value: string | null | undefined): Date | null {
+    return value ? new Date(value) : null;
+}
+
+/**
  * Returns the calendar age in whole years for the given DOB, decremented if
  * the birthday hasn't happened yet as of `asOf`. Canonical implementation — use
  * this everywhere instead of inline epoch-diff age math.
@@ -107,8 +128,16 @@ export function calculateAge(dob: Date | string, asOf: Date | string = new Date(
 /**
  * Returns true if the person with the given DOB is under 18 years old (youth).
  * Canonical implementation — use this everywhere instead of inline age checks.
+ *
+ * Unknown (null/undefined) DOB resolves to `unknownIs`, default 'adult': UI and
+ * household-lead callers rely on that (a null-DOB member stays promotable to
+ * lead, blank forms don't show youth fields). Safety checks must pass
+ * `{ unknownIs: 'youth' }` so missing data fails closed (#300).
  */
-export function isYouth(dob: Date | string | null | undefined): boolean {
-    if (!dob) return false;
+export function isYouth(
+    dob: Date | string | null | undefined,
+    opts?: { unknownIs?: 'youth' | 'adult' },
+): boolean {
+    if (!dob) return (opts?.unknownIs ?? 'adult') === 'youth';
     return calculateAge(dob) < 18;
 }
