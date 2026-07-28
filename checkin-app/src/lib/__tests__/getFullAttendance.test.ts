@@ -95,3 +95,43 @@ describe("getFullAttendance() — privileged caller (unchanged)", () => {
         expect(JSON.stringify(attendance)).not.toContain("@example.com");
     });
 });
+
+describe("two-deep calc fails closed on unknown DOB (#300)", () => {
+    // Youth (hh 8) + real adult (hh 6) + null-DOB visitor in the youth's
+    // household. Under the old null→adult default the null-DOB visitor
+    // "accompanied" the youth AND made adultVisits.length 2 — masking the
+    // violation on both prongs.
+    const nullDobRow = {
+        id: 204, arrivedAt: new Date("2026-07-01T14:20:00Z"), departedAt: null, personId: 80,
+        person: {
+            id: 80, email: "nodob@example.com", name: "No Dob", isKeyholder: false,
+            dateOfBirth: null, isDeclaredAdult: false, householdId: 8, phone: null,
+            household: { id: 8, emergencyContacts: [] },
+        },
+        event: null,
+    };
+
+    it("unknown DOB is never a supervising adult and cannot mask a violation", async () => {
+        findMany.mockResolvedValue([...rows, nullDobRow]);
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: true });
+
+        expect(safety.isTwoDeepViolation).toBe(true);
+        // counted as youth, not volunteer, and flagged as youth on the wire
+        expect(counts).toEqual({ keyholders: 1, volunteers: 0, youth: 2, total: 3 });
+        expect(attendance[2].participant.isYouth).toBe(true);
+    });
+
+    it("a DoB-stripped declared adult (#1165) still supervises", async () => {
+        // Same shape, but the null-DoB visitor is a 26+ member whose DoB was
+        // deliberately deleted: isDeclaredAdult wins over the fail-closed default.
+        findMany.mockResolvedValue([...rows, {
+            ...nullDobRow,
+            person: { ...nullDobRow.person, isDeclaredAdult: true },
+        }]);
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: true });
+
+        expect(safety.isTwoDeepViolation).toBe(false);
+        expect(counts).toEqual({ keyholders: 1, volunteers: 1, youth: 1, total: 3 });
+        expect(attendance[2].participant.isYouth).toBe(false);
+    });
+});
