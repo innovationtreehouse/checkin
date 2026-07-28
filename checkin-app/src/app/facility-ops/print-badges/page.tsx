@@ -48,7 +48,7 @@ export default function PrintBadgesPage() {
         setParticipants(data.people);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to search people for badges:", e);
     } finally {
       setLoading(false);
     }
@@ -160,7 +160,7 @@ export default function PrintBadgesPage() {
           {p.isBoardMember && <Badge size="xs" color="blue">BOARD</Badge>}
           {p.isKeyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
           {!p.isBoardMember && !p.isKeyholder && p.isMember && (
-            <Badge size="xs" color="green">MEMBER</Badge>
+            <Badge size="xs">MEMBER</Badge>
           )}
         </Group>
       ),

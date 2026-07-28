@@ -154,7 +154,7 @@ export default function AdminTrustedAdultsPage() {
                     setNotices((n) => ({ ...n, [reviewId]: { text: body.error ?? "Decision failed.", tone: "error" } }));
                 }
             } else {
-                notifications.show({ color: "green", message: `Recorded: ${label(body.status)}.` });
+                notifications.show({ message: `Recorded: ${label(body.status)}.` });
                 await load();
                 notifyNavRefresh();
             }
@@ -353,7 +353,6 @@ export default function AdminTrustedAdultsPage() {
                                             <span>
                                                 <Button
                                                     size="xs" fz={15}
-                                                    color="green"
                                                     loading={busyId === latest.id}
                                                     disabled={isSelf || !sharedVal.trim() || (needsChoice && !choice)}
                                                     onClick={() => decide(latest.id, "APPROVE", { sharedNote: sharedVal })}
@@ -397,7 +396,6 @@ export default function AdminTrustedAdultsPage() {
                                 <Button
                                     size="xs" fz={15}
                                     variant="subtle"
-                                    color="green"
                                     disabled={isSelf && !user?.isSysadmin}
                                     loading={busyId === latest.id}
                                     onClick={() => openPrompt({

@@ -14,8 +14,10 @@
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
 import prisma from '@/lib/prisma';
+import { config, isStagingAccessAllowed } from '@/lib/config';
 import type { AuthResult } from '@/types/auth';
-import type { Authorize, Role } from './core';
+import type { Authorize, CtxNeeds, Role } from './core';
+import { LIVE_PERSON } from '@/lib/person/filters';
 
 export interface CallerContext {
     selfId?: number;
@@ -38,7 +40,15 @@ export interface CallerContext {
     activeVisitorIds: Set<number>;
 }
 
-export async function buildCallerContext(auth: AuthResult): Promise<CallerContext> {
+/**
+ * Build the per-request context, fetching ONLY what `needs` says this route's
+ * policy can consume (see deriveCtxNeeds in core.ts). An unfetched field stays
+ * an empty set — strictly fewer scopes than a full fetch, and provably
+ * output-identical for any scope the route's tokens don't grant (the
+ * ctxNeeds equivalence test asserts this per registered route). Session-derived
+ * fields (selfId/householdId/isKeyholder) are always populated.
+ */
+export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Promise<CallerContext> {
     const ctx: CallerContext = {
         selfId: undefined,
         householdId: undefined,
@@ -58,57 +68,69 @@ export async function buildCallerContext(auth: AuthResult): Promise<CallerContex
     ctx.householdId = auth.user.householdId;
     ctx.isKeyholder = auth.user.isKeyholder;
 
-    const ledPrograms = await prisma.program.findMany({
-        where: { leadMentorId: auth.user.id },
-        select: { id: true, participants: { select: { personId: true } } },
-    });
+    const [ledPrograms, coreVols, visits] = await Promise.all([
+        needs.programs
+            ? prisma.program.findMany({
+                  where: { leadMentorId: auth.user.id },
+                  select: { id: true, participants: { select: { personId: true } } },
+              })
+            : [],
+        needs.programs
+            ? prisma.programVolunteer.findMany({
+                  where: { personId: auth.user.id, isCore: true, person: LIVE_PERSON },
+                  select: {
+                      programId: true,
+                      program: { select: { participants: { select: { personId: true } } } },
+                  },
+              })
+            : [],
+        needs.activeVisitors && ctx.isKeyholder
+            ? prisma.visit.findMany({
+                  where: { departedAt: null },
+                  select: { personId: true },
+              })
+            : [],
+    ]);
+
     for (const p of ledPrograms) {
         ctx.programsLed.add(p.id);
         for (const pp of p.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
-
-    const coreVols = await prisma.programVolunteer.findMany({
-        where: { personId: auth.user.id, isCore: true },
-        select: {
-            programId: true,
-            program: { select: { participants: { select: { personId: true } } } },
-        },
-    });
     for (const v of coreVols) {
         ctx.programsCoreVolIn.add(v.programId);
         for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
+    for (const v of visits) ctx.activeVisitorIds.add(v.personId);
 
-    // Households of the children in the caller's programs — for Trusted Adult
-    // pickup-note visibility (program leads see operational notes for the
-    // households whose kids they oversee).
-    if (ctx.participantIdsInScopePrograms.size) {
-        const members = await prisma.person.findMany({
-            where: { id: { in: [...ctx.participantIdsInScopePrograms] } },
-            select: { householdId: true },
-        });
-        for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
-    }
-
-    // Events belonging to the caller's programs — RSVP reaches a program only via
-    // eventId → Event.programId (RSVP has no programId column). Drives the
-    // 'their_program_participants' scope on RSVP rows.
     const scopePrograms = [...ctx.programsLed, ...ctx.programsCoreVolIn];
-    if (scopePrograms.length) {
-        const events = await prisma.event.findMany({
-            where: { programId: { in: scopePrograms } },
-            select: { id: true },
-        });
-        for (const e of events) ctx.eventIdsInScopePrograms.add(e.id);
-    }
-
-    if (ctx.isKeyholder) {
-        const visits = await prisma.visit.findMany({
-            where: { departedAt: null },
-            select: { personId: true },
-        });
-        for (const v of visits) ctx.activeVisitorIds.add(v.personId);
-    }
+    await Promise.all([
+        // Households of the children in the caller's programs — for Trusted Adult
+        // pickup-note visibility (program leads see operational notes for the
+        // households whose kids they oversee).
+        needs.programHouseholds && ctx.participantIdsInScopePrograms.size
+            ? prisma.person
+                  .findMany({
+                      where: { id: { in: [...ctx.participantIdsInScopePrograms] }, ...LIVE_PERSON },
+                      select: { householdId: true },
+                  })
+                  .then(members => {
+                      for (const m of members) ctx.householdIdsInScopePrograms.add(m.householdId);
+                  })
+            : undefined,
+        // Events belonging to the caller's programs — RSVP reaches a program only via
+        // eventId → Event.programId (RSVP has no programId column). Drives the
+        // 'their_program_participants' scope on RSVP rows.
+        needs.programEvents && scopePrograms.length
+            ? prisma.event
+                  .findMany({
+                      where: { programId: { in: scopePrograms } },
+                      select: { id: true },
+                  })
+                  .then(events => {
+                      for (const e of events) ctx.eventIdsInScopePrograms.add(e.id);
+                  })
+            : undefined,
+    ]);
 
     return ctx;
 }
@@ -159,6 +181,8 @@ export function callerHoldsRole(
             return auth.type === 'session' && auth.user.isKeyholder;
         case 'isBackgroundCheckReviewer':
             return auth.type === 'session' && auth.user.isBackgroundCheckReviewer;
+        case 'isOperations':
+            return auth.type === 'session' && auth.user.isOperations;
         case 'certifier':
             return isCertifier(auth);
         case 'householdLead':
@@ -184,12 +208,33 @@ export interface ResolverContext {
  * Admission gate — the per-route `authorize` check. Returns whether the
  * caller is even allowed to *invoke* the endpoint (401/403 if not). View
  * resolution (orderedView) is downstream.
+ *
+ * ops-stg ACCESS GATE, checked FIRST, ahead of every `authorize` branch below —
+ * including `'public'`. This is the surface that made the pre-gate design
+ * dangerous: `authenticateRequest` (lib/auth.ts) already downgrades a
+ * non-org/non-flagged caller to `unauthenticated` on staging, but
+ * `authorize: 'public'` unconditionally returns `{ allowed: true }` regardless
+ * of `auth` — so without this check, an anonymous `curl` of
+ * `GET /api/programs/[id]` (registered `authorize: 'public'`, returning real
+ * enrolled minors' names/household/emergency contacts) would sail straight
+ * through on a copy of prod data. Re-derives the predicate independently
+ * (not just `auth.type !== 'unauthenticated'`) as belt-and-suspenders: even if
+ * a future caller ever constructs an `AuthResult` without going through
+ * `authenticateRequest`, this still fails closed on its own.
  */
 export async function resolveAccess(
     authorize: Authorize,
     ctx: ResolverContext,
 ): Promise<{ allowed: boolean }> {
     const { auth, params, callerContext } = ctx;
+
+    if (config.isStaging()) {
+        const claims = auth.type === 'session' ? auth.user : null;
+        if (!isStagingAccessAllowed(claims)) {
+            return { allowed: false };
+        }
+    }
+
     const isAdmin = auth.type === 'session' && (auth.user.isSysadmin || auth.user.isBoardMember);
 
     if (typeof authorize === 'string') {

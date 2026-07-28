@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 // Serves the participant roster for the tool-certification grid: id, a display name, and
 // tool certs. The raw email is read only to resolve the name fallback and never leaves the
@@ -20,7 +21,7 @@ export const GET = withAuth(
 
         if (limitToPresent) {
             const activeVisits = await prisma.visit.findMany({
-                where: { departedAt: null },
+                where: { departedAt: null, person: LIVE_PERSON },
                 include: {
                     person: {
                         select: {
@@ -38,6 +39,7 @@ export const GET = withAuth(
             participantsData = activeVisits.map(v => v.person);
         } else {
             participantsData = await prisma.person.findMany({
+                where: LIVE_PERSON,
                 select: {
                     id: true,
                     email: true,

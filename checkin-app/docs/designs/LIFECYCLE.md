@@ -43,6 +43,25 @@ Dues + background-check + renewal. BG and payment are **parallel tracks** that c
 PERSON_BG`. `RENEWAL_PENDING_BG` is dead-but-guarded legacy (the reachability test asserts it's
 unreachable). Full diagram/table: `../generated/lifecycle/membership.md`.
 
+**Who fires the payment edge (`PENDING_PAYMENT → ACTIVE`).** The generated matrix records that
+the edge is *legal*, not who drives it. The recovery choke point is `activate()` (renewals route
+through it too — `grantRenewalPayment` is the board-only renewal path, actor `board/sysadmin`).
+Three actors reach `activate()`:
+1. **Shopify `orders/paid` webhook** (`app/api/webhooks/shopify/route.ts`) — the low-latency path,
+   activates in real time when the family pays.
+2. **Backup s-read reconciler** (`app/api/cron/reconcile-shopify` → `lib/finance/reconcile.ts`,
+   `runReconcile`) — the **guaranteed backstop for a missed webhook**. Forward pass recovers a paid
+   order still stuck at `PENDING_PAYMENT` via `activate()` (idempotent — stores `shopifyOrderId`,
+   short-circuits on `paidAt`); reversal pass raises a refund/chargeback on an already-activated
+   order to the board (never auto-reversed). The route comment owns the exact cadence; the *decision*
+   is daily-not-hourly, a scale-to-zero Aurora constraint (infra#129), trading ~1h recovery for ~24h.
+   No-op when the mirror isn't wired.
+3. **Manual board action** (membership-ops) — the human override.
+
+This is distinct from `app/api/cron/lifecycle-reconcile` (see *Detection & healing*), which heals
+*off-diagram* rows; the s-read reconciler recovers *on-diagram* rows stuck at a checkpoint because
+an event never fired.
+
 ## Changing a machine — the rules
 1. **Add / rename a status** → update the definition module. `classify` is a total `switch`
    (`assertNever` default), so it won't compile until every status is handled; the enum-parity

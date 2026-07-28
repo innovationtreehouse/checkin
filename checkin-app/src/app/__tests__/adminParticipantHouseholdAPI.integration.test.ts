@@ -106,7 +106,7 @@ describe('Admin Participant Household API Integration Tests', () => {
 
             // The move MUST be audited with the acting admin and the prior→new
             // household — the route's only record of who reassigned the person.
-            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Participant', affectedEntityId: testParticipantId });
+            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Person', affectedEntityId: testParticipantId });
             expect(log.actorId).toBe(testAdminId);
             expect(auditJson(log.oldData).householdId).toBe(priorHouseholdId);
             expect(auditJson(log.newData).householdId).toBe(testHouseholdId);

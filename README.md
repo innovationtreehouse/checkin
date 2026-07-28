@@ -41,7 +41,7 @@ variables go in `checkin-app/.env` — the setup guides list them.
 
 ### Start here
 
-- **[AGENTS.md](AGENTS.md)** — orientation for contributors and agents: the three test classes and how to run each, repo conventions, editing rules.
+- **[AGENTS.md](AGENTS.md)** — orientation for contributors and agents: test commands, repo conventions, editing rules.
 - **[CONSTITUTION.md](CONSTITUTION.md)** — purpose and core principles (security, privacy, auditability); what must never be weakened.
 - **[Canonical Vocabulary](checkin-app/docs/VOCABULARY.md)** — what every domain word means (people, roles, money, tools, attendance).
 - **[Critical User Journeys](docs/designs/CUJS.md)** — all user-facing flows, organized by persona.

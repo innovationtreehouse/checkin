@@ -44,7 +44,7 @@ type RowNoticeState = { id: number; text: string; tone: AlertTone } | null;
 const RowNotice = ({ notice, id, onClose }: { notice: RowNoticeState; id: number; onClose: () => void }) => {
   if (notice?.id !== id) return null;
   return (
-    <Alert py={4} px="xs" color={notice.tone === 'success' ? 'green' : 'red'} variant="light" withCloseButton onClose={onClose}>
+    <Alert py={4} px="xs" color={notice.tone === 'success' ? 'treehouseGreen' : 'red'} variant="light" withCloseButton onClose={onClose}>
       {notice.text}
     </Alert>
   );
@@ -63,7 +63,7 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 };
 
 export default function AdminVisitsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -171,7 +171,7 @@ export default function AdminVisitsPage() {
         })
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Visit updated successfully." });
+        notifications.show({ message: "Visit updated successfully." });
         setEditingVisitId(null);
         fetchVisits();
       } else {
@@ -200,7 +200,7 @@ export default function AdminVisitsPage() {
         body: JSON.stringify({ visitId: id })
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Visit deleted." });
+        notifications.show({ message: "Visit deleted." });
         fetchVisits();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -261,7 +261,7 @@ export default function AdminVisitsPage() {
                     <Table.Td>
                       <Stack gap={6}>
                         <Group gap="xs" wrap="nowrap">
-                          <Button size="xs" fz={15} color="green" onClick={() => handleSaveEdit(v.id)}>Save</Button>
+                          <Button size="xs" fz={15} onClick={() => handleSaveEdit(v.id)}>Save</Button>
                           <Button size="xs" fz={15} variant="default" onClick={() => setEditingVisitId(null)}>Cancel</Button>
                         </Group>
                         <RowNotice notice={rowNotice} id={v.id} onClose={() => setRowNotice(null)} />

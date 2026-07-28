@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { updateContact, deleteContact, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { updateContact, deleteContact, present, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { leadHousehold } from "@/lib/household/leads";
 import { apiError } from "@/lib/api-response";
 
@@ -26,7 +26,9 @@ export const PATCH = withAuth({}, async (req, auth, { params }: { params: Promis
                 newData: { name: contact.name, phone: contact.phone },
             },
         });
-        return NextResponse.json({ contact });
+        // present(): same wire shape as GET/POST — never the raw row (internal
+        // createdAt/updatedAt + conflict bookkeeping don't belong on the wire).
+        return NextResponse.json({ contact: present(contact) });
     } catch (error) {
         if (error instanceof EmergencyContactError) {
             return apiError(error.message, error.code === "not_found" ? 404 : 400);

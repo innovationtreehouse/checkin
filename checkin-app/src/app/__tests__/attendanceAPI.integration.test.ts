@@ -10,6 +10,7 @@ import { GET, POST, DELETE } from '@/app/api/attendance/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as verifyKiosk from '@/lib/verify-kiosk';
+import { ORG_DOMAIN } from '@/lib/config';
 
 // Mock Kiosk util
 jest.mock('@/lib/verify-kiosk', () => ({
@@ -209,6 +210,97 @@ describe('General Attendance API Integration Tests', () => {
              const names = data.attendance.map((v: { participant: { name: string } }) => v.participant.name);
              expect(names).toContain('Common');
              expect(names).toContain('Household Child');
+        });
+    });
+
+    // ── ops-stg ACCESS GATE regression (Finding 2, 2026-07-20) ──────────────────
+    // This route re-verifies kiosk auth DIRECTLY via verifyKioskSignature rather
+    // than through authenticateRequest — the one place that happens outside the
+    // chokepoint. Without the explicit gate check ahead of that branch, a caller
+    // presenting a VALID kiosk signature would still set isKiosk=true, reach
+    // isAdmin, and get the full roster + safety data even after the ops-stg gate
+    // rejected the caller's session.
+    describe('GET /api/attendance — ops-stg access gate', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES a caller presenting a VALID kiosk signature — the regression case for Finding 2', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
+            (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, {
+                method: 'GET',
+                headers: new Headers({
+                    'x-kiosk-signature': 'sig',
+                    'x-kiosk-timestamp': Date.now().toString(),
+                }),
+            });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+            const data = await res.json();
+            expect(data.attendance).toBeUndefined();
+            expect(data.safety).toBeUndefined();
+        });
+
+        it('DENIES a plain anonymous caller (no session, no kiosk headers)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([]);
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+        });
+
+        it('ALLOWS an authenticated admin who is ALSO a verified org member', async () => {
+            // isSysadmin alone does NOT bypass the staging gate — only a verified
+            // innovationtreehouse.org member or canAccessStaging does (see
+            // isStagingAccessAllowed). Both claims must be on the mocked session.
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: adminId, isSysadmin: true, hd: ORG_DOMAIN, emailVerified: true },
+            });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(200);
+        });
+
+        it('DENIES an authenticated admin who is NOT a verified org member and has no canAccessStaging flag', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+        });
+
+        it('is inert outside staging: the SAME valid-kiosk-signature request that was denied above succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
+            (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, {
+                method: 'GET',
+                headers: new Headers({
+                    'x-kiosk-signature': 'sig',
+                    'x-kiosk-timestamp': Date.now().toString(),
+                }),
+            });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(200);
         });
     });
 

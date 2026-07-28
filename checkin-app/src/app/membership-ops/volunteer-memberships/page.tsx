@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button, Card, Center, Group, Loader, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { PageLoader } from "@/components/ui/PageLoader";
 import { notifications } from "@mantine/notifications";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 
@@ -13,6 +15,7 @@ interface Designation {
 }
 
 export default function VolunteerMembershipsPage() {
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   const [designations, setDesignations] = useState<Designation[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -35,6 +38,14 @@ export default function VolunteerMembershipsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  if (authLoading) {
+    return <PageLoader />;
+  }
+
+  if (!ready) {
+    return null;
+  }
+
   const addDesignation = async () => {
     setEmailError(undefined);
     if (!newEmail.trim()) return;
@@ -50,7 +61,7 @@ export default function VolunteerMembershipsPage() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setNewEmail("");
-        if (data.warning) { flash(data.warning, "warning"); } else { notifications.show({ color: "green", message: "Designation added." }); }
+        if (data.warning) { flash(data.warning, "warning"); } else { notifications.show({ message: "Designation added." }); }
         await load();
       } else flash(data.error || "Could not add.");
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }

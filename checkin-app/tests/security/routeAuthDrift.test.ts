@@ -58,6 +58,14 @@ const ALLOWLIST = new Set<string>([
     // getOptionalSessionUser doesn't apply. Abuse is bounded by IP + email rate
     // limits inside the handler (see the "email-bomb / DB-spam target" comment).
     'programs/[id]/public-register/route.ts',
+    // Session-less, self-verifying via a signed HMAC token in the URL (?p=&sig=),
+    // NOT a shared-secret family like withCron/withWebhook/withKiosk (no header,
+    // no config-held secret to check) — see lib/outreach/unsubscribeToken.ts. GET
+    // must not flip the flag (mail scanners prefetch GET links) and POST verifies
+    // the token itself, so neither handler fits withAuth/withCron/withWebhook/
+    // withKiosk, and it's genuinely public so getOptionalSessionUser doesn't apply
+    // either. Bad/missing/tampered tokens get a neutral page, no info leak.
+    'unsubscribe/route.ts',
 ]);
 
 const HTTP_METHODS = 'GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS';
@@ -331,6 +339,38 @@ const FIX_3 =
     'Confirm the GET/HEAD handler admission-gates, query-shapes, or admin-role-gates this edge, ' +
     'then add it to EDGE_INCLUDE_ALLOWLIST with the justification.';
 
+// ---------------------------------------------------------------------------
+// Rule 4 — ops-stg access gate (2026-07-20 finding). getOptionalSessionUser
+// collapses a gate-rejected caller (denied household, or on staging a non-org/
+// non-canAccessStaging caller) to `undefined` — the SAME shape as a genuinely
+// anonymous visitor, which is exactly the intended "public read" happy path in
+// prod/dev. On ops-stg that collapse is wrong for a route whose data is real
+// prod-copied content: "undefined" must ALSO mean "deny", not "serve the
+// public view" (see programs/route.ts, attendance/route.ts). Scoped to actual
+// CALLS of getOptionalSessionUser specifically — not authenticateRequest,
+// which programs/[id]/route.ts also calls but only to ADD viewer-only fields
+// on top of an already-registry-gated response (resolveAccess gates it
+// independently; this rule would false-positive on that file).
+// ---------------------------------------------------------------------------
+const GET_OPTIONAL_SESSION_CALL = /\bgetOptionalSessionUser\s*\(/;
+const IS_STAGING_CALL = /\bisStaging\s*\(\s*\)/;
+
+function callsGetOptionalSessionUser(code: string): boolean {
+    return GET_OPTIONAL_SESSION_CALL.test(code);
+}
+
+function hasStagingGateCheck(code: string): boolean {
+    return IS_STAGING_CALL.test(code);
+}
+
+const FIX_4 =
+    'On ops-stg, getOptionalSessionUser collapses a gate-rejected caller to the SAME ' +
+    '`undefined` shape as a genuinely anonymous visitor. Add ' +
+    '`if (config.isStaging() && !user) return apiError("Unauthorized", 401);` right after the ' +
+    'getOptionalSessionUser call, or add this file to ALLOWLIST with a note on why it is safe ' +
+    'to stay public even on staging (e.g. unsubscribe — no sensitive data, must stay reachable ' +
+    'for mail scanners).';
+
 describe('route auth drift-guard — every app/api/**/route.ts', () => {
     it('has route files to scan (guard is not vacuous)', () => {
         expect(routeFiles.length).toBeGreaterThan(50);
@@ -392,6 +432,21 @@ describe('route auth drift-guard — every app/api/**/route.ts', () => {
             );
             const dead = Object.keys(EDGE_INCLUDE_ALLOWLIST).filter((k) => !flagged.has(k));
             expect(dead).toEqual([]);
+        });
+    });
+
+    describe('rule 4 — getOptionalSessionUser callers must gate ops-stg or be allowlisted', () => {
+        for (const { rel, code } of routeFiles) {
+            if (ALLOWLIST.has(rel)) continue;
+            if (!callsGetOptionalSessionUser(code)) continue;
+            const msg = hasStagingGateCheck(code) ? null : `${rel}: ${FIX_4}`;
+            it(rel, () => {
+                expect(msg).toBeNull();
+            });
+        }
+
+        it('has at least one real getOptionalSessionUser caller to scan (rule is not vacuous)', () => {
+            expect(routeFiles.some(({ code }) => callsGetOptionalSessionUser(code))).toBe(true);
         });
     });
 });
@@ -480,5 +535,26 @@ describe('route auth drift-guard — detectors catch violations', () => {
     it('does NOT flag an edge relation used only as a where-filter (no rows returned)', () => {
         const synthetic = `export const GET = withAuth({}, async () => prisma.person.findMany({ where: { programParticipants: { some: { programId: 1 } } } }));`;
         expect(findEdgeReadsInReads(stripComments(synthetic))).toEqual([]);
+    });
+
+    it('flags a getOptionalSessionUser caller with no isStaging() check (rule 4)', () => {
+        const synthetic = `import { getOptionalSessionUser } from "@/lib/auth";\nexport async function GET(req) { const user = await getOptionalSessionUser(req); return Response.json({ user }); }`;
+        expect(callsGetOptionalSessionUser(stripComments(synthetic))).toBe(true);
+        expect(hasStagingGateCheck(stripComments(synthetic))).toBe(false);
+    });
+
+    it('does NOT flag a getOptionalSessionUser caller that checks config.isStaging() (rule 4)', () => {
+        const synthetic = `import { getOptionalSessionUser } from "@/lib/auth";\nimport { config } from "@/lib/config";\nexport async function GET(req) { const user = await getOptionalSessionUser(req); if (config.isStaging() && !user) return apiError("Unauthorized", 401); }`;
+        expect(hasStagingGateCheck(stripComments(synthetic))).toBe(true);
+    });
+
+    it('does NOT flag a route that only calls authenticateRequest, not getOptionalSessionUser (rule 4 scope)', () => {
+        const synthetic = `import { authenticateRequest } from "@/lib/auth";\nexport async function GET(req) { const auth = await authenticateRequest(req); return Response.json({}); }`;
+        expect(callsGetOptionalSessionUser(stripComments(synthetic))).toBe(false);
+    });
+
+    it('ignores a mention of isStaging in a comment (comments already stripped)', () => {
+        const synthetic = `import { getOptionalSessionUser } from "@/lib/auth";\n// TODO: check config.isStaging() here\nexport async function GET(req) { const user = await getOptionalSessionUser(req); }`;
+        expect(hasStagingGateCheck(stripComments(synthetic))).toBe(false);
     });
 });

@@ -21,6 +21,7 @@ import {
   IconUrgent,
 } from '@tabler/icons-react';
 import { notifications } from "@mantine/notifications";
+import { brand } from '@/brand';
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
@@ -138,9 +139,11 @@ export default function Home() {
     <Container size="sm" py="xl">
       <Card withBorder shadow="sm" radius="md" padding="xl">
         <Stack align="center" gap="xs" mb="lg">
-          <Title order={1} tt="lowercase">{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
-          <Text c="dimmed" size="lg">
-            The next-generation facility check-in system.
+          <Title order={1} ta="center">
+            {isDevInstance ? `${brand.home.title} (dev)` : brand.home.title}
+          </Title>
+          <Text c="dimmed" size="lg" ta="center">
+            {brand.home.subtitle}
           </Text>
         </Stack>
 
@@ -182,22 +185,17 @@ export default function Home() {
               )}
 
               {/* Check-in Toggle Button — in production, only privileged users can self-check-in from the web */}
-              {isCheckedIn !== null &&
-                (canSelfCheckin ? (
-                  <Button
-                    size="lg"
-                    fullWidth
-                    color={isCheckedIn ? 'red' : 'green'}
-                    onClick={handleToggleCheckin}
-                    loading={loading}
-                  >
-                    {isCheckedIn ? 'Check Out' : 'Check In'}
-                  </Button>
-                ) : (
-                  <Alert color="gray" variant="light" ta="center">
-                    📛 Please use the kiosk badge scanner to check in and out.
-                  </Alert>
-                ))}
+              {isCheckedIn !== null && canSelfCheckin && (
+                <Button
+                  size="lg"
+                  fullWidth
+                  color={isCheckedIn ? 'red' : 'treehouseGreen'}
+                  onClick={handleToggleCheckin}
+                  loading={loading}
+                >
+                  {isCheckedIn ? 'Check Out' : 'Check In'}
+                </Button>
+              )}
 
               {/* Board Directory Button for Keyholders/Admins */}
               {isPrivileged && (
@@ -229,7 +227,6 @@ export default function Home() {
               </Text>
 
               <Button
-                color="green"
                 size="md"
                 onClick={() => router.push('/programs')}
                 style={{ maxWidth: 300, width: '100%' }}

@@ -180,19 +180,22 @@ describe("finance-ops/payments — sync status", () => {
 
             expect(lastMessage()).toMatch(/still running/i);
             // Nothing went wrong — the sync started and is proceeding, we just stopped
-            // watching. Plain success shape; the sentence carries "check back later".
-            expect(lastShown()).toMatchObject({ color: "green" });
+            // watching. Plain success shape: no color override, so it inherits the
+            // theme's treehouseGreen (Mantine's Notification falls back to
+            // --mantine-primary-color-filled when no color is passed).
+            expect(lastShown().color).toBeUndefined();
             expect(lastShown().autoClose).not.toBe(false);
         } finally {
             jest.useRealTimers();
         }
     });
 
-    it("only ever speaks the app's red/green notification vocabulary", async () => {
+    it("only ever speaks the app's red/theme-primary notification vocabulary", async () => {
         // The app has no warning tier: every notifications.show() in checkin-app is red
-        // (error) or green (success). This page briefly invented `yellow` for the two
-        // ambiguous outcomes, which read as a new severity that nothing else uses — and
-        // the two disagreed with each other on whether they persisted.
+        // (error, explicit) or the theme's treehouseGreen (success — implicit, no color
+        // override). This page briefly invented `yellow` for the two ambiguous
+        // outcomes, which read as a new severity that nothing else
+        // uses — and the two disagreed with each other on whether they persisted.
         jest.useFakeTimers();
         try {
             mockSync([{ status: 500, body: {} }]);
@@ -201,7 +204,7 @@ describe("finance-ops/payments — sync status", () => {
 
             const colors = shown.mock.calls.map(([c]) => c.color);
             expect(colors.length).toBeGreaterThan(0);
-            expect(colors.every((c) => c === "red" || c === "green")).toBe(true);
+            expect(colors.every((c) => c === "red" || c === undefined)).toBe(true);
         } finally {
             jest.useRealTimers();
         }

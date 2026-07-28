@@ -16,7 +16,7 @@ import { activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 
 // Congrats/reviewer pings must not hit Resend.
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'person-bg-trigger-test';
 const RECHECK_MONTHS = 12;

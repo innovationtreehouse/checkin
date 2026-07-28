@@ -45,6 +45,7 @@
  */
 import { classifications, type Models, type FieldsOf } from './generated/classifications';
 import type { BusinessRole } from '@/types/auth';
+import { assertNever } from '@/lib/lifecycle/classify';
 
 export type { Models, FieldsOf };
 export { classifications };
@@ -79,6 +80,7 @@ export type Role =
     | 'isBoardMember'
     | 'isKeyholder'
     | 'isBackgroundCheckReviewer'
+    | 'isOperations'
     // Holds a MAY_CERTIFY_OTHERS toolStatus (a shop certifier). Not a Person
     // role boolean — derived from session.user.toolStatuses (see callerHoldsRole).
     | 'certifier'
@@ -96,7 +98,9 @@ const VALID_SCOPES = new Set<Scope>([
     'all_current_visitors',
 ]);
 const VALID_SENSITIVE_TIERS = new Set<SensitiveTier>(['pii', 'personal', 'internal']);
-const VALID_ROLES = new Set<Role>([
+// Exported so a guard test can assert BusinessRole (types/auth.ts) ⊆ VALID_ROLES —
+// the gap that let #1104 add isOperations to BusinessRole without adding it here.
+export const VALID_ROLES = new Set<Role>([
     'anyone',
     'unauthenticated',
     'authenticated',
@@ -105,6 +109,7 @@ const VALID_ROLES = new Set<Role>([
     'isBoardMember',
     'isKeyholder',
     'isBackgroundCheckReviewer',
+    'isOperations',
     'certifier',
     'householdLead',
     'programLeadMentor',
@@ -184,7 +189,127 @@ export interface OutboundSpec {
     tiers: readonly ('public' | SensitiveTier)[];
 }
 
-const _routes = new Map<string, RouteSpec>();
+/**
+ * Which CallerContext prefetches a route can possibly consume — derived
+ * statically from its RouteSpec (authorize + orderedView roles + granted token
+ * scopes). buildCallerContext skips the DB queries behind any field not
+ * needed, so a route whose grants never consult program/visitor scopes pays
+ * zero context queries.
+ *
+ * Skipping is fail-closed by construction: an unfetched field is an empty
+ * set, which can only SHRINK scopesHeld — and a scope no view token grants
+ * can never flip fieldVisible anyway. The equivalence test
+ * (tests/security/ctxNeeds.test.ts) proves output-identity per registered
+ * route; the total switches below (assertNever) force this derivation to be
+ * revisited whenever a Scope/Role/Authorize variant is added.
+ */
+export interface CtxNeeds {
+    /** programsLed, programsCoreVolIn, participantIdsInScopePrograms */
+    programs: boolean;
+    /** householdIdsInScopePrograms (implies programs) */
+    programHouseholds: boolean;
+    /** eventIdsInScopePrograms (implies programs) */
+    programEvents: boolean;
+    /** activeVisitorIds (fetched only for keyholders) */
+    activeVisitors: boolean;
+}
+
+export const ALL_CTX_NEEDS: CtxNeeds = Object.freeze({
+    programs: true,
+    programHouseholds: true,
+    programEvents: true,
+    activeVisitors: true,
+});
+
+function scopeNeeds(scope: Scope): Partial<CtxNeeds> {
+    switch (scope) {
+        case 'everyones':
+        case 'their_own':
+        case 'their_households':
+        case 'keyholders':
+            // Resolved from the session alone — no prefetch.
+            return {};
+        case 'their_program_participants':
+            // participantIds AND (RSVP-only) eventIds both hang off this scope;
+            // the bag's models aren't statically known, so fetch both.
+            return { programs: true, programEvents: true };
+        case 'their_program_households':
+            return { programs: true, programHouseholds: true };
+        case 'all_current_visitors':
+            return { activeVisitors: true };
+        default:
+            return assertNever(scope);
+    }
+}
+
+function roleNeeds(role: Role): Partial<CtxNeeds> {
+    switch (role) {
+        case 'anyone':
+        case 'unauthenticated':
+        case 'authenticated':
+        case 'kiosk':
+        case 'isSysadmin':
+        case 'isBoardMember':
+        case 'isKeyholder':
+        case 'isBackgroundCheckReviewer':
+        case 'isOperations':
+        case 'certifier':
+        case 'householdLead':
+            // callerHoldsRole answers these from the session alone.
+            return {};
+        case 'programLeadMentor':
+        case 'programCoreVolunteer':
+            return { programs: true };
+        default:
+            return assertNever(role);
+    }
+}
+
+function authorizeNeeds(authorize: Authorize): Partial<CtxNeeds> {
+    if (typeof authorize !== 'string') return {}; // anyRole — session flags only
+    switch (authorize) {
+        case 'public':
+        case 'authenticated':
+        case 'self':
+        case 'certifier':
+        case 'household-lead':
+        case 'household-member':
+        case 'kiosk':
+            return {};
+        case 'program-lead-mentor':
+        case 'program-core-volunteer':
+            return { programs: true };
+        default:
+            return assertNever(authorize);
+    }
+}
+
+export function deriveCtxNeeds(spec: RouteSpec): CtxNeeds {
+    const needs: CtxNeeds = {
+        programs: false,
+        programHouseholds: false,
+        programEvents: false,
+        activeVisitors: false,
+    };
+    Object.assign(needs, authorizeNeeds(spec.authorize));
+    for (const [role, tokens] of spec.orderedView) {
+        Object.assign(needs, roleNeeds(role));
+        for (const tok of tokens) {
+            const parsed = parseToken(tok);
+            if (parsed !== null && typeof parsed === 'object') {
+                Object.assign(needs, scopeNeeds(parsed.scope));
+            }
+        }
+    }
+    return needs;
+}
+
+/** A RouteSpec as stored: ctxNeeds is DERIVED at registration, never authored. */
+export interface RegisteredRoute extends RouteSpec {
+    readonly ctxNeeds: CtxNeeds;
+}
+
+const _routes = new Map<string, RegisteredRoute>();
 const _outbounds = new Map<string, OutboundSpec>();
 
 export function defineRoute(spec: RouteSpec): RouteSpec {
@@ -206,7 +331,9 @@ export function defineRoute(spec: RouteSpec): RouteSpec {
             }
         }
     }
-    _routes.set(spec.endpoint, spec);
+    // Derived AFTER validation (deriveCtxNeeds assumes tokens parse). The spread
+    // order means an (illegally) author-supplied ctxNeeds is overwritten.
+    _routes.set(spec.endpoint, { ...spec, ctxNeeds: deriveCtxNeeds(spec) });
     return spec;
 }
 
@@ -223,7 +350,7 @@ export function defineOutbound(spec: OutboundSpec): OutboundSpec {
     return spec;
 }
 
-export function getRoute(endpoint: string): RouteSpec | undefined {
+export function getRoute(endpoint: string): RegisteredRoute | undefined {
     return _routes.get(endpoint);
 }
 
@@ -231,7 +358,7 @@ export function getOutbound(surface: string): OutboundSpec | undefined {
     return _outbounds.get(surface);
 }
 
-export function allRoutes(): IterableIterator<[string, RouteSpec]> {
+export function allRoutes(): IterableIterator<[string, RegisteredRoute]> {
     return _routes.entries();
 }
 

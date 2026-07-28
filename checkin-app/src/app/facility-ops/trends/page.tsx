@@ -42,7 +42,7 @@ export default function ParticipationTrendsPage() {
           setPrograms(data.map((p: { id: number; name: string }) => ({ id: p.id, name: p.name })));
         }
       })
-      .catch(console.error);
+      .catch((err) => console.error("Failed to load programs for trends dropdown:", err));
   }, []);
 
   // Fetch trends data
@@ -58,7 +58,7 @@ export default function ParticipationTrendsPage() {
         setBuckets(data.buckets || []);
         setTotals(data.totals || null);
       })
-      .catch(console.error)
+      .catch((err) => console.error("Failed to load facility trends:", err))
       .finally(() => setLoading(false));
   }, [period, programId, ready]);
 

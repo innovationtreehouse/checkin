@@ -24,7 +24,7 @@ export default function BrokenHouseholdsPage() {
       const data = await res.json();
       if (data.households) setHouseholds(data.households);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to load broken households:", err);
     } finally {
       setLoading(false);
     }
@@ -44,7 +44,7 @@ export default function BrokenHouseholdsPage() {
         body: JSON.stringify({ participantId }),
       });
       if (res.ok) {
-        notifications.show({ color: "green", message: "Lead assigned." });
+        notifications.show({ message: "Lead assigned." });
         fetchHouseholds();
         notifyNavRefresh();
       } else {
@@ -75,7 +75,7 @@ export default function BrokenHouseholdsPage() {
               <Card key={h.id} withBorder radius="md" padding="md">
                 <Text fw={600} mb="xs">{h.name}</Text>
                 {notice[h.id] && (
-                  <Alert color={notice[h.id].ok ? "green" : "red"} variant="light" mb="xs" withCloseButton
+                  <Alert color={notice[h.id].ok ? "treehouseGreen" : "red"} variant="light" mb="xs" withCloseButton
                     onClose={() => setNotice((n) => { const next = { ...n }; delete next[h.id]; return next; })}>
                     {notice[h.id].text}
                   </Alert>

@@ -10,6 +10,7 @@ import { openConfigIssues } from "@/lib/configHealth";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
 import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Aggregate "things to do" counts for the left-nav badges. Every count is scoped
@@ -136,7 +137,7 @@ export const GET = withAuth({}, async (_req, auth) => {
     if (user.householdId) {
         const householdId = user.householdId;
         const members = await prisma.person.findMany({
-            where: { householdId },
+            where: { householdId, ...LIVE_PERSON },
             select: { id: true },
         });
         const memberIds = members.map((m) => m.id);
@@ -174,7 +175,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // page highlights the member box; this drives the nav badge count.
             isLead
                 ? prisma.person.findMany({
-                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }] },
+                      where: { householdId, isHouseholdLead: true, OR: [{ phone: null }, { phone: "" }], ...LIVE_PERSON },
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
@@ -182,7 +183,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // on the household page; the lead must add one or the other.
             isLead
                 ? prisma.person.findMany({
-                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false },
+                      where: { householdId, dateOfBirth: null, isDeclaredAdult: false, ...LIVE_PERSON },
                       select: { id: true, name: true },
                   })
                 : Promise.resolve([]),
@@ -201,7 +202,7 @@ export const GET = withAuth({}, async (_req, auth) => {
                 },
             }),
             prisma.programParticipant.findMany({
-                where: { personId: { in: memberIds }, status: "PENDING" },
+                where: { personId: { in: memberIds }, status: "PENDING", person: LIVE_PERSON },
                 select: { programId: true, isPaymentPlanRequested: true, program: { select: { name: true } } },
             }),
         ]);
@@ -279,7 +280,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // "Total Enrolled" = active (not PENDING) participants per program.
             prisma.programParticipant.groupBy({
                 by: ["programId"],
-                where: { programId: { in: ledIds }, status: "ACTIVE" },
+                where: { programId: { in: ledIds }, status: "ACTIVE", person: LIVE_PERSON },
                 _count: { personId: true },
             }),
             // All upcoming sessions, ascending; we keep the next 3 per program below.
@@ -290,7 +291,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             }),
             // Volunteer roster per program — used to split RSVP tallies by role.
             prisma.programVolunteer.findMany({
-                where: { programId: { in: ledIds } },
+                where: { programId: { in: ledIds }, person: LIVE_PERSON },
                 select: { programId: true, personId: true },
             }),
             getLeadConflicts(user.id),
@@ -328,7 +329,7 @@ export const GET = withAuth({}, async (_req, auth) => {
         for (const [programId, evs] of upcomingByProgram) for (const e of evs) eventProgram.set(e.id, programId);
         const rsvpRows = upcomingEventIds.length
             ? await prisma.rSVP.findMany({
-                  where: { eventId: { in: upcomingEventIds } },
+                  where: { eventId: { in: upcomingEventIds }, person: LIVE_PERSON },
                   select: { eventId: true, personId: true, status: true },
               })
             : [];
@@ -378,7 +379,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // Shopify reconciliation queue, and the board is already emailed when a
             // hold fails, so they don't need a green "approval pending" pill.
             prisma.programParticipant.count({
-                where: { status: "PENDING", isPaymentPlanRequested: true, inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null },
+                where: { status: "PENDING", isPaymentPlanRequested: true, inventoryHeldAt: { not: null }, paymentPlanDeniedAt: null, person: LIVE_PERSON },
             }),
             // Households awaiting board approval of a membership-dues payment plan.
             prisma.orgMembershipProcess.count({
@@ -403,7 +404,7 @@ export const GET = withAuth({}, async (_req, auth) => {
             // People Resend has reported as undeliverable (bounce/complaint), not since
             // cleared by a later delivery. See Person.emailUndeliverableAt / webhooks/resend.
             prisma.person.count({
-                where: { emailUndeliverableAt: { not: null } },
+                where: { emailUndeliverableAt: { not: null }, ...LIVE_PERSON },
             }),
             // Programs priced on a tier with no matching Shopify variant — paid enrollment
             // silently can't check out. Same condition as the list/detail UI, shared via

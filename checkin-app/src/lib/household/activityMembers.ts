@@ -1,5 +1,6 @@
 import type { Session } from "next-auth";
 import prisma from "@/lib/prisma";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export type ActivityMember = { id: number; name: string | null };
 
@@ -18,7 +19,7 @@ export async function activityMembers(session: Session): Promise<ActivityMember[
         return [{ id: selfId, name: session.user.name ?? null }];
     }
     return prisma.person.findMany({
-        where: { householdId: session.user.householdId },
+        where: { householdId: session.user.householdId, ...LIVE_PERSON },
         select: { id: true, name: true },
         orderBy: { id: "asc" },
     });

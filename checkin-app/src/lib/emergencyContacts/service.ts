@@ -3,6 +3,7 @@ import type { EmergencyContact } from "@/generated/prisma/client";
 import { identityKeys, sameIdentity, identityMatchReason, cleanEmail, normalizePhone } from "./identity";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import type { DbClient } from "@/lib/db-client";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Emergency-contact write/read model. Enforces the not-a-household-member rule
@@ -38,6 +39,21 @@ export interface ContactInput {
     priority?: number;
 }
 
+/** Shape a contact for the client, exposing the validity flag. The ONLY wire
+ *  shape EC routes may ship: it strips the internal tier (createdAt/updatedAt,
+ *  conflict bookkeeping) and the normalization columns a client never needs. */
+export function present(c: { id: number; name: string; phone: string; email: string | null; relationship: string | null; priority: number; conflictParticipantId: number | null }) {
+    return {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        relationship: c.relationship,
+        priority: c.priority,
+        invalid: c.conflictParticipantId !== null || !c.name.trim() || !c.phone.trim(),
+    };
+}
+
 export interface EmergencyContactWarning {
     code: "EMERGENCY_CONTACT_CONFLICT";
     householdId: number;
@@ -52,7 +68,7 @@ type MemberLike = { id: number; name: string | null; email: string | null; phone
 
 function loadMembers(db: Db, householdId: number): Promise<MemberLike[]> {
     return db.person.findMany({
-        where: { householdId },
+        where: { householdId, ...LIVE_PERSON },
         select: { id: true, name: true, email: true, phone: true },
     });
 }

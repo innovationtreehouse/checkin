@@ -67,7 +67,7 @@ export default function ManualAttendance() {
       if (!res.ok) {
         setError(data.error || "Failed to record manual visit.");
       } else {
-        notifications.show({ color: "green", message: "Visit recorded successfully." });
+        notifications.show({ message: "Visit recorded successfully." });
         setArrived("");
         setDeparted("");
         // Building occupancy badges (attendance nav) count this new visit — refresh them.

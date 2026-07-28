@@ -95,6 +95,9 @@ const AUTHZ_TESTED = new Set<string>([
     'membership-ops/applications/certify-payment',
     'membership-ops/applications/external',
     'membership-ops/applications/review-override',
+    // POST deny-path (401 anon / 403 plain / 403 sysadmin-excluded) in
+    // membership-ops/contacts/__tests__/route.integration.test.ts.
+    'membership-ops/contacts',
     'membership-ops/households',
     'membership-ops/households/[id]',
     'membership-ops/participants',
@@ -110,7 +113,6 @@ const AUTHZ_TESTED = new Set<string>([
     // POST deny-path (401 anon / 403 non-board) in authzRoleRejection.integration.test.ts.
     'programs/[id]/sync-shopify',
     'roles',
-    'safety/board-contacts',
     'safety/emergency-contacts',
     'safety/trusted-adults/decision',
     'safety/trusted-adults/override',

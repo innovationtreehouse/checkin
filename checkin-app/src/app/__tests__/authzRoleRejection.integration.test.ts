@@ -68,7 +68,7 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'authz-rolereject-test';
 
@@ -222,6 +222,19 @@ describe('Protected-route role rejection', () => {
         });
         it('403 for a plain authenticated user (no privileged role)', async () => {
             as(plainId, { householdId: plainHh });
+            expect((await invoke()).status).toBe(403);
+        });
+    });
+
+    // ---- Operations gets the Participants directory (read + membership-ops/
+    // contacts create) only — every edit/rich-create participants endpoint stays
+    // board/sysadmin-only. isOperations must still 403 here (contrast with
+    // membership-ops/contacts, the one endpoint operations DOES clear — see its
+    // own integration suite).
+    const participantsEditRoutes = roleGated.filter((c) => c.name.includes('/membership-ops/participants'));
+    describe.each(participantsEditRoutes)('$name — operations-only is denied', ({ invoke }) => {
+        it('403s an operations-only actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
             expect((await invoke()).status).toBe(403);
         });
     });

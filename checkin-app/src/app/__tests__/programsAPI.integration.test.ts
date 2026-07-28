@@ -9,6 +9,8 @@
 import { GET, POST } from '@/app/api/programs/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { classifications } from '@/security/generated/classifications';
+import { ORG_DOMAIN } from '@/lib/config';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -64,7 +66,7 @@ describe('Programs API Integration Tests', () => {
         // Create mock programs
         await prisma.program.createMany({
             data: [
-                { name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18 },
+                { name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18, leadMentorNotificationSettings: { notifyRsvp: true } },
                 { name: 'Draft API Test Program', phase: 'PLANNING', orgMemberOnly: false, leadMentorId: leadId },
                 { name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true }
             ]
@@ -132,6 +134,103 @@ describe('Programs API Integration Tests', () => {
 
              expect(draft).toBeDefined(); // Revealed because admin
              expect(orgMemberOnly).toBeDefined(); // Revealed because admin
+        });
+
+        // The catalog is deliberately anonymous-readable, so the projection — not a
+        // route gate — is what keeps `personal`-tier data off the wire. Both the
+        // cached anonymous path and the live session path must ship public columns only.
+        //
+        // Expected keys are DERIVED from the generated classifications rather than
+        // listed here: the route's PUBLIC_PROGRAM_SELECT is a hand-maintained copy of
+        // policy data, so a hardcoded list would rot in lockstep with it. Adding a
+        // non-public column to Program now fails this test instead of leaking.
+        it.each([
+            ['anonymous', null],
+            ['admin session', { user: { id: undefined as number | undefined, isSysadmin: true } }],
+        ])('exposes only public-tier Program columns (%s)', async (_label, session) => {
+             if (session) session.user.id = adminId;
+             (getServerSession as jest.Mock).mockResolvedValue(session);
+
+             const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest);
+             expect(res.status).toBe(200);
+
+             const programs = await res.json();
+             const publicActive = programs.find((p: { name?: string }) => p.name === 'Public API Test Program');
+
+             const publicColumns = Object.entries(classifications.Program)
+                 .filter(([, tier]) => tier === 'public')
+                 .map(([field]) => field);
+
+             expect(publicActive).toBeDefined();
+             expect(publicColumns).not.toHaveLength(0); // guard: a broken import would vacuously pass
+             expect(Object.keys(publicActive).sort()).toEqual([...publicColumns, '_count'].sort());
+             expect(publicActive._count).toEqual({ participants: 0, volunteers: 0, events: 0 });
+        });
+    });
+
+    // ── ops-stg ACCESS GATE regression (Finding 1, 2026-07-20) ──────────────────
+    // This route is a bare `export async function GET` — no withAuth, no
+    // handler()/registry entry — that calls getOptionalSessionUser directly and
+    // treats "no session" as the public-catalog happy path (correct in prod/dev).
+    // getOptionalSessionUser collapses a staging-gate-rejected caller to the SAME
+    // `undefined` shape as a genuinely anonymous visitor, so without an explicit
+    // check an anonymous curl would read the full prod-copied catalog (names,
+    // dates, prices, Shopify ids, live enrollment counts) straight through.
+    describe('GET /api/programs — ops-stg access gate', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES an anonymous caller — the regression case for Finding 1', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(401);
+            const text = await res.text();
+            expect(text).not.toContain('Public API Test Program');
+        });
+
+        it('ALLOWS an authenticated admin who is ALSO a verified org member', async () => {
+            // isSysadmin alone does NOT bypass the staging gate — only a verified
+            // innovationtreehouse.org member or canAccessStaging does (see
+            // isStagingAccessAllowed). Both claims must be on the mocked session.
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: adminId, isSysadmin: true, hd: ORG_DOMAIN, emailVerified: true },
+            });
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('DENIES an authenticated admin who is NOT a verified org member and has no canAccessStaging flag', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('is inert outside staging: the same anonymous request succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(200);
         });
     });
 

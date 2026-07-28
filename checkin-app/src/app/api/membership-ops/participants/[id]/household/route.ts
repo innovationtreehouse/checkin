@@ -75,7 +75,7 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             data: {
                 actorId: auth.user.id,
                 action: "EDIT",
-                tableName: "Participant",
+                tableName: "Person",
                 affectedEntityId: participantId,
                 oldData: { householdId: participant.householdId },
                 newData: { householdId: targetHouseholdId, createNew: Boolean(createNew) },

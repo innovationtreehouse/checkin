@@ -11,6 +11,7 @@ import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
 import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest";
 import { type DbClient, type TxClient } from "@/lib/db-client";
 import { awaitingBgReview } from "@/lib/membership/lifecycle";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Background-check review — now a PARALLEL track, not a blocking phase.
@@ -89,7 +90,7 @@ const QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG: Prisma.OrgMembershipProcessWhereInpu
 export async function notifyReviewers(): Promise<void> {
     try {
         const reviewers = await prisma.person.findMany({
-            where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }] },
+            where: { email: { not: null }, OR: [{ isBackgroundCheckReviewer: true }, { isBoardMember: true }], ...LIVE_PERSON },
             select: { email: true },
         });
         const base = config.baseUrl();
@@ -338,7 +339,7 @@ export function matchesVolunteerDesignation(parentEmails: string[], designationE
 export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number, householdId: number, markedByReviewer: boolean) {
     let isVolunteer = markedByReviewer;
     if (!isVolunteer) {
-        const parents = await db.person.findMany({ where: { householdId, isHouseholdLead: true, email: { not: null } }, select: { email: true } });
+        const parents = await db.person.findMany({ where: { householdId, isHouseholdLead: true, email: { not: null }, ...LIVE_PERSON }, select: { email: true } });
         const designations = await db.volunteerDesignation.findMany({ select: { email: true } });
         isVolunteer = matchesVolunteerDesignation(parents.map((p) => p.email!), designations.map((d) => d.email));
     }

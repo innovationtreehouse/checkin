@@ -4,6 +4,7 @@ import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const GET = withCron(async () => {
         const now = new Date();
@@ -40,7 +41,7 @@ export const GET = withCron(async () => {
             
             if (abandonedKeyholders.length > 0) {
                 const boardMembers = await prisma.person.findMany({
-                    where: { isBoardMember: true },
+                    where: { isBoardMember: true, ...LIVE_PERSON },
                     select: { email: true }
                 });
 
@@ -67,12 +68,28 @@ export const GET = withCron(async () => {
         // 2. Process all pending post-event emails immediately, regardless of 1-hour delay
         const emailResult = await processPostEventEmails({ forceImmediate: true });
 
-        return NextResponse.json({ 
-            success: true, 
+        // 3. #1165: delete DoB for anyone who has crossed 26 since the last run. No
+        // age-gated program can target anyone over 25 (MAX_PROGRAM_AGE), so a DoB for
+        // a 26+ person is dead weight on our most-sensitive field. Strip it and set the
+        // declared-adult flag so age gates / search / UI still see them as an adult.
+        // The #1165 backfill migration did the one-time sweep; this keeps it clean as
+        // members age in. Raw SQL so age is judged in the DB, tombstones included.
+        const adultDobPurged = await prisma.$executeRaw`
+            UPDATE "Person"
+            SET "dateOfBirth" = NULL, "isDeclaredAdult" = true
+            WHERE "dateOfBirth" IS NOT NULL
+              AND "dateOfBirth" <= (CURRENT_DATE - INTERVAL '26 years')`;
+        if (adultDobPurged > 0) {
+            logger.info(`Nightly cron: purged DoB for ${adultDobPurged} member(s) now over 25 (#1165).`);
+        }
+
+        return NextResponse.json({
+            success: true,
             facilityClose: {
                 checkedOutCount,
                 boardNotified
             },
-            postEvents: emailResult
+            postEvents: emailResult,
+            adultDobPurged
         });
 });

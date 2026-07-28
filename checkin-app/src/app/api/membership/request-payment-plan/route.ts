@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
-import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck } from "@/lib/scholarshipEmails";
+import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck, resolveAckCopy } from "@/lib/scholarshipEmails";
 import { config } from "@/lib/config";
 
 export const POST = withAuth({}, async (req, auth) => {
@@ -44,12 +44,17 @@ export const POST = withAuth({}, async (req, auth) => {
 
         if (process.isPaymentPlanRequested) {
             // Idempotent re-request: no transition, no emails, still success.
-            return NextResponse.json({ success: true, process });
+            // Return only res.ok — never echo the raw process row (internal-tier
+            // zoho/shopify ids and stage timestamps) to the lead.
+            return NextResponse.json({ success: true });
         }
 
-        const updated = await prisma.orgMembershipProcess.update({
+        // select: the UI reads only res.ok — never echo the raw process row
+        // (internal-tier zoho/shopify ids and stage timestamps) to the lead.
+        await prisma.orgMembershipProcess.update({
             where: { id: processId },
             data: { isPaymentPlanRequested: true },
+            select: { id: true },
         });
 
         const base = config.baseUrl();
@@ -61,14 +66,14 @@ export const POST = withAuth({}, async (req, auth) => {
             "Scholarship review-team notify failed (membership request):",
         );
         const recipients = await resolveScholarshipRecipients(householdId);
-        await sendScholarshipAck(
-            recipients,
-            "We received your scholarship / payment-plan request",
-            `<p>Hi — we've received your household's scholarship / payment-plan request for your Treehouse membership dues. `
-            + `The Scholarship Review Team will review it and follow up.</p>`,
-        );
+        const ackSettings = await prisma.boardSettings.findUnique({
+            where: { id: 1 },
+            select: { scholarshipAckSubject: true, scholarshipAckMembershipBody: true },
+        });
+        const ack = resolveAckCopy(ackSettings, "membership");
+        await sendScholarshipAck(recipients, ack.subject, ack.body);
 
-        return NextResponse.json({ success: true, process: updated });
+        return NextResponse.json({ success: true });
     } catch (error) {
         logger.error("Membership payment plan request error:", error);
         return apiError("Failed to request payment plan", 500);

@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Container, Group, SimpleGrid, Text, Title } from '@mantine/core';
-import { formatDate } from '@/lib/time';
+import { formatDateOnly } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type UserProgram = {
@@ -23,13 +23,15 @@ type UserProgram = {
 };
 
 // Payment pill: ACTIVE (paid/free) shows nothing; a still-owed enrollment is
-// either the household's to pay (green, actionable) or waiting on finance to
+// either the household's to pay (theme-primary, actionable) or waiting on finance to
 // approve a payment plan (gray, not actionable — don't imply it's settled).
+// ponytail: "Payment due" reads more like a warning than a success state — mechanical
+// off-palette-sweep target is theme-primary green; a maintainer may prefer gray/yellow here.
 function paymentPill(status: string, planRequested: boolean) {
   if (status === 'ACTIVE') return null;
   return planRequested
     ? <Badge color="gray" variant="filled">Awaiting finance approval</Badge>
-    : <Badge color="green" variant="filled">Payment due</Badge>;
+    : <Badge variant="filled">Payment due</Badge>;
 }
 
 export default function MyProgramsDashboard() {
@@ -104,8 +106,8 @@ export default function MyProgramsDashboard() {
               </Group>
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>
-                {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
-                {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
+                {program.startAt ? formatDateOnly(program.startAt) : 'Start Date TBD'}
+                {program.endAt ? ` - ${formatDateOnly(program.endAt)}` : ' (Ongoing)'}
               </Text>
               <Button component={Link} href={`/programs/${program.id}`} variant="light" fullWidth mt="md">
                 View Details

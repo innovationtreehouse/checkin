@@ -13,7 +13,10 @@ import { attest, ReviewError } from '@/lib/membership/review';
 import { normalizeAuditData } from '@/lib/auditPayload';
 import prisma from '@/lib/prisma';
 
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 const TAG = 'review-concurrency-test';
 
