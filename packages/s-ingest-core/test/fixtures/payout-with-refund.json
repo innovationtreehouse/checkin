@@ -1,0 +1,50 @@
+[
+  {
+    "objectType": "PAYOUT",
+    "node": {
+      "id": "gid://shopify/ShopifyPaymentsPayout/5001",
+      "legacyResourceId": "5001",
+      "issuedAt": "2026-02-05T00:00:00Z",
+      "status": "PAID",
+      "net": { "amount": "77.00", "currencyCode": "USD" },
+      "summary": {
+        "chargesGross": { "amount": "100.00", "currencyCode": "USD" },
+        "chargesFee": { "amount": "3.00", "currencyCode": "USD" },
+        "refundsFeeGross": { "amount": "-20.00", "currencyCode": "USD" },
+        "refundsFee": { "amount": "0.00", "currencyCode": "USD" },
+        "adjustmentsGross": { "amount": "0.00", "currencyCode": "USD" },
+        "adjustmentsFee": { "amount": "0.00", "currencyCode": "USD" },
+        "reservedFundsGross": { "amount": "0.00", "currencyCode": "USD" },
+        "retriedPayoutsGross": { "amount": "0.00", "currencyCode": "USD" }
+      }
+    }
+  },
+  {
+    "objectType": "BALANCE_TXN",
+    "node": {
+      "id": "gid://shopify/ShopifyPaymentsBalanceTransaction/9001",
+      "type": "CHARGE",
+      "amount": { "amount": "100.00", "currencyCode": "USD" },
+      "fee": { "amount": "3.00", "currencyCode": "USD" },
+      "net": { "amount": "97.00", "currencyCode": "USD" },
+      "transactionDate": "2026-02-01T10:00:05Z",
+      "sourceOrderTransactionId": "gid://shopify/OrderTransaction/7001",
+      "associatedPayout": { "id": "gid://shopify/ShopifyPaymentsPayout/5001" },
+      "associatedOrder": { "id": "gid://shopify/Order/1001", "name": "#1001" }
+    }
+  },
+  {
+    "objectType": "BALANCE_TXN",
+    "node": {
+      "id": "gid://shopify/ShopifyPaymentsBalanceTransaction/9002",
+      "type": "REFUND",
+      "amount": { "amount": "-20.00", "currencyCode": "USD" },
+      "fee": { "amount": "0.00", "currencyCode": "USD" },
+      "net": { "amount": "-20.00", "currencyCode": "USD" },
+      "transactionDate": "2026-02-03T12:00:00Z",
+      "sourceOrderTransactionId": "gid://shopify/OrderTransaction/7002",
+      "associatedPayout": { "id": "gid://shopify/ShopifyPaymentsPayout/5001" },
+      "associatedOrder": { "id": "gid://shopify/Order/1001", "name": "#1001" }
+    }
+  }
+]

@@ -1,0 +1,260 @@
+// shopify-read-function — dedicated Postgres for Shopify orders & payouts.
+//
+// Two layers:
+//   1. shopify_raw_event  — append-only diagnosis log (never updated/deleted).
+//   2. shop_*             — idempotent live tables, keyed on stable Shopify GIDs.
+//
+// Live tables are keyed on (store_id, Shopify GID): a GID is unique only WITHIN a
+// shop, so two stores can share the same gid string — the store_id disambiguates.
+// They reference each other by (store_id, gid) through plain indexed columns (NOT
+// enforced foreign keys). Because backfill starts at a cutover date, a balance
+// transaction can reference an order that predates the cutover and is therefore
+// absent; an enforced FK would reject that row. Links are resolved at query time.
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  runtime      = "nodejs"
+  moduleFormat = "esm"
+}
+
+enum ObjectType {
+  ORDER
+  PAYOUT
+  BALANCE_TXN
+  REFUND
+}
+
+enum EventSource {
+  BACKFILL
+  INCREMENTAL
+  HAND_LOADED
+  TEST_LOADED
+}
+
+enum SyncKind {
+  BACKFILL
+  INCREMENTAL
+  ADMIN // replay / reset-watermark operations (s-replay-function)
+}
+
+enum SyncStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  ABANDONED // process died before finishing; relabeled by the stale-run reaper
+}
+
+/// Append-only log of every node we ingest, however it arrived.
+/// `source` keeps hand/test-loaded rows permanently distinguishable from API data.
+model ShopifyRawEvent {
+  id              BigInt      @id @default(autoincrement())
+  storeId         String      @map("store_id")
+  objectType      ObjectType  @map("object_type")
+  shopifyGid      String      @map("shopify_gid")
+  shopifyLegacyId String?     @map("shopify_legacy_id")
+  occurredAt      DateTime?   @map("occurred_at")
+  fetchedAt       DateTime    @default(now()) @map("fetched_at")
+  source          EventSource
+  syncRunId       BigInt?     @map("sync_run_id")
+  payload         Json
+  payloadHash     String      @map("payload_hash")
+
+  @@index([objectType, shopifyGid])
+  @@index([syncRunId])
+  @@index([storeId, objectType, occurredAt])
+  @@map("shopify_raw_event")
+}
+
+/// Verbatim Bulk Operation result (the raw JSONL exactly as Shopify returned it), captured
+/// BEFORE reassembly. This is the durable pre-transform record for the backfill path: if the
+/// reassembly logic is later found wrong, the orders can be re-reassembled and re-projected
+/// from here without re-pulling from Shopify (see reingestBulkExports). Append-only.
+/// NOTE: the JSONL contains the same customer PII as shop_order — covered by the same
+/// retention/erasure policy decision.
+model ShopifyBulkExport {
+  id              BigInt      @id @default(autoincrement())
+  storeId         String      @map("store_id")
+  objectType      ObjectType  @map("object_type")
+  bulkOperationId String      @map("bulk_operation_id")
+  source          EventSource
+  syncRunId       BigInt?     @map("sync_run_id")
+  recordCount     Int         @map("record_count")
+  /// The raw JSONL body, verbatim. One JSON record per line (orders + flattened children).
+  jsonl           String
+  fetchedAt       DateTime    @default(now()) @map("fetched_at")
+
+  @@index([storeId, objectType, fetchedAt])
+  @@map("shopify_bulk_export")
+}
+
+/// One row per orchestrated sync run, for observability and watermark auditing.
+model SyncRun {
+  id           BigInt     @id @default(autoincrement())
+  storeId      String     @map("store_id")
+  kind         SyncKind
+  objectScope  String     @map("object_scope")
+  startedAt    DateTime   @default(now()) @map("started_at")
+  finishedAt   DateTime?  @map("finished_at")
+  status       SyncStatus @default(RUNNING)
+  cursorBefore String?    @map("cursor_before")
+  cursorAfter  String?    @map("cursor_after")
+  counts       Json?
+  error        String?
+  /// Who triggered this run and why. System runs (incremental/backfill) leave these null;
+  /// operator ADMIN runs (replay / reset-watermark) MUST set them for auditability.
+  actor        String?
+  reason       String?
+
+  @@index([storeId, kind, startedAt])
+  @@map("sync_run")
+}
+
+/// Registry of stores seen by this function. `store_id` stamped on every other
+/// table is the myshopifyDomain (the permanent *.myshopify.com subdomain), which is
+/// resolved from the Shopify API at sync start — never trusted from config. The GID
+/// and numeric id are Shopify's canonical identifiers, recorded here for reference.
+model Store {
+  myshopifyDomain String   @id @map("myshopify_domain")
+  shopGid         String   @unique @map("shop_gid")
+  numericId       String   @map("numeric_id")
+  name            String?
+  firstSeenAt     DateTime @default(now()) @map("first_seen_at")
+  lastSeenAt      DateTime @updatedAt @map("last_seen_at")
+
+  @@map("store")
+}
+
+/// Per (store, objectType) high-water mark + in-flight bulk operation state.
+model SyncState {
+  storeId                 String     @map("store_id")
+  objectType              ObjectType @map("object_type")
+  lastUpdatedAtProcessed  DateTime?  @map("last_updated_at_processed")
+  bulkOperationId         String?    @map("bulk_operation_id")
+  bulkStatus              String?    @map("bulk_status")
+  updatedAt               DateTime   @updatedAt @map("updated_at")
+
+  @@id([storeId, objectType])
+  @@map("sync_state")
+}
+
+model ShopOrder {
+  shopifyGid         String    @map("shopify_gid")
+  storeId            String    @map("store_id")
+  legacyId           String?   @map("legacy_id")
+  name               String?
+  customerEmail      String?   @map("customer_email")
+  customerName       String?   @map("customer_name")
+  financialStatus    String?   @map("financial_status")
+  fulfillmentStatus  String?   @map("fulfillment_status")
+  createdAt          DateTime? @map("created_at")
+  processedAt        DateTime? @map("processed_at")
+  updatedAt          DateTime? @map("updated_at")
+  cancelledAt        DateTime? @map("cancelled_at")
+  currency           String?
+  subtotalCents      Int       @default(0) @map("subtotal_cents")
+  shippingCents      Int       @default(0) @map("shipping_cents")
+  taxCents           Int       @default(0) @map("tax_cents")
+  discountCents      Int       @default(0) @map("discount_cents")
+  totalCents         Int       @default(0) @map("total_cents")
+  totalRefundedCents Int       @default(0) @map("total_refunded_cents")
+  test               Boolean   @default(false)
+  noteAttributes     Json?     @map("note_attributes")
+  /// Coupon codes applied at checkout, verbatim. Empty [] means "no codes" for rows
+  /// written after this shipped AND for pre-existing rows until a backfill re-pulls
+  /// them (scalar lists can't be null in Prisma, so absence isn't distinguishable —
+  /// the same backfill that fills variant ids fixes these).
+  discountCodes      String[]  @default([]) @map("discount_codes")
+  lastSyncedAt       DateTime  @default(now()) @map("last_synced_at")
+
+  @@id([storeId, shopifyGid])
+  @@index([storeId, legacyId])
+  @@index([storeId, name])
+  @@map("shop_order")
+}
+
+model ShopOrderLine {
+  lineGid           String  @map("line_gid")
+  orderGid          String  @map("order_gid")
+  storeId           String  @map("store_id")
+  sku               String?
+  title             String?
+  quantity          Int     @default(1)
+  /// ProductVariant GID. Null for custom/deleted-product lines, and for rows synced
+  /// before the variant columns shipped — a backfill run repopulates those.
+  variantGid        String? @map("variant_gid")
+  /// Numeric variant id — checkin's BoardSettings/Program shopify*VariantId join key,
+  /// which is what makes an order line attributable to a membership or program.
+  variantLegacyId   String? @map("variant_legacy_id")
+  priceCents        Int     @default(0) @map("price_cents")
+  discountCents     Int     @default(0) @map("discount_cents")
+  fulfillmentStatus String? @map("fulfillment_status")
+  removed           Boolean @default(false)
+
+  @@id([storeId, lineGid])
+  @@index([storeId, orderGid])
+  @@index([storeId, variantLegacyId])
+  @@map("shop_order_line")
+}
+
+model ShopRefund {
+  refundGid          String    @map("refund_gid")
+  orderGid           String    @map("order_gid")
+  storeId            String    @map("store_id")
+  createdAt          DateTime? @map("created_at")
+  totalRefundedCents Int       @default(0) @map("total_refunded_cents")
+  note               String?
+
+  @@id([storeId, refundGid])
+  @@index([storeId, orderGid])
+  @@map("shop_refund")
+}
+
+model ShopPayout {
+  payoutGid            String    @map("payout_gid")
+  storeId              String    @map("store_id")
+  legacyId             String?   @map("legacy_id")
+  issuedAt             DateTime? @map("issued_at")
+  status               String?
+  currency             String?
+  netCents             Int       @default(0) @map("net_cents")
+  chargesGrossCents    Int       @default(0) @map("charges_gross_cents")
+  chargesFeeCents      Int       @default(0) @map("charges_fee_cents")
+  refundsGrossCents    Int       @default(0) @map("refunds_gross_cents")
+  refundsFeeCents      Int       @default(0) @map("refunds_fee_cents")
+  adjustmentsGrossCents Int      @default(0) @map("adjustments_gross_cents")
+  adjustmentsFeeCents  Int       @default(0) @map("adjustments_fee_cents")
+  reservedFundsCents   Int       @default(0) @map("reserved_funds_cents")
+  retriedCents         Int       @default(0) @map("retried_cents")
+  lastSyncedAt         DateTime  @default(now()) @map("last_synced_at")
+
+  @@id([storeId, payoutGid])
+  @@index([storeId, legacyId])
+  @@index([storeId, issuedAt])
+  @@map("shop_payout")
+}
+
+/// The key table: each balance transaction carries both its payout and its order.
+/// All cents are SIGNED — refunds/adjustments within a payout are negative.
+model ShopBalanceTransaction {
+  txnGid                  String    @map("txn_gid")
+  storeId                 String    @map("store_id")
+  payoutGid               String?   @map("payout_gid")
+  orderGid                String?   @map("order_gid")
+  type                    String
+  amountCents             Int       @map("amount_cents")
+  feeCents                Int       @map("fee_cents")
+  netCents                Int       @map("net_cents")
+  currency                String?
+  transactionDate         DateTime? @map("transaction_date")
+  sourceOrderTransactionId String?  @map("source_order_transaction_id")
+
+  @@id([storeId, txnGid])
+  @@index([storeId, payoutGid])
+  @@index([storeId, orderGid])
+  @@map("shop_balance_transaction")
+}

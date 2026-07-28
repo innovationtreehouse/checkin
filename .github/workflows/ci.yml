@@ -4,15 +4,277 @@ on:
   push:
     branches:
       - main
+      # Deliberately NOT rel/** here: deploy-staging.yml calls this workflow
+      # directly via workflow_call (`validate`, mirroring how deploy-prod.yml
+      # revalidates a release tag) to gate the deploy on the exact commit being
+      # deployed. Also listing rel/** as a push trigger would run the entire
+      # pipeline a SECOND time on every rel/ push (once via this trigger, once
+      # via that workflow_call) for no benefit — the workflow_call already
+      # covers it. PRs targeting a rel/ branch still get checked below.
   pull_request:
     branches:
       - main
+      # A PR targeting a rel/ branch (e.g. a hotfix landing before a redeploy)
+      # gets the same lint/typecheck/test/migration-drift gate as one
+      # targeting main — this is the check staging exists to catch bad
+      # migrations with, so a rel/ branch can't merge changes around it.
+      - "rel/**"
   merge_group:
+  # Callable so the prod release flow can RE-RUN the full pipeline (tests + the
+  # deploy build/smoke) against the exact released tag before shipping — see
+  # deploy-prod.yml. `ref` is the tag/SHA to validate; empty (the default for
+  # push/PR/merge_group) means "the ref that triggered this run".
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref (tag or SHA) to check out and validate.'
+        type: string
+        required: false
+        default: ''
 
 jobs:
-  test:
-    name: Run Tests
+  # "Run Tests (unit)", "Run Tests (integration)", "Coverage gate (merged)", and
+  # "Deploy build (no deploy)" are REQUIRED status checks on main (the first three
+  # replace the single old "Run Tests" job — see the CAVEAT comment above
+  # `unit-tests` below: branch protection / merge-queue settings still say
+  # "Run Tests" and need a manual update, which this PR cannot make).
+  # The Python kiosk client (client/**) has no Node CI, so a client-only change has
+  # nothing to test — but skipping the workflow via `paths-ignore` left those required
+  # checks permanently "pending" and blocked client-only PRs from ever merging.
+  # Docs/markdown-only changes (docs/ dirs, or any *.md) are treated the same way:
+  # they can't affect the build or the app tests, so there's nothing to build or run.
+  #
+  # Fix: this job decides whether any real app code (not client/, not docs/markdown)
+  # changed. The required jobs
+  # below ALWAYS run (so the required contexts always report a result) but skip their
+  # actual work when only client/** changed. A skipped *workflow* deadlocks a required
+  # check; a job that runs and reports success does not.
+  changes:
+    name: Detect changes
     runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.detect.outputs.app }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
+          fetch-depth: 0
+
+      # Guards against a repeat of PR #791 (commit 5cf40d2a): .gitignore's
+      # "node_modules/" pattern is directory-only and doesn't match a symlink
+      # of that name, so `git add -A` from a worktree with a symlinked
+      # node_modules silently committed two symlinks pointing at an absolute
+      # host path. Turbopack then panicked in the flow-test docker job
+      # ("Symlink checkin-app/node_modules is invalid, it points out of the
+      # filesystem root"). Lives in this job (not `test`/`deploy-build`)
+      # because `changes` has no path-filter `if:` and always runs, checkout
+      # already happened above, and failing here is instant — no need to
+      # wait on npm ci / docker build to catch it.
+      - name: Check for committed symlinks
+        run: |
+          SYMLINKS=$(git ls-files -s | awk '$1 == "120000" {print $4}')
+          if [ -n "$SYMLINKS" ]; then
+            echo "::error::Committed symlink(s) found (mode 120000):"; echo "$SYMLINKS"
+            exit 1
+          fi
+
+      - id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          # Only a pull_request whose every changed file is skippable — client code
+          # (client/), a docs/ directory, or any *.md file — may skip the Node CI.
+          # push-to-main and merge_group always run the full pipeline.
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "Non-PR event ($EVENT_NAME) — running full CI."
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")"
+          echo "Changed files:"; printf '%s\n' "$changed"
+          # grep -v exits 0 if ANY line is NOT skippable (client/, a docs/ dir, or
+          # *.md) → there's real app code to build and test.
+          if printf '%s\n' "$changed" | grep -qvE '(^client/|(^|/)docs/|\.md$)'; then
+            echo "App code changed — running full CI."
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Docs- or client-only change — skipping Node CI work (required checks still pass)."
+            echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # CAVEAT (flagging, cannot fix from this PR): branch protection / merge-queue
+  # required-status-checks still list the single old job name "Run Tests".
+  # That setting must be updated by a repo admin to require the three job names
+  # below — "Run Tests (unit)", "Run Tests (integration)", "Coverage gate
+  # (merged)" — instead, or none of them will actually gate merges.
+  #
+  # Split from the old single `test` job (lint + typecheck + DB preflight +
+  # the FULL unit+integration suite with coverage, ~6m48s, of which
+  # `test:coverage` alone was ~297s) into unit-tests / integration-tests run in
+  # parallel, wall-clock ~= max(unit, integration), with coverage-gate merging
+  # both coverage-final.json outputs and enforcing the ONE real threshold once
+  # `test:coverage:unit` / `test:coverage:integration` are the sibling Jest-side
+  # contract (new npm scripts); each partial run sets SKIP_COVERAGE_THRESHOLD=1
+  # because neither tier alone comes close to the merged floor (unit-only lines
+  # coverage measured ~63%) — only coverage-gate's merged check enforces it.
+  # ---------------------------------------------------------------------------
+
+  unit-tests:
+    name: Run Tests (unit)
+    needs: changes
+    runs-on: ubuntu-latest
+    # Bound the job: the 2026-07-16 lock-wait hang burned a runner for 40+ min
+    # on the 6-hour default. Unit tier baseline is ~2-3 min end to end.
+    timeout-minutes: 15
+
+    # checks: write is required by dorny/test-reporter (publishes the JUnit
+    # results as a Check Run below); everything else defaults to the repo's
+    # standard read access.
+    permissions:
+      contents: read
+      checks: write
+
+    # No postgres service here — every step below (lint, typecheck, prisma
+    # generate incl. the security-classifications generator, route-coverage
+    # lint, and the unit Jest tier) works off schema.prisma / source files
+    # only and never opens a DB connection. See integration-tests for the
+    # steps that genuinely need a live Postgres.
+    steps:
+      - name: Skip notice (client-only change)
+        if: needs.changes.outputs.app != 'true'
+        run: echo "Only client/** changed — no Node CI to run; reporting success."
+
+      - name: Checkout code
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
+
+      - name: Setup Node.js
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: needs.changes.outputs.app == 'true'
+        run: npm ci
+
+      # Jest's own transform/haste cache. Keyed on the lockfile (invalidate on
+      # dependency changes) plus the exact commit, so a re-run of the same
+      # commit hits a warm cache; restore-keys drops the sha suffix so a NEW
+      # commit still falls back to the most recent same-lockfile cache instead
+      # of cold. Same key scheme in integration-tests below — two parallel jobs
+      # reading/writing the same key don't conflict (actions/cache no-ops a
+      # duplicate save with a warning, not a failure).
+      - name: Restore Jest cache
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/cache@v5
+        with:
+          path: checkin-app/.jest-cache
+          key: jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+
+      - name: Lint
+        if: needs.changes.outputs.app == 'true'
+        run: npm run lint
+
+      - name: Generate Prisma Client
+        if: needs.changes.outputs.app == 'true'
+        env:
+          # Inert placeholder: `prisma generate` only needs env("DATABASE_URL")
+          # to resolve syntactically in schema.prisma's datasource block — it
+          # never opens a connection. This job has no postgres service.
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: npm -w checkin-app exec -- prisma generate
+
+      # Fast type feedback. NOTE: tsc does NOT resolve bundler imports, so it
+      # misses failures that only `next build` catches (e.g. importing a deleted
+      # CSS module type-checks fine yet breaks the build). The full production
+      # build runs in the `deploy-build` job below.
+      - name: Type check
+        if: needs.changes.outputs.app == 'true'
+        run: npm -w checkin-app exec -- tsc --noEmit
+
+      # JUDGMENT CALL: relocated here from the old job's DB-preflight block
+      # (it used to run right after "Push Prisma Schema"). Read
+      # scripts/security-generator.js: the custom Prisma generator this step
+      # re-runs (`prisma generate` also runs the `generator security` block)
+      # operates purely on the parsed schema.prisma DMMF — `/// @sensitivity:`
+      # field comments — with zero DB I/O; the DATABASE_URL below is the same
+      # inert placeholder as "Generate Prisma Client" above. Unlike "Push
+      # Prisma Schema" (genuinely needs a live DB — stays in integration-tests
+      # below), this step's output is bit-identical with or without a real
+      # Postgres behind that URL, so it moved to the cheaper, DB-less job.
+      - name: Verify security classifications are up to date
+        if: needs.changes.outputs.app == 'true'
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
+        run: |
+          npm -w checkin-app exec -- prisma generate
+          git diff --exit-code checkin-app/src/security/generated/ || (echo 'checkin-app/src/security/generated/ is stale; run prisma generate locally and commit' && exit 1)
+
+      - name: Check route coverage (security policy lint)
+        if: needs.changes.outputs.app == 'true'
+        # --strict: errors fail the build (0 errors at flip time; warnings never
+        # fail). The new-route-old-authz ratchet would block even without
+        # --strict, but strict also arms direct-json / third-party-fetch /
+        # registry-drift as real gates.
+        run: npm run check-route-coverage -- --strict
+
+      # Full unit tier with coverage, no DB (sibling Jest-side contract).
+      # SKIP_COVERAGE_THRESHOLD=1 disables jest.config.js's coverageThreshold
+      # for this partial run — coverage-gate enforces the real floor once,
+      # after merging this with integration's coverage-final.json.
+      - name: Run unit tests with coverage
+        if: needs.changes.outputs.app == 'true'
+        env:
+          CI: true # jest.config.js only turns on the jest-junit reporter under CI
+          SKIP_COVERAGE_THRESHOLD: 1
+        run: npm run test:coverage:unit
+
+      # Publishes checkin-app/test-results/junit.xml (jest-junit, enabled above)
+      # as a Check Run: pass/fail/skip counts plus inline annotations on the
+      # failing test. `if: always()` so it still runs (and shows what failed)
+      # even when the test step above fails the job.
+      - name: Publish test results
+        if: always() && needs.changes.outputs.app == 'true'
+        uses: dorny/test-reporter@v3
+        with:
+          name: Jest Tests (unit)
+          path: checkin-app/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: false # the test step above already fails the job; don't fail it twice
+
+      # Feeds coverage-gate below. `if: always()` (and upload-artifact's own
+      # default if-no-files-found: warn) so a failed test step — which still
+      # writes coverage-final.json, jest writes coverage regardless of
+      # pass/fail — still hands off what it has; a hard crash before jest ever
+      # ran leaves nothing to upload, which is fine, this job is already red.
+      - name: Upload unit coverage artifact
+        if: always() && needs.changes.outputs.app == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-unit
+          path: checkin-app/coverage/coverage-final.json
+          if-no-files-found: warn
+
+  integration-tests:
+    name: Run Tests (integration)
+    needs: changes
+    runs-on: ubuntu-latest
+    # See unit-tests: same bound reasoning; DB tier gets more headroom.
+    timeout-minutes: 25
+
+    permissions:
+      contents: read
+      checks: write
 
     services:
       postgres:
@@ -30,29 +292,371 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Skip notice (client-only change)
+        if: needs.changes.outputs.app != 'true'
+        run: echo "Only client/** changed — no Node CI to run; reporting success."
+
       - name: Checkout code
-        uses: actions/checkout@v4
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
 
       - name: Install dependencies
+        if: needs.changes.outputs.app == 'true'
         run: npm ci
 
+      # Same cache, same key scheme as unit-tests above.
+      - name: Restore Jest cache
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/cache@v5
+        with:
+          path: checkin-app/.jest-cache
+          key: jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+
       - name: Generate Prisma Client
+        if: needs.changes.outputs.app == 'true'
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
-        run: npx prisma generate
+        run: npm -w checkin-app exec -- prisma generate
 
+      # Tests run on `db push` (full schema), deploys run on `migrate deploy`
+      # (only committed migrations) — so a schema change without a migration
+      # passes CI and then breaks the deployed app (P2022 at runtime). Replay
+      # the migrations onto a clean DB and require zero diff vs schema.prisma.
+      # Genuinely needs a live DB (migrate deploy applies to a real database) —
+      # stays here.
+      - name: Check migrations match schema (no drift)
+        if: needs.changes.outputs.app == 'true'
+        env:
+          DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/drift_check"
+          PGPASSWORD: testpassword
+        run: |
+          psql -h localhost -U testuser -d checkmein_test -c 'CREATE DATABASE drift_check'
+          npm -w checkin-app exec -- prisma migrate deploy
+          npm -w checkin-app exec -- prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      # Genuinely needs a live DB: `db push` diffs schema.prisma against the
+      # actual connected database and applies DDL — stays here (unlike
+      # "Verify security classifications", which moved to unit-tests; see the
+      # judgment-call comment there).
       - name: Push Prisma Schema
+        if: needs.changes.outputs.app == 'true'
         env:
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
-        run: npx prisma db push --accept-data-loss
+        run: npm -w checkin-app exec -- prisma db push --accept-data-loss
 
-      - name: Run Jest Tests
+      # Runs every *.integration.test.ts (scanAuth, scanCheckin,
+      # policy.contract, …) against the test Postgres, with coverage
+      # (sibling Jest-side contract). SKIP_COVERAGE_THRESHOLD=1 — see
+      # unit-tests above; coverage-gate enforces the real floor once, merged.
+      - name: Run integration tests with coverage
+        if: needs.changes.outputs.app == 'true'
         env:
+          CI: true # jest.config.js only turns on the jest-junit reporter under CI
           DATABASE_URL: "postgresql://testuser:testpassword@localhost:5432/checkmein_test"
-        run: npm run test:ci
+          SKIP_COVERAGE_THRESHOLD: 1
+        run: npm run test:coverage:integration
+
+      - name: Publish test results
+        if: always() && needs.changes.outputs.app == 'true'
+        uses: dorny/test-reporter@v3
+        with:
+          name: Jest Tests (integration)
+          path: checkin-app/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: false # the test step above already fails the job; don't fail it twice
+
+      - name: Upload integration coverage artifact
+        if: always() && needs.changes.outputs.app == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-integration
+          path: checkin-app/coverage/coverage-final.json
+          if-no-files-found: warn
+
+  # Merges unit-tests' and integration-tests' coverage-final.json (istanbul
+  # json, sibling Jest-side contract) into one report and enforces the ONE
+  # real coverage floor — replacing the per-job coverageThreshold that each
+  # partial job above explicitly disabled.
+  coverage-gate:
+    name: Coverage gate (merged)
+    needs: [changes, unit-tests, integration-tests]
+    # always() ALONE at job level: a real test failure upstream already fails
+    # that job, but this required check must still report its own read on
+    # whatever coverage was produced — and on a client-only PR it must report
+    # SUCCESS (via the skip-notice step, like every other job here), not
+    # `skipped`. Gating the whole job on `app == 'true'` would skip it and
+    # dead-code the skip-notice step; the per-step guards below do that work.
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Skip notice (client-only change)
+        if: needs.changes.outputs.app != 'true'
+        run: echo "Only client/** changed — no coverage to gate; reporting success."
+
+      # No checkout: nothing here reads repo source, only the two coverage
+      # artifacts (below) and node/npx. That also means no `cache: npm` on
+      # setup-node — that cache needs a lockfile to hash and none is checked
+      # out in this job.
+      - name: Setup Node.js
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      # continue-on-error: true so ONE missing artifact (its job crashed
+      # before ever reaching the upload step) doesn't abort this sequence
+      # before the OTHER tier's download is even attempted — a failed
+      # unit-tests upload must not hide integration's real, present results,
+      # and vice versa. "Verify both coverage artifacts are present" below
+      # turns a missing file into one clear, attributable error instead of a
+      # bare download-artifact stack trace.
+      - name: Download unit coverage artifact
+        if: needs.changes.outputs.app == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-unit
+          path: coverage-artifacts/unit
+
+      - name: Download integration coverage artifact
+        if: needs.changes.outputs.app == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: coverage-integration
+          path: coverage-artifacts/integration
+
+      # The gate must fail loudly here, not mask a missing artifact by letting
+      # `nyc merge` fail on it with a cryptic "no such file" instead. Also
+      # distinguishes "that job failed, of course its coverage is missing"
+      # (already visible via that job's own red status — not this job's job
+      # to repeat) from "that job reported success but never uploaded
+      # anything" (a real bug in this workflow worth calling out distinctly).
+      - name: Verify both coverage artifacts are present
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          ok=1
+          if [ ! -f coverage-artifacts/unit/coverage-final.json ]; then
+            if [ "${{ needs.unit-tests.result }}" = "success" ]; then
+              echo "::error::unit-tests reported success but the coverage-unit artifact is missing — check its Upload step."
+            else
+              echo "::error::unit-tests did not succeed (result=${{ needs.unit-tests.result }}); no unit coverage to merge — see that job's own logs."
+            fi
+            ok=0
+          fi
+          if [ ! -f coverage-artifacts/integration/coverage-final.json ]; then
+            if [ "${{ needs.integration-tests.result }}" = "success" ]; then
+              echo "::error::integration-tests reported success but the coverage-integration artifact is missing — check its Upload step."
+            else
+              echo "::error::integration-tests did not succeed (result=${{ needs.integration-tests.result }}); no integration coverage to merge — see that job's own logs."
+            fi
+            ok=0
+          fi
+          [ "$ok" = "1" ]
+
+      - name: Merge coverage
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p coverage-artifacts/both merged merged-report
+          cp coverage-artifacts/unit/coverage-final.json coverage-artifacts/both/coverage-final-unit.json
+          cp coverage-artifacts/integration/coverage-final.json coverage-artifacts/both/coverage-final-integration.json
+          npx -y nyc merge coverage-artifacts/both merged/coverage-final.json
+          # --temp-dir points at the SAME dir the merge line just wrote into;
+          # `nyc report` treats every *.json under --temp-dir as an istanbul
+          # coverage map and merges them (a no-op merge here, one file) before
+          # reporting — this produces the coverage-summary.json used below.
+          # Do NOT also pass -t: it's an alias for --temp-dir, and yargs turns
+          # two occurrences of the same option into an array, which breaks
+          # nyc's internal path handling (confirmed by hand against nyc 18).
+          npx -y nyc report --temp-dir merged --reporter=json-summary --reporter=text-summary --report-dir merged-report
+
+      # Same floors as checkin-app/jest.config.js `coverageThreshold.global`
+      # (lines 85 / branches 75 / functions 75 — that object has no
+      # `statements` entry, so none here either). MUST-MATCH: change both
+      # together, or this gate silently drifts from what jest.config.js
+      # actually declares.
+      #
+      # Not derived at runtime: jest.config.js's export is `module.exports =
+      # async () => {...}`, composed through next/jest (loads next.config.js
+      # / .env, requires `next` to be installed) — extracting the numbers
+      # that way would mean checking out the repo and running `npm ci` in
+      # this job, which defeats the point of a fast, checkout-less gate.
+      # Hardcoded instead and read straight from that file above.
+      - name: Enforce merged coverage threshold
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          set -euo pipefail
+          # Guard the silent-zero failure mode first: nyc filters files outside
+          # its cwd, so a workspace-path mismatch between the test jobs and this
+          # job would report 0/0 and check-coverage would PASS an empty report
+          # (verified by running this pipeline from a foreign cwd). Refuse it.
+          TOTAL=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("merged-report/coverage-summary.json","utf8")).total.lines.total)')
+          if [ "$TOTAL" = "0" ]; then
+            echo "::error::merged coverage contains zero lines — path mismatch between the test jobs' workspaces and this gate; refusing to pass an empty report."
+            exit 1
+          fi
+          npx -y nyc check-coverage --temp-dir merged --lines 85 --branches 75 --functions 75
+
+      # Coverage summary on the run's own Summary page — reuses the old `test`
+      # job's script, pointed at the merged report instead of a single tier's
+      # coverage-summary.json. `if: always()` so it still renders whatever the
+      # merge/report step produced even if the threshold step above failed.
+      - name: Coverage summary
+        if: always() && needs.changes.outputs.app == 'true'
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = "merged-report/coverage-summary.json";
+            if (!fs.existsSync(path)) { console.log("No merged coverage-summary.json — the merge/report step likely failed before this ran."); process.exit(0); }
+            const t = JSON.parse(fs.readFileSync(path, "utf8")).total;
+            // MUST-MATCH checkin-app/jest.config.js coverageThreshold.global — see the enforcement step above.
+            const floor = { lines: 85, branches: 75, functions: 75 };
+            const mark = (k) => (floor[k] === undefined ? "" : t[k].pct >= floor[k] ? " ✅" : " ❌");
+            const lines = [
+              "### Coverage (merged unit + integration)",
+              "| Metric | Covered / Total | % |",
+              "|---|---:|---:|",
+              ...["lines", "statements", "branches", "functions"].map(
+                (k) => `| ${k} | ${t[k].covered}/${t[k].total} | ${t[k].pct}%${mark(k)} |`
+              ),
+              "",
+              "Gate (jest.config.js coverageThreshold): lines ≥85%, branches ≥75%, functions ≥75%.",
+            ];
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+          '
+
+  # Build the exact production image the dev deploy uses (Dockerfile -> `npm run build`),
+  # but never push or deploy it. The deploy flow's build was previously only exercised on
+  # push to main, so build-only failures (e.g. a Turbopack "module not found" that tsc can't
+  # see) slipped through CI and broke the post-merge deploy. Building here gates the MR.
+  # It ALSO boots the built image and probes `/` (smoke test) — `docker build` alone can't
+  # catch a runtime crash on startup, which only surfaced post-merge as a hung ECS rollout.
+  # The s-read workspaces (s-read-function + s-ingest-core vitest suites) were
+  # invisible to CI — the `test` job runs only checkin-app's jest, so a failing
+  # s-read test could merge green (and nearly did: PR #992's first push carried
+  # a failing normalize test behind all-green checks). Same always-report
+  # pattern as `test` so this can be added as a required check.
+  s-read-tests:
+    name: s-read tests
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notice (client-only change)
+        if: needs.changes.outputs.app != 'true'
+        run: echo "Only client/** changed — nothing to test; reporting success."
+
+      - name: Checkout code
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
+
+      - name: Setup Node.js
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: needs.changes.outputs.app == 'true'
+        run: npm ci
+
+      # prisma generate only writes clients — no database needed. Both s-read
+      # packages' generated clients are imported by the code under test.
+      - name: Generate Prisma clients
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          npm run db:generate -w @inventory/s-ingest-core
+          npm run db:generate -w @inventory/monitoring-db
+
+      - name: Typecheck s-read-function
+        if: needs.changes.outputs.app == 'true'
+        run: npm run typecheck -w s-read-function
+
+      - name: Test s-ingest-core
+        if: needs.changes.outputs.app == 'true'
+        run: npm test -w @inventory/s-ingest-core
+
+      - name: Test s-read-function
+        if: needs.changes.outputs.app == 'true'
+        run: npm test -w s-read-function
+
+  deploy-build:
+    name: Deploy build (no deploy)
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip notice (client-only change)
+        if: needs.changes.outputs.app != 'true'
+        run: echo "Only client/** changed — no deploy build to run; reporting success."
+
+      - name: Checkout code
+        if: needs.changes.outputs.app == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
+
+      # Mirrors deploy-dev.yml's build step minus `docker push`. Architecture is irrelevant
+      # (the image is discarded), so the default x64 runner is fine — the deploy builds arm64
+      # on its own runner for ECS.
+      - name: Build deploy image (no push)
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          docker build \
+            -f checkin-app/Dockerfile \
+            -t checkin-deploy-build:${{ github.sha }} .
+
+      # Actually RUN the image: it must boot and serve `/` (mirrors the ALB health
+      # check, which accepts 200-399 for the app's auth redirect). Placeholder env,
+      # no DB — `/` is reachable without one. This catches a startup crash that the
+      # build can't, before the change can merge and hang the post-merge rollout.
+      - name: Smoke test — boot the app and probe /
+        if: needs.changes.outputs.app == 'true'
+        run: |
+          set -uo pipefail
+          docker run -d --name checkin-smoke -p 4000:4000 \
+            -e NODE_ENV=production -e PORT=4000 -e HOSTNAME=0.0.0.0 \
+            -e DATABASE_URL='postgresql://u:p@127.0.0.1:5432/db?sslmode=disable' \
+            -e NEXTAUTH_URL='http://127.0.0.1:4000' -e AUTH_TRUST_HOST=true -e NEXTAUTH_SECRET=smoke \
+            -e CHECKIN_ENV=dev -e AWS_REGION=us-east-2 \
+            checkin-deploy-build:${{ github.sha }}
+
+          ok=
+          for i in $(seq 1 30); do
+            if [ -z "$(docker ps -q -f name=checkin-smoke -f status=running)" ]; then
+              echo "container is no longer running"; break
+            fi
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4000/ || echo 000)
+            case "$code" in
+              2??|3??) echo "app booted — GET / -> $code"; ok=1; break ;;
+            esac
+            sleep 2
+          done
+
+          echo "----- container logs (tail) -----"
+          docker logs checkin-smoke 2>&1 | tail -50 || true
+          docker rm -f checkin-smoke >/dev/null 2>&1 || true
+          [ -n "$ok" ] || { echo "::error::checkin app failed to boot / serve \"/\" within ~60s"; exit 1; }
+
+          # The migrate ECS task runs `npx prisma migrate deploy` in this same
+          # image; --no-install proves the lockfile-exact CLI is IN the image
+          # (a bare npx would silently download from the registry and mask a
+          # broken COPY closure — the exact regression this guards).
+          docker run --rm --entrypoint sh checkin-deploy-build:${{ github.sha }} \
+            -c 'cd checkin-app && npx --no-install prisma --version' \
+            || { echo "::error::prisma CLI is not resolvable inside the image — the migrate task would fall back to a registry download"; exit 1; }

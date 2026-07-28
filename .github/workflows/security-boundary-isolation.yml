@@ -1,0 +1,130 @@
+name: Security boundary isolation
+
+# The security layer (checkin-app/src/security/) exists to make the data
+# policy EASY TO AUDIT — it is not a replacement for careful management of
+# the routes themselves. To keep that audit meaningful, a change to the
+# boundary (registry grants, token grammar, handler runtime, stripper, scope
+# bindings, or a re-tier of an EXISTING field's @sensitivity) must land in
+# its own PR: a widening or narrowing of what data leaves the server should
+# never be buried inside a feature diff.
+#
+# What this enforces, mechanically:
+#   - If the PR touches any boundary file (src/security/** excluding
+#     generated/, or scripts/security-generator.js), every other changed file
+#     must be a test, doc, schema annotation, or this workflow itself.
+#   - If the PR re-tiers an existing field (the generated classifications
+#     diff shows the same field moving between tiers), the same isolation
+#     applies. Purely ADDITIVE classification changes (new models/fields from
+#     normal feature work) are exempt — annotating a new column is not a
+#     boundary change to existing data.
+#
+# The sanctioned flow for a new registered route: land the registry entry in
+# its own PR first (a defineRoute for an endpoint nothing serves yet is
+# inert), then land the route handler in the feature PR.
+on:
+  pull_request:
+    # pull_request triggers evaluate against the BASE branch's workflow file,
+    # so this must exist on both main (every future rel/* cut inherits it)
+    # and rel/1.0 (so current release-line PRs get checks).
+    branches: [main, 'rel/**']
+  # If `isolation` is a REQUIRED check, the merge queue expects it on the
+  # merge_group ref too — without this trigger no run is dispatched, the
+  # context never reports, and the queue entry hangs forever. The isolation
+  # policy is a PR-shape concern (changed files vs base); the queued PRs are
+  # already reviewed and there's no pull_request base SHA here, so this event
+  # short-circuits to success below.
+  merge_group:
+
+jobs:
+  isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip on merge queue (already enforced on the PR)
+        if: github.event_name == 'merge_group'
+        run: echo "merge_group event — isolation already checked on the PR; nothing to do."
+
+      - uses: actions/checkout@v5
+        if: github.event_name != 'merge_group'
+        with:
+          fetch-depth: 0
+
+      - name: Check boundary changes ship alone
+        if: github.event_name != 'merge_group'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
+          mapfile -t CHANGED < <(git diff --name-only "$BASE_SHA"...HEAD)
+          [ "${#CHANGED[@]}" -eq 0 ] && { echo "No changes."; exit 0; }
+
+          is_boundary() { # policy/runtime files — the security boundary itself
+            case "$1" in
+              checkin-app/src/security/generated/*) return 1 ;;
+              checkin-app/src/security/*) return 0 ;;
+              checkin-app/scripts/security-generator.js) return 0 ;;
+            esac
+            return 1
+          }
+          is_companion() { # allowed to accompany a boundary change
+            case "$1" in
+              checkin-app/src/security/*) return 0 ;;                # incl. generated
+              checkin-app/tests/security/*) return 0 ;;
+              */__tests__/*|*.test.ts|*.test.tsx|*.spec.ts) return 0 ;;
+              checkin-app/prisma/schema.prisma) return 0 ;;          # @sensitivity annotations
+              docs/*|*/docs/*|*.md) return 0 ;;
+              .github/CODEOWNERS) return 0 ;;
+              .github/workflows/security-boundary-isolation.yml) return 0 ;;
+            esac
+            return 1
+          }
+
+          BOUNDARY_TOUCHED=0
+          for f in "${CHANGED[@]}"; do
+            if is_boundary "$f"; then BOUNDARY_TOUCHED=1; fi
+          done
+
+          # Re-tier detection: an existing field moving between tiers in the
+          # generated classifications. Pure additions (new fields/models) pass.
+          RETIER=""
+          CLS=checkin-app/src/security/generated/classifications.ts
+          if printf '%s\n' "${CHANGED[@]}" | grep -qx "$CLS"; then
+            DIFF=$(git diff "$BASE_SHA"...HEAD -- "$CLS")
+            # `|| true`: under set -euo pipefail, grep's exit 1 on zero matches
+            # would kill the script mid-step with no verdict — which failed every
+            # PR whose classifications diff was PURELY ADDITIVE (the exact case
+            # the comment above exempts; first hit by checkin#1021).
+            REMOVED=$(echo "$DIFF" | grep -E "^-\s+\w+: '" | sed -E "s/^-\s+(\w+): '(\w+)'.*/\1 \2/" | sort -u || true)
+            ADDED=$(echo "$DIFF"   | grep -E "^\+\s+\w+: '" | sed -E "s/^\+\s+(\w+): '(\w+)'.*/\1 \2/" | sort -u || true)
+            while read -r field oldtier; do
+              [ -z "$field" ] && continue
+              newtier=$(echo "$ADDED" | awk -v f="$field" '$1 == f { print $2 }' | head -1)
+              if [ -n "$newtier" ] && [ "$newtier" != "$oldtier" ]; then
+                RETIER="$RETIER $field:$oldtier->$newtier"
+              fi
+            done <<< "$REMOVED"
+          fi
+          [ -n "$RETIER" ] && BOUNDARY_TOUCHED=1
+
+          if [ "$BOUNDARY_TOUCHED" -eq 0 ]; then
+            echo "No security-boundary changes in this PR — nothing to isolate."
+            exit 0
+          fi
+
+          VIOLATIONS=()
+          for f in "${CHANGED[@]}"; do
+            is_companion "$f" || VIOLATIONS+=("$f")
+          done
+
+          if [ "${#VIOLATIONS[@]}" -gt 0 ]; then
+            echo "::error::This PR changes the security boundary and must ship it ALONE."
+            [ -n "$RETIER" ] && echo "::error::Re-tiered existing fields:$RETIER"
+            echo "Boundary changes (registry grants, token grammar, handler/stripper,"
+            echo "or re-tiers of existing fields) must land in their own PR so the"
+            echo "widening/narrowing is an isolated, reviewable unit. Move these files"
+            echo "to a separate PR (registry-first for new routes — an unused"
+            echo "defineRoute is inert):"
+            printf '  %s\n' "${VIOLATIONS[@]}"
+            exit 1
+          fi
+          echo "Boundary change is properly isolated (companions: tests/docs/schema only)."

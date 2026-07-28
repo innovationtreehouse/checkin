@@ -1,0 +1,25 @@
+/*
+ * Global styles. The visual system is provided by Mantine (see src/lib/theme.ts and the
+ * `@mantine/core/styles.css` import in layout.tsx). Keep this file minimal — only app-wide
+ * resets that Mantine doesn't already cover.
+ */
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+/* Kiosk display runs unattended on a Raspberry Pi — never show a pointer there. */
+.kiosk-mode,
+.kiosk-mode * {
+  cursor: none !important;
+}
+
+/* Mantine's default NavLink hover fill is near-white — invisible under the white
+   labels on the purple sidebar. Own the hover here rather than overriding Mantine's
+   internal hover token, which has changed name across versions. Attached via
+   classNames in AppFrame.tsx (colored sidebar only). */
+.appframe-sidebar-navlink:not([data-active]):hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}

@@ -1,7 +1,9 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# dependencies (hoisted root tree + any per-workspace node_modules)
+# no trailing slash: also matches node_modules when it's a symlink (e.g.
+# worktree dev setups), which a directory-only "node_modules/" pattern misses
+node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,20 +13,25 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage/
+test-results/
+.jest-cache
 
 # next.js
-/.next/
-/out/
+.next/
+out/
 
 # production
-/build
+build/
 
 # misc
 .DS_Store
 *.pem
 
-# debug
+# debug / runtime artifacts (never commit these)
+*.log
+*.pid
+lint*output*.txt
 dev_server.log
 dev_server.pid
 npm-debug.log*
@@ -42,4 +49,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-/src/generated/prisma
+checkin-app/src/generated/prisma
+
+# kiosk client secrets (belt-and-suspenders; client/.gitignore also covers these)
+client/client.key
+client/config.json

@@ -1,0 +1,96 @@
+name: Deploy s-read
+
+# Thin wrapper around the reusable `.github/actions/deploy-s-read` composite
+# action (which holds all the build/register/migrate logic). Two entry points:
+#
+#   • workflow_dispatch — ad-hoc deploy of one env (dev | prod), run deliberately
+#     after the change has merged and CI is green on main. A prod dispatch keeps
+#     its own `environment: production` approval gate below.
+#   • workflow_call — used by deploy-dev.yml (environment: dev) so every DEV app
+#     deploy also ships its s-read counterpart. PROD does NOT call this workflow:
+#     deploy-prod.yml runs the same composite action inside its already-approved
+#     app-deploy job, so a prod release takes ONE approval, not two (that was the
+#     whole point of extracting the composite).
+#
+# Builds the container image, pushes it to ghcr.io (ONE image repo shared by both
+# envs — envs differ only in config/secrets, never in code), registers new
+# revisions of BOTH task-def families, and (in migrate-and-code mode) runs the
+# migration task in between. There is no ECS service to roll: the schedule runs
+# tasks against the revision-less s-read-<env>-sync family ARN, so it uses the
+# latest ACTIVE revision on its next tick — no terraform involved.
+#
+# AWS auth (GitHub OIDC) uses the per-env checkin-deploy-<env> role; infra wires
+# PassRole on both envs' s-read task roles onto both checkin deploy roles. The
+# dev role's trust is pinned to refs/heads/main, so a dev dispatch/call MUST come
+# from main; the prod role additionally requires `environment: production` (the
+# gate below). Infra preconditions (per env: cluster, both task-def families with
+# ghcr repositoryCredentials, the trigger Lambda + schedule, secret shells + IAM;
+# secret VALUES via the bootstrap task + Shopify creds by hand; repo variable
+# S_READ_NETWORK_CONFIG set) are unchanged — see s-read-function/DEPLOY.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "s-read environment"
+        type: choice
+        options:
+          - dev
+          - prod
+        default: dev
+      mode:
+        description: "Deploy mode"
+        type: choice
+        options:
+          - migrate-and-code
+          - code-only
+        default: migrate-and-code
+  workflow_call:
+    inputs:
+      environment:
+        description: "s-read environment (dev | prod)"
+        type: string
+        required: true
+      mode:
+        description: "Deploy mode (migrate-and-code | code-only)"
+        type: string
+        default: migrate-and-code
+      ref:
+        description: "Commit/tag to build; empty = the triggering commit"
+        type: string
+        default: ""
+
+permissions:
+  id-token: write   # assume the deploy role via OIDC
+  contents: read    # checkout
+  packages: write   # push the image to ghcr.io
+
+concurrency:
+  group: s-read-deploy-${{ inputs.environment }}
+  cancel-in-progress: false  # serialize deploys per env; never abandon one mid-flight
+
+jobs:
+  deploy:
+    name: Build, push, migrate, register (${{ inputs.environment }})
+    runs-on: ubuntu-24.04-arm  # native ARM64 — the task defs are arm64 (runtime_platform)
+    # prod dispatch rides the production environment gate (human approval + the
+    # OIDC sub the prod role trusts). dev: no environment — the dev role's trust
+    # is the bare main-ref sub, so the dev path must carry NO environment (an
+    # empty name means none).
+    environment: ${{ inputs.environment == 'prod' && 'production' || '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          # Empty on dispatch = the triggering commit; deploy-dev passes the
+          # deployed app commit so app and s-read ship the same tree. Checked
+          # out here so the local composite action is on disk and builds the
+          # right ref.
+          ref: ${{ inputs.ref || '' }}
+
+      - name: Deploy s-read
+        uses: ./.github/actions/deploy-s-read
+        with:
+          environment: ${{ inputs.environment }}
+          mode: ${{ inputs.mode }}
+          network-config: ${{ vars.S_READ_NETWORK_CONFIG }}

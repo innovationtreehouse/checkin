@@ -1,0 +1,38 @@
+# Files in this list require maintainer approval to change. They are the
+# "trust anchors" of the security policy layer — what data leaves the server,
+# to which role, through which channel. A contributor PR that touches these
+# files cannot merge without review.
+#
+# DO NOT remove paths from this file without understanding which guarantee
+# you are weakening. See docs/SECURITY-POLICY.md.
+
+# NOTE: paths were root-anchored from Sprint 1 (#140) while the app lives
+# under /checkin-app — root-anchored patterns matched NOTHING, so none of
+# these gates were active until the prefix fix below (2026-07-19).
+
+# Schema annotations — the source of truth for field sensitivity.
+/checkin-app/prisma/schema.prisma                 @dkaygithub @jee7s @thpr
+
+# The policy layer itself.
+/checkin-app/src/security/                        @dkaygithub @jee7s @thpr
+
+# Authentication & session machinery.
+/checkin-app/src/lib/auth.ts                      @dkaygithub @jee7s @thpr
+/checkin-app/src/lib/auth-options.ts              @dkaygithub @jee7s @thpr
+
+# Contract tests that enforce the policy in CI.
+/checkin-app/tests/security/                      @dkaygithub @jee7s @thpr
+
+# CODEOWNERS itself and CI workflows — without protecting these, the rest
+# can be quietly disabled in a PR you'd never see.
+/.github/                             @dkaygithub @jee7s @thpr
+
+# The CI lint and the codegen — bypass routes if changed.
+/checkin-app/scripts/check-route-coverage.ts      @dkaygithub @jee7s @thpr
+/checkin-app/scripts/security-generator.js        @dkaygithub @jee7s @thpr
+/checkin-app/scripts/migrated-routes.txt          @dkaygithub @jee7s @thpr
+/checkin-app/scripts/legacy-authz-routes.txt      @dkaygithub @jee7s @thpr
+/checkin-app/scripts/tsconfig.json                @dkaygithub @jee7s @thpr
+
+# Git hooks.
+/.husky/                              @dkaygithub @jee7s @thpr

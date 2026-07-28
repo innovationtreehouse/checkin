@@ -1,0 +1,475 @@
+"use client";
+
+import { useState, useEffect, useCallback, Suspense } from "react";
+import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { AlertBanner } from "@/components/admin/AlertBanner";
+import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
+import { useSession } from "next-auth/react";
+import { notifyNavRefresh } from "@/lib/nav-refresh";
+import { sharesHousehold } from "@/lib/conflictOfInterest";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { StatusFilterBadge, ActiveFilterNotice, useStatusFilter } from "@/components/StatusFilter";
+import { awaitingBgReview, type ProcessStatus } from "@/lib/membership/lifecycle";
+
+interface Person {
+  id: number;
+  name: string | null;
+  email: string | null;
+  isHouseholdLead: boolean;
+}
+interface Attestation {
+  id: number;
+  result: string;
+  isMarkedVolunteer: boolean;
+}
+interface ProcessRow {
+  id: number;
+  kind: string;
+  status: string;
+  createdAt: string;
+  zohoEnvelopeId: string | null;
+  contractSignedAt: string | null;
+  bgConsentAt: string | null;
+  bgClearedAt: string | null;
+  paidAt: string | null;
+  attestations: Attestation[];
+  orgMembership: {
+    householdId: number;
+    isVolunteer: boolean;
+    household: { name: string | null; householdMembers: Person[] } | null;
+  } | null;
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  INTAKE: "gray",
+  PENDING_EXTERNAL_ACTION: "blue",
+  PENDING_BG_REVIEW: "grape",
+  PENDING_PAYMENT: "orange",
+  PENDING_BG_CLEARANCE: "grape",
+  BLOCKED: "red",
+  PENDING_RENEWAL: "teal",
+  RENEWAL_PENDING_BG: "grape",
+};
+
+const statusColor = (status: string) => STATUS_COLORS[status] || "gray";
+const statusLabel = (status: string) => status.replace(/_/g, " ");
+
+// The background check is a parallel track: an application still needs review
+// when it hasn't cleared and is past consent. ONE definition, shared with the
+// server (fix #1): awaitingBgReview.has — client-safe (booleans in, no Prisma).
+const awaitingBg = (r: ProcessRow) =>
+  awaitingBgReview.has({ status: r.status as ProcessStatus, bgConsentAt: !!r.bgConsentAt, bgClearedAt: !!r.bgClearedAt });
+
+export default function AdminMembershipPage() {
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <ApplicationsBoard />
+    </Suspense>
+  );
+}
+
+function ApplicationsBoard() {
+  const { data: session } = useSession();
+  const me = session?.user;
+  // Conflict of interest: a board member may not certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked). Sysadmin
+  // is the deliberate remedy and keeps the buttons. The disabled state is UX only — the
+  // server is the real enforcement.
+  const ownHousehold = (r: ProcessRow) =>
+    me?.isSysadmin !== true && sharesHousehold(me?.householdId, r.orgMembership?.householdId);
+  const [rows, setRows] = useState<ProcessRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
+  const [messageId, setMessageId] = useState<number | null>(null);
+  const { active, toggle, clear } = useStatusFilter();
+  const [certifyOpened, { open: openCertify, close: closeCertify }] = useDisclosure(false);
+  const [pendingCertify, setPendingCertify] = useState<number | null>(null);
+  const [certifyReason, setCertifyReason] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+
+  const load = useCallback(async (archived: boolean) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/membership-ops/applications${archived ? "?archived=1" : ""}`);
+      if (res.ok) {
+        const data = await res.json();
+        setRows(data.processes || []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(showArchived); }, [load, showArchived]);
+
+  const act = async (processId: number, action: string, extra?: Record<string, unknown>) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/external", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId, action, ...extra }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ message: "Updated." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else {
+        setMessage(data.error || "Action failed.");
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const override = async (processId: number, action: "reset" | "approve") => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/review-override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId, action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ message: action === "reset" ? "Sent back for re-review." : "Overridden to payment." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else if (data.code === "wrong_phase") {
+        notifications.show({ color: "red", message: data.error || "This application is no longer blocked.", autoClose: 4000 });
+        await load(showArchived);
+      } else {
+        setMessage(data.error || "Override failed.");
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const archive = async (processId: number) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ message: "Application archived." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else {
+        setMessage(data.error || "Archive failed.");
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Disposing an abandoned application removes it from the board list. Confirm
+  // because it's a deliberate cleanup action (kept in the audit log, not deleted).
+  const confirmArchive = (r: ProcessRow) => {
+    modals.openConfirmModal({
+      title: "Archive this application?",
+      children: (
+        <Text size="sm">
+          This removes <strong>{householdLabel(r)}</strong> (application #{r.id}) from the board list.
+          A record is kept in the audit log. Only do this for abandoned applications.
+        </Text>
+      ),
+      labels: { confirm: "Archive", cancel: "Cancel" },
+      confirmProps: { color: "red" },
+      onConfirm: () => archive(r.id),
+    });
+  };
+
+  // Board recovery of a wrongly-archived application — restores it to whatever
+  // in-flight status it was archived from (server-determined from the audit trail).
+  const unarchive = async (processId: number) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/unarchive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ message: "Application unarchived." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else {
+        notifications.show({ color: "red", message: data.error || "Unarchive failed.", autoClose: 4000 });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const certify = async (processId: number, reason: string) => {
+    setBusyId(processId);
+    setMessageId(processId);
+    setMessage("");
+    try {
+      const res = await fetch("/api/membership-ops/applications/certify-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ processId, reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notifications.show({ message: "Certified — membership activated." });
+        await load(showArchived);
+        notifyNavRefresh();
+      } else if (data.code === "wrong_phase") {
+        notifications.show({ color: "red", message: data.error || "This application is no longer awaiting payment.", autoClose: 4000 });
+        await load(showArchived);
+      } else {
+        setMessage(data.error || "Certification failed.");
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleCertify = (processId: number) => {
+    setPendingCertify(processId);
+    setCertifyReason("");
+    openCertify();
+  };
+
+  const confirmCertify = async () => {
+    if (pendingCertify === null || !certifyReason.trim()) return;
+    closeCertify();
+    const processId = pendingCertify;
+    const reason = certifyReason.trim();
+    setPendingCertify(null);
+    await certify(processId, reason);
+  };
+
+  const householdLabel = (r: ProcessRow) => {
+    const hh = r.orgMembership?.household;
+    if (!hh) return `Household #${r.orgMembership?.householdId ?? "?"}`;
+    const parents = (hh.householdMembers || []).filter((p) => p.isHouseholdLead).map((p) => p.name || p.email).filter(Boolean);
+    return hh.name || parents.join(" & ") || `Household #${r.orgMembership?.householdId}`;
+  };
+
+  const statusCounts = rows.reduce<Record<string, number>>((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+  // The status-filter badges/notice are meaningless on the archived view (every
+  // row is ARCHIVED) — the filter itself is ignored there too.
+  const visibleRows = rows.filter((r) => showArchived || !active || r.status === active);
+
+  return (
+    <Stack>
+      <Text c="dimmed">
+        In-flight applications. Use the manual controls below to confirm the contract was signed
+        or that background-check consent was received. (The contract is also confirmed
+        automatically once the Zoho webhook is configured.)
+      </Text>
+
+      <Switch
+        label="Show archived"
+        checked={showArchived}
+        onChange={(e) => setShowArchived(e.currentTarget.checked)}
+      />
+
+      {!loading && rows.length > 0 && !showArchived && (
+        <>
+          {rows.some((r) => r.status === "BLOCKED") && (
+            <Alert
+              color="red"
+              variant="light"
+              fw={600}
+              onClick={() => toggle("BLOCKED")}
+              title="Click to filter to blocked applications"
+              style={{ cursor: "pointer" }}
+            >
+              🚨 {rows.filter((r) => r.status === "BLOCKED").length} application(s) blocked at
+              background review — board attention needed.
+            </Alert>
+          )}
+          <Group gap="xs">
+            {Object.entries(statusCounts).map(([status, count]) => (
+              <StatusFilterBadge key={status} value={status} active={active} onToggle={toggle} color={statusColor(status)}>
+                {statusLabel(status)}: {count}
+              </StatusFilterBadge>
+            ))}
+          </Group>
+        </>
+      )}
+
+      {!showArchived && <ActiveFilterNotice active={active} label={statusLabel} onClear={clear} />}
+
+      {loading ? (
+        <Center py="xl"><Loader /></Center>
+      ) : rows.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Text c="dimmed">{showArchived ? "No archived applications." : "No in-flight membership applications."}</Text>
+        </Card>
+      ) : visibleRows.length === 0 ? (
+        <Card withBorder radius="md" padding="xl" ta="center">
+          <Stack align="center" gap="xs">
+            <Text c="dimmed">
+              No applications in {statusLabel(active as string)} — clear the filter to see everything.
+            </Text>
+            <Button size="xs" variant="light" onClick={clear}>Clear filter</Button>
+          </Stack>
+        </Card>
+      ) : (
+        <Stack>
+          {visibleRows.map((r) => (
+            <Card key={r.id} withBorder radius="md" padding="lg">
+              <Group justify="space-between" align="center" wrap="wrap">
+                <div>
+                  <Text fw={700} fz="lg">{householdLabel(r)}</Text>
+                  <Text size="xs" c="dimmed">
+                    {r.kind} · application #{r.id}
+                    {r.orgMembership?.isVolunteer && <Text component="span" c="green"> · volunteer</Text>}
+                  </Text>
+                </div>
+                <StatusFilterBadge value={r.status} active={active} onToggle={toggle} color={statusColor(r.status)}>
+                  {statusLabel(r.status)}
+                </StatusFilterBadge>
+              </Group>
+
+              {r.status === "PENDING_EXTERNAL_ACTION" && (
+                <Group gap="xl" wrap="wrap" mt="md">
+                  <div>
+                    <Text size="xs" c="dimmed" mb={4}>Contract</Text>
+                    {r.contractSignedAt ? (
+                      <Text c="green" fw={600}>✓ Signed</Text>
+                    ) : (
+                      <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
+                        Confirm contract signed
+                      </Button>
+                    )}
+                  </div>
+                  <div>
+                    <Text size="xs" c="dimmed" mb={4}>Background-check consent</Text>
+                    {r.bgConsentAt ? (
+                      <Text c="green" fw={600}>✓ Received</Text>
+                    ) : (
+                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
+                        Confirm BG consent
+                      </Button>
+                    )}
+                  </div>
+                </Group>
+              )}
+
+              {awaitingBg(r) && (
+                <Text size="sm" c="dimmed" mt="md">
+                  Background check (in parallel) — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
+                </Text>
+              )}
+
+              {r.status === "PENDING_PAYMENT" && (
+                <Group mt="md" gap="md" wrap="wrap" align="center">
+                  <Text size="sm" c="dimmed">Awaiting payment.</Text>
+                  <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => handleCertify(r.id)}>
+                    Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
+                  </Button>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                  )}
+                </Group>
+              )}
+
+              {r.status === "PENDING_BG_CLEARANCE" && (
+                <Text size="sm" c="dimmed" mt="md">
+                  Paid — membership activates automatically once the background check clears.
+                </Text>
+              )}
+
+              {r.status === "BLOCKED" && (
+                <Alert color="red" variant="light" mt="md" title="🚨 Blocked at background review — needs board attention.">
+                  {r.paidAt && (
+                    <Text size="sm" c="red" fw={700} mb="sm">
+                      💸 This household already paid — a refund is likely needed (membership was not activated).
+                    </Text>
+                  )}
+                  <Group gap="sm" wrap="wrap">
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
+                      Reset for re-review
+                    </Button>
+                    <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
+                      Override → {r.paidAt ? "activate" : "payment"}
+                    </Button>
+                  </Group>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                  )}
+                </Alert>
+              )}
+
+              {messageId === r.id && (
+                <AlertBanner message={message} tone="error" mt="md" />
+              )}
+
+              <Group justify="flex-end" mt="md">
+                {showArchived ? (
+                  <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => unarchive(r.id)}>
+                    Unarchive
+                  </Button>
+                ) : (
+                  <Button size="xs" fz={15} variant="subtle" color="red" disabled={busyId === r.id} onClick={() => confirmArchive(r)}>
+                    Archive
+                  </Button>
+                )}
+              </Group>
+            </Card>
+          ))}
+        </Stack>
+      )}
+
+      <Modal
+        opened={certifyOpened}
+        onClose={closeCertify}
+        title={<Text span fw={700} fz="lg">Certify Payment Plan</Text>}
+        centered
+      >
+        <Text mb="sm">
+          Certify this payment plan? This activates the household&apos;s membership without a
+          Shopify payment (holding for background clearance if it isn&apos;t done yet).
+        </Text>
+        <Textarea
+          value={certifyReason}
+          onChange={(e) => setCertifyReason(e.currentTarget.value)}
+          label="Reason"
+          placeholder="Why is this being certified?"
+          autosize
+          minRows={3}
+          mb="lg"
+          required
+        />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={closeCertify}>Cancel</Button>
+          <Button onClick={confirmCertify} disabled={!certifyReason.trim()}>Certify</Button>
+        </Group>
+      </Modal>
+    </Stack>
+  );
+}

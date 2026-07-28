@@ -1,0 +1,137 @@
+/**
+ * The kiosk is an unattended device that re-broadcasts this payload into an iframe
+ * with a wildcard postMessage origin (client/client.py), so its roster must carry no
+ * `personal`/`pii` field. The privileged (keyholder/board/sysadmin) roster keeps them
+ * — that grant is deliberate (registry.ts `keyholders:personal`, pickup/emergency).
+ */
+const findMany = jest.fn();
+jest.mock("@/lib/prisma", () => ({ __esModule: true, default: { visit: { findMany: (...a: unknown[]) => findMany(...a) } } }));
+
+import { getFullAttendance } from "@/lib/getFullAttendance";
+
+const rows = [
+    {
+        id: 201, arrivedAt: new Date("2026-07-01T14:00:00Z"), departedAt: null, personId: 50,
+        person: {
+            id: 50, email: "karen@example.com", name: "Karen Keyholder", isKeyholder: true,
+            dateOfBirth: new Date("1985-01-01"), householdId: 6, phone: "5551234567",
+            household: { id: 6, emergencyContacts: [{ id: 1, name: "Con One", phone: "5559990001", relationship: "Aunt" }] },
+        },
+        event: { id: 9, program: { id: 3, name: "Robotics", price: 100 } },
+    },
+    {
+        id: 203, arrivedAt: new Date("2026-07-01T14:10:00Z"), departedAt: null, personId: 70,
+        person: {
+            id: 70, email: "stu@example.com", name: null, isKeyholder: false,
+            dateOfBirth: new Date("2012-01-01"), householdId: 8, phone: "5557654321",
+            household: { id: 8, emergencyContacts: [{ id: 2, name: "Con Two", phone: "5559990002", relationship: null }] },
+        },
+        event: null,
+    },
+];
+
+beforeEach(() => {
+    findMany.mockReset();
+    findMany.mockResolvedValue(rows);
+});
+
+describe("getFullAttendance({ kiosk: true })", () => {
+    it("ships no dateOfBirth, phone, householdId or emergency contacts", async () => {
+        const { attendance } = await getFullAttendance({ kiosk: true });
+
+        const wire = JSON.stringify(attendance);
+        expect(wire).not.toMatch(/dateOfBirth|phone|emergencyContacts|householdId/);
+        // The contact values themselves, not just the keys.
+        expect(wire).not.toContain("5551234567");
+        expect(wire).not.toContain("Con One");
+
+        expect(attendance[0]).toEqual({
+            id: 201,
+            arrivedAt: rows[0].arrivedAt,
+            participant: { id: 50, name: "Karen Keyholder", isKeyholder: true, isYouth: false },
+            event: { program: { id: 3, name: "Robotics" } },
+        });
+    });
+
+    it("still gives the display what it renders: name fallback, youth split, program badge", async () => {
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: true });
+
+        // name-or-email-prefix resolved server-side; raw address never ships
+        expect(attendance[1].participant.name).toBe("stu");
+        expect(JSON.stringify(attendance)).not.toContain("@example.com");
+        // youth column still populates without dateOfBirth
+        expect(attendance[1].participant.isYouth).toBe(true);
+        expect(attendance[0].event).toEqual({ program: { id: 3, name: "Robotics" } });
+        expect(attendance[1].event).toBeNull();
+        // aggregates are identical either way
+        expect(counts).toEqual({ keyholders: 1, volunteers: 0, youth: 1, total: 2 });
+        expect(safety).toEqual({ isLastKeyholder: true, isTwoDeepViolation: true });
+    });
+
+    it("does not even fetch the emergency contacts", async () => {
+        await getFullAttendance({ kiosk: true });
+        expect(findMany.mock.calls[0][0].include.person.select.household).toBe(false);
+    });
+});
+
+describe("getFullAttendance() — privileged caller (unchanged)", () => {
+    it("keeps dateOfBirth, phone and the household emergency contacts", async () => {
+        const { attendance } = await getFullAttendance();
+
+        expect(attendance[0].participant).toMatchObject({
+            id: 50,
+            name: "Karen Keyholder",
+            isKeyholder: true,
+            dateOfBirth: rows[0].person.dateOfBirth,
+            householdId: 6,
+            phone: "5551234567",
+            household: { id: 6, emergencyContacts: [{ id: 1, name: "Con One", phone: "5559990001", relationship: "Aunt" }] },
+        });
+        expect(findMany.mock.calls[0][0].include.person.select.household).toMatchObject({ select: { id: true } });
+    });
+
+    it("never ships the raw email on either path", async () => {
+        const { attendance } = await getFullAttendance();
+        expect(JSON.stringify(attendance)).not.toContain("@example.com");
+    });
+});
+
+describe("two-deep calc fails closed on unknown DOB (#300)", () => {
+    // Youth (hh 8) + real adult (hh 6) + null-DOB visitor in the youth's
+    // household. Under the old null→adult default the null-DOB visitor
+    // "accompanied" the youth AND made adultVisits.length 2 — masking the
+    // violation on both prongs.
+    const nullDobRow = {
+        id: 204, arrivedAt: new Date("2026-07-01T14:20:00Z"), departedAt: null, personId: 80,
+        person: {
+            id: 80, email: "nodob@example.com", name: "No Dob", isKeyholder: false,
+            dateOfBirth: null, isDeclaredAdult: false, householdId: 8, phone: null,
+            household: { id: 8, emergencyContacts: [] },
+        },
+        event: null,
+    };
+
+    it("unknown DOB is never a supervising adult and cannot mask a violation", async () => {
+        findMany.mockResolvedValue([...rows, nullDobRow]);
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: true });
+
+        expect(safety.isTwoDeepViolation).toBe(true);
+        // counted as youth, not volunteer, and flagged as youth on the wire
+        expect(counts).toEqual({ keyholders: 1, volunteers: 0, youth: 2, total: 3 });
+        expect(attendance[2].participant.isYouth).toBe(true);
+    });
+
+    it("a DoB-stripped declared adult (#1165) still supervises", async () => {
+        // Same shape, but the null-DoB visitor is a 26+ member whose DoB was
+        // deliberately deleted: isDeclaredAdult wins over the fail-closed default.
+        findMany.mockResolvedValue([...rows, {
+            ...nullDobRow,
+            person: { ...nullDobRow.person, isDeclaredAdult: true },
+        }]);
+        const { attendance, counts, safety } = await getFullAttendance({ kiosk: true });
+
+        expect(safety.isTwoDeepViolation).toBe(false);
+        expect(counts).toEqual({ keyholders: 1, volunteers: 1, youth: 1, total: 3 });
+        expect(attendance[2].participant.isYouth).toBe(false);
+    });
+});

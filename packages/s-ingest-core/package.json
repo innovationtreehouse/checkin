@@ -1,0 +1,39 @@
+{
+  "name": "@inventory/s-ingest-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "node --env-file=.env node_modules/.bin/prisma migrate dev && node node_modules/.bin/prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@inventory/money": "*",
+    "@inventory/telemetry": "*",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@inventory/pg-test-harness": "*",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.8",
+    "dotenv": "^17.0.0",
+    "prisma": "^7.8.0",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
