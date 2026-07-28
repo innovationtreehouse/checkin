@@ -23,7 +23,7 @@ import { createRenewalProcess } from '@/lib/membership/renewal';
 import prisma from '@/lib/prisma';
 
 const sendEmail = jest.fn().mockResolvedValue(true);
-jest.mock('@/lib/email', () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: (...a: unknown[]) => sendEmail(...a) }));
 
 const TAG = 'renewal-concurrency-test';
 

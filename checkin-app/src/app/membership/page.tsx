@@ -335,9 +335,11 @@ export default function MembershipPage() {
     if (error || msg === "") setWarnings([]);
   };
 
-  // Prefer the API's user-facing error string; fall back to a friendly default.
-  const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
-    data?.error || fallback;
+  // Build an error message from an API response, appending the dev-only `detail`
+  // (the real server failure) when present so an "Internal Server Error" isn't a
+  // dead end. Falls back to a friendly default when the body carries nothing.
+  const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
+    [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
 
   // Real Shopify checkout only (opens a new tab) — starts the payment holdoff.
   // The local mock below settles synchronously and never needs one.
@@ -477,6 +479,9 @@ export default function MembershipPage() {
       });
       const saveData = await saveRes.json();
       if (!saveRes.ok) {
+        // The save can reject a field the client can't check locally (e.g. an
+        // emergency contact who is also a household member) — highlight it.
+        if (saveData.fields) setFieldErrors(mapServerFields(saveData.fields));
         flash(apiError(saveData, "Could not save."), true);
         return;
       }
