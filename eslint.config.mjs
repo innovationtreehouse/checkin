@@ -35,6 +35,19 @@ const nodeEnvRules = [
   },
 ];
 
+// The lifecycle modules are imported by client components, so a Prisma VALUE
+// reaching them drags the generated client into a page bundle. Types are erased
+// at build, so `import type` stays legal. The regex covers the `@/` alias and any
+// relative path to the same directory.
+const noPrismaValueImport = [
+  {
+    regex: "(^@/|/)generated/prisma(/|$)",
+    message:
+      "Client-safe module: use `import type` for @/generated/prisma — a value import pulls the Prisma client into the page bundle.",
+    allowTypeImports: true,
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -66,6 +79,23 @@ const eslintConfig = defineConfig([
   {
     files: ["**/src/app/api/**/*.ts"],
     rules: { "no-console": "warn" },
+  },
+  {
+    // Lifecycle definitions are shared server/client, so they stay Prisma-free at
+    // runtime. Tests are excluded: they are not the client bundle and may value-
+    // import the generated enum (see lifecycle/enumParity.ts).
+    files: [
+      "**/src/lib/lifecycle/**/*.ts",
+      "**/src/lib/membership/lifecycle.ts",
+      "**/src/lib/programs/enrollmentState.ts",
+    ],
+    ignores: ["**/__tests__/**", "**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        { patterns: noPrismaValueImport },
+      ],
+    },
   },
   {
     // P3-1: error responses must go through apiError() (@/lib/api-response) so the
