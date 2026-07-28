@@ -41,7 +41,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { name, phone, dob, notificationSettings, emailSuppressed } = body;
+            const { name, phone, dob, over25, notificationSettings, emailSuppressed } = body;
 
             if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
                 return apiError(PHONE_ERROR, 400);
@@ -53,8 +53,12 @@ export const PATCH = withAuth(
                     name: name !== undefined ? name : undefined,
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                     // #1165: a self-entered DoB for a 26+ member is stripped and the
-                    // over-25 flag set instead. Empty dob leaves the field unchanged.
-                    ...(dob ? normalizeAdultDob(dob) : {}),
+                    // over-25 flag set instead; with no DoB the over-25 checkbox owns
+                    // the flag. Only touched when the profile form submits age fields,
+                    // so notification-only PATCHes leave DoB/flag unchanged.
+                    ...(dob !== undefined || over25 !== undefined
+                        ? { ...normalizeAdultDob(dob || null), ...(dob ? {} : { isDeclaredAdult: !!over25 }) }
+                        : {}),
                     notificationSettings: notificationSettings !== undefined ? notificationSettings : undefined,
                     emailSuppressed: emailSuppressed !== undefined ? !!emailSuppressed : undefined,
                 },
