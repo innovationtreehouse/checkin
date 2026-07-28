@@ -6,6 +6,7 @@ import { useRequireRole } from '@/hooks/useRequireRole';
 import { Alert, Badge, Button, Card, Checkbox, Group, Paper, SimpleGrid, Stack, Text, Textarea, TextInput, Title, Tooltip } from '@mantine/core';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { PageContainer } from '@/components/ui/PageContainer';
+import EmergencyContactNotice from '@/components/ui/EmergencyContactNotice';
 import { calculateAge } from '@/lib/time';
 import TrustedAdultPanel from '@/components/TrustedAdultPanel';
 import { notifications } from '@mantine/notifications';
@@ -527,8 +528,9 @@ export default function HouseholdPage() {
                   {!showContactForm && <Button size="compact-xs" variant="light" onClick={startAddContact}>+ Add Contact</Button>}
                 </Group>
                 <Text size="sm" c="dimmed" mb="sm">
-                  At least one is required. Each must be someone <strong>outside</strong> this household.
+                  At least one is required.
                 </Text>
+                <EmergencyContactNotice mb="sm" />
 
                 {contactError && (
                   <Alert color="red" variant="light" mb="sm" withCloseButton onClose={() => setContactError("")}>{contactError}</Alert>
