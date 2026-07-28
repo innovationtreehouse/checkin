@@ -29,6 +29,8 @@ const ALLOWLIST: Record<string, string> = {
     'security/access-resolvers.ts': 'Boundary file (security-boundary-isolation.yml): the keyholder-scope query gains its LIVE_VISIT filter in an isolated boundary PR, not in the feature PR that introduced the tombstone. Remove this entry in that PR.',
     'app/api/facility/trends/route.ts': 'Scanner is textually blind to the variable-held where: the findMany passes `whereClause`, which is built a few lines up WITH `deletedAt: null`.',
     'app/api/membership-ops/participants/merge/analyze/route.ts': 'Merge PREVIEW: `_count.visits` counts the rows the merge will move, and a merge moves tombstoned visits with the person (provenance travels). Filtering would understate the preview against the actual move.',
+    'app/api/membership-ops/participants/merge/route.ts': 'The merge itself: tombstoned visits travel with the person, same rule the PREVIEW counts by — filtering would strand them on the merged-away tombstone.',
+    'app/api/events/[id]/route.ts': 'Event cancel nulls `associatedEventId` on every visit pointing at the doomed event, tombstoned included — the FK must clear or the event delete fails, and the tombstone keeps its own times either way.',
 };
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -81,9 +83,11 @@ function captureObject(s: string, from: number): { text: string; end: number } |
     return null;
 }
 
-// A direct list/count call on the Visit delegate. findUnique(OrThrow) is
-// deliberately absent — see the boundary note in the header.
-const VISIT_CALL_RE = /\b(?:prisma|tx|db)\.visit\.(findMany|findFirst|count|aggregate|groupBy)\s*\(/g;
+// A direct list/count/bulk-write call on the Visit delegate. A bulk write is in
+// scope for the same reason a read is: an unpredicated `updateMany`/`deleteMany`
+// rewrites or removes tombstoned rows. findUnique(OrThrow) and single-row
+// update/delete are deliberately absent — see the boundary note in the header.
+const VISIT_CALL_RE = /\b(?:prisma|tx|db)\.visit\.(findMany|findFirst|count|aggregate|groupBy|updateMany|deleteMany)\s*\(/g;
 
 // A nested pull of Visit rows through another model's query — `visits: true`
 // or `visits: { ... }`. Unlike the Person guard's relation class, ANY nested
