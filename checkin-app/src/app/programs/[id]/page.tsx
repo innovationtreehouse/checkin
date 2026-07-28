@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { formatDate } from '@/lib/time';
+import { formatDateOnly } from '@/lib/time';
 import { checkProgramAge } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
@@ -424,8 +424,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {program.leadMentor && (
               <Text><strong>Lead Mentor:</strong> {program.leadMentor.name || 'Unnamed'}</Text>
             )}
-            <Text><strong>Starts:</strong> {program.startAt ? formatDate(program.startAt) : 'TBD'}</Text>
-            <Text><strong>Ends:</strong> {program.endAt ? formatDate(program.endAt) : 'Ongoing'}</Text>
+            <Text><strong>Starts:</strong> {program.startAt ? formatDateOnly(program.startAt) : 'TBD'}</Text>
+            <Text><strong>Ends:</strong> {program.endAt ? formatDateOnly(program.endAt) : 'Ongoing'}</Text>
             <Text>
               <strong>Enrollment:</strong>{' '}
               {program.enrollmentStatus === 'OPEN' ? <Text component="span" c="green">Open</Text> :

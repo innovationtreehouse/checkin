@@ -48,7 +48,7 @@ export default function PrintBadgesPage() {
         setParticipants(data.people);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to search people for badges:", e);
     } finally {
       setLoading(false);
     }

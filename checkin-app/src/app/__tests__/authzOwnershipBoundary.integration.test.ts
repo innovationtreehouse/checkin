@@ -38,7 +38,7 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'authz-ownership-test';
 
@@ -338,11 +338,15 @@ describe('Ownership-boundary authorization', () => {
             anon();
             expect((await RENEW_POST(req('http://localhost/x', { method: 'POST' }))).status).toBe(401);
         });
-        it('409 for a user with no renewal of their own (cannot reach another household\'s)', async () => {
+        it('403 for a non-lead household member (renewal is the lead\'s call)', async () => {
             as(memberA, { householdId: hhA });
+            expect((await RENEW_POST(req('http://localhost/x', { method: 'POST' }))).status).toBe(403);
+        });
+        it('409 for a lead with no renewal of their own (cannot reach another household\'s)', async () => {
+            as(leadA, { householdId: hhA });
             expect((await RENEW_POST(req('http://localhost/x', { method: 'POST' }))).status).toBe(409);
         });
-        it('200 for a member of the household with an open renewal', async () => {
+        it('200 for a lead of the household with an open renewal', async () => {
             as(renewUser, { householdId: hhRenew });
             expect((await RENEW_POST(req('http://localhost/x', { method: 'POST' }))).status).toBe(200);
         });

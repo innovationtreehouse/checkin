@@ -18,6 +18,9 @@ export const GET = withAuth(
             // Only `adults` is recognized; any other value (or none) filters by age not at all.
             const adultsOnly = url.searchParams.get('filter') === 'adults';
 
+            // DB-level 18-year boundary for the adults filter below. Mirrors the
+            // under-18 threshold in isYouth (lib/time.ts); kept inline because this
+            // is a Prisma `where` predicate, not an in-memory classification.
             const eighteenYearsAgo = new Date();
             eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
 

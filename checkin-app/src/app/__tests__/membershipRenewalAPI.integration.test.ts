@@ -12,7 +12,7 @@ import { attest } from '@/lib/membership/review';
 import { markBgConsent, markContractSigned } from '@/lib/membership/external';
 import prisma from '@/lib/prisma';
 
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'renewal-test';
 const CRON_SECRET = 'cron-test-secret';

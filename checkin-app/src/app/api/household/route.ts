@@ -8,6 +8,7 @@ import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isOrgAccount } from "@/lib/orgAccount";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
+import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
@@ -104,9 +105,11 @@ export const PATCH = withAuth(
                     data: {
                         name: memberName,
                         ...(memberEmail && { email: memberEmail.toLowerCase() }),
-                        dateOfBirth: memberDob ? new Date(memberDob) : null,
+                        // #1165: strip DoB + declare adult when the entered date is 26+.
+                        // When no DoB is given, the over-25 checkbox owns the flag.
+                        ...normalizeAdultDob(memberDob || null),
                         ...(memberPhone && { phone: formatPhone(memberPhone) }),
-                        isDeclaredAdult: !memberDob && !!memberOver25,
+                        ...(memberDob ? {} : { isDeclaredAdult: !!memberOver25 }),
                         allergies: memberAllergies || null,
                         householdId,
                     },
