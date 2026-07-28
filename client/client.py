@@ -49,13 +49,18 @@ def load_signing_key(path):
         seed = f.read()
     return SigningKey(seed)
 
+def build_signed_message(timestamp, nonce, method, path, body):
+    # The wire contract with the server's verifyKioskSignature. Pinned by the
+    # golden vector in kiosk-signing-vector.test.json, which both this client's
+    # test_signing_vector.py and the server's verifyKioskSignature test read.
+    return f"{timestamp}:{nonce}:{method}:{path}:{body}".encode()
+
 def sign_request(signing_key, method, path, body=""):
     # Nonce is bound into the signed message and is single-use server-side, so a
-    # captured request can't be replayed within the 60s timestamp window. Server
-    # must verify the same format — ship client and server together.
+    # captured request can't be replayed within the 60s timestamp window.
     timestamp = str(int(time.time()))
     nonce = secrets.token_hex(16)
-    message = f"{timestamp}:{nonce}:{method}:{path}:{body}".encode()
+    message = build_signed_message(timestamp, nonce, method, path, body)
     signature = signing_key.sign(message).signature.hex()
     return {
         "X-Kiosk-Timestamp": timestamp,
