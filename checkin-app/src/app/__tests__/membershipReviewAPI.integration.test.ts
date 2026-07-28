@@ -14,7 +14,10 @@ import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 // Don't hit Resend during tests — the reviewer ping is exercised, not actually sent.
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({
+    sendEmail: jest.fn().mockResolvedValue(true),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 const TAG = 'review-test';
 
@@ -153,7 +156,7 @@ describe('Membership BG review API', () => {
     it('a single REJECT blocks the application', async () => {
         const proc = await makeApplicantProcess('Reject');
         as(rev1, { isBackgroundCheckReviewer: true });
-        const res = await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
+        const res = await ATTEST(req({ processId: proc.processId, result: 'REJECT', note: 'Check came back with a concerning record' }) as never);
         expect((await res.json()).outcome.status).toBe('BLOCKED');
         const updated = await prisma.orgMembershipProcess.findUnique({ where: { id: proc.processId } });
         expect(updated?.status).toBe('BLOCKED');
@@ -161,13 +164,46 @@ describe('Membership BG review API', () => {
         // The BLOCKED audit records the rejecting reviewer.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: proc.processId }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(rev1);
-        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'BLOCKED' });
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'BLOCKED', note: 'Check came back with a concerning record' });
+
+        const attestation = await prisma.backgroundCheckAttestation.findFirst({ where: { processId: proc.processId, reviewerId: rev1 } });
+        expect(attestation?.note).toBe('Check came back with a concerning record');
+    });
+
+    it('REJECT without a note is rejected (400), no attestation written', async () => {
+        const proc = await makeApplicantProcess('RejectNoNote');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
+        expect(res.status).toBe(400);
+
+        const res2 = await ATTEST(req({ processId: proc.processId, result: 'REJECT', note: '   ' }) as never);
+        expect(res2.status).toBe(400);
+
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } })).toBe(0);
+    });
+
+    it('APPROVE without a note succeeds (200) and stores a null note', async () => {
+        const proc = await makeApplicantProcess('ApproveNoNote');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: proc.processId, result: 'APPROVE' }) as never);
+        expect(res.status).toBe(200);
+        const attestation = await prisma.backgroundCheckAttestation.findFirst({ where: { processId: proc.processId, reviewerId: rev1 } });
+        expect(attestation?.note).toBeNull();
+    });
+
+    it('APPROVE with a note stores it on the attestation', async () => {
+        const proc = await makeApplicantProcess('ApproveWithNote');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: proc.processId, result: 'APPROVE', note: 'Looks clean, quick review' }) as never);
+        expect(res.status).toBe(200);
+        const attestation = await prisma.backgroundCheckAttestation.findFirst({ where: { processId: proc.processId, reviewerId: rev1 } });
+        expect(attestation?.note).toBe('Looks clean, quick review');
     });
 
     it('board reset on a BLOCKED app clears attestations and returns it to review', async () => {
         const proc = await makeApplicantProcess('ResetMe');
         as(rev1, { isBackgroundCheckReviewer: true });
-        await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
+        await ATTEST(req({ processId: proc.processId, result: 'REJECT', note: 'Needs another look' }) as never);
 
         as(board, { isBoardMember: true });
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'reset' }) as never);
@@ -186,7 +222,7 @@ describe('Membership BG review API', () => {
     it('board override-approve on a BLOCKED app forces it to PENDING_PAYMENT', async () => {
         const proc = await makeApplicantProcess('ForceApprove');
         as(rev1, { isBackgroundCheckReviewer: true });
-        await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
+        await ATTEST(req({ processId: proc.processId, result: 'REJECT', note: 'Needs another look' }) as never);
 
         as(board, { isBoardMember: true });
         const res = await OVERRIDE(req({ processId: proc.processId, action: 'approve' }) as never);
@@ -218,7 +254,7 @@ describe('Membership BG review API', () => {
 
         // A reject from an eligible reviewer (different household) blocks it.
         as(rev1, { isBackgroundCheckReviewer: true });
-        const rej = await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never);
+        const rej = await ATTEST(req({ processId: proc.processId, result: 'REJECT', note: 'Needs another look' }) as never);
         expect((await rej.json()).outcome.status).toBe('BLOCKED');
 
         as(board, { isBoardMember: true });
@@ -241,7 +277,7 @@ describe('Membership BG review API', () => {
     it('attest on an already-decided (BLOCKED) process is rejected (409 wrong_phase), no new attestation or audit', async () => {
         const proc = await makeApplicantProcess('AlreadyDecided');
         as(rev1, { isBackgroundCheckReviewer: true });
-        await ATTEST(req({ processId: proc.processId, result: 'REJECT' }) as never); // → BLOCKED (1 attestation, 1 audit)
+        await ATTEST(req({ processId: proc.processId, result: 'REJECT', note: 'Needs another look' }) as never); // → BLOCKED (1 attestation, 1 audit)
         const attBefore = await prisma.backgroundCheckAttestation.count({ where: { processId: proc.processId } });
         const auditBefore = await prisma.auditLog.count({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: proc.processId } });
 

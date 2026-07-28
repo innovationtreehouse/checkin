@@ -4,22 +4,29 @@ name: Deploy prod
 # published in this repo. Mirrors deploy-dev.yml step-for-step (build an ARM64
 # image, run DB migrations, roll out the ECS service) with these differences:
 #   - trigger: a published GitHub release instead of a merge to main
-#   - guard:   RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
+#   - guard 1: the released commit must live on the rel/* branch matching its
+#              own version — see the `release-branch-match` job. Prod ships
+#              only from release branches; a release cut from main (or any
+#              other ref) fails fast here, before any CI or human approval is
+#              spent on it.
+#   - guard 2: RE-RUNS the entire CI pipeline (tests + the deploy build/smoke)
 #              against the released tag — see the `validate` job. A release can
-#              be cut from ANY commit, and stale or partial check status on that
-#              commit is not trustworthy, so we revalidate from scratch rather
-#              than querying past check-runs. `deploy` needs `validate`.
-#   - gate:    `deploy` targets the `production` GitHub Environment, which holds
-#              the human-approval rule (required reviewers — one approval). The
-#              validate job runs first (no environment), so the reviewer approves
-#              a release that has already gone green on its own tag.
+#              be cut from any commit ON a rel/* branch, and stale or partial
+#              check status on that commit is not trustworthy, so we revalidate
+#              from scratch rather than querying past check-runs.
+#   - gate:    `deploy` (needs both guards) targets the `production` GitHub
+#              Environment, which holds the human-approval rule (required
+#              reviewers — one approval). The guards run first (no
+#              environment), so the reviewer approves a release that has
+#              already proven its branch origin and gone green on its own tag.
 #   - report:  a run step summary (releases have no comment thread to post to)
 #
 # Auth is GitHub OIDC (no static AWS keys) — assumes the checkin-deploy-prod
 # role defined in ~/projects/treehouse/aws/infra/modules/checkin/iam.tf.
 #
 # Cutting a release:
-#   gh release create v1.2.3 --target main --generate-notes
+#   git push origin main:refs/heads/rel/1.2       # or fast-forward an existing rel/*
+#   gh release create v1.2.3 --target rel/1.2 --generate-notes
 # Publishing (not drafting) is what fires this. Re-publishing a draft works;
 # pre-releases deploy too — don't mark a release pre if it shouldn't ship.
 
@@ -67,47 +74,78 @@ env:
   APP_URL: https://ops.innovationtreehouse.org
 
 jobs:
+  # A release must ship from its OWN release line: v1.1.x may only be cut from
+  # rel/1.1. Supersedes the old branch-guard job (any rel/* branch) — matching
+  # the specific line implies containment in some rel/* line, so running both
+  # was redundant.
+  #
+  # Checks ANCESTRY, not `release.target_commitish`. That field can be a branch
+  # name OR a bare SHA, is chosen by whoever cut the release, and is re-taggable —
+  # containment in the branch is the property we actually care about.
+  #
+  # Runs before `validate` so a mis-cut release fails in seconds with one clear
+  # error, instead of burning a full CI pass in parallel first.
+  release-branch-match:
+    name: Release version matches its rel/ branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout released tag
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0   # ancestry check needs real history, not a shallow clone
+
+      - name: Assert the tag's line matches the branch containing it
+        run: ./scripts/release-branch-match.sh "${{ github.event.release.tag_name }}"
+
   # Re-run the FULL CI pipeline (lint, type-check, migration-drift, Jest, the
   # security contract tests, AND the deploy build + boot/smoke) against the exact
   # released tag. This is the H1 fix: a release tag can point at any commit, and
   # we no longer trust whatever check status happened to exist there — we prove
   # the released code green from scratch before a human is even asked to approve.
+  # Needs release-branch-match so a mis-cut release fails with ONE error
+  # instead of burning a full CI pass in parallel with the rejection.
   validate:
     name: Revalidate CI on the released tag
+    needs: [release-branch-match]   # never burn a CI pass on a mis-cut release
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ github.event.release.tag_name }}
     secrets: inherit
 
-  # Release gate: a release may apply AT MOST ONE new database migration.
-  # The rule lives in the callable migration-release-gate.yml — the same
-  # workflow runs advisory (allowed to fail) on every PR, so the "coalesce
-  # before preparing a release" signal shows up long before this blocking
-  # call. Passing exclude_tag makes the gate compare against the release's
-  # true predecessor; with no previous release, every migration counts.
+  # Migration COUNT is deliberately ungated here — no CI job blocks a release
+  # on how many new migrations it carries. The team manages coalescing
+  # manually per release (docs/MIGRATION_COALESCE_FLOW.md is still the
+  # playbook and its script still works); this used to be enforced by a
+  # blocking release-time job (removed) plus an advisory PR-time check (also
+  # removed) — both judged a per-release human call, not CI's, after the old
+  # gate blocked the legitimate v1.0.4 deploy (4 additive migrations vs. its
+  # budget of 1).
   #
-  # This is not a step inside `validate`: that job is a reusable-workflow
-  # `uses: ./.github/workflows/ci.yml` call, which has no step surface of its
-  # own to add to. Runs as its own job instead; `deploy` needs both.
-  migration-release-gate:
-    name: Release gate — at most 1 new migration
-    uses: ./.github/workflows/migration-release-gate.yml
-    with:
-      ref: ${{ github.event.release.tag_name }}
-      exclude_tag: ${{ github.event.release.tag_name }}
+  # Historical warning, still true: `prisma migrate deploy` is not
+  # transactional across migrations, so a multi-migration release that fails
+  # mid-batch can leave prod partially migrated behind a P3009 (the
+  # 2026-07-02 incident). A human should still weigh coalescing before
+  # releasing a multi-migration batch.
 
   deploy:
     name: Build, migrate, roll out
-    needs: [validate, migration-release-gate]   # do not build/migrate/roll out unless the tag re-passed all of CI and the release gate
+    # Both listed explicitly, not just [validate]: the branch gate is a release
+    # correctness property, and a refactor that changes what `validate` needs
+    # must not be able to drop it silently.
+    needs: [release-branch-match, validate]
     runs-on: ubuntu-24.04-arm  # native ARM64 — task defs require arm64 images
     environment:
       name: production
       url: https://ops.innovationtreehouse.org
     steps:
       - name: Checkout released tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.release.tag_name }}
+          # Full history + tags for `git describe` below (see deploy-dev.yml's
+          # note: a shallow clone degrades describe to a bare SHA silently).
+          fetch-depth: 0
 
       - name: Resolve released commit
         id: vars
@@ -118,9 +156,14 @@ jobs:
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHA:0:7}" >> "$GITHUB_OUTPUT"
           echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          # On a release this normally reads "<tag>-0-g<sha>" — the -0- is the
+          # point: it proves the deployed commit IS the tag, not a descendant.
+          DESCRIBE=$(git describe --tags --long --abbrev=7 --always)
+          echo "describe=$DESCRIBE" >> "$GITHUB_OUTPUT"
+          echo "build describe: $DESCRIBE"
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.DEPLOY_ROLE }}
           aws-region: ${{ env.AWS_REGION }}
@@ -144,8 +187,19 @@ jobs:
           # -f: there is no root Dockerfile — the app image builds from
           # checkin-app/Dockerfile with the repo root as context, exactly like
           # deploy-dev.yml (the release-scrub found this job would die here).
+          # Deliberately NOT passing --build-arg NEXT_PUBLIC_GIT_BRANCH here:
+          # this job checks out github.event.release.tag_name, so github.ref_name
+          # IS the tag, not a branch — passing it through would just duplicate
+          # NEXT_PUBLIC_RELEASE_TAG in the footer ("v1.1.0 v1.1.0 abc1234").
+          # release.target_commitish is sometimes a branch name, but it's the
+          # branch the tag was CUT from, not necessarily anything meaningful by
+          # release time, and resolving "the real branch a commit belongs to" is
+          # itself ambiguous (a commit can be on several, or on none once a
+          # branch is deleted post-release). Left unset -> the footer omits the
+          # branch part and shows "<tag> <sha7>", which is what prod wants anyway.
           docker build \
             --build-arg NEXT_PUBLIC_GIT_SHA="${{ steps.vars.outputs.sha }}" \
+            --build-arg NEXT_PUBLIC_GIT_DESCRIBE="${{ steps.vars.outputs.describe }}" \
             --build-arg NEXT_PUBLIC_RELEASE_TAG="${{ steps.vars.outputs.tag }}" \
             -f checkin-app/Dockerfile \
             -t "$IMAGE" -t "$IMAGE_TAGGED" .
@@ -218,11 +272,7 @@ jobs:
           # undiagnosed for a day (mirrors deploy-dev.yml).
           TASK_ID="${TASK_ARN##*/}"
           echo "--- migrate container logs (/ecs/checkin-migrate-prod) ---"
-          aws logs get-log-events \
-            --log-group-name /ecs/checkin-migrate-prod \
-            --log-stream-name "ecs/checkin-migrate/$TASK_ID" \
-            --start-from-head --limit 200 \
-            --query 'events[].message' --output text | tr '\t' '\n' || echo "(could not fetch logs)"
+          ./scripts/dump-task-logs.sh /ecs/checkin-migrate-prod "ecs/checkin-migrate/$TASK_ID"
           echo "--- end migrate container logs ---"
 
           if [ "$EXIT_CODE" != "0" ]; then
@@ -282,6 +332,18 @@ jobs:
           echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
           exit 1
 
+      # s-read rides every prod release, in THIS job — after the app is live, on
+      # the same released tag (still checked out) and the same already-assumed
+      # checkin-deploy-prod credentials. Folded in (rather than a separate job
+      # carrying its own `environment: production`) so the release takes ONE
+      # approval instead of two: only this job enters the production environment.
+      # The composite writes its own step-summary section.
+      - name: Deploy s-read (prod)
+        uses: ./.github/actions/deploy-s-read
+        with:
+          environment: prod
+          network-config: ${{ vars.S_READ_NETWORK_CONFIG }}
+
       - name: Report result
         if: always()
         env:
@@ -294,16 +356,16 @@ jobs:
           set -euo pipefail
           if [ "$STATUS" = "success" ]; then
             {
-              echo "### ✅ Released $TAG to prod"
+              echo "### ✅ Released $TAG to prod (app + s-read)"
               echo "Commit \`$SHORT_SHA\` is live on [$APP_URL]($APP_URL)."
               echo "- Image: \`$IMAGE_REPO:$TAG\`"
-              echo "- Migrations: applied · Service: stable"
+              echo "- Migrations: applied · Service: stable · s-read: deployed"
               echo "- [Release]($RELEASE_URL) · [Deploy run]($RUN_URL)"
             } >> "$GITHUB_STEP_SUMMARY"
           else
             {
               echo "### ❌ Prod deploy of $TAG failed (status: \`$STATUS\`)"
-              echo "- [Deploy run]($RUN_URL) — check the logs."
-              echo "- Prod still runs the previous image."
+              echo "- [Deploy run]($RUN_URL) — check the logs (app and/or s-read)."
+              echo "- The app rolls out before s-read: if the app step passed, prod runs the new image and only s-read needs a rerun; otherwise prod still runs the previous image."
             } >> "$GITHUB_STEP_SUMMARY"
           fi

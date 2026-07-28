@@ -84,15 +84,17 @@ describe('setZohoEnvelope', () => {
         await expect(setZohoEnvelope(1, 'req-1', 5)).rejects.toBeInstanceOf(ExternalError);
     });
 
-    it('updates the envelope id and writes an audit row', async () => {
+    it('updates the envelope id, clears any stale action id, and writes an audit row', async () => {
         prisma.orgMembershipProcess.findUnique.mockResolvedValue({ id: 1 });
-        prisma.orgMembershipProcess.update.mockResolvedValue({ id: 1, zohoEnvelopeId: 'req-1' });
+        prisma.orgMembershipProcess.update.mockResolvedValue({ id: 1, zohoEnvelopeId: 'req-1', zohoActionId: null });
 
         const result = await setZohoEnvelope(1, 'req-1', 5);
 
-        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { zohoEnvelopeId: 'req-1' } });
+        // zohoActionId is nulled so re-pointing the envelope can't leave the old
+        // action paired with the new request — restores the claimable state (#877).
+        expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { zohoEnvelopeId: 'req-1', zohoActionId: null } });
         expect(prisma.auditLog.create).toHaveBeenCalledTimes(1);
-        expect(result).toEqual({ id: 1, zohoEnvelopeId: 'req-1' });
+        expect(result).toEqual({ id: 1, zohoEnvelopeId: 'req-1', zohoActionId: null });
     });
 });
 
@@ -400,5 +402,40 @@ describe('getOrCreateContractSigningUrl', () => {
         loadAgreementPdf.mockRejectedValue(new AgreementUnavailableError('no pdf yet'));
 
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'agreement_unavailable' });
+    });
+
+    // ops-stg: CHECKIN_ENV=stg falls back to 'prod' (readCheckinEnv), so config.isProd()
+    // alone would call ops-stg's signing flow "prod" and skip the watermark/prefix the
+    // moment a real Zoho credential is ever wired to staging to rehearse signing —
+    // producing a document indistinguishable from a binding prod agreement. isStaging()
+    // must override isProd() here regardless.
+    it('ops-stg (CHECKIN_ENV=stg, isProd()=true via the readCheckinEnv stg->prod fallback): watermark + [DEV TEST] prefix still applied', async () => {
+        const prevStaging = process.env.CHECKIN_ENV;
+        process.env.CHECKIN_ENV = 'stg';
+        try {
+            config.isProd.mockReturnValue(true); // the stg->'prod' fallback (readCheckinEnv)
+            prisma.person.findUnique.mockResolvedValue(leadUser);
+            zohoSign.getAccessToken.mockResolvedValue('token-1');
+            const rawPdf = Buffer.from('raw-agreement');
+            const watermarkedPdf = Buffer.from('watermarked-agreement');
+            loadAgreementPdf.mockResolvedValue({ pdf: rawPdf, lastPageNo: 1, pageWidth: 1, pageHeight: 1 });
+            stampWatermark.mockResolvedValue(watermarkedPdf);
+            zohoSign.createRequest.mockResolvedValue({ requestId: 'req-stg', actionId: 'act-stg', documentId: 'doc-stg' });
+            zohoSign.submitRequest.mockResolvedValue(undefined);
+            zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-stg');
+
+            await getOrCreateContractSigningUrl(1);
+
+            expect(stampWatermark).toHaveBeenCalledWith(rawPdf, 'DEV TEST — NOT A LEGAL AGREEMENT');
+            expect(zohoSign.createRequest).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    pdf: watermarkedPdf,
+                    requestName: expect.stringContaining('[DEV TEST — NOT BINDING] '),
+                }),
+            );
+        } finally {
+            if (prevStaging === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = prevStaging;
+        }
     });
 });

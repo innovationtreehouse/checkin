@@ -139,7 +139,8 @@ const NAV_ITEMS: NavItem[] = [
     href: '/finance-ops',
     label: 'Finance Ops',
     icon: <IconCoin size={18} />,
-    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
+    // Finance Ops is board-only — sysadmin has no access (issue #1083).
+    visible: (u) => !!u?.isBoardMember,
   },
   {
     href: '/system-status',
@@ -220,7 +221,19 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   const brandEl = (
     <Link href="/" onNavigate={guardNav} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
       {brand.logo ? (
-        <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
+        // The logo art ships with a baked-in white background, so in dark mode a
+        // bare <Image> reads as a stark white rectangle. Framing it as a rounded
+        // white chip makes the white deliberate; in light mode the chip is
+        // invisible (white on white). Transparency isn't an option — the mark's
+        // own colors need the light background.
+        <Box
+          bg="white"
+          px={6}
+          py={2}
+          style={{ borderRadius: 'var(--mantine-radius-md)', display: 'inline-flex', alignItems: 'center' }}
+        >
+          <Image src={brand.logo.src} alt={brand.logo.alt} width={brand.logo.width} height={brand.logo.height} priority />
+        </Box>
       ) : (
         <Title order={3} tt="lowercase" c={`${brand.nav.accent}.7`}>
           {brand.appName}

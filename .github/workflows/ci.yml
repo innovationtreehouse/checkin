@@ -4,9 +4,21 @@ on:
   push:
     branches:
       - main
+      # Deliberately NOT rel/** here: deploy-staging.yml calls this workflow
+      # directly via workflow_call (`validate`, mirroring how deploy-prod.yml
+      # revalidates a release tag) to gate the deploy on the exact commit being
+      # deployed. Also listing rel/** as a push trigger would run the entire
+      # pipeline a SECOND time on every rel/ push (once via this trigger, once
+      # via that workflow_call) for no benefit — the workflow_call already
+      # covers it. PRs targeting a rel/ branch still get checked below.
   pull_request:
     branches:
       - main
+      # A PR targeting a rel/ branch (e.g. a hotfix landing before a redeploy)
+      # gets the same lint/typecheck/test/migration-drift gate as one
+      # targeting main — this is the check staging exists to catch bad
+      # migrations with, so a rel/ branch can't merge changes around it.
+      - "rel/**"
   merge_group:
   # Callable so the prod release flow can RE-RUN the full pipeline (tests + the
   # deploy build/smoke) against the exact released tag before shipping — see
@@ -29,8 +41,11 @@ jobs:
   # The Python kiosk client (client/**) has no Node CI, so a client-only change has
   # nothing to test — but skipping the workflow via `paths-ignore` left those required
   # checks permanently "pending" and blocked client-only PRs from ever merging.
+  # Docs/markdown-only changes (docs/ dirs, or any *.md) are treated the same way:
+  # they can't affect the build or the app tests, so there's nothing to build or run.
   #
-  # Fix: this job decides whether anything OUTSIDE client/** changed. The required jobs
+  # Fix: this job decides whether any real app code (not client/, not docs/markdown)
+  # changed. The required jobs
   # below ALWAYS run (so the required contexts always report a result) but skip their
   # actual work when only client/** changed. A skipped *workflow* deadlocks a required
   # check; a job that runs and reports success does not.
@@ -70,8 +85,9 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # Only a pull_request whose every changed file is under client/ may skip the
-          # Node CI. push-to-main and merge_group always run the full pipeline.
+          # Only a pull_request whose every changed file is skippable — client code
+          # (client/), a docs/ directory, or any *.md file — may skip the Node CI.
+          # push-to-main and merge_group always run the full pipeline.
           if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "Non-PR event ($EVENT_NAME) — running full CI."
             echo "app=true" >> "$GITHUB_OUTPUT"
@@ -79,12 +95,13 @@ jobs:
           fi
           changed="$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")"
           echo "Changed files:"; printf '%s\n' "$changed"
-          # grep -v exits 0 if ANY line is NOT under client/ → there's app work to do.
-          if printf '%s\n' "$changed" | grep -qvE '^client/'; then
-            echo "Non-client files changed — running full CI."
+          # grep -v exits 0 if ANY line is NOT skippable (client/, a docs/ dir, or
+          # *.md) → there's real app code to build and test.
+          if printf '%s\n' "$changed" | grep -qvE '(^client/|(^|/)docs/|\.md$)'; then
+            echo "App code changed — running full CI."
             echo "app=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Client-only change — skipping Node CI work (required checks still pass)."
+            echo "Docs- or client-only change — skipping Node CI work (required checks still pass)."
             echo "app=false" >> "$GITHUB_OUTPUT"
           fi
 
@@ -157,7 +174,7 @@ jobs:
       # duplicate save with a warning, not a failure).
       - name: Restore Jest cache
         if: needs.changes.outputs.app == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: checkin-app/.jest-cache
           key: jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
@@ -205,7 +222,11 @@ jobs:
 
       - name: Check route coverage (security policy lint)
         if: needs.changes.outputs.app == 'true'
-        run: npm run check-route-coverage
+        # --strict: errors fail the build (0 errors at flip time; warnings never
+        # fail). The new-route-old-authz ratchet would block even without
+        # --strict, but strict also arms direct-json / third-party-fetch /
+        # registry-drift as real gates.
+        run: npm run check-route-coverage -- --strict
 
       # Full unit tier with coverage, no DB (sibling Jest-side contract).
       # SKIP_COVERAGE_THRESHOLD=1 disables jest.config.js's coverageThreshold
@@ -224,7 +245,7 @@ jobs:
       # even when the test step above fails the job.
       - name: Publish test results
         if: always() && needs.changes.outputs.app == 'true'
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Jest Tests (unit)
           path: checkin-app/test-results/junit.xml
@@ -238,7 +259,7 @@ jobs:
       # ran leaves nothing to upload, which is fine, this job is already red.
       - name: Upload unit coverage artifact
         if: always() && needs.changes.outputs.app == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-unit
           path: checkin-app/coverage/coverage-final.json
@@ -295,7 +316,7 @@ jobs:
       # Same cache, same key scheme as unit-tests above.
       - name: Restore Jest cache
         if: needs.changes.outputs.app == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: checkin-app/.jest-cache
           key: jest-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
@@ -348,7 +369,7 @@ jobs:
 
       - name: Publish test results
         if: always() && needs.changes.outputs.app == 'true'
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@v3
         with:
           name: Jest Tests (integration)
           path: checkin-app/test-results/junit.xml
@@ -357,7 +378,7 @@ jobs:
 
       - name: Upload integration coverage artifact
         if: always() && needs.changes.outputs.app == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-integration
           path: checkin-app/coverage/coverage-final.json
@@ -404,7 +425,7 @@ jobs:
       - name: Download unit coverage artifact
         if: needs.changes.outputs.app == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: coverage-unit
           path: coverage-artifacts/unit
@@ -412,7 +433,7 @@ jobs:
       - name: Download integration coverage artifact
         if: needs.changes.outputs.app == 'true'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: coverage-integration
           path: coverage-artifacts/integration

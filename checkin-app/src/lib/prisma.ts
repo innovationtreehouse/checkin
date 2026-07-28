@@ -32,6 +32,16 @@ const pool = new Pool({
     // whether an EARLIER orphaned one is still silently holding a lock).
     keepAlive: true,
     keepAliveInitialDelayMillis: 10_000,
+    // Scale-to-zero invariant: idle connections MUST be reaped (and `min` must
+    // stay 0) or this pool alone keeps the shared Aurora cluster from ever
+    // auto-pausing — the cluster pauses only after ~5 minutes with zero
+    // connections and zero queries. One minute (vs pg-pool's 10s default)
+    // keeps a connection warm across a user's click-to-click gaps without
+    // meaningfully delaying the pause window; if you need longer-lived warm
+    // connections, wake latency is already handled by the
+    // aurora-resume-retry extension below, not by holding sockets open.
+    idleTimeoutMillis: 60_000,
+    min: 0,
     // Server-side backstops for tests (#688 → #701's other half): #701 put
     // statement/idle-in-transaction timeouts into deploy/docker-compose.yml's
     // Postgres, but CI's `services:` container and the per-worker integration

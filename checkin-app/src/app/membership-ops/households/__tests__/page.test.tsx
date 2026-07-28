@@ -16,12 +16,14 @@ const households = {
       name: "The Smiths",
       orgMembership: { status: "ACTIVE" },
       householdMembers: [{ id: 10, name: "Pat Smith", email: "pat@example.com", isBoardMember: false }],
+      renewalGrantable: true,
     },
     {
       id: 2,
       name: "The Joneses",
       orgMembership: null,
       householdMembers: [{ id: 20, name: "Jo Jones", email: "jo@example.com", isBoardMember: false }],
+      renewalGrantable: true,
     },
   ],
 };
@@ -125,5 +127,97 @@ describe("membership-ops/households page", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "+ Add Participant" })[0]);
 
     expect(router.push).toHaveBeenCalledWith("/membership-ops/participants/new?householdId=1");
+  });
+
+  describe("Grant for coming year (renewal season)", () => {
+    const inSeason = { ...households, renewalSeason: true };
+
+    it("is hidden outside renewal season", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({ "/api/membership-ops/households": households }); // no renewalSeason flag
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      expect(screen.queryByRole("button", { name: "Grant for coming year" })).not.toBeInTheDocument();
+    });
+
+    it("shows for both an existing member and a non-member in renewal season", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({ "/api/membership-ops/households": inSeason });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      // The Smiths (ACTIVE) and The Joneses (non-member) both get the button.
+      expect(screen.getAllByRole("button", { name: "Grant for coming year" })).toHaveLength(2);
+    });
+
+    it("opens a modal requiring a reason, then posts comingYear + reason when confirmed", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      const fetchMock = mockFetchJson({ "/api/membership-ops/households": inSeason });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      fireEvent.click(screen.getAllByRole("button", { name: "Grant for coming year" })[0]);
+
+      // Mantine's `required` prop appends a visible " *" to the label text.
+      const reasonInput = await screen.findByLabelText(/^Reason/);
+      // The confirm button is disabled until a reason is entered.
+      expect(screen.getByRole("button", { name: "Grant" })).toBeDisabled();
+
+      fireEvent.change(reasonInput, { target: { value: "Family paid cash at the front desk" } });
+      expect(screen.getByRole("button", { name: "Grant" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: "Grant" }));
+
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/membership-ops/households",
+          expect.objectContaining({
+            method: "POST",
+            body: JSON.stringify({ householdId: 1, comingYear: true, reason: "Family paid cash at the front desk" }),
+          }),
+        ),
+      );
+    });
+
+    it("disables it once the coming year is settled", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({
+        "/api/membership-ops/households": {
+          ...inSeason,
+          households: [{ ...inSeason.households[0], settledForComingYear: true }, inSeason.households[1]],
+        },
+      });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      expect(screen.getByRole("button", { name: "Granted for coming year" })).toBeDisabled();
+      // The un-settled household keeps a live button.
+      expect(screen.getByRole("button", { name: "Grant for coming year" })).toBeEnabled();
+    });
+
+    it("hides it for a board member's OWN household (conflict of interest)", async () => {
+      setSession({ id: 99, isBoardMember: true, householdId: 2 }); // same household as The Joneses (id 2)
+      mockFetchJson({ "/api/membership-ops/households": inSeason });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Joneses");
+
+      // The gate is now visibility-only: only the Smiths' button renders — the
+      // Joneses' (own household) is hidden entirely, not just disabled.
+      expect(screen.getAllByRole("button", { name: "Grant for coming year" })).toHaveLength(1);
+    });
+
+    it("hides it when the household has no grantable renewal (renewalGrantable false)", async () => {
+      setSession({ id: 1, isSysadmin: true });
+      mockFetchJson({
+        "/api/membership-ops/households": {
+          ...inSeason,
+          households: inSeason.households.map((h) => ({ ...h, renewalGrantable: false })),
+        },
+      });
+      renderWithProviders(<AdminHouseholdsPage />);
+      await screen.findByText("The Smiths");
+
+      expect(screen.queryByRole("button", { name: "Grant for coming year" })).not.toBeInTheDocument();
+    });
   });
 });

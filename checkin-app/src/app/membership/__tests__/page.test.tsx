@@ -170,13 +170,16 @@ describe("membership page", () => {
     mockFetchJson({
       "/api/membership": state({
         process: { id: 1, kind: "INITIAL", status: "PENDING_EXTERNAL_ACTION" },
-        external: { contractSigned: true, contractStarted: true, bgConsented: false, bgCleared: true, deepLinkUrl: null },
+        // deepLinkUrl still set (the server keeps returning it) to prove the reopen
+        // link is hidden because the household is cleared, not because it's absent.
+        external: { contractSigned: true, contractStarted: true, bgConsented: false, bgCleared: true, deepLinkUrl: "https://averity.example/consent" },
       }),
     });
     renderWithProviders(<MembershipPage />);
 
     expect(await screen.findByText("Agreement signed — thank you!")).toBeInTheDocument();
     expect(screen.getByText("Background check")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Reopen the Averity consent form/ })).not.toBeInTheDocument();
   });
 
   it("renders PENDING_PAYMENT with a checkout link", async () => {
@@ -271,7 +274,7 @@ describe("membership page", () => {
     });
     renderWithProviders(<MembershipPage />);
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Thanks — your signature was received." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Thanks — your signature was received." })));
     expect(window.location.search).toBe("");
   });
 
@@ -287,7 +290,7 @@ describe("membership page", () => {
     });
     renderWithProviders(<MembershipPage />);
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: expect.stringContaining("Signature received — finalizing.") })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("Signature received — finalizing.") })));
   });
 
   it("falls back to a finalizing message when the sync request itself errors", async () => {
@@ -306,7 +309,7 @@ describe("membership page", () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     renderWithProviders(<MembershipPage />);
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: expect.stringContaining("Signature received — finalizing.") })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: expect.stringContaining("Signature received — finalizing.") })));
   });
 
   // ── PENDING_PAYMENT dues fetch branches ──────────────────────────────────────
@@ -455,6 +458,9 @@ describe("membership page", () => {
 
     expect(await screen.findByRole("button", { name: "Resume signing →" })).toBeInTheDocument();
     expect(screen.getByText("Background check started", { exact: false })).toBeInTheDocument();
+    // Consented (honor-system) but not yet reviewer-cleared: the Averity link stays
+    // reachable so a mis-click or an unfinished form isn't a dead end.
+    expect(screen.getByRole("link", { name: /Reopen the Averity consent form/ })).toHaveAttribute("href", "https://averity.example/consent");
   });
 
   it("shows a not-yet-available background-check link and refreshes status on demand", async () => {
@@ -918,5 +924,93 @@ describe("membership page", () => {
     expect(body.children[0].email).toBeNull();
     expect(body.children[0].dob).toBeNull();
     expect(body.children[0].allergies).toBeNull();
+  });
+});
+
+describe("payment holdoff visibility refetch", () => {
+  it("refetches state when the tab becomes visible while awaiting payment", async () => {
+    setSession({ id: 1 });
+    sessionStorage.setItem("membership_awaiting_payment_1", String(Date.now()));
+    const fetchMock = mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+    expect(await screen.findByText(/update your status here when we receive your payment/i)).toBeInTheDocument();
+
+    const stateCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]) === "/api/membership").length;
+    const before = stateCalls();
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(stateCalls()).toBeGreaterThan(before));
+  });
+});
+
+describe("scholarship / payment-plan request", () => {
+  const pendingPayment = (extra: Record<string, unknown> = {}) => ({
+    "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+    "/api/membership": state({
+      process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT", ...extra },
+      external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+    }),
+  });
+
+  it("asks for confirmation before sending — cancel fires nothing", async () => {
+    setSession({ id: 1 });
+    const fetchMock = mockFetchJson(pendingPayment());
+    renderWithProviders(<MembershipPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ }));
+    expect(await screen.findByText(/This sends your request to the board/)).toBeInTheDocument();
+    const requestCalls = () => fetchMock.mock.calls.filter((c) => String(c[0]).includes("request-payment-plan")).length;
+    expect(requestCalls()).toBe(0);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(requestCalls()).toBe(0);
+    expect(screen.getByRole("button", { name: /Request a scholarship or payment plan/ })).toBeInTheDocument();
+  });
+
+  it("confirm sends the request and swaps the button for the received state", async () => {
+    setSession({ id: 1 });
+    const fetchMock = mockFetchJson({ ...pendingPayment(), "/api/membership/request-payment-plan": { ok: true } });
+    renderWithProviders(<MembershipPage />);
+    fireEvent.click(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send request" }));
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter((c) => String(c[0]).includes("request-payment-plan")).length).toBe(1);
+    expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
+  });
+
+  it("a reload after requesting still shows the received state (server flag)", async () => {
+    setSession({ id: 1 });
+    mockFetchJson(pendingPayment({ isPaymentPlanRequested: true }));
+    renderWithProviders(<MembershipPage />);
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
+  });
+
+  it("a state refetch with isPaymentPlanRequested:false reverts the button to requestable", async () => {
+    setSession({ id: 1 });
+    // Piggyback on the payment-holdoff visibility refetch (already exercised
+    // above) as the lever to force a second /api/membership load — the
+    // PENDING_PAYMENT card has no other user-facing refresh trigger.
+    sessionStorage.setItem("membership_awaiting_payment_1", String(Date.now()));
+    let requested = true;
+    mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": () => state({
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT", isPaymentPlanRequested: requested },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+    expect(await screen.findByText(/requested — the Scholarship Review Team will follow up/)).toBeInTheDocument();
+
+    requested = false;
+    Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(await screen.findByRole("button", { name: /Request a scholarship or payment plan/ })).toBeInTheDocument();
   });
 });

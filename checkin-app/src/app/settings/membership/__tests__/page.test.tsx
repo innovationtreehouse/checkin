@@ -5,7 +5,7 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, setCheckinEnv, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
 import MembershipSettingsPage from "../page";
 
@@ -54,7 +54,7 @@ describe("MembershipSettingsPage", () => {
     expect(JSON.parse(putOpts!.body as string)).toEqual(expect.objectContaining({ normalDuesCents: 20000 }));
 
     await waitFor(() =>
-      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Settings saved." })),
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Settings saved." })),
     );
   });
 
@@ -98,7 +98,7 @@ describe("MembershipSettingsPage", () => {
     // The extracted id lands in the variant-ID field, with a reminder to Save.
     expect(await screen.findByDisplayValue("789789")).toBeInTheDocument();
     expect(notifications.show).toHaveBeenCalledWith(
-      expect.objectContaining({ color: "green", message: expect.stringMatching(/789789.*Save settings/) }),
+      expect.objectContaining({ message: expect.stringMatching(/789789.*Save settings/) }),
     );
 
     // The normal save persists both the URL and the extracted variant ID.
@@ -231,7 +231,30 @@ describe("MembershipSettingsPage", () => {
     );
   });
 
-  it("opens renewals for all active members after confirming, with reminders toggled on", async () => {
+  // The signing-target radio is a CHECKIN_ENV=dev knob: the API 400s devSigningTarget on
+  // any other env, and one rejected field rejects the whole PUT — so sending it on 'local'
+  // made every membership setting unsaveable. tsc can't see this (both predicates are
+  // boolean), so the env gate needs a real assertion on the PUT body.
+  it.each([
+    ["local" as const, false],
+    ["dev" as const, true],
+  ])("on CHECKIN_ENV=%s, sends devSigningTarget: %s", async (env, expected) => {
+    setCheckinEnv(env);
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({ "/api/settings/membership": { settings: SETTINGS } });
+    renderWithProviders(<MembershipSettingsPage />);
+    await screen.findByDisplayValue("150.00");
+
+    // The radio itself is only rendered on a real dev instance.
+    expect(!!screen.queryByText(/Contract signing target/)).toBe(expected);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/settings/membership", expect.objectContaining({ method: "PUT" })));
+    const [, putOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PUT")!;
+    expect("devSigningTarget" in JSON.parse(putOpts!.body as string)).toBe(expected);
+  });
+
+  it("opens renewals for all active members after confirming (never emails — PR-2)", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
       "/api/settings/membership/bulk-open-renewals": { opened: 12, skipped: 3 },
@@ -240,7 +263,8 @@ describe("MembershipSettingsPage", () => {
     renderWithProviders(<MembershipSettingsPage />);
     await screen.findByDisplayValue("150.00");
 
-    fireEvent.click(screen.getByLabelText("Also email each household a renewal reminder"));
+    expect(screen.queryByLabelText("Also email each household a renewal reminder")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Open renewals for all active members" }));
     const modal = await screen.findByRole("dialog", { name: "Open Renewals For All Active Members" });
     fireEvent.click(within(modal).getByRole("button", { name: "Open Renewals" }));
@@ -248,7 +272,7 @@ describe("MembershipSettingsPage", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/settings/membership/bulk-open-renewals",
-        expect.objectContaining({ method: "POST", body: JSON.stringify({ sendReminders: true }) }),
+        expect.objectContaining({ method: "POST" }),
       ),
     );
     expect(await screen.findByText("Opened 12 renewal(s); 3 already in progress.")).toBeInTheDocument();

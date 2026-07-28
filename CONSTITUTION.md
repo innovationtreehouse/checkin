@@ -1,7 +1,7 @@
 # CheckMeIn Constitution
 
 ## Purpose and Vision
-CheckMeIn is a dedicated member check-in and program management system designed for makerspaces, community shops, and volunteer organizations. Its primary goal is to provide a seamless, secure, and user-friendly experience for managing member access, tool certifications, program enrollments, and facility usage.
+CheckMeIn is a member check-in and program management system for makerspaces, community shops, and volunteer organizations. It manages member access, tool certifications, program enrollments, and facility usage.
 
 ## Core Principles
 1. **Security and Access Control**: CheckMeIn is responsible for physical and operational security (e.g., verifying who can enter the facility and who is certified to use dangerous tools). Features that bypass or weaken these checks are strictly prohibited.

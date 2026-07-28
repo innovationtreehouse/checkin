@@ -27,3 +27,11 @@ export function parseVisitTime(
 export function departureAfterArrival(arrived: Date, departed: Date): boolean {
   return departed.getTime() > arrived.getTime();
 }
+
+/** A single visit can't span more than a day — a longer window is a missed
+ * checkout or a typo, not a real visit. Applies only to closed visits. */
+export const MAX_VISIT_MS = 24 * 60 * 60 * 1000;
+
+export function withinMaxDuration(arrived: Date, departed: Date): boolean {
+  return departed.getTime() - arrived.getTime() <= MAX_VISIT_MS;
+}

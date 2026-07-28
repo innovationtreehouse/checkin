@@ -22,7 +22,19 @@ describe('Events API Integration Tests', () => {
     let testLeadMentorId: number;
     let testProgramId: number;
 
+    let prevAppSettings: { id: number; timezone: string; locale: string } | null = null;
+
     beforeAll(async () => {
+        // This suite asserts America/Chicago wall-clock semantics; pin the
+        // AppSettings singleton rather than trusting whatever a worker-mate
+        // left behind (the localization suite once leaked America/New_York).
+        prevAppSettings = await prisma.appSettings.findUnique({ where: { id: 1 } });
+        await prisma.appSettings.upsert({
+            where: { id: 1 },
+            create: { id: 1, timezone: 'America/Chicago' },
+            update: { timezone: 'America/Chicago' },
+        });
+
         // Clean up any leaked state
         await prisma.event.deleteMany({
             where: { name: { contains: 'Test Event' } }
@@ -63,6 +75,10 @@ describe('Events API Integration Tests', () => {
     });
 
     afterAll(async () => {
+        // Same singleton discipline as the pin above: put back what we found.
+        if (prevAppSettings) await prisma.appSettings.update({ where: { id: 1 }, data: { timezone: prevAppSettings.timezone, locale: prevAppSettings.locale } });
+        else await prisma.appSettings.deleteMany({ where: { id: 1 } });
+
         // Clean up
         await prisma.event.deleteMany({
             where: { name: { contains: 'Test Event' } }

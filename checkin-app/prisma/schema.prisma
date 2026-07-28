@@ -103,6 +103,14 @@ model Person {
   /// @sensitivity:personal
   notificationSettings Json?
 
+  /// Self- or board-set suppression of outreach (join-invitation) email to this
+  /// person. Set via the unsubscribe link (join-variant only) or the member's own
+  /// communication-page toggle. Renew-variant outreach ignores this — see
+  /// lib/outreach/recipients.ts. 'personal' (not 'internal'): the member reads/writes
+  /// their own via their_own:personal; board/ops see it on the directory pill via
+  /// everyones:personal. @sensitivity:personal
+  emailSuppressed Boolean @default(false)
+
   /// @sensitivity:public
   householdId Int
   household   Household @relation(fields: [householdId], references: [id])
@@ -114,17 +122,43 @@ model Person {
   /// leads/household enforced at write, not in schema. @sensitivity:public
   isHouseholdLead Boolean @default(false)
 
+  /// Provenance: when this record was merged into another Person, the surviving
+  /// Person.id. Null == a live record. Set once by the merge route; the row is
+  /// tombstoned, never deleted. Drives the double-merge CAS guard and the
+  /// live-person filter (lib/person/filters.ts). @sensitivity:internal
+  mergedIntoId Int?
+  mergedInto   Person?  @relation("PersonMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom   Person[] @relation("PersonMerge")
+
   /// @sensitivity:personal
   allergies String?
 
+  /// @deprecated legacy mirror column, kept in sync by write-through for existing
+  /// readers (see PersonRole). PersonRole is the source of truth; dropped in the
+  /// CONTRACT PR once those readers are ported to `roles:{some:{role:...}}`.
   /// @sensitivity:internal
   isSysadmin                Boolean @default(false)
+  /// @deprecated legacy mirror column — see isSysadmin.
   /// @sensitivity:public
   isBoardMember             Boolean @default(false)
+  /// @deprecated legacy mirror column — see isSysadmin.
   /// @sensitivity:internal
   isKeyholder               Boolean @default(false)
+  /// @deprecated legacy mirror column — see isSysadmin.
   /// @sensitivity:internal
   isBackgroundCheckReviewer Boolean @default(false)
+
+  /// Admits this person past the ops-stg access gate (middleware +
+  /// authenticateRequest + resolveAccess) even though they are not a verified
+  /// innovationtreehouse.org member — the escape hatch for an outside
+  /// collaborator a sysadmin explicitly admits to staging. NOT one of the five
+  /// PersonRole-backed flags in lib/roles.ts: it is sysadmin-settable only (a
+  /// board member without isSysadmin may not grant it — see /api/roles), unlike
+  /// the board-symmetric role matrix. Forced false whenever the household is
+  /// DENIED (assignParticipantClaims), same as the role flags. Inert outside
+  /// staging (isStaging()) — see lib/config.ts.
+  /// @sensitivity:internal
+  canAccessStaging Boolean @default(false)
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
@@ -144,11 +178,46 @@ model Person {
   trustedAdultsDisclosed      TrustedAdult[]       @relation("TrustedAdultDiscloser")
   trustedAdultReviewsDecided  TrustedAdultReview[] @relation("TrustedAdultDecider")
 
+  // Source-of-truth role grants (see PersonRole). Two named relations because
+  // Person is referenced twice (holder + granter) — same pattern as BgAttestations.
+  roles        PersonRole[] @relation("PersonRoles")
+  grantedRoles PersonRole[] @relation("RoleGrantedBy")
+
   // Household-lead lookups (a1): "leads of household X" runs on the hot paths
   // (check-in notification fan-out, nav badges, broken/unclaimed-household scans).
   // Person had no householdId index — the old HouseholdLead composite PK provided
   // one; this restores it, extended with isHouseholdLead so lead scans stay index-only.
   @@index([householdId, isHouseholdLead])
+}
+
+enum PersonRoleKind {
+  SYSADMIN
+  BOARD
+  KEYHOLDER
+  BG_REVIEWER
+  OPERATIONS
+}
+
+/// Source of truth for role grants (expand phase of the boolean-column -> table
+/// migration; see docs on the roles-foundation rework). The five session/JWT
+/// booleans (isSysadmin...isOperations) are derived from this table
+/// (src/lib/roles.ts rolesToFlags); four legacy Person columns stay as a
+/// write-through mirror for existing readers (isOperations never had one).
+model PersonRole {
+  /// @sensitivity:internal
+  personId    Int
+  /// @sensitivity:internal
+  role        PersonRoleKind
+  /// @sensitivity:internal
+  grantedAt   DateTime       @default(now())
+  /// @sensitivity:internal
+  grantedById Int?
+
+  person    Person  @relation("PersonRoles",  fields: [personId],    references: [id], onDelete: Cascade)
+  grantedBy Person? @relation("RoleGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@id([personId, role])
+  // ponytail: no @@index([role]) — handful of rows, seq scan is free; add when the table grows.
 }
 
 model Tool {
@@ -404,6 +473,12 @@ model OrgMembershipProcess {
   /// @sensitivity:internal
   certifiedById         Int?
   /// @sensitivity:internal
+  certificationNote     String?
+  /// Write-never as of the outreach engine (PR-2): the renewal sweep and the go-live
+  /// bulk-open button no longer email, so nothing stamps this anymore. Kept (not
+  /// dropped) because dropping a column is a destructive migration for no benefit —
+  /// see lib/outreach for the only remaining send surface.
+  /// @sensitivity:internal
   renewalReminderSentAt DateTime?
   /// @sensitivity:internal
   isPaymentPlanRequested Boolean @default(false)
@@ -425,6 +500,8 @@ model BackgroundCheckAttestation {
   reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
   /// @sensitivity:internal
   result          AttestationResult
+  /// @sensitivity:internal
+  note            String?
   /// @sensitivity:internal
   isMarkedVolunteer Boolean           @default(false)
   /// @sensitivity:public
@@ -495,6 +572,41 @@ model BoardSettings {
   /// go to From). Need not be on the sending domain.
   /// @sensitivity:public
   emailReplyToAddress        String?
+  /// Where a new scholarship / payment-plan request is announced (the "Scholarship
+  /// Review Team"). Comma-separated list of one or more addresses, each a bare
+  /// address or "Name <addr@domain>" — same shape as emailReplyToAddress. NULL =
+  /// fall back to emailing every board member (the board IS the review team until
+  /// this is configured).
+  /// @sensitivity:internal
+  scholarshipNotifyEmail     String?
+  /// Subject line for the scholarship / payment-plan request ACK — the applicant's
+  /// only automatic email (scholarshipEmails.ts). NULL or blank = the default copy
+  /// in lib/scholarshipEmails.ts. Set on Settings → Email, same section as
+  /// scholarshipNotifyEmail. @sensitivity:internal
+  scholarshipAckSubject      String?
+  /// ACK body for a membership-dues request (POST /api/membership/request-payment-plan).
+  /// Plain text: rendered by HTML-escaping then splitting into `<p>` paragraphs — never
+  /// interpreted as HTML (see scholarshipAckProgramBody re: the outreach preview XSS
+  /// history this deliberately avoids). NULL/blank = the default copy.
+  /// @sensitivity:internal
+  scholarshipAckMembershipBody String?
+  /// ACK body for a program request (POST /api/programs/[id]/request-payment-plan).
+  /// Same plain-text rendering as scholarshipAckMembershipBody, plus one token,
+  /// `{{programName}}`. Ignored on the Shopify-seat-hold-failed branch, which always
+  /// sends its own hard-coded operational-incident copy (the subject above still
+  /// applies). NULL/blank = the default copy. @sensitivity:internal
+  scholarshipAckProgramBody String?
+  /// Opening-of-renewals campaign template (settings/outreach). Board/sysadmin/ops
+  /// editable; four tokens only ({{name}} {{deadline}} {{actionWord}} {{actionLink}}),
+  /// validated on save. @sensitivity:internal
+  outreachOpeningSubject     String?
+  /// @sensitivity:internal
+  outreachOpeningBody        String?
+  /// Reminder campaign template (settings/outreach). Same token set as
+  /// outreachOpeningSubject/Body. @sensitivity:internal
+  outreachReminderSubject    String?
+  /// @sensitivity:internal
+  outreachReminderBody       String?
   /// @sensitivity:internal
   shopifyOrgMembershipProductId String?
   /// @sensitivity:internal
@@ -503,6 +615,11 @@ model BoardSettings {
   shopifyVolunteerVariantId  String?
   /// @sensitivity:internal
   shopifyPriceSyncedAt       DateTime?
+  /// High-water mark for the daily Shopify reconciler (lib/finance/reconcile.ts):
+  /// the mirror `updatedAt` of the newest order it has already processed. Only
+  /// orders changed after this are re-scanned each run. Null = scan from the start.
+  /// @sensitivity:internal
+  shopifyReconcileCursorAt   DateTime?
   /// Grace period (days) a denied scholarship applicant keeps their held seat
   /// before the grace-period expiry cron auto-withdraws them and releases it.
   /// NULL = the expiry feature is OFF (a denied hold is only ever released by
@@ -735,6 +852,15 @@ model Program {
   enrollmentStatus               EnrollmentStatus @default(CLOSED)
   /// @sensitivity:public
   orgMemberOnly                  Boolean          @default(false)
+  /// Opt-in (#1153): when true, reaching UPCOMING+OPEN emails covered members once.
+  /// Default false — no program announces unless a leader enables it.
+  /// @sensitivity:public
+  announceOnOpen                 Boolean          @default(false)
+  /// Once-per-lifetime announce marker: set by the conditional claim in
+  /// lib/programAnnounce.ts when the announce blast fires. Never reset — a
+  /// program that announced once never auto-announces again.
+  /// @sensitivity:internal
+  announcedAt                    DateTime?
   /// @sensitivity:public
   minAge                         Int?
   /// @sensitivity:public
@@ -819,6 +945,11 @@ model ProgramParticipant {
   /// BoardSettings.scholarshipDenialGraceDays.
   /// @sensitivity:personal
   paymentPlanDeniedAt  DateTime?
+  /// Shopify order id (numeric, from the orders/paid webhook) this enrollment was
+  /// activated by. Stored so the reconciler can join a later refund/chargeback/cancel
+  /// on that order back to the enrollment (mirror shop_order.legacyId ↔ this).
+  /// @sensitivity:internal
+  shopifyOrderId       String?
 
   program Program     @relation(fields: [programId], references: [id])
   person  Person @relation(fields: [personId], references: [id])
@@ -1113,4 +1244,133 @@ model DevSentEmail {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+// ── Payment reconciliation ───────────────────────────────────────────────────
+// The daily reconciler (lib/finance/reconcile.ts) reads the s-read `shopify_read`
+// mirror and reconciles Shopify order truth against membership/program truth.
+// Clean recoveries (a missed orders/paid webhook) advance the family and are
+// recorded to AuditLog only. Everything a human must decide — refunds, chargebacks,
+// cancellations, unattributable payments — becomes a PaymentException row: a thin
+// TRIAGE record, deliberately NOT a copy of the mirror (amounts/status are re-read
+// live from shopify_read by shopifyOrderId at view time).
+
+enum PaymentExceptionKind {
+  PAID_WHILE_BLOCKED
+  NO_ITEM
+  UNMATCHED_ORDER
+  REFUND
+  CHARGEBACK
+  CANCELLED
+  REVERSED_BEFORE_ACTIVATION
+  AMOUNT_MISMATCH
+  ACTIVE_WITHOUT_PAYMENT
+  DISCOUNT_UNAUTHORIZED
+  // An activation records a Shopify order id, but that order isn't in the mirror
+  // (deleted in Shopify, or a mirror low-water/backfill gap). Distinct from
+  // ACTIVE_WITHOUT_PAYMENT: a payment IS on record here, it just can't be verified.
+  PAYMENT_UNVERIFIABLE
+}
+
+enum PaymentExceptionSeverity {
+  WARN
+  CRITICAL
+}
+
+enum PaymentExceptionStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model PaymentException {
+  /// @sensitivity:public
+  id                   Int                      @id @default(autoincrement())
+  /// @sensitivity:internal
+  kind                 PaymentExceptionKind
+  /// @sensitivity:internal
+  severity             PaymentExceptionSeverity @default(WARN)
+  /// @sensitivity:internal
+  status               PaymentExceptionStatus   @default(OPEN)
+  /// Numeric Shopify order id (mirror shop_order.legacyId) — the pointer back INTO
+  /// the mirror. The dashboard re-reads live amounts/financialStatus from here.
+  /// @sensitivity:internal
+  shopifyOrderId       String?
+  /// The membership process this problem is about, when matched.
+  /// @sensitivity:internal
+  processId            Int?
+  /// The program enrollment this problem is about, when matched (composite key).
+  /// @sensitivity:internal
+  programId            Int?
+  /// @sensitivity:internal
+  personId             Int?
+  /// @sensitivity:internal
+  resolvedById         Int?
+  /// @sensitivity:internal
+  resolvedAt           DateTime?
+  /// @sensitivity:personal
+  resolutionNote       String?
+  /// @sensitivity:internal
+  detectedAt           DateTime                 @default(now())
+
+  // Idempotent re-detection: one open row per (kind, order) across daily runs —
+  // the reconciler upserts on this key instead of duplicating each run.
+  @@unique([kind, shopifyOrderId])
+  @@index([status, severity])
+}
+
+/// One manual outreach campaign send (settings/outreach). The recipient snapshot
+/// is captured into BulkSendItem rows at create time; there is no background
+/// job — the browser drains `queued` items via /api/outreach/process-batch until
+/// none remain. This row (+ its items) IS the send log / last-sent panel data.
+/// Counts are computed from items (groupBy status), never denormalized here.
+model BulkSend {
+  /// @sensitivity:internal
+  id          Int       @id @default(autoincrement())
+  /// "opening" | "reminder"
+  /// @sensitivity:internal
+  emailType   String
+  /// "a" | "b" | "c" — the audience preset chosen at send time.
+  /// @sensitivity:internal
+  audience    String
+  /// Person.id who fired the send.
+  /// @sensitivity:internal
+  senderId    Int
+  /// @sensitivity:internal
+  startedAt   DateTime  @default(now())
+  /// Set when a batch finds zero `queued` items remaining.
+  /// @sensitivity:internal
+  completedAt DateTime?
+  items       BulkSendItem[]
+}
+
+/// One recipient row of a BulkSend — the per-item idempotency key for the
+/// client-driven drain (a guarded `updateMany where status='queued'` claim means
+/// a re-POST of an already-processed batch claims and sends nothing).
+model BulkSendItem {
+  /// @sensitivity:internal
+  id         Int       @id @default(autoincrement())
+  /// @sensitivity:internal
+  bulkSendId Int
+  bulkSend   BulkSend  @relation(fields: [bulkSendId], references: [id])
+  /// @sensitivity:internal
+  personId   Int
+  /// Captured at snapshot time (not re-read from Person at send time). Tagged
+  /// `internal` rather than `pii` as a DELIBERATE call, FLAGGED FOR REVIEW: this
+  /// row is only ever read by board/ops on the admin send panel, never serialized
+  /// through a member-facing bag — same admin-ledger tier as the rest of this model.
+  /// @sensitivity:internal
+  email      String
+  /// "join" | "renew"
+  /// @sensitivity:internal
+  variant    String
+  /// "queued" | "sent" | "failed" | "skipped_unsubscribed"
+  /// @sensitivity:internal
+  status     String
+  /// @sensitivity:internal
+  sentAt     DateTime?
+  /// @sensitivity:internal
+  error      String?
+
+  @@index([bulkSendId, status])
 }

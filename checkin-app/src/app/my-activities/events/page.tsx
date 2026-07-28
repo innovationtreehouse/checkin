@@ -38,7 +38,7 @@ function groupByEvent(events: EventData[]): EventData[][] {
 }
 
 const RSVP_OPTIONS: { status: RsvpStatus; label: string; color: string }[] = [
-  { status: 'ATTENDING', label: 'Yes', color: 'green' },
+  { status: 'ATTENDING', label: 'Yes', color: 'treehouseGreen' },
   { status: 'MAYBE', label: 'Maybe', color: 'yellow' },
   { status: 'NOT_ATTENDING', label: 'No', color: 'red' },
 ];

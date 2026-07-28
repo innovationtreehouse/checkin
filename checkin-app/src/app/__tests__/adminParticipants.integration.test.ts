@@ -285,7 +285,7 @@ describe('Admin Participants API Integration Tests', () => {
             // PII edits MUST leave an audit trail naming the acting admin and the
             // before/after of the field — a regression dropping the actor or the
             // log fails right here.
-            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Participant', affectedEntityId: editUser.id });
+            const log = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'Person', affectedEntityId: editUser.id });
             expect(log.actorId).toBe(testAdminId);
             expect(auditJson(log.oldData).name).toBe('Original Name');
             expect(auditJson(log.newData).name).toBe('Updated Name');

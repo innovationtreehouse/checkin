@@ -75,7 +75,7 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
 // Board members are implicit reviewers (see canReviewBackgroundChecks); attest() re-checks.
 export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
-    let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean };
+    let body: { processId?: number; result?: "APPROVE" | "REJECT"; isMarkedVolunteer?: boolean; note?: string };
     try {
         body = await req.json();
     } catch {
@@ -84,8 +84,12 @@ export const POST = withAuth({ roles: ["isBackgroundCheckReviewer", "isBoardMemb
     if (!body.processId || (body.result !== "APPROVE" && body.result !== "REJECT")) {
         return apiError("processId and result (APPROVE|REJECT) are required", 400);
     }
+    const note = typeof body.note === "string" ? body.note.trim() : "";
+    if (body.result === "REJECT" && !note) {
+        return apiError("A note explaining the denial is required", 400);
+    }
     try {
-        const outcome = await attest(auth.user.id, body.processId, { result: body.result, isMarkedVolunteer: body.isMarkedVolunteer });
+        const outcome = await attest(auth.user.id, body.processId, { result: body.result, isMarkedVolunteer: body.isMarkedVolunteer, note: note || undefined });
         return NextResponse.json({ outcome });
     } catch (error) {
         if (error instanceof ReviewError) {

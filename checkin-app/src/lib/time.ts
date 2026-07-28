@@ -29,6 +29,22 @@ export function formatDateTime(date: Date | string | number | null | undefined, 
 }
 
 /**
+ * Coarse "how long ago" for freshness lines ("just now", "12 min ago", "3 hr ago",
+ * "2 d ago"). No timezone involved — it's a difference, not a wall-clock reading.
+ * Deliberately coarse: it answers "is this stale?", not "exactly when?" — pair it
+ * with formatDateTime when the precise instant matters.
+ */
+export function relTime(when: string | Date, now: Date | number = Date.now()): string {
+    const ms = new Date(now).getTime() - new Date(when).getTime();
+    const min = Math.floor(ms / 60000);
+    if (min < 1) return "just now";
+    if (min < 60) return `${min} min ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr} hr ago`;
+    return `${Math.floor(hr / 24)} d ago`;
+}
+
+/**
  * Visit time range for display: "1:35 PM-2:19 PM (44 minutes)" once departed,
  * or "1:35 PM-" while still active (no end time, no length — too dynamic).
  * Times are shown without seconds.
@@ -71,6 +87,27 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 }
 
 /**
+ * Format a calendar-date field (program dates, DOB, memberSince — stored at UTC
+ * midnight by convention) UTC-pinned, so the stored calendar day renders
+ * unshifted in every zone. Counterpart to formatDate, which is for instants.
+ * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+ */
+export function formatDateOnly(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+    if (!date) return '';
+    return new Date(date).toLocaleDateString(undefined, { timeZone: 'UTC', ...options });
+}
+
+/**
+ * Parse an <input type="date"> value ("yyyy-MM-dd") into the calendar-date
+ * storage convention: UTC midnight (what `new Date` does to a bare date).
+ * The single write-side seam if the storage model ever changes (the design
+ * doc's open decision). A value already carrying a time parses as-is.
+ */
+export function parseDateOnly(value: string | null | undefined): Date | null {
+    return value ? new Date(value) : null;
+}
+
+/**
  * Returns the calendar age in whole years for the given DOB, decremented if
  * the birthday hasn't happened yet as of `asOf`. Canonical implementation — use
  * this everywhere instead of inline epoch-diff age math.
@@ -91,8 +128,16 @@ export function calculateAge(dob: Date | string, asOf: Date | string = new Date(
 /**
  * Returns true if the person with the given DOB is under 18 years old (youth).
  * Canonical implementation — use this everywhere instead of inline age checks.
+ *
+ * Unknown (null/undefined) DOB resolves to `unknownIs`, default 'adult': UI and
+ * household-lead callers rely on that (a null-DOB member stays promotable to
+ * lead, blank forms don't show youth fields). Safety checks must pass
+ * `{ unknownIs: 'youth' }` so missing data fails closed (#300).
  */
-export function isYouth(dob: Date | string | null | undefined): boolean {
-    if (!dob) return false;
+export function isYouth(
+    dob: Date | string | null | undefined,
+    opts?: { unknownIs?: 'youth' | 'adult' },
+): boolean {
+    if (!dob) return (opts?.unknownIs ?? 'adult') === 'youth';
     return calculateAge(dob) < 18;
 }

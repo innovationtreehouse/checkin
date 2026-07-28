@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { usePolling, POLL_IDLE_STOP_MS } from "@/hooks/usePolling";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
@@ -24,6 +25,9 @@ type Person = {
   name?: string | null;
   isKeyholder: boolean;
   isSysadmin: boolean;
+  // Server-computed youth classification. The kiosk payload carries this INSTEAD of
+  // dateOfBirth (personal tier); privileged payloads carry both.
+  isYouth?: boolean;
   dateOfBirth?: string | null;
   householdId?: number | null;
   phone?: string | null;
@@ -76,16 +80,20 @@ function KioskDisplayInner() {
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
+  // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
+  // fall back to the birth date the privileged payload still ships.
+  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth);
+
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
-  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
-  const youthList = fullAttendance.filter(v => isYouth(v.participant.dateOfBirth));
+  const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
+  const youthList = fullAttendance.filter(v => visitIsYouth(v));
 
   const limitedHousehold = !isFull && data ? (data as LimitedResponse).household : [];
   const limitedSelf = !isFull && data ? (data as LimitedResponse).self : null;
   const householdKeyholders = limitedHousehold.filter(v => v.participant.isKeyholder);
-  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !isYouth(v.participant.dateOfBirth));
-  const householdYouth = limitedHousehold.filter(v => isYouth(v.participant.dateOfBirth));
+  const householdVolunteers = limitedHousehold.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
+  const householdYouth = limitedHousehold.filter(v => visitIsYouth(v));
 
   const isCheckedIn = isFull
     ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
@@ -107,39 +115,43 @@ function KioskDisplayInner() {
     if (canCheckInHousehold) fetchHousehold();
   }, [canCheckInHousehold, currentUserHouseholdId]);
 
-  useEffect(() => {
-    const fetchAttendance = async () => {
-      try {
-        const headers: Record<string, string> = {};
-        const sigParamsUrl = searchParams.get("sig");
-        const tsParamsUrl = searchParams.get("ts");
-        const nonceParamsUrl = searchParams.get("nonce");
-        if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
-          headers["x-kiosk-signature"] = sigParamsUrl;
-          headers["x-kiosk-timestamp"] = tsParamsUrl;
-          headers["x-kiosk-nonce"] = nonceParamsUrl;
-        }
+  // A signed kiosk display (sig/ts/nonce present) is unattended, so it must not
+  // idle-stop — only the interactive staff view does. Either way the visibility
+  // gate applies; a cookieless kiosk poll can't wake a slept env anyway.
+  const isSignedKiosk = !!(searchParams.get("sig") && searchParams.get("ts") && searchParams.get("nonce"));
 
-        const res = await fetch("/api/attendance", { headers });
-        const json = await res.json().catch(() => ({}));
-        if (res.ok && (json.access === "full" || json.access === "limited")) {
-          setData(json);
-          setError(null);
-          if (json.signedRequest === true) setIsKioskMode(true);
-        } else if (!res.ok) {
-          setError(json.error || "Failed to load attendance");
-        }
-      } catch (error) {
-        console.error("Failed to fetch attendance:", error);
-        notifications.show({ color: "red", message: "Network error", autoClose: false });
-      } finally {
-        setLoading(false);
+  const fetchAttendance = useCallback(async () => {
+    try {
+      const headers: Record<string, string> = {};
+      const sigParamsUrl = searchParams.get("sig");
+      const tsParamsUrl = searchParams.get("ts");
+      const nonceParamsUrl = searchParams.get("nonce");
+      if (sigParamsUrl && tsParamsUrl && nonceParamsUrl) {
+        headers["x-kiosk-signature"] = sigParamsUrl;
+        headers["x-kiosk-timestamp"] = tsParamsUrl;
+        headers["x-kiosk-nonce"] = nonceParamsUrl;
       }
-    };
 
-    fetchAttendance();
-    const interval = setInterval(fetchAttendance, 60000);
+      const res = await fetch("/api/attendance", { headers });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && (json.access === "full" || json.access === "limited")) {
+        setData(json);
+        setError(null);
+        if (json.signedRequest === true) setIsKioskMode(true);
+      } else if (!res.ok) {
+        setError(json.error || "Failed to load attendance");
+      }
+    } catch (error) {
+      console.error("Failed to fetch attendance:", error);
+      notifications.show({ color: "red", message: "Network error", autoClose: false });
+    } finally {
+      setLoading(false);
+    }
+  }, [searchParams]);
 
+  usePolling(fetchAttendance, 60000, { idleStopMs: isSignedKiosk ? undefined : POLL_IDLE_STOP_MS });
+
+  useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (typeof event.data === "object" && event.data?.type === "refresh-attendance" && event.data.attendance) {
         setData({ access: "full", attendance: event.data.attendance, counts: event.data.counts, safety: event.data.safety });
@@ -150,12 +162,8 @@ function KioskDisplayInner() {
       }
     };
     window.addEventListener("message", handleMessage);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [searchParams]);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [fetchAttendance]);
 
   useEffect(() => {
     const performSearch = async () => {
@@ -222,7 +230,7 @@ function KioskDisplayInner() {
       if (res.ok) refreshAttendance();
       else notifications.show({ color: "red", message: isSelf ? "Failed to check out." : "Failed to force checkout.", autoClose: false });
     } catch (e) {
-      console.error(e);
+      console.error("Attendance action failed:", e);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingOut(null);
@@ -259,7 +267,7 @@ function KioskDisplayInner() {
         }
       }
     } catch (e) {
-      console.error(e);
+      console.error("Attendance action failed:", e);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setCheckingInId(null);

@@ -26,7 +26,7 @@ import AdminMembershipPage from "../page";
 // reconciling, losing the page's already-fetched rows state.
 const rewrapped = () => (
     <MantineProvider>
-        <EnvProvider value={{ checkinEnv: "prod", shopifyStoreDomain: null }}>
+        <EnvProvider value={{ checkinEnv: "prod", shopifyStoreDomain: null, isStaging: false }}>
             <AdminMembershipPage />
         </EnvProvider>
     </MantineProvider>
@@ -42,6 +42,22 @@ beforeEach(() => {
 function household(name: string, id: number) {
     return { name, householdMembers: [{ id: 1, name: "Lead One", email: "lead@example.com", isHouseholdLead: true }], householdId: id };
 }
+
+const archivedRows = [
+    {
+        id: 4,
+        kind: "NEW",
+        status: "ARCHIVED",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        zohoEnvelopeId: null,
+        contractSignedAt: null,
+        bgConsentAt: null,
+        bgClearedAt: null,
+        paidAt: null,
+        attestations: [],
+        orgMembership: { householdId: 4, isVolunteer: false, household: household("Archived Family", 4) },
+    },
+];
 
 const rows = [
     {
@@ -120,6 +136,12 @@ describe("AdminMembershipPage", () => {
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Updated." })));
 
         fireEvent.click(screen.getByRole("button", { name: /Certify payment plan/ }));
+        // Mantine's `required` prop appends a visible " *" to the label text.
+        const certifyReasonInput = await screen.findByLabelText(/^Reason/);
+        // The confirm button is disabled until a reason is entered.
+        expect(screen.getByRole("button", { name: "Certify" })).toBeDisabled();
+        fireEvent.change(certifyReasonInput, { target: { value: "Paid by check outside Shopify" } });
+        fireEvent.click(screen.getByRole("button", { name: "Certify" }));
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Certified — membership activated." })));
 
         fireEvent.click(screen.getByRole("button", { name: "Reset for re-review" }));
@@ -166,5 +188,30 @@ describe("AdminMembershipPage", () => {
         // empty-state card's own clear button. Either should reset the same param.
         fireEvent.click(screen.getAllByRole("button", { name: "Clear filter" })[0]);
         await waitFor(() => expect(replace).toHaveBeenCalledWith("/membership-ops/applications", { scroll: false }));
+    });
+
+    it("shows archived applications behind the Show-archived toggle, with Unarchive as the only action", async () => {
+        mockFetchJson({
+            // More specific keys first: mockFetchJson matches by substring, and
+            // "/applications" is a substring of both the archived query and the
+            // unarchive action URL.
+            "/api/membership-ops/applications/unarchive": { outcome: { status: "PENDING_PAYMENT" } },
+            "/api/membership-ops/applications?archived=1": { processes: archivedRows },
+            "/api/membership-ops/applications": { processes: rows },
+        });
+        renderWithProviders(<AdminMembershipPage />);
+        await screen.findByText("Awaiting Family");
+
+        fireEvent.click(screen.getByLabelText("Show archived"));
+        expect(await screen.findByText("Archived Family")).toBeInTheDocument();
+        expect(screen.queryByText("Awaiting Family")).not.toBeInTheDocument();
+
+        // Status-filter badges don't apply to the archived view, and Unarchive
+        // is the only action offered — no Archive/certify/override controls.
+        expect(screen.queryByRole("button", { name: /PENDING PAYMENT:/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Unarchive" }));
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Application unarchived." })));
     });
 });

@@ -7,6 +7,7 @@ import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
+import { fromWhere } from "@/lib/membership/lifecycle";
 
 /**
  * EXTERNAL-phase service — the actions an applicant completes after intake:
@@ -113,7 +114,8 @@ export async function advanceExternalIfComplete(processId: number) {
         const { count } = await tx.orgMembershipProcess.updateMany({
             where: {
                 id: processId,
-                status: "PENDING_EXTERNAL_ACTION",
+                // #7 advance CAS from-state from the definition (#1080); the contract/BG narrowing stays literal.
+                ...fromWhere("PENDING_EXTERNAL_ACTION"),
                 contractSignedAt: { not: null },
                 OR: [{ bgClearedAt: { not: null } }, { bgConsentAt: { not: null } }],
             },
@@ -214,13 +216,20 @@ export async function selfAttestBgConsent(userId: number): Promise<ExternalStatu
     return getExternalStatus(updated);
 }
 
-/** Associate a Zoho signing request id with a process so its webhook can match. */
+/**
+ * Associate a Zoho signing request id with a process so its webhook can match.
+ * Clears zohoActionId: re-pointing the envelope would otherwise leave the old
+ * action id paired with the new request, an unsignable mismatch that
+ * getOrCreateContractSigningUrl's null-claim repair can't fix (both ids non-null).
+ * Nulling the action id restores the claimable envelope-without-action state its
+ * claim already handles — the same recovery clearDeadSigningRequest relies on.
+ */
 export async function setZohoEnvelope(processId: number, requestId: string, actorId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
-    const updated = await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId } });
+    const updated = await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { zohoEnvelopeId: requestId, zohoActionId: null } });
     await prisma.auditLog.create({
-        data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId } },
+        data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { zohoEnvelopeId: requestId, zohoActionId: null } },
     });
     return updated;
 }
@@ -390,7 +399,13 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         // (CHECKIN_ENV), not editable by the applicant. Prod stays clean. The
         // create/submit/embed flow is otherwise identical across envs. (Mock mode
         // skips the watermark — the empty placeholder PDF is never rendered.)
-        const isProd = config.isProd();
+        //
+        // ops-stg is a SEPARATE exclusion, not a CheckinEnv value: CHECKIN_ENV=stg
+        // falls back to 'prod' (readCheckinEnv), so config.isProd() alone would
+        // call ops-stg's signing flow "prod" and produce a watermark-free document
+        // indistinguishable from a real binding agreement the moment a Zoho
+        // credential is ever wired to staging to rehearse signing.
+        const isProd = config.isProd() && !config.isStaging();
         const pdf = isProd || signingMock ? agreement.pdf : await stampWatermark(agreement.pdf, "DEV TEST — NOT A LEGAL AGREEMENT");
         const requestName = `${isProd ? "" : "[DEV TEST — NOT BINDING] "}Membership Agreement — ${recipientName}`;
 

@@ -1,5 +1,6 @@
 import type { OrgMembershipStatus, Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
+import { nextBoundary, renewalSeasonWindow } from "@/lib/membership/renewal";
 
 /**
  * Canonical "is this person an active Treehouse Member?" read model.
@@ -60,4 +61,74 @@ export function orgMembershipStatusBlocksLogin(
     status: OrgMembershipStatus | null | undefined,
 ): boolean {
     return status === "DENIED";
+}
+
+/**
+ * How far a household's membership currently covers, as a boundary date — or
+ * null when no horizon can be computed (not ACTIVE, or the board hasn't set
+ * {@link BoardSettings.orgMembershipYearBoundary}). A membership always runs
+ * boundary-to-boundary: an un-renewed ACTIVE household is covered through the
+ * UPCOMING boundary; one already "settled for the coming year" (a terminal
+ * ACTIVE {@link OrgMembershipProcess} stamped inside this cycle's renewal
+ * window — the same probe households-ops uses for its `settledForComingYear`
+ * flag) is covered one boundary further.
+ */
+export async function membershipValidThrough(householdId: number, now = new Date()): Promise<Date | null> {
+    const household = await prisma.household.findUnique({
+        where: { id: householdId },
+        select: { orgMembership: { select: { id: true, status: true } } },
+    });
+    if (household?.orgMembership?.status !== "ACTIVE") return null;
+
+    const settings = await prisma.boardSettings.findUnique({
+        where: { id: 1 },
+        select: { orgMembershipYearBoundary: true },
+    });
+    if (!settings?.orgMembershipYearBoundary) return null;
+
+    const boundary = nextBoundary(settings.orgMembershipYearBoundary, now);
+    const window = await renewalSeasonWindow(now);
+    const settled = (await prisma.orgMembershipProcess.findFirst({
+        where: {
+            orgMembershipId: household.orgMembership.id,
+            status: "ACTIVE",
+            stageEnteredAt: { gte: window?.windowStart ?? new Date(8.64e15) },
+        },
+        select: { id: true },
+    })) !== null;
+
+    return settled
+        ? new Date(Date.UTC(boundary.getUTCFullYear() + 1, boundary.getUTCMonth(), boundary.getUTCDate()))
+        : boundary;
+}
+
+/**
+ * Does this Person's org membership cover a program running through `through`?
+ * `through === null` means the program has no dates to compare against, so
+ * today's status-only behavior applies. When a horizon CAN'T be computed (no
+ * boundary configured) an ACTIVE membership still passes — preserves current
+ * behavior rather than penalizing every member for a board settings gap.
+ */
+export async function isActiveOrgMemberThrough(personId: number, through: Date | null): Promise<boolean> {
+    if (!(await isActiveOrgMember(personId))) return false;
+    if (through === null) return true;
+
+    const person = await prisma.person.findUnique({ where: { id: personId }, select: { householdId: true } });
+    const validThrough = person ? await membershipValidThrough(person.householdId) : null;
+    if (validThrough === null) return true;
+
+    const throughDay = Date.UTC(through.getUTCFullYear(), through.getUTCMonth(), through.getUTCDate());
+    const validDay = Date.UTC(validThrough.getUTCFullYear(), validThrough.getUTCMonth(), validThrough.getUTCDate());
+    return validDay >= throughDay;
+}
+
+/**
+ * The date a program's member pricing must be valid through: its end date, or
+ * (an ongoing program with no end) its start date. Shared by the discount-code
+ * route and the program detail route so both apply the same coverage rule.
+ * POLICY (flag for veto): an ongoing program (endAt null) requires validity
+ * only through its START, not indefinitely.
+ */
+export function programCoverageDate(p: { startAt: Date | null; endAt: Date | null }): Date | null {
+    return p.endAt ?? p.startAt ?? null;
 }

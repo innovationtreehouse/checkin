@@ -6,20 +6,24 @@
  * openRenewalsForAllActive (admin button) both check-then-act through the shared
  * createRenewalProcess, and neither serializes the read+create. Across instances
  * two overlapping runs each read zero open processes and both reach the INSERT —
- * which would mint duplicate PENDING_RENEWAL rows (duplicate household reminders +
- * a dangling process beginRenewalForUser never advances). We drive that losing
- * branch directly: two concurrent createRenewalProcess calls (the read-guard
- * already passed). The partial unique index `membership_one_inflight_renewal` is
- * the guarantee — the loser's INSERT hits P2002, which createRenewalProcess
- * catches and turns into a clean no-op (returns null, no second audit row, no
- * second reminder). Drop the index and the second INSERT succeeds → this fails.
+ * which would mint duplicate PENDING_RENEWAL rows (and a dangling process
+ * beginRenewalForUser never advances). We drive that losing branch directly: two
+ * concurrent createRenewalProcess calls (the read-guard already passed). The
+ * partial unique index `membership_one_inflight_renewal` is the guarantee — the
+ * loser's INSERT hits P2002, which createRenewalProcess catches and turns into a
+ * clean no-op (returns null, no second audit row). Drop the index and the second
+ * INSERT succeeds → this fails.
+ *
+ * The machine never emails (PR-2, outreach engine) — createRenewalProcess no
+ * longer reminds, so this test no longer asserts a send; sendEmail is mocked only
+ * as a blanket guard against any accidental real network call.
  */
 
 import { createRenewalProcess } from '@/lib/membership/renewal';
 import prisma from '@/lib/prisma';
 
 const sendEmail = jest.fn().mockResolvedValue(true);
-jest.mock('@/lib/email', () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: (...a: unknown[]) => sendEmail(...a) }));
 
 const TAG = 'renewal-concurrency-test';
 
@@ -36,12 +40,10 @@ async function wipe() {
 
 describe('renewal opening concurrency', () => {
     let orgMembershipId = 0;
-    let householdId = 0;
 
     beforeAll(async () => {
         await wipe();
         const hh = await prisma.household.create({ data: { name: `Family ${TAG}` } });
-        householdId = hh.id;
         const lead = await prisma.person.create({ data: { name: 'Lead', email: `lead-${TAG}@ex.com`, householdId: hh.id } });
         await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
         orgMembershipId = (await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } })).id;
@@ -49,12 +51,10 @@ describe('renewal opening concurrency', () => {
 
     afterAll(wipe);
 
-    it('two concurrent createRenewalProcess calls yield exactly one in-flight RENEWAL and one reminder', async () => {
-        const now = new Date();
-        const boundary = new Date();
+    it('two concurrent createRenewalProcess calls yield exactly one in-flight RENEWAL', async () => {
         const results = await Promise.all([
-            createRenewalProcess(orgMembershipId, householdId, now, { remind: true, boundary }),
-            createRenewalProcess(orgMembershipId, householdId, now, { remind: true, boundary }),
+            createRenewalProcess(orgMembershipId),
+            createRenewalProcess(orgMembershipId),
         ]);
 
         // Exactly one create won; the other lost the race and no-op'd (null).
@@ -67,8 +67,8 @@ describe('renewal opening concurrency', () => {
         });
         expect(inflight).toHaveLength(1); // the loser's P2002 no-op'd, not a second process
 
-        // One lead → reminder sent exactly once (the duplicate send is skipped).
-        expect(sendEmail).toHaveBeenCalledTimes(1);
+        // The machine never emails — no reminder fires either way.
+        expect(sendEmail).not.toHaveBeenCalled();
 
         // Exactly one CREATE audit row for the winning process — no orphan from the loser.
         const created = await prisma.auditLog.count({

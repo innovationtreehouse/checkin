@@ -12,7 +12,7 @@ import { attest } from '@/lib/membership/review';
 import { markBgConsent, markContractSigned } from '@/lib/membership/external';
 import prisma from '@/lib/prisma';
 
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'renewal-test';
 const CRON_SECRET = 'cron-test-secret';
@@ -102,13 +102,11 @@ describe('Membership renewal', () => {
         expect(res.opened).toBe(0);
     });
 
-    it('opens a PENDING_RENEWAL process within the window, once', async () => {
+    it('opens a PENDING_RENEWAL process within the window, once, without emailing (PR-2: the machine never emails)', async () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1))); // Aug 1
         const m = await makeActiveMembership('Due', null, `due-lead-${TAG}@example.com`);
         const now = new Date(Date.UTC(2026, 6, 1)); // Jul 1 — within 2 months before Aug 1
 
-        // sendEmail is mocked (top of file), so the reminder is recorded on the spy,
-        // not devSentEmail. Clear it so the assertion sees only this scenario's sweep.
         const { sendEmail } = jest.requireMock('@/lib/email') as { sendEmail: jest.Mock };
         sendEmail.mockClear();
 
@@ -118,13 +116,34 @@ describe('Membership renewal', () => {
         expect(proc?.status).toBe('PENDING_RENEWAL');
         expect(proc?.kind).toBe('RENEWAL');
 
-        // Opening the renewal also reminds the household lead by email.
-        expect(sendEmail).toHaveBeenCalledWith(m.leadEmail, 'Time to renew your Treehouse membership', expect.any(String));
+        // The sweep no longer reminds — the settings/outreach page is the only send surface.
+        expect(sendEmail).not.toHaveBeenCalled();
 
         const second = await runRenewalSweep(now);
         const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
         expect(count).toBe(1); // not duplicated
         expect(second).toBeDefined();
+    });
+
+    it('does not re-open for a household already renewed this cycle (terminal RENEWAL in-window)', async () => {
+        await setBoundary(new Date(Date.UTC(2000, 7, 1))); // Aug 1
+        const now = new Date(Date.UTC(2026, 6, 1)); // Jul 1 — within the window
+        const m = await makeActiveMembership('Renewed', null, `renewed-lead-${TAG}@example.com`);
+        // A completed renewal this cycle (early finisher, or the admin coming-year
+        // override): terminal ACTIVE RENEWAL with stageEnteredAt inside the window.
+        await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'ACTIVE', stageEnteredAt: now },
+        });
+
+        await runRenewalSweep(now);
+
+        // No fresh PENDING_RENEWAL opened — the terminal row counts as handled.
+        const opened = await prisma.orgMembershipProcess.findFirst({
+            where: { orgMembershipId: m.orgMembershipId, status: 'PENDING_RENEWAL' },
+        });
+        expect(opened).toBeNull();
+        const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: m.orgMembershipId } });
+        expect(count).toBe(1);
     });
 
     it('beginRenewal with a valid parent background check: re-sign only — bgClearedAt stamped, signature opens payment', async () => {

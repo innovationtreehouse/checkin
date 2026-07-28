@@ -11,7 +11,7 @@ import { getServerSession } from 'next-auth/next';
 import { sendEmail } from '@/lib/email';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'bulk-renewal-test';
 
@@ -74,11 +74,11 @@ describe('Bulk renewal migration', () => {
         expect(res.status).toBe(403);
     });
 
-    it('a board member opens PENDING_RENEWAL for all active members, idempotently, no email by default', async () => {
+    it('a board member opens PENDING_RENEWAL for all active members, idempotently, never emailing (PR-2)', async () => {
         (sendEmail as jest.Mock).mockClear();
         asBoard(boardId);
 
-        const res = await BULK(jsonReq({ sendReminders: false }));
+        const res = await BULK(jsonReq());
         expect(res.status).toBe(200);
         const data = await res.json();
         expect(data.success).toBe(true);
@@ -91,7 +91,7 @@ describe('Bulk renewal migration', () => {
         expect(sendEmail as jest.Mock).not.toHaveBeenCalled();
 
         // Idempotent: a second press opens nothing new.
-        const second = await BULK(jsonReq({ sendReminders: false }));
+        const second = await BULK(jsonReq());
         expect((await second.json()).opened).toBe(0);
         const count = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: mA } });
         expect(count).toBe(1);
@@ -99,7 +99,7 @@ describe('Bulk renewal migration', () => {
 
     it('a isSysadmin may also trigger it', async () => {
         asSysadmin(sysId);
-        const res = await BULK(jsonReq({ sendReminders: false }));
+        const res = await BULK(jsonReq());
         expect(res.status).toBe(200);
         const data = await res.json();
         expect(data.success).toBe(true);

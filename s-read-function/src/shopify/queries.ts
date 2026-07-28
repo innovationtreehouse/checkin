@@ -52,6 +52,8 @@ const ORDER_FIELDS = `
   test
   displayFinancialStatus
   displayFulfillmentStatus
+  customAttributes { key value }
+  discountCodes
   currentSubtotalPriceSet ${MONEY_BAG}
   totalShippingPriceSet ${MONEY_BAG}
   currentTotalTaxSet ${MONEY_BAG}
@@ -64,6 +66,7 @@ const ORDER_FIELDS = `
       sku
       title
       quantity
+      variant { id legacyResourceId }
       originalUnitPriceSet ${MONEY_BAG}
       totalDiscountSet ${MONEY_BAG}
     }
@@ -267,6 +270,8 @@ export function buildOrdersBulkQuery(updatedAtFloorIso: string): string {
             test
             displayFinancialStatus
             displayFulfillmentStatus
+            customAttributes { key value }
+            discountCodes
             currentSubtotalPriceSet ${MONEY_BAG}
             totalShippingPriceSet ${MONEY_BAG}
             currentTotalTaxSet ${MONEY_BAG}
@@ -280,6 +285,7 @@ export function buildOrdersBulkQuery(updatedAtFloorIso: string): string {
                   sku
                   title
                   quantity
+                  variant { id legacyResourceId }
                   originalUnitPriceSet ${MONEY_BAG}
                   totalDiscountSet ${MONEY_BAG}
                 }

@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { formatDate } from '@/lib/time';
+import { formatDateOnly } from '@/lib/time';
 import { checkProgramAge } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
@@ -41,6 +41,13 @@ type ProgramDetail = {
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
+  // Server-computed, session callers only (route.ts) — undefined for an
+  // anonymous caller or an older cached response. viewerMemberPricingEligible
+  // is the pricing-relevant flag: a current member whose membership ends
+  // before this program's coverage date (endAt, else startAt) is NOT eligible
+  // for member pricing even though viewerIsMember is true.
+  viewerIsMember?: boolean;
+  viewerMemberPricingEligible?: boolean;
 };
 
 type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
@@ -215,12 +222,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         if (res.ok) {
           anyRequested = true;
         } else {
-          errors.push("Enrolled as pending, but failed to alert the finance committee for one member. Please email them directly.");
+          errors.push("Enrolled as pending, but failed to alert the Scholarship Review Team for one member. Please email them directly.");
         }
       }
 
       if (anyRequested) {
-        notifications.show({ color: "green", message: "Requested! Please check your email for communication from the finance committee of the board." });
+        notifications.show({ message: "Requested! Please check your email for communication from the Scholarship Review Team." });
         fetchProgram();
         notifyNavRefresh();
       }
@@ -258,15 +265,20 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       // one is a real config gap in every env.
       let mockPay = false;
       let isMember = false;
+      // Pricing goes by the server-computed duration-aware flag when present (a
+      // member not covered through this program's end must pay full price);
+      // ?? isMember is the fallback for an older cached response missing it.
+      let pricingEligible = false;
       if (isPayingOnShopify && program) {
         const householdRes = await fetch('/api/household');
         if (householdRes.ok) {
           const householdData = await householdRes.json();
           isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
         }
+        pricingEligible = program.viewerMemberPricingEligible ?? isMember;
         // Single-pool programs sell the SAME variant to everyone — the discount
         // code (below, at redirect time) does the member pricing, not a variant pick.
-        variantId = program.shopifyVariantId || (isMember ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
+        variantId = program.shopifyVariantId || (pricingEligible ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
         storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
@@ -304,7 +316,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             body: JSON.stringify({ programId: program.id, participantIds: enrolledIds }),
           });
           if (payRes.ok) {
-            notifications.show({ color: "green", message: "Payment mocked (local) — enrollment activated." });
+            notifications.show({ message: "Payment mocked (local) — enrollment activated." });
           } else {
             notifications.show({ color: "red", autoClose: false, message: "Enrolled, but the mock payment failed — fire it from the Debug → Shopify tool." });
           }
@@ -321,7 +333,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           // safe fallback (never blocks checkout), per lib/shopify.ts's
           // mintMemberDiscountCode contract.
           let discountCode: string | null = null;
-          if (program.shopifyVariantId && isMember) {
+          if (program.shopifyVariantId && pricingEligible) {
             try {
               const discRes = await fetch(`/api/programs/${id}/discount-code`, { method: 'POST' });
               if (discRes.ok) discountCode = (await discRes.json()).code ?? null;
@@ -331,7 +343,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           window.location.href = buildShopifyCheckoutUrl(storeDomain, variantId, enrolledIds, id, discountCode);
           return; // spinner stays; page unloads on redirect
         } else {
-          notifications.show({ color: "green", message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
+          notifications.show({ message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
           setRequiresOverride(false);
           fetchProgram();
         }
@@ -398,7 +410,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           <Title order={1}>{program.name}</Title>
           <Group>
             {canManage && (
-              <Button color="green" variant="light" onClick={() => router.push(`/program-ops/programs/${program.id}`)}>
+              <Button variant="light" onClick={() => router.push(`/program-ops/programs/${program.id}`)}>
                 Manage Program
               </Button>
             )}
@@ -412,8 +424,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {program.leadMentor && (
               <Text><strong>Lead Mentor:</strong> {program.leadMentor.name || 'Unnamed'}</Text>
             )}
-            <Text><strong>Starts:</strong> {program.startAt ? formatDate(program.startAt) : 'TBD'}</Text>
-            <Text><strong>Ends:</strong> {program.endAt ? formatDate(program.endAt) : 'Ongoing'}</Text>
+            <Text><strong>Starts:</strong> {program.startAt ? formatDateOnly(program.startAt) : 'TBD'}</Text>
+            <Text><strong>Ends:</strong> {program.endAt ? formatDateOnly(program.endAt) : 'Ongoing'}</Text>
             <Text>
               <strong>Enrollment:</strong>{' '}
               {program.enrollmentStatus === 'OPEN' ? <Text component="span" c="green">Open</Text> :
@@ -456,8 +468,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           </Stack>
         </Card>
 
+        {/* A current member whose membership doesn't cover this program's whole
+            run doesn't get member pricing on it — the discount-code fetch's
+            `reason` reinforces this at checkout time, so it isn't repeated here. */}
+        {program.viewerIsMember === true && program.viewerMemberPricingEligible === false && (
+          <Alert color="yellow" variant="light" mb="lg">
+            Your membership ends before this program finishes, so member pricing doesn&apos;t apply — renew your membership first to enroll at the member price.
+          </Alert>
+        )}
+
         {message && <Alert color="red" mb="lg">{message}</Alert>}
-        {successMessage && <Alert color="green" mb="lg">{successMessage}</Alert>}
+        {successMessage && <Alert mb="lg">{successMessage}</Alert>}
 
         <Center mt="xl">
           {!showEnrollmentSelection ? (
@@ -555,7 +576,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     onClick={handleRequestPaymentPlan}
                     styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                   >
-                    Request a scholarship or payment plan from the Finance Committee of the Board
+                    Request a scholarship or payment plan from the Scholarship Review Team
                   </Button>
                 )}
               </Stack>

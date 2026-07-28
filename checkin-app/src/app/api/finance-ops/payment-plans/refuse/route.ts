@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { fromWhere } from "@/lib/programs/enrollmentState";
 
 // Denies a pending scholarship / payment-plan request — the sibling of
 // POST /api/finance-ops/payment-plans (approve) this branch previously lacked.
@@ -16,7 +17,7 @@ import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 // normal payment / grace-period expiry fires first (see
 // docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md).
 export const POST = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isBoardMember'] },
     async (req, auth) => {
         try {
             const body = await req.json();
@@ -43,7 +44,8 @@ export const POST = withAuth(
             // true->false guard: a double-refuse (already false) 409s instead of
             // re-stamping paymentPlanDeniedAt.
             const { count } = await prisma.programParticipant.updateMany({
-                where: { programId, personId: participantId, isPaymentPlanRequested: true, status: 'PENDING' },
+                // T6 deny CAS: from-state status from the definition (#1080); isPaymentPlanRequested stays literal.
+                where: { programId, personId: participantId, isPaymentPlanRequested: true, ...fromWhere('PENDING_HELD') },
                 data,
             });
 
@@ -63,6 +65,12 @@ export const POST = withAuth(
                     },
                 });
             }
+
+            // Denial is deliberately silent — no automatic applicant email (user
+            // decision: the ack at request time is the only automatic applicant
+            // email; the board communicates decisions, including this one, manually).
+            // That means the scholarshipDenialGraceDays clock (§4) now starts
+            // without any notice to the applicant.
 
             return NextResponse.json({ success: true });
         } catch (error) {

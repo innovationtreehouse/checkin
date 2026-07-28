@@ -6,7 +6,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
-import { useIsDevInstance } from "@/components/EnvProvider";
+import { useCheckinEnv } from "@/components/EnvProvider";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
 interface Settings {
@@ -46,7 +46,9 @@ export default function MembershipSettingsPage() {
   const [extracting, setExtracting] = useState(false);
   const [discountCode, setDiscountCode] = useState("");
   // Dev-instance-only: where contract signing requests go ('zoho' | 'debug').
-  const isDev = useIsDevInstance();
+  // Strictly CHECKIN_ENV=dev, not useIsDevInstance()'s not-prod: the API rejects
+  // devSigningTarget on any other env, and one rejected field 400s the whole PUT.
+  const isDev = useCheckinEnv() === "dev";
   const [signingTarget, setSigningTarget] = useState("zoho");
 
   // Snapshot of the dues-form values as last loaded/saved; isDirty compares it to
@@ -55,7 +57,6 @@ export default function MembershipSettingsPage() {
   // separate save flow — wire it if it grows edits.
   const [initial, setInitial] = useState<Record<string, string> | null>(null);
 
-  const [bulkReminders, setBulkReminders] = useState(false);
   const [confirmOpenRenewalsOpened, { open: openConfirmOpenRenewals, close: closeConfirmOpenRenewals }] = useDisclosure(false);
 
   const [loading, setLoading] = useState(true);
@@ -135,7 +136,7 @@ export default function MembershipSettingsPage() {
           ...(boundaryUnlocked || !boundaryWasSet ? { orgMembershipYearBoundary: boundary || null } : {}),
         }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Settings saved." }); setBoundaryUnlocked(false); notifyNavRefresh(); await load(); }
+      if (res.ok) { notifications.show({ message: "Settings saved." }); setBoundaryUnlocked(false); notifyNavRefresh(); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
@@ -158,7 +159,7 @@ export default function MembershipSettingsPage() {
       if (res.ok) {
         setVariantId(data.variantId);
         setFieldErrors((f) => ({ ...f, variantId: undefined }));
-        notifications.show({ color: "green", message: `Variant ${data.variantId} filled in — press Save settings to keep it.` });
+        notifications.show({ message: `Variant ${data.variantId} filled in — press Save settings to keep it.` });
       } else {
         setSaveNotice({ text: data.error || "Could not extract the variant.", err: true });
       }
@@ -171,11 +172,7 @@ export default function MembershipSettingsPage() {
     setSaving(true);
     setRenewalNotice(null);
     try {
-      const res = await fetch("/api/settings/membership/bulk-open-renewals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sendReminders: bulkReminders }),
-      });
+      const res = await fetch("/api/settings/membership/bulk-open-renewals", { method: "POST" });
       const data = await res.json().catch(() => ({}));
       if (res.ok) setRenewalNotice({ text: `Opened ${data.opened} renewal(s); ${data.skipped} already in progress.`, err: false });
       else setRenewalNotice({ text: data.error || "Failed.", err: true });
@@ -347,7 +344,7 @@ export default function MembershipSettingsPage() {
             )}
 
             {saveNotice && (
-              <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">
+              <Alert mt="lg" color={saveNotice.err ? "red" : "treehouseGreen"} variant="light">
                 {saveNotice.text}
               </Alert>
             )}
@@ -364,14 +361,8 @@ export default function MembershipSettingsPage() {
               they renew for the upcoming year. Press this once, after your existing members are
               imported (board or isSysadmin).
             </Text>
-            <Checkbox
-              my="sm"
-              checked={bulkReminders}
-              onChange={(e) => setBulkReminders(e.currentTarget.checked)}
-              label="Also email each household a renewal reminder"
-            />
             {renewalNotice && (
-              <Alert mt="md" mb="md" color={renewalNotice.err ? "red" : "green"} variant="light">
+              <Alert mt="md" mb="md" color={renewalNotice.err ? "red" : "treehouseGreen"} variant="light">
                 {renewalNotice.text}
               </Alert>
             )}

@@ -5,7 +5,8 @@
  * Authorization-boundary tests for sensitive (PII / impersonation) routes that
  * previously had no integration coverage. Focus: who is rejected.
  *   - GET /api/safety/emergency-contacts   (isSysadmin | isBoardMember | isKeyholder)
- *   - GET /api/people/search  (isSysadmin | isBoardMember — isKeyholder MUST be denied)
+ *   - GET /api/people/search  (isSysadmin | isBoardMember | isOperations — isKeyholder
+ *     MUST be denied; an operations-only caller gets a stripped, ops-only shape)
  *   - GET /api/auth/dev-personas          (impersonation surface; 404 outside dev)
  */
 import { GET as EmergencyGet } from '@/app/api/safety/emergency-contacts/route';
@@ -31,6 +32,9 @@ describe('Sensitive route authorization', () => {
     let plainId: number;
     let searchTargetId: number;
     let personaId: number;
+    let adultId: number;
+    let minorId: number;
+    let declaredAdultId: number;
     const householdIds: number[] = [];
     const ENV_BEFORE = process.env.CHECKIN_ENV;
 
@@ -42,7 +46,20 @@ describe('Sensitive route authorization', () => {
         householdIds.push(plain.householdId);
 
         const target = await prisma.person.create({
-            data: { name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101', household: { create: { name: "Test HH" } } },
+            data: {
+                name: `ZZTarget ${TAG}`, email: `target-${TAG}@example.com`, phone: '555-0101',
+                lastBackgroundCheck: new Date('2026-01-01'),
+                dateOfBirth: new Date('1990-05-05'),
+                // intakeNotes (pii) and line1 (internal) exist on the fixture so the
+                // ops-strip assertions below pin the projection instead of passing
+                // vacuously on an unset column.
+                household: {
+                    create: {
+                        name: "Test HH", intakeNotes: 'sensitive family note', line1: '1 Test St',
+                        orgMembership: { create: { status: 'ACTIVE' } },
+                    },
+                },
+            },
         });
         searchTargetId = target.id;
         householdIds.push(target.householdId);
@@ -52,6 +69,33 @@ describe('Sensitive route authorization', () => {
         });
         personaId = persona.id;
         householdIds.push(persona.householdId);
+
+        // Age fixtures for ?filter=adults (the lead-mentor pickers). Relative to now so
+        // they never age past the boundary the way a hardcoded year would.
+        const yearsAgo = (n: number) => {
+            const d = new Date();
+            d.setFullYear(d.getFullYear() - n);
+            return d;
+        };
+        const adult = await prisma.person.create({
+            data: { name: `ZZAdult ${TAG}`, email: `adult-${TAG}@example.com`, dateOfBirth: yearsAgo(40), household: { create: { name: "Test HH" } } },
+        });
+        adultId = adult.id;
+        householdIds.push(adult.householdId);
+
+        const minor = await prisma.person.create({
+            data: { name: `ZZMinor ${TAG}`, email: `minor-${TAG}@example.com`, dateOfBirth: yearsAgo(10), household: { create: { name: "Test HH" } } },
+        });
+        minorId = minor.id;
+        householdIds.push(minor.householdId);
+
+        // No DoB, but a lead marked them 25+ — must survive the filter, or every
+        // null-DoB adult mentor vanishes from the picker.
+        const declared = await prisma.person.create({
+            data: { name: `ZZDeclared ${TAG}`, email: `declared-${TAG}@example.com`, dateOfBirth: null, isDeclaredAdult: true, household: { create: { name: "Test HH" } } },
+        });
+        declaredAdultId = declared.id;
+        householdIds.push(declared.householdId);
     });
 
     beforeEach(() => {
@@ -61,7 +105,9 @@ describe('Sensitive route authorization', () => {
 
     afterAll(async () => {
         process.env.CHECKIN_ENV = ENV_BEFORE;
-        await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId] } } });
+        await prisma.person.deleteMany({ where: { id: { in: [plainId, searchTargetId, personaId, adultId, minorId, declaredAdultId] } } });
+        // The target's orgMembership row must go before its household (RESTRICT FK).
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
         await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
     });
 
@@ -111,6 +157,87 @@ describe('Sensitive route authorization', () => {
             const hit = json.people.find((p: { id: number }) => p.id === searchTargetId);
             expect(hit).toBeDefined();
             expect(hit.phone).toBe('555-0101');
+            expect(hit.lastBackgroundCheck).toBeTruthy();
+            expect(hit.household.orgMembership).toBeTruthy();
+            // dateOfBirth is role-conditional: board sees it, ops does not (below).
+            expect(hit.dateOfBirth).toBeTruthy();
+            // Household address/intakeNotes are NOT role-conditional — the explicit
+            // projection drops them for every role, board included, because no
+            // consumer of this endpoint reads them.
+            expect(hit.household.intakeNotes).toBeUndefined();
+            expect(hit.household.line1).toBeUndefined();
+        });
+
+        it('200 for an operations-only actor, with lastBackgroundCheck, dateOfBirth and the household address stripped', async () => {
+            mockSession.mockResolvedValue({ user: { id: plainId, isOperations: true } });
+            const res = await SearchGet(req(url));
+            expect(res.status).toBe(200);
+            const json = await res.json();
+            const hit = json.people.find((p: { id: number }) => p.id === searchTargetId);
+            expect(hit).toBeDefined();
+            // Contact info stays — this is still the directory:
+            expect(hit.phone).toBe('555-0101');
+            // Membership standing stays too: every OrgMembership field is
+            // @sensitivity:public, and isMember is derived from that same row.
+            expect(hit.isMember).toBe(true);
+            expect(hit.household.orgMembership).toBeTruthy();
+            // Background-check compliance dates and date of birth do not:
+            expect(hit.lastBackgroundCheck).toBeUndefined();
+            expect(hit.dateOfBirth).toBeUndefined();
+            expect(hit.isDeclaredAdult).toBeUndefined();
+            // The household is an explicit projection, not a `...p.household` spread:
+            // intakeNotes (pii, free-text hardship/medical disclosures) and the home
+            // address must never ride along on a 200-hit directory search.
+            expect(hit.household.intakeNotes).toBeUndefined();
+            expect(hit.household.line1).toBeUndefined();
+            expect(hit.household.name).toBe('Test HH');
+            // household.householdMembers must NOT leak full Person rows one level down
+            // (a plain `householdMembers: true` include returns every column, including
+            // lastBackgroundCheck/googleId, regardless of the opsOnly strip above, which
+            // only touches the top-level person) — the target is its own household's
+            // sole member, and it has both fields set, so a leak would show up here.
+            expect(hit.household.householdMembers[0].lastBackgroundCheck).toBeUndefined();
+            expect(hit.household.householdMembers[0].googleId).toBeUndefined();
+            // ...but isHouseholdLead (@sensitivity:public) MUST survive the select — the
+            // participant-merge page reads it off these rows for its isLeadWithOthers guard
+            // and [Lead] marker. The merge page's own tests mock the response, so this is the
+            // only place that pins the contract; dropping it from the select must fail here.
+            // Present for ops too (opsOnly strips only orgMembership on the household).
+            expect(hit.household.householdMembers[0]).toHaveProperty('isHouseholdLead', false);
+        });
+
+        // ?filter=adults backs both lead-mentor pickers (program-ops/new and
+        // program-ops/programs/[id]). The param used to be read nowhere, so a minor
+        // could be picked as a program lead mentor.
+        describe('?filter=adults', () => {
+            const ids = async (u: string) => {
+                mockSession.mockResolvedValue({ user: { id: plainId, isBoardMember: true } });
+                const res = await SearchGet(req(u));
+                expect(res.status).toBe(200);
+                return (await res.json()).people.map((p: { id: number }) => p.id);
+            };
+
+            it('returns adults (by DoB and by isDeclaredAdult) and excludes minors', async () => {
+                const got = await ids(`http://localhost/api/people/search?q=ZZ&filter=adults`);
+                expect(got).toContain(adultId);
+                expect(got).toContain(declaredAdultId);
+                expect(got).not.toContain(minorId);
+            });
+
+            it('applies no age filter without the param, or with an unrecognized value', async () => {
+                expect(await ids(`http://localhost/api/people/search?q=ZZ`)).toContain(minorId);
+                expect(await ids(`http://localhost/api/people/search?q=ZZ&filter=everyone`)).toContain(minorId);
+            });
+
+            // Pins the hazard: `q` and `filter` are both ORs, so a naive second `OR:` key
+            // drops the name search. Both must apply — a matching minor stays out, and a
+            // non-matching adult does not leak in on the age leg alone.
+            it('applies BOTH q and the age filter', async () => {
+                const got = await ids(`http://localhost/api/people/search?q=ZZMinor&filter=adults`);
+                expect(got).not.toContain(minorId);
+                expect(got).not.toContain(adultId);
+                expect(got).not.toContain(declaredAdultId);
+            });
         });
     });
 

@@ -79,6 +79,16 @@ describe("membership-ops/participants/new page", () => {
     renderWithProviders(<NewParticipantPage />);
 
     expect(await screen.findByDisplayValue("The Smiths")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "← Households" })).toHaveAttribute("href", "/membership-ops/households");
+  });
+
+  it("keeps the generic back link when not deep-linked from a household", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({});
+    renderWithProviders(<NewParticipantPage />);
+
+    await screen.findByText("Register New User");
+    expect(screen.getByRole("link", { name: "← Membership Ops" })).toHaveAttribute("href", "/membership-ops");
   });
 
   it("redirects a caller without sysadmin/board-member role, and shows a loader while resolving", () => {

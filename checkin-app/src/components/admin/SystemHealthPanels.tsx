@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Anchor, Badge, Card, Center, Code, Group, List, Loader, Stack, Text, Title } from "@mantine/core";
+import { Anchor, Badge, Button, Card, Center, Code, Group, List, Loader, Stack, Text, Title } from "@mantine/core";
 
 type DailyStat = {
   date: string;
@@ -134,6 +134,78 @@ export function ConfigHealthBox() {
   );
 }
 
+// Mirrors DiagStep in api/finance-ops/s-read/diagnose/route.ts.
+type DiagStep = { id: string; ok: boolean | null; detail: string; code?: string };
+
+// Human labels for the diagnose route's stable step slugs.
+const DIAG_LABELS: Record<string, string> = {
+  "env": "Mirror env wiring",
+  "mirror-read": "Mirror read (network → auth → DB → table → grant → rows)",
+  "latest-run": "Latest sync run",
+  "clock": "Timestamp sanity",
+  "trigger-env": "Sync trigger env wiring",
+  "trigger-invoke": "Sync trigger invoke (dry run)",
+};
+
+/**
+ * On-demand deep probe of the s-read chain (docs/designs/S_READ_DIAGNOSTICS.md).
+ * Deliberately NOT run on page load and never polled: every probe wakes the
+ * scale-to-zero Aurora cluster, so it fires only on an explicit click. This is
+ * the deep counterpart to ConfigHealthBox above, which stays presence-only.
+ */
+export function SReadDiagnosticsBox() {
+  const [steps, setSteps] = useState<DiagStep[] | null>(null);
+  const [running, setRunning] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const run = async () => {
+    setRunning(true);
+    setFailed(false);
+    try {
+      const res = await fetch('/api/finance-ops/s-read/diagnose');
+      if (!res.ok) throw new Error();
+      setSteps((await res.json()).steps as DiagStep[]);
+    } catch {
+      setSteps(null);
+      setFailed(true);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <Card withBorder radius="md" padding="lg">
+      <Group justify="space-between" mb="md">
+        <Title order={4}>Shopify Mirror (s-read) Diagnostics</Title>
+        <Button size="xs" variant="light" onClick={run} loading={running}>Run diagnostics</Button>
+      </Group>
+      <Text size="sm" c="dimmed" mb={steps || failed ? "md" : 0}>
+        Probes each link the payments page&apos;s sync status depends on and names the first
+        broken one. Wakes the database cluster — run it when something is wrong, not on a timer.
+      </Text>
+
+      {failed && <Text c="red">Diagnostics failed to run — see the server log.</Text>}
+      {steps && (
+        <List spacing="sm" listStyleType="none">
+          {steps.map((s) => (
+            <List.Item key={s.id}>
+              <Group justify="space-between" wrap="nowrap" align="flex-start">
+                <span>{DIAG_LABELS[s.id] ?? s.id}</span>
+                <Text c={s.ok === null ? 'dimmed' : s.ok ? 'green' : 'red'} fw={s.ok === false ? 700 : undefined} ta="right">
+                  ● {s.ok === null ? 'Skipped' : s.ok ? 'OK' : 'FAIL'}
+                </Text>
+              </Group>
+              <Text size="xs" c="dimmed">
+                {s.detail}{s.code ? <> <Code>{s.code}</Code></> : null}
+              </Text>
+            </List.Item>
+          ))}
+        </List>
+      )}
+    </Card>
+  );
+}
+
 type GithubCommit = {
   sha: string;
   html_url: string;
@@ -256,7 +328,7 @@ export function BadgeScanChart() {
           setStats(data.days);
         }
       })
-      .catch(console.error)
+      .catch((err) => console.error("Failed to load system health:", err))
       .finally(() => setLoading(false));
   }, []);
 

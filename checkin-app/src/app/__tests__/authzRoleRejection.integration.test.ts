@@ -31,6 +31,8 @@ import { GET as TRENDS_GET } from '@/app/api/facility/trends/route';
 import { GET as ADMIN_TA_GET } from '@/app/api/safety/trusted-adults/route';
 import { POST as TA_OVERRIDE_POST } from '@/app/api/safety/trusted-adults/override/route';
 import { PATCH as SHOP_TOOL_PATCH } from '@/app/api/shop/tools/[id]/route';
+import { GET as FIN_PAYMENTS_GET } from '@/app/api/finance-ops/payments/route';
+import { PATCH as FIN_PAYMENTS_PATCH } from '@/app/api/finance-ops/payments/[id]/route';
 import { GET as EVENT_GET, PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
 import { GET as EVENTS_LIST_GET } from '@/app/api/events/route';
 import { POST as PROGRAMS_POST } from '@/app/api/programs/route';
@@ -49,6 +51,7 @@ import { POST as CERTIFY_PAYMENT_POST } from '@/app/api/membership-ops/applicati
 import { POST as APP_EXTERNAL_POST } from '@/app/api/membership-ops/applications/external/route';
 import { POST as REVIEW_OVERRIDE_POST } from '@/app/api/membership-ops/applications/review-override/route';
 import { POST as APP_ARCHIVE_POST } from '@/app/api/membership-ops/applications/archive/route';
+import { POST as APP_UNARCHIVE_POST } from '@/app/api/membership-ops/applications/unarchive/route';
 import { GET as MOPS_HH_GET, POST as MOPS_HH_POST } from '@/app/api/membership-ops/households/route';
 import { POST as REVIEWS_POST } from '@/app/api/membership/reviews/route';
 import { GET as ROLES_GET, PATCH as ROLES_PATCH } from '@/app/api/roles/route';
@@ -65,7 +68,7 @@ import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'authz-rolereject-test';
 
@@ -177,6 +180,10 @@ describe('Protected-route role rejection', () => {
         { name: 'GET /api/admin/settings/localization', invoke: () => LOCALIZATION_GET(nreq('http://localhost/api/admin/settings/localization')) },
         { name: 'PUT /api/admin/settings/localization (sysadmin-only)', invoke: () => LOCALIZATION_PUT(nreq('http://localhost/api/admin/settings/localization', 'PUT', {})) },
         { name: 'GET /api/facility/badges', invoke: () => BADGES_GET(nreq('http://localhost/api/facility/badges')) },
+        // Payment problems queue (the Shopify reconciler's triage rows): family +
+        // order + what went wrong, board/sysadmin only.
+        { name: 'GET /api/finance-ops/payments', invoke: () => FIN_PAYMENTS_GET(nreq('http://localhost/api/finance-ops/payments')) },
+        { name: 'PATCH /api/finance-ops/payments/[id]', invoke: () => FIN_PAYMENTS_PATCH(nreq('http://localhost/api/finance-ops/payments/1', 'PATCH', {}), idCtx(1)) },
         { name: 'GET /api/facility/visits', invoke: () => FAC_VISITS_GET(nreq('http://localhost/api/facility/visits')) },
         { name: 'PATCH /api/facility/visits', invoke: () => FAC_VISITS_PATCH(nreq('http://localhost/api/facility/visits', 'PATCH', {})) },
         { name: 'GET /api/membership-audit/households-missing-contact', invoke: () => MISSING_CONTACT_GET(nreq('http://localhost/api/membership-audit/households-missing-contact')) },
@@ -185,6 +192,7 @@ describe('Protected-route role rejection', () => {
         { name: 'POST /api/membership-ops/applications/external', invoke: () => APP_EXTERNAL_POST(nreq('http://localhost/api/membership-ops/applications/external', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/review-override', invoke: () => REVIEW_OVERRIDE_POST(nreq('http://localhost/api/membership-ops/applications/review-override', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/archive', invoke: () => APP_ARCHIVE_POST(nreq('http://localhost/api/membership-ops/applications/archive', 'POST', {})) },
+        { name: 'POST /api/membership-ops/applications/unarchive', invoke: () => APP_UNARCHIVE_POST(nreq('http://localhost/api/membership-ops/applications/unarchive', 'POST', {})) },
         { name: 'GET /api/membership-ops/households (collection)', invoke: () => MOPS_HH_GET(nreq('http://localhost/api/membership-ops/households')) },
         { name: 'POST /api/membership-ops/households (collection)', invoke: () => MOPS_HH_POST(nreq('http://localhost/api/membership-ops/households', 'POST', {})) },
         { name: 'POST /api/membership/reviews (backgroundCheckReviewer-only)', invoke: () => REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {})) },
@@ -214,6 +222,19 @@ describe('Protected-route role rejection', () => {
         });
         it('403 for a plain authenticated user (no privileged role)', async () => {
             as(plainId, { householdId: plainHh });
+            expect((await invoke()).status).toBe(403);
+        });
+    });
+
+    // ---- Operations gets the Participants directory (read + membership-ops/
+    // contacts create) only — every edit/rich-create participants endpoint stays
+    // board/sysadmin-only. isOperations must still 403 here (contrast with
+    // membership-ops/contacts, the one endpoint operations DOES clear — see its
+    // own integration suite).
+    const participantsEditRoutes = roleGated.filter((c) => c.name.includes('/membership-ops/participants'));
+    describe.each(participantsEditRoutes)('$name — operations-only is denied', ({ invoke }) => {
+        it('403s an operations-only actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
             expect((await invoke()).status).toBe(403);
         });
     });

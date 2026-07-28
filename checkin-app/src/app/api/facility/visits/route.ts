@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
-import { parseVisitTime, departureAfterArrival } from "@/lib/visitTimes";
+import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -64,6 +64,9 @@ export const PATCH = withAuth(
             if (!departureAfterArrival(nextArrived, nextDeparted)) {
                 return apiError("Departure time must be after arrival time", 400);
             }
+            if (!withinMaxDuration(nextArrived, nextDeparted)) {
+                return apiError("A visit cannot be longer than 24 hours.", 400);
+            }
 
             const updatedVisit = await prisma.visit.update({
                 where: { id: visitId },
@@ -89,6 +92,45 @@ export const PATCH = withAuth(
             return NextResponse.json({ visit: updatedVisit });
         } catch (error) {
             logger.error("Update visit error:", error);
+            return apiError("Internal Server Error", 500);
+        }
+    }
+);
+
+export const DELETE = withAuth(
+    { roles: ['isSysadmin', 'isBoardMember'] },
+    async (req, auth) => {
+        try {
+            const { visitId } = await req.json();
+
+            if (!visitId) {
+                return apiError("visitId is required.", 400);
+            }
+
+            const existing = await prisma.visit.findUnique({ where: { id: visitId } });
+            if (!existing) {
+                return apiError("Visit not found.", 404);
+            }
+
+            await prisma.visit.delete({ where: { id: visitId } });
+
+            // Log the manual deletion in the audit trail — keep the deleted row in oldData
+            // since it no longer exists anywhere else.
+            if (auth.type === 'session') {
+                await prisma.auditLog.create({
+                    data: {
+                        actorId: auth.user.id,
+                        action: "DELETE",
+                        tableName: "Visit",
+                        affectedEntityId: visitId,
+                        oldData: JSON.parse(JSON.stringify(existing)),
+                    },
+                });
+            }
+
+            return NextResponse.json({ success: true });
+        } catch (error) {
+            logger.error("Delete visit error:", error);
             return apiError("Internal Server Error", 500);
         }
     }

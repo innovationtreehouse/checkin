@@ -31,9 +31,15 @@ name: Migration safety (populated DB)
 # same conditions, as before.
 on:
   pull_request:
-    branches: [main]
+    # pull_request triggers evaluate against the BASE branch's workflow file,
+    # so this must exist on both main (every future rel/* cut inherits it)
+    # and rel/1.0 (so current release-line PRs get checks).
+    branches: [main, 'rel/**']
     paths:
       - 'checkin-app/prisma/migrations/**'
+      # The mirror chain gets the history-invariants job below (the populated-DB
+      # job remains checkin-only and skips itself for mirror-only PRs).
+      - 'packages/s-ingest-core/prisma/migrations/**'
       - '.github/workflows/migration-safety.yml'
 
 jobs:
@@ -236,3 +242,58 @@ jobs:
             exit 1
           fi
           echo "Found $FILE"
+
+  # ── Release-anchored history invariants (both databases) ────────────────────
+  # 1. RELEASED MIGRATIONS ARE IMMUTABLE: any migration directory that existed
+  #    at the previous v* release may not be modified or deleted — prod's
+  #    ledger references those names, and every already-migrated database
+  #    depends on that history staying put. "We'll always be able to migrate."
+  #    This deliberately outlaws whole-chain squashes of released history; the
+  #    coalesce flow operates on the UNRELEASED tail only (scoped reconcile).
+  #    Even reconcile.sql edits inside a released directory count — history is
+  #    history.
+  # 2. ACCUMULATION WARNING (non-blocking): more than 5 unreleased migrations
+  #    in a chain annotates the PR as a cue to coalesce the tail before the
+  #    next release. Migration count per release is a manual team judgment
+  #    now (no CI gate enforces it); this is just the early nudge that keeps
+  #    PRs moving.
+  history:
+    name: Released migrations immutable (+ accumulation warning)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Check history against the previous release
+        run: |
+          set -euo pipefail
+          git fetch --tags --quiet origin
+          LAST_RELEASE=$(git tag --list 'v*' --merged HEAD | sort -V | tail -n1 || true)
+          if [ -z "$LAST_RELEASE" ]; then
+            echo "No v* release reachable — nothing released to protect."
+            exit 0
+          fi
+          echo "Previous release: $LAST_RELEASE"
+          FAILED=0
+          for DIR in checkin-app/prisma/migrations packages/s-ingest-core/prisma/migrations; do
+            BASE_DIRS=$(git ls-tree --name-only "$LAST_RELEASE:$DIR" 2>/dev/null | grep -v '^migration_lock\.toml$' | sort || true)
+            HEAD_DIRS=$(git ls-tree --name-only "HEAD:$DIR" 2>/dev/null | grep -v '^migration_lock\.toml$' | sort || true)
+            while IFS= read -r d; do
+              [ -z "$d" ] && continue
+              if ! printf '%s\n' "$HEAD_DIRS" | grep -qxF "$d"; then
+                echo "::error::$DIR/$d existed at $LAST_RELEASE but is deleted here — released migrations are immutable (prod's ledger references them). Coalesce only the unreleased tail."
+                FAILED=1
+              elif ! git diff --quiet "$LAST_RELEASE" HEAD -- "$DIR/$d"; then
+                echo "::error::$DIR/$d existed at $LAST_RELEASE and was modified here — released migrations are immutable (the ledger checksum is a sha256 of migration.sql, and applied history must stay reproducible)."
+                FAILED=1
+              fi
+            done <<< "$BASE_DIRS"
+            NEW_COUNT=$(comm -13 <(printf '%s\n' "$BASE_DIRS") <(printf '%s\n' "$HEAD_DIRS") | grep -c . || true)
+            if [ "$NEW_COUNT" -gt 5 ]; then
+              echo "::warning::$DIR carries $NEW_COUNT unreleased migrations since $LAST_RELEASE — consider coalescing the unreleased tail before the next release (checkin-app/docs/MIGRATION_COALESCE_FLOW.md). Non-blocking."
+            fi
+            echo "[$DIR] unreleased migrations: $NEW_COUNT"
+          done
+          [ "$FAILED" -eq 0 ]
+          echo "Released history intact."

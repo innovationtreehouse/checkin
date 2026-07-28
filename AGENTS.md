@@ -13,6 +13,29 @@ After a `git merge`/`rebase`/`cherry-pick` (or any external write) touches a
 file you're about to edit, re-Read it first — it counts as modified since your
 last Read.
 
+## Comments
+
+A code comment describes what the code below it does and why it exists **now**,
+in the present tense. Keep it short — usually one line. Prefer making the code
+self-explanatory (better names, smaller functions) over explaining it.
+
+- **No history in comments.** Don't narrate how the code got here: no "used
+  to…", "previously…", "changed because…", "workaround for the old…", bug/PR
+  numbers, TODO-from-2023, or a log of past attempts. That context belongs in
+  the PR description and commit message, where it's linked to the diff and
+  reviewable — not stranded in the source where it rots.
+- **A "why" comment is fine when the reason is non-obvious and still true** —
+  an ordering constraint, an external-API quirk, a security invariant. State
+  the constraint, not the story of discovering it.
+- **Delete stale comments when you touch the code.** A comment that no longer
+  matches the code is worse than none.
+- If a comment needs multiple paragraphs to make sense, that's usually a signal
+  the code or its name should change instead.
+
+Design rationale, regressions-to-learn-from, and past approaches live in
+`docs/` and PR history — not in code comments. (This file's own flow-test
+section is an example: the failure stories sit in docs, not in the source.)
+
 ## Test classes
 
 There are **three** classes of tests. Run all commands from `checkin-app/`.
@@ -91,6 +114,42 @@ external integrations (Zoho/Shopify/Averity); use the board/admin manual-action
 routes to advance flows those would otherwise gate. Real journeys are catalogued
 in `docs/designs/CUJS.md` — start there when choosing what to cover.
 
+## Issue workflow (org project 1)
+
+Org **project 1** is the canonical triage surface; its Status field plus the
+issue's assignee are the claim-state machine. An assignment means exactly one
+thing: someone is actively working the issue *right now* — never leave one
+standing as a soft reservation, and never trust it as the only signal.
+
+- **Pick up**: choose an open issue that is unassigned **and** has no open PR
+  claiming it. That check is two-pronged, because design PRs don't create a
+  closing link: (1) `closingIssuesReferences` on open PRs / the issue's
+  Development panel (implementation PRs), and (2) open PRs whose title/body
+  mention `#NNN` and carry a design doc for it. Assignment is dropped when a
+  PR opens, so "unassigned" alone does not mean free. Then assign yourself and
+  set Status → **In progress**.
+- **Re-verify before building**: issue bodies go stale — renames, moved files,
+  callers added since filing. Re-run the blast-radius search against current
+  `main` before implementing, and comment corrections on the issue (see #300:
+  filed against `isMinor`/3 callers, fixed as `isYouth`/10 callers).
+- **PR open**: set Status → **In review** and **unassign the issue**. The next
+  action belongs to reviewers, not the author; a standing assignment would
+  claim work that isn't happening. The open PR is what marks the issue as
+  taken. How the PR references the issue depends on what it is:
+  - **Implementation PR**: a closing keyword — `Fixes #NNN`, `Closes #NNN`,
+    or `Resolves #NNN` (all three work) — and confirm the link registered via
+    `closingIssuesReferences`.
+  - **Design-doc PR**: reference the issue WITHOUT a closing keyword (plain
+    `#NNN`, "Design for #NNN"). A closing link here would auto-close the
+    issue when the doc merges, with nothing implemented.
+- **Merge**: an implementation PR needs nothing manual — the closing keyword
+  closes the issue and the project's built-in workflows (Item closed / Pull
+  request merged) set Status → Done. A merged design-doc PR leaves the issue
+  open: set Status back to **Ready** for implementation pickup.
+
+Project-field writes need the `project` token scope; if GraphQL returns
+INSUFFICIENT_SCOPES, have the user run `gh auth refresh -s project`.
+
 ## Docs map
 
 Read these before changing the relevant area — start here, then follow links.
@@ -106,7 +165,7 @@ Read these before changing the relevant area — start here, then follow links.
 - `CUJS.md` — **critical user journeys** (the basis for flow tests).
 - `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
 - `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
-- `PRODUCTION_PLAN.md`, `implementation_plan.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
+- `PRODUCTION_PLAN.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
 - `SECURITY-POLICY.md` — the response-stripper / `@sensitivity` registry rules (read before adding API responses or schema fields).
@@ -115,7 +174,7 @@ Read these before changing the relevant area — start here, then follow links.
 
 **Deploy & migrations** (`checkin-app/docs/`)
 - `DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` — infra rules + order of operations for schema migrations vs. deploys (read before writing a migration); `.claude/skills/migration-safety/` fires this as a checklist whenever a migration is being built.
-- `MIGRATION_COALESCE_FLOW.md` — the pre-release migration-coalesce policy + script (`scripts/coalesce-migrations.ts`), the release gate (at most 1 new migration per release), and the dev/prod ledger-reconcile procedure.
+- `MIGRATION_COALESCE_FLOW.md` — the pre-release migration-coalesce policy + script (`scripts/coalesce-migrations.ts`), the manual migration-count policy, and the dev/prod ledger-reconcile procedure.
 - `PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` — single-pool Shopify capacity model + the scholarship hold-ledger state machine (read before touching `Program`/`ProgramParticipant` capacity or payment-plan logic).
 
 **Subprojects** (each has its own `README.md`)

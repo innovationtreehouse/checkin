@@ -23,17 +23,33 @@ name: Security boundary isolation
 # inert), then land the route handler in the feature PR.
 on:
   pull_request:
-    branches: [main]
+    # pull_request triggers evaluate against the BASE branch's workflow file,
+    # so this must exist on both main (every future rel/* cut inherits it)
+    # and rel/1.0 (so current release-line PRs get checks).
+    branches: [main, 'rel/**']
+  # If `isolation` is a REQUIRED check, the merge queue expects it on the
+  # merge_group ref too — without this trigger no run is dispatched, the
+  # context never reports, and the queue entry hangs forever. The isolation
+  # policy is a PR-shape concern (changed files vs base); the queued PRs are
+  # already reviewed and there's no pull_request base SHA here, so this event
+  # short-circuits to success below.
+  merge_group:
 
 jobs:
   isolation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Skip on merge queue (already enforced on the PR)
+        if: github.event_name == 'merge_group'
+        run: echo "merge_group event — isolation already checked on the PR; nothing to do."
+
+      - uses: actions/checkout@v5
+        if: github.event_name != 'merge_group'
         with:
           fetch-depth: 0
 
       - name: Check boundary changes ship alone
+        if: github.event_name != 'merge_group'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |

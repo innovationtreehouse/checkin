@@ -89,16 +89,18 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
+    // Phone must be capturable on ADD, not only on a later edit.
+    fireEvent.change(screen.getByLabelText("Phone (optional)"), { target: { value: "5125551234" } });
     // Allergies (safety data) must be capturable on ADD, not only on a later edit.
     fireEvent.change(screen.getByLabelText("Allergies (optional)"), { target: { value: "Bees" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/household",
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberOver25: true, memberAllergies: "Bees" }),
+          body: JSON.stringify({ memberName: "Robin Smith", memberEmail: "", memberDob: "", memberPhone: "5125551234", memberOver25: true, memberAllergies: "Bees" }),
         }),
       ),
     );
@@ -218,19 +220,19 @@ describe("HouseholdPage", () => {
     expect(screen.queryByLabelText("Full Name")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     expect(await screen.findByText("Name is required.")).toBeInTheDocument();
     expect(screen.getByText("Date of birth is required for anyone under 25.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.change(screen.getByLabelText("Email (Optional)"), { target: { value: "not-an-email" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     expect(await screen.findByText("Enter a valid email address.")).toBeInTheDocument();
     expect(screen.getByText("Date of birth is required for anyone under 25.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Email (Optional)"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Date of Birth"), { target: { value: "2000-01-01" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/household", expect.objectContaining({ method: "PATCH" })),
@@ -257,10 +259,10 @@ describe("HouseholdPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     expect(await screen.findByText("Household is full.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save / Invite Household Member" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save / Invite" }));
     await waitFor(() => expectToast("Network error adding household member."));
   });
 
@@ -415,7 +417,7 @@ describe("HouseholdPage", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/household/emergency-contacts/2", expect.objectContaining({ method: "DELETE" })),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Emergency contact removed." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Emergency contact removed." })));
     await waitFor(() => expect(screen.queryByText("Jess Friend")).not.toBeInTheDocument());
 
     const editButtons = screen.getAllByRole("button", { name: "Edit" });
@@ -430,7 +432,7 @@ describe("HouseholdPage", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith("/api/household/emergency-contacts/1", expect.objectContaining({ method: "PATCH" })),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Emergency contact updated." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Emergency contact updated." })));
   });
 
   it("shows a dismissible contact server error, and validates/cancels the contact form", async () => {

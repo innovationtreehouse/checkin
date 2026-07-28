@@ -30,6 +30,67 @@ function readCheckinEnv(): CheckinEnv {
     return value === 'dev' || value === 'local' ? value : 'prod';
 }
 
+/**
+ * True on the ops-stg staging environment. ops-stg deploys with CHECKIN_ENV=stg
+ * and NOTHING ELSE — no separate CHECKIN_STAGING variable to wire or forget.
+ *
+ * 'stg' is deliberately NOT a member of the CheckinEnv union: readCheckinEnv()
+ * collapses the unrecognized value to 'prod', keeping every mock
+ * (Zoho/Shopify/background-check) off and persona-mint unregistered — a
+ * prod-data copy needs that. Adding 'staging' to CheckinEnv would flip every
+ * `readCheckinEnv() !== 'prod'` mock gate ON in staging, the opposite of what
+ * we want. So this predicate reads the RAW process.env.CHECKIN_ENV, not
+ * checkinEnv(), to see the un-collapsed 'stg' that the mock path throws away.
+ *
+ * Exact `=== 'stg'`, not a truthy/substring check, so a stray value can't
+ * accidentally engage the gate — it only ever widens the surface that runs a
+ * stricter check (isStagingAccessAllowed below), so failing inert on any
+ * ambiguous value is the safe default.
+ *
+ * Derived as well as declared: a missing/blank/malformed CHECKIN_ENV fails
+ * readCheckinEnv() SAFE to prod, which fails THIS predicate OPEN — the gate
+ * goes inert exactly when it matters most. So CHECKIN_ENV is not the only
+ * signal: the ops-stg host (config.baseUrl(), sourced from NEXTAUTH_URL) is a
+ * second, independent one that can't be silently forgotten — Google OAuth
+ * callbacks don't work without NEXTAUTH_URL pointed at the real host, so it is
+ * set correctly by construction, not by a task-def author remembering it.
+ */
+function isStagingEnv(): boolean {
+    if (process.env.CHECKIN_ENV === 'stg') return true;
+    try {
+        return new URL(config.baseUrl()).hostname.startsWith('ops-stg.');
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * ops-stg trust-boundary predicate (see docs on the staging access gate).
+ * ops-stg runs a scrubbed copy of PRODUCTION data behind PROD's Google OAuth
+ * client, deliberately NOT restricted to the org Google Workspace (a
+ * sysadmin-settable exception must be able to admit an outside collaborator).
+ * That means any Google account on the internet can complete sign-in and
+ * NextAuth auto-creates a Person row for them — this predicate is the ONLY
+ * thing standing between that stranger and copied prod data, so it is applied
+ * at all three surfaces that can serve a response: middleware (pages),
+ * authenticateRequest (the API auth chokepoint), and resolveAccess (the
+ * `authorize: 'public'` path, which reaches authenticateRequest but does not
+ * gate on its result by default).
+ *
+ * Fails closed: missing/undefined claims (no token, anonymous caller, a
+ * caller whose claims didn't decode) deny.
+ */
+export type StagingGateClaims = {
+    hd?: string | null;
+    emailVerified?: boolean;
+    canAccessStaging?: boolean;
+};
+
+export function isStagingAccessAllowed(claims: StagingGateClaims | null | undefined): boolean {
+    if (!claims) return false;
+    return (claims.hd === ORG_DOMAIN && claims.emailVerified === true) || claims.canAccessStaging === true;
+}
+
 /** True only when all three Zoho OAuth secrets are present. */
 function zohoConfiguredEnv(): boolean {
     return !!(process.env.ZOHO_CLIENT_ID && process.env.ZOHO_CLIENT_SECRET && process.env.ZOHO_REFRESH_TOKEN);
@@ -193,6 +254,45 @@ export const config = {
     // Cron — shared secret gating the session-less cron routes (see cronAuth.ts).
     cronSecret: (): string | null => process.env.CRON_SECRET || null,
 
+    // s-read mirror — read-only connection string to the `shopify_read` Postgres
+    // (the s-read-function's Shopify order/refund/payout mirror). Null when not
+    // wired → the reconciler (lib/finance/reconcile.ts) short-circuits as "not
+    // wired" instead of throwing, so an env without the mirror simply runs no
+    // reconciliation.
+    //
+    // In AWS there is NO mirror connection string of its own: the app's DML role
+    // is a member of the mirror's SELECT-only NOLOGIN grant-holder (infra
+    // modules/checkin-bootstrap/bootstrap.sh), so the URL is DATABASE_URL with the
+    // database name swapped to SHOPIFY_READ_DB ("shopify_read_<env>", a plain task
+    // env — see infra modules/checkin/overview.tf, incl. why it is explicit per
+    // env rather than derived from checkinEnv()). SHOPIFY_READ_DATABASE_URL stays
+    // as a full-URL override for local dev, where the mirror may live anywhere.
+    shopifyReadDatabaseUrl: (): string | null => {
+        if (process.env.SHOPIFY_READ_DATABASE_URL) return process.env.SHOPIFY_READ_DATABASE_URL;
+        const db = process.env.SHOPIFY_READ_DB;
+        const base = process.env.DATABASE_URL;
+        if (!db || !base) return null;
+        try {
+            const url = new URL(base);
+            url.pathname = `/${db}`;
+            return url.toString();
+        } catch {
+            return null;
+        }
+    },
+
+    // s-read sync trigger — name of the `s-read-<env>-trigger` Lambda that RunTasks
+    // the sync family (s-read-function/DEPLOY.md). Null when unset → the board's
+    // manual-sync route reports "not wired" (503) rather than throwing, matching the
+    // mirror accessor above.
+    //
+    // Named EXPLICITLY per env rather than derived from checkinEnv(): that predicate
+    // fails safe to 'prod' for any unset/unrecognized value, which is right for the
+    // Zoho/Shopify mocks (a misconfigured box must not get the mock) but exactly
+    // backwards here — it would point an unconfigured box at PROD's sync trigger. An
+    // explicit name fails to null, i.e. to doing nothing.
+    sReadTriggerFunction: (): string | null => process.env.S_READ_TRIGGER_FUNCTION || null,
+
     // Shopify — Client Credentials Grant integration (see shopify.ts). All three
     // null when unset (integration "off").
     shopifyStoreDomain: (): string | null => process.env.SHOPIFY_STORE_DOMAIN || null,
@@ -232,6 +332,9 @@ export const config = {
     devToolsActive: (): boolean => readCheckinEnv() !== 'prod',
     // True only on a developer laptop. Gates offline credential login + keyless kiosk.
     isLocal: (): boolean => readCheckinEnv() === 'local',
+    // True on ops-stg (CHECKIN_ENV=stg; see isStagingEnv) — gates the access
+    // gate's staging branch (middleware/authenticateRequest/resolveAccess).
+    isStaging: (): boolean => isStagingEnv(),
     baseUrl: (): string => {
         if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
         return process.env.NEXTAUTH_URL || 'http://localhost:4000';

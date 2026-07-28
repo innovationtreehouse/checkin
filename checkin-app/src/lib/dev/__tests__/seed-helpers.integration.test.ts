@@ -33,6 +33,11 @@ describe("dev seed-helpers (integration)", () => {
     });
 
     afterAll(async () => {
+        // This suite seeds the baseline personas — including a BOARD member — into the
+        // DB every integration suite shares. Leaving them behind makes any later suite
+        // that reasons about global role counts fail on ambient fixtures, so truncate
+        // back to empty rather than just disconnecting.
+        await truncateAll();
         await prisma.$disconnect();
     });
 

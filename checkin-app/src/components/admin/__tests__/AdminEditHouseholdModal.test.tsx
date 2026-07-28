@@ -102,7 +102,7 @@ describe("AdminEditHouseholdModal", () => {
       expect.objectContaining({ name: "Smith Fam", line1: "2 Main St", city: "Round Rock", postalCode: "78664" }),
     );
 
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green" })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Household updated." })));
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ name: "Smith Fam" }));
     expect(onClose).toHaveBeenCalled();
   });
@@ -200,13 +200,54 @@ describe("AdminEditHouseholdModal", () => {
         expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 1 }) }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "green", message: "Lead removed." })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Lead removed." })));
 
     // Now down to a single lead: the last remaining Remove-lead button is disabled
     // and the "must keep at least one lead" copy shows.
     await waitFor(() => expect(screen.getAllByRole("button", { name: "Remove lead" })).toHaveLength(1));
     expect(screen.getByRole("button", { name: "Remove lead" })).toBeDisabled();
     expect(screen.getByText("A household must keep at least one lead.")).toBeInTheDocument();
+  });
+
+  it("promotes a non-lead adult to lead, excluding youth and existing leads", async () => {
+    // One lead (adult), one promotable adult, one youth. Only the promotable
+    // adult gets a Make-lead button; youth is excluded, the lead has Remove.
+    const oneLady = {
+      ...household,
+      householdLeads: [{ personId: 1 }],
+      householdMembers: [
+        { id: 1, name: "Lead Adult", email: "lead@example.com", dateOfBirth: "1985-01-01" },
+        { id: 2, name: "Other Adult", email: "adult@example.com", dateOfBirth: "1990-01-01" },
+        { id: 3, name: "A Kid", email: null, dateOfBirth: "2015-01-01" },
+      ],
+    };
+    const promoted = { ...oneLady, householdLeads: [{ personId: 1 }, { personId: 2 }] };
+    mockFetchJson({
+      "/api/membership-ops/households?id=55": { household: oneLady },
+      "/api/household/lead": { ok: true },
+    });
+    renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} />);
+    await screen.findByDisplayValue("Smith Family");
+
+    const makeLeadButtons = screen.getAllByRole("button", { name: "Make lead" });
+    expect(makeLeadButtons).toHaveLength(1); // Other Adult only — not the youth, not the lead
+    expect(screen.getByText("Other Adult")).toBeInTheDocument();
+    expect(screen.queryByText("A Kid")).not.toBeInTheDocument();
+
+    // After a successful promote the reload shows both leads and no Make-lead button (cap of 2).
+    const fetchMock = mockFetchJson({
+      "/api/household/lead": { ok: true },
+      "/api/membership-ops/households?id=55": { household: promoted },
+    });
+    fireEvent.click(makeLeadButtons[0]);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/household/lead",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ participantId: 2 }) }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Make lead" })).not.toBeInTheDocument());
   });
 
   it("shows a failure notification, and a network-error notification, when removing a lead", async () => {
@@ -240,6 +281,27 @@ describe("AdminEditHouseholdModal", () => {
     );
     const [, patchOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PATCH")!;
     expect(JSON.parse(patchOpts!.body as string)).toEqual(expect.objectContaining({ isVolunteer: true }));
+  });
+
+  it("omits the membership fields from the PATCH body for a membership-less household", async () => {
+    const fetchMock = mockFetchJson({
+      "/api/membership-ops/households?id=55": { household },
+      "/api/membership-ops/households/55": { household },
+    });
+    renderWithProviders(<AdminEditHouseholdModal householdId={55} opened={true} onClose={jest.fn()} onSaved={jest.fn()} />);
+    await screen.findByDisplayValue("Smith Family");
+
+    fireEvent.change(screen.getByLabelText("Household Name"), { target: { value: "Smith Fam" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes — As Admin" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/membership-ops/households/55", expect.objectContaining({ method: "PATCH" })),
+    );
+    const [, patchOpts] = fetchMock.mock.calls.find(([, opts]) => opts?.method === "PATCH")!;
+    const body = JSON.parse(patchOpts!.body as string);
+    expect(body).toEqual(expect.objectContaining({ name: "Smith Fam" }));
+    expect(body).not.toHaveProperty("isVolunteer");
+    expect(body).not.toHaveProperty("memberSince");
   });
 
   it("shows the no-leads state for a household with no household leads", async () => {

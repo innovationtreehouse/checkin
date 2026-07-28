@@ -90,6 +90,7 @@ describe('Membership settings + volunteer designations API', () => {
         expect((await cleared.json()).settings.orgMembershipProductUrl).toBeNull();
     });
 
+
     it('rejects negative dues and keeps the previous value', async () => {
         asBoard(boardId);
         // Establish a known good value.

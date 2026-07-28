@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 import {
-  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group,
+  Alert, Anchor, Box, Button, Card, Checkbox, Container, Group, Modal,
   SimpleGrid, Stack, Text, Textarea, TextInput, ThemeIcon, Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner, type AlertTone } from "@/components/admin/AlertBanner";
 import MembershipFlowStepper from "@/components/MembershipFlowStepper";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
@@ -49,7 +50,7 @@ interface IntakeState {
   hasHousehold: boolean;
   isLead: boolean;
   membershipStatus: OrgMembershipStatus | null;
-  process: { id: number; kind: string; status: OrgMembershipProcessStatus } | null;
+  process: { id: number; kind: string; status: OrgMembershipProcessStatus; isPaymentPlanRequested?: boolean } | null;
   external: ExternalStatus | null;
   prefill: {
     household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
@@ -89,16 +90,21 @@ export const serializeMembershipForm = (v: FormValues) =>
     v.notes,
   ]);
 
-function ExternalTask({ done, title, doneText, children }: { done: boolean; title: string; doneText: string; children: React.ReactNode }) {
+function ExternalTask({ done, title, doneText, doneExtra, children }: { done: boolean; title: string; doneText: string; doneExtra?: React.ReactNode; children: React.ReactNode }) {
   return (
     <Card withBorder radius="md" padding="md" bg={done ? "var(--mantine-color-green-light)" : undefined}>
       <Group align="flex-start" wrap="nowrap">
-        <ThemeIcon color={done ? "green" : "gray"} radius="xl" size="md" variant={done ? "filled" : "light"}>
+        <ThemeIcon color={done ? "treehouseGreen" : "gray"} radius="xl" size="md" variant={done ? "filled" : "light"}>
           {done ? "✓" : "•"}
         </ThemeIcon>
         <Box style={{ flex: 1 }}>
           <Text fw={600} mb="xs">{title}</Text>
-          {done ? <Text c="green">{doneText}</Text> : children}
+          {done ? (
+            <>
+              <Text c="green">{doneText}</Text>
+              {doneExtra}
+            </>
+          ) : children}
         </Box>
       </Group>
     </Card>
@@ -146,8 +152,11 @@ export default function MembershipPage() {
   // webhook today, an s-read reconciliation possibly in the future — moves the
   // process out of PENDING_PAYMENT, or explicitly via the escape-hatch link.
   const [awaitingPayment, setAwaitingPayment] = useState<{ processId: number } | null>(null);
-  // Flips true once the household asks the finance committee for a payment plan.
+  // Flips true once the household asks the Scholarship Review Team for a payment plan.
+  // Seeded from the server flag so a reload (or another device) still shows the
+  // request as received rather than resurrecting the button.
   const [planRequested, setPlanRequested] = useState(false);
+  const [confirmPlanOpened, { open: openConfirmPlan, close: closeConfirmPlan }] = useDisclosure(false);
   // Self-attest gate for the background-check task (#875): the confirm checkbox
   // unlocks only after the applicant has opened the Averity consent link this
   // visit, so they can't attest to a form they never saw.
@@ -266,7 +275,6 @@ export default function MembershipPage() {
       }
       await load();
       notifications.show({
-        color: "green",
         message: signedNow
           ? "Thanks — your signature was received."
           : "Signature received — finalizing. If it doesn't update shortly, use “Refresh status”.",
@@ -295,15 +303,30 @@ export default function MembershipPage() {
   // Implicit clearing, at page-load time: if the process has moved out of
   // PENDING_PAYMENT — the orders/paid webhook settled it, or (possibly, in the
   // future) an s-read reconciliation did — drop the holdoff and its
-  // sessionStorage record. Deliberately no background polling or focus
-  // listeners: the dev instance scales to zero, and an idle tab must not keep
-  // it (and the database) awake. The message resolves on the next page load.
+  // sessionStorage record. Deliberately no background polling: the dev
+  // instance scales to zero, and an idle tab must not keep it (and the
+  // database) awake. The one exception is below — a visibility refetch while
+  // a payment holdoff is active — which is user-driven (a hidden tab fires
+  // nothing) and saves the "pay on Shopify, come back, refresh by hand" step.
   useEffect(() => {
     const processId = state?.process?.id;
     if (!processId || state?.process?.status === "PENDING_PAYMENT") return;
     sessionStorage.removeItem(awaitingPaymentKey(processId));
     setAwaitingPayment(null);
   }, [state?.process?.id, state?.process?.status]);
+
+  // Returning from the Shopify checkout tab: refetch once when this tab becomes
+  // visible again, ONLY while a payment holdoff is active — so the paid state
+  // appears without a manual refresh. Event-driven, not polling: a hidden or
+  // idle tab triggers nothing (see the no-polling note above).
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [awaitingPayment, load]);
 
   const flash = (msg: string, error = false) => {
     setMessage(msg ? { text: msg, tone: error ? "error" : "success" } : undefined);
@@ -312,9 +335,11 @@ export default function MembershipPage() {
     if (error || msg === "") setWarnings([]);
   };
 
-  // Prefer the API's user-facing error string; fall back to a friendly default.
-  const apiError = (data: { error?: string } | null | undefined, fallback: string) =>
-    data?.error || fallback;
+  // Build an error message from an API response, appending the dev-only `detail`
+  // (the real server failure) when present so an "Internal Server Error" isn't a
+  // dead end. Falls back to a friendly default when the body carries nothing.
+  const apiError = (data: { error?: string; detail?: string } | null | undefined, fallback: string) =>
+    [data?.error, data?.detail].filter(Boolean).join(" — ") || fallback;
 
   // Real Shopify checkout only (opens a new tab) — starts the payment holdoff.
   // The local mock below settles synchronously and never needs one.
@@ -454,6 +479,9 @@ export default function MembershipPage() {
       });
       const saveData = await saveRes.json();
       if (!saveRes.ok) {
+        // The save can reject a field the client can't check locally (e.g. an
+        // emergency contact who is also a household member) — highlight it.
+        if (saveData.fields) setFieldErrors(mapServerFields(saveData.fields));
         flash(apiError(saveData, "Could not save."), true);
         return;
       }
@@ -510,10 +538,21 @@ export default function MembershipPage() {
     // On success we navigate away, so we intentionally leave `saving` true.
   };
 
-  // Ask the board's finance committee for a payment plan on membership dues.
+  // Ask the board's Scholarship Review Team for a payment plan on membership dues.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
+  // Mirrors the server flag both ways (not just true->true) so a denial that
+  // clears isPaymentPlanRequested — surfaced on the next state refetch — reverts
+  // the button to requestable instead of latching "requested" forever. The
+  // request button's own optimistic setPlanRequested(true) after a successful
+  // POST (below) is untouched by this: it doesn't change `state`, so this effect
+  // doesn't re-run and clobber it.
+  useEffect(() => {
+    setPlanRequested(!!state?.process?.isPaymentPlanRequested);
+  }, [state?.process?.isPaymentPlanRequested]);
+
   const requestPaymentPlan = async () => {
+    closeConfirmPlan();
     if (!state?.process) return;
     try {
       const res = await fetch("/api/membership/request-payment-plan", {
@@ -523,7 +562,7 @@ export default function MembershipPage() {
       });
       if (res.ok) {
         setPlanRequested(true);
-        notifications.show({ color: "green", message: "Requested! The finance committee of the board will follow up." });
+        notifications.show({ message: "Requested! The Scholarship Review Team will follow up." });
       } else {
         const data = await res.json().catch(() => ({}));
         notifications.show({ color: "red", message: data.error || "Could not request a payment plan.", autoClose: false });
@@ -664,7 +703,7 @@ export default function MembershipPage() {
             Did anything change — new members, address, phone, or email?{" "}
             <Anchor component={Link} href="/my-household">Update your household details first</Anchor>.
           </Text>
-          <Button color="green" disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
+          <Button disabled={saving} loading={saving} onClick={renew}>Renew now</Button>
         </Card>
       ) : isRenewal && inStatus === "RENEWAL_PENDING_BG" ? (
         <Card withBorder radius="md" padding="xl" maw={640}>
@@ -679,11 +718,11 @@ export default function MembershipPage() {
         <Group align="flex-start" gap="xl" wrap="wrap">
           {/* Renewals ride the same stepper as new applications — same phases, same
               progress, whether the background check is valid, expired, or first-time. */}
-          <Box style={{ flex: "0 0 auto" }}>
+          <Box style={{ flex: "0 1 auto", maxWidth: "100%", overflowX: "auto" }}>
             <MembershipFlowStepper currentStatus={inStatus} />
           </Box>
 
-          <Box style={{ flex: "1 1 420px", minWidth: 320 }}>
+          <Box style={{ flex: "1 1 420px", minWidth: "min(320px, 100%)" }}>
             {isIntake ? (
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="lg">
@@ -695,6 +734,9 @@ export default function MembershipPage() {
                       errors={{ line1: fieldErrors.address, city: fieldErrors.addrCity, state: fieldErrors.addrState, postalCode: fieldErrors.addrZip }}
                       onErrorClear={(f) => clearErr(f === "line1" ? "address" : f === "city" ? "addrCity" : f === "state" ? "addrState" : "addrZip")}
                     />
+                    <Text c="dimmed" size="sm" mt="md" mb="xs">
+                      Someone we can call in an emergency — must be an adult outside your household.
+                    </Text>
                     <EmergencyContactForm
                       emName={emName} setEmName={setEmName}
                       emPhone={emPhone} setEmPhone={setEmPhone}
@@ -769,14 +811,14 @@ export default function MembershipPage() {
                   {/* Local echo of the page-top banner: intake is a long card, so
                       the top AlertBanner posts off-screen next to these buttons. */}
                   {message && (
-                    <Alert color={message.tone === "error" ? "red" : "green"} variant="light">
+                    <Alert color={message.tone === "error" ? "red" : "treehouseGreen"} variant="light">
                       {message.text}
                     </Alert>
                   )}
 
                   <Group gap="md" wrap="wrap">
                     <Button variant="default" disabled={saving} loading={saving} onClick={save}>Save progress</Button>
-                    <Button color="green" disabled={saving} loading={saving} onClick={submit}>Submit &amp; continue</Button>
+                    <Button disabled={saving} loading={saving} onClick={submit}>Submit &amp; continue</Button>
                   </Group>
                 </Stack>
               </Card>
@@ -796,9 +838,10 @@ export default function MembershipPage() {
                     <Stack gap="xs" align="flex-start">
                       <Text c="dimmed">
                         Sign your personalized membership agreement online. This page updates
-                        automatically once it&apos;s signed.
+                        automatically once it&apos;s signed. Have your insurance details handy — the
+                        agreement asks for your provider and policy number.
                       </Text>
-                      <Button color="green" disabled={saving} loading={saving} onClick={startSigning}>
+                      <Button disabled={saving} loading={saving} onClick={startSigning}>
                         {state.external?.contractStarted ? "Resume signing →" : "Sign your membership agreement →"}
                       </Button>
                     </Stack>
@@ -809,7 +852,19 @@ export default function MembershipPage() {
                       <Text c="dimmed" />
                     </ExternalTask>
                   ) : (
-                    <ExternalTask done={!!state.external?.bgConsented} title="Start your background check" doneText="Background check started — we&apos;ll finish it in the background.">
+                    <ExternalTask
+                      done={!!state.external?.bgConsented}
+                      title="Start your background check"
+                      doneText="Background check started — we&apos;ll finish it in the background."
+                      doneExtra={state.external?.deepLinkUrl ? (
+                        <Text size="sm" c="dimmed" mt="xs">
+                          Checked it by mistake, or still need to finish the form?{" "}
+                          <Anchor href={state.external.deepLinkUrl} target="_blank" rel="noopener noreferrer">
+                            Reopen the Averity consent form →
+                          </Anchor>
+                        </Text>
+                      ) : undefined}
+                    >
                       <Stack gap="xs" align="flex-start">
                         <Text c="dimmed">
                           Consent to your background check on Averity. It runs in the background — you
@@ -865,27 +920,38 @@ export default function MembershipPage() {
                         </Anchor>
                       </Stack>
                     ) : payment.checkoutUrl ? (
-                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" color="green" mt="md" onClick={handlePayClick}>
+                      <Button component="a" href={payment.checkoutUrl} target="_blank" rel="noopener noreferrer" mt="md" onClick={handlePayClick}>
                         Pay here with Shopify →
                       </Button>
                     ) : isLocalInstance ? (
-                      <Button color="green" mt="md" disabled={saving} onClick={settleMockPayment}>
+                      <Button mt="md" disabled={saving} onClick={settleMockPayment}>
                         Pay now (local mock) →
                       </Button>
                     ) : (
                       <Text c="yellow" mt="md">The payment link isn&apos;t available yet. Please check back shortly.</Text>
                     )}
+                    <Modal opened={confirmPlanOpened} onClose={closeConfirmPlan} title="Request a scholarship or payment plan?" centered>
+                      <Text size="sm">
+                        This sends your request to the board&apos;s Scholarship Review Team, who will review
+                        your household&apos;s dues and follow up with you. You won&apos;t be charged
+                        anything now, and you can still pay online at any time.
+                      </Text>
+                      <Group justify="flex-end" mt="md">
+                        <Button variant="default" onClick={closeConfirmPlan}>Cancel</Button>
+                        <Button onClick={requestPaymentPlan}>Send request</Button>
+                      </Group>
+                    </Modal>
                     {planRequested ? (
-                      <Text c="green" mt="md">Scholarship or payment plan requested — the finance committee will follow up.</Text>
+                      <Text c="green" mt="md">Scholarship or payment plan requested — the Scholarship Review Team will follow up.</Text>
                     ) : (
                       <Button
                         variant="light"
                         type="button"
                         mt="md"
-                        onClick={requestPaymentPlan}
+                        onClick={openConfirmPlan}
                         styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                       >
-                        Request a scholarship or payment plan from the Finance Committee of the Board
+                        Request a scholarship or payment plan from the Scholarship Review Team
                       </Button>
                     )}
                     {!state.external?.bgCleared && (

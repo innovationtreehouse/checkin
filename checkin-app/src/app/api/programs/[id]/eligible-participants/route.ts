@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { ACTIVE_ORG_MEMBER_PERSON_WHERE } from "@/lib/orgMembership";
 import { handler, notFound, badRequest } from "@/security/handler";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 // Admission + field stripping declared in src/security/registry.ts under
 // 'GET /api/programs/[id]/eligible-participants'. Admission ('program-lead-mentor',
@@ -46,7 +47,7 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
     }
 
     const members = await prisma.person.findMany({
-        where: andClauses.length > 0 ? { AND: andClauses } : undefined,
+        where: { AND: andClauses, ...LIVE_PERSON },
         select: { id: true, name: true, email: true, dateOfBirth: true },
         orderBy: { name: 'asc' },
         take: 50

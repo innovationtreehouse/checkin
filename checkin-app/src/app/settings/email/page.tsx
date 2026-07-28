@@ -1,16 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Alert, Button, Card, Center, Checkbox, Loader, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Card, Center, Checkbox, Loader, Stack, Text, Textarea, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { SettingsTabs } from "@/components/admin/SettingsTabs";
 import { useUnsavedGuard, shallowEqual } from "@/components/UnsavedChangesProvider";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { isValidEmailHeader, parseEmailHeaderList } from "@/lib/emailHeader";
+import { DEFAULT_ACK_SUBJECT, DEFAULT_ACK_MEMBERSHIP_BODY, DEFAULT_ACK_PROGRAM_BODY } from "@/lib/scholarshipAckCopy";
 
 interface Settings {
   emailFromAddress: string | null;
   emailReplyToAddress: string | null;
+  scholarshipNotifyEmail: string | null;
+  scholarshipAckSubject: string | null;
+  scholarshipAckMembershipBody: string | null;
+  scholarshipAckProgramBody: string | null;
 }
 
 const HEADER_ERROR = 'Enter an email address or "Name <addr@domain>".';
@@ -24,6 +29,10 @@ export default function EmailSettingsPage() {
 
   const [emailFrom, setEmailFrom] = useState("");
   const [emailReplyTo, setEmailReplyTo] = useState("");
+  const [scholarshipNotify, setScholarshipNotify] = useState("");
+  const [ackSubject, setAckSubject] = useState("");
+  const [ackMembershipBody, setAckMembershipBody] = useState("");
+  const [ackProgramBody, setAckProgramBody] = useState("");
   // Once an identity exists, editing is high-stakes (a wrong From on an unverified
   // domain bounces all mail; a wrong Reply-To misroutes replies) — lock behind an
   // explicit unlock, mirroring the membership-year boundary. First-time set is free.
@@ -33,7 +42,7 @@ export default function EmailSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveNotice, setSaveNotice] = useState<{ text: string; err: boolean } | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ from?: string; replyTo?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ from?: string; replyTo?: string; scholarshipNotify?: string }>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,9 +50,20 @@ export default function EmailSettingsPage() {
       const res = await fetch("/api/settings/email");
       if (res.ok) {
         const { settings } = (await res.json()) as { settings: Settings };
-        const snap = { emailFrom: settings.emailFromAddress ?? "", emailReplyTo: settings.emailReplyToAddress ?? "" };
+        const snap = {
+          emailFrom: settings.emailFromAddress ?? "",
+          emailReplyTo: settings.emailReplyToAddress ?? "",
+          scholarshipNotify: settings.scholarshipNotifyEmail ?? "",
+          ackSubject: settings.scholarshipAckSubject ?? "",
+          ackMembershipBody: settings.scholarshipAckMembershipBody ?? "",
+          ackProgramBody: settings.scholarshipAckProgramBody ?? "",
+        };
         setEmailFrom(snap.emailFrom);
         setEmailReplyTo(snap.emailReplyTo);
+        setScholarshipNotify(snap.scholarshipNotify);
+        setAckSubject(snap.ackSubject);
+        setAckMembershipBody(snap.ackMembershipBody);
+        setAckProgramBody(snap.ackProgramBody);
         setInitial(snap);
       }
     } finally {
@@ -65,25 +85,36 @@ export default function EmailSettingsPage() {
     // duplicated) so a typo is caught inline instead of surfacing as a raw API error.
     const from = emailFrom.trim();
     const replyTo = emailReplyTo.trim();
-    const fe: { from?: string; replyTo?: string } = {};
+    const notify = scholarshipNotify.trim();
+    const fe: { from?: string; replyTo?: string; scholarshipNotify?: string } = {};
     if (from && !isValidEmailHeader(from)) fe.from = HEADER_ERROR;
     if (replyTo && !parseEmailHeaderList(replyTo)) fe.replyTo = REPLY_TO_ERROR;
-    if (fe.from || fe.replyTo) { setFieldErrors(fe); return; }
+    if (notify && !parseEmailHeaderList(notify)) fe.scholarshipNotify = REPLY_TO_ERROR;
+    if (fe.from || fe.replyTo || fe.scholarshipNotify) { setFieldErrors(fe); return; }
     setFieldErrors({});
     setSaving(true);
     try {
       const res = await fetch("/api/settings/email", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emailFromAddress: emailFrom.trim() || null, emailReplyToAddress: emailReplyTo.trim() || null }),
+        body: JSON.stringify({
+          emailFromAddress: emailFrom.trim() || null,
+          emailReplyToAddress: emailReplyTo.trim() || null,
+          scholarshipNotifyEmail: notify || null,
+          scholarshipAckSubject: ackSubject.trim() || null,
+          scholarshipAckMembershipBody: ackMembershipBody.trim() || null,
+          scholarshipAckProgramBody: ackProgramBody.trim() || null,
+        }),
       });
-      if (res.ok) { notifications.show({ color: "green", message: "Email settings saved." }); setUnlocked(false); await load(); }
+      if (res.ok) { notifications.show({ message: "Email settings saved." }); setUnlocked(false); await load(); }
       else { const d = await res.json().catch(() => ({})); setSaveNotice({ text: d.error || "Save failed.", err: true }); }
     } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
     finally { setSaving(false); }
   };
 
-  const isDirty = !!initial && !shallowEqual(initial, { emailFrom, emailReplyTo });
+  const isDirty = !!initial && !shallowEqual(initial, {
+    emailFrom, emailReplyTo, scholarshipNotify, ackSubject, ackMembershipBody, ackProgramBody,
+  });
   useUnsavedGuard(isDirty);
 
   if (authLoading) return <Center mih="60vh"><Loader /></Center>;
@@ -148,10 +179,49 @@ export default function EmailSettingsPage() {
               onChange={(e) => { setEmailReplyTo(e.currentTarget.value); setFieldErrors((f) => ({ ...f, replyTo: undefined })); }}
               disabled={locked}
             />
+            <TextInput
+              label="Scholarship review notifications"
+              description="Comma-separated for multiple addresses. Blank = the whole board is notified of new scholarship / payment-plan requests."
+              placeholder="finance@innovationtreehouse.org"
+              w={440}
+              value={scholarshipNotify}
+              error={fieldErrors.scholarshipNotify}
+              onChange={(e) => { setScholarshipNotify(e.currentTarget.value); setFieldErrors((f) => ({ ...f, scholarshipNotify: undefined })); }}
+              disabled={locked}
+            />
+            <TextInput
+              label="Scholarship ACK subject"
+              description={'Subject line for the applicant\'s request-received email. "{{programName}}" is replaced with the program\'s name. Blank = default shown below.'}
+              placeholder={DEFAULT_ACK_SUBJECT}
+              w={440}
+              value={ackSubject}
+              onChange={(e) => setAckSubject(e.currentTarget.value)}
+              disabled={locked}
+            />
+            <Textarea
+              label="Scholarship ACK body — membership dues request"
+              description="Plain text (blank lines separate paragraphs) — not HTML. Blank = default shown below."
+              placeholder={DEFAULT_ACK_MEMBERSHIP_BODY}
+              minRows={3}
+              autosize
+              value={ackMembershipBody}
+              onChange={(e) => setAckMembershipBody(e.currentTarget.value)}
+              disabled={locked}
+            />
+            <Textarea
+              label="Scholarship ACK body — program request"
+              description={'Plain text (blank lines separate paragraphs) — not HTML. "{{programName}}" is replaced with the program\'s name. Blank = default shown below.'}
+              placeholder={DEFAULT_ACK_PROGRAM_BODY}
+              minRows={3}
+              autosize
+              value={ackProgramBody}
+              onChange={(e) => setAckProgramBody(e.currentTarget.value)}
+              disabled={locked}
+            />
           </Stack>
 
           {saveNotice && (
-            <Alert mt="lg" color={saveNotice.err ? "red" : "green"} variant="light">
+            <Alert mt="lg" color={saveNotice.err ? "red" : "treehouseGreen"} variant="light">
               {saveNotice.text}
             </Alert>
           )}

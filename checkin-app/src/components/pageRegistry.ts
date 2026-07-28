@@ -12,6 +12,7 @@ export type RegistryUser = {
   isSysadmin?: boolean;
   isBoardMember?: boolean;
   isKeyholder?: boolean;
+  isOperations?: boolean;
   householdLead?: boolean;
   toolStatuses?: Array<{ level: string }>;
 };
@@ -28,6 +29,12 @@ const HOUSEHOLD_LEAD: Visible = (u, signedIn) => signedIn && !!u?.householdLead;
 // Program lead mentors only — mirrors the staff "My Programs" nav gate.
 const LEADS_PROGRAM: Visible = (_u, signedIn, counts) => signedIn && leadsAnyProgram(counts);
 const BOARD: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember;
+// Participants is the one Membership Ops page operations can also reach (read-only
+// directory + add-contact) — see membership-ops/layout.tsx's nav gate. Outreach is
+// the one settings/* page operations can also reach (see settings/layout.tsx).
+const BOARD_OR_OPS: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isOperations;
+// Finance Ops is board-only — sysadmin has no access (issue #1083).
+const BOARD_ONLY: Visible = (u) => !!u?.isBoardMember;
 const SYSADMIN: Visible = (u) => !!u?.isSysadmin;
 const SAFETY: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder;
 const SHOP: Visible = (u) =>
@@ -98,11 +105,12 @@ export const PAGES: PageEntry[] = [
   { href: '/membership-ops/applications', label: 'Applications', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/households', label: 'Households', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/volunteer-memberships', label: 'Volunteer Memberships', section: 'Membership Ops', visible: BOARD },
-  { href: '/membership-ops/participants', label: 'Participants', section: 'Membership Ops', visible: BOARD },
+  { href: '/membership-ops/participants', label: 'Participants', section: 'Membership Ops', visible: BOARD_OR_OPS },
   { href: '/membership-ops/participants/new', label: 'New Participant', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/participants/import', label: 'Import Participants', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/participants/merge', label: 'Merge Participants', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/review', label: 'Membership Review', section: 'Membership Ops', visible: BOARD },
+  { href: '/membership-ops/roles', label: 'Roles', section: 'Membership Ops', visible: BOARD },
 
   // Membership Audit — board
   { href: '/membership-audit', label: 'Membership Audit', section: 'Membership Audit', visible: BOARD },
@@ -120,9 +128,11 @@ export const PAGES: PageEntry[] = [
   { href: '/program-ops/sessions/new', label: 'New Session', section: 'Program Ops', visible: BOARD },
 
   // Finance Ops — board
-  { href: '/finance-ops', label: 'Finance Ops', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/payment-plan', label: 'Program Payment Plan', section: 'Finance Ops', visible: BOARD },
-  { href: '/finance-ops/membership-payment-plan', label: 'Membership Payment Plan', section: 'Finance Ops', visible: BOARD },
+  { href: '/finance-ops', label: 'Finance Ops', section: 'Finance Ops', visible: BOARD_ONLY },
+  { href: '/finance-ops/payment-plan', label: 'Program Payment Plan', section: 'Finance Ops', visible: BOARD_ONLY },
+  { href: '/finance-ops/membership-payment-plan', label: 'Membership Payment Plan', section: 'Finance Ops', visible: BOARD_ONLY },
+  { href: '/finance-ops/shopify-holds', label: 'Shopify Hold Reconciliation', section: 'Finance Ops', keywords: 'seat hold failed inventory scholarship manual reconcile shopify', visible: BOARD_ONLY },
+  { href: '/finance-ops/payments', label: 'Payment problems', section: 'Finance Ops', keywords: 'reconcile exception refund chargeback unmatched shopify', visible: BOARD_ONLY },
 
   // System Status — board
   { href: '/system-status', label: 'System Status', section: 'System Status', visible: BOARD },
@@ -130,12 +140,13 @@ export const PAGES: PageEntry[] = [
   { href: '/system-status/errors', label: 'Errors', section: 'System Status', visible: BOARD },
   { href: '/system-status/audit-log', label: 'Audit Log', section: 'System Status', visible: BOARD },
   { href: '/system-status/links', label: 'Links', section: 'System Status', visible: BOARD },
+  { href: '/system-status/lifecycle', label: 'Lifecycle', section: 'System Status', keywords: 'invariant validate off-diagram drift reconcile enrollment membership state machine', visible: BOARD },
 
   // Settings — board
   { href: '/settings/membership', label: 'Membership Settings', section: 'Settings', visible: BOARD },
-  { href: '/settings/roles', label: 'Role Assignment', section: 'Settings', visible: BOARD },
   { href: '/settings/localization', label: 'Localization', section: 'Settings', visible: SYSADMIN },
   { href: '/settings/email', label: 'Email Settings', section: 'Settings', keywords: 'sender from reply-to identity', visible: BOARD },
+  { href: '/settings/outreach', label: 'Outreach', section: 'Settings', keywords: 'renewal join campaign email template bulk send reminder opening', visible: BOARD_OR_OPS },
   { href: '/settings/shopify-webhook', label: 'Shopify Webhook', section: 'Settings', keywords: 'orders paid delivery test notification signature secret payment', visible: BOARD },
 ];
 
