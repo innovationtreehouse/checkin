@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Anchor, Button, Card, Stack, Text, TextInput, Title } from '@mantine/core';
+import { Anchor, Button, Card, Checkbox, Stack, Text, TextInput, Title } from '@mantine/core';
 import { PageContainer } from '@/components/ui/PageContainer';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
@@ -22,7 +22,8 @@ export default function ProfilePage() {
     name: "",
     email: "",
     phone: "",
-    dob: ""
+    dob: "",
+    over25: false
   });
   const fetchProfile = useCallback(async () => {
     try {
@@ -33,7 +34,8 @@ export default function ProfilePage() {
           name: data.profile.name || "",
           email: data.profile.email || "",
           phone: data.profile.phone || "",
-          dob: data.profile.dateOfBirth ? new Date(data.profile.dateOfBirth).toISOString().split('T')[0] : ""
+          dob: data.profile.dateOfBirth ? new Date(data.profile.dateOfBirth).toISOString().split('T')[0] : "",
+          over25: !data.profile.dateOfBirth && !!data.profile.isDeclaredAdult
         });
       } else {
         setMessage({ text: "Failed to load profile.", tone: "error" });
@@ -65,7 +67,8 @@ export default function ProfilePage() {
         body: JSON.stringify({
           name: form.name,
           phone: form.phone,
-          dob: form.dob || null
+          dob: form.over25 ? null : (form.dob || null),
+          over25: form.over25
         })
       });
 
@@ -105,7 +108,15 @@ export default function ProfilePage() {
               <TextInput label="Email Address" value={form.email} disabled title="Email cannot be changed here." />
               <TextInput label="Full Name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" disabled={readOnly} />
               <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" disabled={readOnly} />
-              <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} disabled={readOnly} />
+              <Checkbox
+                label="I am over 25"
+                checked={form.over25}
+                disabled={readOnly}
+                onChange={(e) => setForm({ ...form, over25: e.currentTarget.checked, dob: e.currentTarget.checked ? "" : form.dob })}
+              />
+              {!form.over25 && (
+                <TextInput type="date" label="Date of Birth" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.currentTarget.value })} disabled={readOnly} />
+              )}
 
               <Text size="sm" c="dimmed">
                 Your address is managed on the <Anchor href="/my-household">Household</Anchor> page.

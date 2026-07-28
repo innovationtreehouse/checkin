@@ -30,7 +30,7 @@ const RENEWAL_LEAD_MONTHS = 2;
 // integration test), replacing the hand-sync comment that used to live here.
 
 export class RenewalError extends Error {
-    constructor(public readonly code: "not_found" | "wrong_phase", message: string) {
+    constructor(public readonly code: "not_found" | "wrong_phase" | "not_lead", message: string) {
         super(message);
         this.name = "RenewalError";
     }
@@ -290,10 +290,19 @@ export async function openRenewalsForAllActive() {
     return { opened, skipped };
 }
 
-/** Resolve and begin the caller's household renewal. */
+/** Resolve and begin the caller's household renewal. Lead-gated like every
+ *  other membership action (intake assertLead): confirming a renewal advances
+ *  the household's membership state, which is the lead's call — a non-lead
+ *  member (incl. youth logins) must not be able to trigger it. */
 export async function beginRenewalForUser(userId: number) {
-    const user = await prisma.person.findUnique({ where: { id: userId }, select: { householdId: true } });
+    const user = await prisma.person.findUnique({
+        where: { id: userId },
+        select: { householdId: true, isHouseholdLead: true, isSysadmin: true },
+    });
     if (!user?.householdId) throw new RenewalError("not_found", "You are not in a household.");
+    if (!user.isHouseholdLead && !user.isSysadmin) {
+        throw new RenewalError("not_lead", "Only a household lead can confirm the renewal.");
+    }
     const process = await prisma.orgMembershipProcess.findFirst({
         where: { orgMembership: { householdId: user.householdId }, status: "PENDING_RENEWAL" },
         orderBy: { id: "desc" },

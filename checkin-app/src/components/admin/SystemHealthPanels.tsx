@@ -328,7 +328,7 @@ export function BadgeScanChart() {
           setStats(data.days);
         }
       })
-      .catch(console.error)
+      .catch((err) => console.error("Failed to load system health:", err))
       .finally(() => setLoading(false));
   }, []);
 

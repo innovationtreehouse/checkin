@@ -5,7 +5,7 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
 import AdminVisitsPage from "../page";
 
@@ -27,6 +27,27 @@ describe("facility-ops/visits page", () => {
     expect(screen.getByText("Open Gym")).toBeInTheDocument();
     expect(screen.getByText("Open Facility")).toBeInTheDocument();
     expect(screen.getByText("Active")).toBeInTheDocument();
+  });
+
+  // The page must gate on the same roles the PATCH/DELETE /api/facility/visits
+  // route allows (['isSysadmin', 'isBoardMember']) — UI and API agree on who
+  // may edit/delete a visit.
+  it("admits a board member (matches the API's edit/delete grant)", async () => {
+    setSession({ id: 3, isBoardMember: true });
+    mockFetchJson({ "/api/facility/visits": { visits } });
+    renderWithProviders(<AdminVisitsPage />);
+
+    expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("redirects a non-privileged user (denied like the API)", async () => {
+    setSession({ id: 4 });
+    mockFetchJson({ "/api/facility/visits": { visits } });
+    renderWithProviders(<AdminVisitsPage />);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/"));
+    expect(screen.queryByText("Val Volunteer")).not.toBeInTheDocument();
   });
 
   it("re-sorts rows when a sortable header is clicked", async () => {

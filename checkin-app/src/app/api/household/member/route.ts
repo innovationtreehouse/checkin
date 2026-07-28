@@ -7,6 +7,7 @@ import { reconcileAndWarn } from "@/lib/emergencyContacts/service";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
+import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
@@ -51,10 +52,12 @@ export const PATCH = withAuth(
                     data: {
                         name: name !== undefined ? name : undefined,
                         email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
-                        dateOfBirth: dob !== undefined ? (dob === "" ? null : new Date(dob + "T12:00:00Z")) : undefined,
                         phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
-                        // A real DoB supersedes the 25+ flag; otherwise honor the checkbox.
-                        isDeclaredAdult: over25 !== undefined ? (dob ? false : !!over25) : undefined,
+                        // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a
+                        // 26+ DoB is stripped and forces the flag on; an empty DoB honors
+                        // the checkbox. `undefined` dob leaves the field unchanged.
+                        ...(dob !== undefined ? normalizeAdultDob(dob === "" ? null : dob + "T12:00:00Z") : {}),
+                        ...(over25 !== undefined && !dob ? { isDeclaredAdult: !!over25 } : {}),
                         allergies: allergies !== undefined ? (allergies === "" ? null : allergies) : undefined,
                     },
                     select: HOUSEHOLD_PEER_SELECT,
