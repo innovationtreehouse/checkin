@@ -327,9 +327,11 @@ defineRoute({
 // ─── handler() conversion lands in its feature PR — AGENTS.md boundary rule ─
 
 // Standalone (one-time) events list — admin surface. The handler selects only
-// public-tier Event columns (id/name/startAt/endAt/description); the full
-// everyones band is the standard admin view so a later select widening is
-// still policy-covered rather than silently leaking.
+// public-tier Event columns only (id/name/startAt/endAt/description). Declared
+// public-only ON PURPOSE: the response is exact, not aspirational. If the select
+// later grows to an internal field (attendanceConfirmedAt/ById, postEventEmailSent)
+// the strip fails closed and forces a boundary PR + CODEOWNERS review, instead of
+// the field shipping silently under a pre-granted band.
 defineRoute({
     endpoint: 'GET /api/events',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
@@ -337,8 +339,8 @@ defineRoute({
     // Bag: { Event } — bare-array response (envelope null + single-key bag).
     returns: ['Event'],
     orderedView: [
-        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isSysadmin',    ['public']],
+        ['isBoardMember', ['public']],
     ],
 });
 
@@ -372,7 +374,10 @@ defineRoute({
 
 // App-localization singleton (timezone/locale) — sysadmin-only surface,
 // wholly public-tier data; the gate is about who may see admin settings
-// screens, not the fields.
+// screens, not the fields. Declared public-only ON PURPOSE: AppSettings is the
+// natural home for a future integration key / webhook secret, and a public-only
+// view makes that field fail closed (forcing a boundary PR) instead of shipping
+// to sysadmin through an entry nobody revisited.
 defineRoute({
     endpoint: 'GET /api/admin/settings/localization',
     authorize: { anyRole: ['isSysadmin'] },
@@ -380,7 +385,7 @@ defineRoute({
     // Bag: { AppSettings } (singleton row).
     returns: ['AppSettings'],
     orderedView: [
-        ['isSysadmin', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isSysadmin', ['public']],
     ],
 });
 
