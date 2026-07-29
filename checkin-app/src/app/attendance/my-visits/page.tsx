@@ -132,7 +132,10 @@ export default function MyVisits() {
                   <Table.Td>
                     {editing === v.id ? (
                       <Group gap="xs" wrap="nowrap">
-                        <Button size="xs" onClick={() => saveEdit(v.id)} loading={saving} disabled={!arrivedAt}>
+                        {/* A closed visit stays closed — the server ignores a
+                            cleared departure, so don't offer a save that lies. */}
+                        <Button size="xs" onClick={() => saveEdit(v.id)} loading={saving}
+                          disabled={!arrivedAt || (!!v.departedAt && !departedAt)}>
                           Save
                         </Button>
                         <ActionIcon variant="subtle" aria-label="Cancel edit" onClick={() => setEditing(null)}>
