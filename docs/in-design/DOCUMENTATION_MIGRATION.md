@@ -249,22 +249,22 @@ compliance finding, and it goes to the owner directly rather than into any file.
 
 ### 3.6 The policy corpus
 
-The governing policies are held by the owner at
-`/Volumes/Untitled/Scratchpad/Policies` — outside this repo, outside version
-control, readable only on that machine. Same custody model as the PR corpus
-(§3.1): a private **input** whose **output** is the citations in `docs/rules/`.
+Canonical policies are on **Google Drive** (standard §3.5). A markdown export
+sits at `/Volumes/Untitled/Scratchpad/Policies` so agents can read them without
+Drive access — derived, possibly stale, never the authority.
 
 Consequences for this step:
 
-- **Only the owner can run §3.5's promotion pass.** Everyone else drafts under
-  Procedure and flags.
-- **Reviewers can never verify a citation**, only see the claim and which policy
-  it names. Making the register auditable is the goal here; verifiable is out of
-  reach until the policies are published.
-- **The citation format is what makes this survivable.** Name plus
-  article/section stays meaningful to anyone holding the policy, in any format,
-  on any machine. A page number or a path would be meaningful only on the
-  owner's disk, today.
+- **Promote off Drive, not off the export.** The export is fine for finding
+  candidates and drafting a citation; confirm the article on Drive before a rule
+  lands in the Policy tier. An export predating an amendment would enshrine a
+  superseded rule with a citation that looks correct.
+- **Citations stay verifiable.** Anyone with Drive access can check a
+  policy-tier rule against the policy it names — unlike the PR corpus (§3.1),
+  this input is not owner-only, so the tier carries real weight.
+- **Cite name plus article/section only.** Not a page, not the export path, not
+  a Drive URL. It is the one identifier stable across Drive, the export, and
+  any rendering of either.
 
 ### 3.7 Owner review
 

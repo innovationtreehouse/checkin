@@ -184,27 +184,27 @@ Splitting the file hides the symptom without fixing it.
 
 ### 3.5 Where the policies live
 
-The governing policies are **not in this repo**. They are held by the owner at
-`/Volumes/Untitled/Scratchpad/Policies` — outside version control and readable
-only on that machine.
+**The governing policies live on Google Drive.** That is the canonical source —
+what the board adopts and amends, and what a citation ultimately refers to.
+Anyone with Drive access can verify a policy-tier rule against the policy it
+names, which is what makes this tier meaningful rather than decorative.
 
-This has a consequence worth stating plainly: **a reviewer cannot verify a policy
-citation.** They can see that a rule claims policy authority and which policy it
-names, but not that the cited article says what the rule says. The register makes
-the claim auditable, not verified.
+A markdown **export** of the policies is also kept on the owner's machine at
+`/Volumes/Untitled/Scratchpad/Policies`, so agents can read them without Drive
+access. Treat it accordingly:
 
-That is the reason for the naming discipline in §3.2. A citation by policy name
-and article is meaningful to anyone holding the policy, in any format, at any
-time. A citation by path or page is meaningful only to the one machine that has
-the file open right now.
+- **It is a convenience copy, not the source.** Where the export and Drive
+  disagree, Drive wins.
+- **It can be stale.** A policy amended on Drive does not update the export.
+  Before promoting a rule to the policy tier off the export alone, confirm the
+  article still reads that way on Drive.
+- **Never cite the export path.** It exists on one machine and is derived.
 
-Two consequences for practice:
-
-- **Only someone with the policy corpus can classify a rule as policy-tier.**
-  Everyone else writes it as procedure and flags it for reclassification.
-- **If the policies are ever published**, this section is where the pointer goes.
-  Publishing them would turn every policy-tier rule from auditable into
-  verifiable, which is the single biggest available improvement to this register.
+This is why §3.2 cites by policy name and article rather than by any locator. The
+name and section are the one identifier stable across Drive, the export, and
+whatever format either is rendered in. A Drive URL is no better than a path:
+it rots on reorganisation and is permission-gated. Name the policy and its
+article; a reader with access can find it in seconds.
 
 ---
 
