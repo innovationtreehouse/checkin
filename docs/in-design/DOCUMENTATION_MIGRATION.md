@@ -1,7 +1,7 @@
 # Documentation migration — getting the corpus to the standard
 
 **Status: WORKING DOC — delete when complete.**
-One-time plan for moving the existing ~43 docs and ~1,028 merged PRs' worth of
+One-time plan for moving the existing ~43 docs, and the years of
 undocumented decisions into the shape defined by `DOCUMENTATION_STANDARD.md`.
 This file is scaffolding: it follows its own rule and gets deleted when the work
 lands.
@@ -15,17 +15,19 @@ lands.
 Two examples surfaced during a single design review:
 
 - **The intake-note hold.** An applicant note holds the membership application
-  at background-check review; payment does not open until reviewers have read
-  it, so a family writing "treat us as a volunteer household" has dues settled
-  before they pay. Stated only in a code comment in
+  at background-check review so reviewers read it before dues are settled —
+  unless the household already holds a still-valid background clearance, which
+  takes the direct path to payment. Stated only in a code comment in
   `checkin-app/src/lib/membership/external.ts`, a parenthetical inside the
   lifecycle transition table, and one aside in `docs/backlog/CUJS.md`.
 
 - **The member-pricing coverage window.** Member program pricing requires the
-  membership to be valid through the program's whole run, not merely active
-  today. Stated only in a JSDoc block in
-  `checkin-app/src/lib/orgMembership.ts` — where it is explicitly tagged as a
-  policy call awaiting a veto, and has sat there since.
+  membership to cover the program's end date, not merely be active today; a
+  program with no end date requires coverage only through its start. Stated only
+  in a JSDoc block in `checkin-app/src/lib/orgMembership.ts` — which tags it
+  `POLICY (flag for veto)`, so it is an open question that has been shipping as
+  behaviour, not a settled decision. It cannot be written into `docs/rules/`
+  until the owner answers it.
 
 Neither was skipped through carelessness. There was no file either one belonged
 in. A design doc proposing to change both cited the lifecycle doc (mechanics)
@@ -34,24 +36,37 @@ to check itself against.
 
 ### 1.2 The cost is already measured
 
-An existing PR-history analysis distilled 861 merged PRs (#249–1168) and
-labelled each with the upstream cause that produced it. **192 of them — a
-little over a fifth — trace to the `SPEC` stage**, which decomposes as:
+An existing PR-history analysis distilled **941 PRs (#249–1372)** and labelled
+each with the upstream cause that produced it. **216 of them — just under a
+quarter — carry a `SPEC`-stage cause:**
 
 | Cause | PRs | What it means |
 |---|---|---|
-| `scope-miss` | 87 | a rule existed but was not considered |
-| `domain-knowledge-gap` | 63 | a rule nobody had written down |
-| `auth-unclear` | 26 | an access or approval rule left undecided |
+| `scope-miss` | 116 | a rule existed but was not considered |
+| `domain-knowledge-gap` | 82 | a rule nobody had written down |
+| `auth-unclear` | 31 | an access or approval rule left undecided |
 
-A second analysis, run independently to answer a different question, agrees:
-19% of technical fixes trace to spec gaps, money paths worst (reconciliation,
-43%), and of 229 `feat:` PRs only 24% were real features — the plurality were
-business misses.
+These columns **overlap** — a PR can carry several causes, so they sum to more
+than 216. The 216 is the deduplicated union and is the figure to quote. Adding
+`data-model-misfit` (34) brings the rule-bearing set to **243**.
 
-Roughly one PR in five exists because a rule was not written down anywhere a
-person or an agent would look. That is the quantified case for a rules register,
-and it is why §3 mines this history rather than starting from a blank page.
+Two counting caveats, so the figure is not overclaimed:
+
+- The corpus counts **all** PRs in range, not merged ones. Merged-only over
+  #249–1372 is 885 (816 up to #1168, 69 after). The cause labels are what the
+  argument rests on, and those are per-PR regardless of outcome — but "941
+  merged PRs" would be wrong.
+- The labels come from an LLM distillation pass, owner-reviewed in aggregate but
+  not line-by-line. Treat 216 as well-founded, not exact.
+
+A second analysis, run independently to answer a different question, points the
+same way: 19% of technical fixes trace to spec gaps, money paths worst
+(reconciliation, 43%), and of 229 `feat:` PRs only 24% were real features — the
+plurality were business misses.
+
+Roughly one PR in four carries a cause that means a rule was not written down
+anywhere a person or an agent would look. That is the quantified case for a
+rules register, and why §3 mines this history rather than starting blank.
 
 ### 1.3 Sprawl
 
@@ -66,14 +81,19 @@ tell which files are worth opening without opening all of them.
 Create `docs/rules/membership.md` and `docs/rules/programs.md` from what is
 already known, before any mining. Sources:
 
-- the two rules in §1.1
-- `checkin-app/docs/designs/HOUSEHOLD_LEAD_MODEL.md` — a rules doc wearing a
-  design-doc hat; its content promotes directly
+- the intake-note hold from §1.1. The member-pricing window is **not** seeded —
+  it is tagged `POLICY (flag for veto)` and needs an owner answer first.
 - `checkin-app/docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` — a domain rules doc
   named after one feature; capacity and scholarship policy folds into
   `programs.md`
 - `docs/backlog/CUJS.md` journey A1, which already states several membership
   rules inline
+
+`checkin-app/docs/designs/HOUSEHOLD_LEAD_MODEL.md` is **not** a source here.
+Its content is guardianship and household leadership, which belongs in
+`people-households.md`, not in either seeded file — forcing it into
+`membership.md` would violate "named for the domain, not for any feature."
+It is handled once, in step 4, and `people-households.md` is created there.
 
 Cut aggressively. Two short files that get read beat six thorough ones that do
 not. This step also validates the format before the mining step produces volume.
@@ -82,7 +102,7 @@ not. This step also validates the format before the mining step produces volume.
 
 ## 3. Step 2 — mine the full PR history for standing rules
 
-**Goal:** recover the decisions that shipped over ~1,028 merged PRs and were
+**Goal:** recover the decisions that shipped across the repo's history and were
 never written anywhere durable. This is the bulk of the value and the only step
 that cannot be done incrementally later.
 
@@ -94,7 +114,8 @@ questions. Both are useful; neither is checked into this repo.
 **Primary — the `pr-mining` corpus.** An owner-local working directory holding a
 complete, distilled, cause-labelled analysis:
 
-- **861 PRs (#249–1168), 100% distilled.** `raw/pr-NNNN.json` is the exported
+- **941 PRs (#249–1372), 100% distilled** — all PRs in range, merged or not.
+  `raw/pr-NNNN.json` is the exported
   PR; `distilled/pr-NNNN.md` is a per-PR summary with YAML frontmatter
   (`claimed_type`, `actual_nature`, `epoch`, `upstream_causes`, `confidence`)
   plus prose sections for *What it actually did*, *Root cause*, *Upstream cause
@@ -116,20 +137,23 @@ down" bucket.
 built to answer a different question (what fraction of features were real).
 Useful as a cross-check on anything the primary sweep surfaces; not the driver.
 
-**Coverage gap to close before the sweep:** PRs **#1169 and later** (80 merged
-since the last export). Fetchable with the existing pipeline, which skips work
-already on disk.
+**Coverage is current** through #1372; the corpus was topped up and re-labelled.
 
 PRs **#1–248** are deliberately out of scope. They predate the corpus and are
 not worth the fetch.
 
-**Three practical notes.** The corpus is owner-local and lives on one machine —
-it is a private *input*, and the domain rules it produces are the shared
-*output*; nothing about the sweep should assume another developer can see it.
-It is not a git repository, and `git init` is worth doing first so a
-long-running sweep is resumable and auditable. Its `README.md` still says to run
-from `~/Software/Checkin/pr-mining/`, which is stale since the repos moved —
-fix the path while you are in there.
+**Reachability — read this before planning around the corpus.** It is
+**owner-local by decision** (§8), lives on one machine, and is not in any repo.
+No other developer or agent can open it, and the `~/Software/Checkin/pr-mining/`
+path in its own `README.md` is stale since the repos moved. The same applies to
+the secondary `analysis/` branch, whose commit is unpushed.
+
+That is deliberate: the corpus is a private **input**; the domain rules it
+produces are the shared **output**. Nobody should be blocked waiting for access.
+But it does mean **only the owner can execute step 2** — if this step needs to
+move to someone else, publishing the corpus becomes a prerequisite, not a
+detail. `git init` inside it is worth doing regardless, so a long sweep is
+resumable and auditable.
 
 ### 3.2 Filter to rule-bearing PRs
 
@@ -138,25 +162,29 @@ than a judgement call — select on stage and family in `labels.tsv`:
 
 | Stage | Family | PRs | Why it bears a rule |
 |---|---|---|---|
-| SPEC | `scope-miss` | 87 | a rule existed but was not considered |
-| SPEC | `domain-knowledge-gap` | 63 | a rule nobody had written down |
-| SPEC | `auth-unclear` | 26 | an access or approval rule left undecided |
-| PROCESS | `data-model-misfit` | 30 | the model and the policy disagreed |
+| SPEC | `scope-miss` | 116 | a rule existed but was not considered |
+| SPEC | `domain-knowledge-gap` | 82 | a rule nobody had written down |
+| SPEC | `auth-unclear` | 31 | an access or approval rule left undecided |
+| PROCESS | `data-model-misfit` | 34 | the model and the policy disagreed |
 
-That is the sweep: roughly **200 PRs**, not 1,028. Read each one's *Upstream
-cause analysis* section — the rule is usually stated there in plain language
-already.
+Families overlap, so do not add the column. The deduplicated set is **243 PRs**
+of 941 — that is the sweep. Read each one's *Upstream cause analysis* section;
+the rule is usually stated there in plain language already.
+
+```bash
+awk -F'\t' 'NR>1 && $5 ~ /scope-miss|domain-knowledge-gap|auth-unclear|data-model-misfit/{print $1}' labels.tsv | sort -un
+```
 
 Then check two secondary signals:
 
-- **`half-wired-feature`** (242 PRs, the largest family) — mostly genuine build
+- **`half-wired-feature`** (263 PRs, the largest family) — mostly genuine build
   gaps, but a subset are a rule applied on one path and not its siblings. Sample
   rather than read all of them.
 - **Churn clusters** — repeated work in one area usually means an unstated rule
   everyone kept guessing at. `REPORT.md` names the ones already found.
 
-Deprioritise entirely: `missing-test-coverage` (219), `pattern-not-followed`
-(191), `process-tooling-friction`, `test-infra-reliability`, `none-clean-work`.
+Deprioritise entirely: `missing-test-coverage` (238), `pattern-not-followed`
+(205), `process-tooling-friction`, `test-infra-reliability`, `none-clean-work`.
 These are process and craft findings — real, but they belong in a retrospective,
 not in a rules register.
 
@@ -233,18 +261,54 @@ it documents how the generated artifacts and drift guards work, which is
 mechanism, not policy.
 
 **→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
-(promotes into `people-households.md`), `INDEX_PAGE_SCOPING.md`,
-`MY_PROGRAMS_SCOPING.md`, `PRODUCTION_PLAN.md`, `ARCHITECT_IDEAS_o46.md`,
-`DESIGN.md`, `INDEX_PAGE_SCOPING.md`, `MY_PROGRAMS_SCOPING.md`. Check each for
+(promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
+`MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for
 standing rules first; most will yield none.
+
+**`PRODUCTION_PLAN.md` moves to `docs/ops/` — do not delete it.** Despite the
+name it is the live "Production Launch Runbook" for ops.innovationtreehouse.org:
+an ordered cutover checklist with open items (trust-policy verification,
+release-gate roster, ECR/ECS task-definition names). Extraction yields no rules,
+so the extract-and-delete bucket would destroy the only deploy/rollback runbook.
+The ops-bucket definition already covers it.
 
 **Unresolved, decide during the sweep:** `CUJS.md` (both copies — see step 3),
 `UNFINISHED.md` (a deferred-decision ledger; arguably belongs in `in-design/`,
 arguably its own thing).
 
-**Leave alone entirely:** `docs/security/`, `docs/generated/`, `docs/backlog/`,
-`checkin-app/docs/VOCABULARY.md`, and the deploy/migration docs under
-`checkin-app/docs/`.
+**Leave alone entirely:** `docs/security/`, `checkin-app/docs/generated/`,
+`docs/backlog/`, `checkin-app/docs/VOCABULARY.md`, and the deploy/migration docs
+under `checkin-app/docs/`.
+
+### 5.1 Reference sweep — do this BEFORE any move or delete
+
+Deleting or moving a doc that other files cite leaves dead pointers. There are
+currently **63 references to `docs/designs/…`** across `checkin-app/src`,
+`.github/`, `README.md`, and `AGENTS.md` — README front-page links and the
+AGENTS.md instruction to read `DEV_INSTANCE_DESIGN.md` before touching auth/env
+among them.
+
+```bash
+grep -rn "docs/designs/" checkin-app/src .github README.md AGENTS.md docs
+```
+
+Every hit is updated to the new path, or removed if its target is being deleted.
+The sweep is part of the same change as the move — never a follow-up.
+
+**One reference is not a plain text edit.**
+`checkin-app/src/lib/lifecycle/artifacts.ts:115` bakes the literal string
+`Generated from the machine's TRANSITIONS (docs/designs/LIFECYCLE.md)` into the
+generated artifacts, and `artifactsDrift.test.ts` asserts byte-equality against
+them. So moving `LIFECYCLE.md` requires, in one commit:
+
+1. update the literal in `artifacts.ts`,
+2. re-run `npm run generate:lifecycle-artifacts`,
+3. commit the regenerated files with it.
+
+Edit the string without regenerating and CI goes red on a confusing docs-path
+diff; skip the edit and the drift-tested, "do not hand-edit" artifacts ship a
+path that no longer exists — the one document class the standard calls
+machine-verified would be provably wrong.
 
 ---
 
@@ -267,6 +331,11 @@ do it last, after the rules register exists, so nothing moves twice.
 - AGENTS.md points at the register and at `DOCUMENTATION_STANDARD.md`.
 - No `Status: SHIPPED` feature docs remain outside `docs/ops/`.
 - `docs/designs/` and `checkin-app/docs/designs/` no longer exist.
+- **`grep -rn "docs/designs/" checkin-app/src .github README.md AGENTS.md docs`
+  returns nothing.**
+- **`npm run generate:lifecycle-artifacts` produces no diff**, and
+  `artifactsDrift.test.ts` passes.
+- **`PRODUCTION_PLAN.md` is in `docs/ops/`**, not deleted.
 - Only one `CUJS.md`.
 - This file is deleted.
 

@@ -26,7 +26,7 @@ domain rules — and gives everything else a shorter life.
 | `docs/rules/` | Board and operations decisions; invariants new work must not violate | **Permanent, edited by later changes** |
 | `docs/ops/` | How to run, deploy, test, and mock things | Long-lived, edited as tooling changes |
 | `docs/security/` | Security policy and boundary rules | Long-lived |
-| `docs/generated/` | Machine-derived artifacts, drift-tested | Regenerated, never hand-edited |
+| `checkin-app/docs/generated/` | Machine-derived artifacts, drift-tested | Regenerated, never hand-edited |
 | `docs/backlog/` | Journey inventory and gap tracking | Long-lived |
 | `docs/in-design/` | Proposals and designs being worked right now | **Deleted at merge** |
 
@@ -66,9 +66,9 @@ empty ones in advance.
 Decisions the board or operations have made about how things work, and
 invariants that later work must not violate.
 
-**Not:** implementation mechanism, state-machine structure (already generated
-and drift-tested under `docs/generated/`), rollout sequencing, or anything a
-reader could derive by reading the code.
+**Not:** implementation mechanism, state-machine structure (already generated and
+drift-tested under `checkin-app/docs/generated/`), rollout sequencing, or
+anything a reader could derive by reading the code.
 
 ### 3.2 Format
 
@@ -78,13 +78,19 @@ so a reviewer can judge a diff against it without opening code:
 ```markdown
 ## Membership application
 
-- An intake note holds the application at background-check review. Payment does
-  not open until two reviewers have read the note — a family that writes
-  "treat us as a volunteer household" must have dues settled before paying.
+- An intake note holds the application at background-check review, so reviewers
+  read it before dues are settled — a family writing "treat us as a volunteer
+  household" must not pay first. A household that already holds a still-valid
+  background clearance is exempt and goes straight to payment.
 
 - Membership activates only after background-check clearance. Payment arriving
   first does not activate; clearance arriving first does not activate.
 ```
+
+Note what the first rule spends a whole clause on: the **exemption**. An earlier
+draft of this document stated it without the clearance carve-out, which would
+have marked shipped, correct code as a violation. State the guards and carve-outs
+the code actually has, or the register does damage rather than none.
 
 **Write rules as constraints, not descriptions.** If the sentence does not let a
 reviewer tell whether a change violates it, rewrite the sentence.
@@ -98,6 +104,17 @@ linked to a diff and stays accurate on its own.
 **No line-number citations.** They rot within weeks and pull the register toward
 implementation when what a reviewer needs is the rule. A bare file path is the
 most a "where this bites" pointer should carry, and most rules need none.
+
+**Never state an over-broad rule.** A rule that claims more than the code does is
+worse than no rule: it marks correct behaviour as a violation, and the likely
+response is someone "fixing" working code to comply. When in doubt, state the
+narrower version, or leave it out and raise it.
+
+**An unratified policy is a candidate, not a rule.** Code sometimes carries a
+decision that was never actually decided — a `POLICY (flag for veto)` comment, a
+choice made to unblock a PR and never confirmed. Writing it here converts an open
+question into a stated invariant nobody agreed to. Take it to the owner or the
+board first; record it only once it is answered.
 
 ### 3.3 How much belongs
 
