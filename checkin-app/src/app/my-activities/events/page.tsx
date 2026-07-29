@@ -24,6 +24,7 @@ type EventData = {
   participant: { id: number; name: string | null };
   rsvp: RsvpStatus | null;
   isVolunteer: boolean;
+  isLead: boolean;
 };
 
 // Group (event, member) rows into one bucket per event, preserving first-seen order.
@@ -114,7 +115,7 @@ export default function ParticipantEventsDashboard() {
         <Card withBorder radius="md" padding="xl" ta="center">
           <Title order={3}>No Upcoming Events</Title>
           <Text c="dimmed" mt="sm">
-            You have no scheduled events for the programs you are enrolled in.
+            You have no scheduled events for the programs you take part in.
           </Text>
           <Group justify="center" mt="lg">
             <Button component={Link} href="/programs" variant="light">Browse Programs</Button>
@@ -140,9 +141,14 @@ export default function ParticipantEventsDashboard() {
                       <Title order={4}>{ev.name}</Title>
                       <Text size="sm" c="dimmed">📅 {startStr} – {endStr}</Text>
                     </div>
-                    {rows.some((r) => r.isVolunteer) && (
-                      <Badge color="grape" variant="light" style={{ flexShrink: 0 }}>Volunteer</Badge>
-                    )}
+                    <Group gap={4} wrap="nowrap" style={{ flexShrink: 0 }}>
+                      {rows.some((r) => r.isLead) && (
+                        <Badge color="indigo" variant="light">Lead Mentor</Badge>
+                      )}
+                      {rows.some((r) => r.isVolunteer) && (
+                        <Badge color="grape" variant="light">Volunteer</Badge>
+                      )}
+                    </Group>
                   </Group>
 
                   {ev.description && (
