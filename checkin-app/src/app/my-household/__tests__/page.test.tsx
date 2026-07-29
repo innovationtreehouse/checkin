@@ -470,59 +470,92 @@ describe("HouseholdPage", () => {
     expect(screen.queryByText("Duplicate contact.")).not.toBeInTheDocument();
   });
 
-  it("covers the remaining server-error and network-error branches (settings, contacts, member edit, lead)", async () => {
-    const household = { ...householdData, householdMembers: [...householdData.householdMembers, { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true }] };
+  // ── Remaining server-error and network-error branches, one write route per
+  //    test ───────────────────────────────────────────────────────────────────
+  // Casey is a promotable non-lead adult; two contacts on file so either row's
+  // Remove is enabled (the last valid contact's is not).
+  const failureHousehold = { ...householdData, householdMembers: [...householdData.householdMembers, { id: 12, name: "Casey Smith", email: "", isDeclaredAdult: true }] };
+  const failureLoadRules = [
+    { url: "/api/household/emergency-contacts", method: "GET", result: { ok: true, body: { contacts: [
+      { id: 9, name: "Old Contact", phone: "5125550000", email: null, relationship: null, priority: 1, invalid: false },
+      { id: 8, name: "Backup Contact", phone: "5125550001", email: null, relationship: null, priority: 2, invalid: false },
+    ] } } },
+    { url: "/api/household", method: "GET", result: { ok: true, body: { household: failureHousehold } } },
+  ];
+
+  /** Render the loaded page as its lead, with `rules` layered over the GET routes. */
+  async function renderWithFailingRoutes(rules: Parameters<typeof routedFetch>[0]) {
     setSession({ id: 10, email: "sam@example.com" });
-    let settingsAttempt = 0;
-    let deleteAttempt = 0;
-    let editAttempt = 0;
-    const fetchMock = routedFetch([
-      { url: "/api/household/emergency-contacts/9", method: "DELETE", result: () => (deleteAttempt++ === 0 ? { ok: false, status: 400, body: { error: "Contact not found." } } : { throws: true }) },
-      { url: "/api/household/emergency-contacts", method: "POST", result: { throws: true } },
-      { url: "/api/household/emergency-contacts", method: "GET", result: { ok: true, body: { contacts: [
-        { id: 9, name: "Old Contact", phone: "5125550000", email: null, relationship: null, priority: 1, invalid: false },
-        { id: 8, name: "Backup Contact", phone: "5125550001", email: null, relationship: null, priority: 2, invalid: false },
-      ] } } },
-      { url: "/api/household/settings", method: "PATCH", result: () => (settingsAttempt++ === 0 ? { ok: false, status: 400, body: {} } : { throws: true }) },
-      { url: "/api/household/member", method: "PATCH", result: () => (editAttempt++ === 0 ? { ok: false, status: 400, body: { error: "Update rejected." } } : { throws: true }) },
-      { url: "/api/household/lead", method: "POST", result: { throws: true } },
-      { url: "/api/household", method: "GET", result: { ok: true, body: { household } } },
-    ]);
+    const fetchMock = routedFetch([...rules, ...failureLoadRules]);
     renderWithProviders(<HouseholdPage />);
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
+    return fetchMock;
+  }
 
-    // Address settings: client validation error, then server failure, then network error.
+  it("surfaces client-validation, server, and network failures when saving the address", async () => {
+    let attempt = 0;
+    await renderWithFailingRoutes([
+      { url: "/api/household/settings", method: "PATCH", result: () => (attempt++ === 0 ? { ok: false, status: 400, body: {} } : { throws: true }) },
+    ]);
+
     fireEvent.change(screen.getByLabelText(/Street Address/), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     expect(await screen.findByText("Street address is required.")).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText(/Street Address/), { target: { value: "123 Main St" } });
     fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     expect(await screen.findByText("Failed to update some settings.")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "Save household details" }));
     await waitFor(() => expectToast("Network error saving settings."));
+  });
 
-    // Emergency contact add: network error.
+  it("toasts a network failure when adding an emergency contact", async () => {
+    await renderWithFailingRoutes([
+      { url: "/api/household/emergency-contacts", method: "POST", result: { throws: true } },
+    ]);
+
     fireEvent.click(screen.getByRole("button", { name: "+ Add Contact" }));
     fireEvent.change(screen.getByLabelText("Contact Name"), { target: { value: "New Contact" } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "5125559000" } });
     fireEvent.click(screen.getByRole("button", { name: "Add Contact" }));
-    await waitFor(() => expectToast("Network error saving emergency contact."));
 
-    // Emergency contact delete: server failure, then network error (same row both times).
+    await waitFor(() => expectToast("Network error saving emergency contact."));
+  });
+
+  it("surfaces server and network failures when removing an emergency contact", async () => {
+    let attempt = 0;
+    await renderWithFailingRoutes([
+      { url: "/api/household/emergency-contacts/9", method: "DELETE", result: () => (attempt++ === 0 ? { ok: false, status: 400, body: { error: "Contact not found." } } : { throws: true }) },
+    ]);
+
+    // Same row both times — the failed delete leaves it on the list.
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     expect(await screen.findByText("Contact not found.")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     await waitFor(() => expectToast("Network error removing emergency contact."));
+  });
 
-    // Household member edit: server failure, then network error.
+  it("surfaces server and network failures when editing a household member", async () => {
+    let attempt = 0;
+    await renderWithFailingRoutes([
+      { url: "/api/household/member", method: "PATCH", result: () => (attempt++ === 0 ? { ok: false, status: 400, body: { error: "Update rejected." } } : { throws: true }) },
+    ]);
+
     fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Update rejected.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expectToast("Network error updating household member."));
+  });
 
-    // Make Lead: network error.
+  it("toasts a network failure when promoting a household member to lead", async () => {
+    const fetchMock = await renderWithFailingRoutes([
+      { url: "/api/household/lead", method: "POST", result: { throws: true } },
+    ]);
+
     fireEvent.click(screen.getByRole("button", { name: "Make Lead" }));
+
     await waitFor(() => expectToast("Network error promoting household member."));
     expect(fetchMock).toHaveBeenCalledWith("/api/household/lead", expect.objectContaining({ method: "POST" }));
   });
