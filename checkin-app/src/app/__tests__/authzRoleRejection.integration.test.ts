@@ -53,6 +53,7 @@ import { POST as REVIEW_OVERRIDE_POST } from '@/app/api/membership-ops/applicati
 import { POST as APP_ARCHIVE_POST } from '@/app/api/membership-ops/applications/archive/route';
 import { POST as APP_UNARCHIVE_POST } from '@/app/api/membership-ops/applications/unarchive/route';
 import { GET as MOPS_HH_GET, POST as MOPS_HH_POST } from '@/app/api/membership-ops/households/route';
+import { GET as VOL_ROSTER_GET } from '@/app/api/membership-ops/volunteer-memberships/route';
 import { POST as REVIEWS_POST } from '@/app/api/membership/reviews/route';
 import { GET as ROLES_GET, PATCH as ROLES_PATCH } from '@/app/api/roles/route';
 import { GET as BOARD_CONTACTS_GET } from '@/app/api/safety/board-contacts/route';
@@ -195,6 +196,7 @@ describe('Protected-route role rejection', () => {
         { name: 'POST /api/membership-ops/applications/unarchive', invoke: () => APP_UNARCHIVE_POST(nreq('http://localhost/api/membership-ops/applications/unarchive', 'POST', {})) },
         { name: 'GET /api/membership-ops/households (collection)', invoke: () => MOPS_HH_GET(nreq('http://localhost/api/membership-ops/households')) },
         { name: 'POST /api/membership-ops/households (collection)', invoke: () => MOPS_HH_POST(nreq('http://localhost/api/membership-ops/households', 'POST', {})) },
+        { name: 'GET /api/membership-ops/volunteer-memberships', invoke: () => VOL_ROSTER_GET(nreq('http://localhost/api/membership-ops/volunteer-memberships')) },
         { name: 'POST /api/membership/reviews (backgroundCheckReviewer-only)', invoke: () => REVIEWS_POST(nreq('http://localhost/api/membership/reviews', 'POST', {})) },
         { name: 'GET /api/roles', invoke: () => ROLES_GET(nreq('http://localhost/api/roles')) },
         { name: 'PATCH /api/roles', invoke: () => ROLES_PATCH(nreq('http://localhost/api/roles', 'PATCH', {})) },
