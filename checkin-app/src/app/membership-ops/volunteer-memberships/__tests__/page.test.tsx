@@ -134,6 +134,10 @@ describe("membership-ops/volunteer-memberships page", () => {
 
     // Only the two designation-backed rows offer Remove; the plain volunteer household does not.
     expect(screen.getAllByRole("button", { name: /^Remove / })).toHaveLength(2);
+    // A row that IS an email needs no address on the button; a household row does,
+    // because the designation it removes is one of the household's emails.
+    expect(screen.getByRole("button", { name: "Remove zoe@example.com" })).toHaveTextContent(/^Remove$/);
+    expect(screen.getByRole("button", { name: "Remove bo@example.com" })).toHaveTextContent("Remove bo@example.com");
     fireEvent.click(screen.getByRole("button", { name: "Remove zoe@example.com" }));
 
     await waitFor(() =>

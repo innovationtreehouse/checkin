@@ -161,8 +161,10 @@ export default function VolunteerMembershipsPage() {
     {
       header: "",
       align: "right",
-      // One Remove per designation: a household can carry several (both parents),
-      // and each needs its own action and its own accessible name.
+      // One Remove per designation, each naming its own email. A designation is an
+      // EMAIL-level record but this row is HOUSEHOLD-level once the household
+      // exists, so on those rows a bare "Remove" doesn't say what it removes.
+      // Only a row that is still just an email can drop the address.
       render: (r) => (
         <Stack gap={4} align="flex-end">
           {r.designations.map((d) => (
@@ -175,7 +177,7 @@ export default function VolunteerMembershipsPage() {
               aria-label={`Remove ${d.email}`}
               onClick={() => removeDesignation(d.id)}
             >
-              {r.designations.length > 1 ? `Remove ${d.email}` : "Remove"}
+              {r.householdId != null ? `Remove ${d.email}` : "Remove"}
             </Button>
           ))}
         </Stack>
