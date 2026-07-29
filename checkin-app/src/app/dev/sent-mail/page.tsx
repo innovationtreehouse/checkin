@@ -14,9 +14,6 @@ export const metadata = {
     title: "Dev — Sent Mail",
 };
 
-// devToolsActive, NOT a NODE_ENV check: cloud-dev runs the same production
-// image as prod, so a NODE_ENV fuse 404'd this page on the dev instance itself
-// (the Debug nav item's landing tab). See config.devToolsActive.
 function devOnlyOrNotFound() {
     if (!config.devToolsActive()) notFound();
 }
