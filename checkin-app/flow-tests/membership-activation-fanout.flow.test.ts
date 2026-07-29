@@ -57,8 +57,10 @@ import { loginAs, api } from "./helpers";
 
 type State = { process: { id: number; status: string } | null; membershipStatus: string | null };
 
-// payment.ts › sendCongrats — the one and only activation email. Kept in sync by hand;
-// if the copy changes, this literal must change with it (that's the point — it pins the send).
+// payment.ts › sendCongrats — the one and only activation email, in its INITIAL
+// wording (this journey activates a brand-new membership; a RENEWAL is thanked for
+// renewing instead). Kept in sync by hand; if the copy changes, this literal must
+// change with it (that's the point — it pins the send).
 const CONGRATS_SUBJECT = "Welcome to the Treehouse — your membership is active!";
 const APPLICANT_EMAIL = "parent.family@example.com";
 
