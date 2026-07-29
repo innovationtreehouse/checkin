@@ -189,22 +189,15 @@ what the board adopts and amends, and what a citation ultimately refers to.
 Anyone with Drive access can verify a policy-tier rule against the policy it
 names, which is what makes this tier meaningful rather than decorative.
 
-A markdown **export** of the policies is also kept on the owner's machine at
-`/Volumes/Untitled/Scratchpad/Policies`, so agents can read them without Drive
-access. Treat it accordingly:
-
-- **It is a convenience copy, not the source.** Where the export and Drive
-  disagree, Drive wins.
-- **It can be stale.** A policy amended on Drive does not update the export.
-  Before promoting a rule to the policy tier off the export alone, confirm the
-  article still reads that way on Drive.
-- **Never cite the export path.** It exists on one machine and is derived.
-
 This is why §3.2 cites by policy name and article rather than by any locator. The
-name and section are the one identifier stable across Drive, the export, and
-whatever format either is rendered in. A Drive URL is no better than a path:
-it rots on reorganisation and is permission-gated. Name the policy and its
-article; a reader with access can find it in seconds.
+name and section are the one identifier stable across Drive and whatever format
+a policy is rendered in. A Drive URL is no better than a filesystem path: it rots
+on reorganisation and is permission-gated. Name the policy and its article; a
+reader with access can find it in seconds.
+
+Verify against Drive, not against any local or cached copy of a policy — a copy
+predating an amendment would enshrine a superseded rule behind a citation that
+still looks correct.
 
 ---
 

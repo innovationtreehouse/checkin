@@ -249,22 +249,19 @@ compliance finding, and it goes to the owner directly rather than into any file.
 
 ### 3.6 The policy corpus
 
-Canonical policies are on **Google Drive** (standard §3.5). A markdown export
-sits at `/Volumes/Untitled/Scratchpad/Policies` so agents can read them without
-Drive access — derived, possibly stale, never the authority.
+Canonical policies are on **Google Drive** (standard §3.5).
 
 Consequences for this step:
 
-- **Promote off Drive, not off the export.** The export is fine for finding
-  candidates and drafting a citation; confirm the article on Drive before a rule
-  lands in the Policy tier. An export predating an amendment would enshrine a
-  superseded rule with a citation that looks correct.
+- **Confirm on Drive before promoting.** A local or cached copy is fine for
+  finding candidates and drafting; the citation is only sound once checked
+  against Drive. A copy predating an amendment would enshrine a superseded rule
+  behind a citation that looks correct.
 - **Citations stay verifiable.** Anyone with Drive access can check a
   policy-tier rule against the policy it names — unlike the PR corpus (§3.1),
   this input is not owner-only, so the tier carries real weight.
-- **Cite name plus article/section only.** Not a page, not the export path, not
-  a Drive URL. It is the one identifier stable across Drive, the export, and
-  any rendering of either.
+- **Cite name plus article/section only.** Not a page, not a path, not a Drive
+  URL.
 
 ### 3.7 Owner review
 
