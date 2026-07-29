@@ -95,6 +95,11 @@ Its content is guardianship and household leadership, which belongs in
 `membership.md` would violate "named for the domain, not for any feature."
 It is handled once, in step 4, and `people-households.md` is created there.
 
+Draft both files with the **Policy / Procedure** split from standard §3.2, even
+if the Policy section starts empty — the shape is part of what this step
+validates, and an empty Policy heading is an honest signal that nothing has been
+traced to a policy yet.
+
 Cut aggressively. Two short files that get read beat six thorough ones that do
 not. This step also validates the format before the mining step produces volume.
 
@@ -216,7 +221,52 @@ if a domain comes out with dozens of rules, it has almost certainly captured
 mechanism rather than policy, so re-apply the test before accepting the volume.
 Splitting the file is not the fix.
 
-### 3.5 Owner review
+### 3.5 Classify each rule: policy or procedure
+
+Standard §3.2 splits every domain file into a **Policy** section above a
+**Procedure** section. The mine cannot make that call on its own — a PR diff
+shows what the code does, never whether a board policy required it.
+
+So the sweep produces everything as **procedure by default**, and a separate
+pass promotes what is genuinely policy-backed:
+
+1. Draft every mined rule under Procedure. Never guess at policy authority; an
+   unsupported promotion is the same defect as writing an unratified policy as
+   settled.
+2. Flag candidates — anything touching dues, background checks, eligibility and
+   age gates, refunds, volunteer status, or access and certification is likely
+   to have a policy behind it. These are the ones worth checking.
+3. The owner checks each candidate against the policy corpus (§3.6) and either
+   promotes it with a citation by **policy name and article/section** — never a
+   page, never a path — or leaves it as procedure.
+
+Expect this to reclassify a meaningful share of the membership and finance
+rules, and almost none of the attendance or tooling ones.
+
+**A rule can also be neither.** If a candidate turns out to contradict the
+policy it supposedly implements, that is not a documentation finding — it is a
+compliance finding, and it goes to the owner directly rather than into any file.
+
+### 3.6 The policy corpus
+
+The governing policies are held by the owner at
+`/Volumes/Untitled/Scratchpad/Policies` — outside this repo, outside version
+control, readable only on that machine. Same custody model as the PR corpus
+(§3.1): a private **input** whose **output** is the citations in `docs/rules/`.
+
+Consequences for this step:
+
+- **Only the owner can run §3.5's promotion pass.** Everyone else drafts under
+  Procedure and flags.
+- **Reviewers can never verify a citation**, only see the claim and which policy
+  it names. Making the register auditable is the goal here; verifiable is out of
+  reach until the policies are published.
+- **The citation format is what makes this survivable.** Name plus
+  article/section stays meaningful to anyone holding the policy, in any format,
+  on any machine. A page number or a path would be meaningful only on the
+  owner's disk, today.
+
+### 3.7 Owner review
 
 The register states board and operations decisions. A rule inferred from a PR
 diff is a *candidate* decision until the owner confirms it. Present each domain
@@ -328,6 +378,11 @@ do it last, after the rules register exists, so nothing moves twice.
 
 - `docs/rules/` holds the domain files, each owner-reviewed, every line a rule a
   change could violate.
+- **Every domain file carries the Policy / Procedure split**, policy above
+  procedure, and every policy-tier rule cites a policy by name and
+  article/section — no page numbers, no filesystem paths.
+- **Any contradiction found between code and policy has been raised with the
+  owner**, not silently recorded as a rule.
 - AGENTS.md points at the register and at `DOCUMENTATION_STANDARD.md`.
 - No `Status: SHIPPED` feature docs remain outside `docs/ops/`.
 - `docs/designs/` and `checkin-app/docs/designs/` no longer exist.
