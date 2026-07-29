@@ -1,21 +1,24 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Badge, Button, Card, Chip, Group, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Badge, Button, Card, Chip, Group, Stack, Switch, Text, TextInput, Title } from "@mantine/core";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { notifications } from "@mantine/notifications";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
+import { formatDate, formatDateOnly } from "@/lib/time";
 import type { VolunteerRow, VolunteerRowStatus } from "@/app/api/membership-ops/volunteer-memberships/route";
 
 const STATUS_CHIPS: { value: VolunteerRowStatus; label: string; color: string }[] = [
   { value: "VOLUNTEER", label: "Volunteer member", color: "green" },
   { value: "IN_PROGRESS", label: "Signup in progress", color: "blue" },
+  { value: "BLOCKED", label: "Application blocked", color: "orange" },
   { value: "DESIGNATED", label: "Pre-designated", color: "gray" },
-  { value: "FULL_PRICE", label: "Full-price member", color: "yellow" },
+  { value: "NEXT_RENEWAL", label: "Takes effect next renewal", color: "yellow" },
   { value: "REVOKED", label: "Revoked", color: "red" },
+  { value: "INACTIVE", label: "No live application", color: "gray" },
 ];
 
 const chipFor = (status: VolunteerRowStatus) => STATUS_CHIPS.find((c) => c.value === status);
@@ -24,8 +27,9 @@ const chipFor = (status: VolunteerRowStatus) => STATUS_CHIPS.find((c) => c.value
 // active volunteers → in-flight → not-yet-members.
 const STATUS_RANK = Object.fromEntries(STATUS_CHIPS.map((c, i) => [c.value, i]));
 
-const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString(undefined, { timeZone: "UTC" }) : "—";
+// memberSince is a calendar date (UTC midnight by convention); a designation's
+// createdAt is a true instant. See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+const memberSinceText = (iso: string | null) => (iso ? formatDateOnly(iso) : "—");
 
 export default function VolunteerMembershipsPage() {
   const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
@@ -38,6 +42,7 @@ export default function VolunteerMembershipsPage() {
   const [emailError, setEmailError] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<string[]>([]);
+  const [showInactive, setShowInactive] = useState(false);
 
   const flash = (text: string, tone: "warning" | "error" = "error") =>
     setMessage(text ? { text, tone } : undefined);
@@ -63,11 +68,15 @@ export default function VolunteerMembershipsPage() {
   const visibleRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
+      // A household with no live application is off the default roster — unless a
+      // designation hangs off it, since this row carries its only Remove action.
+      if (!showInactive && r.status === "INACTIVE" && r.designations.length === 0) return false;
       if (statuses.length > 0 && !statuses.includes(r.status)) return false;
       if (!q) return true;
-      return [r.householdName, r.email, ...r.leads].some((v) => v?.toLowerCase().includes(q));
+      return [r.householdName, r.email, ...r.leads, ...r.designations.map((d) => d.email)]
+        .some((v) => v?.toLowerCase().includes(q));
     });
-  }, [rows, search, statuses]);
+  }, [rows, search, statuses, showInactive]);
 
   if (authLoading) {
     return <PageLoader />;
@@ -101,10 +110,18 @@ export default function VolunteerMembershipsPage() {
 
   const removeDesignation = async (id: number) => {
     setSaving(true);
+    flash("");
     try {
-      await fetch(`/api/settings/membership/volunteer-designations?id=${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/settings/membership/volunteer-designations?id=${id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        flash(data.error || "Could not remove that designation.");
+        return;
+      }
+      notifications.show({ message: "Designation removed." });
       await load();
-    } finally { setSaving(false); }
+    } catch { notifications.show({ color: "red", message: "Network error.", autoClose: false }); }
+    finally { setSaving(false); }
   };
 
   const columns: DataTableColumn<VolunteerRow>[] = [
@@ -128,23 +145,41 @@ export default function VolunteerMembershipsPage() {
         return <Badge color={chip?.color} variant="light">{chip?.label ?? r.status}</Badge>;
       },
     },
-    { header: "Member since", sortBy: (r) => r.memberSince, render: (r) => formatDate(r.memberSince) },
-    { header: "Designated", sortBy: (r) => r.designatedAt, render: (r) => formatDate(r.designatedAt) },
+    { header: "Member since", sortBy: (r) => r.memberSince, render: (r) => memberSinceText(r.memberSince) },
+    {
+      header: "Designated",
+      sortBy: (r) => r.designations[0]?.createdAt,
+      render: (r) =>
+        r.designations.length === 0 ? "—" : (
+          <Stack gap={2}>
+            {r.designations.map((d) => (
+              <Text key={d.id} size="sm">{formatDate(d.createdAt)}</Text>
+            ))}
+          </Stack>
+        ),
+    },
     {
       header: "",
       align: "right",
-      render: (r) =>
-        r.designationId != null ? (
-          <Button
-            variant="subtle"
-            color="red"
-            size="compact-sm"
-            disabled={saving}
-            onClick={() => removeDesignation(r.designationId!)}
-          >
-            Remove
-          </Button>
-        ) : null,
+      // One Remove per designation: a household can carry several (both parents),
+      // and each needs its own action and its own accessible name.
+      render: (r) => (
+        <Stack gap={4} align="flex-end">
+          {r.designations.map((d) => (
+            <Button
+              key={d.id}
+              variant="subtle"
+              color="red"
+              size="compact-sm"
+              disabled={saving}
+              aria-label={`Remove ${d.email}`}
+              onClick={() => removeDesignation(d.id)}
+            >
+              {r.designations.length > 1 ? `Remove ${d.email}` : "Remove"}
+            </Button>
+          ))}
+        </Stack>
+      ),
     },
   ];
 
@@ -172,13 +207,22 @@ export default function VolunteerMembershipsPage() {
           />
           <Chip.Group multiple value={statuses} onChange={setStatuses}>
             <Group gap="xs">
-              {STATUS_CHIPS.map((c) => (
+              {STATUS_CHIPS.filter((c) => showInactive || c.value !== "INACTIVE").map((c) => (
                 <Chip key={c.value} value={c.value} color={c.color} size="sm" variant="outline">
                   {c.label}
                 </Chip>
               ))}
             </Group>
           </Chip.Group>
+          <Switch
+            label="Show inactive"
+            checked={showInactive}
+            onChange={(e) => {
+              const on = e.currentTarget.checked;
+              setShowInactive(on);
+              if (!on) setStatuses((s) => s.filter((v) => v !== "INACTIVE"));
+            }}
+          />
         </Group>
 
         <DataTable

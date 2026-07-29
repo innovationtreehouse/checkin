@@ -12,22 +12,24 @@ beforeEach(() => resetRtl());
 const ROSTER = "/api/membership-ops/volunteer-memberships";
 const DESIGNATIONS = "/api/settings/membership/volunteer-designations";
 
+const des = (id: number, email: string, createdAt: string) => ({ id, email, createdAt });
+
 const roster = {
   rows: [
     {
       key: "hh:1", status: "VOLUNTEER", householdId: 1, householdName: "Alvarez",
       leads: ["Ana Alvarez"], email: "ana@example.com",
-      memberSince: "2025-03-04T00:00:00.000Z", designationId: null, designatedAt: null,
+      memberSince: "2025-03-04T00:00:00.000Z", designations: [],
     },
     {
       key: "des:7", status: "DESIGNATED", householdId: null, householdName: null,
       leads: [], email: "zoe@example.com",
-      memberSince: null, designationId: 7, designatedAt: "2026-07-01T00:00:00.000Z",
+      memberSince: null, designations: [des(7, "zoe@example.com", "2026-07-01T00:00:00.000Z")],
     },
     {
-      key: "des:8", status: "FULL_PRICE", householdId: 5, householdName: "Baker",
+      key: "des:8", status: "NEXT_RENEWAL", householdId: 5, householdName: "Baker",
       leads: ["Bo Baker"], email: "bo@example.com",
-      memberSince: "2024-01-02T00:00:00.000Z", designationId: 8, designatedAt: "2026-07-02T00:00:00.000Z",
+      memberSince: "2024-01-02T00:00:00.000Z", designations: [des(8, "bo@example.com", "2026-07-02T00:00:00.000Z")],
     },
   ],
 };
@@ -45,7 +47,8 @@ describe("membership-ops/volunteer-memberships page", () => {
     expect(screen.getByText("zoe@example.com")).toBeInTheDocument();
     // Scoped to the rows: the filter chips carry the same status labels.
     expect(bodyRowText()[0]).toContain("Volunteer member");
-    expect(bodyRowText()[2]).toContain("Full-price member");
+    // The designation is the subject, not the household: it is inert until renewal.
+    expect(bodyRowText()[2]).toContain("Takes effect next renewal");
     // A designation with no household reads as not-yet-signed-up, not a blank cell.
     expect(screen.getByText("Not signed up yet")).toBeInTheDocument();
   });
@@ -130,9 +133,8 @@ describe("membership-ops/volunteer-memberships page", () => {
     await screen.findByText("zoe@example.com");
 
     // Only the two designation-backed rows offer Remove; the plain volunteer household does not.
-    const removes = screen.getAllByRole("button", { name: "Remove" });
-    expect(removes).toHaveLength(2);
-    fireEvent.click(removes[0]);
+    expect(screen.getAllByRole("button", { name: /^Remove / })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Remove zoe@example.com" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -140,6 +142,79 @@ describe("membership-ops/volunteer-memberships page", () => {
         expect.objectContaining({ method: "DELETE" }),
       ),
     );
+  });
+
+  it("gives every designation on one household its own Remove action", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const rows = [{
+      key: "hh:1", status: "VOLUNTEER", householdId: 1, householdName: "Alvarez",
+      leads: ["Ana Alvarez", "Alex Alvarez"], email: "ana@example.com",
+      memberSince: "2025-03-04T00:00:00.000Z",
+      designations: [des(7, "ana@example.com", "2026-07-01T00:00:00.000Z"), des(8, "alex@example.com", "2026-07-02T00:00:00.000Z")],
+    }];
+    const fetchMock = mockFetchJson({ [ROSTER]: { rows }, [DESIGNATIONS]: {} });
+    renderWithProviders(<VolunteerMembershipsPage />);
+    await screen.findByText("Alvarez");
+
+    // Folding both onto one row must not cost either its only Remove.
+    expect(screen.getAllByRole("button", { name: /^Remove / })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Remove alex@example.com" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${DESIGNATIONS}?id=8`,
+        expect.objectContaining({ method: "DELETE" }),
+      ),
+    );
+  });
+
+  it("surfaces a failed remove instead of silently reporting success", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ [ROSTER]: roster }); // DELETE 404s
+    renderWithProviders(<VolunteerMembershipsPage />);
+    await screen.findByText("zoe@example.com");
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove zoe@example.com" }));
+
+    expect(await screen.findByText(/Could not remove that designation/)).toBeInTheDocument();
+    // The row is still there — nothing was removed.
+    expect(screen.getByText("zoe@example.com")).toBeInTheDocument();
+  });
+
+  it("hides volunteer households with no live application until asked", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const rows = [
+      roster.rows[0],
+      {
+        key: "hh:9", status: "INACTIVE", householdId: 9, householdName: "Chen",
+        leads: ["Cy Chen"], email: "cy@example.com", memberSince: null, designations: [],
+      },
+    ];
+    mockFetchJson({ [ROSTER]: { rows } });
+    renderWithProviders(<VolunteerMembershipsPage />);
+    await screen.findByText("Alvarez");
+
+    expect(screen.queryByText("Chen")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Show inactive"));
+
+    expect(await screen.findByText("Chen")).toBeInTheDocument();
+    expect(bodyRowText()[1]).toContain("No live application");
+  });
+
+  it("keeps an inactive household visible when a designation hangs off it", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const rows = [{
+      key: "hh:9", status: "INACTIVE", householdId: 9, householdName: "Chen",
+      leads: ["Cy Chen"], email: "cy@example.com", memberSince: null,
+      designations: [des(4, "cy@example.com", "2026-07-01T00:00:00.000Z")],
+    }];
+    mockFetchJson({ [ROSTER]: { rows } });
+    renderWithProviders(<VolunteerMembershipsPage />);
+
+    // Hiding it would hide the only Remove action for designation 4.
+    expect(await screen.findByText("Chen")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove cy@example.com" })).toBeInTheDocument();
   });
 
   it("renders nothing for a background-check reviewer who navigates directly", async () => {
