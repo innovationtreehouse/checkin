@@ -853,7 +853,7 @@ describe("membership page", () => {
       const call = fetchMock.mock.calls.find(([u, init]) => u === "/api/membership/intake" && (init as RequestInit)?.method === "PATCH")!;
       return JSON.parse((call[1] as RequestInit).body as string);
     };
-    return { fetchMock, savedPayload };
+    return { savedPayload };
   }
 
   // ── Every intake onChange handler + addChild/updateChild/removeChild, one
@@ -943,7 +943,9 @@ describe("membership page", () => {
 
     // Only the secondary parent's name and a child's name are filled — leaves
     // email/dob/allergies blank on both, exercising the `|| undefined`/`|| null`
-    // fallback side of buildPayload() (the previous test covers the truthy side).
+    // fallback side of buildPayload() (the "fills every second parent /
+    // guardian field" and "adds and removes children" tests above cover the
+    // truthy side).
     fireEvent.click(screen.getByLabelText("Add a second parent / guardian"));
     fireEvent.change(screen.getAllByLabelText("Full name", { exact: false })[1], { target: { value: "Sam Secondary" } });
 
