@@ -73,12 +73,11 @@ export default function AdminMembershipPage() {
 function ApplicationsBoard() {
   const { data: session } = useSession();
   const me = session?.user;
-  // Conflict of interest: a board member may not certify/override their OWN household's
-  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked). Sysadmin
-  // is the deliberate remedy and keeps the buttons. The disabled state is UX only — the
-  // server is the real enforcement.
+  // Conflict of interest: no actor may certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked).
+  // The disabled state is UX only — the server is the real enforcement.
   const ownHousehold = (r: ProcessRow) =>
-    me?.isSysadmin !== true && sharesHousehold(me?.householdId, r.orgMembership?.householdId);
+    sharesHousehold(me?.householdId, r.orgMembership?.householdId);
   const [rows, setRows] = useState<ProcessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);

@@ -349,7 +349,7 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
 }
 
 /** Board override on a BLOCKED application: reset for re-review, or force-clear the check. */
-export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve", opts?: { isSysadmin?: boolean }) {
+export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve") {
     const process = await prisma.orgMembershipProcess.findUnique({
         where: { id: processId },
         include: { orgMembership: { select: { household: { select: { intakeNotes: true } } } } },
@@ -357,12 +357,12 @@ export async function overrideBlocked(processId: number, actorId: number, action
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
-    // Conflict of interest: a board member may not override their OWN household's blocked
+    // Conflict of interest: no actor may override their OWN household's blocked
     // application — else they could force-clear their family's failed background check, the
-    // very thing attest()'s same-household gate forbids. Sysadmin bypasses (opts.isSysadmin).
+    // very thing attest()'s same-household gate forbids. No role bypasses this.
     const applicantHouseholdId = await applicantHousehold(prisma, process);
-    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId, { isSysadmin: opts?.isSysadmin })) {
-        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — a sysadmin must.");
+    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId)) {
+        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — someone outside your household must.");
     }
 
     if (action === "reset") {

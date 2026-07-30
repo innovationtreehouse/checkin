@@ -26,10 +26,8 @@ describe("hasHouseholdConflict", () => {
         expect(await hasHouseholdConflict(db(4), 1, 3)).toBe(false);
     });
 
-    it("sysadmin always bypasses — no conflict, and no DB read", async () => {
-        const client = db(3); // same household as subject → would conflict without the bypass
-        expect(await hasHouseholdConflict(client, 1, 3, { isSysadmin: true })).toBe(false);
-        expect((client.person.findUnique as jest.Mock)).not.toHaveBeenCalled();
+    it("takes no role argument — there is no way for a caller to opt out of the rule", () => {
+        expect(hasHouseholdConflict).toHaveLength(3); // db, actorId, subjectHouseholdId
     });
 
     it("no conflict when the subject has no household to conflict with", async () => {

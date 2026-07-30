@@ -25,9 +25,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
         return apiError("processId and action (reset|approve) are required", 400);
     }
     try {
-        const outcome = await overrideBlocked(body.processId, auth.user.id, body.action, {
-            isSysadmin: auth.user.isSysadmin === true,
-        });
+        const outcome = await overrideBlocked(body.processId, auth.user.id, body.action);
         return NextResponse.json({ outcome });
     } catch (error) {
         if (error instanceof ReviewError) {
