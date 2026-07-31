@@ -392,7 +392,7 @@ function ApplicationsBoard() {
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                   {ownHousehold(r) && (
-                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — someone outside your household must.</Text>
                   )}
                 </Group>
               )}
@@ -419,7 +419,7 @@ function ApplicationsBoard() {
                     </Button>
                   </Group>
                   {ownHousehold(r) && (
-                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — someone outside your household must.</Text>
                   )}
                 </Alert>
               )}
