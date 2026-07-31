@@ -158,7 +158,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
       setNeedsSetup(!hasEnrollable || !hasValidEmergencyContact);
     } catch {
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
+      const solo = { id: currentUserId, name: "Myself", dateOfBirth: null };
+      setHouseholdMembers([solo]);
+      // The solo entry carries no DOB, so an age-gated program blocks it and
+      // leaves nothing to check. Offer household setup instead of a panel whose
+      // only row is disabled.
+      const reason = enrollBlock(solo).reason;
+      setNeedsSetup(!(reason === null || reason === 'pending'));
     } finally {
       setLoadingHousehold(false);
     }
@@ -587,7 +593,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     As an Admin or Lead Mentor, you can bypass this restriction. Are you sure you want
                     to force enroll?
                   </Text>
-                  <Button color="yellow" fullWidth onClick={() => handleEnroll(true)}>
+                  <Button
+                    color="yellow"
+                    fullWidth
+                    onClick={() => handleEnroll(true)}
+                    disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
+                  >
                     Force Enroll (Override)
                   </Button>
                 </Alert>

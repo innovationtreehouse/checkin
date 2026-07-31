@@ -436,6 +436,33 @@ describe("ProgramEnrollmentPage", () => {
         expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" }));
     });
 
+    it("disables the override button once the selection is emptied", async () => {
+        setSession({ id: 5, isSysadmin: true });
+        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === "string" ? input : input.toString();
+            if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
+            if (url.includes("/api/programs/10/participants")) {
+                return { ok: false, status: 403, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
+            }
+            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ minAge: null, maxAge: null, leadMentorId: 5 }) } as Response;
+            return { ok: false, status: 404, json: async () => ({}) } as Response;
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+        await screen.findByText("Which of your household wants to enroll?");
+        await selectMember("Kid One");
+        fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
+        await screen.findByText("Warning: Enrollment rules not met.");
+
+        // The checkbox group stays live while the override alert is up, so
+        // unchecking must disable the override too — handleEnroll returns on an
+        // empty selection, and a live button would do nothing with no feedback.
+        expect(screen.getByRole("button", { name: "Force Enroll (Override)" })).toBeEnabled();
+        fireEvent.click(screen.getByLabelText("Kid One"));
+        expect(screen.getByRole("button", { name: "Force Enroll (Override)" })).toBeDisabled();
+    });
+
     it("shows a network-error message when enrollment throws", async () => {
         setSession({ id: 101 });
         mockFetchJson({ "/api/household": household, "/api/programs/10": baseProgram({ minAge: null, maxAge: null }) });
@@ -706,6 +733,26 @@ describe("ProgramEnrollmentPage", () => {
         await screen.findByText("Robotics Club");
         fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
         expect(await screen.findByLabelText("Myself")).toBeInTheDocument();
+    });
+
+    it("offers household setup when the solo fallback can't clear an age-gated program", async () => {
+        setSession({ id: 777 });
+        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+            const url = typeof input === "string" ? input : input.toString();
+            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ participants: [] }) } as Response;
+            return Promise.reject(new Error("down"));
+        });
+        renderPage();
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+
+        // The fallback entry has no DOB, so the program's 5-18 range blocks it.
+        // Without the setup affordance the panel is a dead end: the one row is
+        // disabled, and the hint asks for a box that can't be checked.
+        expect(await screen.findByRole("button", { name: "Finish setting up your household to enroll" })).toBeInTheDocument();
+        expect(screen.getByLabelText("Myself")).toBeDisabled();
+        expect(screen.queryByText("Check the box next to each person you want to enroll.")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Complete Enrollment" })).not.toBeInTheDocument();
     });
 
     it("pre-checks nobody, so the enroll button starts disabled", async () => {
