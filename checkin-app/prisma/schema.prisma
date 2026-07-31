@@ -265,9 +265,10 @@ model Household {
   /// @sensitivity:public
   name    String
   /// Home address is strict-band intimate data. 'internal' (not 'personal')
-  /// so it sits ABOVE the *:personal grants that deliver emergency contacts to
-  /// program leads (their_program_households:personal) and keyholders
-  /// (keyholders:personal): they get EC, never the family's address. Only
+  /// so it sits ABOVE every household-scoped grant that reaches program leads
+  /// (their_program_households:pii/:personal — emergency contacts plus the
+  /// parents' own contact details) and keyholders (keyholders:personal): they
+  /// get people to call, never the family's address. Only
   /// board/sysadmin (everyones:internal) see it on registered routes; the
   /// household's own view is hand-shaped by the self-household routes.
   /// @sensitivity:internal
@@ -285,10 +286,13 @@ model Household {
   /// volunteer-only household types the note that tells a background-check
   /// reviewer to mark them volunteer. Stays 'pii' (NOT internal like the other
   /// narrative fields) because reviewers hold exactly everyones:pii on
-  /// GET /api/membership/reviews and must read it. GUARD: no household-scoped
-  /// pii token may ever be granted to a lead/keyholder-facing view that
-  /// returns Household rows, or this narrative leaks — leads/keyholders get
-  /// household data via *:personal (EC) only.
+  /// GET /api/membership/reviews and must read it. GUARD: what keeps it away
+  /// from leads/keyholders is that Household binds NO scope but their_households
+  /// (scopeBindings.ts) — a household-scoped token like
+  /// their_program_households:pii resolves to nothing on a Household row, which
+  /// is why GET /api/programs/[id] can grant one for the parents' Person rows
+  /// without exposing this. Never bind Household to a program- or
+  /// keyholder-scoped scope, or the narrative leaks with it.
   /// @sensitivity:pii
   intakeNotes String?
 

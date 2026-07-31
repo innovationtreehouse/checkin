@@ -35,6 +35,19 @@ export const SCOPE_BINDINGS = {
         their_own: { field: 'id', eqCtx: 'selfId' },
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_program_participants: { field: 'id', inCtx: 'participantIdsInScopePrograms' },
+        // The PARENTS of the children a program lead/core-vol oversees: household
+        // leads (isHouseholdLead) of ctx.householdIdsInScopePrograms. The
+        // isHouseholdLead conjunct IS the policy — a sibling or any other member of
+        // an in-scope household holds nothing here, so only the two adults a lead
+        // would actually call are reachable. Requires the row to carry BOTH
+        // householdId and isHouseholdLead; either one unselected fails closed
+        // (isTrue is strict === true, and inCtx rejects a non-number).
+        their_program_households: {
+            all: [
+                { field: 'householdId', inCtx: 'householdIdsInScopePrograms' },
+                { field: 'isHouseholdLead', isTrue: true },
+            ],
+        },
         // Global front-desk grant, unconditional per row (mirrors TrustedAdult).
         // Only GET /api/safety/board-contacts grants keyholders:* on Person, and
         // that route returns board members only. Any future Person view granting

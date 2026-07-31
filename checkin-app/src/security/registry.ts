@@ -112,17 +112,30 @@ defineRoute({
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        // their_program_households:personal delivers the household band leads
-        // operationally need — emergency contacts (personal). It deliberately
-        // does NOT reach the family's home address or intake notes: address is
-        // 'internal' and intakeNotes is 'pii', both outside a household-scoped
-        // personal grant. EC yes, address no.
+        // their_program_households delivers the household band leads operationally
+        // need: the family's emergency contacts (personal) and the parents' own
+        // contact details (pii). Person binds this scope ONLY on isHouseholdLead
+        // rows, so the pii grant reaches the two adults a lead would call and no
+        // one else — siblings and other household members hold nothing.
+        //
+        // FINDING for the CODEOWNERS reviewer: the pre-existing :personal token now
+        // also resolves on those same parent rows, so Person.dateOfBirth/allergies/
+        // notificationSettings/emailSuppressed become deliverable for a parent. The
+        // route's select is what keeps them off the wire (id/householdId/name/email/
+        // phone/isHouseholdLead only) — this view no longer strips them.
+        //
+        // Still out of reach: the family's home address (Household.line1..postalCode
+        // are 'internal', above every token here) and Household.intakeNotes ('pii',
+        // but Household binds no scope beyond their_households, so a
+        // their_program_households token resolves to nothing on a Household row).
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['programCoreVolunteer', ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['authenticated',        ['their_own:pii', 'their_own:personal', 'member', 'public']],
