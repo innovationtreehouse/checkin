@@ -103,6 +103,15 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                             household: {
                                 select: {
                                     id: true,
+                                    // The family's parents, for the roster's "call someone" band.
+                                    // householdId and isHouseholdLead are BOTH scope keys for the
+                                    // Person their_program_households binding: drop either and a
+                                    // lead resolves no scope, so name/email/phone strip away.
+                                    householdMembers: {
+                                        where: { isHouseholdLead: true, ...LIVE_PERSON },
+                                        orderBy: { id: "asc" },
+                                        select: { id: true, householdId: true, isHouseholdLead: true, name: true, email: true, phone: true },
+                                    },
                                     emergencyContacts: {
                                         where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
                                         orderBy: [{ priority: "asc" }, { id: "asc" }],

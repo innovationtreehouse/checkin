@@ -430,6 +430,54 @@ describe("ProgramDetailsPage", () => {
     );
   });
 
+  it("renders the parents above the emergency contacts, skipping a participant who leads their own household", async () => {
+    const withParents = {
+      ...programData,
+      participants: [
+        {
+          personId: 501, status: "ACTIVE", pendingSince: null,
+          person: {
+            name: "Kid With Parents", email: "kid@example.com", phone: "5125559999",
+            household: {
+              householdMembers: [
+                { id: 601, name: "Sam Smith", email: "sam@example.com", phone: "5125551111" },
+                { id: 602, name: "Jamie Smith", email: null, phone: "5125552222" },
+              ],
+              emergencyContacts: [{ id: 1, name: "Aunt Ada", phone: "5125553333", relationship: "Aunt" }],
+            },
+          },
+        },
+        {
+          personId: 603, status: "ACTIVE", pendingSince: null,
+          person: {
+            name: "Adult Lead", email: "adult@example.com", phone: "5125558888",
+            household: {
+              householdMembers: [{ id: 603, name: "Adult Lead", email: "adult@example.com", phone: "5125558888" }],
+              emergencyContacts: [],
+            },
+          },
+        },
+      ],
+    };
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/programs/1": withParents });
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+
+    const parents = await screen.findByText("Parents:");
+    expect(screen.getByText(/Sam Smith - 512-555-1111, sam@example.com; Jamie Smith - 512-555-2222/)).toBeInTheDocument();
+
+    // The point of the issue: parents come first, emergency contacts after.
+    // Both cards render a singular "Emergency Contact:"; [0] is this card's.
+    const contacts = screen.getAllByText("Emergency Contact:")[0];
+    expect(parents.compareDocumentPosition(contacts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // An adult who leads their own household is not listed as their own parent.
+    expect(screen.getByText("Parent:")).toBeInTheDocument();
+    expect(screen.queryByText(/Adult Lead - /)).not.toBeInTheDocument();
+  });
+
   it("renders participant phone/household/pending-since edge cases and removes on confirm", async () => {
     const detailedProgram = {
       ...programData,

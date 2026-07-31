@@ -35,7 +35,13 @@ export type ProgramDetail = {
       name: string | null;
       email: string;
       phone?: string | null;
-      household?: { emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[] } | null;
+      // householdMembers is the household's leads (the parents) only. Contact
+      // fields are optional because the response stripper drops them for a
+      // viewer without the grant.
+      household?: {
+        householdMembers?: { id: number; name: string | null; email?: string | null; phone?: string | null }[];
+        emergencyContacts: { id: number; name: string; phone: string; relationship: string | null }[];
+      } | null;
     };
   }[];
   volunteers: { personId: number; isCore: boolean; person: { name: string | null; email: string } }[];

@@ -9,12 +9,27 @@ import { calculateAge, formatDateTime } from '@/lib/time';
 import { formatPhone } from '@/lib/phone';
 import type { ProgramDetail, ParticipantOption } from './page';
 
+type Participant = ProgramDetail['participants'][number];
+
 // Roster mutation routes answer with these advisory fields. A non-JSON body
 // (session-expiry HTML redirect, proxy error page) must not throw and skip the
 // roster refetch, so parse failures degrade to an empty object.
 type ApiFeedback = { notice?: string; warning?: string; error?: string };
 async function readJson(res: Response): Promise<ApiFeedback> {
   try { return await res.json(); } catch { return {}; }
+}
+
+// The household's leads, minus the participant themselves when they lead their
+// own household — an adult enrolled in a program is not their own parent.
+function parentsOf(p: Participant) {
+  return (p.person.household?.householdMembers ?? []).filter(m => m.id !== p.personId);
+}
+
+// Contact fields are absent for a viewer the stripper denied them to, so a
+// parent can legitimately render as a bare name.
+function formatParent(m: ReturnType<typeof parentsOf>[number]) {
+  const contact = [m.phone ? formatPhone(m.phone) : null, m.email || null].filter(Boolean).join(', ');
+  return contact ? `${m.name || 'Unnamed'} - ${contact}` : (m.name || 'Unnamed');
 }
 
 type ProgramRosterTabProps = {
@@ -257,12 +272,18 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
                   <Text size="sm" c="dimmed"><strong>Email:</strong> {p.person.email}</Text>
                   <Text size="sm" c="dimmed"><strong>Phone:</strong> {p.person.phone ? formatPhone(p.person.phone) : 'N/A'}</Text>
                   {p.person.household && (
-                    <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
-                      <strong>Emergency Contact{(p.person.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
-                      {p.person.household.emergencyContacts && p.person.household.emergencyContacts.length > 0
-                        ? p.person.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
-                        : 'N/A'}
-                    </Text>
+                    <>
+                      <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
+                        <strong>Parent{parentsOf(p).length > 1 ? 's' : ''}:</strong>{' '}
+                        {parentsOf(p).length > 0 ? parentsOf(p).map(formatParent).join('; ') : 'N/A'}
+                      </Text>
+                      <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
+                        <strong>Emergency Contact{(p.person.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
+                        {p.person.household.emergencyContacts && p.person.household.emergencyContacts.length > 0
+                          ? p.person.household.emergencyContacts.map((c) => `${c.name} - ${formatPhone(c.phone)}`).join('; ')
+                          : 'N/A'}
+                      </Text>
+                    </>
                   )}
                 </SimpleGrid>
               </Card>

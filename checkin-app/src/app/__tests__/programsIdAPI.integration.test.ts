@@ -21,12 +21,18 @@ describe('Individual Program API Integration Tests', () => {
     let memberId: number;
     let memberHouseholdId: number;
     let enrolledId: number;
+    let parentId: number;
+    let siblingId: number;
     let publicProgramId: number;
     let orgMemberOnlyProgramId: number;
 
     // Distinctive name we assert NEVER appears in an anonymous response — the
     // roster/association leak (#P0-5.1a) is closed iff this string is absent.
     const ENROLLED_NAME = 'Roster Leak Canary';
+    const PARENT_NAME = 'Roster Parent Canary';
+    const PARENT_EMAIL = 'parent-prog-id-api-test@example.com';
+    const PARENT_PHONE = '5125551234';
+    const SIBLING_NAME = 'Roster Sibling Canary';
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -107,16 +113,36 @@ describe('Individual Program API Integration Tests', () => {
         // Enroll a participant with a recognizable name into the public program so
         // the leak tests have a roster identity to look for.
         const enrolled = await prisma.person.create({
-            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: { name: "Test HH" } } }
+            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: { name: "Test HH" } } },
+            select: { id: true, householdId: true }
         });
         enrolledId = enrolled.id;
         await prisma.programParticipant.create({
             data: { programId: publicProgramId, personId: enrolledId, status: 'ACTIVE' }
         });
+
+        // The enrolled kid's parent — a lead of the same household, so the roster's
+        // parent band has something to deliver.
+        const parent = await prisma.person.create({
+            data: {
+                email: PARENT_EMAIL,
+                name: PARENT_NAME,
+                phone: PARENT_PHONE,
+                isHouseholdLead: true,
+                householdId: enrolled.householdId,
+            }
+        });
+        parentId = parent.id;
+        // A second member of the same household who is NOT a lead — the roster must
+        // not list them as a parent.
+        const sibling = await prisma.person.create({
+            data: { email: 'sibling-prog-id-api-test@example.com', name: SIBLING_NAME, householdId: enrolled.householdId }
+        });
+        siblingId = sibling.id;
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId];
+        const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId, parentId, siblingId];
 
         if (memberHouseholdId) {
             await prisma.orgMembership.deleteMany({
@@ -260,6 +286,43 @@ describe('Individual Program API Integration Tests', () => {
              expect(Array.isArray(data.participants)).toBe(true);
              expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
              expect(JSON.stringify(data)).toContain(ENROLLED_NAME);
+        });
+
+        // ── Parent contact band (#1400) ────────────────────────────────────────────
+        // Runs the REAL stack (handler -> registry -> scopesHeld -> stripBag), so it
+        // proves the their_program_households:pii grant actually delivers, not just
+        // that the select asked for it.
+        it('delivers the parents (household leads only) to the program lead mentor', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             const row = data.participants.find((p: { personId: number }) => p.personId === enrolledId);
+             const parents = row.person.household.householdMembers;
+             // The non-lead sibling is filtered out by the select.
+             expect(parents.map((m: { id: number }) => m.id)).toEqual([parentId]);
+             expect(parents[0].name).toBe(PARENT_NAME);
+             expect(parents[0].phone).toBe(PARENT_PHONE);
+             expect(parents[0].email).toBe(PARENT_EMAIL);
+             expect(JSON.stringify(data)).not.toContain(SIBLING_NAME);
+        });
+
+        it('strips the parents contact details for an enrolled non-staff caller', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: enrolledId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             const row = data.participants.find((p: { personId: number }) => p.personId === enrolledId);
+             const parents = row.person.household.householdMembers;
+             expect(parents[0].name).toBe(PARENT_NAME); // public tier survives
+             expect(parents[0].phone).toBeUndefined();
+             expect(parents[0].email).toBeUndefined();
         });
 
         it('returns the roster to an enrolled participant (their own household)', async () => {
