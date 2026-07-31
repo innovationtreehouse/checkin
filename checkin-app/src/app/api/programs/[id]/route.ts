@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth, authenticateRequest } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
-import { isActiveOrgMember, isActiveOrgMemberThrough, programCoverageDate } from "@/lib/orgMembership";
+import { isActiveOrgMember, isDuesSettled, isDuesSettledThrough, programCoverageDate } from "@/lib/orgMembership";
 import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
@@ -38,9 +38,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         startAt: body.startAt ? new Date(body.startAt) : null,
         endAt: body.endAt ? new Date(body.endAt) : null,
     });
+    // viewerIsMember answers "is this household a Treehouse Member" (ACTIVE only);
+    // viewerMemberPricingEligible answers the pricing question, which also covers a
+    // paid household still awaiting background clearance (#1397).
     const [viewerIsMember, viewerMemberPricingEligible] = await Promise.all([
         isActiveOrgMember(auth.user.id),
-        isActiveOrgMemberThrough(auth.user.id, coverageDate),
+        isDuesSettledThrough(auth.user.id, coverageDate),
     ]);
     return NextResponse.json({ ...body, viewerIsMember, viewerMemberPricingEligible });
 }
@@ -89,10 +92,12 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.personId === sessionUser.id && v.isCore);
     const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
 
+    // Dues settled, not "is a member": a paid household awaiting background
+    // clearance is admitted to members-only programs (#1397).
     if (program.orgMemberOnly && !isPrivileged) {
         if (!sessionUser) throw notFound('Program not found');
-        const hasActiveMembership = await isActiveOrgMember(sessionUser.id);
-        if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
+        const duesSettled = await isDuesSettled(sessionUser.id);
+        if (!duesSettled) throw forbidden('Forbidden: Member-Only Program');
     }
 
     // ── Association gate (deliberate inline exception) ──────────────────────────

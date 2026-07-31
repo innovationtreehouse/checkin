@@ -20,6 +20,7 @@
 import type { Prisma, OrgMembershipProcessStatus, OrgMembershipProcessKind } from "@/generated/prisma/client";
 import {
     type StateSet,
+    defineStateSet,
     fromStatusWhere,
     assertNever,
     defineValidator,
@@ -141,6 +142,25 @@ export const awaitingBgReview: StateSet<AwaitingBgRow, Where> = {
         ],
     },
 };
+
+// ── dues settled, background check outstanding ────────────────────────────────
+
+/**
+ * Dues paid in full, waiting on the board's background-check clearance. PROGRAM
+ * ACCESS reads this set: a household here gets the member rate and sees
+ * members-only programs even though its membership is not ACTIVE yet (#1397) —
+ * see lib/orgMembership.ts's DUES_SETTLED_PERSON_WHERE. It is NOT an answer to
+ * "is this a member"; ACTIVE stays that answer for every other benefit and every
+ * member-only audience.
+ *
+ * `paidAt` is redundant with the status today (activate() is the only writer and
+ * always stamps it) and is asserted anyway — the money question must not rest on
+ * a status invariant holding for a row some future path writes differently.
+ */
+export const duesSettledAwaitingBg = defineStateSet<Where>()({
+    statuses: ["PENDING_BG_CLEARANCE"],
+    flags: { paidAt: true },
+});
 
 // ── renewal grantability (fix #3) & settled-this-cycle (fix #4) ────────────────
 
