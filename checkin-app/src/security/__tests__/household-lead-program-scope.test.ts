@@ -84,13 +84,13 @@ describe('Person.their_program_households scope resolution', () => {
         expect(scopesHeld('Person', outsiderParentRow, lead).has('their_program_households')).toBe(false);
     });
 
-    it('fails closed when the row omits isHouseholdLead', () => {
-        const { isHouseholdLead: _omitted, ...noFlag } = parentRow;
+    it('fails closed when the select omitted isHouseholdLead', () => {
+        const noFlag = { id: 500, householdId: 42, name: 'Sam Smith', phone: '5125551234' };
         expect(scopesHeld('Person', noFlag, lead).has('their_program_households')).toBe(false);
     });
 
-    it('fails closed when the row omits householdId', () => {
-        const { householdId: _omitted, ...noHousehold } = parentRow;
+    it('fails closed when the select omitted householdId', () => {
+        const noHousehold = { id: 500, isHouseholdLead: true, name: 'Sam Smith', phone: '5125551234' };
         expect(scopesHeld('Person', noHousehold, lead).has('their_program_households')).toBe(false);
     });
 
