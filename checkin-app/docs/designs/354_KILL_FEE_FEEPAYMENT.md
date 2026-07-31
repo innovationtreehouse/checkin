@@ -104,9 +104,16 @@ is a grant list; nothing asserts it equals the actual include, and `Fee` is not 
 | File | Change |
 |---|---|
 | `src/security/registry.ts:43` | drop `'Fee'` from `returns`; fix the `fees (Fee)` comment (line 41) |
-| `src/security/scopeBindings.ts:92-95` | remove the `FeePayment` binding; update the `Fee`/`RSVP` explainer comments (18-23, 74-77) |
 
-Both are now-unused grants → inert removals. No app code in this PR.
+A now-unused grant → inert removal. No app code in this PR.
+
+The `FeePayment` binding (`src/security/scopeBindings.ts:92-95`) **cannot** move here: while
+`FeePayment` is still in `schema.prisma`, its `personal` fields make it sensitive-and-scopable, so
+`validateBindings` coverage rule (b) (`scopes.ts`) errors "silent over-restriction" the moment the
+binding disappears. `OPT_OUT_PENDING_ROUTE` is a work queue for routes not built yet, not a
+graveyard for dying models. The binding goes in Release 2, where the model leaves `classifications`
+in the same PR (keeping it past that point flips the failure to rule (a), "binding for unknown
+model").
 
 Gate each PR: full `jest` (per `jest-run` skill), not just `tsc`. Watch the merge integration test (1a)
 and `routeAuthDrift` (1b).
@@ -118,6 +125,10 @@ and `routeAuthDrift` (1b).
 | `prisma/schema.prisma:893` | remove `fees Fee[]` on `Program` |
 | `prisma/schema.prisma:167` | remove `feePayments FeePayment[]` on `Person` |
 | `prisma/schema.prisma:956-992` | remove `model Fee` + `model FeePayment` |
+| `src/security/scopeBindings.ts:92-95` | remove the `FeePayment` binding (must land with the schema removal — see Release 1b); update the `Fee`/`RSVP` explainer comments (18-23, 74-77) |
+| `tests/security/scopeBindingsEquivalence.test.ts` | drop the `FeePayment` case + the unbound-model `'Fee'` entry; binding count 18 → 17 |
+| `tests/security/ctxNeeds.test.ts:194` | drop `'Fee'` from `MODELS` |
+| `src/__tests__/livePersonDriftGuard.test.ts:38,211` | drop `feePayment` from the person-scoped model regex |
 | `prisma/migrations/<new>/migration.sql` | the DROP below |
 | `src/security/generated/classifications.ts` | **regenerated** by `prisma generate` (schema-driven, not hand-edited); `check-route-coverage.ts` guards freshness. If `security-boundary-isolation.yml` flags `src/security/generated/`, split this regen into its own boundary PR |
 
