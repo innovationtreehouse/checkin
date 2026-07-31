@@ -489,6 +489,85 @@ describe("ProgramDetailsPage", () => {
     );
   });
 
+  it("surfaces the server error when removing a pending participant is rejected", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = routedFetch([
+      {
+        url: "/api/programs/1/participants", method: "DELETE",
+        result: { ok: false, status: 403, body: { error: "Forbidden: Not authorized to remove this participant" } },
+      },
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    await screen.findByText(/Charlie Kid/);
+
+    // Volunteer (201), active participant (101), then the pending one (102).
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[2]);
+    const modal = await screen.findByRole("dialog", { name: "Remove Participant" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/programs/1/participants",
+        expect.objectContaining({ method: "DELETE", body: JSON.stringify({ participantId: 102 }) }),
+      ),
+    );
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Forbidden: Not authorized to remove this participant" }),
+      ),
+    );
+    // The row is still there — the failed removal must not look like it worked.
+    expect(screen.getByText(/Charlie Kid/)).toBeInTheDocument();
+  });
+
+  it("surfaces a network error when the remove request throws", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    routedFetch([
+      { url: "/api/programs/1/participants", method: "DELETE", result: { throws: true } },
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    await screen.findByText(/Charlie Kid/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[2]);
+    const modal = await screen.findByRole("dialog", { name: "Remove Participant" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Remove" }));
+
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Network error — please try again." }),
+      ),
+    );
+  });
+
+  it("surfaces the server error when removing a volunteer is rejected", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    routedFetch([
+      { url: "/api/programs/1/volunteers", method: "DELETE", result: { ok: false, status: 500, body: {} } },
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    await screen.findByText(/Vera Volunteer/);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    const modal = await screen.findByRole("dialog", { name: "Remove Volunteer" });
+    fireEvent.click(within(modal).getByRole("button", { name: "Remove" }));
+
+    // No `error` in the body -> the status-code fallback.
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", message: "Request failed (500)." }),
+      ),
+    );
+  });
+
   it("shows past-confirmed and future events distinctly, and can schedule a new session", async () => {
     const eventsProgram = {
       ...programData,
