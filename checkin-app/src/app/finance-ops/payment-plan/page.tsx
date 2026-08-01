@@ -38,10 +38,10 @@ type PaymentPlanRequest = {
 
 export default function PendingParticipantsPage() {
   const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
-  // Conflict of interest: a board member may not approve their OWN household member's
-  // plan (mirrors the server guard). Sysadmin keeps the button. UX only — server enforces.
+  // Conflict of interest: no actor may approve their OWN household member's plan
+  // (mirrors the server guard). UX only — server enforces.
   const ownHousehold = (req: PaymentPlanRequest) =>
-    me?.isSysadmin !== true && sharesHousehold(me?.householdId, req.person.householdId);
+    sharesHousehold(me?.householdId, req.person.householdId);
 
   const [requests, setRequests] = useState<PaymentPlanRequest[]>([]);
   const [cutoff, setCutoff] = useState<string | null>(null);
@@ -204,7 +204,7 @@ export default function PendingParticipantsPage() {
           <Button
             size="xs" fz={15} color="red" variant="light"
             disabled={ownHousehold(req)}
-            title={ownHousehold(req) ? "You can't refuse your own household's plan — a sysadmin must." : undefined}
+            title={ownHousehold(req) ? "You can't refuse your own household's plan — someone outside your household must." : undefined}
             onClick={() => handleRefuse(req.programId, req.personId)}
           >
             Refuse
@@ -212,7 +212,7 @@ export default function PendingParticipantsPage() {
           <Button
             size="xs" fz={15} variant="light"
             disabled={ownHousehold(req)}
-            title={ownHousehold(req) ? "You can't approve your own household's plan — a sysadmin must." : undefined}
+            title={ownHousehold(req) ? "You can't approve your own household's plan — someone outside your household must." : undefined}
             onClick={() => handleApprove(req.programId, req.personId)}
           >
             Approve &amp; Mark Active

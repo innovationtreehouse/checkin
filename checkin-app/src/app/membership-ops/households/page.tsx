@@ -215,13 +215,12 @@ export default function AdminHouseholdsPage() {
               const hasActiveMembership = status === "ACTIVE";
               const isDenied = status === "DENIED";
               const hasBoardMember = household.householdMembers?.some((p) => p.isBoardMember) ?? false;
-              // Conflict of interest: a board member may not GRANT their own household
-              // membership (bypasses payment + background check). Sysadmin keeps the button.
-              // Mirrors the server guard; disabled state is UX only. Revoke stays allowed.
-              // A board member may not grant their own household (bypasses payment + BG).
+              // Conflict of interest: no actor may GRANT their own household membership
+              // (bypasses payment + background check). Mirrors the server guard; disabled
+              // state is UX only. Revoke stays allowed.
               // Grant Membership only offers on non-members; the coming-year override applies
               // to existing members too, so it needs the conflict regardless of current status.
-              const ownHouseholdConflict = me?.isSysadmin !== true && sharesHousehold(me?.householdId, household.id);
+              const ownHouseholdConflict = sharesHousehold(me?.householdId, household.id);
               const ownGrantBlocked = !hasActiveMembership && ownHouseholdConflict;
               const hasBrokenEmail = household.householdMembers?.some((p) => p.emailUndeliverableAt) ?? false;
               // Staff households (@innovationtreehouse.org) aren't program families: block
@@ -321,7 +320,7 @@ export default function AdminHouseholdsPage() {
                               !hasActiveMembership && isStaffHousehold
                                 ? "Staff households can't be granted membership."
                                 : ownGrantBlocked
-                                  ? "You can't grant your own household's membership — a sysadmin must."
+                                  ? "You can't grant your own household's membership — someone outside your household must."
                                   : undefined
                             }
                             onClick={() => toggleMembership(household.id, hasActiveMembership)}

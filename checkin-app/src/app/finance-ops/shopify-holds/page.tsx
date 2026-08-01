@@ -30,11 +30,11 @@ type Target = { programId: number; participantId: number } | null;
 
 export default function ShopifyHoldsPage() {
   const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
-  // Conflict of interest mirrors the scholarship queue: a board member may not
-  // approve/deny their OWN household's request (server enforces; this is UX). It
-  // does NOT gate the manual-hold action — that confers no benefit.
+  // Conflict of interest mirrors the scholarship queue: no actor may approve/deny
+  // their OWN household's request (server enforces; this is UX). It does NOT gate
+  // the manual-hold action — that confers no benefit.
   const ownHousehold = (row: HoldFailedRow) =>
-    me?.isSysadmin !== true && sharesHousehold(me?.householdId, row.person.householdId);
+    sharesHousehold(me?.householdId, row.person.householdId);
 
   const [rows, setRows] = useState<HoldFailedRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,7 +132,7 @@ export default function ShopifyHoldsPage() {
           <Button
             size="xs" fz={15} color="red" variant="subtle"
             disabled={ownHousehold(r)}
-            title={ownHousehold(r) ? "You can't deny your own household's plan — a sysadmin must." : undefined}
+            title={ownHousehold(r) ? "You can't deny your own household's plan — someone outside your household must." : undefined}
             onClick={() => openFor(r, 'deny')}
           >
             Deny (override)
@@ -140,7 +140,7 @@ export default function ShopifyHoldsPage() {
           <Button
             size="xs" fz={15} color="red" variant="subtle"
             disabled={ownHousehold(r)}
-            title={ownHousehold(r) ? "You can't approve your own household's plan — a sysadmin must." : undefined}
+            title={ownHousehold(r) ? "You can't approve your own household's plan — someone outside your household must." : undefined}
             onClick={() => openFor(r, 'approve')}
           >
             Approve (override)

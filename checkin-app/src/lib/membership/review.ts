@@ -361,7 +361,7 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
  * `approve` stays BLOCKED-only — force-clearing a review still open to its
  * second reviewer is what the two-reviewer rule forbids.
  */
-export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve", opts?: { isSysadmin?: boolean }) {
+export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve") {
     const process = await prisma.orgMembershipProcess.findUnique({
         where: { id: processId },
         include: { orgMembership: { select: { household: { select: { intakeNotes: true } } } } },
@@ -369,12 +369,12 @@ export async function overrideBlocked(processId: number, actorId: number, action
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (action === "approve" && process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
-    // Conflict of interest: a board member may not override their OWN household's blocked
+    // Conflict of interest: no actor may override their OWN household's blocked
     // application — else they could force-clear their family's failed background check, the
-    // very thing attest()'s same-household gate forbids. Sysadmin bypasses (opts.isSysadmin).
+    // very thing attest()'s same-household gate forbids. No role bypasses this.
     const applicantHouseholdId = await applicantHousehold(prisma, process);
-    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId, { isSysadmin: opts?.isSysadmin })) {
-        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — a sysadmin must.");
+    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId)) {
+        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — someone outside your household must.");
     }
 
     if (action === "reset") {
