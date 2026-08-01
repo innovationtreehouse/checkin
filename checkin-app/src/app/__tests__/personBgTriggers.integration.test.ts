@@ -11,6 +11,7 @@
  */
 
 import { runPersonBgAnnualSweep } from '@/lib/membership/personBgTriggers';
+import { nextBoundary } from '@/lib/membership/renewal';
 import { attest, eligibleReviewProcessIds, ReviewError } from '@/lib/membership/review';
 import { activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
@@ -25,6 +26,16 @@ const BOUNDARY_SEED = new Date('2000-09-01');
 
 /** Adult born long ago → ≥18 at any as-of date. */
 const ADULT_DOB = new Date('1990-01-01');
+
+/**
+ * The boundary the sweep itself will compute, and a DOB whose 18th birthday lands
+ * two months past it → 17 as of the boundary → MINOR. Derived, never a literal:
+ * nextBoundary() rolls with the real clock, so a fixed DOB ages past the boundary
+ * on a date nobody wrote down. The age gate is boundary-inclusive (a birthday
+ * exactly on the boundary counts as ≥18), hence the two-month margin.
+ */
+const BOUNDARY = nextBoundary(BOUNDARY_SEED, new Date());
+const NOT_YET_18_DOB = new Date(Date.UTC(BOUNDARY.getUTCFullYear() - 18, BOUNDARY.getUTCMonth() + 2, BOUNDARY.getUTCDate()));
 
 async function makeHousehold(slug: string) {
     return prisma.household.create({ data: { name: `${TAG} ${slug}` } });
@@ -111,8 +122,8 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         await setRecheckMonths(RECHECK_MONTHS);
         const hh = await makeHousehold('cohortA');
         const adult = await makePerson('cohort-adult', hh.id, { dateOfBirth: ADULT_DOB });
-        // Turns 18 AFTER the Sept-1 boundary → 17 as of the boundary → MINOR, not opened.
-        const notYet18 = await makePerson('cohort-notyet', hh.id, { dateOfBirth: new Date('2008-10-01') });
+        // Turns 18 AFTER the boundary → 17 as of the boundary → MINOR, not opened.
+        const notYet18 = await makePerson('cohort-notyet', hh.id, { dateOfBirth: NOT_YET_18_DOB });
         const fresh = await makePerson('cohort-fresh', hh.id, { dateOfBirth: ADULT_DOB, lastBackgroundCheck: new Date() });
         for (const p of [adult, notYet18, fresh]) await attachToProgram(`cohort-${p.id}`, p.id);
         // Not program-attached → out of scope even though ≥18.
@@ -165,7 +176,7 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         // no role-assignment trigger, and the annual run judges age as-of the boundary —
         // so nothing opens until the next annual run.
         const existingHh = await makeHousehold('existingHh');
-        const roleTaker = await makePerson('role-taker', existingHh.id, { dateOfBirth: new Date('2008-10-01') });
+        const roleTaker = await makePerson('role-taker', existingHh.id, { dateOfBirth: NOT_YET_18_DOB });
         await attachToProgram('role-taker', roleTaker.id);
         await runPersonBgAnnualSweep(new Date());
         expect(await personBgCountFor(roleTaker.id)).toBe(0);
