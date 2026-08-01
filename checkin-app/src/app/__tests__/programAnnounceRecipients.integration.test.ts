@@ -15,6 +15,7 @@ jest.mock('@/lib/email', () => ({
 }));
 
 import { notifyNewProgramAnnounced } from '@/lib/notifications';
+import { nextBoundary } from '@/lib/membership/renewal';
 import { sendEmail } from '@/lib/email';
 import prisma from '@/lib/prisma';
 
@@ -107,6 +108,12 @@ describe('notifyNewProgramAnnounced recipient set (#1153 covered-member audience
     describe('expired-at-midyear boundary', () => {
         let prevBoardSettings: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number } | null = null;
         const AUG1 = new Date(Date.UTC(2020, 7, 1)); // only month/day matter to nextBoundary()
+        // Both program dates are derived from the boundary the code will actually
+        // compute, never hardcoded: a literal date silently swaps the two cases
+        // once the real clock passes it.
+        const boundary = nextBoundary(AUG1, new Date());
+        const ENDS_AFTER_BOUNDARY = new Date(boundary.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const ENDS_BEFORE_BOUNDARY = new Date((Date.now() + boundary.getTime()) / 2);
 
         beforeAll(async () => {
             const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
@@ -129,13 +136,13 @@ describe('notifyNewProgramAnnounced recipient set (#1153 covered-member audience
         });
 
         it('excludes the covered household when the program ends AFTER the boundary (unrenewed)', async () => {
-            await notifyNewProgramAnnounced({ name: 'Robotics Past Boundary', startAt: null, endAt: new Date('2026-12-01') });
+            await notifyNewProgramAnnounced({ name: 'Robotics Past Boundary', startAt: null, endAt: ENDS_AFTER_BOUNDARY });
             const recipients = mockSendEmail.mock.calls.map((c) => c[0]);
             expect(recipients).not.toContain(`covered-${TAG}@example.com`);
         });
 
         it('includes the SAME covered household when the program ends BEFORE the boundary', async () => {
-            await notifyNewProgramAnnounced({ name: 'Robotics Before Boundary', startAt: null, endAt: new Date('2026-07-25') });
+            await notifyNewProgramAnnounced({ name: 'Robotics Before Boundary', startAt: null, endAt: ENDS_BEFORE_BOUNDARY });
             const recipients = mockSendEmail.mock.calls.map((c) => c[0]);
             expect(recipients).toContain(`covered-${TAG}@example.com`);
         });
