@@ -15,8 +15,8 @@ describe("sharesHousehold", () => {
 });
 
 describe("hasHouseholdConflict", () => {
-    const db = (actorHouseholdId: number | null) =>
-        ({ person: { findUnique: jest.fn().mockResolvedValue(actorHouseholdId == null ? null : { householdId: actorHouseholdId }) } }) as unknown as DbClient;
+    const db = (actorHouseholdId: number | null, actorRow: Record<string, unknown> = {}) =>
+        ({ person: { findUnique: jest.fn().mockResolvedValue(actorHouseholdId == null ? null : { householdId: actorHouseholdId, ...actorRow }) } }) as unknown as DbClient;
 
     it("conflict when the actor shares the subject's household", async () => {
         expect(await hasHouseholdConflict(db(3), 1, 3)).toBe(true);
@@ -26,8 +26,9 @@ describe("hasHouseholdConflict", () => {
         expect(await hasHouseholdConflict(db(4), 1, 3)).toBe(false);
     });
 
-    it("takes no role argument — there is no way for a caller to opt out of the rule", () => {
-        expect(hasHouseholdConflict).toHaveLength(3); // db, actorId, subjectHouseholdId
+    it("still conflicts when the actor holds every privileged role", async () => {
+        const privileged = { isSysadmin: true, isBoardMember: true, isBackgroundCheckReviewer: true, isKeyholder: true };
+        expect(await hasHouseholdConflict(db(3, privileged), 1, 3)).toBe(true);
     });
 
     it("no conflict when the subject has no household to conflict with", async () => {
