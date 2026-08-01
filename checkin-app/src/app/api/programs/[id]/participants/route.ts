@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { checkProgramAge } from "@/lib/programAge";
+import { isActiveOrgMember } from "@/lib/orgMembership";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { apiError } from "@/lib/api-response";
 
@@ -90,6 +91,15 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             // Check Enrollment Status
             if (currentProgram.enrollmentStatus === 'CLOSED') {
                 return NextResponse.json({ error: "Program enrollment is currently closed.", requiresOverride: true }, { status: 400 });
+            }
+
+            // Members-only, judged on the PERSON being enrolled (a household lead
+            // enrolling a dependent is judged on the dependent's household). The
+            // sibling read routes only HIDE such a program; the id is a small
+            // integer and a program can flip to orgMemberOnly after it was public,
+            // so the write path needs its own gate.
+            if (currentProgram.orgMemberOnly && !(await isActiveOrgMember(participantId))) {
+                return NextResponse.json({ error: "This program is for Treehouse Members only.", requiresOverride: true }, { status: 400 });
             }
 
             // Check Age (as of program start; now for dateless programs). A declared
