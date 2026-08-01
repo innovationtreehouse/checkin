@@ -22,6 +22,7 @@
 import { stripValue } from '@/security/stripper';
 import { scopesHeld, type CallerContext } from '@/security/access-resolvers';
 import { getRoute, type Role, type Token } from '@/security/core';
+import { SCOPE_BINDINGS } from '@/security/scopeBindings';
 import '@/security/registry';
 
 function ctx(opts: Partial<CallerContext> = {}): CallerContext {
@@ -137,6 +138,12 @@ describe('Parent field-stripping on GET /api/programs/[id]', () => {
         expect(out.phone).toBeUndefined();
     });
 
+    it('the Household model stays bound to their_households only', () => {
+        // The intakeNotes GUARD in schema.prisma rests on this: a program- or
+        // keyholder-scoped token must never resolve on a Household row.
+        expect(Object.keys(SCOPE_BINDINGS.Household)).toEqual(['their_households']);
+    });
+
     it('the pii grant does NOT reach Household.intakeNotes or the address', () => {
         const tokens = tokensFor(ENDPOINT, 'programLeadMentor');
         const household = { id: 42, name: 'Smith', intakeNotes: 'please call mom first', line1: '1 Main St', city: 'Austin' };
@@ -145,5 +152,59 @@ describe('Parent field-stripping on GET /api/programs/[id]', () => {
         expect(out.intakeNotes).toBeUndefined();
         expect(out.line1).toBeUndefined();
         expect(out.city).toBeUndefined();
+    });
+});
+
+// The route ships `volunteers: { include: { person: true } }` and `leadMentor: true`
+// — full-row Person selects outside the participant bag. A volunteer who is also a
+// household lead of an in-scope household (a parent volunteer) therefore resolves the
+// new binding on merge, with no follow-up. These pin what that delivers.
+describe('Parent volunteers, the shape the route already returns', () => {
+    const parentVolunteerRow = {
+        programId: 100,
+        personId: 500,
+        isCore: false,
+        person: {
+            ...parentRow,
+            dateOfBirth: new Date('1985-04-02'),
+            allergies: 'penicillin',
+            emailSuppressed: false,
+        },
+    };
+
+    it('delivers the parent volunteer contact details to a lead', () => {
+        const tokens = tokensFor(ENDPOINT, 'programLeadMentor');
+        const out = stripValue('ProgramVolunteer', parentVolunteerRow, tokens, lead) as {
+            person: Record<string, unknown>;
+        };
+        expect(out.person.email).toBe('sam@example.com');
+        expect(out.person.phone).toBe('5125551234');
+    });
+
+    it('also delivers their personal tier — the collateral of reusing the scope', () => {
+        // their_program_households:personal is pre-existing on this view; binding
+        // Person to the scope is what makes it resolve here. Narrowing the route's
+        // select is what takes these back off the wire.
+        const tokens = tokensFor(ENDPOINT, 'programLeadMentor');
+        const out = stripValue('ProgramVolunteer', parentVolunteerRow, tokens, lead) as {
+            person: Record<string, unknown>;
+        };
+        expect(out.person.dateOfBirth).toEqual(new Date('1985-04-02'));
+        expect(out.person.allergies).toBe('penicillin');
+        expect(out.person.emailSuppressed).toBe(false);
+    });
+
+    it('a volunteer who is not a household lead keeps public tier only', () => {
+        const tokens = tokensFor(ENDPOINT, 'programLeadMentor');
+        const row = {
+            ...parentVolunteerRow,
+            person: { ...parentVolunteerRow.person, isHouseholdLead: false },
+        };
+        const out = stripValue('ProgramVolunteer', row, tokens, lead) as {
+            person: Record<string, unknown>;
+        };
+        expect(out.person.name).toBe('Sam Smith');
+        expect(out.person.email).toBeUndefined();
+        expect(out.person.allergies).toBeUndefined();
     });
 });
