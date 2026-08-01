@@ -63,7 +63,10 @@ describe('logger DB persistence + TTL purge', () => {
         });
 
         // logBackendError writes the new row, then runs the 30-day purge.
+        // Spy to suppress the intentional console.error it now emits.
+        const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
         await logBackendError(new Error('trigger'), `${TAG}-trigger`);
+        consoleSpy.mockRestore();
 
         expect(await prisma.errorLog.findUnique({ where: { id: old.id } })).toBeNull();
         expect(await prisma.errorLog.findUnique({ where: { id: recent.id } })).not.toBeNull();
