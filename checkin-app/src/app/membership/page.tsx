@@ -734,9 +734,6 @@ export default function MembershipPage() {
                       errors={{ line1: fieldErrors.address, city: fieldErrors.addrCity, state: fieldErrors.addrState, postalCode: fieldErrors.addrZip }}
                       onErrorClear={(f) => clearErr(f === "line1" ? "address" : f === "city" ? "addrCity" : f === "state" ? "addrState" : "addrZip")}
                     />
-                    <Text c="dimmed" size="sm" mt="md" mb="xs">
-                      Someone we can call in an emergency — must be an adult outside your household.
-                    </Text>
                     <EmergencyContactForm
                       emName={emName} setEmName={setEmName}
                       emPhone={emPhone} setEmPhone={setEmPhone}

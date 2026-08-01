@@ -249,7 +249,7 @@ export async function attest(
     // Side effects outside the transaction (a slow/failed send must not roll it back).
     if ("activated" in result) {
         if (result.activated) {
-            await sendCongrats(result.householdId!);
+            await sendCongrats(result.householdId!, result.isInitial);
             // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
             // for any program-attached ≥18 person in the household (as-of activation).
             if (result.isInitial) await openPersonBgForNewMember(result.householdId!, new Date());
@@ -397,7 +397,7 @@ export async function overrideBlocked(processId: number, actorId: number, action
         return clearBackgroundCheck(tx, processId, actorId);
     });
     if (activated) {
-        await sendCongrats(householdId!);
+        await sendCongrats(householdId!, isInitial);
         // Trigger C: a board force-clear can be the first activation of a brand-new
         // (INITIAL) member — open PERSON_BG for the household's program-attached adults.
         if (isInitial) await openPersonBgForNewMember(householdId!, new Date());

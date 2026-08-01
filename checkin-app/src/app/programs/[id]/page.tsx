@@ -134,19 +134,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         if (data.household?.householdMembers) members = data.household.householdMembers;
       }
       setHouseholdMembers(members);
-      // Default to me if I'm eligible, else the first eligible member, else none —
-      // never auto-select someone who'd fail the age/DOB check.
-      const me = members.find((p) => p.id === currentUserId);
-      const def = me && enrollBlock(me).reason === null
-        ? me.id
-        : members.find((m) => enrollBlock(m).reason === null)?.id;
-      if (def != null) {
-        setSelectedParticipantIds([def]);
-      } else {
-        // Nobody new to enroll — preselect everyone with a payment still owed,
-        // so the page loads ready to finish that checkout in one click.
-        setSelectedParticipantIds(members.filter((m) => enrollBlock(m).reason === 'pending').map((m) => m.id));
-      }
+      // Nobody is pre-checked: enrolling creates a PENDING row and a payment
+      // obligation, so each participant must be an explicit click — including
+      // the account holder, the easiest person to enroll by accident.
+      setSelectedParticipantIds([]);
 
       const hasEnrollable = members.some((m) => { const r = enrollBlock(m).reason; return r === null || r === 'pending'; });
       // Emergency contact isn't in /api/household; probe the process-free intake
@@ -167,8 +158,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
       setNeedsSetup(!hasEnrollable || !hasValidEmergencyContact);
     } catch {
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-      setSelectedParticipantIds([currentUserId]);
+      const solo = { id: currentUserId, name: "Myself", dateOfBirth: null };
+      setHouseholdMembers([solo]);
+      // The solo entry carries no DOB, so an age-gated program blocks it and
+      // leaves nothing to check. Offer household setup instead of a panel whose
+      // only row is disabled.
+      const reason = enrollBlock(solo).reason;
+      setNeedsSetup(!(reason === null || reason === 'pending'));
     } finally {
       setLoadingHousehold(false);
     }
@@ -191,7 +187,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   };
 
   const handleRequestPaymentPlan = async () => {
-    if (!session || selectedParticipantIds.length === 0) return router.push('/');
+    if (!session) return router.push('/');
+    if (selectedParticipantIds.length === 0) return;
 
     setEnrolling(true);
     setMessage("");
@@ -240,10 +237,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   };
 
   const handleEnroll = async (override = false) => {
-    if (!session || selectedParticipantIds.length === 0) {
+    if (!session) {
       router.push('/');
       return;
     }
+    if (selectedParticipantIds.length === 0) return;
 
     const isPayingOnShopify = !override && (program?.orgMemberPriceCents || program?.nonOrgMemberPriceCents);
 
@@ -557,6 +555,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Stack>
               ) : (
               <Stack align="center">
+                {selectedParticipantIds.length === 0 && (
+                  <Text size="sm" c="dimmed" ta="center">
+                    Check the box next to each person you want to enroll.
+                  </Text>
+                )}
+
                 <Button
                   fullWidth
                   size="md"
@@ -574,6 +578,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     variant="light"
                     type="button"
                     onClick={handleRequestPaymentPlan}
+                    disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
                     styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                   >
                     Request a scholarship or payment plan from the Scholarship Review Team
@@ -588,7 +593,12 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                     As an Admin or Lead Mentor, you can bypass this restriction. Are you sure you want
                     to force enroll?
                   </Text>
-                  <Button color="yellow" fullWidth onClick={() => handleEnroll(true)}>
+                  <Button
+                    color="yellow"
+                    fullWidth
+                    onClick={() => handleEnroll(true)}
+                    disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
+                  >
                     Force Enroll (Override)
                   </Button>
                 </Alert>

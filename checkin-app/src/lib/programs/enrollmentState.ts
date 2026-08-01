@@ -6,10 +6,10 @@
  * `where`/predicate the existing compare-and-set guards already hand-write; it
  * never executes a transition. Postgres stays the runtime authority.
  *
- * Client-safe (docs/designs/LIFECYCLE.md): value-imports NOTHING from
- * `@/generated/prisma`. The status union is a local string-literal type checked
- * against the Prisma enum by a TYPE-ONLY parity line; the `where` fragments are
- * typed via `import type { Prisma }` (erased at build).
+ * Client-safe — a Prisma value here would pull the generated client into a page
+ * bundle. `no-restricted-imports` in `eslint.config.mjs` allows
+ * `@/generated/prisma` only as `import type`, so the status union is a local
+ * string-literal type checked against the Prisma enum by a TYPE-ONLY parity line.
  */
 import {
     defineStateSet,
@@ -21,7 +21,6 @@ import {
     type Expect,
     type Equal,
 } from '@/lib/lifecycle';
-// Type-only: erased at build, so no Prisma value reaches the client bundle.
 import type { Prisma, ProgramParticipantStatus as PrismaStatus } from '@/generated/prisma/client';
 
 /** Local status union — the trunk `status` column. `UNENROLLED` (∅/no row) is

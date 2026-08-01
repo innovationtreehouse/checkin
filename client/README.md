@@ -71,6 +71,25 @@ python3 client.py
 ./kiosk.sh
 ```
 
+## Tests
+
+```bash
+pip install -r requirements.txt
+python3 -m unittest discover
+```
+
+Run from `client/`. CI runs the same command (the `Kiosk client tests (Python)`
+job in `.github/workflows/ci.yml`).
+
+`kiosk-signing-vector.test.json` is a golden vector pinning the Ed25519
+request-signing contract: `test_signing_vector.py` reproduces its signature, and
+the backend's `verifyKioskSignature` test verifies the same one, so a change to
+the message format on either side turns that side red.
+
+> **The key in that fixture is test-only and public.** Never write it to
+> `client.key` on a Pi, and never set its public key as `KIOSK_PUBLIC_KEY` on any
+> instance — anyone could then forge signed kiosk requests.
+
 ### Testing without a scanner
 
 When `usb_device` is empty in `config.json`, the client reads participant IDs from stdin. Just type an ID and press Enter to simulate a scan.
@@ -108,6 +127,8 @@ When `usb_device` is empty in `config.json`, the client reads participant IDs fr
 ## Files
 
 - `client.py` — Main process (signing proxy server + scan listener + flash overlay)
+- `badge.py` — Send one signed scan by hand; reuses `client.py`'s signing
+- `scanner_discovery.py` — Manual helper: list USB input devices matching a pattern (needs `python3-evdev` and real hardware)
 - `generate_keys.py` — One-time Ed25519 keypair generator
 - `kiosk.sh` — Pi startup script (launches client.py, reads port from config, opens Chromium)
 - `migrate.sh` — One-time migration script for Pis on the old standalone `checkin-client` repo

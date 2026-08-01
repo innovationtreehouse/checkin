@@ -10,12 +10,12 @@
  * `FOR UPDATE` lock, conditional `updateMany`, and partial-unique-index +
  * P2002 catch is unchanged and merely *fed* the status set it names.
  *
- * CLIENT-SAFETY (docs/designs/LIFECYCLE.md) — CRITICAL, pages import
- * this file: NOTHING here value-imports `@/generated/prisma`. `Prisma` and the
- * enums are `import type` only (erased at build); predicates take booleans, not
- * `Date | null`; the `where` fragments are plain object literals typed via the
- * generic. The enum-parity assertion is compile-time here (type-only) and
- * value-based only in the test.
+ * Client-safe — pages import this file, and a Prisma value here would pull the
+ * generated client into a page bundle. `no-restricted-imports` in
+ * `eslint.config.mjs` allows `@/generated/prisma` only as `import type`.
+ * Predicates therefore take booleans, not `Date | null`; the `where` fragments
+ * are plain object literals typed via the generic; enum parity is compile-time
+ * here and value-based only in the test.
  */
 import type { Prisma, OrgMembershipProcessStatus, OrgMembershipProcessKind } from "@/generated/prisma/client";
 import {
