@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Textarea, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { type AlertTone } from "@/components/admin/AlertBanner";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
 
@@ -86,6 +87,48 @@ export default function MembershipReviewPage() {
     }
   };
 
+  // Who this review is about — the PERSON_BG subject, else the applicant household.
+  const applicantLabel = (item: QueueItem) =>
+    item.subjectPerson
+      ? item.subjectPerson.name || `Person #${item.subjectPerson.id}`
+      : item.orgMembership?.household?.name || `Household (application #${item.id})`;
+
+  // Attesting is a one-click, two-of-two decision, and the SECOND approval clears the
+  // check outright — stamping the household, opening payment or activating, and
+  // emailing the family. Confirm both actions, and say what the click actually does
+  // rather than "are you sure?", which trains people to click through.
+  const confirmSubmit = (item: QueueItem, result: "APPROVE" | "REJECT") => {
+    const who = applicantLabel(item);
+    const clearing = result === "APPROVE" && item._count.attestations >= 1;
+    modals.openConfirmModal({
+      title: result === "REJECT" ? "Reject this background check?" : clearing ? "Clear this background check?" : "Record your approval?",
+      children: (
+        <Text size="sm">
+          {result === "REJECT" ? (
+            <>
+              This blocks <strong>{who}</strong>&apos;s membership and notifies the board. The
+              applicant is not told the reason.
+            </>
+          ) : clearing ? (
+            <>
+              You are the second reviewer for <strong>{who}</strong>. This clears the background
+              check, records it against the household, opens payment (or activates the membership
+              if dues are already paid), and emails the family. It cannot be undone.
+            </>
+          ) : (
+            <>
+              This records your approval of <strong>{who}</strong>&apos;s background check. A second
+              reviewer must also approve before the check clears.
+            </>
+          )}
+        </Text>
+      ),
+      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Clear the check" : "Approve", cancel: "Cancel" },
+      confirmProps: { color: result === "REJECT" ? "red" : clearing ? "orange" : undefined },
+      onConfirm: () => submit(item.id, result),
+    });
+  };
+
   if (sessionStatus === "loading" || loading) {
     return <PageLoader />;
   }
@@ -123,16 +166,14 @@ export default function MembershipReviewPage() {
             <Card key={item.id} withBorder radius="md" padding="lg">
               {subject ? (
                 <>
-                  <Text fw={700} fz="lg">{subject.name || `Person #${subject.id}`}</Text>
+                  <Text fw={700} fz="lg">{applicantLabel(item)}</Text>
                   <Text size="sm" c="dimmed" mt={4}>
                     Background check for an individual · {subject.household?.name ? `Household: ${subject.household.name}` : "No household on file"}
                   </Text>
                 </>
               ) : (
                 <>
-                  <Text fw={700} fz="lg">
-                    {item.orgMembership?.household?.name || `Household (application #${item.id})`}
-                  </Text>
+                  <Text fw={700} fz="lg">{applicantLabel(item)}</Text>
                   <Text size="sm" c="dimmed" mt={4}>
                     {parents.length > 0
                       ? parents.map((p) => `${p.name || "—"}${p.email ? ` <${p.email}>` : ""}`).join(", ")
@@ -170,10 +211,10 @@ export default function MembershipReviewPage() {
               />
 
               <Group gap="sm" wrap="wrap" mt="md">
-                <Button disabled={busyId === item.id} loading={busyId === item.id} onClick={() => submit(item.id, "APPROVE")}>
+                <Button disabled={busyId === item.id} loading={busyId === item.id} onClick={() => confirmSubmit(item, "APPROVE")}>
                   Attest — check is clean
                 </Button>
-                <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => submit(item.id, "REJECT")}>
+                <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => confirmSubmit(item, "REJECT")}>
                   Reject
                 </Button>
               </Group>

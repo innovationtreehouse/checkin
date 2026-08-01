@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- jest.mock factories are hoisted above imports */
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 
 // Reactive next/navigation mock (mirrors src/components/__tests__/StatusFilter.test.tsx):
 // router.replace writes back into `search` so a `rerender()` after a click picks up
@@ -16,18 +16,26 @@ jest.mock("next/navigation", () => ({
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 import { MantineProvider } from "@mantine/core";
+import { ModalsProvider } from "@mantine/modals";
 import { EnvProvider } from "@/components/EnvProvider";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
 import AdminMembershipPage from "../page";
 
-// rerender() replaces the whole root, so re-supplying it must mirror renderWithProviders'
+// modals.openConfirmModal is a no-op without a provider, so a confirmed action would
+// silently never fire. Wrapped here rather than in the shared harness: several suites
+// jest.mock("@mantine/modals") and would get an undefined ModalsProvider.
+const renderPage = () => renderWithProviders(<ModalsProvider><AdminMembershipPage /></ModalsProvider>);
+
+// rerender() replaces the whole root, so re-supplying it must mirror renderPage's
 // wrapper tree (same component types at each level) or React remounts instead of
 // reconciling, losing the page's already-fetched rows state.
 const rewrapped = () => (
     <MantineProvider>
         <EnvProvider value={{ checkinEnv: "prod", shopifyStoreDomain: null, isStaging: false }}>
-            <AdminMembershipPage />
+            <ModalsProvider>
+                <AdminMembershipPage />
+            </ModalsProvider>
         </EnvProvider>
     </MantineProvider>
 );
@@ -104,7 +112,7 @@ const rows = [
 describe("AdminMembershipPage", () => {
     it("renders in-flight applications and their status counts", async () => {
         mockFetchJson({ "/api/membership-ops/applications": { processes: rows } });
-        renderWithProviders(<AdminMembershipPage />);
+        renderPage();
 
         expect(await screen.findByText("Awaiting Family")).toBeInTheDocument();
         expect(screen.getByText("Payment Family")).toBeInTheDocument();
@@ -115,7 +123,7 @@ describe("AdminMembershipPage", () => {
 
     it("shows an empty state when there are no in-flight applications", async () => {
         mockFetchJson({ "/api/membership-ops/applications": { processes: [] } });
-        renderWithProviders(<AdminMembershipPage />);
+        renderPage();
         expect(await screen.findByText("No in-flight membership applications.")).toBeInTheDocument();
     });
 
@@ -126,7 +134,7 @@ describe("AdminMembershipPage", () => {
             "/api/membership-ops/applications/certify-payment": { ok: true },
             "/api/membership-ops/applications/review-override": { ok: true },
         });
-        renderWithProviders(<AdminMembershipPage />);
+        renderPage();
         await screen.findByText("Awaiting Family");
 
         fireEvent.click(screen.getByRole("button", { name: "Confirm contract signed" }));
@@ -151,9 +159,31 @@ describe("AdminMembershipPage", () => {
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Overridden to payment." })));
     });
 
+    it("clears a still-open review's approvals, behind a confirmation", async () => {
+        const fetchMock = mockFetchJson({
+            "/api/membership-ops/applications": { processes: rows },
+            "/api/membership-ops/applications/review-override": { ok: true },
+        });
+        renderPage();
+        await screen.findByText("Payment Family");
+
+        // Only the in-review row with an approval on it offers the reset.
+        const reset = screen.getByRole("button", { name: "Clear approvals — start the review over" });
+        fireEvent.click(reset);
+        expect(await screen.findByText("Start this background-check review over?")).toBeInTheDocument();
+        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Clear approvals" }));
+
+        await waitFor(() =>
+            expect(fetchMock).toHaveBeenCalledWith(
+                "/api/membership-ops/applications/review-override",
+                expect.objectContaining({ body: JSON.stringify({ processId: 2, action: "reset" }) }),
+            ),
+        );
+    });
+
     it("clicking a legend badge narrows the list to that status; clicking again restores it", async () => {
         mockFetchJson({ "/api/membership-ops/applications": { processes: rows } });
-        const { rerender } = renderWithProviders(<AdminMembershipPage />);
+        const { rerender } = renderPage();
         await screen.findByText("Awaiting Family");
 
         fireEvent.click(screen.getByRole("button", { name: "PENDING PAYMENT: 1" }));
@@ -179,7 +209,7 @@ describe("AdminMembershipPage", () => {
     it("shows a clear-filter empty state when the active status has no matching rows", async () => {
         search = "status=PENDING_BG_REVIEW";
         mockFetchJson({ "/api/membership-ops/applications": { processes: rows } });
-        renderWithProviders(<AdminMembershipPage />);
+        renderPage();
 
         expect(await screen.findByText(/No applications in PENDING BG REVIEW/)).toBeInTheDocument();
         expect(screen.queryByText("Awaiting Family")).not.toBeInTheDocument();
@@ -199,7 +229,7 @@ describe("AdminMembershipPage", () => {
             "/api/membership-ops/applications?archived=1": { processes: archivedRows },
             "/api/membership-ops/applications": { processes: rows },
         });
-        renderWithProviders(<AdminMembershipPage />);
+        renderPage();
         await screen.findByText("Awaiting Family");
 
         fireEvent.click(screen.getByLabelText("Show archived"));
