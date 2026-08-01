@@ -459,17 +459,16 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
 /**
  * Board / sysadmin override: force a review to a terminal state regardless of phase.
  *
- * Same conflict-of-interest rule as decideReview — a board member may not override
- * their OWN household's review (else they could force-approve their own trusted adult,
- * the very thing decideReview forbids). A sysadmin is the deliberate remedy and bypasses
- * the check (opts.isSysadmin); the route sets it only when the actor holds that role.
+ * Same conflict-of-interest rule as decideReview, and no role is exempt from it — a
+ * board member may not override their OWN household's review (else they could
+ * force-approve their own trusted adult, the very thing decideReview forbids), and
+ * neither may a sysadmin. Someone outside the household has to decide the case.
  */
 export async function overrideReview(
     reviewId: number,
     actorId: number,
     action: "approve" | "deny" | "revoke",
     sharedNote?: string | null,
-    opts?: { isSysadmin?: boolean },
 ) {
     const review = await prisma.trustedAdultReview.findUnique({
         where: { id: reviewId },
@@ -477,18 +476,16 @@ export async function overrideReview(
     });
     if (!review) throw new TrustedAdultError("not_found", "Review not found.");
 
-    if (!opts?.isSysadmin) {
-        const me = await prisma.person.findUnique({ where: { id: actorId }, select: { householdId: true } });
-        if (
-            isTrustedAdultConflict({
-                actorParticipantId: actorId,
-                actorHouseholdId: me?.householdId,
-                taHouseholdId: review.trustedAdult.householdId,
-                taTrustedAdultPersonId: review.trustedAdult.trustedAdultPersonId,
-            })
-        ) {
-            throw new TrustedAdultError("forbidden", "You can't override your own household's trusted-adult review — a sysadmin must.");
-        }
+    const me = await prisma.person.findUnique({ where: { id: actorId }, select: { householdId: true } });
+    if (
+        isTrustedAdultConflict({
+            actorParticipantId: actorId,
+            actorHouseholdId: me?.householdId,
+            taHouseholdId: review.trustedAdult.householdId,
+            taTrustedAdultPersonId: review.trustedAdult.trustedAdultPersonId,
+        })
+    ) {
+        throw new TrustedAdultError("forbidden", "You can't override your own household's trusted-adult review — someone outside your household must.");
     }
 
     const now = new Date();

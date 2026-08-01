@@ -75,7 +75,6 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                 },
             },
             events: { orderBy: { startAt: 'asc' } },
-            fees: true,
             leadMentor: true,
             _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } } } },
         },

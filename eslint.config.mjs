@@ -22,6 +22,32 @@ const bareConsoleErrorRules = [
   },
 ];
 
+// Every deployed instance — prod, cloud-dev, ops-stg — runs the same production
+// image, so NODE_ENV is 'production' everywhere and cannot tell them apart.
+// CHECKIN_ENV is the only fuse. Shared for the same replace-not-merge reason as
+// bareConsoleErrorRules.
+const nodeEnvRules = [
+  {
+    selector:
+      "MemberExpression[object.object.name='process'][object.property.name='env'][property.name='NODE_ENV']",
+    message:
+      "Environment branches gate on config.checkinEnv(), never NODE_ENV — every deployed instance runs the same production image. (Test-harness plumbing in src/lib/prisma.ts is the only exception.)",
+  },
+];
+
+// The lifecycle modules are imported by client components, so a Prisma VALUE
+// reaching them drags the generated client into a page bundle. Types are erased
+// at build, so `import type` stays legal. The regex covers the `@/` alias and any
+// relative path to the same directory.
+const noPrismaValueImport = [
+  {
+    regex: "(^@/|/)generated/prisma(/|$)",
+    message:
+      "Client-safe module: use `import type` for @/generated/prisma — a value import pulls the Prisma client into the page bundle.",
+    allowTypeImports: true,
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -39,7 +65,13 @@ const eslintConfig = defineConfig([
   ]),
   {
     files: ["**/src/**/*.{ts,tsx}"],
-    rules: { "no-restricted-syntax": ["error", ...bareConsoleErrorRules] },
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        ...bareConsoleErrorRules,
+        ...nodeEnvRules,
+      ],
+    },
   },
   // API routes must log through @/lib/logger (console sink + logBackendError),
   // not raw console. Scoped to server routes only — client code can't use the
@@ -47,6 +79,23 @@ const eslintConfig = defineConfig([
   {
     files: ["**/src/app/api/**/*.ts"],
     rules: { "no-console": "warn" },
+  },
+  {
+    // Lifecycle definitions are shared server/client, so they stay Prisma-free at
+    // runtime. Tests are excluded: they are not the client bundle and may value-
+    // import the generated enum (see lifecycle/enumParity.ts).
+    files: [
+      "**/src/lib/lifecycle/**/*.ts",
+      "**/src/lib/membership/lifecycle.ts",
+      "**/src/lib/programs/enrollmentState.ts",
+    ],
+    ignores: ["**/__tests__/**", "**/*.test.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        { patterns: noPrismaValueImport },
+      ],
+    },
   },
   {
     // P3-1: error responses must go through apiError() (@/lib/api-response) so the
@@ -69,8 +118,21 @@ const eslintConfig = defineConfig([
             "Return errors via apiError(message, status[, details]) from @/lib/api-response, not a raw NextResponse.json({ error }).",
         },
         ...bareConsoleErrorRules,
+        ...nodeEnvRules,
       ],
     },
+  },
+  // NODE_ENV exemptions. prisma.ts reads it as test-harness/dev-server plumbing
+  // (pool sizing, adapter disposal, the dev global), not as an environment fuse;
+  // tests set and read it to exercise both builds. Both blocks re-spread the
+  // rules they still need, since flat config replaces the array.
+  {
+    files: ["**/src/lib/prisma.ts"],
+    rules: { "no-restricted-syntax": ["error", ...bareConsoleErrorRules] },
+  },
+  {
+    files: ["**/src/**/*.test.{ts,tsx}"],
+    rules: { "no-restricted-syntax": ["error", ...bareConsoleErrorRules] },
   },
 ]);
 

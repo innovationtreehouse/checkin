@@ -182,6 +182,24 @@ function ApplicationsBoard() {
     }
   };
 
+  // An awaiting row only ever holds APPROVE attestations (any REJECT blocks it).
+  const approvals = (r: ProcessRow) => r.attestations.filter((a) => a.result === "APPROVE").length;
+
+  const confirmResetReview = (r: ProcessRow) => {
+    modals.openConfirmModal({
+      title: "Start this background-check review over?",
+      children: (
+        <Text size="sm">
+          This discards the {approvals(r)} approval(s) recorded for <strong>{householdLabel(r)}</strong>{" "}
+          and asks the reviewers to start again. Use it when an approval was recorded by
+          mistake — the check itself has not cleared yet, so nothing else changes.
+        </Text>
+      ),
+      labels: { confirm: "Clear approvals", cancel: "Cancel" },
+      onConfirm: () => override(r.id, "reset"),
+    });
+  };
+
   // Disposing an abandoned application removes it from the board list. Confirm
   // because it's a deliberate cleanup action (kept in the audit log, not deleted).
   const confirmArchive = (r: ProcessRow) => {
@@ -380,9 +398,18 @@ function ApplicationsBoard() {
               )}
 
               {awaitingBg(r) && (
-                <Text size="sm" c="dimmed" mt="md">
-                  Background check (in parallel) — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
-                </Text>
+                <Group mt="md" gap="md" wrap="wrap" align="center">
+                  <Text size="sm" c="dimmed">
+                    Background check (in parallel) — <Text component="span" fw={600}>{approvals(r)}/2</Text> approvals recorded.
+                  </Text>
+                  {/* The board's way back from a reviewer's misclick: the review is still
+                      open, so clearing the attestations undoes it with nothing to unwind. */}
+                  {approvals(r) > 0 && (
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => confirmResetReview(r)}>
+                      Clear approvals — start the review over
+                    </Button>
+                  )}
+                </Group>
               )}
 
               {r.status === "PENDING_PAYMENT" && (

@@ -357,6 +357,33 @@ describe('background check is non-blocking', () => {
         expect(await statusOf(processId)).toBe('BLOCKED');
     });
 
+    it('reset returns a still-open review to neutral (the misclicked approval), but not a cleared one', async () => {
+        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        await attest(revA, processId, { result: 'APPROVE' }); // 1 of 2 — review still open
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+
+        // The review never left its phase, so the reset only drops the attestations.
+        await overrideBlocked(processId, revB, 'reset');
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId } })).toBe(0);
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId } });
+        expect(audits.map((a) => normalizeAuditData(a.newData)).some((d) => (d as { action?: string }).action === 'board reset')).toBe(true);
+
+        // The withdrawn approval is genuinely gone: the same reviewer may attest again,
+        // and it takes two more approvals to clear.
+        await attest(revA, processId, { result: 'APPROVE' });
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // 1 of 2 again, not cleared
+        await attest(revB, processId, { result: 'APPROVE' });
+        const cleared = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(cleared?.bgClearedAt).not.toBeNull();
+
+        // Past clearance the side effects have already fanned out — reset is refused.
+        await expect(overrideBlocked(processId, revB, 'reset')).rejects.toMatchObject({ code: 'wrong_phase' });
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId } })).toBe(2);
+    });
+
     it('renewal with a still-valid background check: bgClearedAt stamped, signature opens payment, paying activates (not stuck)', async () => {
         await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
         const { orgMembershipId, processId } = await makeFreshRenewal();

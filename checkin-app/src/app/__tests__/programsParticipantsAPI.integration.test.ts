@@ -25,11 +25,14 @@ describe('Program Participants API Integration Tests', () => {
     let otherId: number;
     let boardId: number;   // board member who leads a household
     let depId: number;     // dependent (25yo) in the board member's household
+    let memberId: number;  // person in a household with an ACTIVE OrgMembership
+    let memberHouseholdId: number;
 
     let standardProgramId: number;
     let freeProgramId: number;
     let fullProgramId: number;
     let exactAgeProgramId: number;
+    let memberOnlyProgramId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -41,6 +44,10 @@ describe('Program Participants API Integration Tests', () => {
 
         await prisma.programParticipant.deleteMany({
             where: { personId: { in: existingUserIds } }
+        });
+
+        await prisma.orgMembership.deleteMany({
+            where: { household: { householdMembers: { some: { id: { in: existingUserIds } } } } }
         });
 
         await prisma.program.deleteMany({
@@ -139,11 +146,32 @@ describe('Program Participants API Integration Tests', () => {
             data: { name: 'Age Restricted Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', minAge: 18, maxAge: 21 }
         });
         exactAgeProgramId = exactAgeProgram.id;
+
+        // Treehouse Member (household carries the ACTIVE OrgMembership) + the
+        // members-only program they are the only eligible enroller for.
+        const memberHousehold = await prisma.household.create({
+            data: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } }
+        });
+        memberHouseholdId = memberHousehold.id;
+        const member = await prisma.person.create({
+            data: {
+                email: 'member-partic-api-test@example.com',
+                name: 'Org Member',
+                dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
+                householdId: memberHouseholdId
+            }
+        });
+        memberId = member.id;
+
+        const memberOnlyProgram = await prisma.program.create({
+            data: { name: 'Member Only Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', orgMemberOnly: true, orgMemberPriceCents: null, nonOrgMemberPriceCents: null }
+        });
+        memberOnlyProgramId = memberOnlyProgram.id;
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId].filter(id => id !== undefined);
-        const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId, memberId].filter(id => id !== undefined);
+        const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId, memberOnlyProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.programParticipant.deleteMany({
@@ -165,6 +193,10 @@ describe('Program Participants API Integration Tests', () => {
             await prisma.person.deleteMany({
                 where: { id: { in: existingUserIds } }
             });
+        }
+
+        if (memberHouseholdId !== undefined) {
+            await prisma.orgMembership.deleteMany({ where: { householdId: memberHouseholdId } });
         }
     });
 
@@ -422,6 +454,61 @@ describe('Program Participants API Integration Tests', () => {
                 await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
                 await prisma.program.delete({ where: { id: shopifyProgram.id } });
             }
+        });
+
+        // The three read routes only HIDE an orgMemberOnly program; POSTing the id
+        // directly used to enroll a non-member outright.
+        it('should block a non-member from self-enrolling into a members-only program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: commonId })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+
+             const data = await res.json();
+             expect(data.error).toMatch(/Treehouse Members only/);
+             expect(data.requiresOverride).toBe(true);
+
+             const row = await prisma.programParticipant.findUnique({
+                 where: { programId_personId: { programId: memberOnlyProgramId, personId: commonId } },
+             });
+             expect(row).toBeNull();
+        });
+
+        it('should allow a Treehouse Member to self-enroll into a members-only program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: memberId })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.personId).toBe(memberId);
+        });
+
+        // The members-only gate lives inside enforceLimits, so it must not break
+        // the deliberate comp path — a confirmed board/sysadmin override still
+        // seats a non-member.
+        it('should let a confirmed admin comp a non-member into a members-only program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: otherId, override: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.status).toBe('ACTIVE');
         });
 
         it('should return 409 (not 500) when enrolling the same participant twice', async () => {
