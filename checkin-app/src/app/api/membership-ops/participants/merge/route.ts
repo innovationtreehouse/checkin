@@ -120,7 +120,6 @@ export const POST = withAuth(
                     programVolunteers: true,
                     rsvps: true,
                     toolStatuses: true,
-                    feePayments: true,
                     bgAttestations: true,
                     corporationLeads: true,
                     corporationMembers: true,
@@ -134,7 +133,6 @@ export const POST = withAuth(
                     programVolunteers: true,
                     rsvps: true,
                     toolStatuses: true,
-                    feePayments: true,
                     bgAttestations: true,
                     corporationLeads: true,
                     corporationMembers: true,
@@ -234,7 +232,6 @@ export const POST = withAuth(
                     programParticipants: { migrated: 0, left: 0 },
                     programVolunteers: { migrated: 0, left: 0 },
                     rsvps: { migrated: 0, left: 0 },
-                    feePayments: { migrated: 0, left: 0 },
                     toolStatuses: { migrated: 0, left: 0 },
                     bgAttestations: { migrated: 0, left: 0 },
                     corporationLeads: { migrated: 0, left: 0 },
@@ -253,7 +250,7 @@ export const POST = withAuth(
                     data: { personId: keepId }
                 })).count;
 
-                // 4. Move the 5 join tables — no deletes. Migrate the non-colliding row;
+                // 4. Move the 4 join tables — no deletes. Migrate the non-colliding row;
                 // leave the colliding row on the tombstone (both survive; §3's LIVE_PERSON
                 // filter excludes the tombstone's from every count/roster).
                 for (const pp of mergeParticipant.programParticipants) {
@@ -289,18 +286,6 @@ export const POST = withAuth(
                         moved.rsvps.migrated++;
                     } else {
                         moved.rsvps.left++;
-                    }
-                }
-
-                for (const fee of mergeParticipant.feePayments) {
-                    if (!keepParticipant.feePayments.find(k => k.feeId === fee.feeId)) {
-                        await tx.feePayment.update({
-                            where: { feeId_personId: { feeId: fee.feeId, personId: mergeId } },
-                            data: { personId: keepId }
-                        });
-                        moved.feePayments.migrated++;
-                    } else {
-                        moved.feePayments.left++;
                     }
                 }
 
