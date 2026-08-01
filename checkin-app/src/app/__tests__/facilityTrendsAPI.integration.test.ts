@@ -33,7 +33,18 @@ describe('Facility trends API', () => {
     let eventId: number;
     const visitIds: number[] = [];
 
-    const hoursAgo = (h: number) => new Date(Date.now() - h * 60 * 60 * 1000);
+    // Every seeded arrival hangs off one anchor, a few minutes apart and at least an hour
+    // into the month, so the whole seed lands in a single calendar-month bucket no matter
+    // when the suite runs. The route buckets on arrivedAt only, so departures that spill
+    // past midnight into the next month are fine.
+    const NOW = new Date();
+    const monthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+    const ANCHOR = new Date(Math.max(NOW.getTime(), monthStart(NOW).getTime() + 60 * 60 * 1000));
+    // The bucket the assertions inspect, keyed the way the route keys it (local month start).
+    const BUCKET_START = monthStart(ANCHOR);
+    const arrival = (minutesBefore: number) => new Date(ANCHOR.getTime() - minutesBefore * 60 * 1000);
+    const departure = (minutesBefore: number, hours: number) =>
+        new Date(arrival(minutesBefore).getTime() + hours * 60 * 60 * 1000);
 
     beforeAll(async () => {
         const admin = await prisma.person.create({
@@ -60,7 +71,7 @@ describe('Facility trends API', () => {
         const otherProgram = await prisma.program.create({ data: { name: `Other ${TAG}` } });
         otherProgramId = otherProgram.id;
         const event = await prisma.event.create({
-            data: { programId, name: `Event ${TAG}`, startAt: hoursAgo(5), endAt: hoursAgo(2) },
+            data: { programId, name: `Event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
         });
         eventId = event.id;
 
@@ -71,23 +82,23 @@ describe('Facility trends API', () => {
 
         // Structured visit (associated to the event): enrolled adult, 3 hours -> participant.
         const structured = await prisma.visit.create({
-            data: { personId: enrolledAdultId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SCANNER', associatedEventId: eventId },
+            data: { personId: enrolledAdultId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'SCANNER', associatedEventId: eventId },
         });
         // Structured visit (associated to the event): non-enrolled youth, 2 hours -> volunteer.
         const youthStructured = await prisma.visit.create({
-            data: { personId: youthId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(3), arrivedVia: 'SCANNER', associatedEventId: eventId },
+            data: { personId: youthId, arrivedAt: arrival(2), departedAt: departure(2, 2), arrivedVia: 'SCANNER', associatedEventId: eventId },
         });
         // Unstructured visit (no event): non-enrolled adult volunteer, 1 hour.
         const unstructured = await prisma.visit.create({
-            data: { personId: volunteerId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(3), arrivedVia: 'WEB' },
+            data: { personId: volunteerId, arrivedAt: arrival(1), departedAt: departure(1, 1), arrivedVia: 'WEB' },
         });
         // Synthetic "marked present" visit (arrivedVia SYSTEM) — must be excluded entirely.
         const synthetic = await prisma.visit.create({
-            data: { personId: volunteerId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SYSTEM', associatedEventId: eventId },
+            data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
         // Still-open visit (no departedAt) — excluded (departedAt: { not: null } in the where).
         const open = await prisma.visit.create({
-            data: { personId: youthId, arrivedAt: hoursAgo(1), arrivedVia: 'WEB' },
+            data: { personId: youthId, arrivedAt: arrival(0), arrivedVia: 'WEB' },
         });
         visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, open.id);
     });
@@ -119,8 +130,10 @@ describe('Facility trends API', () => {
         expect(data.period).toBe('month');
         expect(Array.isArray(data.buckets)).toBe(true);
 
-        // Everything we seeded lands in the current month's bucket.
-        const thisMonth = data.buckets[data.buckets.length - 1];
+        // Look the anchor's bucket up by periodStart: the seed's month is not necessarily
+        // the last bucket, since any unrelated visit in a later month adds one.
+        expect(data.buckets.map((b: { periodStart: string }) => b.periodStart)).toContain(BUCKET_START.toISOString());
+        const thisMonth = data.buckets.find((b: { periodStart: string }) => b.periodStart === BUCKET_START.toISOString());
         expect(thisMonth.uniqueVolunteers).toBeGreaterThanOrEqual(1);
         expect(thisMonth.uniqueParticipants).toBeGreaterThanOrEqual(1);
         // Structured (event-associated) = the 3h enrolled-adult + 2h youth visits; unstructured =
