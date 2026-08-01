@@ -118,11 +118,16 @@ defineRoute({
         // rows, so the pii grant reaches the two adults a lead would call and no
         // one else — siblings and other household members hold nothing.
         //
-        // FINDING for the CODEOWNERS reviewer: the pre-existing :personal token now
-        // also resolves on those same parent rows, so Person.dateOfBirth/allergies/
-        // notificationSettings/emailSuppressed become deliverable for a parent. The
-        // route's select is what keeps them off the wire (id/householdId/name/email/
-        // phone/isHouseholdLead only) — this view no longer strips them.
+        // FINDING for the CODEOWNERS reviewer: this widens live traffic. The route
+        // already returns full-row Person selects outside the participant bag —
+        // `volunteers.include.person` and `leadMentor` — so a lead/core-vol now
+        // receives, for any program volunteer or lead mentor who is also a household
+        // lead of an in-scope household (a parent volunteer, the common case):
+        // email/phone from this pii grant, plus dateOfBirth/allergies/
+        // notificationSettings/emailSuppressed from the pre-existing :personal token,
+        // which now resolves on those rows too. Those rows held `everyones` only
+        // before. Narrowing the two selects to what the roster renders is a route
+        // change, not a boundary one.
         //
         // Still out of reach: the family's home address (Household.line1..postalCode
         // are 'internal', above every token here) and Household.intakeNotes ('pii',

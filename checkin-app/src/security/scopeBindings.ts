@@ -42,6 +42,9 @@ export const SCOPE_BINDINGS = {
         // would actually call are reachable. Requires the row to carry BOTH
         // householdId and isHouseholdLead; either one unselected fails closed
         // (isTrue is strict === true, and inCtx rejects a non-number).
+        // ctx.householdIdsInScopePrograms is the union across ALL programs the caller
+        // leads/core-vols, so on program A's page a lead of both A and B also resolves
+        // this on a row whose household's child is enrolled in B, not A.
         their_program_households: {
             all: [
                 { field: 'householdId', inCtx: 'householdIdsInScopePrograms' },
