@@ -7,6 +7,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
+import { pinTimezone } from "@/test-helpers/tz";
 import MergeParticipants from "../page";
 
 beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
@@ -41,6 +42,8 @@ async function selectBoth() {
 }
 
 describe("membership-ops/participants/merge page", () => {
+  pinTimezone();
+
   it("searches, selects two participants, and analyzes them", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockRoutes();
@@ -421,9 +424,11 @@ describe("membership-ops/participants/merge page", () => {
     const warningText = await screen.findByText(/Different birth dates may mean these are NOT the same person/);
     const alertBox = warningText.closest(".mantine-Alert-root") as HTMLElement;
     expect(alertBox).toBeInTheDocument();
-    // Still resolvable via the radio, just nested inside the warning — exact date
-    // text is locale/timezone-formatted (toLocaleDateString), so just count them.
     expect(within(alertBox).getAllByRole("radio")).toHaveLength(2);
+    // DOB is a calendar date at UTC midnight: both options must read as their own
+    // day, not the day before, even west of UTC.
+    expect(alertBox.textContent).toContain("1/1/1990");
+    expect(alertBox.textContent).toContain("6/15/2005");
   });
 
   it("renders nothing for a background-check reviewer who navigates directly", () => {
