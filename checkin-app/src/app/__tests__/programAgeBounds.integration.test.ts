@@ -19,6 +19,12 @@ jest.mock('@/lib/notifications', () => ({
     sendNotification: jest.fn()
 }));
 
+// The program's start date, and the anchor every birthdate fixture is measured
+// from. A literal, not the real clock: reconstructing today's month/day N years
+// back only round-trips when that day exists in the target year, which Feb 29
+// does not. Jun 15 has a counterpart in every year, and a day on either side.
+const NOW = new Date('2026-06-15T12:00:00.000Z');
+
 describe('Program Age Bounds Integration Tests', () => {
     let testAdminId: number;
     let validUserId: number;
@@ -32,23 +38,24 @@ describe('Program Age Bounds Integration Tests', () => {
     let testProgramId: number;
 
     beforeAll(async () => {
-        // Calculate Birthdates dynamically relative to execution time.
+        // Birthdates are relative to NOW, which is also the program's start date —
+        // the instant the enroll route judges age against (calculateAge(dob,
+        // program.startAt)).
         // Built in UTC because calculateAge() compares UTC date components — a
         // local-midnight fixture lands on the wrong UTC day off-zero-offset and
         // shifts the "day before/after the birthday" cases by a year.
-        const now = new Date();
         const dobYearsAgo = (years: number, dayOffset = 0) =>
-            new Date(Date.UTC(now.getUTCFullYear() - years, now.getUTCMonth(), now.getUTCDate() + dayOffset));
+            new Date(Date.UTC(NOW.getUTCFullYear() - years, NOW.getUTCMonth(), NOW.getUTCDate() + dayOffset));
         const dob16 = dobYearsAgo(16);
         const dob12 = dobYearsAgo(12);
         const dob20 = dobYearsAgo(20);
         // Exact boundaries for program [minAge=14, maxAge=18].
-        // Birthday is today => exactly N years old today (eligible at both ends).
+        // Birthday is the start date => exactly N years old then (eligible at both ends).
         const dobExactly14 = dobYearsAgo(14);
         const dobExactly18 = dobYearsAgo(18);
-        // Birthday tomorrow, born 14 years ago => still 13 today (under).
+        // Birthday the day after, born 14 years ago => still 13 on the start date (under).
         const dobTurns14Tomorrow = dobYearsAgo(14, 1);
-        // Birthday yesterday, born 19 years ago => turned 19 already (over).
+        // Birthday the day before, born 19 years ago => turned 19 already (over).
         const dobTurned19Yesterday = dobYearsAgo(19, -1);
 
         // Clean up any leaked state from previous runs
@@ -112,7 +119,7 @@ describe('Program Age Bounds Integration Tests', () => {
                 name: 'Age Bounds Integration Test Program',
                 minAge: 14,
                 maxAge: 18,
-                startAt: new Date(),
+                startAt: NOW,
                 phase: 'UPCOMING',
                 enrollmentStatus: 'OPEN'
             }
