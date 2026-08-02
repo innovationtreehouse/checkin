@@ -49,7 +49,6 @@ describe("Merge Participants API", () => {
     // generically in afterEach so each test doesn't hand-roll teardown ordering.
     let extraPersonIds: number[];
     let createdProgramId: number | undefined;
-    let createdFeeId: number | undefined;
     let createdToolId: number | undefined;
     let createdEventId: number | undefined;
     let createdCorporationId: number | undefined;
@@ -80,7 +79,6 @@ describe("Merge Participants API", () => {
 
         extraPersonIds = [];
         createdProgramId = undefined;
-        createdFeeId = undefined;
         createdToolId = undefined;
         createdEventId = undefined;
         createdCorporationId = undefined;
@@ -97,7 +95,6 @@ describe("Merge Participants API", () => {
         await prisma.trustedAdult.deleteMany({ where: { householdId } });
         await prisma.toolStatus.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.rSVP.deleteMany({ where: { personId: { in: personIds } } });
-        await prisma.feePayment.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.visit.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.programParticipant.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.programVolunteer.deleteMany({ where: { personId: { in: personIds } } });
@@ -107,7 +104,6 @@ describe("Merge Participants API", () => {
         await prisma.person.deleteMany({ where: { id: { in: personIds } } });
 
         if (createdEventId) await prisma.event.deleteMany({ where: { id: createdEventId } });
-        if (createdFeeId) await prisma.fee.deleteMany({ where: { id: createdFeeId } });
         if (createdToolId) await prisma.tool.deleteMany({ where: { id: createdToolId } });
         if (createdProgramId) await prisma.program.deleteMany({ where: { id: createdProgramId } });
         if (createdCorporationId) await prisma.corporation.deleteMany({ where: { id: createdCorporationId } });
@@ -211,10 +207,6 @@ describe("Merge Participants API", () => {
     it("keeps BOTH rows on every join-table/loop-guarded collision — zero deletes", async () => {
         const program = await prisma.program.create({ data: { name: "Merge Conflict Program" } });
         createdProgramId = program.id;
-        const fee = await prisma.fee.create({
-            data: { programId: program.id, name: "Conflict Fee", nonOrgMemberPriceCents: 5000, orgMemberPriceCents: 2500 },
-        });
-        createdFeeId = fee.id;
         const tool = await prisma.tool.create({ data: { name: "Conflict Tool" } });
         createdToolId = tool.id;
         const event = await prisma.event.create({
@@ -231,8 +223,6 @@ describe("Merge Participants API", () => {
         await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId } });
         await prisma.programVolunteer.create({ data: { programId: program.id, personId: pKeepId } });
         await prisma.programVolunteer.create({ data: { programId: program.id, personId: pMergeId } });
-        await prisma.feePayment.create({ data: { feeId: fee.id, personId: pKeepId } });
-        await prisma.feePayment.create({ data: { feeId: fee.id, personId: pMergeId } });
         await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pKeepId, level: "BASIC" } });
         await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pMergeId, level: "MAY_CERTIFY_OTHERS" } });
         await prisma.rSVP.create({ data: { eventId: event.id, personId: pKeepId, status: "ATTENDING" } });
@@ -250,7 +240,6 @@ describe("Merge Participants API", () => {
         // Every collision retained BOTH rows — zero deletes.
         expect(await prisma.programParticipant.count({ where: { programId: program.id } })).toBe(2);
         expect(await prisma.programVolunteer.count({ where: { programId: program.id } })).toBe(2);
-        expect(await prisma.feePayment.count({ where: { feeId: fee.id } })).toBe(2);
         expect(await prisma.toolStatus.count({ where: { toolId: tool.id } })).toBe(2);
         expect(await prisma.rSVP.count({ where: { eventId: event.id } })).toBe(2);
         expect(await prisma.corporationLead.count({ where: { corporationId: corp.id } })).toBe(2);
@@ -276,13 +265,9 @@ describe("Merge Participants API", () => {
     });
 
     // Matrix 2: non-collision move — the row relinks to the keeper, not duplicated.
-    it("moves a tombstone-only enrollment/fee/tool/rsvp to the keeper (no collision)", async () => {
+    it("moves a tombstone-only enrollment/tool/rsvp to the keeper (no collision)", async () => {
         const program = await prisma.program.create({ data: { name: "Non-Collision Program" } });
         createdProgramId = program.id;
-        const fee = await prisma.fee.create({
-            data: { programId: program.id, name: "Fee", nonOrgMemberPriceCents: 1000, orgMemberPriceCents: 500 },
-        });
-        createdFeeId = fee.id;
         const tool = await prisma.tool.create({ data: { name: "Tool" } });
         createdToolId = tool.id;
         const event = await prisma.event.create({
@@ -292,7 +277,6 @@ describe("Merge Participants API", () => {
 
         // Only the MERGE side has these — nothing for the keeper to collide with.
         await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId } });
-        await prisma.feePayment.create({ data: { feeId: fee.id, personId: pMergeId } });
         await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pMergeId, level: "CERTIFIED" } });
         await prisma.rSVP.create({ data: { eventId: event.id, personId: pMergeId, status: "MAYBE" } });
 
@@ -301,7 +285,6 @@ describe("Merge Participants API", () => {
 
         expect(await prisma.programParticipant.findUnique({ where: { programId_personId: { programId: program.id, personId: pKeepId } } })).not.toBeNull();
         expect(await prisma.programParticipant.findUnique({ where: { programId_personId: { programId: program.id, personId: pMergeId } } })).toBeNull();
-        expect((await prisma.feePayment.findUnique({ where: { feeId_personId: { feeId: fee.id, personId: pKeepId } } }))).not.toBeNull();
         expect((await prisma.toolStatus.findUnique({ where: { personId_toolId: { personId: pKeepId, toolId: tool.id } } }))?.level).toBe("CERTIFIED");
         expect((await prisma.rSVP.findUnique({ where: { eventId_personId: { eventId: event.id, personId: pKeepId } } }))?.status).toBe("MAYBE");
     });

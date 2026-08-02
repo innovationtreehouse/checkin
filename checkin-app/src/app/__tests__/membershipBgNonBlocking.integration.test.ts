@@ -321,7 +321,7 @@ describe('background check is non-blocking', () => {
         expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held for the note
     });
 
-    it('conflict of interest: a certifier in the applicant household is blocked; sysadmin overrides', async () => {
+    it('conflict of interest: a certifier in the applicant household is blocked, sysadmin flag or not', async () => {
         const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
@@ -331,12 +331,14 @@ describe('background check is non-blocking', () => {
         await expect(certifyPaymentPlan(processId, leadId)).rejects.toMatchObject({ code: 'forbidden' });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // unchanged — nothing certified
 
-        // Sysadmin is the deliberate remedy and bypasses the guard.
-        await certifyPaymentPlan(processId, leadId, { isSysadmin: true });
-        expect(await statusOf(processId)).toBe('PENDING_BG_CLEARANCE'); // paid; still needs the check
+        // Promoting that same lead to sysadmin does not buy a way through: the guard
+        // reads the household relationship, not the actor's roles.
+        await prisma.person.update({ where: { id: leadId }, data: { isSysadmin: true } });
+        await expect(certifyPaymentPlan(processId, leadId)).rejects.toMatchObject({ code: 'forbidden' });
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
     });
 
-    it('conflict of interest: overrideBlocked by the applicant household is blocked; sysadmin overrides', async () => {
+    it('conflict of interest: overrideBlocked by the applicant household is blocked, sysadmin flag or not', async () => {
         const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
@@ -347,9 +349,39 @@ describe('background check is non-blocking', () => {
         await expect(overrideBlocked(processId, leadId, 'approve')).rejects.toMatchObject({ code: 'same_household_applicant' });
         expect(await statusOf(processId)).toBe('BLOCKED'); // unchanged
 
-        // Sysadmin bypasses; the force-clear lands the process back on the payment track.
-        await overrideBlocked(processId, leadId, 'approve', { isSysadmin: true });
-        expect(await statusOf(processId)).not.toBe('BLOCKED');
+        // A sysadmin is still the applicant's own household → still refused. This is the
+        // asymmetry that mattered: attest() never let them vote on their own family's
+        // check, so the stronger force-clear must not either.
+        await prisma.person.update({ where: { id: leadId }, data: { isSysadmin: true } });
+        await expect(overrideBlocked(processId, leadId, 'approve')).rejects.toMatchObject({ code: 'same_household_applicant' });
+        expect(await statusOf(processId)).toBe('BLOCKED');
+    });
+
+    it('reset returns a still-open review to neutral (the misclicked approval), but not a cleared one', async () => {
+        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        await markContractSigned(processId);
+        await markBgConsent(processId, revA);
+        await attest(revA, processId, { result: 'APPROVE' }); // 1 of 2 — review still open
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+
+        // The review never left its phase, so the reset only drops the attestations.
+        await overrideBlocked(processId, revB, 'reset');
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId } })).toBe(0);
+        const audits = await prisma.auditLog.findMany({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId } });
+        expect(audits.map((a) => normalizeAuditData(a.newData)).some((d) => (d as { action?: string }).action === 'board reset')).toBe(true);
+
+        // The withdrawn approval is genuinely gone: the same reviewer may attest again,
+        // and it takes two more approvals to clear.
+        await attest(revA, processId, { result: 'APPROVE' });
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // 1 of 2 again, not cleared
+        await attest(revB, processId, { result: 'APPROVE' });
+        const cleared = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
+        expect(cleared?.bgClearedAt).not.toBeNull();
+
+        // Past clearance the side effects have already fanned out — reset is refused.
+        await expect(overrideBlocked(processId, revB, 'reset')).rejects.toMatchObject({ code: 'wrong_phase' });
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId } })).toBe(2);
     });
 
     it('renewal with a still-valid background check: bgClearedAt stamped, signature opens payment, paying activates (not stuck)', async () => {

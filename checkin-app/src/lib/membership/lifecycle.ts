@@ -152,7 +152,7 @@ export const awaitingBgReview: StateSet<AwaitingBgRow, Where> = {
  * settles to PENDING_BG_CLEARANCE, while a cleared one settles to ACTIVE — activate()
  * makes that split, BG is never bypassed. Both the list route's `renewalGrantable`
  * probe and `grantRenewalPayment`'s row lookup use this ONE fragment; the COI check
- * inside certifyPaymentPlan stays on top.
+ * inside certifyPaymentPlan stays on top for every actor.
  */
 export const grantableRenewalWhere: Where = {
     kind: "RENEWAL",

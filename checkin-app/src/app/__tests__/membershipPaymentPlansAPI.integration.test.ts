@@ -275,7 +275,7 @@ describe('Membership payment-plan routes', () => {
             await prisma.person.delete({ where: { id: boardKin.id } });
         });
 
-        it('a sysadmin may deny their own household (COI bypass)', async () => {
+        it('a board+sysadmin may NOT deny their own household either', async () => {
             const own = await makeProc('DenySysadmin', { requested: true });
             const sysKin = await prisma.person.create({
                 data: { name: 'Sys Kin', email: `sys-kin-${own.processId}-${TAG}@example.com`, isBoardMember: true, householdId: own.householdId },
@@ -283,9 +283,9 @@ describe('Membership payment-plan routes', () => {
             mockSession.mockResolvedValue({ user: { id: sysKin.id, isBoardMember: true, isSysadmin: true } });
 
             const res = await DenyPost(denyReq({ processId: own.processId }));
-            expect(res.status).toBe(200);
+            expect(res.status).toBe(403);
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: own.processId } });
-            expect(proc?.isPaymentPlanRequested).toBe(false);
+            expect(proc?.isPaymentPlanRequested).toBe(true); // flag NOT flipped by the refused deny
 
             await prisma.person.delete({ where: { id: sysKin.id } }); // keep it out of the board-member fallback set
         });

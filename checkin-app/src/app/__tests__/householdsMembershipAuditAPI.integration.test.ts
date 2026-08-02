@@ -182,19 +182,21 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         expect((audit!.newData as { status: string }).status).toBe('ACTIVE');
     });
 
-    it("refuses to grant the actor's OWN household (conflict of interest); sysadmin overrides", async () => {
+    it("refuses to grant the actor's OWN household (conflict of interest), sysadmin included", async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
         const res = await post({ householdId: boardHouseholdId, active: true });
         expect(res.status).toBe(403);
         const before = await prisma.orgMembership.findUnique({ where: { householdId: boardHouseholdId } });
         expect(before?.status ?? 'NONE').not.toBe('ACTIVE'); // not granted
 
-        // Sysadmin is the deliberate remedy.
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
-        const ok = await post({ householdId: boardHouseholdId, active: true });
-        expect(ok.status).toBe(200);
-        const after = await prisma.orgMembership.findUnique({ where: { householdId: boardHouseholdId } });
-        expect(after?.status).toBe('ACTIVE');
+        // Holding sysadmin — alone or alongside board — buys no way through.
+        for (const roles of [{ isSysadmin: true }, { isBoardMember: true, isSysadmin: true }]) {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, ...roles } });
+            const denied = await post({ householdId: boardHouseholdId, active: true });
+            expect(denied.status).toBe(403);
+            const after = await prisma.orgMembership.findUnique({ where: { householdId: boardHouseholdId } });
+            expect(after?.status ?? 'NONE').not.toBe('ACTIVE');
+        }
     });
 
     it('coming-year grant: no in-flight renewal → 409, no mutation', async () => {
@@ -255,19 +257,22 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         expect(process?.paidAt).not.toBeNull();
     });
 
-    it("refuses coming-year grant for the actor's OWN household (conflict of interest); sysadmin overrides", async () => {
+    it("refuses coming-year grant for the actor's OWN household (conflict of interest), sysadmin included", async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
         const res = await post({ householdId: boardHouseholdId, comingYear: true, reason: 'Renewal grant test' });
         expect(res.status).toBe(403);
         const stillPending = await prisma.orgMembershipProcess.findUnique({ where: { id: boardProcessId } });
         expect(stillPending?.status).toBe('PENDING_PAYMENT');
 
-        // Sysadmin is the deliberate remedy — same renewal, now grantable.
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isSysadmin: true } });
-        const ok = await post({ householdId: boardHouseholdId, comingYear: true, reason: 'Renewal grant test' });
-        expect(ok.status).toBe(200);
-        const settled = await prisma.orgMembershipProcess.findUnique({ where: { id: boardProcessId } });
-        expect(settled?.status).toBe('ACTIVE');
+        // The comingYear branch reaches the same guard through grantRenewalPayment →
+        // certifyPaymentPlan, so sysadmin gets no separate door here either.
+        for (const roles of [{ isSysadmin: true }, { isBoardMember: true, isSysadmin: true }]) {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, ...roles } });
+            const denied = await post({ householdId: boardHouseholdId, comingYear: true, reason: 'Renewal grant test' });
+            expect(denied.status).toBe(403);
+            const unsettled = await prisma.orgMembershipProcess.findUnique({ where: { id: boardProcessId } });
+            expect(unsettled?.status).toBe('PENDING_PAYMENT');
+        }
     });
 
     it('coming-year grant: missing reason → 400, no mutation', async () => {
