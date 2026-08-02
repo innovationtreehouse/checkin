@@ -126,6 +126,13 @@ when the answer is not available at the time it is needed.
   age, not age zero. Anything that reads, sorts, counts or renders such a value
   carries the difference through rather than flattening it.
 
+- **Where finishing an operation would take inventing a fact, refuse to finish
+  it.** Not a plausible departure time for someone whose visit was never closed,
+  not a guess at which of two conflicting records is the real one. Refusing is
+  visible and recoverable; an invented value is neither, because nothing
+  downstream can tell it from a real one. The operation stops and says what it
+  needs — the person who knows supplies it.
+
 The tell is a default. Every `?? 0`, `|| false`, and empty-result branch is this
 principle being decided, usually without anyone noticing they decided it.
 

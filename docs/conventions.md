@@ -35,3 +35,21 @@ the endpoint behind it answers anyone who asks.
 
 A domain choice is invisible in review. A plausible-looking name is registrable
 by anyone, and the mistake is only visible to whoever owns it.
+
+---
+
+## An invariant everyone must remember is not an invariant
+
+- **Where something must never be read, make it impossible to read rather than
+  everyone's job to exclude.** A rule held by convention holds until the first
+  person who has not read the convention writes a query.
+
+- **A filter every caller must remember, a guard that hunts for the ones who
+  forgot, and a list of justified exceptions are one smell, not three.** That
+  arrangement is how a design announces it needs the invariant moved into the
+  data rather than reasserted at each site.
+
+The failure is silent by construction. Forgetting produces no error, no failed
+test and no wrong-looking code — just a row that should not have been there,
+counted, rendered, or accepted as proof of who someone is. It is found when
+someone notices the number is wrong, which is not a mechanism.
