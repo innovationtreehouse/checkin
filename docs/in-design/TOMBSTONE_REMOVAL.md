@@ -1,6 +1,6 @@
 # Remove `LIVE_PERSON`: tombstone exclusion becomes structural
 
-Issue: [#1456](https://github.com/innovationtreehouse/checkin/issues/1456) · Status: **PROPOSED — for review**
+Issue: [#1456](https://github.com/innovationtreehouse/checkin/issues/1456)
 
 ## Problem
 
@@ -45,7 +45,7 @@ two tool certifications is real".
 
 ## How it breaks today
 
-`LIVE_PERSON` ([`lib/person/filters.ts`](../../src/lib/person/filters.ts)) is
+`LIVE_PERSON` ([`lib/person/filters.ts`](../../checkin-app/src/lib/person/filters.ts)) is
 `{ mergedIntoId: null }` — an **opt-out** convention. A merged-away Person is a tombstone: the row
 survives forever, so every Person query must remember the filter or silently read a ghost.
 
@@ -106,7 +106,7 @@ The merge already **repoints** to the survivor: visits, plus `programParticipant
 
 Rows stay behind in exactly one situation: a **unique-constraint collision** — the same human holds
 a row on both records for the same program / event / tool / process, so the FK cannot be repointed.
-[`merge/route.ts:257`](../../src/app/api/membership-ops/participants/merge/route.ts) states the
+[`merge/route.ts:257`](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts) states the
 coupling outright:
 
 > leave the colliding row on the tombstone (both survive; §3's LIVE_PERSON filter excludes the
@@ -154,7 +154,7 @@ Refusal fixes the **flow**, not the **stock**: every tombstone already carrying 
 past merge still needs one-time resolution. The widened drift guard's allowlist is the scoping input
 — each entry is a code path that depends on tombstones existing today.
 
-Per [the AWS/board-surface precedent](1260_BG_PER_ADULT_SUBJECT.md), prefer an in-app worklist over a
+Per the sibling proposal [BG_PER_ADULT_SUBJECT](BG_PER_ADULT_SUBJECT.md) (in-design, not settled — do not build on it), prefer an in-app worklist over a
 script if the volume warrants a human decision per row; a pure count of collisions should be gathered
 first to decide which.
 
@@ -173,7 +173,7 @@ model PersonMerge {
 }
 ```
 
-- **Badge scan** ([`api/scan/route.ts:61-73`](../../src/app/api/scan/route.ts)) currently walks
+- **Badge scan** ([`api/scan/route.ts:61-73`](../../checkin-app/src/app/api/scan/route.ts)) currently walks
   `mergedIntoId` to the survivor; it reads `PersonMerge` instead. Same loop, same cap.
 - **`AuditLog.affectedEntityId`** is a bare `Int` with no FK, so historical audit references survive
   a deleted `Person`.
@@ -189,7 +189,7 @@ model PersonMerge {
 1. **Per-table collision rules.** The table above is a proposal; the `ToolStatus` ladder (`DOF`
    outranks `CERTIFIED` despite the enum declaration order) and the `ProgramParticipant`
    seat/payment interaction want their owners' sign-off.
-2. **The open visit.** [`merge/route.ts:246-253`](../../src/app/api/membership-ops/participants/merge/route.ts)
+2. **The open visit.** [`merge/route.ts:246-253`](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts)
    deliberately leaves the tombstone's open visit when the keeper already has one — *"no delete, no
    fabricated departedAt"*, with a `ponytail:` note preferring the left row to an invented departure
    time. Removing tombstones forces the question: fabricate a `departedAt` (what the code refuses),
