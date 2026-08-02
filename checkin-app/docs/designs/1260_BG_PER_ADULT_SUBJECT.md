@@ -41,7 +41,24 @@ Related issues:
 Unblocks **SA3** (household-composition sweeps), which needs a per-adult predicate.
 Also see: `personBgCheck.ts` policy block (the rule this violates) · `HOUSEHOLD_LEAD_MODEL.md`.
 
-## Domain rules (board policy — not inferable from the code)
+## Domain rules
+
+> **Canonical home is the rules register**, `docs/rules/membership.md` § *Background checks* and
+> § *Background checks for program-attached adults* ([#1445](https://github.com/innovationtreehouse/checkin/pull/1445),
+> open at time of writing). It carries the policy citations this restatement lacks. **Once #1445
+> merges, collapse this section to a pointer** rather than maintaining two copies — the register is
+> the single source, and a design doc restating rules is exactly the drift the register exists to end.
+>
+> Restated here only because the design below is unreadable without them. The register sources them:
+> rules 1 and 3 to *Membership Policy, Art. VI §VI.1* ("At least one adult in each family is checked;
+> so is any other family member 18 or over who will be present regularly"), and rule 2 to *Volunteer
+> Policy, Art. IV* ("Every volunteer 18 or older is checked. The obligation attaches to the role, not
+> only to the household") — which is this design's thesis, in the policy's own words.
+>
+> **One reconciliation point.** The register says "present regularly"; this design's population is
+> `ProgramVolunteer`-driven (rule 4). Those coincide only because there is no informal volunteering
+> here — confirmed, and recorded as rule 4. If that ever stops being true, the code's population is
+> narrower than the policy's and rule 4 is where it breaks.
 
 1. **Membership requires ONE background-checked adult lead.** Not all of them. A household with a
    checked lead is compliant for membership purposes, full stop.
@@ -114,8 +131,9 @@ it:
 
 1. `personBgVerdict` returns `FRESH` for them.
 2. → `openPersonBg` skips them ([`personBgTriggers.ts:49`](../../src/lib/membership/personBgTriggers.ts),
-   dedup guard b), so neither the annual cohort sweep (Trigger A) nor new-member activation
-   (Trigger C) ever opens a `PERSON_BG`.
+   dedup guard b — becoming the shared `personBgOpen.where` StateSet under
+   [#1449](https://github.com/innovationtreehouse/checkin/pull/1449); same semantics), so neither the
+   annual cohort sweep (Trigger A) nor new-member activation (Trigger C) ever opens a `PERSON_BG`.
 3. → They never appear in `peopleNeedingBgCheck` on the board compliance dashboard.
 4. **The loop re-arms every cycle.** Their stale stamp keeps them out of the nag, and the next
    household clearance re-stamps them fresh. They can volunteer indefinitely, unchecked, and never
@@ -301,6 +319,15 @@ While in this line: the current `updateMany` omits `...LIVE_PERSON`, unlike ever
 ([`merge/route.ts:210-216`](../../src/app/api/membership-ops/participants/merge/route.ts)), so a
 tombstone still flagged as a lead can only be a residue of merges predating that behaviour. The
 subject-id form removes it by construction regardless; noted for completeness, not as live risk.
+
+This was the last lead-scoped query missing the filter. Its siblings landed as separate fixes —
+[#1448](https://github.com/innovationtreehouse/checkin/pull/1448) (the merge lead-count guard,
+which counted tombstones and *falsely blocked* legitimate merges) and
+[#1450](https://github.com/innovationtreehouse/checkin/pull/1450) (the "needs a lead" surfaces). Same
+omission, opposite consequences: over-blocking there, over-writing here. Worth asking whether
+`householdLeadsWhere` should bundle `LIVE_PERSON` outright, or whether `livePersonDriftGuard.test.ts`
+should cover lead-scoped queries — three independent fixes for one class suggests the predicate, not
+the callers, is the right place to fix it. Out of scope for this PR.
 
 ### Read side — unchanged, and why
 
