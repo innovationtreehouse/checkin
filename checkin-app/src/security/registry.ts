@@ -32,6 +32,34 @@ defineRoute({
     ],
 });
 
+// Self-correction of the caller's OWN visit: PATCH edits the times, DELETE
+// tombstones the row. `[id]` is a Visit id, NOT a person id, so 'self' cannot
+// express the gate — it compares the id param against auth.user.id. Ownership
+// is enforced in the route body, which 404s any id that is not the caller's own
+// live row; their_own (Visit.personId) is the per-row field backstop. The grant
+// stops at 'personal' (arrivedAt/departedAt); 'internal' tombstone fields stay
+// stripped.
+defineRoute({
+    endpoint: 'PATCH /api/attendance/manual/[id]',
+    authorize: 'authenticated',
+    envelope: 'visit',
+    // Bag: { Visit }.
+    returns: ['Visit'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/attendance/manual/[id]',
+    authorize: 'authenticated',
+    // No bag — the response is { success, flagged }, no model data.
+    envelope: null,
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
