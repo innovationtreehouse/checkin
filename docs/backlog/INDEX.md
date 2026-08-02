@@ -50,7 +50,7 @@ Legend of drops: see [§ Dropped — confirmed built](#dropped--confirmed-built-
 
 | id | item | origin | readiness | size | Workaround | src | GH |
 |----|------|--------|-----------|------|----|-----|-----|
-| P1 | **Program → Instance → Event 3-tier restructure** (insert ProgramInstance; move roster/vols/fee/lead/capacity/dates/age-limits down). **Open problem from PR #1197 (w/ P25):** list-opt-out suppression keys on `(person, target, scope=program:<id>)` — teams persist year-over-year with reused group addresses; if instance-id changes yearly, suppression silently resets each year; if it doesn't, a one-time unsubscribe suppresses years later for a different child. P1's design must decide **which identity (team vs instance) opt-outs bind to** | ENHANCE | IN-DESIGN | XL | use flat Program model (no instance tier) | B,C,E,F | #155, #152 (open) |
+| P1 | **Program → Instance → Event 3-tier restructure** (insert ProgramInstance; move roster/vols/fee/lead/capacity/dates/age-limits down). **Open problem from PR #1197 (w/ P25):** list-opt-out suppression keys on `(person, target, scope=program:<id>)` — teams persist year-over-year with reused group addresses; if instance-id changes yearly, suppression silently resets each year; if it doesn't, a one-time unsubscribe suppresses years later for a different child. P1's design must decide **which identity (team vs instance) opt-outs bind to**. Parked PR #953 CLOSED → phase-1 (additive tier + backfill) tracked as #1361 | ENHANCE | IN-DESIGN | XL | use flat Program model (no instance tier) | B,C,E,F | #155, #152 (open); #1361 (phase-1) |
 | P2 | **Seat reservation / capacity holds** (temp hold, expiry, convert to enrollment) — no schema today | CREATE | NEEDS-DESIGN | M | ? | B | #1235 (open) |
 | P3 | **Waitlist** for full programs (notify on capacity; queue-vs-notify-all open Q) | CREATE | NEEDS-DESIGN | M | ? | F | #942 (open) |
 | P4 | **Auto-close enrollment** when pending+active ≥ max | CREATE | READY-FOR-DEV | S | ? | F | #82 (open) |
@@ -63,12 +63,12 @@ Legend of drops: see [§ Dropped — confirmed built](#dropped--confirmed-built-
 | P11 | Program removal: 15-day warning + leader **Pause** (30d, once/yr); privacy-preserving "Incomplete Membership" label | CREATE | NEEDS-DESIGN | M | ? | B | #1239 (open) |
 | P12 | Program-removal enforcement (stale/grace/expiry, scheduled) | CREATE | NEEDS-DESIGN | M | remove stale enrollments by hand | B | #1240 (open) |
 | P13 | Manual-only programs (no Shopify limit; payment follows enrollment) | CREATE | VERIFY | S | ? | B | #1241 (open) |
-| P14 | **Checkin → public Google Calendar feed** (Q83): programs/events created here publish to the website's Google Calendar. MUST include **display rules for cancellations + last-minute moves** (weather reactions etc.) so the public view never gaslights people — a changed event shows AS changed, not silently swapped. (Parked PR #952 = .ics export + template links only, NOT a live feed.) Ties CM11, CM14, P24 | CREATE | NEEDS-DESIGN | M | hand-edit the Google Calendar | B,owner | #1242 (open) |
+| P14 | **Checkin → public Google Calendar feed** (Q83): programs/events created here publish to the website's Google Calendar. MUST include **display rules for cancellations + last-minute moves** (weather reactions etc.) so the public view never gaslights people — a changed event shows AS changed, not silently swapped. (Parked PR #952 CLOSED → its narrow .ics-export slice is tracked separately as #1360; P14 here is the full live feed.) Ties CM11, CM14, P24 | CREATE | NEEDS-DESIGN | M | hand-edit the Google Calendar | B,owner | #1242 (open); #1360 (.ics slice) |
 | P15 | Volunteer↔instance assignment (leader assigns; volunteer self-removes) | VERIFY | VERIFY | S | ? | B | #1243 (open) |
 | P16 | Youth enrollment rules — **DECIDED: disallow** under-18 self/household enrollment now (2026-07-22); richer rules (limit / parent-notify / slot-reserve) deferred to backlog-later | ENHANCE | READY-FOR-DEV | S | ? | F | #167 (open) |
 | P18 | Dead routes: wire-or-delete `/publish` (#476) + `/settings` (#477); port lost validation/guards | FIX | READY-FOR-DEV | S | ? | F | #476, #477 (open) |
 | P19 | Program-date **time display** off-by-one (UTC/local) — **a slice of PL17** (the broader date/time remediation) | FIX | READY-FOR-DEV | S | ? | F | #1149 (open) |
-| P20 | **My-Programs roster surface** for leads — roster + contact, attendance summary, stats, CSV (net-new read surface beyond the inbox; ties GC-ROLES/PL duties; parked partial PR #964, scope source) | CREATE | NEEDS-DESIGN | M | ? | PR#964 | #964 |
+| P20 | **My-Programs roster surface** for leads — roster + contact, attendance summary, stats, CSV (net-new read surface beyond the inbox; ties GC-ROLES/PL duties; parked PR #964 CLOSED by triage → scope source) | CREATE | NEEDS-DESIGN | M | ? | PR#964 | #1364 (open); PR #964 (parked, closed) |
 | P21 | **T-shirt size on Person** — size field for participants + adults (some parents too), with **staleness/refresh policy** (size set too long ago → re-confirm reminder; refresh window likely age-based since youth grow — open design Q) | CREATE | NEEDS-DESIGN | S–M | collect sizes by hand (forms/spreadsheet) | owner | #1244 (open) |
 | P22 | **Program "issues t-shirts" flag + missing-size ops surface** — program attribute; flag gaps to families; dashboard for ops/program leads (+assistant leads) of students in shirt-issuing programs with no/stale size (fits the existing compliance-dashboard `peopleMissingDob` + nav todo-count pattern) | CREATE | NEEDS-DESIGN | M | chase sizes over email | owner | #1245 (open) |
 | P23 | **Program add-on offers → Shopify checkout (deadline-gated)** — design as a GENERIC "buy N by deadline so we can order" pattern; instance 1 = **t-shirts** (students AND adults, N comped per student + paid extras, comp policy TBD); instance 2 = **meal fees for parents at far-away competitions** (Q41). Reuses program↔Shopify variant + webhook plumbing | CREATE | NEEDS-DESIGN | M–L | manual order collection + side spreadsheet to vendor | owner | #1246 (open) |
@@ -96,7 +96,7 @@ Legend of drops: see [§ Dropped — confirmed built](#dropped--confirmed-built-
 | AT8 | Offline kiosk store-and-replay + offline banner — **a slice of the AT14 kiosk-resilience epic** | VERIFY | VERIFY | M | ? | B | #1257 (open) |
 | AT14 | **Kiosk resilience epic** (from PR #1216 design review) — beyond AT8's offline queue: layered health state-machine, recovery ladder (Chromium/wifi bounce, nightly+escalation reboot), reconciliation substrate + projection, server-side DLQ, `system-status/unsynced-scans` review panel, Phase-0 dead-path fixes. Includes a **bug**: 3s debounce swallows the 2nd badge so a fast keyholder double-badge can't close the facility (real window [3s,12s]); ties AT6/#300, AT9/#254. Several sequencing DECISIONS teed up. **Design MERGED to main (#1216 v2 + #1207 proposal).** | CREATE | IN-DESIGN | XL | ? | design-PR | #1347 (open) |
 | AT9 | Force-close **race** (updateMany under per-participant lock → check-in survives close) | FIX | READY-FOR-DEV | S | ? | F | #254 (open) |
-| AT11 | **Badge-print tracking** — `BadgePrint` model + facility-ops report of who has/hasn't had a badge printed in year X (net-new; parked partial PR #962, scope source) | CREATE | NEEDS-DESIGN | S | ? | PR#962 | #962 |
+| AT11 | **Badge-print tracking** — `BadgePrint` model + facility-ops report of who has/hasn't had a badge printed in year X (net-new; parked PR #962 CLOSED by triage → scope source) | CREATE | NEEDS-DESIGN | S | ? | PR#962 | #1363 (open); PR #962 (parked, closed) |
 | AT12 | **Admin hour-correction review screen** — surface how often self/hour corrections happen + let admins review them, NOT buried in the audit log (companion oversight surface to AT5). **Design MERGED to main (#1352 correction surface).** | CREATE | IN-DESIGN | S | read the audit log by hand | owner | #1258 (open) |
 
 ## 4. Safety & Compliance  (prefix SA)
@@ -216,7 +216,7 @@ _Note: FR+FE+CI (+CI4 glue) are ONE dependency-chained pipeline — little value
 | PL11 | Test-runner split Jest/Vitest (#228) [monorepo conversion #214 done, Lambda infra #235 done] | CHORE | READY-FOR-DEV | M | ? | C,F | #228 (open); #214, #235 closed |
 | PL12 | Dev tooling: `+ new persona` creation; dev-instance macro set; sysadmin-persona impersonation | ENHANCE | READY-FOR-DEV | S | ? | C | #1310 (open) |
 | PL13 | Test coverage → ~80% (Phase 4 remaining 53 pages; shared RTL fetch/session helper prereq) | CHORE | READY-FOR-DEV | M | ? | C | #393 (closed) |
-| PL14 | **Staleness auto-notification framework** — registry-driven daily household nudges + weekly board digest for aging renewals/trusted-adults/broken-emails (net-new; distinct from external CM5; parked partial PR #958, scope source). NOTE (PR #958): `Person.notificationSettings` exists but **nothing consults it** (not renewal/TA emails either) — honoring member opt-outs is a cross-cutting follow-up (ties CM10 + SYNC-2 intent model) | CREATE | NEEDS-DESIGN | M | ? | PR#958 | #958 |
+| PL14 | **Staleness auto-notification framework** — registry-driven daily household nudges + weekly board digest for aging renewals/trusted-adults/broken-emails (net-new; distinct from external CM5; parked partial PR #958, scope source). NOTE (PR #958): `Person.notificationSettings` exists but **nothing consults it** (not renewal/TA emails either) — honoring member opt-outs is a cross-cutting follow-up (ties CM10 + SYNC-2 intent model). **Live tracking issue = #1362** (staleness-notification engine); PR #958 = parked scope-source | CREATE | NEEDS-DESIGN | M | ? | PR#958 | #1362 (open); PR #958 (parked) |
 | PL15 | **Annual org metrics report** (Q62): member-family count, total participant count, volunteer count, volunteer hours — the numbers the board hand-builds every year, from data checkin already has | CREATE | READY-FOR-DEV | S | hand-count from queries/exports | owner | #1311 (open) |
 | PL16 | **Org task/todo board** (Q73): "here's what the Treehouse needs done" — one-time AND repeating tasks volunteers can see/claim. Lightweight chore board, not project management | CREATE | NEEDS-DESIGN | M | word-of-mouth / whiteboard | owner | #1312 (open) |
 | PL17 | **Date/time canonical-layer remediation** (from PR #1338/#1149 design review) — whole-class fix beyond P19's program-date slice: DOB written at 3 conventions (+ dedup-miss → duplicate Person, ties M18), **age-gate birthday flip that can reject an 18-yr-old (safety-adjacent, F7)**, memberSince/lastBackgroundCheck display bugs, visit-window/trends bucketing, single display-tz source. Blocked on the calendar-date-storage DECISION. **P19 = a slice of this. Design MERGED to main (#1338).** | FIX | IN-DESIGN | L | ? | design-PR | #1346 (open) |
@@ -279,15 +279,15 @@ Owner-assigned relative priority. Not a schedule — a lean. Still high-level (d
 
 | INDEX item | parked PR | how complete (per PR body) |
 |-----------|-----------|----------------------------|
-| M4 archive family | #959 | soft-archive present |
-| M5 cascade removal | #965 | grace→auto-withdraw designed+coded |
-| P5 program archive | #954 | `Program.archivedAt` present |
-| P6 Shopify auto-archive | #955 | **partial** — listing archive only; no empty-category warnings |
-| P14 calendar load | #952 | **partial** — .ics export + Google template links, NOT a live feed |
-| CM1 mailing-list sync | #960 | Google Group sync; **CONFLICTING — needs rebase** |
-| PL4 time-scoped contact | #963 | ±7d window, audited |
-| SA1 BG automation | #961 | **partial** — student-nudge/consent slice only |
-| P1 program→instance | #953 | **phase 1 only** — additive schema + backfill, nothing reads it |
+| M4 archive family | #959 (OPEN) | soft-archive present; interview reworked M4 to two-state (#1228) |
+| M5 cascade removal | #965 (closed) | tracked as #1229 (enrollments only; pickup-auth leg open) |
+| P5 program archive | #954 (closed) | tracked as #1236 |
+| P6 Shopify auto-archive | #955 (closed) | tracked as #1237 (listing archive only; no empty-category warnings) |
+| P14 calendar load | #952 (closed) | .ics slice tracked as #1360; full feed = #1242 |
+| CM1 mailing-list sync | #960 (closed) | superseded by MEMBERSHIP_SYNC #1197 / #943 |
+| PL4 time-scoped contact | #963 (OPEN) | interview re-cut PL4 (#1304) — theater vs old roster door |
+| SA1 BG automation | #961 (OPEN) | student-nudge slice; self-attest BLOCKER surfaced (#1260) |
+| P1 program→instance | #953 (closed) | phase-1 tracked as #1361 |
 
 _Merge health: #960 + #1109 CONFLICTING (rebase); other 11 mergeable=UNKNOWN (GitHub hasn't recomputed — re-poll, not a clean signal)._
 
