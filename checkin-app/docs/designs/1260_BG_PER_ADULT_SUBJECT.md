@@ -303,32 +303,20 @@ attempted, because there is nothing to count.
   ([`:364`](../../src/lib/membership/review.ts), `hasHouseholdConflict`, sysadmin-bypassable) already
   stops a board member force-clearing their own household. Naming subjects does not widen it.
 
-While in this line: the current `updateMany` omits `...LIVE_PERSON`, unlike every sibling query
-(`householdBgIsFresh:323`, `applyVolunteerStatus:342`, `notifyReviewers:93`). The exposure is
-**narrower than it looks and closed going forward** — the merge CAS is the only non-null writer of
-`mergedIntoId` and it sets `isHouseholdLead: false` in the same write
+**The `LIVE_PERSON` omission on this line is already fixed elsewhere.**
+[#1455](https://github.com/innovationtreehouse/checkin/pull/1455) adds `...LIVE_PERSON` here
+minimally — deliberately not restructuring the logic, since that is this design's job. The
+subject-id form removes the concern by construction anyway. The exposure was small: the merge CAS is
+the only non-null writer of `mergedIntoId` and clears `isHouseholdLead` in the same write
 ([`merge/route.ts:210-216`](../../src/app/api/membership-ops/participants/merge/route.ts)), so a
-tombstone still flagged as a lead can only be a residue of merges predating that behaviour. The
-subject-id form removes it by construction regardless; noted for completeness, not as live risk.
+tombstone flagged as a lead could only be residue from merges predating that.
 
-Sibling omissions landed as separate fixes —
-[#1448](https://github.com/innovationtreehouse/checkin/pull/1448) (the merge lead-count guard) and
-[#1450](https://github.com/innovationtreehouse/checkin/pull/1450) (the "needs a lead" surfaces).
-**Their severities differ and should not be conflated:** #1448 counted household *members*, and every
-merge creates one, so it was live and compounding — it *falsely blocked* legitimate merges. This one
-filters `isHouseholdLead: true`, which the CAS sets false, so it only ever reached pre-#1105 residue.
-
-**The generalisable point is why the existing guard missed all of them.**
-`src/__tests__/livePersonDriftGuard.test.ts` exists for exactly this class, and matches
-`\b(?:prisma|tx|db)\.person\.(findMany|findFirst|count|aggregate|groupBy)\(` plus nested pulls keyed
-on `person:`. Neither bug matches: `review.ts:305` is `tx.person.updateMany` (**no write verb is in
-the pattern**), and `merge/route.ts:130` is a `findUnique` (explicitly excluded) pulling a
-Person-typed relation named `householdMembers` (pattern 2 keys on `person:`). Neither was allowlisted,
-because neither was ever seen.
-
-So the fix for the class is extending the guard along those two axes — write verbs, and Person-typed
-relations under other names — **not** bundling `LIVE_PERSON` into `householdLeadsWhere`, which neither
-site uses. Out of scope for this PR; worth its own.
+The wider class is not small, and is tracked separately as
+[#1456](https://github.com/innovationtreehouse/checkin/issues/1456). #1455 widened the drift guard to
+see writes and renamed Person relations and immediately flagged **19 sites, 13 of which were silently
+wrong** — including an authorization check a merged-away identity could satisfy, and a `take: 1` lead
+lookup a tombstone could shadow entirely. This design needs none of that; noted so the line's history
+is legible.
 
 ### Read side — unchanged, and why
 
