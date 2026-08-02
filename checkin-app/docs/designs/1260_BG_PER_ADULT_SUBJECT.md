@@ -222,8 +222,10 @@ deliberately — showing reviewer A that reviewer B already signed off invites a
 
 ```ts
 // Stamp the adults this review actually covered — read off the Averity PDFs by the
-// reviewers. Legacy rows carry no subject and deliberately stamp nobody.
-const cleared = subjectsWithTwoApprovals(process.attestations); // personId[]
+// reviewers. `subjectOverride` is the board force-approve path, which asserts the
+// subjects directly instead of counting attestations (see below). Legacy rows carry
+// no subject and deliberately stamp nobody.
+const cleared = subjectOverride ?? subjectsWithTwoApprovals(process.attestations); // personId[]
 if (cleared.length) {
     await tx.person.updateMany({ where: { id: { in: cleared } }, data: { lastBackgroundCheck: now } });
 }
@@ -246,15 +248,59 @@ the `PERSON_BG` track, which already picks them up —
 Both call `openPersonBg`, which now — with no false stamp — correctly reads them as `NEEDED`. The
 handoff is free.
 
+**New failure mode: the split-subject stall.** If reviewer 1 names only Alex and reviewer 2 names only
+Sam, *neither* reaches 2/2, `bgClearedAt` never fires, and the process sits in the queue awaiting a
+third reviewer who shares a household with neither of the first two. On a small board that pool can be
+empty, and it is a stall that **cannot occur today** — one attestation per reviewer means two
+approvals always converge.
+
+Accepted, not designed away: the alternative is letting one reviewer's subject choice bind the other's,
+which defeats the independence the two-reviewer rule exists for. Two things keep it from being silent —
+the `subjects[]` payload renders per-subject counts on the card, so reviewer 2 sees Alex sitting at 1/2
+before choosing, and the board's force-approve (above) resolves any stall outright. Reviewers should be
+told to name every adult whose PDF they actually read, not just one.
+
 **Legacy rows stamp nothing.** A pre-deploy process whose attestations carry no subject yields an
 empty `cleared` set, so no `Person` row is written. Conservative on purpose: better a household that
 reads stale and gets chased than one more unchecked adult silently marked cleared. The remediation
 report counts these so nobody is surprised.
 
-While in this line: the current `updateMany` also omits `...LIVE_PERSON`, unlike every sibling query
-(`householdBgIsFresh:323`, `applyVolunteerStatus:342`, `notifyReviewers:93`), so merged-away tombstone
-rows still flagged `isHouseholdLead` get stamped too. The subject-id form removes the issue by
-construction.
+### Board force-approve needs its own subject selection
+
+`overrideBlocked(processId, actorId, "approve")` ([`review.ts:352`](../../src/lib/membership/review.ts))
+routes into the same `clearBackgroundCheck` ([`:397`](../../src/lib/membership/review.ts)) — and
+**counting attestations there yields the empty set every time.** A `BLOCKED` process got blocked by a
+REJECT, and unlike the `reset` branch ([`:385`](../../src/lib/membership/review.ts)) `approve` does
+**not** delete attestations. So it carries at most one APPROVE per subject — a second would already
+have cleared it. `subjectsWithTwoApprovals` can never reach 2.
+
+Left unaddressed this is not a legacy tail but a permanent path that **inverts the override's
+purpose**: the board force-approves, `bgClearedAt` is set, the membership activates — and no adult is
+stamped at all, so the household reads `STALE_BG` immediately and holds a `bgClearedAt` with no person
+behind it. Strictly worse than today, where the override at least stamps someone.
+
+**The override asserts subjects directly.** It already bypasses the two-reviewer count for
+`bgClearedAt`; it does the same for the stamp. `overrideBlocked` takes `subjectPersonIds`, passes them
+as `subjectOverride`, and those adults are stamped on the board member's authority. Counting is not
+attempted, because there is nothing to count.
+
+- The board's action UI (`/membership-ops/applications`, the `review-override` POST) gains the same
+  lead checkbox group as the reviewer card.
+- **Non-empty selection required** on a household process, same 400 as `attest`. An override that
+  names nobody is the blanket-stamp bug wearing a different hat.
+- `reset` is unaffected — it deletes attestations and returns the process to review, where the normal
+  per-subject flow applies.
+- The existing conflict-of-interest gate on `overrideBlocked`
+  ([`:364`](../../src/lib/membership/review.ts), `hasHouseholdConflict`, sysadmin-bypassable) already
+  stops a board member force-clearing their own household. Naming subjects does not widen it.
+
+While in this line: the current `updateMany` omits `...LIVE_PERSON`, unlike every sibling query
+(`householdBgIsFresh:323`, `applyVolunteerStatus:342`, `notifyReviewers:93`). The exposure is
+**narrower than it looks and closed going forward** — the merge CAS is the only non-null writer of
+`mergedIntoId` and it sets `isHouseholdLead: false` in the same write
+([`merge/route.ts:210-216`](../../src/app/api/membership-ops/participants/merge/route.ts)), so a
+tombstone still flagged as a lead can only be a residue of merges predating that behaviour. The
+subject-id form removes it by construction regardless; noted for completeness, not as live risk.
 
 ### Read side — unchanged, and why
 
@@ -378,9 +424,28 @@ The route computes the list; **no human runs a query.** Two lookups, both exact:
    board mark is documented as the backstop. The dashboard **labels** the likely subject; it never
    pre-selects or auto-clears. A board member clicks.
 
-Also surfaced, as a separate short list: survivors of a person merge whose `lastBackgroundCheck` may
-have arrived via the newer-wins rule ([`merge/route.ts:94`](../../src/app/api/membership-ops/participants/merge/route.ts))
-— `Person` rows with `mergedFrom` entries. Low volume, no reliable automatic signal, hand-review only.
+### Merge is an ongoing source, not part of the one-time cleanup
+
+Separately surfaced: survivors of a person merge whose `lastBackgroundCheck` arrived via the
+newer-wins rule in `resolveKeeperUpdate`
+([`merge/route.ts:92-100`](../../src/app/api/membership-ops/participants/merge/route.ts)), which takes
+the later of the two dates **unconditionally, with no subject provenance**.
+
+**This list does not empty, and the write fix does not touch it.** The whole thesis of this design is
+that a `lastBackgroundCheck` must trace to a named subject's PDF; every future merge can still mint one
+that traces to nothing. So this sub-list is a **permanent** dashboard section, not part of the
+blanket-stamp cleanup — [step 6](#order-of-operations) deletes the blanket-stamp list only.
+
+Closing the hole properly is **deferred to [#1396](https://github.com/innovationtreehouse/checkin/issues/1396)**
+(merge transfers the BG date but leaves the application at review), which owns merge/BG provenance.
+This design deliberately does not redesign the merge rule.
+
+**Cross-reference for #1396:** the merge route is gated by `withAuth({ roles: ['isSysadmin',
+'isBoardMember'] })` and has **no conflict-of-interest check** — unlike `overrideBlocked`, which calls
+`hasHouseholdConflict` ([`review.ts:364`](../../src/lib/membership/review.ts)) precisely to stop a board
+member clearing their own household. A merge is therefore an unguarded route for a board member to
+place a background-check date on a person in their own household. Out of scope here; worth carrying
+into #1396's design.
 
 ### Deliberate departure: the dashboard gains an action
 
@@ -421,9 +486,11 @@ costs one input instead of a redeploy if 2026-07-01 turns out to be wrong.
    so the spike is expected. Household `STALE_BG` counts should barely move, since membership only
    ever needed one checked adult.
 5. Update `docs/backlog/INDEX.md:303` with what the list showed.
-6. **Delete the section** once it empties. It is one-time cleanup, not a permanent surface: legacy
-   processes clearing after the deploy stamp *nobody*, so no tail accumulates and the existing
-   `STALE_BG` bucket already catches those households.
+6. **Delete the blanket-stamp list** once it empties — that part is one-time cleanup, not a permanent
+   surface: legacy processes clearing after the deploy stamp *nobody*, so no tail accumulates and the
+   existing `STALE_BG` bucket already catches those households. **The merge sub-list stays** until
+   [#1396](https://github.com/innovationtreehouse/checkin/issues/1396) closes the provenance hole — see
+   [above](#merge-is-an-ongoing-source-not-part-of-the-one-time-cleanup).
 
 ### Rejected: re-running the affected reviews
 
@@ -448,6 +515,10 @@ path. Not worth it to avoid a dozen button clicks.
   The in-transaction `already_attested` check under the existing `FOR UPDATE` process lock
   ([`review.ts:214`](../../src/lib/membership/review.ts)) is what actually serializes concurrent
   attestations; the index is defence-in-depth. Do not let it quietly become less than that.
+  *(Considered and not taken: denormalising `subjectPersonId` onto `PERSON_BG` attestations — the
+  process already names its subject — would shrink the null population to legacy rows only. It does
+  not remove the raw-SQL requirement, so it buys little; noted because this design reasons explicitly
+  about which rows carry null.)*
 - **Security boundary ships in its own PR.** A new FK on `BackgroundCheckAttestation` plus its
   `@sensitivity` annotation touches `scopeBindings.ts` and the generated classifications — per the
   boundary-isolation rule in `AGENTS.md` that lands **before** the app-code PR, with no feature code.
@@ -476,8 +547,15 @@ removal. New coverage, mirroring the `PERSON_BG` safety assertion at
   `NEEDED`, Sam appears in `peopleNeedingBgCheck`, and Trigger C opens a `PERSON_BG` for Sam. Today
   all three are false.
 - Both reviewers name both leads ⇒ both stamped.
-- Reviewer 1 names Alex, reviewer 2 names Sam ⇒ **nobody** stamped, both at 1/2, process stays queued.
+- Reviewer 1 names Alex, reviewer 2 names Sam ⇒ **nobody** stamped, both at 1/2, process stays queued
+  (the split-subject stall — an accepted new failure mode, asserted so it stays deliberate).
 - APPROVE with an empty subject selection on a household process ⇒ 400.
+- **Board force-approve stamps its named subjects.** `overrideBlocked(…, "approve", { subjectPersonIds: [alex] })`
+  on a BLOCKED process carrying one APPROVE + one REJECT ⇒ Alex stamped, `bgClearedAt` set. Without
+  the subject override this is the case that silently stamps nobody, so assert the stamp, not just
+  the status.
+- Force-approve with an empty subject selection ⇒ 400.
+- Force-approve `reset` still deletes attestations and returns the process to review unchanged.
 - A reviewer who has attested Alex but not Sam still sees the process in `eligibleReviewProcessIds`.
 - Legacy row whose attestations carry no subject: clearance stamps **no** `Person` row, and
   `bgClearedAt`/activation still happen.
