@@ -1,6 +1,6 @@
 # Per-adult background-check subjects (household path)
 
-Issue: [#1260](https://github.com/innovationtreehouse/checkin/issues/1260) · Status: **PROPOSED — for review**
+Issue: [#1260](https://github.com/innovationtreehouse/checkin/issues/1260)
 · Scope/related work in the [appendix](#appendix--issue-scope-and-related-work).
 
 ## Problem
@@ -67,7 +67,7 @@ design's population is `ProgramVolunteer`-driven. Those coincide only because of
 
 ## How it breaks today
 
-`clearBackgroundCheck`, household branch — [`review.ts:305`](../../src/lib/membership/review.ts):
+`clearBackgroundCheck`, household branch — [`review.ts:305`](../../checkin-app/src/lib/membership/review.ts):
 
 ```ts
 await tx.person.updateMany({ where: { householdId, isHouseholdLead: true }, data: { lastBackgroundCheck: now } });
@@ -76,11 +76,11 @@ await tx.person.updateMany({ where: { householdId, isHouseholdLead: true }, data
 When two reviewers approve one household application, **every household lead** (cap 2, see
 `MAX_HOUSEHOLD_LEADS`) gets `lastBackgroundCheck = now` — whether or not they consented, whether or
 not a check for them exists at Averity at all. The `PERSON_BG` branch immediately above it
-([`review.ts:290`](../../src/lib/membership/review.ts)) does the right thing and stamps only
+([`review.ts:290`](../../checkin-app/src/lib/membership/review.ts)) does the right thing and stamps only
 `subjectPersonId`.
 
 This is known and deliberate legacy. The policy block at
-[`personBgCheck.ts:18-21`](../../src/lib/membership/personBgCheck.ts) states it outright:
+[`personBgCheck.ts:18-21`](../../checkin-app/src/lib/membership/personBgCheck.ts) states it outright:
 
 > Checks are PER-ADULT. One person's check must never satisfy another's — in particular a
 > household lead's check does not cover a second volunteering spouse. (The legacy household
@@ -93,14 +93,14 @@ This is known and deliberate legacy. The policy block at
 
 | Surface | Writes | Scope |
 |---|---|---|
-| Applicant checkbox "I submitted my consent on Averity" ([`membership/page.tsx:881`](../../src/app/membership/page.tsx)) | `OrgMembershipProcess.bgConsentAt` | **per process**, no person FK |
+| Applicant checkbox "I submitted my consent on Averity" ([`membership/page.tsx:881`](../../checkin-app/src/app/membership/page.tsx)) | `OrgMembershipProcess.bgConsentAt` | **per process**, no person FK |
 | Board backstop `mark-bg-consent` | same column | per process |
 | Reviewer "Attest — check is clean" | `BackgroundCheckAttestation{processId, reviewerId, …}` | **per process × reviewer**, no subject |
 | 2nd APPROVE, `PERSON_BG` | `Person.lastBackgroundCheck` (1 row) | **per person** ✅ |
 | 2nd APPROVE, household | `Person.lastBackgroundCheck` (**all leads**) | **per household** ❌ |
 
 The Averity link is one static org-wide URL (`AVERITY_CONSENT_URL`,
-[`manual-adapter.ts:13`](../../src/lib/membership/background-check/manual-adapter.ts)) with no
+[`manual-adapter.ts:13`](../../checkin-app/src/lib/membership/background-check/manual-adapter.ts)) with no
 per-person token, so no integration supplies the subject either.
 
 So the fix is not "narrow the `updateMany`" — there is no recorded subject to narrow it *to*. The
@@ -121,7 +121,7 @@ compounds because the false stamp also removes them from the machinery that woul
 it:
 
 1. `personBgVerdict` returns `FRESH` for them.
-2. → `openPersonBg` skips them ([`personBgTriggers.ts:49`](../../src/lib/membership/personBgTriggers.ts),
+2. → `openPersonBg` skips them ([`personBgTriggers.ts:49`](../../checkin-app/src/lib/membership/personBgTriggers.ts),
    dedup guard b — becoming the shared `personBgOpen.where` StateSet under
    [#1449](https://github.com/innovationtreehouse/checkin/pull/1449); same semantics), so neither the
    annual cohort sweep (Trigger A) nor new-member activation (Trigger C) ever opens a `PERSON_BG`.
@@ -130,7 +130,7 @@ it:
    household clearance re-stamps them fresh. They can volunteer indefinitely, unchecked, and never
    appear anywhere.
 5. Person merge takes the newer compliance date unconditionally
-   ([`merge/route.ts:94`](../../src/app/api/membership-ops/participants/merge/route.ts)), so a
+   ([`merge/route.ts:94`](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts)), so a
    falsely stamped duplicate propagates its date onto the survivor.
 
 A volunteering second lead is already a `ProgramVolunteer` — guaranteed, per rule 4 — and therefore
@@ -215,7 +215,7 @@ as now — the selection is the only addition. Usually it will be a single name.
   `applyVolunteerStatus`'s existing `attestations.some(a => a.isMarkedVolunteer)` is unchanged.
 
 **Eligibility filtering shifts from per-process to per-subject.** `eligibleReviewProcessIds`
-([`review.ts:161`](../../src/lib/membership/review.ts)) currently drops a process once the reviewer
+([`review.ts:161`](../../checkin-app/src/lib/membership/review.ts)) currently drops a process once the reviewer
 has any attestation on it; now it drops it only when the reviewer has attested every outstanding
 named subject. Same for `reviewQueueCounts`'s `approvedAwaitingSecond`. The same-household-reviewer
 and same-household-applicant exclusions stay **process-scoped** — a reviewer's household-mate should
@@ -246,7 +246,7 @@ satisfies the membership obligation. The payment/activation convergence, `applyV
 
 **A second subject left at 1/2 is not stranded, and needs no special handling.** Once `bgClearedAt`
 is set the process leaves the reviewer queue (`awaitingBgReview` gates on `bgClearedAt: null`,
-[`lifecycle.ts:131`](../../src/lib/membership/lifecycle.ts)), so a half-approved second subject stops
+[`lifecycle.ts:131`](../../checkin-app/src/lib/membership/lifecycle.ts)), so a half-approved second subject stops
 accumulating there. That is correct: their obligation is a *volunteer* obligation, and it belongs on
 the `PERSON_BG` track, which already picks them up —
 
@@ -276,10 +276,10 @@ report counts these so nobody is surprised.
 
 ### Board force-approve needs its own subject selection
 
-`overrideBlocked(processId, actorId, "approve")` ([`review.ts:352`](../../src/lib/membership/review.ts))
-routes into the same `clearBackgroundCheck` ([`:397`](../../src/lib/membership/review.ts)) — and
+`overrideBlocked(processId, actorId, "approve")` ([`review.ts:352`](../../checkin-app/src/lib/membership/review.ts))
+routes into the same `clearBackgroundCheck` ([`:397`](../../checkin-app/src/lib/membership/review.ts)) — and
 **counting attestations there yields the empty set every time.** A `BLOCKED` process got blocked by a
-REJECT, and unlike the `reset` branch ([`:385`](../../src/lib/membership/review.ts)) `approve` does
+REJECT, and unlike the `reset` branch ([`:385`](../../checkin-app/src/lib/membership/review.ts)) `approve` does
 **not** delete attestations. So it carries at most one APPROVE per subject — a second would already
 have cleared it. `subjectsWithTwoApprovals` can never reach 2.
 
@@ -300,7 +300,7 @@ attempted, because there is nothing to count.
 - `reset` is unaffected — it deletes attestations and returns the process to review, where the normal
   per-subject flow applies.
 - The existing conflict-of-interest gate on `overrideBlocked`
-  ([`:364`](../../src/lib/membership/review.ts), `hasHouseholdConflict`, sysadmin-bypassable) already
+  ([`:364`](../../checkin-app/src/lib/membership/review.ts), `hasHouseholdConflict`, sysadmin-bypassable) already
   stops a board member force-clearing their own household. Naming subjects does not widen it.
 
 **The `LIVE_PERSON` omission on this line is already fixed elsewhere.**
@@ -308,7 +308,7 @@ attempted, because there is nothing to count.
 minimally — deliberately not restructuring the logic, since that is this design's job. The
 subject-id form removes the concern by construction anyway. The exposure was small: the merge CAS is
 the only non-null writer of `mergedIntoId` and clears `isHouseholdLead` in the same write
-([`merge/route.ts:210-216`](../../src/app/api/membership-ops/participants/merge/route.ts)), so a
+([`merge/route.ts:210-216`](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts)), so a
 tombstone flagged as a lead could only be residue from merges predating that.
 
 The wider class is not small, and is tracked separately as
@@ -326,9 +326,9 @@ rule 1. All three stay exactly as they are:
 
 | Site | Current behaviour | Verdict |
 |---|---|---|
-| `householdBgIsFresh` ([`renewal.ts:319`](../../src/lib/membership/renewal.ts)) | `findFirst` — any one fresh lead ⇒ household fresh | **Correct.** Membership needs one. Drives the intake shortcut, renewal shortcut, `STALE_BG`. |
-| [`membership-ops/households/route.ts:109`](../../src/app/api/membership-ops/households/route.ts) `+:194` | `reduce` to the **later** lead date | **Correct.** Household stays member-eligible until the last check lapses. |
-| [`membership-audit/compliance/route.ts:154`](../../src/app/api/membership-audit/compliance/route.ts) | same max reduce | **Correct**, same reason. |
+| `householdBgIsFresh` ([`renewal.ts:319`](../../checkin-app/src/lib/membership/renewal.ts)) | `findFirst` — any one fresh lead ⇒ household fresh | **Correct.** Membership needs one. Drives the intake shortcut, renewal shortcut, `STALE_BG`. |
+| [`membership-ops/households/route.ts:109`](../../checkin-app/src/app/api/membership-ops/households/route.ts) `+:194` | `reduce` to the **later** lead date | **Correct.** Household stays member-eligible until the last check lapses. |
+| [`membership-audit/compliance/route.ts:154`](../../checkin-app/src/app/api/membership-audit/compliance/route.ts) | same max reduce | **Correct**, same reason. |
 
 Per-adult visibility is not this rollup's job — it is `peopleNeedingBgCheck`'s, which is already
 person-scoped and already includes volunteering leads. Nothing to add.
@@ -377,7 +377,7 @@ actually had a check is a judgement call against the Averity PDFs, and the peopl
 are board members, not whoever has database access.
 
 **Almost all of it already exists.** The mutation is
-[`PUT /api/membership-ops/participants/[id]`](../../src/app/api/membership-ops/participants/[id]/route.ts)
+[`PUT /api/membership-ops/participants/[id]`](../../checkin-app/src/app/api/membership-ops/participants/[id]/route.ts)
 — board/sysadmin gated, accepts `lastBackgroundCheck: null` to clear a stamp, and already writes a
 proper `AuditLog` row with `oldData`/`newData` and the acting board member as `actorId`. Its UI is the
 edit modal on `/membership-ops/participants`. A board member can correct a bad stamp today, unaided.
@@ -415,7 +415,7 @@ correction. The section disappears when the list empties.
 The route computes the list; **no human runs a query.** Two lookups, both exact:
 
 1. **Which households were blanket-stamped.** In `clearBackgroundCheck` a single
-   `const now = new Date()` ([`review.ts:300`](../../src/lib/membership/review.ts)) is written to
+   `const now = new Date()` ([`review.ts:300`](../../checkin-app/src/lib/membership/review.ts)) is written to
    *both* every lead's `lastBackgroundCheck` **and** the process's `bgClearedAt`. So the join key is
    equality to the millisecond, not a heuristic: household processes (`subjectPersonId` null) with
    `bgClearedAt` set, joined to leads whose `lastBackgroundCheck` equals it, keeping only groups of
@@ -428,7 +428,7 @@ The route computes the list; **no human runs a query.** Two lookups, both exact:
 
 2. **Who probably had the check.** `markBgConsent` writes exactly one `AuditLog` row per process with
    `newData.bgConsentAt = true`, and its `actorId` is whoever attested
-   ([`external.ts:181`](../../src/lib/membership/external.ts)):
+   ([`external.ts:181`](../../checkin-app/src/lib/membership/external.ts)):
 
    | `actorId` | What the row shows | Board action |
    |---|---|---|
@@ -444,7 +444,7 @@ The route computes the list; **no human runs a query.** Two lookups, both exact:
 
 Separately surfaced: survivors of a person merge whose `lastBackgroundCheck` arrived via the
 newer-wins rule in `resolveKeeperUpdate`
-([`merge/route.ts:92-100`](../../src/app/api/membership-ops/participants/merge/route.ts)), which takes
+([`merge/route.ts:92-100`](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts)), which takes
 the later of the two dates **unconditionally, with no subject provenance**.
 
 **This list does not empty, and the write fix does not touch it.** The whole thesis of this design is
@@ -458,7 +458,7 @@ This design deliberately does not redesign the merge rule.
 
 **Cross-reference for #1396:** the merge route is gated by `withAuth({ roles: ['isSysadmin',
 'isBoardMember'] })` and has **no conflict-of-interest check** — unlike `overrideBlocked`, which calls
-`hasHouseholdConflict` ([`review.ts:364`](../../src/lib/membership/review.ts)) precisely to stop a board
+`hasHouseholdConflict` ([`review.ts:364`](../../checkin-app/src/lib/membership/review.ts)) precisely to stop a board
 member clearing their own household. A merge is therefore an unguarded route for a board member to
 place a background-check date on a person in their own household. Out of scope here; worth carrying
 into #1396's design.
@@ -529,7 +529,7 @@ path. Not worth it to avoid a dozen button clicks.
   `scripts/compare-schema-dumps.sh` — call it out in the migration's comment header so the next
   `coalesce-migrations` run does not silently regenerate a plain unique.
   The in-transaction `already_attested` check under the existing `FOR UPDATE` process lock
-  ([`review.ts:214`](../../src/lib/membership/review.ts)) is what actually serializes concurrent
+  ([`review.ts:214`](../../checkin-app/src/lib/membership/review.ts)) is what actually serializes concurrent
   attestations; the index is defence-in-depth. Do not let it quietly become less than that.
   *(Considered and not taken: denormalising `subjectPersonId` onto `PERSON_BG` attestations — the
   process already names its subject — would shrink the null population to legacy rows only. It does
@@ -548,11 +548,11 @@ path. Not worth it to avoid a dozen button clicks.
 ## Test plan
 
 The bug is currently invisible to the suite: both integration tests that assert the stamp
-([`membershipReviewAPI:135`](../../src/app/__tests__/membershipReviewAPI.integration.test.ts),
-[`membershipBgNonBlocking:141`](../../src/app/__tests__/membershipBgNonBlocking.integration.test.ts))
+([`membershipReviewAPI:135`](../../checkin-app/src/app/__tests__/membershipReviewAPI.integration.test.ts),
+[`membershipBgNonBlocking:141`](../../checkin-app/src/app/__tests__/membershipBgNonBlocking.integration.test.ts))
 use **single-lead** households, so nothing locks in the blanket behaviour and nothing catches its
 removal. New coverage, mirroring the `PERSON_BG` safety assertion at
-[`personBgTriggers.integration.test.ts:199`](../../src/app/__tests__/personBgTriggers.integration.test.ts)
+[`personBgTriggers.integration.test.ts:199`](../../checkin-app/src/app/__tests__/personBgTriggers.integration.test.ts)
 ("household-mate untouched"):
 
 - **The regression itself** — two-lead household, both reviewers name only Alex ⇒ Alex stamped and
@@ -630,4 +630,4 @@ needs correcting, and INDEX's SA1 row needs to match #1260's reduced scope.
   not households" shift. Not a dependency.
 
 Unblocks **SA3** (household-composition sweeps), which needs a per-adult predicate.
-Also see: `personBgCheck.ts` policy block (the rule this violates) · `HOUSEHOLD_LEAD_MODEL.md`.
+Also see: `personBgCheck.ts` policy block (the rule this violates) · `checkin-app/docs/designs/HOUSEHOLD_LEAD_MODEL.md`.
