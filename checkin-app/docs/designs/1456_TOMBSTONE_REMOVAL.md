@@ -10,8 +10,14 @@ exclude tombstones, or it silently shows and counts a person who no longer exist
 
 Remembering is left to the developer. There are **113 places** that have to get it right, across 40
 files. Getting it wrong produces no error of any kind — just a ghost in a roster, a wrong count, or
-a write that lands on a dead record. It has already happened three times, and the automated check
-built to catch it missed all three.
+a write that lands on a dead record.
+
+It has gone wrong repeatedly. Three bugs shipped and were fixed one at a time; then the automated
+check that should have caught them was widened, and found **13 more live defects in a single sweep**
+— including an authorization check that a merged-away identity could satisfy. It also surfaced a
+safety question nobody can answer cleanly: a merge can leave someone's open building visit attached
+to the deleted record, so the evacuation roster must choose between showing a ghost and reporting a
+household absent while a person is still inside.
 
 ## Objective
 
@@ -43,25 +49,53 @@ two tool certifications is real".
 `{ mergedIntoId: null }` — an **opt-out** convention. A merged-away Person is a tombstone: the row
 survives forever, so every Person query must remember the filter or silently read a ghost.
 
-**113 usages across 40 files, plus a 31-entry allowlist** on the drift guard. Forgetting produces no
+**113 usages across 40 files, plus a 37-entry allowlist** on the drift guard. Forgetting produces no
 compiler error and no runtime error — a stale row in a list, or a write landing on a dead record.
 
-### It has already failed three times
+### The failure rate is the argument
+
+Three bugs shipped and were fixed individually:
 
 | Bug | Effect |
 |---|---|
 | [#1448](https://github.com/innovationtreehouse/checkin/pull/1448) | The merge's own lead-count guard counted tombstones, **falsely blocking** legitimate merges with a message naming members that don't exist |
 | [#1450](https://github.com/innovationtreehouse/checkin/pull/1450) | Tombstones leaked into the "needs a lead" household surfaces |
-| `review.ts:305` | The background-check blanket stamp (fixed under [#1260](https://github.com/innovationtreehouse/checkin/issues/1260) / PR [#1454](https://github.com/innovationtreehouse/checkin/pull/1454)) |
+| `review.ts:305` | The background-check blanket stamp (fixed under [#1260](https://github.com/innovationtreehouse/checkin/issues/1260)) |
 
-`livePersonDriftGuard.test.ts` exists to catch precisely this class, and **missed all three.** Its
-matcher is `\b(?:prisma|tx|db)\.person\.(findMany|findFirst|count|aggregate|groupBy)\(` plus nested
-pulls keyed on `person:`. So it sees neither `tx.person.updateMany` (no write verb in the pattern)
-nor a Person-typed relation named `householdMembers` (a `findUnique`, and not keyed `person:`).
+`livePersonDriftGuard.test.ts` exists to catch precisely this class and **missed all three** — its
+matcher saw only read verbs on the `person` delegate, so a `person.updateMany` and a Person-typed
+relation named `householdMembers` were both invisible.
 
-A chip is widening it along both axes now. **That is mitigation, not a fix** — the guard is a regex
-over source text, so new blind spots are a matter of time. The correct move is to remove what it
-guards.
+**Then [#1455](https://github.com/innovationtreehouse/checkin/pull/1455) widened it, and the true
+size showed: 19 sites flagged, 13 of them silently wrong.** Not stylistic — among them:
+
+- **An authorization check a merged-away identity could satisfy.** `membership/request-payment-plan`
+  tested household leadership with `some(p => p.id === currentUserId)` over an unfiltered lead set.
+- **A lead lookup a tombstone could shadow entirely** — `finance-ops/payments` pulls with `take: 1`.
+- **Tombstone contact addresses presented as people to contact** — the merge rewrites the loser's
+  email to `merged-*@deleted.invalid`, and household rosters and lead-contact lists displayed it.
+
+That is the case for this issue. Three bugs is a run of bad luck; **13 live defects sitting behind
+one filter nobody could see they had missed is a design that does not work.** Every one is a place a
+developer had to remember something, and didn't — which is what an opt-out convention guarantees at
+scale.
+
+**#1455 is mitigation, not the fix.** The guard is a regex over source text: it now sees two more
+shapes, and the next blind spot is a matter of time. It also cannot answer the questions it
+surfaces — see [the safety surface it could not decide](#the-question-the-model-cannot-answer).
+
+### The question the model cannot answer
+
+The widened guard left `safety/emergency-contacts` deliberately unfiltered, marked `NEEDS REVIEW`.
+It is the evacuation roster: `isPresent` derives from each member's open `visits`, and a merge can
+leave a concurrently-open visit on the **tombstone**.
+
+So filtering trades a duplicate ghost row against **reporting a household absent while someone is
+still in the building**. Neither answer is safe, and a drift guard has no business choosing.
+
+This is the sharpest argument for removal. The dilemma is not inherent to evacuation rosters — it
+exists *only* because a merge can strand a live visit on a record that still looks like a person.
+Remove tombstones and the question does not get answered; it stops existing.
 
 ## Why the tombstone exists — and why it needn't
 
