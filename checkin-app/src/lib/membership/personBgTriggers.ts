@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 import { nextBoundary } from "@/lib/membership/renewal";
+import { personBgOpen } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
 
 /**
@@ -38,13 +39,12 @@ export async function openPersonBg(personId: number, asOf: Date, threshold: Date
         });
         if (!person) return null;
         if (personBgVerdict(person, asOf, threshold) !== "NEEDED") return null; // (b)
-        // Left literal on purpose (#1080): this is NOT a transition from-state — the
-        // PERSON_BG edge is ∅→PENDING_BG_REVIEW (no from-row). This `{in:…}` is an
-        // idempotency EXISTENCE set ("a PERSON_BG is already open or blocked for this
-        // person → skip"), broader than any single from-state, so it can't be sourced
-        // from `fromWhere` without misrepresenting it.
+        // The idempotency EXISTENCE set ("this person already owes a check → skip"),
+        // shared with the person merge's duplicate resolution — one definition, since
+        // the two must agree on what counts as open. Not `fromWhere`: this is broader
+        // than any from-state (the PERSON_BG edge is ∅→PENDING_BG_REVIEW, no from-row).
         const existing = await tx.orgMembershipProcess.findFirst({
-            where: { kind: "PERSON_BG", subjectPersonId: personId, status: { in: ["PENDING_BG_REVIEW", "BLOCKED"] } },
+            where: { kind: "PERSON_BG", subjectPersonId: personId, ...personBgOpen.where },
             select: { id: true },
         });
         if (existing) return null; // (a)

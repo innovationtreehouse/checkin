@@ -702,6 +702,84 @@ describe("Merge Participants API", () => {
         expect(await prisma.session.count({ where: { userId: { in: [pKeepId, pMergeId] } } })).toBe(0);
     });
 
+    // One human owes ONE background check: both sides can hold an open PERSON_BG, and
+    // re-pointing both at the survivor would leave two concurrent 2-of-N reviews.
+    describe("duplicate open PERSON_BG on both merge subjects", () => {
+        const openPersonBg = (personId: number, extra: { status?: "PENDING_BG_REVIEW" | "BLOCKED"; bgConsentAt?: Date } = {}) =>
+            prisma.orgMembershipProcess.create({
+                data: { kind: "PERSON_BG", subjectPersonId: personId, status: extra.status ?? "PENDING_BG_REVIEW", bgConsentAt: extra.bgConsentAt ?? null },
+            });
+
+        const openForKeeper = () =>
+            prisma.orgMembershipProcess.findMany({
+                where: { kind: "PERSON_BG", subjectPersonId: pKeepId, status: { in: ["PENDING_BG_REVIEW", "BLOCKED"] } },
+            });
+
+        it("leaves the survivor exactly one open PERSON_BG, archiving the less-advanced row", async () => {
+            const keeperProc = await openPersonBg(pKeepId);
+            const tombstoneProc = await openPersonBg(pMergeId, { bgConsentAt: new Date() }); // further along: submitted for review
+            createdProcessIds.push(keeperProc.id, tombstoneProc.id);
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const open = await openForKeeper();
+            expect(open.map(p => p.id)).toEqual([tombstoneProc.id]);
+
+            // The loser is ARCHIVED (not deleted), with archiveApplication's audit shape
+            // so the board can unarchive it if the merge picked wrong.
+            const loser = await prisma.orgMembershipProcess.findUnique({ where: { id: keeperProc.id } });
+            expect(loser?.status).toBe("ARCHIVED");
+            expect(loser?.subjectPersonId).toBe(pKeepId);
+            const log = await prisma.auditLog.findFirst({ where: { tableName: "OrgMembershipProcess", affectedEntityId: keeperProc.id } });
+            expect(log?.oldData).toMatchObject({ status: "PENDING_BG_REVIEW" });
+            expect(log?.newData).toMatchObject({ status: "ARCHIVED", survivorProcessId: tombstoneProc.id });
+
+            const mergeLog = await prisma.auditLog.findFirst({ where: { tableName: "Person", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId } });
+            expect((mergeLog?.newData as { moved: { personBgArchived: number } }).moved.personBgArchived).toBe(1);
+        });
+
+        it("keeps the row with attestations when neither has consent", async () => {
+            const keeperProc = await openPersonBg(pKeepId);
+            const tombstoneProc = await openPersonBg(pMergeId);
+            createdProcessIds.push(keeperProc.id, tombstoneProc.id);
+            await prisma.backgroundCheckAttestation.create({ data: { processId: keeperProc.id, reviewerId: actorId, result: "APPROVE" } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const open = await openForKeeper();
+            expect(open.map(p => p.id)).toEqual([keeperProc.id]);
+            // The reviewer's work is not orphaned onto the archived row.
+            expect(await prisma.backgroundCheckAttestation.count({ where: { processId: keeperProc.id } })).toBe(1);
+        });
+
+        it("never archives a BLOCKED row in favour of an open review", async () => {
+            const keeperProc = await openPersonBg(pKeepId, { bgConsentAt: new Date() });
+            const tombstoneProc = await openPersonBg(pMergeId, { status: "BLOCKED" });
+            createdProcessIds.push(keeperProc.id, tombstoneProc.id);
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const open = await openForKeeper();
+            // The rejection survives; the pending review is the one archived.
+            expect(open.map(p => p.id)).toEqual([tombstoneProc.id]);
+            expect((await prisma.orgMembershipProcess.findUnique({ where: { id: keeperProc.id } }))?.status).toBe("ARCHIVED");
+        });
+
+        it("leaves a single open PERSON_BG alone (nothing to resolve)", async () => {
+            const tombstoneProc = await openPersonBg(pMergeId);
+            createdProcessIds.push(tombstoneProc.id);
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const open = await openForKeeper();
+            expect(open.map(p => ({ id: p.id, status: p.status }))).toEqual([{ id: tombstoneProc.id, status: "PENDING_BG_REVIEW" }]);
+        });
+    });
+
     // Matrix 13
     it("moves closed visits; both-open leaves the tombstone's open visit in place", async () => {
         await prisma.visit.create({ data: { personId: pKeepId, arrivedAt: new Date(Date.now() - 3600000) } }); // keeper's own open visit

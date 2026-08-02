@@ -4,7 +4,9 @@ import type { Person } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { personBgOpen } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import type { TxClient } from "@/lib/db-client";
 
 export const dynamic = 'force-dynamic';
 
@@ -101,6 +103,63 @@ function resolveKeeperUpdate(
     }
 
     return data;
+}
+
+/**
+ * One human owes at most ONE open background check. Both merge subjects can hold an
+ * open PERSON_BG, and re-pointing both at the survivor leaves two concurrent 2-of-N
+ * reviews for the same person — the trigger's own dedupe never sees them (it runs at
+ * create time). Keep the furthest-along row, archive the rest.
+ *
+ * Rank: BLOCKED outranks an open review — archiving a block in favour of a pending
+ * row would erase a rejection and hand the person a fresh path to clearance. Then
+ * more attestations, then consent recorded, then the older row.
+ *
+ * Attestations stay on the archived row: moving them onto the survivor would seat
+ * reviewers past attest()'s same-household/already-attested gates, and the archived
+ * row keeps the record. The audit row matches archiveApplication's shape, so the
+ * board can unarchive one archived by mistake.
+ *
+ * No new lifecycle edge: this is the declared §13 archive transition
+ * ({PENDING_BG_REVIEW,BLOCKED}→ARCHIVED) driven from a second site, and the CAS
+ * from-state comes from the definition (`personBgOpen.where` covers both).
+ */
+async function archiveDuplicatePersonBg(tx: TxClient, personId: number, actorId: number): Promise<number> {
+    const open = await tx.orgMembershipProcess.findMany({
+        where: { kind: "PERSON_BG", subjectPersonId: personId, ...personBgOpen.where },
+        select: { id: true, status: true, bgConsentAt: true, _count: { select: { attestations: true } } },
+    });
+    if (open.length < 2) return 0;
+
+    const rank = (p: (typeof open)[number]) => [p.status === "BLOCKED" ? 1 : 0, p._count.attestations, p.bgConsentAt ? 1 : 0, -p.id];
+    const [survivor, ...losers] = [...open].sort((a, b) => {
+        const [ra, rb] = [rank(a), rank(b)];
+        for (let i = 0; i < ra.length; i++) if (ra[i] !== rb[i]) return rb[i] - ra[i];
+        return 0;
+    });
+
+    let archived = 0;
+    for (const loser of losers) {
+        // CAS on the open set: a concurrent attest that just cleared or blocked this
+        // row wins, and we leave it alone.
+        const { count } = await tx.orgMembershipProcess.updateMany({
+            where: { id: loser.id, ...personBgOpen.where },
+            data: { status: "ARCHIVED", stageEnteredAt: new Date() },
+        });
+        if (count !== 1) continue;
+        await tx.auditLog.create({
+            data: {
+                actorId,
+                action: "EDIT",
+                tableName: "OrgMembershipProcess",
+                affectedEntityId: loser.id,
+                oldData: { status: loser.status },
+                newData: { status: "ARCHIVED", reason: "duplicate PERSON_BG resolved by participant merge", survivorProcessId: survivor.id },
+            },
+        });
+        archived++;
+    }
+    return archived;
 }
 
 export const POST = withAuth(
@@ -232,6 +291,7 @@ export const POST = withAuth(
 
                 const moved = {
                     visits: 0,
+                    personBgArchived: 0,
                     programParticipants: { migrated: 0, left: 0 },
                     programVolunteers: { migrated: 0, left: 0 },
                     rsvps: { migrated: 0, left: 0 },
@@ -312,6 +372,8 @@ export const POST = withAuth(
                 // (smaller and safer than moving a session onto a different person mid-use).
                 await tx.session.deleteMany({ where: { userId: mergeId } });
                 await tx.orgMembershipProcess.updateMany({ where: { subjectPersonId: mergeId }, data: { subjectPersonId: keepId } });
+                // Both sides can have owed a check — the survivor keeps exactly one.
+                moved.personBgArchived = await archiveDuplicatePersonBg(tx, keepId, auth.type === 'session' ? auth.user.id : 0);
                 await tx.program.updateMany({ where: { leadMentorId: mergeId }, data: { leadMentorId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { disclosedById: mergeId }, data: { disclosedById: keepId } });
