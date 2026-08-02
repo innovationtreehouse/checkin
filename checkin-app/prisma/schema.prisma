@@ -184,7 +184,6 @@ model Person {
   programVolunteers   ProgramVolunteer[]
   programParticipants ProgramParticipant[]
   programsLed         Program[]                    @relation("ProgramLeadMentor")
-  feePayments         FeePayment[]
   rsvps               RSVP[]
   rawBadgeLogs        RawBadgeLog[]
   visits              Visit[]
@@ -949,7 +948,6 @@ model Program {
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
-  fees         Fee[]
   events       Event[]
 }
 
@@ -1010,44 +1008,6 @@ model ProgramParticipant {
   person  Person @relation(fields: [personId], references: [id])
 
   @@id([programId, personId])
-}
-
-model Fee {
-  /// @sensitivity:public
-  id             Int    @id @default(autoincrement())
-  /// @sensitivity:public
-  programId      Int
-  /// @sensitivity:public
-  name           String
-  /// @sensitivity:public
-  /// Integer cents (e.g. 2599 = $25.99).
-  nonOrgMemberPriceCents Int
-  /// @sensitivity:public
-  /// Integer cents (e.g. 2599 = $25.99).
-  orgMemberPriceCents    Int
-
-  program  Program      @relation(fields: [programId], references: [id])
-  payments FeePayment[]
-}
-
-model FeePayment {
-  /// @sensitivity:public
-  feeId             Int
-  /// @sensitivity:public
-  personId          Int
-  /// @sensitivity:personal
-  paidAt            DateTime? @default(now())
-  /// @sensitivity:personal
-  shopifyLink       String?
-  /// @sensitivity:personal
-  quickBooksInvoice String?
-  /// @sensitivity:personal
-  customNote        String?
-
-  fee         Fee         @relation(fields: [feeId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
-
-  @@id([feeId, personId])
 }
 
 model Event {
