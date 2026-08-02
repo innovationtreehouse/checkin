@@ -1,13 +1,43 @@
 # Remove `LIVE_PERSON`: tombstone exclusion becomes structural
 
-Status: **PROPOSED — for review**
-Issue: [#1456](https://github.com/innovationtreehouse/checkin/issues/1456)
-
-**Scope is deliberately narrow: delete `LIVE_PERSON` and the drift guard by removing the thing they
-guard against.** Not a general soft-delete or row-visibility framework — this issue must be able to
-close. See [Out of scope](#out-of-scope) for what is deliberately excluded and why.
+Issue: [#1456](https://github.com/innovationtreehouse/checkin/issues/1456) · Status: **PROPOSED — for review**
 
 ## Problem
+
+When two duplicate person records are merged, the loser is not deleted — it stays in the database
+forever as a "tombstone". Every part of the app that reads people therefore has to remember to
+exclude tombstones, or it silently shows and counts a person who no longer exists.
+
+Remembering is left to the developer. There are **113 places** that have to get it right, across 40
+files. Getting it wrong produces no error of any kind — just a ghost in a roster, a wrong count, or
+a write that lands on a dead record. It has already happened three times, and the automated check
+built to catch it missed all three.
+
+## Objective
+
+**Make it impossible to read a merged-away person, rather than everyone's job to remember not to.**
+
+Concretely: delete the `LIVE_PERSON` filter and its drift guard, by removing the tombstones they
+exist to hide.
+
+## Executive summary
+
+| | |
+|---|---|
+| **The fix** | Stop creating tombstones. The merge either absorbs the loser completely or refuses to run. |
+| **Why that's possible** | The merge already moves everything to the survivor. Rows are left behind in one situation only: a unique-constraint collision (the same human enrolled in the same program twice). |
+| **What board members see** | Merges get stricter: "unenroll one of these from Program X first." Clear-up surfaces already exist for nearly all cases. |
+| **What developers stop doing** | Remembering `LIVE_PERSON` on 113 queries. It, the drift guard, and its 31-entry allowlist all get deleted. |
+| **What replaces the tombstone** | A `PersonMerge` record (from, to, when, snapshot). Badge scans and audit history keep working. |
+| **Done when** | No `Person` row has `mergedIntoId`; the column, the filter, and the guard are gone. |
+| **Deliberately not included** | #1134 (permission-based row visibility) and #1228 (`archivedAt`). See [Out of scope](#out-of-scope) — this issue has to be able to close. |
+
+The trade being made: **merges become harder in exchange for the whole bug class disappearing.** A
+merge that today silently parks an ambiguity now stops and asks a human to resolve it first — which
+is also the better answer on its own merits, since the ambiguities are things like "which of these
+two tool certifications is real".
+
+## How it breaks today
 
 `LIVE_PERSON` ([`lib/person/filters.ts`](../../src/lib/person/filters.ts)) is
 `{ mergedIntoId: null }` — an **opt-out** convention. A merged-away Person is a tombstone: the row
