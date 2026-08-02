@@ -302,7 +302,7 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
 
     // Stamp the guardians' (household leads') lastBackgroundCheck. Expiry is derived from this
     // plus BoardSettings.bgRecheckMonths at read time (see householdBgIsFresh) — not stored.
-    await tx.person.updateMany({ where: { householdId, isHouseholdLead: true }, data: { lastBackgroundCheck: now } });
+    await tx.person.updateMany({ where: { householdId, isHouseholdLead: true, ...LIVE_PERSON }, data: { lastBackgroundCheck: now } });
     await applyVolunteerStatus(tx, process.orgMembershipId!, householdId, process.attestations.some((a) => a.isMarkedVolunteer));
 
     await tx.orgMembershipProcess.update({
