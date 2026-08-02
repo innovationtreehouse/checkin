@@ -94,6 +94,10 @@ export default function MergeParticipants() {
 
   const [previewMode, setPreviewMode] = useState(false);
 
+  // Set when the two records' households carry different Treehouse membership
+  // status — the merge server-side refuses (see the API's membershipGuard).
+  const [membershipMismatch, setMembershipMismatch] = useState<{ a: string; b: string } | null>(null);
+
   // One choice per true conflict field ('keep' | 'merge'); default 'keep' (the
   // keeper's value). Recomputed below (derived from analyzedA/analyzedB + keepId)
   // and reset whenever the keeper flips (Swap Kept/Merged).
@@ -155,6 +159,7 @@ export default function MergeParticipants() {
           if (d.participants) {
             setAnalyzedA(d.participants[0]);
             setAnalyzedB(d.participants[1]);
+            setMembershipMismatch(d.membershipMismatch ?? null);
 
             // Recommend keeping the one with more activity or better data
             const score = (p: ParticipantMergeView) => {
@@ -181,6 +186,7 @@ export default function MergeParticipants() {
       setAnalyzedB(null);
       setKeepId(null);
       setPreviewMode(false);
+      setMembershipMismatch(null);
     }
   }, [pA, pB]);
 
@@ -367,6 +373,15 @@ export default function MergeParticipants() {
                 </Button>
               </Group>
 
+              {membershipMismatch && (
+                <Alert color="red" variant="light" fw={700} title="Membership status differs">
+                  {analyzedA.name || `ID ${analyzedA.id}`}&apos;s household is {membershipMismatch.a} and{" "}
+                  {analyzedB.name || `ID ${analyzedB.id}`}&apos;s household is {membershipMismatch.b}. A merge never
+                  moves a membership between households, so it would either strand the membership or drop the
+                  restriction. Resolve the membership on these households first, then merge.
+                </Alert>
+              )}
+
               <SimpleGrid cols={{ base: 1, md: 2 }}>
                 {renderStats(analyzedA, keepId === analyzedA.id, analyzedA.id !== keepId ? isLeadWithOthers : false)}
                 {renderStats(analyzedB, keepId === analyzedB.id, analyzedB.id !== keepId ? isLeadWithOthers : false)}
@@ -422,7 +437,7 @@ export default function MergeParticipants() {
               )}
 
               <Group justify="flex-end">
-                <Button size="md" disabled={isLeadWithOthers} onClick={() => setPreviewMode(true)}>
+                <Button size="md" disabled={isLeadWithOthers || !!membershipMismatch} onClick={() => setPreviewMode(true)}>
                   Proceed to Preview
                 </Button>
               </Group>

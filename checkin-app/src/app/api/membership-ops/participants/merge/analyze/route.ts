@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { householdMembershipStatus } from "../membershipGuard";
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,9 @@ export const GET = withAuth(
                             select: {
                                 id: true,
                                 name: true,
+                                // Public-tier; feeds the membership-mismatch warning the
+                                // POST guard enforces (see ../membershipGuard.ts).
+                                orgMembership: { select: { status: true } },
                                 householdMembers: {
                                     // Tombstones are not members: the page's
                                     // isLeadWithOthers guard must match the POST's.
@@ -82,7 +86,14 @@ export const GET = withAuth(
                 return apiError("Cannot analyze: one of these participants has already been merged.", 409);
             }
 
-            return NextResponse.json({ participants: [pA, pB] });
+            // Mirrors the POST guard so the picker can warn before the operator
+            // commits. Direction-agnostic: the keeper isn't chosen until the UI
+            // scores/swaps, and any difference blocks the merge either way.
+            const statusA = householdMembershipStatus(pA.household);
+            const statusB = householdMembershipStatus(pB.household);
+            const membershipMismatch = statusA === statusB ? null : { a: statusA, b: statusB };
+
+            return NextResponse.json({ participants: [pA, pB], membershipMismatch });
         } catch (error) {
             logger.error("Failed to analyze participants:", error);
             return apiError("Server error", 500);

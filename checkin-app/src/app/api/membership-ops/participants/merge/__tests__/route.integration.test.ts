@@ -22,6 +22,8 @@ jest.mock("@/lib/shopifyRead/client", () => ({
     minRealOrderLegacyId: async () => null,
 }));
 import { runMatchAudit } from "@/lib/finance/matchAudit";
+import { orgMembershipStatusBlocksLogin } from "@/lib/orgMembership";
+import type { OrgMembershipStatus } from "@/generated/prisma/client";
 
 // Base fixture participants differ on name+email by design (realistic collision
 // data for the field-picker tests below). name is a per-field conflict and both
@@ -87,6 +89,14 @@ describe("Merge Participants API", () => {
         createdProcessIds = [];
     });
 
+    /** A second household for the membership-guard tests; no OrgMembership row reads as NONE. */
+    async function makeHousehold(name: string, status?: OrgMembershipStatus): Promise<number> {
+        const hh = await prisma.household.create({ data: { name } });
+        extraHouseholdIds.push(hh.id);
+        if (status) await prisma.orgMembership.create({ data: { householdId: hh.id, status } });
+        return hh.id;
+    }
+
     afterEach(async () => {
         const personIds = [pKeepId, pMergeId, actorId, ...extraPersonIds];
 
@@ -109,6 +119,7 @@ describe("Merge Participants API", () => {
         if (createdToolId) await prisma.tool.deleteMany({ where: { id: createdToolId } });
         if (createdProgramId) await prisma.program.deleteMany({ where: { id: createdProgramId } });
         if (createdCorporationId) await prisma.corporation.deleteMany({ where: { id: createdCorporationId } });
+        await prisma.orgMembership.deleteMany({ where: { householdId: { in: [householdId, ...extraHouseholdIds] } } });
         if (householdId) await prisma.household.deleteMany({ where: { id: householdId } });
         if (extraHouseholdIds.length) await prisma.household.deleteMany({ where: { id: { in: extraHouseholdIds } } });
     });
@@ -342,6 +353,95 @@ describe("Merge Participants API", () => {
         const { participants } = await res.json();
         const members = participants[1].household.householdMembers as { id: number }[];
         expect(members.map(m => m.id)).toEqual([lead.id]);
+    });
+
+    // OrgMembership is 1:1 with Household and the merge never moves it: the tombstone
+    // keeps its householdId, the keeper stays in its own household. So the two sides'
+    // membership status must already agree, or the merge either strands the membership
+    // or drops a restriction.
+    describe("household membership guard", () => {
+        it("400s when the merged-away record holds an ACTIVE membership and the keeper's household is NONE (value stranded)", async () => {
+            // Tombstone is the SOLE live member of an ACTIVE household — the lead guard
+            // (lead + others > 0) can't see this shape.
+            const memberHh = await makeHousehold("Paid Member Household", "ACTIVE");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: memberHh, isHouseholdLead: true } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toContain("different Treehouse membership status");
+            expect(data.error).toContain("ACTIVE");
+
+            // Refused before the transaction: the ACTIVE membership still has a live
+            // member, and the surviving human isn't sitting in the NONE household.
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+            expect(await prisma.person.count({ where: { householdId: memberHh, mergedIntoId: null } })).toBe(1);
+        });
+
+        it("400s when the merged-away record's household is DENIED and the keeper's is NONE (restriction laundered)", async () => {
+            const deniedHh = await makeHousehold("Denied Household", "DENIED");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: deniedHh } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toContain("different Treehouse membership status");
+            expect(data.error).toContain("DENIED");
+
+            // The login block is derived live from the person's household (authClaims),
+            // so had the merge run, the surviving record would simply not be denied.
+            const merged = await prisma.person.findUnique({ where: { id: pMergeId }, include: { household: { include: { orgMembership: true } } } });
+            const kept = await prisma.person.findUnique({ where: { id: pKeepId }, include: { household: { include: { orgMembership: true } } } });
+            expect(merged?.mergedIntoId).toBeNull();
+            expect(orgMembershipStatusBlocksLogin(merged?.household?.orgMembership?.status)).toBe(true);
+            expect(orgMembershipStatusBlocksLogin(kept?.household?.orgMembership?.status)).toBe(false);
+        });
+
+        it("400s when the KEEPER's household carries the restriction and the merged-away side is weaker", async () => {
+            const revokedHh = await makeHousehold("Revoked Household", "REVOKED");
+            await prisma.person.update({ where: { id: pKeepId }, data: { householdId: revokedHh } });
+            const activeHh = await makeHousehold("Active Household", "ACTIVE");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: activeHh } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toContain("REVOKED");
+            expect(data.error).toContain("ACTIVE");
+        });
+
+        it("allows the merge when both households are ACTIVE", async () => {
+            await prisma.orgMembership.create({ data: { householdId, status: "ACTIVE" } });
+            const otherActive = await makeHousehold("Other Active Household", "ACTIVE");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: otherActive } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBe(pKeepId);
+        });
+
+        it("allows the merge when one household has an explicit NONE row and the other has no membership at all", async () => {
+            const noneHh = await makeHousehold("Explicit None Household", "NONE");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: noneHh } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+        });
+
+        it("analyze reports the mismatch so the picker warns before the operator commits", async () => {
+            const deniedHh = await makeHousehold("Analyze Denied Household", "DENIED");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: deniedHh } });
+
+            const res = await analyzeGET(analyzeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.membershipMismatch).toEqual({ a: "NONE", b: "DENIED" });
+
+            // Matching households produce no warning.
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId } });
+            const clean = await analyzeGET(analyzeReq(pKeepId, pMergeId));
+            expect((await clean.json()).membershipMismatch).toBeNull();
+        });
     });
 
     // Matrix 4

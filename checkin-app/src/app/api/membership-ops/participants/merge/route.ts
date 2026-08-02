@@ -7,6 +7,7 @@ import { apiError } from "@/lib/api-response";
 import { personBgOpen } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
+import { householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
 
 export const dynamic = 'force-dynamic';
 
@@ -183,6 +184,11 @@ export const POST = withAuth(
                     bgAttestations: true,
                     corporationLeads: true,
                     corporationMembers: true,
+                    household: {
+                        include: {
+                            orgMembership: true
+                        }
+                    },
                 }
             });
 
@@ -200,7 +206,8 @@ export const POST = withAuth(
                         include: {
                             // The lead guard below asks "would this leave live members
                             // leaderless" — tombstones are not members.
-                            householdMembers: { where: LIVE_PERSON }
+                            householdMembers: { where: LIVE_PERSON },
+                            orgMembership: true
                         }
                     }
                 }
@@ -220,6 +227,14 @@ export const POST = withAuth(
 
             if (isLead && householdOthersCount > 0) {
                 return apiError("Cannot merge: the to-be-deleted participant is the lead of a household with other members.", 400);
+            }
+
+            const membershipBlock = membershipMergeBlock(
+                householdMembershipStatus(keepParticipant.household),
+                householdMembershipStatus(mergeParticipant.household),
+            );
+            if (membershipBlock) {
+                return apiError(membershipBlock, 400);
             }
 
             // ---- Server-side fieldChoices validation (recompute conflicts; never trust the client's) ----
