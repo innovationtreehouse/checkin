@@ -1,80 +1,71 @@
 # Per-adult background-check subjects (household path)
 
-Status: **PROPOSED — for review**
-Issue: [#1260](https://github.com/innovationtreehouse/checkin/issues/1260) · Backlog item **SA1**
-(ENHANCE · NEEDS-DESIGN · size L)
-
-**#1260 is now scoped to exactly this defect** (it was decomposed from the original five-slice SA1
-bundle). This design is the whole of it — an implementation PR should carry `Fixes #1260`; a
-design-doc PR references it plainly, no closing keyword.
-
-The other former SA1 slices, none of them dependencies:
-
-| Former slice | Now |
-|---|---|
-| cron cohort-open | **already shipped** — `api/cron/person-bg-annual/route.ts` calls `runPersonBgAnnualSweep` |
-| consent link/email | [#961](https://github.com/innovationtreehouse/checkin/issues/961) 18+ student nudges — PERSON_BG has no in-app consent orchestration; the only path is the board's manual `submitPersonBgForReview` → `markBgConsent` (`personBgSubmit.ts:14`) |
-| self-attest widening | [#1452](https://github.com/innovationtreehouse/checkin/issues/1452) (SA17) — self-attest must accept a bare PERSON_BG obligation; blocks #961 |
-| enforcement/grace blocking | SA18 — warn-only is by design (`backlog/CUJS.md:235`), board-gated by SA5. Explicitly **not** proposed here |
-| supplier affirmation | unresolved — no code, no backlog context beyond the INDEX line; needs clarification before anyone scopes it |
-
-**Resolves a flagged backlog TODO.** `docs/backlog/INDEX.md:303` retired SA2 with a warning: *"⚠
-likely also moots SA1's 'blanket-stamp→per-adult migration' sub-part — verify when SA1 is scoped."*
-Verified while scoping this: **it does not moot it.** SA2 was about pre-import pollution; the
-blanket `updateMany` never stopped running, so new pollution has accrued from every household
-clearance since. That line should be corrected, and INDEX's SA1 row now needs to match #1260's
-reduced scope.
-
-Related issues:
-- [#1429](https://github.com/innovationtreehouse/checkin/issues/1429) (SA11) **volunteer-onset BG
-  trigger** — the same second-adult case, fired when an adult *starts volunteering* rather than at
-  the annual sweep. Complementary: this design fixes the stamp so the second adult becomes visible;
-  #1429 makes them visible *sooner*. See [Read side](#read-side--unchanged-and-why). Its "when a
-  SECOND adult volunteers, BOTH adults need a check" wording needs reconciling against domain rule 1
-  — it is a volunteer trigger, not a membership requirement.
-- [#1396](https://github.com/innovationtreehouse/checkin/issues/1396) participant merge transfers the
-  BG date — adjacent to the merge-propagation note in [Remediation](#remediation).
-- [#1224](https://github.com/innovationtreehouse/checkin/issues/1224) `PERSON_AGREEMENT` — **design
-  only, never implemented** (the enum has no such kind). The agreement side of the same
-  "individuals, not households" shift. Not a dependency.
-
-Unblocks **SA3** (household-composition sweeps), which needs a per-adult predicate.
-Also see: `personBgCheck.ts` policy block (the rule this violates) · `HOUSEHOLD_LEAD_MODEL.md`.
-
-## Domain rules
-
-> **Canonical home is the rules register**, `docs/rules/membership.md` § *Background checks* and
-> § *Background checks for program-attached adults* ([#1445](https://github.com/innovationtreehouse/checkin/pull/1445),
-> open at time of writing). It carries the policy citations this restatement lacks. **Once #1445
-> merges, collapse this section to a pointer** rather than maintaining two copies — the register is
-> the single source, and a design doc restating rules is exactly the drift the register exists to end.
->
-> Restated here only because the design below is unreadable without them. The register sources them:
-> rules 1 and 3 to *Membership Policy, Art. VI §VI.1* ("At least one adult in each family is checked;
-> so is any other family member 18 or over who will be present regularly"), and rule 2 to *Volunteer
-> Policy, Art. IV* ("Every volunteer 18 or older is checked. The obligation attaches to the role, not
-> only to the household") — which is this design's thesis, in the policy's own words.
->
-> **One reconciliation point.** The register says "present regularly"; this design's population is
-> `ProgramVolunteer`-driven (rule 4). Those coincide only because there is no informal volunteering
-> here — confirmed, and recorded as rule 4. If that ever stops being true, the code's population is
-> narrower than the policy's and rule 4 is where it breaks.
-
-1. **Membership requires ONE background-checked adult lead.** Not all of them. A household with a
-   checked lead is compliant for membership purposes, full stop.
-2. **A second adult's check is a VOLUNTEER obligation, never a membership gate.** If the other lead
-   volunteers, they need their own check — that changes *how we nag them*, not whether the family
-   is a member. Posture is warn-only per the `personBgCheck.ts` policy block.
-3. **Checks are per-adult.** One person's check must never satisfy another's. This is the rule the
-   current code breaks.
-4. **There is no informal volunteering.** This is a youth organisation; every volunteering adult is
-   recorded as a `ProgramVolunteer`. The volunteer roster is therefore *authoritative*, not
-   best-effort — which is what lets the nag population below be treated as complete.
-
-Rules 1 and 2 mean the household-level rollups are **correct as written** and stay untouched — see
-[Read side](#read-side--unchanged-and-why). The defect is entirely on the write side.
+Issue: [#1260](https://github.com/innovationtreehouse/checkin/issues/1260) · Status: **PROPOSED — for review**
+· Scope/related work in the [appendix](#appendix--issue-scope-and-related-work).
 
 ## Problem
+
+When two reviewers approve a household's background check, the system marks **every adult lead in
+that household** as background-checked — not just the one whose check was actually reviewed.
+
+So an adult who has never been checked, whose report does not exist at the vendor, shows up
+everywhere as cleared. They can volunteer with youth indefinitely and appear compliant. Worse, the
+false mark also hides them from the reports designed to catch exactly this, and it is refreshed
+every time the household renews, so they never surface.
+
+The system has no way to do better today: nothing anywhere records **who** a household's check was
+for. There is one consent checkbox per household, one timestamp with no person attached, and the
+vendor link is a single shared URL with no per-person identity.
+
+## Objective
+
+**A background-check date on a person means that person was checked.** Nothing else should ever set
+it.
+
+Two constraints on getting there: membership must keep working exactly as it does today (it requires
+one checked adult, not all of them), and the families applying should not have to do anything new.
+
+## Executive summary
+
+| | |
+|---|---|
+| **Reviewers** | Gain one checkbox group on the review card — *whose check did you review?* Still one Approve click. |
+| **Applicants** | **No change at all.** Same consent checkbox, same copy, same flow. |
+| **Data** | Only the adults a reviewer named get a check date. One nullable FK column on an existing table; no new table. |
+| **Board force-approve** | Names its subjects too — today's override path would otherwise stamp nobody. |
+| **Membership** | Unchanged. Still one checked adult; household freshness rollups and activation timing untouched. |
+| **Existing bad data** | Corrected by the board through a worklist on the compliance dashboard they already use — no script, no SQL, no prod access. |
+| **Cost** | One column, one reviewer-UI change, and one unique-constraint change that needs hand-written SQL. |
+
+The insight that makes it cheap: **the reviewer is already holding the vendor's report, and it names
+the person.** Recording that name is one extra click on a screen only board members see — versus
+asking every applying family to self-declare who submitted what, which is both more work and worse
+evidence.
+
+## Rules this design obeys
+
+Canonical home is the rules register, `docs/rules/membership.md` § *Background checks*
+([#1445](https://github.com/innovationtreehouse/checkin/pull/1445), open) — **collapse this to a
+pointer once that merges.** Restated here only because the design is unreadable without them.
+
+1. **Membership requires ONE background-checked adult lead** — not all of them. *(Membership Policy,
+   Art. VI §VI.1)*
+2. **A second adult's check is a VOLUNTEER obligation, never a membership gate.** *"Every volunteer
+   18 or older is checked. The obligation attaches to the role, not only to the household"*
+   *(Volunteer Policy, Art. IV)* — this design's thesis in the policy's own words.
+3. **Checks are per-adult.** One person's check must never satisfy another's. This is the rule the
+   current code breaks.
+4. **There is no informal volunteering.** Every volunteering adult is recorded as a
+   `ProgramVolunteer`, so that roster is authoritative rather than best-effort — which is what makes
+   the write fix *sufficient* rather than merely necessary.
+
+Rules 1 and 2 are why the household-level rollups are **correct as written** and stay untouched (see
+[Read side](#read-side--unchanged-and-why)). The defect is entirely on the write side.
+
+One seam worth watching: the register says checks cover any adult *"present regularly"*, where this
+design's population is `ProgramVolunteer`-driven. Those coincide only because of rule 4.
+
+## How it breaks today
 
 `clearBackgroundCheck`, household branch — [`review.ts:305`](../../src/lib/membership/review.ts):
 
@@ -165,7 +156,7 @@ Every adult who is unchecked and around youth becomes visible the moment their s
 - Enforcement/blocking. Warn-only stays warn-only.
 - The consent link/email automation and cron cohort-open — the rest of SA1, separate slices.
 
-## Design
+## Design — how it works
 
 The reviewer already opens each Averity PDF to decide whether the check is clean. The PDF names its
 subject. Recording that name is one extra click on a surface only board members touch.
@@ -614,3 +605,41 @@ A flow test is optional — the journey is already covered end-to-end and the ch
 3. **Reviewer subject list — leads only, or any household adult?** The card lists live household
    leads. If a PDF names someone who is not a lead (an adult child, a mis-recorded name), the reviewer
    has nowhere to put it. Reject and route to `PERSON_BG`, or allow selecting any live household member?
+
+## Appendix — issue scope and related work
+
+**#1260 is scoped to exactly this defect**, decomposed from the original five-slice SA1 bundle. This
+design is the whole of it: an implementation PR carries `Fixes #1260`; a design-doc PR references it
+plainly, no closing keyword. The other former slices, none of them dependencies:
+
+| Former slice | Now |
+|---|---|
+| cron cohort-open | **already shipped** — `api/cron/person-bg-annual/route.ts` calls `runPersonBgAnnualSweep` |
+| consent link/email | [#961](https://github.com/innovationtreehouse/checkin/issues/961) 18+ student nudges — PERSON_BG has no in-app consent orchestration; the only path is the board's manual `submitPersonBgForReview` → `markBgConsent` (`personBgSubmit.ts:14`) |
+| self-attest widening | [#1452](https://github.com/innovationtreehouse/checkin/issues/1452) (SA17) — self-attest must accept a bare PERSON_BG obligation; blocks #961 |
+| enforcement/grace blocking | SA18 — warn-only is by design (`backlog/CUJS.md:235`), board-gated by SA5. Explicitly **not** proposed here |
+| supplier affirmation | unresolved — no code, no backlog context beyond the INDEX line; needs clarification before anyone scopes it |
+
+**Resolves a flagged backlog TODO.** `docs/backlog/INDEX.md:303` retired SA2 warning *"⚠ likely also
+moots SA1's 'blanket-stamp→per-adult migration' sub-part — verify when SA1 is scoped."* Verified
+while scoping this: **it does not moot it.** SA2 was pre-import *data*; the blanket `updateMany`
+never stopped running, so new pollution has accrued from every household clearance since. That line
+needs correcting, and INDEX's SA1 row needs to match #1260's reduced scope.
+
+**Related issues**
+
+- [#1429](https://github.com/innovationtreehouse/checkin/issues/1429) (SA11) **volunteer-onset BG
+  trigger** — the same second-adult case, fired when an adult *starts volunteering* rather than at the
+  annual sweep. Complementary: this design makes the second adult visible, #1429 makes them visible
+  *sooner*. Its "when a SECOND adult volunteers, BOTH adults need a check" wording needs reconciling
+  against rule 1 — it is a volunteer trigger, not a membership requirement.
+- [#1396](https://github.com/innovationtreehouse/checkin/issues/1396) participant merge transfers the
+  BG date — owns the merge-provenance hole this design defers to it.
+- [#1456](https://github.com/innovationtreehouse/checkin/issues/1456) remove `LIVE_PERSON` — would
+  make the tombstone note under [Clearance](#clearance) moot entirely.
+- [#1224](https://github.com/innovationtreehouse/checkin/issues/1224) `PERSON_AGREEMENT` — **design
+  only, never implemented** (the enum has no such kind). The agreement side of the same "individuals,
+  not households" shift. Not a dependency.
+
+Unblocks **SA3** (household-composition sweeps), which needs a per-adult predicate.
+Also see: `personBgCheck.ts` policy block (the rule this violates) · `HOUSEHOLD_LEAD_MODEL.md`.
