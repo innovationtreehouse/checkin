@@ -1,4 +1,8 @@
-import { findBareIncludeLegs, findUnregisteredBareIncludeLegs } from "../check-route-coverage";
+import {
+    findBareIncludeLegs,
+    findOrphanRegistryEntries,
+    findUnregisteredBareIncludeLegs,
+} from "../check-route-coverage";
 
 const names = (src: string) => findBareIncludeLegs(src).map(l => l.name);
 
@@ -72,5 +76,35 @@ describe("findUnregisteredBareIncludeLegs", () => {
 
     it("stays silent on a file that exports no verbs", () => {
         expect(findUnregisteredBareIncludeLegs(BODY, [], "/api/thing", new Set())).toEqual([]);
+    });
+});
+
+describe("findOrphanRegistryEntries", () => {
+    const orphans = (registered: string[], methods: string[], paths: string[]) =>
+        findOrphanRegistryEntries(registered, new Set(methods), new Set(paths));
+
+    it("stays silent when a route method serves the entry", () => {
+        expect(orphans(["GET /api/thing"], ["GET /api/thing"], ["/api/thing"])).toEqual([]);
+    });
+
+    // Severity is the register-first contract: a --strict run only fails on
+    // 'error', so an entry whose route file has not landed must be a 'warn'.
+    it("warns when no route file exists yet — the register-first state", () => {
+        const found = orphans(["PATCH /api/thing/[id]"], [], []);
+        expect(found).toHaveLength(1);
+        expect(found[0].severity).toBe("warn");
+        expect(found[0].rule).toBe("orphan-registry");
+        expect(found[0].message).toContain("PATCH /api/thing/[id]");
+        expect(found[0].message).toContain("register-first");
+    });
+
+    // The other half of the split: policy claims a verb the live file no longer
+    // serves. Inert it is not — the ratchet must keep blocking here.
+    it("errors when the route file exists but no longer exports the verb", () => {
+        const found = orphans(["PATCH /api/thing/[id]"], ["GET /api/thing/[id]"], ["/api/thing/[id]"]);
+        expect(found).toHaveLength(1);
+        expect(found[0].severity).toBe("error");
+        expect(found[0].message).toContain("stale");
+        expect(found[0].message).toContain("exports no PATCH");
     });
 });
