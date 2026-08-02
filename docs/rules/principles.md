@@ -223,6 +223,24 @@ reusability in the abstract, and this principle never asks for a plugin system.
 
 ---
 
+## Capture a fact where it is known
+
+- **Record something at the point someone can verify it, not the point it is
+  convenient to ask.** Where one person holds the document and another is being
+  asked to remember, ask the one holding the document.
+
+- **Accepting a claim nobody can check is a decision, not a default.** It is a
+  fair one where the risk has been weighed and taken. It is not one where
+  somebody downstream does hold the evidence and simply was not asked.
+
+The tell is a field filled in by the person the fact is *about*, on a path where
+someone else later reads the paperwork that settles it. Self-assertion is the
+cheaper place to put the control and it looks like trusting people, but a family
+saying "we both did the check" cannot catch a family that submitted one form and
+believed it covered two.
+
+---
+
 ## Accountability
 
 - **Anything that changes standing, money, or access is attributable.** Who did
