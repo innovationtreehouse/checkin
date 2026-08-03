@@ -282,12 +282,39 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     if (openVisit) {
                         return "Participant is currently checked in — check them out before marking Absent";
                     }
-                    // Only closed visits remain; safe to remove on an Absent correction.
-                    // Never hard-delete a tombstone: it is the reviewable record of
-                    // an earlier self-deletion.
-                    await tx.visit.deleteMany({
+                    // Only closed visits remain; safe to clear on an Absent
+                    // correction — as a TOMBSTONE, never a row removal (design §3).
+                    // A lead's Absent mark must be as reversible and reviewable as
+                    // the member's own delete, and an already-tombstoned row is
+                    // left alone: it is the record of an earlier deletion.
+                    const doomed = await tx.visit.findMany({
                         where: { personId: targetId, associatedEventId: eventId, ...LIVE_VISIT }
                     });
+                    if (doomed.length > 0) {
+                        await tx.visit.updateMany({
+                            where: { id: { in: doomed.map(v => v.id) }, ...LIVE_VISIT },
+                            data: { deletedAt: new Date(), deletedById: userId }
+                        });
+                        // Every human visit-write logs (design "Audit substrate").
+                        // Inside the lock, so the rows audited are exactly the rows
+                        // tombstoned — no racing delete can strand a DELETE row
+                        // crediting this lead with someone else's deletion.
+                        await tx.auditLog.createMany({
+                            data: doomed.map(v => ({
+                                actorId: userId,
+                                action: "DELETE",
+                                tableName: "Visit",
+                                affectedEntityId: v.id,
+                                secondaryAffectedEntity: targetId,
+                                oldData: {
+                                    arrivedAt: v.arrivedAt, departedAt: v.departedAt,
+                                    arrivedVia: v.arrivedVia, departedVia: v.departedVia,
+                                    associatedEventId: v.associatedEventId
+                                },
+                                newData: { type: "lead_attendance_correction", status: "Absent" }
+                            }))
+                        });
+                    }
                     return null;
                 }
 
@@ -323,14 +350,42 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     departedVia: departedAt ? "WEB" : null
                 } satisfies Prisma.VisitUncheckedUpdateInput;
 
+                // Every human visit-write logs (design "Audit substrate"), with
+                // secondaryAffectedEntity = the subject so a correction review
+                // reads actor ≠ subject without a join (§6.6).
                 if (existingVisit) {
-                    await tx.visit.update({
+                    const updated = await tx.visit.update({
                         where: { id: existingVisit.id },
                         data: { ...times, associatedEventId: eventId }
                     });
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: userId,
+                            action: "EDIT",
+                            tableName: "Visit",
+                            affectedEntityId: updated.id,
+                            secondaryAffectedEntity: targetId,
+                            oldData: {
+                                arrivedAt: existingVisit.arrivedAt, departedAt: existingVisit.departedAt,
+                                arrivedVia: existingVisit.arrivedVia, departedVia: existingVisit.departedVia,
+                                associatedEventId: existingVisit.associatedEventId
+                            },
+                            newData: { ...times, type: "lead_attendance_correction", status: "Present" }
+                        }
+                    });
                 } else {
-                    await tx.visit.create({
+                    const created = await tx.visit.create({
                         data: { ...times, personId: targetId, associatedEventId: eventId }
+                    });
+                    await tx.auditLog.create({
+                        data: {
+                            actorId: userId,
+                            action: "CREATE",
+                            tableName: "Visit",
+                            affectedEntityId: created.id,
+                            secondaryAffectedEntity: targetId,
+                            newData: { ...times, type: "lead_attendance_correction", status: "Present" }
+                        }
                     });
                 }
                 return null;

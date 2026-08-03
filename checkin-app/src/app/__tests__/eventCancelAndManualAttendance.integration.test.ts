@@ -176,7 +176,7 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(visits.length).toBe(1); // open visit survives
         });
 
-        it('deletes a closed (departedAt) visit when marking Absent', async () => {
+        it('tombstones a closed (departedAt) visit when marking Absent, and audits it', async () => {
             const event = await makeEvent('manual-absent-closed', -2 * HOUR);
             await prisma.visit.create({
                 data: {
@@ -190,8 +190,23 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const res = await patch(event.id, { action: 'manualEditAttendance', participantId, status: 'Absent' });
             expect(res.status).toBe(200);
 
+            // A lead's Absent mark is as reversible as the member's own delete
+            // (AT3 §3): the row survives with deletedAt set, and drops out of
+            // every LIVE_VISIT read.
             const visits = await prisma.visit.findMany({ where: { personId: participantId, associatedEventId: event.id } });
-            expect(visits.length).toBe(0); // closed visit removed
+            expect(visits.length).toBe(1);
+            expect(visits[0].deletedAt).not.toBeNull();
+            expect(visits[0].deletedById).toBe(adminId);
+            expect(await prisma.visit.count({
+                where: { personId: participantId, associatedEventId: event.id, deletedAt: null },
+            })).toBe(0);
+
+            const audit = await prisma.auditLog.findFirst({
+                where: { tableName: 'Visit', affectedEntityId: visits[0].id, action: 'DELETE' },
+            });
+            expect(audit).not.toBeNull();
+            expect(audit!.actorId).toBe(adminId);
+            expect(audit!.secondaryAffectedEntity).toBe(participantId);
         });
 
         it('rejects and deletes nothing when an open visit coexists with a closed one', async () => {
