@@ -1,12 +1,14 @@
 /**
  * @jest-environment node
  *
- * Self-correction of own visits (AT5, #1256): PATCH edits times, DELETE
- * tombstones. The invariants under test: ownership is the only gate (404 on
- * not-yours/tombstoned — no existence oracle), validity checks reject bad
- * times, the write is audited with type "self_correction" + significance, a
- * significant change emails the board, a delete never removes the row, and
- * closing an open visit routes through processVisitCheckout.
+ * Self-correction of own visits (AT5, #1256) and a household lead's correction
+ * of a member's (AT3, #1254): PATCH edits times, DELETE tombstones. The
+ * invariants under test: scope is the only gate (404 on out-of-scope/tombstoned
+ * — no existence oracle), validity checks reject bad times, the write is
+ * audited with type "self_correction" + significance, a significant change
+ * emails the board, a delete never removes the row, closing an open visit
+ * routes through processVisitCheckout, and every lock/where keys on the visit's
+ * PERSON (not the actor) so a lead's write serializes against the member's kiosk.
  */
 
 import type { NextRequest } from "next/server";
@@ -14,6 +16,7 @@ import { getServerSession } from "next-auth/next";
 import prisma from "@/lib/prisma";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 import { emailBoardMembers } from "@/lib/emailRecipients";
+import { visitSubject } from "@/lib/visit/scope";
 import { PATCH, DELETE } from "@/app/api/attendance/manual/[id]/route";
 
 jest.mock("next-auth/next", () => ({ getServerSession: jest.fn() }));
@@ -24,6 +27,9 @@ jest.mock("@/lib/verify-kiosk", () => ({
 }));
 jest.mock("@/lib/attendanceTransitions", () => ({ processVisitCheckout: jest.fn().mockResolvedValue([]) }));
 jest.mock("@/lib/emailRecipients", () => ({ emailBoardMembers: jest.fn().mockResolvedValue(undefined) }));
+// Scope resolution is exercised in lib/visit/__tests__/scope.test.ts; here the
+// default stands in for "self only", and the household-lead cases override it.
+jest.mock("@/lib/visit/scope", () => ({ visitSubject: jest.fn() }));
 
 const tx = {
     $executeRaw: jest.fn(),
@@ -43,6 +49,7 @@ const visitFindUnique = prisma.visit.findUnique as jest.Mock;
 const auditCreate = prisma.auditLog.create as jest.Mock;
 
 const OWN_ID = 7;
+const MEMBER_ID = 8; // a household member the actor leads
 const baseVisit = {
     id: 42, personId: OWN_ID, deletedAt: null, deletedById: null, associatedEventId: null,
     arrivedAt: new Date("2026-07-20T14:00:00Z"), departedAt: new Date("2026-07-20T16:00:00Z"),
@@ -61,6 +68,8 @@ const ctx = { params: Promise.resolve({ id: "42" }) };
 beforeEach(() => {
     jest.clearAllMocks();
     mockSession.mockResolvedValue({ user: { id: OWN_ID } });
+    (visitSubject as jest.Mock).mockImplementation(async (actorId: number, subjectId: number) =>
+        actorId === subjectId ? { id: subjectId, isKeyholder: false } : null);
     tx.visit.findFirst.mockResolvedValue({ id: 42 });
     tx.visit.update.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ ...baseVisit, ...args.data }));
     tx.visit.updateMany.mockResolvedValue({ count: 1 });
@@ -227,5 +236,65 @@ describe("DELETE /api/attendance/manual/[id]", () => {
         expect(res.status).toBe(404);
         expect(auditCreate).not.toHaveBeenCalled();
         expect(emailBoardMembers).not.toHaveBeenCalled();
+    });
+});
+
+// AT3 §3: a household lead corrects a member's visit on the same terms as their
+// own — the lead is the responsible adult, and a minor cannot self-serve at all.
+describe("household-lead correction of a member's visit", () => {
+    const memberVisit = { ...baseVisit, personId: MEMBER_ID };
+
+    // The lead leads MEMBER_ID's household; anyone else is still out of scope.
+    const leadScope = async (actorId: number, subjectId: number) =>
+        actorId === subjectId || (actorId === OWN_ID && subjectId === MEMBER_ID)
+            ? { id: subjectId, isKeyholder: false } : null;
+
+    beforeEach(() => {
+        (visitSubject as jest.Mock).mockImplementation(leadScope);
+        visitFindUnique.mockResolvedValue(memberVisit);
+        tx.visit.findFirst.mockResolvedValue({ id: 42 });
+    });
+
+    it("edits a member's visit, locking and matching on the MEMBER, auditing the actor", async () => {
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+
+        expect(res.status).toBe(200);
+        // The one-open-visit invariant is per person, so the lock and the
+        // under-lock re-check key on the visit's person, not the lead.
+        expect(tx.$executeRaw).toHaveBeenCalledWith(expect.anything(), MEMBER_ID);
+        expect(tx.visit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+            where: { id: 42, personId: MEMBER_ID, deletedAt: null },
+        }));
+        const audit = auditCreate.mock.calls[0][0].data;
+        expect(audit).toMatchObject({ actorId: OWN_ID, secondaryAffectedEntity: MEMBER_ID });
+    });
+
+    it("weights a proxy edit double — a nudge that is noise on your own record flags here", async () => {
+        // 50 min on a WEB (weight 1) arrival: 50 alone is under the 90 threshold,
+        // 100 by proxy is over it.
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:50:00Z" }), ctx as never);
+        expect(await res.json()).toMatchObject({ flagged: true });
+        expect((emailBoardMembers as jest.Mock).mock.calls[0][0]).toContain("household-edit");
+    });
+
+    it("tombstones a member's visit, stamping the LEAD as the deleter", async () => {
+        const res = await DELETE(req("DELETE"), ctx as never);
+
+        expect(res.status).toBe(200);
+        expect(tx.visit.updateMany).toHaveBeenCalledWith({
+            where: { id: 42, personId: MEMBER_ID, deletedAt: null },
+            data: expect.objectContaining({ deletedById: OWN_ID }),
+        });
+        expect(auditCreate.mock.calls[0][0].data).toMatchObject({
+            actorId: OWN_ID, secondaryAffectedEntity: MEMBER_ID,
+        });
+    });
+
+    it("404s a visit belonging to someone outside the lead's household", async () => {
+        visitFindUnique.mockResolvedValue({ ...baseVisit, personId: 99 });
+        expect((await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never)).status).toBe(404);
+        expect((await DELETE(req("DELETE"), ctx as never)).status).toBe(404);
+        expect(tx.visit.update).not.toHaveBeenCalled();
+        expect(tx.visit.updateMany).not.toHaveBeenCalled();
     });
 });

@@ -83,3 +83,31 @@ describe("deleteSignificance", () => {
         expect(r.score).toBe(360);
     });
 });
+
+// An adult changing another person's record is itself a flag input (design §3),
+// so a household lead's correction weighs double.
+describe("acting for a household member (byProxy)", () => {
+    it("doubles an edit — the same shift that is noise on your own record flags here", () => {
+        const own = { arrivedAt: at(14), departedAt: at(16), arrivedVia: "WEB" as const, departedVia: "WEB" as const };
+        const moved = { arrivedAt: at(14, 50), departedAt: at(16) };
+        expect(editSignificance(own, moved).flagged).toBe(false);          // 50
+        expect(editSignificance(own, moved, { byProxy: true })).toEqual({ score: 100, flagged: true });
+    });
+
+    it("doubles a delete's score (which already flags either way)", () => {
+        const visit = { arrivedAt: at(14), departedAt: at(16), arrivedVia: "WEB" as const, departedVia: "WEB" as const };
+        expect(deleteSignificance(visit).score).toBe(120);
+        expect(deleteSignificance(visit, { byProxy: true }).score).toBe(240);
+    });
+
+    // Source suppression outranks the proxy weight: fixing a cron-stamped
+    // departure is the happy path whoever does it.
+    it("never resurrects a machine-close correction", () => {
+        const r = editSignificance(
+            { arrivedAt: at(9), departedAt: at(23), arrivedVia: "SCANNER", departedVia: "SYSTEM" },
+            { arrivedAt: at(9), departedAt: at(13) },
+            { byProxy: true },
+        );
+        expect(r).toEqual({ score: 0, flagged: false });
+    });
+});

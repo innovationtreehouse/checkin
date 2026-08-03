@@ -30,6 +30,10 @@ const MACHINE_CLOSE_WEIGHT = 0;
 // Sits above a 15-min shift of both ends of a roster-marked visit (60) and
 // below a 2h move of a scanned arrival (360) — the design's no/yes examples.
 const FLAG_THRESHOLD = 90; // weighted minutes
+// One adult changing another person's record is itself a flag input (design
+// §3), so a household lead's edit of a member's visit weighs double: the same
+// nudge that is noise on your own record is worth seeing on someone else's.
+const PROXY_MULTIPLIER = 2;
 
 type VisitTimes = {
     arrivedAt: Date;
@@ -55,19 +59,24 @@ function minutesBetween(a: Date | null, b: Date | null): number {
     return Math.abs(a.getTime() - b.getTime()) / 60000;
 }
 
+/** `byProxy`: the actor is not the visit's person (a household lead acting for a member). */
+export type SignificanceOpts = { byProxy?: boolean };
+
 /** Significance of editing a visit's times, weighted by the OLD values' sources. */
 export function editSignificance(
     oldVisit: VisitTimes,
     newTimes: { arrivedAt: Date; departedAt: Date | null },
+    opts: SignificanceOpts = {},
 ): Significance {
-    const score =
+    const score = (
         minutesBetween(oldVisit.arrivedAt, newTimes.arrivedAt) * weightOf(oldVisit.arrivedVia, "arrival", oldVisit) +
-        minutesBetween(oldVisit.departedAt, newTimes.departedAt) * weightOf(oldVisit.departedVia, "departure", oldVisit);
+        minutesBetween(oldVisit.departedAt, newTimes.departedAt) * weightOf(oldVisit.departedVia, "departure", oldVisit)
+    ) * (opts.byProxy ? PROXY_MULTIPLIER : 1);
     return { score: Math.round(score), flagged: score >= FLAG_THRESHOLD };
 }
 
 /** A delete always flags — the floor. Score reflects how much recorded time vanished. */
-export function deleteSignificance(visit: VisitTimes): Significance {
+export function deleteSignificance(visit: VisitTimes, opts: SignificanceOpts = {}): Significance {
     const duration = visit.departedAt
         ? minutesBetween(visit.arrivedAt, visit.departedAt)
         : 0;
@@ -75,5 +84,5 @@ export function deleteSignificance(visit: VisitTimes): Significance {
         weightOf(visit.arrivedVia, "arrival", visit),
         weightOf(visit.departedVia, "departure", visit),
     );
-    return { score: Math.round(duration * weight), flagged: true };
+    return { score: Math.round(duration * weight * (opts.byProxy ? PROXY_MULTIPLIER : 1)), flagged: true };
 }
