@@ -509,6 +509,50 @@ describe('Program Participants API Integration Tests', () => {
              expect(data.enrollment.personId).toBe(memberId);
         });
 
+        // #1397: the write gate must admit exactly who the read gates show the
+        // program to — a household whose dues are paid and whose background check
+        // is still with the board sees this program, so it must be able to enroll.
+        it('should allow a household that has paid but is awaiting background clearance', async () => {
+             const paidPending = await prisma.person.create({
+                 data: {
+                     email: 'paid-pending-partic-api-test@example.com',
+                     name: 'Paid Pending',
+                     dateOfBirth: new Date('1990-01-01'),
+                     household: {
+                         create: {
+                             name: 'Test HH',
+                             orgMembership: {
+                                 create: {
+                                     status: 'NONE',
+                                     processes: { create: { kind: 'INITIAL', status: 'PENDING_BG_CLEARANCE', paidAt: new Date() } },
+                                 },
+                             },
+                         },
+                     },
+                 },
+                 select: { id: true, householdId: true },
+             });
+
+             try {
+                 (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPending.id } });
+
+                 const req = new Request(`http://localhost:4000/api/programs/${memberOnlyProgramId}/participants`, {
+                     method: 'POST',
+                     body: JSON.stringify({ participantId: paidPending.id })
+                 });
+                 const res = await POST(req as unknown as import("next/server").NextRequest, createParams(memberOnlyProgramId) as unknown as never);
+                 expect(res.status).toBe(200);
+
+                 const data = await res.json();
+                 expect(data.success).toBe(true);
+             } finally {
+                 await prisma.programParticipant.deleteMany({ where: { personId: paidPending.id } });
+                 await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: paidPending.householdId } } });
+                 await prisma.orgMembership.deleteMany({ where: { householdId: paidPending.householdId } });
+                 await prisma.person.delete({ where: { id: paidPending.id } });
+             }
+        });
+
         // The members-only gate lives inside enforceLimits, so it must not break
         // the deliberate comp path — a confirmed board/sysadmin override still
         // seats a non-member.

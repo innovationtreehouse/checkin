@@ -1,7 +1,7 @@
 # Youth enrollment rules (issue #167)
 
-**Status: IN BUILD.** The gate itself is being implemented; the open gaps at the
-end are not settled and nothing in them is built.
+**Status: BUILT.** Every decision below is implemented. The out-of-scope items
+at the end are deliberately not.
 
 ## Problem
 
@@ -191,7 +191,7 @@ Why the claim rather than a per-response `viewerIsMember`-style flag:
 - **It costs no extra query.** Both callback branches use
   `findUnique({ where, include })` with no `select`, so every Person scalar —
   `dateOfBirth` and `isDeclaredAdult` included — is already loaded. The claim is
-  a derived boolean over data already in hand.
+  a derived value over data already in hand.
 - **Per-response scales as endpoints × signals.** Youth-gating alone would need
   `GET /api/programs/[id]` and `/api/programs/mine`, and each addition is a
   response-shape change to justify and a place to forget.
@@ -209,9 +209,15 @@ Two constraints that ride with it:
    the gate must open *now*, not up to 15 minutes later. The intake save calls
    `useSession().update()` to force a re-stamp before returning to the
    member-select.
-2. **Stamp the boolean, never the date.** `dateOfBirth` is
-   `@sensitivity:personal`; a derived `isKnownAdult` in the token is fine, the
-   raw date is not.
+2. **Stamp the derived band, never the date.** `dateOfBirth` is
+   `@sensitivity:personal`; a derived `ageBand` in the token is fine, the raw
+   date is not.
+
+3. **A band, not a boolean.** "Not a known adult" covers a youth AND an
+   unverifiable adult, and this design treats those oppositely — one boolean
+   would hide the enrollment surface from the brand-new adult it exists to
+   serve. `ageBand` is `adult | youth | unknown`, so the impossible pair cannot
+   be represented.
 
 `viewerIsMember` / `viewerMemberPricingEligible` stay as they are — an existing
 exception, not the pattern to copy.
@@ -229,7 +235,7 @@ role-gated and out of a youth's reach, so they are not listed.
 | `programs/[id]` primary CTA | "Continue enrollment" when the household owes | Falls back to the lead-required message |
 | `programs/[id]` "Pay on Shopify" | Checkout action | Hide for youth |
 | `programs/[id]` scholarship button | "Request a scholarship or payment plan" | Hide for youth |
-| `my-activities/programs` | "Payment due" badge per enrollment | Hide for youth |
+| `my-activities/programs` | "Payment due" badge per enrollment | Reads `Awaiting confirmation` for youth |
 | `POST request-payment-plan` | Authorises on `isSelf`, no age gate | Add the known-adult self-gate (server) |
 | `DELETE participants` | Authorises self-removal, no age gate | Add the known-adult self-gate (server) |
 
@@ -292,8 +298,10 @@ from *who may initiate*).
 
 ## Build shape
 
-- `isKnownAdult` in `lib/programAge.ts`, next to `checkProgramAge`, so the route
-  and the page judge adulthood by one rule.
+`isKnownAdult` and `ageBand` live in `lib/programAge.ts` next to
+`checkProgramAge`, so the routes and the claim judge adulthood by one rule: the
+routes use the predicate, the JWT carries the band.
+
 Server (the enforcement; each is a refusal a direct POST cannot talk past):
 
 - Enroll route `POST`: inside the limits-enforced block, after the age check,
@@ -302,21 +310,34 @@ Server (the enforcement; each is a refusal a direct POST cannot talk past):
 - Enroll route `DELETE`: refuse a non-known-adult self-removal.
 - `request-payment-plan POST`: same self-gate.
 
-Client (the absence; every item waits on the viewer signal):
+Client (the absence), all keyed off the `ageBand` claim:
 
+- Program page: the CTA reads the lead-required message and is disabled, the
+  household payment summary is not rendered, and neither is "Pay on Shopify" or
+  the scholarship button.
 - Enroll page `enrollBlock`: on the viewer's own row, a known minor → the
-  lead-required reason on a fresh enrollment and a plain `Enrolled` on an
-  existing one; an unverifiable age → the `dob` reason, which already drops into
-  the intake panel.
-- The rest of the sweep table: household summary, CTA label, "Pay on Shopify",
-  the scholarship button, and the `my-activities` payment badge.
+  lead-required reason on a fresh enrollment and `Awaiting confirmation` on a
+  pending one; an unverifiable age → the `dob` reason, which drops into the
+  intake panel. Because a youth cannot open the member-select at all (the CTA is
+  disabled), these row states are a defensive mirror of the route rather than a
+  path a youth reaches.
+- `my-activities/programs`: the payment badge reads `Awaiting confirmation`.
 
-Tests — new cases: known minor self → refused; unverifiable-age self → refused;
-declared/DOB adult self → allowed; a lead enrolling a minor → still allowed; a
-youth cannot withdraw themselves.
+Tests — new cases: known minor self → refused; unverifiable-age self → refused
+with the age-capture message, not the lead one; declared/DOB adult self →
+allowed; a lead enrolling a minor → still allowed; a youth cannot withdraw
+themselves; a youth sees the lead-required CTA, no payment surface, and still
+sees the price, while an adult in the same household still gets the resume.
 
-Tests — existing suites encode the old rule and must be re-pointed to a
-lead-enrolls-child shape, since any persona used for a non-age self-enroll now
-has to be a known adult: `programAgeBounds`, `programAgeStartDate`,
-`programsParticipantsAPI`, and `programsEnrollClosed` (integration), plus the
-enroll page suite.
+Tests — existing suites encoded the old rule and were re-pointed, since any
+persona used for a non-age self-enroll or self-request now has to be a known
+adult: `programAgeBounds` and `programAgeStartDate` (the "allow self-enrollment"
+cases became lead-enrolls-child), `programsParticipantsAPI` (drop-out split into
+youth-refused and adult-allowed), `programsHouseholdEnrollment`,
+`programPaymentPlansAPI`, and `enrollmentStateOracle`, plus the enroll page
+suite and the `rtl` session helper (which now exposes `update`).
+
+`programAgeBounds` also built its boundary DOBs from local date parts while
+`calculateAge` reads UTC, so the "turns 14 tomorrow" persona read as 14 after
+~19:00 local and that test failed on its own, independent of this change. Those
+fixtures are now built with `Date.UTC`.
