@@ -228,19 +228,19 @@ table rebuild / accept-data-loss reset.
 > (`GET /api/programs` via `PUBLIC_PROGRAM_SELECT`), `GET /api/programs/[id]`,
 > `nav/todo-counts`, and the lifecycle-reconcile cron for the length of that window.
 
-## Shopify-side caveat (the plan is DB-only)
+## Shopify-side: nothing to clean up (confirmed 2026-08-02)
 
-Everything above is app + database. Nothing here archives/unpublishes the legacy
-two-variant Shopify **products** or voids carts already built against a legacy
-variant. Release 1 has removed the webhook matcher, so a customer still holding a
-stale legacy cart can now complete checkout against a legacy variant and the paid
-order will activate nothing — a silent paid-but-stuck order. Low likelihood once
-legacy programs are retired.
+This plan is app + database only — it never archived/unpublished the legacy
+two-variant Shopify **products**, and it can't void carts already built against a
+legacy variant.
 
-**Still outstanding — #1464 did not do this.** If any legacy two-variant product
-is still purchasable on the store, archive/unpublish it in Shopify. This is a
-store-side action with no code change, so it is not gated on Release 2; do it now
-rather than waiting for the migration.
+That was worth checking, because Release 1 removed the webhook matcher: a customer
+still holding a stale legacy cart could complete checkout against a legacy variant
+and have the paid order activate nothing — a silent paid-but-stuck order.
+
+**Confirmed there are no stale legacy items in the store**, so there is no
+purchasable legacy product and no cart that can reach that state. No store-side
+action is required, and this is not a Release 2 prerequisite.
 
 ## Not in scope
 
