@@ -234,6 +234,6 @@ describe('enum parity with Prisma', () => {
         expect(() => assertEnumParity(ALL_STATUSES, OrgMembershipProcessStatus, 'OrgMembershipProcessStatus')).not.toThrow();
     });
     test('ProcessKind union matches OrgMembershipProcessKind keys', () => {
-        expect(() => assertEnumParity(['INITIAL', 'RENEWAL', 'PERSON_BG'], OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
+        expect(() => assertEnumParity(['INITIAL', 'RENEWAL', 'PERSON_BG', 'PERSON_AGREEMENT'], OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
     });
 });

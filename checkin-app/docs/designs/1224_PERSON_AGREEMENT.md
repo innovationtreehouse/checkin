@@ -1,8 +1,9 @@
 # Individual adult-child membership agreement (PERSON_AGREEMENT)
 
-Status: **PROPOSED — for review**
+Status: **AGREED — ready to build**
 Issue: [#1224](https://github.com/innovationtreehouse/checkin/issues/1224) · Backlog item **M6** (ENHANCE · NEEDS-DESIGN · size M)
 Related: SA1 18+ background-check trigger (`PERSON_BG`) — this is the *agreement* side of turning 18, not the BG side.
+Related: [#1462](https://github.com/innovationtreehouse/checkin/issues/1462) — program attachment has no exit state. Not a blocker; see "Considered and dropped".
 
 ## Problem
 
@@ -32,10 +33,8 @@ individual agreement. A spouse does **not**: a spouse stays on the household agr
 
 1. **No spouse-vs-child field exists.** `Person` carries only `isHouseholdLead` (bool, cap 2
    leads/household) and age (`dateOfBirth` / `isDeclaredAdult`). There is no relationship type.
-   We therefore lean on the convention **both signing adults are marked household lead**; every
-   other member who is 18+ is treated as an adult child. A household running with one lead + an
-   un-marked spouse cannot be distinguished and would wrongly flag the spouse — acceptable given
-   the cap-2-leads convention, and correctable by marking the spouse a lead.
+   The automatic population is therefore drawn narrowly enough that the distinction doesn't have
+   to be made — see "Population" below.
 
 2. **The signer must authenticate.** The Zoho recipient is the signing person's own account
    (`recipientEmail = user.email`, already required). An adult child must have an email on their
@@ -43,9 +42,11 @@ individual agreement. A spouse does **not**: a spouse stays on the household agr
    person needs it. No new auth work beyond the email→Person link SSO already performs.
 
 3. **`PERSON_BG` is the established precedent** for a person-scoped obligation: a process with
-   `orgMembershipId = null` and `subjectPersonId` set, judged by age as-of a boundary, opened by
-   an activation trigger + an annual sweep, idempotent and Person-row-locked. This design mirrors
-   it closely so the two "turns 18" obligations behave consistently.
+   `orgMembershipId = null` and `subjectPersonId` set, idempotent and Person-row-locked, opened by
+   an activation trigger plus a periodic one. The model and the concurrency pattern are reused
+   verbatim. Two things deliberately **diverge** — the age reference (as-of `now`, not as-of the
+   boundary) and the cadence (nightly, not annual); see Population and Triggers for why. Do not
+   "fix" this file to match `personBgTriggers.ts` on those two points.
 
 ## Design
 
@@ -55,61 +56,104 @@ New enum value `OrgMembershipProcessKind.PERSON_AGREEMENT`, a direct mirror of `
 
 - `subjectPersonId` = the adult child; `orgMembershipId` = null.
 - Reuses existing process columns: `contractSignedAt`, `zohoEnvelopeId`, `zohoActionId`.
+- Opens at `PENDING_EXTERNAL_ACTION` (the status the signing flow already selects on), and the
+  signature flips it straight to `ACTIVE`.
 - **No new columns.** Migration is a single additive enum value — safe (no drop/rename, no
   NOT NULL backfill).
 
 ### Population — who needs one
 
-Base rule: **≥18 as-of the boundary ∧ NOT `isHouseholdLead` ∧ live person ∧ program-attached**,
-within a member household. This is the `PERSON_BG` population **minus the leads** (leads sign the
-household agreement instead).
+The automatic rule is deliberately narrow: it must never ask a **spouse** to sign an individual
+agreement, and it must reach that guarantee from the fields we actually have.
 
-**Program-attachment window (open detail — needs a decision).** "Program-attached *now*" is too
-narrow: a member may become program-attached later in the year, after the trigger has already run.
-We therefore widen to **attached now OR within roughly the last year**. This deliberately
-*overshoots* — a graduating senior who has left is still flagged for a cycle — which we accept and
-manage with messaging (the family can ignore an obligation for someone who has aged out / left).
+**Automatic population — all five must hold:**
 
-Implementation snag: there is **no clean per-attachment timestamp**. `ProgramParticipant` has
-`pendingSince`; `ProgramVolunteer` has **none**; `Program.leadMentor` has only the program's own
-`startAt`/`endAt`. **Decided: proxy via the Program's active window** — a person counts as
-"attached in the last year" if they are attached to any `Program` whose `startAt`/`endAt` overlaps
-`[now − 12 months, now]`. This is a proxy, not exact per-person attachment history; a real
-per-attachment end date is a later investment only if precision proves to matter.
+1. **NOT `isHouseholdLead`** — a lead signs the household agreement.
+2. **In a member household** — the household's `OrgMembership` is ACTIVE.
+3. **Live person** (`LIVE_PERSON`, not a merge tombstone).
+4. **Program-attached** — `ProgramParticipant` ∪ `ProgramVolunteer` ∪ `Program.leadMentor`, the
+   same predicate `PERSON_BG` uses (`PROGRAM_ATTACHED_WHERE`). We don't need a legal agreement
+   from someone who isn't in the building; if we do, the board triggers it by hand.
+5. **`dateOfBirth` on file AND 18 ≤ age ≤ 25** as of **now** (inclusive at both ends).
 
-**NULL-date rule (required — both fields are nullable).** A naive overlap predicate
-(`startAt <= now AND endAt >= yearAgo`) silently drops undated programs via SQL three-valued logic:
-an 18+ non-lead attached only to an ongoing program with **no `endAt`** would never get an
-obligation opened — a silent compliance gap. The predicate must treat NULLs as *open*, not
-*excluded*:
-- `endAt` NULL → program is still active → counts as attached (overlaps `now`).
-- `startAt` NULL → unbounded start → satisfies the "started before now" side.
-- both NULL → treat as currently attached.
+**Age is judged as-of `now`, NOT as-of the membership-year boundary.** `PERSON_BG` judges age
+as-of `nextBoundary(now)` — always the *upcoming* boundary — which is only safe because that sweep
+is meant to fire once, at the boundary, where `nextBoundary(now) ≈ now`. This trigger runs nightly
+(below), and boundary-relative age run nightly would flag a **17-year-old** whose 18th birthday
+falls any time before the next boundary: asked to sign a contract they cannot legally be bound by,
+which is the exact failure this feature exists to prevent. As-of-`now` age is the only correct
+reading for a nightly trigger.
 
-Concretely: attached iff `(endAt IS NULL OR endAt >= yearAgo) AND (startAt IS NULL OR startAt <= now)`.
+**Why the age band is the spouse guard.** `isDeclaredAdult` means "over 25, no DOB on file" — set
+at intake by the over-25 checkbox, and also stamped automatically by the #1165 nightly purge on
+everyone who crosses 26. A non-lead adult **over 25** is a spouse the household didn't mark as a
+lead, or an adult child who should by then have their own household — either way a household
+data-hygiene item, not a signature obligation. A non-lead **18–25 with a DOB** is a child who
+turned 18. The band buys the spouse/child distinction that no field records.
+
+**The ceiling is written explicitly, not inherited.** Post-#1165 a person with a DOB is
+necessarily ≤25, so `age >= 18` alone would pick out the same set today. It is still written as
+`18 ≤ age ≤ 25`, because the implicit version depends on another feature's side effect and has a
+reachable hole: a household adds a 30-year-old spouse via my-household **with** a date of birth
+and doesn't mark them a lead — until the next nightly purge that person has a DOB and is 30, and
+an implicit rule would flag them. One comparison closes it.
+
+**Manual (board) population.** The manual button is the escape hatch and carries only the guards
+that prevent a wedged state, NOT the automatic narrowing:
+
+- **No program-attachment requirement** — that is the button's whole purpose.
+- **No age ceiling** — the board can see that a 27-year-old is an adult child and not a spouse.
+- **Still refuses a household lead** (see the resolver rule below — an open `PERSON_AGREEMENT` on
+  a lead would shadow the household signing flow).
+- **Still requires a known age** — `dateOfBirth != null || isDeclaredAdult`, i.e. anyone the BG
+  dashboard classifies as `DOB_MISSING` is refused. Fix the age first; the compliance page already
+  surfaces those people in its "Missing date of birth" section.
 
 ### Triggers
 
-Clone `personBgTriggers.ts` into `personAgreementTriggers.ts`:
+New `personAgreementTriggers.ts`, modeled on `personBgTriggers.ts`. There is **no separate annual
+sweep**: one nightly trigger does both jobs — it opens the first agreement when a person starts
+qualifying, and opens a fresh one after each cycle rolls. The boundary is no longer an age
+reference; it only moves the dedup window.
 
-- `openPersonAgreement(personId, asOf)` — idempotent, `FOR UPDATE` lock on the Person row,
-  dedup-guarded (opens nothing if one is already in flight for the cycle, or already signed).
+- `openPersonAgreement(personId, now, cycleStart)` — idempotent, `FOR UPDATE` lock on the Person
+  row, dedup-guarded (see below).
+- **Nightly** — hosted on the existing `api/cron/nightly` route, not a new one. Cron scheduling
+  lives out-of-band (nothing in `deploy/` or `.github/` schedules `person-bg-annual`), so a new
+  route would ship inert until someone wired it. `nightly` is known-scheduled (it does facility
+  auto-close) and already carries a comparable periodic item (the #1165 DoB purge). Idempotent, so
+  running it daily is free.
+
+  Nightly is what makes the trigger *correct*, not just convenient. A once-a-year sweep misses
+  everyone who starts qualifying after it fires: a 19-year-old added to a program on **Sept 2**,
+  the day after a Sept 1 boundary, would wait a full year. (That gap is what the dropped 12-month
+  program-window proxy was trying to paper over — badly, since that window keys on the *program's*
+  dates, not on when the person joined it.) Re-evaluating nightly closes it directly: they are
+  caught Sept 3, and a January 18th birthday is caught January 16.
 - **Activation** — on INITIAL → ACTIVE, open one for each qualifying adult child in the household
-  (mirror `openPersonBgForNewMember`).
-- **Annual sweep** — at the renewal boundary, open a fresh agreement for each qualifying adult
-  child, so the individual agreement re-signs every cycle exactly like the household one (mirror
-  `runPersonBgAnnualSweep`). A mid-year 18th birthday is caught at the next annual run — no
-  realtime birthday cron, same as SA1.
-- **Manual board buttons (new) — build both.** Off the membership boundary, because the automatic
-  population can't catch every case (someone who becomes attached between runs, or a judgement call
-  the board makes directly). Two buttons, same manual-open shape, different kind:
-  - "This person needs an **agreement** now" → opens a `PERSON_AGREEMENT` if none is open. **Must
-    carry the same NOT-`isHouseholdLead` guard as the automatic triggers** — a lead signs the
-    household agreement, and an open PERSON_AGREEMENT on a lead would wedge the household signing
-    flow (see the resolver rule below). Refuse (or no-op with a clear message) if the subject is a
-    lead.
-  - "This person needs a **BG check** now" → opens a `PERSON_BG` if none is open (mirror of the
-    existing `submitPersonBgForReview` manual path). No lead guard — leads *do* need BG checks.
+  (mirror `openPersonBgForNewMember`). Strictly an optimization over waiting for the next nightly
+  run, so a new member isn't asked a day late; the nightly pass would catch them regardless.
+- **Manual board button** — opens a `PERSON_AGREEMENT` for one person, subject to the manual
+  guards above. Lives on the membership-audit compliance page next to the existing
+  "Record external check & submit" (`PERSON_BG`) button.
+
+**Cycle dedup — mirrors the household renewal window.** A person is "handled this cycle" when they
+have a `PERSON_AGREEMENT` that is either:
+
+- **in flight** — `PENDING_EXTERNAL_ACTION`, from any cycle (an unsigned obligation is not a reason
+  to open a second one), or
+- **settled this cycle** — terminal (`ACTIVE`/`ARCHIVED`) with `stageEnteredAt >= windowStart`,
+  where `windowStart = boundary − RENEWAL_LEAD_MONTHS` — the same window
+  `runRenewalSweep` uses via `settledThisCycleWhere` ([lifecycle.ts:171](../../src/lib/membership/lifecycle.ts)).
+
+Dedup-ing from `windowStart` rather than from the boundary itself is what stops a double-ask: a
+person who starts qualifying on Aug 20 signs, and without the lead-month window the Sept 1 rollover
+would ask them again two weeks later. The household flow already solved this exact shape; this
+mirrors it so the individual agreement and the household agreement roll on the same cycle.
+
+The clause is written locally in `personAgreementTriggers.ts` rather than by extending
+`settledThisCycleWhere`, which is hardcoded to `kind: "RENEWAL"` and belongs to the #1080 lifecycle
+work — same shape, different kind. With no boundary configured the guard degrades to "one ever".
 
 ### Signer + unblocking the lead-only gate
 
@@ -147,9 +191,10 @@ above.
 
 - **Subject** (`/membership`): a "Sign your individual membership agreement" card appears when they
   have an open `PERSON_AGREEMENT`, mirroring the household lead's sign card. This is the surface the
-  gate-unblock exists for.
+  gate-unblock exists for. The copy states the ask and that nothing is blocked; it does **not**
+  invite the reader to decide whether it applies to them (see "Considered and dropped").
 - **Lead / ops:** informational visibility of outstanding adult-child agreements — *not* a gate.
-  Enough for the board to chase them by hand.
+  Enough for the board to chase them by hand, and the surface the manual button lives on.
 
 ### Gating
 
@@ -157,20 +202,30 @@ above.
 `PERSON_BG` runs in parallel and only the final activation waits on the *household* check.
 Enforcement is manual to start.
 
-## Open questions for review
+## Considered and dropped
 
-1. **Flagging & rules messaging (TBD).** The design leans on rules a family has to understand, and
-   two of them produce false positives that need a reasonable way to be surfaced and explained:
-   - **Overshoot** — a graduating senior / someone who has left is flagged for a cycle by the
-     "attached in the last year" window. We need to tell the family "you can ignore this one, they
-     have aged out / left."
-   - **Spouse edge case** — a household with one lead + an 18+ non-lead spouse would flag the
-     spouse (we can't distinguish spouse from adult child in data). The fix a family takes is to
-     mark the spouse a lead — but they have to be told that.
-
-   Both are the same underlying need: a clear surface that says *why* an individual agreement was
-   requested and *what to do* if it does not actually apply (ignore it / mark them a lead).
-   Copy and placement still to be figured out.
+- **A 12-month `Program.startAt`/`endAt` overlap window** (with a NULL-date rule so undated
+  programs count as open) instead of plain program attachment. It existed to bound the "attached to
+  a program that ended long ago" false positive. Dropped: it is a proxy for data we don't have, and
+  the age band plus the manual override already keep the population honest. The underlying gap —
+  attachment has no exit state, withdrawal hard-deletes the row — is [#1462](https://github.com/innovationtreehouse/checkin/issues/1462),
+  tracked separately and **not** a blocker here.
+- **Family-facing "you can ignore this one" copy** for people who have aged out or left. Dropped as
+  undeliverable: there is no class year, no graduation state, and no attachment history, so the
+  system cannot tell a person who left from one who stayed. The only honest version would be a
+  generic caveat shown to everyone, which trains people to ignore a legal-agreement request. The
+  narrow automatic population removes the need for it.
+- **"Mark your spouse as a household lead" instructional copy.** Unnecessary once the age band
+  excludes over-25 non-leads from the automatic population.
+- **A board classification click as the first step** (board asserts "adult child, not spouse", then
+  the system auto-renews). Unnecessary — `isDeclaredAdult` already carries that signal, so the rule
+  re-derives it every cycle with no human in the loop and nothing to remember.
+- **A dedicated `api/cron/person-agreement-annual` route.** Would ship inert; see the Triggers note.
+- **An annual boundary sweep, mirroring `runPersonBgAnnualSweep`.** Fires once a year, so it misses
+  everyone who begins qualifying after it runs — the Sept 2 enrolment above waits a year. Replaced
+  by the nightly trigger, which subsumes both the first open and the per-cycle re-open.
+- **Boundary-relative age (`nextBoundary(now)`), copied from `PERSON_BG`.** Correct only for a
+  once-a-year sweep. Run nightly it flags minors; see the Population note.
 
 ## Migration / safety notes
 
@@ -178,9 +233,5 @@ Enforcement is manual to start.
 - The signing-gate change is a branch, not a rewrite — the household lead flow is untouched; only
   the self-signing case is newly permitted. Cover with a test that a non-lead **cannot** sign the
   household agreement but **can** sign their own PERSON_AGREEMENT.
-- `personAgreementTriggers.ts` reuses the Person-row-lock idempotency pattern from
-  `personBgTriggers.ts`, but **derives-and-narrows** the population predicate rather than reusing
-  `PROGRAM_ATTACHED_WHERE` verbatim. That helper is *attached-to-any-program-ever* (no time bound);
-  this feature needs the **12-month Program-window** proxy above (with the NULL-date rule) plus the
-  NOT-`isHouseholdLead` exclusion. Reusing `PROGRAM_ATTACHED_WHERE` as-is would turn "flagged for one
-  cycle" into "flagged forever."
+- `personAgreementTriggers.ts` reuses `PROGRAM_ATTACHED_WHERE` and the Person-row-lock idempotency
+  pattern from `personBgTriggers.ts`, and adds the NOT-`isHouseholdLead` exclusion and the age band.

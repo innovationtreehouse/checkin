@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import type { OrgMembershipProcess } from "@/generated/prisma/client";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 import { backgroundCheckProvider } from "@/lib/membership/background-check/manual-adapter";
@@ -7,6 +8,7 @@ import { zohoSign } from "@/lib/membership/contract/zohoProvider";
 import { signingMockActive } from "@/lib/membership/contract/signingTarget";
 import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavailableError } from "@/lib/membership/contract/agreementDocument";
 import { latestPendingExternal } from "@/lib/membership/phases";
+import { findOpenPersonAgreement } from "@/lib/membership/personAgreementTriggers";
 import { fromWhere } from "@/lib/membership/lifecycle";
 
 /**
@@ -147,23 +149,41 @@ export async function advanceExternalIfComplete(processId: number) {
     return advanced;
 }
 
-/** Record that the membership contract was signed (idempotent), then maybe advance. */
+/**
+ * Record that the membership contract was signed (idempotent), then maybe advance.
+ *
+ * A PERSON_AGREEMENT (#1224) completes on the signature alone — it has no membership,
+ * no payment and no BG gate — so it flips straight to the terminal ACTIVE in the same
+ * conditional write and skips advanceExternalIfComplete entirely (which would deref a
+ * null orgMembershipId).
+ */
 export async function markContractSigned(processId: number, actorId: number = SYSTEM_ACTOR) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
+    const isPersonAgreement = process.kind === "PERSON_AGREEMENT";
     // Conditional on contractSignedAt: null — two concurrent Zoho webhook retries
     // both see null, but only the winner's updateMany flips it (count === 1), so the
     // audit row is written once.
     await prisma.$transaction(async (tx) => {
+        const signedAt = new Date();
         const { count } = await tx.orgMembershipProcess.updateMany({
             where: { id: processId, contractSignedAt: null },
-            data: { contractSignedAt: new Date() },
+            data: isPersonAgreement
+                ? { contractSignedAt: signedAt, status: "ACTIVE", stageEnteredAt: signedAt }
+                : { contractSignedAt: signedAt },
         });
         if (count !== 1) return;
         await tx.auditLog.create({
-            data: { actorId, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, newData: { contractSignedAt: true } },
+            data: {
+                actorId,
+                action: "EDIT",
+                tableName: "OrgMembershipProcess",
+                affectedEntityId: processId,
+                newData: isPersonAgreement ? { contractSignedAt: true, status: "ACTIVE" } : { contractSignedAt: true },
+            },
         });
     });
+    if (isPersonAgreement) return prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     return advanceExternalIfComplete(processId);
 }
 
@@ -269,6 +289,31 @@ async function clearDeadSigningRequest(processId: number, requestId: string, act
 }
 
 /**
+ * Which process this caller signs, shared by the signing action and the return-from-
+ * signing sync so the two can never disagree.
+ *
+ * A household lead ALWAYS signs the household INITIAL/RENEWAL process — `isHouseholdLead`
+ * is checked FIRST, so a stray open PERSON_AGREEMENT on someone who is (or becomes) a
+ * lead can never shadow it and stall activation/renewal with no UI explanation. The
+ * NOT-lead guard on the triggers should keep a lead from ever having one; this ordering
+ * is the backstop.
+ *
+ * Otherwise the caller's own open PERSON_AGREEMENT wins — they are signing for
+ * themselves, so the household lead-only gate does not apply to them (#1224).
+ */
+async function resolveSigningProcess(
+    userId: number,
+    isHouseholdLead: boolean,
+    householdProcesses: OrgMembershipProcess[] | undefined,
+): Promise<{ process: OrgMembershipProcess | undefined; isOwnAgreement: boolean }> {
+    if (!isHouseholdLead) {
+        const own = await findOpenPersonAgreement(userId);
+        if (own) return { process: own, isOwnAgreement: true };
+    }
+    return { process: latestPendingExternal(householdProcesses), isOwnAgreement: false };
+}
+
+/**
  * Pull the contract status from Zoho for the applicant's in-flight process and
  * record it signed if Zoho says so. Called when the signer returns from embedded
  * signing (?signed=1) so completion doesn't hinge on the inbound webhook — which
@@ -282,8 +327,12 @@ export async function syncContractStatus(userId: number): Promise<ExternalStatus
         where: { id: userId },
         include: { household: { include: { orgMembership: { include: { processes: true } } } } },
     });
-    // Same selection as the signing action: the latest process awaiting external action.
-    const process = latestPendingExternal(user?.household?.orgMembership?.processes);
+    if (!user) return null;
+    // Same selection as the signing action — including a PERSON_AGREEMENT, which can
+    // never appear in household.orgMembership.processes (its orgMembershipId is null).
+    // Without this the subject's signature only lands if the unreliable Zoho webhook
+    // fires, and a re-click mints a second signing ceremony for a signed agreement.
+    const { process } = await resolveSigningProcess(user.id, user.isHouseholdLead, user.household?.orgMembership?.processes);
     if (!process) return null;
 
     if (!process.contractSignedAt && process.zohoEnvelopeId && config.zohoAvailable()) {
@@ -330,16 +379,23 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
         },
     });
     if (!user) throw new ExternalError("not_found", "Application not found.");
-    if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
-    if (!user.isHouseholdLead && !user.isSysadmin) {
-        throw new ExternalError("not_lead", "Only a household lead can sign the membership agreement.");
-    }
 
     // Any kind in the EXTERNAL phase — INITIAL applications AND renewals, which
-    // re-sign the agreement fresh each cycle. Gating on status alone keeps this in
-    // step with getIntakeState/getExternalStatus, which surface the button for any
-    // non-ACTIVE process (a kind filter here would render the button then 409).
-    const process = latestPendingExternal(user.household?.orgMembership?.processes);
+    // re-sign the agreement fresh each cycle, plus the caller's own PERSON_AGREEMENT.
+    // Gating on status alone keeps this in step with getIntakeState/getExternalStatus,
+    // which surface the button for any non-ACTIVE process (a kind filter here would
+    // render the button then 409).
+    const { process, isOwnAgreement } = await resolveSigningProcess(user.id, user.isHouseholdLead, user.household?.orgMembership?.processes);
+
+    // The household gates apply only to the household agreement. Signing your OWN
+    // agreement needs neither a household application in flight nor a lead role — that
+    // bypass is the whole point of #1224.
+    if (!isOwnAgreement) {
+        if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
+        if (!user.isHouseholdLead && !user.isSysadmin) {
+            throw new ExternalError("not_lead", "Only a household lead can sign the membership agreement.");
+        }
+    }
     if (!process) throw new ExternalError("wrong_phase", "No application is awaiting your signature.");
 
     const recipientEmail = user.email;
