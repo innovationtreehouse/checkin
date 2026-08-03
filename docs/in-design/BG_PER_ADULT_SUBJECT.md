@@ -3,6 +3,14 @@
 Issue: [#1260](https://github.com/innovationtreehouse/checkin/issues/1260)
 · Scope/related work in the [appendix](#appendix--issue-scope-and-related-work).
 
+**Built.** Boundary entry [#1469](https://github.com/innovationtreehouse/checkin/pull/1469) (merged),
+implementation [#1470](https://github.com/innovationtreehouse/checkin/pull/1470). This doc has been
+edited to match what shipped, so the design below describes the code rather than a proposal — but it
+is still a working doc. Per `docs/DOCUMENTATION_STANDARD.md` §4 it gets **deleted** at merge, with any
+standing rules extracted into `docs/rules/membership.md` — which does not exist yet
+([#1445](https://github.com/innovationtreehouse/checkin/pull/1445) is still open). That extraction is
+the last step, not this file's continued existence.
+
 ## Problem
 
 When two reviewers approve a household's background check, the system marks **every adult lead in
@@ -169,15 +177,19 @@ One nullable column on an existing table. **No new table.**
 model BackgroundCheckAttestation {
   …
   /// The adult whose Averity check this attestation covers, as read off the PDF by
-  /// the reviewer. Null on PERSON_BG (the process already names its subject) and on
-  /// legacy household rows attested before per-adult subjects existed.
+  /// the reviewer. Null on PERSON_BG (the process already names its subject), on any
+  /// REJECT (a rejection is whole-process), and on legacy household rows attested
+  /// before per-adult subjects existed.
   /// @sensitivity:public
   subjectPersonId Int?
   subjectPerson   Person? @relation("BgAttestationSubject", fields: [subjectPersonId], references: [id])
 
-  @@unique([processId, reviewerId, subjectPersonId])
+  @@unique([processId, reviewerId, subjectPersonId], map: "BgAttestation_processId_reviewerId_subjectPersonId_key")
 }
 ```
+
+The index name is pinned: the generated one would be 67 characters, past Postgres's 63-character
+identifier limit.
 
 One reviewer may now hold several attestations on one household process — one per adult they
 reviewed, when a family submitted more than one form. `subjectPersonId` is a real FK, so a subject
@@ -217,15 +229,27 @@ as now — the selection is the only addition. Usually it will be a single name.
 **Eligibility filtering shifts from per-process to per-subject.** `eligibleReviewProcessIds`
 ([`review.ts:161`](../../checkin-app/src/lib/membership/review.ts)) currently drops a process once the reviewer
 has any attestation on it; now it drops it only when the reviewer has attested every outstanding
-named subject. Same for `reviewQueueCounts`'s `approvedAwaitingSecond`. The same-household-reviewer
-and same-household-applicant exclusions stay **process-scoped** — a reviewer's household-mate should
-not touch any part of that family's review.
+named subject. Same for `reviewQueueCounts`'s `approvedAwaitingSecond`, which now also excludes what
+is still actionable — otherwise a half-named row is counted green AND gray. The
+same-household-reviewer and same-household-applicant exclusions stay **process-scoped** — a
+reviewer's household-mate should not touch any part of that family's review.
 
-**Per-subject counts are computed server-side**, returned as a derived
-`subjects: [{ personId, name, approvals, isFresh }]` shape rather than by putting attestation rows in
-the response. That keeps reviewer identities out of the payload (today only a `_count` is returned,
-deliberately — showing reviewer A that reviewer B already signed off invites anchoring) and keeps
-`BackgroundCheckAttestation` out of the route's `returns` bag and the edge-include drift guard.
+One consequence not anticipated above: a household with **no live lead** has nobody to name, so it
+drops out of every reviewer's queue rather than sitting there un-actionable. It stays visible to the
+board on `/membership-ops/applications`. That state is broken data either way.
+
+**Per-subject counts reach the card as bare subject ids.** The queue route selects
+`attestations: { select: { subjectPersonId: true } }` and the card counts per lead. Nothing else is
+selected: `reviewerId` is public-tier and would tell reviewer A that reviewer B already signed off
+(today only a `_count` is returned, deliberately — that invites anchoring), and `result` is
+redundant because an awaiting process only ever holds APPROVEs.
+
+*An earlier revision proposed a derived `subjects: [{ personId, name, approvals, isFresh }]` shape
+instead, to keep `BackgroundCheckAttestation` out of the route's `returns` bag. That does not work:
+the stripper builds each response row only from fields present in the generated classification map,
+so an invented key is dropped silently. The bag entry is the cost, and it is small — the edge-include
+drift guard covers `ProgramParticipant`/`ProgramVolunteer`/`RSVP`/`Visit` only, so no
+`EDGE_INCLUDE_ALLOWLIST` entry is needed. What must not drift is the one-field select.*
 
 ### Clearance
 
@@ -269,10 +293,16 @@ the `subjects[]` payload renders per-subject counts on the card, so reviewer 2 s
 before choosing, and the board's force-approve (above) resolves any stall outright. Reviewers should be
 told to name every adult whose PDF they actually read, not just one.
 
-**Legacy rows stamp nothing.** A pre-deploy process whose attestations carry no subject yields an
-empty `cleared` set, so no `Person` row is written. Conservative on purpose: better a household that
-reads stale and gets chased than one more unchecked adult silently marked cleared. The remediation
-report counts these so nobody is surprised.
+**Legacy rows stamp nothing.** A pre-deploy attestation carries no subject, so it counts toward
+nobody and no `Person` row is written for it. Conservative on purpose: better a household that reads
+stale and gets chased than one more unchecked adult silently marked cleared. The remediation report
+counts these so nobody is surprised.
+
+In practice the "cleared nobody" branch is unreachable after deploy: `attest` only clears when some
+subject reached two approvals, and the override asserts its subjects, so `cleared` is non-empty on
+both paths. What legacy rows actually produce is a **half-approved process that never clears** — the
+subject-less row vouches for no one, so a post-deploy reviewer naming an adult leaves them at 1 of 2.
+Those go to the board's force-approve, same as any other stall.
 
 ### Board force-approve needs its own subject selection
 
@@ -432,9 +462,14 @@ The route computes the list; **no human runs a query.** Two lookups, both exact:
 
    | `actorId` | What the row shows | Board action |
    |---|---|---|
-   | one of the stamped leads | "consent submitted by *name*" — self-attestation | keep theirs, clear the other |
-   | not a lead of that household | "consent marked by board (*name*)" — the backstop | cannot tell; check the PDFs |
+   | one of the stamped leads | that lead is labelled "submitted their own consent — likely the one who was checked" | keep theirs, clear the other |
+   | not a lead of that household | "consent recorded by someone outside this household" — the backstop | cannot tell; check the PDFs |
    | no audit row | "no consent recorded" — shortcut or pre-audit row | cannot tell; check the PDFs |
+
+   The actor's own **name** is not resolved or returned. On the backstop path it is a board member's
+   name, which says nothing about which report was reviewed — and looking it up would mean an
+   unfiltered `Person` read, costing the route a `LIVE_PERSON` drift-guard exemption for no gain.
+   Only "was the actor one of these leads" is sent.
 
    Self-attestation should be the bulk, since the applicant checkbox is the primary path and the
    board mark is documented as the backstop. The dashboard **labels** the likely subject; it never
@@ -476,7 +511,7 @@ and no process or `bgClearedAt` is ever touched.
 Clearing the wrong lead's stamp cannot cost anyone their membership (rule 1 — the household keeps its
 other checked adult). It puts that person in the volunteer nag queue; worst case is a redundant
 re-check request. That argues for clearing when the evidence is thin rather than long archaeology —
-[open question 2](#open-questions-for-review) asks the board to confirm that trade.
+[Still open](#still-open--board-process-not-code) asks the board to confirm that trade.
 
 ### Cutoff — a filter control, not a hardcoded date
 
@@ -485,10 +520,9 @@ which is why backlog **SA2** ("wipe polluted blanket BG data") was retired on 20
 polluted data exists"*. That retirement was about pre-import pollution. New pollution has been
 accruing from every household clearance since — the blanket `updateMany` never stopped running.
 
-The section therefore ships with **no date filter applied by default** and a "cleared since" control.
-The board looks at the full list first, sees the real distribution of clearance dates, and narrows
-only once the cutoff is confirmed against actual data. Cheap to validate, expensive to assume, and it
-costs one input instead of a redeploy if 2026-07-01 turns out to be wrong.
+**2026-07-01 was confirmed by the board while this was being built**, so the section ships with that
+as the *default* value of a "cleared since" control — not as a hardcoded constant. If the real
+distribution of clearance dates starts earlier, widening it is one input instead of a redeploy.
 `docs/backlog/INDEX.md:303` currently asserts the opposite and should be updated with what the list shows.
 
 ### Order of operations
@@ -535,12 +569,15 @@ path. Not worth it to avoid a dozen button clicks.
   process already names its subject — would shrink the null population to legacy rows only. It does
   not remove the raw-SQL requirement, so it buys little; noted because this design reasons explicitly
   about which rows carry null.)*
-- **Security boundary ships in its own PR.** A new FK on `BackgroundCheckAttestation` plus its
-  `@sensitivity` annotation touches `scopeBindings.ts` and the generated classifications — per the
-  boundary-isolation rule in `AGENTS.md` that lands **before** the app-code PR, with no feature code.
-- **Drift guard avoided by design.** Returning a derived `subjects` shape rather than attestation rows
-  keeps `BackgroundCheckAttestation` out of the `GET /api/membership/reviews` `returns` bag, so no
-  `EDGE_INCLUDE_ALLOWLIST` entry is needed. If that changes, it needs one with a justification.
+- **Security boundary ships in its own PR** — landed as
+  [#1469](https://github.com/innovationtreehouse/checkin/pull/1469), the `returns` entry alone, ahead
+  of the app-code PR. `scopeBindings.ts` needed **no** change: `BackgroundCheckAttestation` is already
+  in `OPT_OUT_PENDING_ROUTE`, and adding a field does not move it. The generated classifications gain
+  three purely additive lines, which the isolation workflow explicitly exempts.
+- **No `EDGE_INCLUDE_ALLOWLIST` entry needed.** `routeAuthDrift` rule 3 covers
+  `ProgramParticipant`/`ProgramVolunteer`/`RSVP`/`Visit` only — all-public-tier models whose row
+  existence is the sensitive fact. `BackgroundCheckAttestation` is not one of them (`result`, `note`,
+  `isMarkedVolunteer` are `internal`).
 - **`tsc` is not sufficient.** The approval-counting change (per-process → per-subject) is semantic
   and type-identical. Covered by integration tests, not the compiler. Run `test:integration`
   `--runInBand`.
@@ -572,27 +609,59 @@ removal. New coverage, mirroring the `PERSON_BG` safety assertion at
   the status.
 - Force-approve with an empty subject selection ⇒ 400.
 - Force-approve `reset` still deletes attestations and returns the process to review unchanged.
-- A reviewer who has attested Alex but not Sam still sees the process in `eligibleReviewProcessIds`.
-- Legacy row whose attestations carry no subject: clearance stamps **no** `Person` row, and
-  `bgClearedAt`/activation still happen.
-- Remediation list: a blanket-stamped two-lead household appears; a single-lead household and a
-  fresh-check-shortcut process (`bgClearedAt` set, no `Person` stamped) do **not**.
+- A reviewer who has attested Alex but not Sam still sees the process in `eligibleReviewProcessIds`,
+  and naming the same adult twice is still `already_attested`.
+- Legacy row: a subject-less attestation counts toward nobody, so a post-deploy approval naming Alex
+  leaves Alex at 1 of 2 — `bgClearedAt` stays null and no `Person` is stamped.
+- Naming someone who is not a live lead of that household ⇒ 400; a REJECT names nobody.
+- Remediation list: a blanket-stamped two-lead household appears; a single-lead household, a
+  fresh-check-shortcut process (`bgClearedAt` set, no `Person` stamped), and a process cleared under
+  per-adult rules do **not**. The `bgClearedSince` cutoff narrows it.
 - Remediation evidence labelling: consent actor is a stamped lead → that lead is labelled the likely
   subject; board-marked or no audit row → labelled "cannot tell". Nothing is ever pre-selected.
+- A survivor holding a merged-away record's background-check date appears in the merge sub-list.
+
+Shipped as `checkin-app/src/app/__tests__/bgPerAdultSubject.integration.test.ts`, plus reviewer- and
+board-card unit coverage for the checkbox groups and the "Clear this date" button.
 
 A flow test is optional — the journey is already covered end-to-end and the change is service-level.
+None was added.
 
-## Open questions for review
+**Every pre-existing suite that attested had to be updated**, because approving now requires naming
+someone: `membershipReviewAPI`, `membershipBgNonBlocking`, `membershipRenewalAPI`,
+`membershipReviewConcurrency`, and the two ops page tests. `notificationsAPI` needed a *fixture*
+change rather than a call change — its awaiting-review household had no leads, which under
+per-subject eligibility means nothing for a reviewer to do.
 
-1. **Cutoff.** Is 2026-07-01 confirmed, or does the unfiltered report widen it? (Step 1 of the
-   remediation answers this with data; do not assume it.)
-2. **"Cannot tell" rows.** Given the low stakes (a wrong call costs a redundant re-check, never a
-   membership), is "when in doubt, clear the stamp and let the nag run" acceptable — or does the board
-   want the Averity PDFs reconciled first? This decides how much of the list is a few minutes' work
-   versus an afternoon.
-3. **Reviewer subject list — leads only, or any household adult?** The card lists live household
-   leads. If a PDF names someone who is not a lead (an adult child, a mis-recorded name), the reviewer
-   has nowhere to put it. Reject and route to `PERSON_BG`, or allow selecting any live household member?
+## Decisions taken
+
+1. **Cutoff — 2026-07-01 confirmed.** Shipped as the default value of the "cleared since" control,
+   still editable. See [Cutoff](#cutoff--a-filter-control-not-a-hardcoded-date).
+2. **Reviewer subject list — leads only.** A report naming someone who is not a live household lead
+   has nowhere to go on the card; the reviewer rejects, and that adult's obligation belongs on the
+   `PERSON_BG` track, which already owns non-lead adults (see [Scope](#scope)). The card offers no
+   way to name a non-lead, and the service rejects one with a 400.
+3. **The compliance dashboard gains an action.** Signed off before building — see
+   [Deliberate departure](#deliberate-departure-the-dashboard-gains-an-action). Worth recording that
+   the "first mutation on that page" framing was already stale: `Record external check & submit`
+   (`POST /api/membership-audit/person-bg`) was there before this.
+4. **Supplier affirmation stays out of scope.** The appendix lists it as unresolved with no code and
+   no backlog context; nothing here scopes it.
+
+### Still open — board process, not code
+
+**"Cannot tell" rows.** Given the low stakes (a wrong call costs a redundant re-check, never a
+membership), is "when in doubt, clear the stamp and let the nag run" acceptable, or does the board
+want the Averity PDFs reconciled first? This decides whether the list is a few minutes' work or an
+afternoon. **It does not change the software** — the row is labelled the same either way, nothing is
+pre-selected, and one button clears one date.
+
+**Whether remediation surfaces anyone at all.** Every consumer of the nag treats
+`BoardSettings.bgRecheckMonths <= 0` as "policy not configured, do not enforce":
+`runPersonBgAnnualSweep` returns early, `openPersonBgForNewMember` no-ops, and the compliance route
+skips `peopleNeedingBgCheck` entirely. The schema default is `0`. If the live instance has never set
+it, clearing false stamps surfaces nobody until it is set — the write fix still matters, the
+remediation payoff waits.
 
 ## Appendix — issue scope and related work
 
