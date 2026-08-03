@@ -21,6 +21,9 @@ interface QueueItem {
   id: number;
   subjectPerson: { id: number; name: string | null; householdId: number | null; household: { name: string | null } | null } | null;
   orgMembership: { household: { name: string | null; intakeNotes: string | null; householdMembers: Person[] } | null } | null;
+  // Subject ids only — enough to count approvals per lead, and it says nothing
+  // about WHO approved (see the route comment).
+  attestations: { subjectPersonId: number | null }[];
   _count: { attestations: number };
 }
 
@@ -34,6 +37,8 @@ export default function MembershipReviewPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [volunteer, setVolunteer] = useState<Record<number, boolean>>({});
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
+  // processId -> the household leads whose reports this reviewer is attesting to.
+  const [subjects, setSubjects] = useState<Record<number, number[]>>({});
   // Tagged with the acting row's processId so the result renders in that card, not off-screen at page top.
   const [message, setMessage] = useState<{ processId: number; text: string; tone: AlertTone } | undefined>();
 
@@ -67,11 +72,12 @@ export default function MembershipReviewPage() {
       const res = await fetch("/api/membership/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId], note: reviewNotes[processId]?.trim() || undefined }),
+        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId], note: reviewNotes[processId]?.trim() || undefined, subjectPersonIds: subjects[processId] ?? [] }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
+        setSubjects((s) => ({ ...s, [processId]: [] }));
         await load();
         notifyNavRefresh();
       } else if (data.code === "already_attested") {
@@ -93,13 +99,30 @@ export default function MembershipReviewPage() {
       ? item.subjectPerson.name || `Person #${item.subjectPerson.id}`
       : item.orgMembership?.household?.name || `Household (application #${item.id})`;
 
-  // Attesting is a one-click, two-of-two decision, and the SECOND approval clears the
-  // check outright — stamping the household, opening payment or activating, and
-  // emailing the family. Confirm both actions, and say what the click actually does
-  // rather than "are you sure?", which trains people to click through.
+  // Approvals a household lead already has, from other reviewers' attestations.
+  const approvalsFor = (item: QueueItem, personId: number) =>
+    item.attestations.filter((a) => a.subjectPersonId === personId).length;
+
+  const selected = (item: QueueItem) => subjects[item.id] ?? [];
+
+  const toggleSubject = (processId: number, personId: number, checked: boolean) =>
+    setSubjects((s) => {
+      const current = s[processId] ?? [];
+      return { ...s, [processId]: checked ? [...current, personId] : current.filter((id) => id !== personId) };
+    });
+
+  // Attesting is a one-click, two-of-two decision, and the SECOND approval on a named
+  // adult clears the check outright — stamping that adult, opening payment or
+  // activating, and emailing the family. Confirm both actions, and say what the click
+  // actually does rather than "are you sure?", which trains people to click through.
   const confirmSubmit = (item: QueueItem, result: "APPROVE" | "REJECT") => {
     const who = applicantLabel(item);
-    const clearing = result === "APPROVE" && item._count.attestations >= 1;
+    // A household clears the moment one named adult reaches two approvals.
+    const clearing =
+      result === "APPROVE" &&
+      (item.subjectPerson
+        ? item._count.attestations >= 1
+        : selected(item).some((id) => approvalsFor(item, id) >= 1));
     modals.openConfirmModal({
       title: result === "REJECT" ? "Reject this background check?" : clearing ? "Clear this background check?" : "Record your approval?",
       children: (
@@ -112,13 +135,15 @@ export default function MembershipReviewPage() {
           ) : clearing ? (
             <>
               You are the second reviewer for <strong>{who}</strong>. This clears the background
-              check, records it against the household, opens payment (or activates the membership
-              if dues are already paid), and emails the family. It cannot be undone.
+              check, records it against the {item.subjectPerson ? "subject" : "adult(s) you named"},
+              opens payment (or activates the membership if dues are already paid), and emails the
+              family. It cannot be undone.
             </>
           ) : (
             <>
-              This records your approval of <strong>{who}</strong>&apos;s background check. A second
-              reviewer must also approve before the check clears.
+              This records your approval of <strong>{who}</strong>&apos;s background check
+              {item.subjectPerson ? "" : " for the adult(s) you named"}. A second reviewer must also
+              approve before the check clears.
             </>
           )}
         </Text>
@@ -147,9 +172,10 @@ export default function MembershipReviewPage() {
   return (
     <Container size="md" pb="md">
       <Text c="dimmed">
-        Review each applicant&apos;s background check on Averity, then attest below. Two independent
-        reviewers are required. If anything is concerning, choose <strong>Reject</strong> — the
-        board is notified and the applicant is not told the reason.
+        Review each applicant&apos;s background check on Averity, then attest below. Name every adult
+        whose report you actually read — a check is recorded against that person and nobody else.
+        Two independent reviewers are required per adult. If anything is concerning, choose{" "}
+        <strong>Reject</strong> — the board is notified and the applicant is not told the reason.
       </Text>
 
       {queue.length === 0 ? (
@@ -181,7 +207,30 @@ export default function MembershipReviewPage() {
                   </Text>
                 </>
               )}
-              <Text size="xs" c="dimmed" mt={4}>{item._count.attestations}/2 approvals so far.</Text>
+              {subject && <Text size="xs" c="dimmed" mt={4}>{item._count.attestations}/2 approvals so far.</Text>}
+
+              {/* Whose report did you read? The Averity report names its subject, and
+                  that name is the only record of who a household's check covered — so
+                  approving without one is refused by the server. Every live lead is
+                  listed, including one that already looks checked, so a family who
+                  re-checked early can still be recorded. */}
+              {!subject && (
+                <Stack gap={4} mt="md">
+                  <Text size="sm" fw={600}>Whose check(s) did you review?</Text>
+                  {parents.length === 0 ? (
+                    <Text size="sm" c="dimmed">No household leads on file — this application cannot be attested.</Text>
+                  ) : (
+                    parents.map((p) => (
+                      <Checkbox
+                        key={p.id}
+                        checked={selected(item).includes(p.id)}
+                        onChange={(e) => toggleSubject(item.id, p.id, e.currentTarget.checked)}
+                        label={`${p.name || p.email || `Person #${p.id}`} — ${approvalsFor(item, p.id)} of 2 approvals`}
+                      />
+                    ))
+                  )}
+                </Stack>
+              )}
 
               {/* Household-application concepts (intake note + volunteer-only mark)
                   don't apply to a per-person BG check. */}
@@ -211,7 +260,11 @@ export default function MembershipReviewPage() {
               />
 
               <Group gap="sm" wrap="wrap" mt="md">
-                <Button disabled={busyId === item.id} loading={busyId === item.id} onClick={() => confirmSubmit(item, "APPROVE")}>
+                <Button
+                  disabled={busyId === item.id || (!subject && selected(item).length === 0)}
+                  loading={busyId === item.id}
+                  onClick={() => confirmSubmit(item, "APPROVE")}
+                >
                   Attest — check is clean
                 </Button>
                 <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => confirmSubmit(item, "REJECT")}>

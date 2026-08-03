@@ -25,8 +25,18 @@ export const dynamic = "force-dynamic";
  *                          no fresh check. Skipped when bgRecheckMonths = 0.
  *   peopleMissingDob     — program-attached people whose age is unknown (no DOB,
  *                          not declared 25+): data hygiene, NOT bg-needed.
+ *
+ * And two lists of background-check dates that trace to no named person (#1260):
+ *   blanketStamped          — households cleared before per-adult subjects existed,
+ *                             where every lead was stamped. One-time cleanup; narrow
+ *                             it with ?bgClearedSince=YYYY-MM-DD.
+ *   mergeInheritedBgChecks  — survivors of a person merge who took the merged-away
+ *                             record's date. Permanent until #1396 closes that hole.
  */
-export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
+export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req) => {
+    const sinceParam = new URL(req.url).searchParams.get("bgClearedSince");
+    const since = sinceParam ? new Date(sinceParam) : null;
+    const bgClearedSince = since && !Number.isNaN(since.getTime()) ? since : null;
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const bgRecheckMonths = settings?.bgRecheckMonths ?? 0;
     const boundary = settings?.orgMembershipYearBoundary
@@ -131,8 +141,125 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         }
     }
 
+    // 5. Blanket-stamped background checks (#1260). Before per-adult subjects, clearing
+    //    a household check stamped EVERY lead with the process's own bgClearedAt — one
+    //    `new Date()` wrote both, so equality to the millisecond is an exact join key,
+    //    not a heuristic. Three classes fall out on their own: single-lead households
+    //    (never two matching leads), the fresh-check intake/renewal shortcut (stamps
+    //    bgClearedAt without touching any Person, so it matches none), and PERSON_BG
+    //    (excluded by subjectPersonId). A clearance under per-adult rules is excluded
+    //    by carrying at least one subject-named attestation.
+    const clearedProcesses = await prisma.orgMembershipProcess.findMany({
+        where: {
+            subjectPersonId: null,
+            bgClearedAt: bgClearedSince ? { gte: bgClearedSince } : { not: null },
+        },
+        select: {
+            id: true,
+            bgClearedAt: true,
+            attestations: { select: { subjectPersonId: true } },
+            orgMembership: {
+                select: {
+                    household: {
+                        select: {
+                            id: true,
+                            name: true,
+                            householdMembers: {
+                                where: { isHouseholdLead: true, ...LIVE_PERSON },
+                                select: { id: true, name: true, email: true, lastBackgroundCheck: true },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        orderBy: { bgClearedAt: "desc" },
+    });
+
+    const suspect = clearedProcesses
+        .map((p) => ({
+            process: p,
+            household: p.orgMembership?.household ?? null,
+            stamped: (p.orgMembership?.household?.householdMembers ?? []).filter(
+                (l) => l.lastBackgroundCheck?.getTime() === p.bgClearedAt!.getTime(),
+            ),
+        }))
+        .filter((s) => s.household !== null && s.stamped.length > 1 && s.process.attestations.every((a) => a.subjectPersonId === null));
+
+    // markBgConsent writes exactly one audit row per process with newData.bgConsentAt =
+    // true, and its actor is whoever recorded the consent: the applicant themselves on
+    // the primary path, a board member on the backstop. A lead who attested their own
+    // consent is the best evidence available of who actually went to Averity — labelled
+    // for the board, never pre-selected and never auto-cleared.
+    const consentActorByProcess = new Map<number, number>();
+    if (suspect.length) {
+        const logs = await prisma.auditLog.findMany({
+            where: { tableName: "OrgMembershipProcess", affectedEntityId: { in: suspect.map((s) => s.process.id) } },
+            select: { affectedEntityId: true, actorId: true, newData: true },
+        });
+        for (const l of logs) {
+            if ((l.newData as { bgConsentAt?: boolean } | null)?.bgConsentAt === true) {
+                consentActorByProcess.set(l.affectedEntityId, l.actorId);
+            }
+        }
+    }
+    const blanketStamped = suspect.map(({ process, household, stamped }) => {
+        const consentActorId = consentActorByProcess.get(process.id) ?? null;
+        return {
+            processId: process.id,
+            householdId: household!.id,
+            householdName: household!.name || `Household #${household!.id}`,
+            bgClearedAt: process.bgClearedAt!.toISOString(),
+            // Who recorded consent is only useful as "was it one of these leads" — the
+            // actor's own name would be the board member on the backstop path, which
+            // tells the board nothing about which report was reviewed.
+            consentRecorded: consentActorId !== null,
+            leads: stamped.map((l) => ({
+                personId: l.id,
+                name: l.name || l.email || `Person #${l.id}`,
+                email: l.email,
+                likelySubject: consentActorId === l.id,
+            })),
+        };
+    });
+
+    // 6. Background-check dates that arrived through a person merge (#1396). The merge
+    //    rule takes the later of the two dates unconditionally, with no record of whose
+    //    check it was, so a survivor can hold a date that traces to nobody. Unlike the
+    //    blanket stamps this list never empties on its own — every future merge can mint
+    //    another — so it stays after the one-time cleanup is done.
+    const survivors = await prisma.person.findMany({
+        where: {
+            lastBackgroundCheck: { not: null },
+            mergedFrom: { some: { lastBackgroundCheck: { not: null } } },
+            ...LIVE_PERSON,
+        },
+        select: {
+            id: true,
+            name: true,
+            email: true,
+            householdId: true,
+            lastBackgroundCheck: true,
+            mergedFrom: { select: { id: true, name: true, lastBackgroundCheck: true } },
+        },
+        orderBy: { name: "asc" },
+    });
+    const mergeInheritedBgChecks = survivors
+        .map((s) => ({
+            survivor: s,
+            source: s.mergedFrom.find((m) => m.lastBackgroundCheck?.getTime() === s.lastBackgroundCheck!.getTime()),
+        }))
+        .filter((r) => r.source !== undefined)
+        .map(({ survivor, source }) => ({
+            personId: survivor.id,
+            name: survivor.name || survivor.email || `Person #${survivor.id}`,
+            householdId: survivor.householdId,
+            lastBackgroundCheck: survivor.lastBackgroundCheck!.toISOString(),
+            fromName: source!.name || `Person #${source!.id}`,
+        }));
+
     if (reasons.size === 0) {
-        return NextResponse.json({ households: [], peopleNeedingBgCheck, peopleMissingDob });
+        return NextResponse.json({ households: [], peopleNeedingBgCheck, peopleMissingDob, blanketStamped, mergeInheritedBgChecks });
     }
 
     const households = await prisma.household.findMany({
@@ -168,5 +295,5 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         };
     });
 
-    return NextResponse.json({ households: result, peopleNeedingBgCheck, peopleMissingDob });
+    return NextResponse.json({ households: result, peopleNeedingBgCheck, peopleMissingDob, blanketStamped, mergeInheritedBgChecks });
 });

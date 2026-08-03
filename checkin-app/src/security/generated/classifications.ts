@@ -102,6 +102,7 @@ export const classifications = {
         id: 'public',
         processId: 'public',
         reviewerId: 'public',
+        subjectPersonId: 'public',
         result: 'internal',
         note: 'internal',
         isMarkedVolunteer: 'internal',
@@ -402,6 +403,7 @@ export const relations = {
         mergedFrom: { model: 'Person', isList: true },
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
+        bgAttestationsAsSubject: { model: 'BackgroundCheckAttestation', isList: true },
         personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
@@ -451,6 +453,7 @@ export const relations = {
     BackgroundCheckAttestation: {
         process: { model: 'OrgMembershipProcess', isList: false },
         reviewer: { model: 'Person', isList: false },
+        subjectPerson: { model: 'Person', isList: false },
     },
     VolunteerDesignation: {
     },

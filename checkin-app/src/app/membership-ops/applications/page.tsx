@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
+import { Alert, Button, Card, Center, Checkbox, Group, Loader, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
@@ -88,6 +88,9 @@ function ApplicationsBoard() {
   const [pendingCertify, setPendingCertify] = useState<number | null>(null);
   const [certifyReason, setCertifyReason] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  // processId -> the leads a force-approve asserts were checked. The board asserts
+  // them because a blocked review has no second approval to count.
+  const [overrideSubjects, setOverrideSubjects] = useState<Record<number, number[]>>({});
 
   const load = useCallback(async (archived: boolean) => {
     setLoading(true);
@@ -137,7 +140,7 @@ function ApplicationsBoard() {
       const res = await fetch("/api/membership-ops/applications/review-override", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId, action }),
+        body: JSON.stringify({ processId, action, subjectPersonIds: overrideSubjects[processId] ?? [] }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -286,6 +289,14 @@ function ApplicationsBoard() {
     setPendingCertify(null);
     await certify(processId, reason);
   };
+
+  const leads = (r: ProcessRow) => (r.orgMembership?.household?.householdMembers ?? []).filter((p) => p.isHouseholdLead);
+
+  const toggleOverrideSubject = (processId: number, personId: number, checked: boolean) =>
+    setOverrideSubjects((s) => {
+      const current = s[processId] ?? [];
+      return { ...s, [processId]: checked ? [...current, personId] : current.filter((id) => id !== personId) };
+    });
 
   const householdLabel = (r: ProcessRow) => {
     const hh = r.orgMembership?.household;
@@ -437,11 +448,35 @@ function ApplicationsBoard() {
                       💸 This household already paid — a refund is likely needed (membership was not activated).
                     </Text>
                   )}
+                  {/* A force-approve must say which adults it covers: a blocked review
+                      has no second approval to count, so an unnamed override would set
+                      bgClearedAt with nobody recorded as checked. */}
+                  <Stack gap={4} mb="sm">
+                    <Text size="sm" fw={600}>Whose background check does an override cover?</Text>
+                    {leads(r).length === 0 ? (
+                      <Text size="sm" c="dimmed">No household leads on file — this application cannot be overridden.</Text>
+                    ) : (
+                      leads(r).map((p) => (
+                        <Checkbox
+                          key={p.id}
+                          size="xs"
+                          checked={(overrideSubjects[r.id] ?? []).includes(p.id)}
+                          onChange={(e) => toggleOverrideSubject(r.id, p.id, e.currentTarget.checked)}
+                          label={p.name || p.email || `Person #${p.id}`}
+                        />
+                      ))
+                    )}
+                  </Stack>
                   <Group gap="sm" wrap="wrap">
                     <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
+                    <Button
+                      size="xs"
+                      fz={15}
+                      disabled={busyId === r.id || ownHousehold(r) || (overrideSubjects[r.id] ?? []).length === 0}
+                      onClick={() => override(r.id, "approve")}
+                    >
                       Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>

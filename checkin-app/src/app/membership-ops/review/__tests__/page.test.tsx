@@ -21,14 +21,27 @@ const queue = {
   queue: [
     {
       id: 100,
-      orgMembership: { household: { name: "The Smiths", intakeNotes: "We're volunteer only — no students.", householdMembers: [{ id: 1, name: "Pat Smith", email: "pat@example.com" }] } },
+      orgMembership: {
+        household: {
+          name: "The Smiths",
+          intakeNotes: "We're volunteer only — no students.",
+          householdMembers: [
+            { id: 1, name: "Pat Smith", email: "pat@example.com" },
+            { id: 2, name: "Sam Smith", email: "sam@example.com" },
+          ],
+        },
+      },
+      // One reviewer has already named Pat; nobody has named Sam.
+      attestations: [{ subjectPersonId: 1 }],
       _count: { attestations: 1 },
     },
   ],
 };
 
 // The same household with no approvals yet — the first-reviewer confirmation.
-const firstApprovalQueue = { queue: [{ ...queue.queue[0], id: 101, _count: { attestations: 0 } }] };
+const firstApprovalQueue = { queue: [{ ...queue.queue[0], id: 101, attestations: [], _count: { attestations: 0 } }] };
+
+const nameSubject = (label: string) => fireEvent.click(screen.getByRole("checkbox", { name: label }));
 
 describe("membership-ops/review page", () => {
   it("loads and renders the review queue", async () => {
@@ -38,9 +51,23 @@ describe("membership-ops/review page", () => {
 
     expect(await screen.findByText("The Smiths")).toBeInTheDocument();
     expect(screen.getByText("Pat Smith <pat@example.com>", { exact: false })).toBeInTheDocument();
-    expect(screen.getByText("1/2 approvals so far.")).toBeInTheDocument();
+    // Approvals are counted per adult, not per application — a household-mate sitting
+    // at 0 of 2 is exactly what a second reviewer needs to see before choosing.
+    expect(screen.getByRole("checkbox", { name: "Pat Smith — 1 of 2 approvals" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Sam Smith — 0 of 2 approvals" })).toBeInTheDocument();
     // The applicant's freeform note is surfaced on the card (the volunteer signal).
     expect(screen.getByText("We're volunteer only — no students.")).toBeInTheDocument();
+  });
+
+  it("cannot approve a household without naming whose check was reviewed", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/membership/reviews": queue });
+    renderPage();
+    await screen.findByText("The Smiths");
+
+    expect(screen.getByRole("button", { name: "Attest — check is clean" })).toBeDisabled();
+    nameSubject("Sam Smith — 0 of 2 approvals");
+    expect(screen.getByRole("button", { name: "Attest — check is clean" })).toBeEnabled();
   });
 
   it("approves an attestation", async () => {
@@ -49,9 +76,10 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
+    nameSubject("Pat Smith — 1 of 2 approvals");
     fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
-    // This row already holds one approval, so the confirm names the consequence of
-    // the CLEARING approve rather than a generic "are you sure?".
+    // Pat already holds one approval, so naming Pat is the SECOND — the confirm names
+    // the consequence of a clearing approve rather than a generic "are you sure?".
     expect(await screen.findByText("Clear this background check?")).toBeInTheDocument();
     expect(screen.getByText(/emails the family/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1); // the queue GET only — nothing posted yet
@@ -62,7 +90,7 @@ describe("membership-ops/review page", () => {
         "/api/membership/reviews",
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ processId: 100, result: "APPROVE", isMarkedVolunteer: false }),
+          body: JSON.stringify({ processId: 100, result: "APPROVE", isMarkedVolunteer: false, subjectPersonIds: [1] }),
         }),
       ),
     );
@@ -75,6 +103,7 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
+    nameSubject("Pat Smith — 1 of 2 approvals");
     fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
 
@@ -88,15 +117,16 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
+    nameSubject("Pat Smith — 0 of 2 approvals");
     fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
     expect(await screen.findByText("Record your approval?")).toBeInTheDocument();
-    expect(screen.getByText(/A second\s+reviewer must also approve/)).toBeInTheDocument();
+    expect(screen.getByText(/A second\s+reviewer must also\s+approve/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Approve" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/membership/reviews",
-        expect.objectContaining({ body: JSON.stringify({ processId: 101, result: "APPROVE", isMarkedVolunteer: false }) }),
+        expect.objectContaining({ body: JSON.stringify({ processId: 101, result: "APPROVE", isMarkedVolunteer: false, subjectPersonIds: [1] }) }),
       ),
     );
   });
@@ -116,7 +146,8 @@ describe("membership-ops/review page", () => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/api/membership/reviews",
         expect.objectContaining({
-          body: JSON.stringify({ processId: 101, result: "REJECT", isMarkedVolunteer: false, note: "Record is concerning." }),
+          // A rejection is whole-process: it blocks the household without naming anyone.
+          body: JSON.stringify({ processId: 101, result: "REJECT", isMarkedVolunteer: false, note: "Record is concerning.", subjectPersonIds: [] }),
         }),
       ),
     );
@@ -146,6 +177,7 @@ describe("membership-ops/review page", () => {
           id: 200,
           subjectPerson: { id: 9, name: "Dana Vol", householdId: 5, household: { name: null } },
           orgMembership: null,
+          attestations: [],
           _count: { attestations: 0 },
         }],
       },
@@ -154,7 +186,10 @@ describe("membership-ops/review page", () => {
 
     expect(await screen.findByText("Dana Vol")).toBeInTheDocument();
     expect(screen.getByText("No household on file", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("0/2 approvals so far.")).toBeInTheDocument();
     // The volunteer-only checkbox is a household-application concept — hidden for PERSON_BG.
     expect(screen.queryByText("This is a volunteer only family (no students)")).not.toBeInTheDocument();
+    // So is naming a subject: the process already names the person it is about.
+    expect(screen.queryByText("Whose check(s) did you review?")).not.toBeInTheDocument();
   });
 });

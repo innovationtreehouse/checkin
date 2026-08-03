@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
-import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { Badge, Button, Card, Center, Group, Paper, Stack, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { modals } from "@mantine/modals";
 import { formatPhone } from "@/lib/phone";
 import { formatDateOnly } from "@/lib/time";
 import { PageLoader } from "@/components/ui/PageLoader";
+
+// The board's stated cutoff for blanket-stamped background checks: everyone was
+// re-imported per-adult on this date. Only a default — the control stays editable so
+// the real distribution of clearance dates can widen it.
+const BLANKET_STAMP_CUTOFF = "2026-07-01";
 
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
 type Household = {
@@ -22,6 +28,21 @@ type PersonRow = {
   programId: number | null;
   programName: string | null;
   reason: string;
+};
+type BlanketStampedRow = {
+  processId: number;
+  householdId: number;
+  householdName: string;
+  bgClearedAt: string;
+  consentRecorded: boolean;
+  leads: { personId: number; name: string; email: string | null; likelySubject: boolean }[];
+};
+type MergeInheritedRow = {
+  personId: number;
+  name: string;
+  householdId: number;
+  lastBackgroundCheck: string;
+  fromName: string;
 };
 
 // Reason tag -> human label + badge color. Keys mirror the endpoint's tags.
@@ -75,16 +96,20 @@ function PersonSection({
 
 /**
  * Membership Audit view: households out of compliance that the system did NOT
- * auto-terminate. Read-only — the board follows up manually; no action buttons.
+ * auto-terminate. The board follows up manually — nothing here acts on its own.
  */
 export default function CompliancePage() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [peopleNeedingBgCheck, setPeopleNeedingBgCheck] = useState<PersonRow[]>([]);
   const [peopleMissingDob, setPeopleMissingDob] = useState<PersonRow[]>([]);
+  const [blanketStamped, setBlanketStamped] = useState<BlanketStampedRow[]>([]);
+  const [mergeInherited, setMergeInherited] = useState<MergeInheritedRow[]>([]);
+  const [clearedSince, setClearedSince] = useState(BLANKET_STAMP_CUTOFF);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
   const [submittedIds, setSubmittedIds] = useState<Set<number>>(new Set());
+  const [clearedStampIds, setClearedStampIds] = useState<Set<number>>(new Set());
 
   // Record that an external background check exists for a program person and submit
   // it for two-reviewer approval. Board/lead-initiated — the subject may have no login.
@@ -110,26 +135,73 @@ export default function CompliancePage() {
     }
   };
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/membership-audit/compliance");
-        if (res.ok) {
-          const data = await res.json();
-          setHouseholds(data.households ?? []);
-          setPeopleNeedingBgCheck(data.peopleNeedingBgCheck ?? []);
-          setPeopleMissingDob(data.peopleMissingDob ?? []);
-        } else {
-          setError("Failed to load compliance data. Ensure you have the proper authorizations.");
-        }
-      } catch (e) {
-        console.error("Failed to load compliance data:", e);
-        setError("Network error loading compliance data.");
-      } finally {
-        setLoading(false);
+  // Clear one person's background-check date. Not a new capability: the same
+  // board-gated PUT the participants edit modal already uses, one person at a time,
+  // audited with the acting board member as the actor. It never touches a process or
+  // its bgClearedAt, and it can never cost a household its membership — one checked
+  // adult is all membership requires, so the worst case is a redundant re-check.
+  const clearStamp = async (personId: number) => {
+    setBusyId(personId);
+    try {
+      const res = await fetch(`/api/membership-ops/participants/${personId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastBackgroundCheck: null }),
+      });
+      if (res.ok) {
+        setClearedStampIds((s) => new Set(s).add(personId));
+        notifications.show({ message: "Stamp cleared — they will show up as needing a check." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Could not clear the stamp." });
       }
-    })();
+    } catch {
+      notifications.show({ color: "red", message: "Network error." });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const confirmClearStamp = (row: BlanketStampedRow, lead: BlanketStampedRow["leads"][number]) =>
+    modals.openConfirmModal({
+      title: "Clear this background-check date?",
+      children: (
+        <Text size="sm">
+          This removes <strong>{lead.name}</strong>&apos;s background-check date, so they will be
+          asked to complete one. It does not affect{" "}
+          <strong>{row.householdName}</strong>&apos;s membership — that only ever needed one checked
+          adult. Do this when their report is not the one that was reviewed.
+        </Text>
+      ),
+      labels: { confirm: "Clear the date", cancel: "Cancel" },
+      confirmProps: { color: "orange" },
+      onConfirm: () => clearStamp(lead.personId),
+    });
+
+  const load = useCallback(async (since: string) => {
+    setLoading(true);
+    try {
+      const query = since ? `?bgClearedSince=${encodeURIComponent(since)}` : "";
+      const res = await fetch(`/api/membership-audit/compliance${query}`);
+      if (res.ok) {
+        const data = await res.json();
+        setHouseholds(data.households ?? []);
+        setPeopleNeedingBgCheck(data.peopleNeedingBgCheck ?? []);
+        setPeopleMissingDob(data.peopleMissingDob ?? []);
+        setBlanketStamped(data.blanketStamped ?? []);
+        setMergeInherited(data.mergeInheritedBgChecks ?? []);
+      } else {
+        setError("Failed to load compliance data. Ensure you have the proper authorizations.");
+      }
+    } catch (e) {
+      console.error("Failed to load compliance data:", e);
+      setError("Network error loading compliance data.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { load(clearedSince); }, [load, clearedSince]);
 
   if (loading) return <PageLoader />;
 
@@ -151,7 +223,8 @@ export default function CompliancePage() {
         </Text>
       </Card>
 
-      {households.length === 0 && peopleNeedingBgCheck.length === 0 && peopleMissingDob.length === 0 && (
+      {households.length === 0 && peopleNeedingBgCheck.length === 0 && peopleMissingDob.length === 0
+        && blanketStamped.length === 0 && mergeInherited.length === 0 && (
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">Everyone is in compliance. 🎉</Text>
         </Card>
@@ -212,6 +285,101 @@ export default function CompliancePage() {
           )
         }
       />
+
+      {/* One-time cleanup (#1260): households cleared before a check recorded WHOSE it
+          was, where every lead got stamped. Only a person holding the reports can say
+          which one is real, so the list labels the evidence and a board member decides
+          — nothing is pre-selected and nothing is bulk. */}
+      <Stack gap="sm">
+        <Title order={4}>Background-check dates to confirm</Title>
+        <Text c="dimmed" size="sm">
+          These households had one check approved, but every lead was marked checked. Confirm who
+          actually had the check and clear the others. Clearing the wrong one costs a redundant
+          re-check, never a membership.
+        </Text>
+        <TextInput
+          type="date"
+          label="Cleared since"
+          description="Widen this if the dates below start earlier than expected."
+          value={clearedSince}
+          onChange={(e) => setClearedSince(e.currentTarget.value)}
+          maw={260}
+        />
+        {blanketStamped.length === 0 ? (
+          <Text c="dimmed" size="sm">Nothing to confirm in this range.</Text>
+        ) : (
+          blanketStamped.map((row) => (
+            <Card key={row.processId} withBorder radius="md" padding="lg">
+              <Text fw={600} fz="lg">{row.householdName}</Text>
+              <Text size="sm" c="dimmed" mb="xs">
+                Cleared {new Date(row.bgClearedAt).toLocaleDateString()}
+                {row.leads.some((l) => l.likelySubject)
+                  ? ""
+                  : row.consentRecorded
+                    ? " · consent recorded by someone outside this household"
+                    : " · no consent recorded"}
+              </Text>
+              <Stack gap="xs">
+                {row.leads.map((lead) => (
+                  <Paper key={lead.personId} withBorder radius="sm" p="xs">
+                    <Group justify="space-between" wrap="wrap">
+                      <div>
+                        <Text fw={500}>{lead.name}</Text>
+                        <Text size="sm" c="dimmed">
+                          {lead.likelySubject
+                            ? "Submitted their own consent — likely the one who was checked"
+                            : "No evidence either way — check the report"}
+                        </Text>
+                      </div>
+                      {clearedStampIds.has(lead.personId) ? (
+                        <Badge variant="light">Date cleared</Badge>
+                      ) : (
+                        <Button
+                          size="xs"
+                          variant="light"
+                          color="orange"
+                          loading={busyId === lead.personId}
+                          disabled={busyId === lead.personId}
+                          onClick={() => confirmClearStamp(row, lead)}
+                        >
+                          Clear this date
+                        </Button>
+                      )}
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            </Card>
+          ))
+        )}
+      </Stack>
+
+      {/* Permanent, unlike the list above: a merge takes the later of the two dates with
+          no record of whose check it was, so every future merge can mint another. Stays
+          until #1396 closes that hole. */}
+      {mergeInherited.length > 0 && (
+        <Stack gap="sm">
+          <Title order={4}>Background-check dates inherited from a merge</Title>
+          <Text c="dimmed" size="sm">
+            These people took their background-check date from a record merged into theirs. The
+            merge keeps the later date without recording whose check it was.
+          </Text>
+          {mergeInherited.map((p) => (
+            <Card key={p.personId} withBorder radius="md" padding="lg">
+              <Group justify="space-between" wrap="wrap">
+                <div>
+                  <Text fw={600} fz="lg">{p.name}</Text>
+                  <Text size="sm" c="dimmed">
+                    Checked {new Date(p.lastBackgroundCheck).toLocaleDateString()} · from {p.fromName}
+                    {" · "}Household #{p.householdId}
+                  </Text>
+                </div>
+                <Badge color="yellow" variant="light">Unverified provenance</Badge>
+              </Group>
+            </Card>
+          ))}
+        </Stack>
+      )}
 
       <PersonSection
         title="Missing date of birth"
