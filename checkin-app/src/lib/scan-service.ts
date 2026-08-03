@@ -161,9 +161,12 @@ export async function processCheckout(
 async function closeAllOpenVisits(db: DbClient) {
     await db.visit.updateMany({
         // Tombstoned visits are excluded: closing one would rewrite a record the
-        // member chose to erase, and resurrect a SYSTEM departure if it is undone.
+        // member chose to erase, and resurrect a machine departure if it is undone.
         where: { departedAt: null, deletedAt: null },
-        data: { departedAt: new Date(), departedVia: "SYSTEM" },
+        // FACILITY_CLOSE, not AUTO_CLOSE: this stamp is the moment the building
+        // actually closed, so it is bounded by building hours — plausible, unlike
+        // the cron's midnight sweep.
+        data: { departedAt: new Date(), departedVia: "FACILITY_CLOSE" },
     });
 }
 

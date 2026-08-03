@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Alert, Button, Group, Modal, Select, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconLock, IconRobot, IconScan, IconSelector, IconUserCheck } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
@@ -11,7 +11,7 @@ import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
 import { MAX_VISIT_MS } from '@/lib/visitTimes';
 
 import { PageLoader } from "@/components/ui/PageLoader";
-type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
+type VisitSource = 'SCANNER' | 'WEB' | 'LEAD_MARKED' | 'FACILITY_CLOSE' | 'AUTO_CLOSE' | 'SYSTEM';
 
 type Visit = {
   id: number;
@@ -26,7 +26,10 @@ type Visit = {
 const SOURCE_META: Record<VisitSource, { Icon: typeof IconScan; label: string }> = {
   SCANNER: { Icon: IconScan, label: 'Scanner (kiosk badge)' },
   WEB: { Icon: IconDeviceLaptop, label: 'Web (dashboard)' },
-  SYSTEM: { Icon: IconRobot, label: 'Automated (facility close / nightly)' },
+  LEAD_MARKED: { Icon: IconUserCheck, label: 'Marked present by staff (event window, not measured)' },
+  FACILITY_CLOSE: { Icon: IconLock, label: 'Building closed (stamped at the close moment)' },
+  AUTO_CLOSE: { Icon: IconRobot, label: 'Nightly sweep (stamped at cron-run time — likely late)' },
+  SYSTEM: { Icon: IconRobot, label: 'Automated, pre-split (facility close or nightly — indistinguishable)' },
 };
 
 const SourceIcon = ({ via }: { via?: VisitSource | null }) => {

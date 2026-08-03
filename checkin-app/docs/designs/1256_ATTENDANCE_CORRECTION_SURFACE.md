@@ -494,9 +494,14 @@ add the group-by. Do not build a second generic audit browser.
 `@sensitivity:internal`. The `facility/corrections` read exposes audit rows
 (internal) — it must be a registered route with a tight select, and per the
 boundary-isolation rule any registry/scope change ships in its own PR ahead of
-the feature route. The `VisitSource` re-tier (a source enum value is `public`)
-touches `security/generated/classifications.ts` and likewise lands in its own
-boundary PR. The self-scoped `PATCH`/`DELETE` writes only the actor's own (or a
+the feature route. The `VisitSource` split is **not** a boundary change and
+needs no isolated PR: `classifications.ts` tiers *fields*, not enum values —
+`arrivedVia`/`departedVia` stay `public` whatever the value set is, so adding
+values leaves the generated file byte-identical (verified), and
+`security-boundary-isolation.yml` fires only on `src/security/**` (excluding
+`generated/`), the generator script, or a genuine re-tier of an existing field.
+It therefore ships inside the AT3 PR, as §3 says. The self-scoped
+`PATCH`/`DELETE` writes only the actor's own (or a
 household member's) `Visit` — no new sensitivity surface. The scope check
 (`personId` = self or a household member, never from the body) is the security
 invariant and belongs in the route, not the UI; the significance/flagging logic

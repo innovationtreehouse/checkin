@@ -18,27 +18,39 @@ describe("editSignificance", () => {
     it("fixing a machine-closed departure never flags, however large the correction", () => {
         const arrivedAt = new Date(Date.UTC(2026, 6, 1, 9));   // arrive 9am
         const r = editSignificance(
-            { arrivedAt, departedAt: new Date(Date.UTC(2026, 6, 2, 2)), arrivedVia: "SCANNER", departedVia: "SYSTEM" },
+            { arrivedAt, departedAt: new Date(Date.UTC(2026, 6, 2, 2)), arrivedVia: "SCANNER", departedVia: "AUTO_CLOSE" },
             { arrivedAt, departedAt: new Date(Date.UTC(2026, 6, 1, 13)) }, // really left 1pm
         );
         expect(r.score).toBe(0); // 780 min × 0
         expect(r.flagged).toBe(false);
     });
 
-    it("a small machine-close fix is free too", () => {
+    it("a FACILITY_CLOSE fix is free too — a placeholder is a placeholder", () => {
         const r = editSignificance(
-            { arrivedAt: at(14), departedAt: at(20), arrivedVia: "SCANNER", departedVia: "SYSTEM" },
+            { arrivedAt: at(14), departedAt: at(20), arrivedVia: "SCANNER", departedVia: "FACILITY_CLOSE" },
             { arrivedAt: at(14), departedAt: at(18) },
         );
         expect(r.flagged).toBe(false);
     });
 
-    it("15-min shift of a roster-marked (SYSTEM pair) visit — small delta, not flagged", () => {
+    it("15-min shift of a LEAD_MARKED visit — small delta, not flagged", () => {
         const r = editSignificance(
-            { arrivedAt: at(14), departedAt: at(16), arrivedVia: "SYSTEM", departedVia: "SYSTEM" },
+            { arrivedAt: at(14), departedAt: at(16), arrivedVia: "LEAD_MARKED", departedVia: "LEAD_MARKED" },
             { arrivedAt: at(14, 15), departedAt: at(16, 15) },
         );
         expect(r.flagged).toBe(false); // (15+15) × 2 = 60 < 90
+    });
+
+    // The whole point of splitting SYSTEM: LEAD_MARKED on a departure is a staff
+    // assertion worth weighing, the two machine closers are placeholders worth
+    // nothing. Pre-split they were one value and had to be told apart by
+    // inference from the arrival side.
+    it("distinguishes a LEAD_MARKED departure from the two machine closes by source alone", () => {
+        const shift = { arrivedAt: at(14), departedAt: at(17) };
+        const base = { arrivedAt: at(14), departedAt: at(16), arrivedVia: "SCANNER" as const };
+        expect(editSignificance({ ...base, departedVia: "LEAD_MARKED" }, shift).score).toBe(120); // 60 × 2
+        expect(editSignificance({ ...base, departedVia: "FACILITY_CLOSE" }, shift).score).toBe(0);
+        expect(editSignificance({ ...base, departedVia: "AUTO_CLOSE" }, shift).score).toBe(0);
     });
 
     it("moving a SCANNER arrival 2h — overwrites a measurement, flagged", () => {
@@ -49,12 +61,23 @@ describe("editSignificance", () => {
         expect(r.flagged).toBe(true); // 120 × 3 = 360
     });
 
-    it("a SYSTEM departure paired with a SYSTEM arrival is a roster mark, not an auto-close", () => {
+    // Legacy SYSTEM rows survive in two places: history the backfill mapped, and
+    // anything the previous release writes during a rolling deploy's drain
+    // window. Until the contract release drops the value, the old inference has
+    // to keep working — a SYSTEM pair is a roster mark, a SYSTEM departure on a
+    // real arrival is a machine close.
+    it("still reads legacy SYSTEM by inference: a SYSTEM pair is a roster mark, not an auto-close", () => {
         const rosterPair = editSignificance(
             { arrivedAt: at(14), departedAt: at(16), arrivedVia: "SYSTEM", departedVia: "SYSTEM" },
             { arrivedAt: at(14), departedAt: at(17) },
         );
-        expect(rosterPair.score).toBe(120); // 60 min × 2, not × 0.25
+        expect(rosterPair.score).toBe(120); // 60 min × 2, not × 0
+
+        const machineClose = editSignificance(
+            { arrivedAt: at(14), departedAt: at(16), arrivedVia: "SCANNER", departedVia: "SYSTEM" },
+            { arrivedAt: at(14), departedAt: at(17) },
+        );
+        expect(machineClose.score).toBe(0);
     });
 
     it("closing an own open visit — the routine correction — does not flag", () => {

@@ -125,7 +125,7 @@ describe('My-programs conflicts resolve API', () => {
 
     it('lets the leading mentor delete an overlapping visit and writes an audit trail', async () => {
         const anchor = await prisma.visit.create({
-            data: { personId: participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'SYSTEM', associatedEventId: eventId },
+            data: { personId: participantId, arrivedAt: hoursAgo(5), departedAt: hoursAgo(2), arrivedVia: 'LEAD_MARKED', associatedEventId: eventId },
         });
         const sibling = await prisma.visit.create({
             data: { personId: participantId, arrivedAt: hoursAgo(4), departedAt: hoursAgo(1), arrivedVia: 'SCANNER' },

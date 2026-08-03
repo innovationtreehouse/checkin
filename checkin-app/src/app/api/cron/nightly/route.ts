@@ -29,7 +29,10 @@ export const GET = withCron(async () => {
         if (abandonedVisits.length > 0) {
             // Force everybody out concurrently. One bad checkout must not abort the rest.
             const results = await Promise.allSettled(
-                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now, undefined, "SYSTEM"))
+                // AUTO_CLOSE: stamped at cron-run time, so the member's real leave
+                // may be hours earlier. Correcting one of these is expected by
+                // construction and never flags (lib/visit/significance.ts).
+                abandonedVisits.map((visit) => processVisitCheckout(visit.id, now, undefined, "AUTO_CLOSE"))
             );
             results.forEach((result, i) => {
                 if (result.status === "fulfilled") {

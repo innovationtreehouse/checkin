@@ -3,8 +3,11 @@
 Decisions and deferrals from implementing AT3 (staff/household visit
 management) on top of AT5 (PR #1357). The design itself is
 [1256_ATTENDANCE_CORRECTION_SURFACE.md](./1256_ATTENDANCE_CORRECTION_SURFACE.md);
-this file records the two non-obvious calls made while building it and the two
-pieces deliberately left out.
+this file records the non-obvious calls made while building it, what shipped,
+and what was deliberately left out.
+
+**Left for later:** §4 (the open `isOperations` gate decision), the `SYSTEM`
+enum-value drop (contract stage of §3), and the two items under "Also open".
 
 ---
 
@@ -87,34 +90,61 @@ scanned visit outranks a member deleting their own web entry.
 
 ---
 
-## 3. NOT DONE — the `VisitSource` 3-way split
+## 3. DONE — the `VisitSource` 3-way split (shipped in this PR)
 
 Issue #1254 item 4, design "Terminology" + §3. `SYSTEM` splits into
 `LEAD_MARKED` / `FACILITY_CLOSE` / `AUTO_CLOSE`, one value per current writer:
 
-| writer | today | becomes |
+| writer | was | now |
 |---|---|---|
 | events-attendance roster mark | `SYSTEM` (both fields) | `LEAD_MARKED` |
 | keyholder building-close `closeAllOpenVisits` | `departedVia: SYSTEM` | `FACILITY_CLOSE` |
 | nightly-cron sweep `processVisitCheckout` | `departedVia: SYSTEM` | `AUTO_CLOSE` |
 
-**Why it is not in this PR:** it touches
-`src/security/generated/classifications.ts`, and
-`.github/workflows/security-boundary-isolation.yml` requires any boundary change
-to ship in its own PR with no feature code.
+**It is not a security-boundary change**, contrary to the design's own
+Security-boundary note (now corrected in that doc). `classifications.ts` tiers
+*fields*, not enum values: `arrivedVia`/`departedVia` are `public` regardless of
+the value set, so adding values regenerates the file byte-identical — verified
+by adding the values, regenerating, and diffing to empty.
+`security-boundary-isolation.yml` fires only on `src/security/**` (excluding
+`generated/`), the generator script, or a re-tier of an existing field. Design
+§3 was right that it belongs in the AT3 PR.
 
-**What that costs until it lands:** `src/lib/visit/significance.ts` still
-*infers* "machine close" at runtime — a `SYSTEM` departure paired with a
-non-`SYSTEM` arrival — because the enum cannot yet distinguish the closers.
-`FACILITY_CLOSE` and `AUTO_CLOSE` corrections are therefore indistinguishable to
-the flagging rule, and the board cannot tell "the building closed while you were
-badged in" from "you were still badged in at midnight".
+**Shipped as expand-only, in two migrations.** `SYSTEM` is **kept in the enum**.
+During a rolling deploy the previous release serves traffic against the
+fully-migrated schema and still writes `SYSTEM` from all three paths above;
+dropping the value would 500 every one of them for the whole drain window.
+Dropping it is a follow-up release (the contract stage), once no deployed code
+can write it.
 
-**Also note:** existing `departedVia = SYSTEM` rows are fused history and cannot
-be back-split — the discriminator was never stored. The migration maps legacy
-`SYSTEM` departures to one bucket (design recommends `AUTO_CLOSE`, the
-conservative "don't trust this time" reading); only rows written after the split
-carry the true distinction.
+- `20260803000000_visit_source_split_add` — three `ALTER TYPE … ADD VALUE`.
+  Deliberately **not** wrapped in `BEGIN`/`COMMIT`: Postgres forbids *using* a
+  value in the transaction that added it. The statements are additive and
+  idempotent, so a partial apply is harmless.
+- `20260803000100_visit_source_split_backfill` — the row mapping, wrapped,
+  because its two updates must land together.
+
+**The legacy mapping, and the one case that is recoverable.** `departedVia =
+SYSTEM` is fused history — the discriminator between "building closed" and "cron
+swept you" was never stored. But the roster mark is the only writer that puts
+`SYSTEM` on *arrivedVia*, and it writes both fields together, so a
+`SYSTEM`/`SYSTEM` pair is unambiguously a lead mark. Everything else falls back
+to `AUTO_CLOSE` — the conservative "don't trust this departure" reading, which
+also makes those rows source-suppressed in the significance rule rather than
+flagging their corrections to the board. Verified against seeded legacy rows:
+
+| before | after |
+|---|---|
+| `SYSTEM` / `SYSTEM` | `LEAD_MARKED` / `LEAD_MARKED` |
+| `SCANNER` / `SYSTEM` | `SCANNER` / `AUTO_CLOSE` |
+| `WEB` / `WEB` | unchanged |
+
+**What the split bought.** `src/lib/visit/significance.ts` no longer has to
+*infer* a machine close for new rows — the source says so outright. The
+inference branch survives for legacy `SYSTEM` only and dies with the value in
+the contract release. `facility/trends` now excludes
+`arrivedVia ∈ {LEAD_MARKED, SYSTEM}` — the legacy spelling stays in the list for
+the same drain-window reason, and there is an integration fixture pinning both.
 
 ---
 

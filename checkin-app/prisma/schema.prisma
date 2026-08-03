@@ -34,11 +34,30 @@ enum AuditAction {
   BECOME_ADMIN
 }
 
-/// How a visit arrival/departure was recorded.
-/// SCANNER = physical kiosk badge, WEB = admin/dashboard UI, SYSTEM = automated (facility-close sweep, nightly cron).
+/// How a visit arrival/departure was recorded. Five non-overlapping meanings
+/// (docs/designs/1256_ATTENDANCE_CORRECTION_SURFACE.md, "Terminology"):
+///   SCANNER        = physical kiosk badge — measured, exact.
+///   WEB            = dashboard / self-service entry — self-reported.
+///   LEAD_MARKED    = staff asserted presence; a roster mark writes BOTH fields
+///                    at the event window, so it is not arrival-only.
+///   FACILITY_CLOSE = departure only; the building closed (last keyholder badged
+///                    out) — stamped at the close moment, bounded by building hours.
+///   AUTO_CLOSE     = departure only; the nightly cron swept an abandoned open
+///                    visit — stamped at cron-run time, so the real leave may be
+///                    hours earlier. Correcting one is expected by construction.
+/// Domains: arrivedVia ∈ {SCANNER, WEB, LEAD_MARKED};
+///          departedVia ∈ {SCANNER, WEB, LEAD_MARKED, FACILITY_CLOSE, AUTO_CLOSE}.
+///
+/// SYSTEM is the retired predecessor of the last three. It is kept in the type
+/// only so the previous release can keep writing it through a rolling deploy's
+/// drain window; no current code path writes it, and the backfill migration left
+/// no rows carrying it. Drop it in a follow-up release (contract stage).
 enum VisitSource {
   SCANNER
   WEB
+  LEAD_MARKED
+  FACILITY_CLOSE
+  AUTO_CLOSE
   SYSTEM
 }
 

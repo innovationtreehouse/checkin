@@ -13,20 +13,22 @@ import type { VisitSource } from "@/generated/prisma/client";
  * a place to calibrate from.
  */
 
-// SYSTEM is overloaded (design "Terminology"): on arrivedVia it is a staff
-// roster-mark (high trust — someone else's observation); as a departure paired
-// with a real arrival it is a machine close. The LEAD_MARKED / FACILITY_CLOSE /
-// AUTO_CLOSE split retires that inference.
 const WEIGHTS: Record<VisitSource, number> = {
-    SCANNER: 3, // physical measurement
-    SYSTEM: 2,  // staff observation (roster mark)
-    WEB: 1,     // the member's own prior self-report
+    SCANNER: 3,     // physical measurement
+    LEAD_MARKED: 2, // staff observation (roster mark)
+    WEB: 1,         // the member's own prior self-report
+    // A machine close is a placeholder the member is *meant* to fix, so
+    // correcting one never flags — suppressed by SOURCE, not magnitude (design
+    // §2): the cron stamps at its own run time, making the correction largest
+    // exactly where the overwritten value deserves the least trust.
+    FACILITY_CLOSE: 0,
+    AUTO_CLOSE: 0,
+    // Legacy, pre-split. It fused the roster mark with both machine closes, so
+    // no single weight is right; take the roster-mark reading, since that is the
+    // only meaning it ever carried on arrivedVia. Rows written by the previous
+    // release during a rolling deploy's drain window are the last of these.
+    SYSTEM: 2,
 };
-// A machine close is a placeholder the member is *meant* to fix, so correcting
-// one never flags — suppressed by SOURCE, not magnitude (design §2): the cron
-// stamps at its own run time, making the correction largest exactly where the
-// overwritten value deserves the least trust.
-const MACHINE_CLOSE_WEIGHT = 0;
 // Sits above a 15-min shift of both ends of a roster-marked visit (60) and
 // below a 2h move of a scanned arrival (360) — the design's no/yes examples.
 const FLAG_THRESHOLD = 90; // weighted minutes
@@ -46,8 +48,13 @@ export type Significance = { score: number; flagged: boolean };
 
 function weightOf(source: VisitSource | null, field: "arrival" | "departure", visit: VisitTimes): number {
     if (!source) return WEIGHTS.WEB; // untagged legacy value ≈ self-reported
+    // Legacy SYSTEM only: pre-split it fused the roster mark with the machine
+    // closes, so the closer has to be inferred — a SYSTEM departure on a real
+    // (non-SYSTEM) arrival was a machine close. FACILITY_CLOSE / AUTO_CLOSE say
+    // so outright, which is what the split bought; this branch dies with the
+    // value in the contract release.
     if (source === "SYSTEM" && field === "departure" && visit.arrivedVia !== "SYSTEM") {
-        return MACHINE_CLOSE_WEIGHT;
+        return 0;
     }
     return WEIGHTS[source];
 }

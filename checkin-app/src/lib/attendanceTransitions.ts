@@ -77,7 +77,7 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
  * 
  * It returns the final list of visits spanning their arrival to departure.
  */
-export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "WEB" | "SYSTEM" = "WEB") {
+export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "WEB" | "AUTO_CLOSE" = "WEB") {
     const originalVisit = await db.visit.findUnique({
         where: { id: visitId }
     });
