@@ -1,7 +1,7 @@
 # Youth enrollment rules (issue #167)
 
-**Status: DESIGN — not built.** Policy + rationale only. No code here; the
-mechanics land in the implementation when we agree to build.
+**Status: IN BUILD.** The gate itself is being implemented; the open gaps at the
+end are not settled and nothing in them is built.
 
 ## Problem
 
@@ -75,6 +75,20 @@ unverified self-report, so a minor willing to misreport can clear the gate and
 self-enroll + pay. The only trustworthy age signal is one set by *someone other
 than the subject* — a lead/board, or staff import.
 
+The household-lead flag falls under the same acceptance. `leads.ts` blocks a
+youth from becoming a lead by reading `dateOfBirth` only — it never consults
+`isDeclaredAdult` — so the same misreport that clears the enroll gate clears the
+lead check too. Its unknown-DOB default (`unknownIs: 'adult'`) therefore grants
+a determined minor nothing that lying would not. Two residues, both narrow: it
+needs no lie at all, so a youth who signs in and touches nothing is silently
+made a lead (`auth-options.ts` provisions the household and calls
+`addHouseholdLead` unconditionally); and lead authority is over *other people*,
+which this section's reasoning about self-commitment never weighed — worth
+remembering, since the paragraph below offers "a lead enrolling the minor" as
+the trustworthy alternative. Reaching real third parties still requires an admin
+to reassign real people into that household, so it is a design inconsistency
+more than an exploit.
+
 **Decision: accept it.** A self-declared adult (DOB or the over-25 tick, whoever
 set it, including the member themselves) is trusted, and the possibility that a
 minor lies to bypass the gate is an accepted residual risk. We do **not** add a
@@ -85,18 +99,170 @@ who simply lands on the enroll page), not to defeat deliberate misrepresentation
 which no self-service flow can. The trustworthy path (a lead enrolling the minor)
 remains available for anyone who wants the stronger guarantee.
 
-## Open question — does the self-gate apply to admin overrides?
+## Resolved — the self-gate and admin overrides
 
-A confirmed board/sysadmin `override` already deliberately bypasses every soft
-limit (closed enrollment, age, capacity) — that's an existing, tested intent
-lock. Placing the known-adult **self**-gate *before* that override path would
-also block an admin who self-enrolls-with-override and happens to have no DOB.
+The original question was whether a confirmed board/sysadmin `override` — which
+already bypasses every other soft limit — should also skip the known-adult
+self-gate.
 
-Proposed resolution: the self-gate is about ordinary self-enrollers, so it
-should live under the **same override exemption** as the other soft limits — a
-confirmed admin override skips it too. (Concretely: the gate runs only when
-limits are being enforced, not on the admin-override path.) **Needs your
-sign-off** before implementation.
+**It is moot, because overriding a limit for yourself is a conflict of
+interest.** `lib/conflictOfInterest.ts` states the rule the rest of the app
+follows: an actor may not decide their own household's case, and no role is
+exempt. The enroll route never adopted it — `enforceLimits` keys only off
+`override` and the actor's roles, never off *who the enrollment is for* — so a
+sysadmin or board member can currently self-override past closed enrollment,
+age bounds, members-only, and capacity. That is a pre-existing hole, being
+fixed separately.
+
+Once a conflicted actor can no longer reach the override exemption at all,
+"inside `enforceLimits`" and "outside `enforceLimits`" are the same behaviour
+for every case the self-gate can reach: the gate only fires when actor ==
+target, and limits are then always enforced. So the gate lives **inside**
+`enforceLimits` — one exemption rule, at one layer.
+
+**Ordering dependency:** that only holds once the conflict-of-interest fix has
+landed. Until it does, an admin can `override` past this gate on themselves.
+
+## Known adult — DOB outranks the declared-adult flag
+
+"Known adult" is 18+ by `dateOfBirth`, or `isDeclaredAdult` when there is no DOB
+on file. Where both exist and disagree, the DOB wins: the flag stands in for a
+missing DOB, it does not overrule one. (`checkProgramAge` already reads the flag
+only on the no-DOB path; `isKnownAdult` matches it.) Unknown age is not an
+adult — the helper fails closed.
+
+## A youth never sees a payment situation
+
+The governing rule, and it is a hard one: **a youth is never shown a payment
+obligation, a payment action, or a payment status — their own or their
+household's.** Not "disabled", not "explained" — absent.
+
+What follows from it:
+
+1. **No self-completion of a lead's checkout.** A pending enrollment created by
+   a household lead is a payment the household owes, not one the youth may
+   settle. The enroll route refuses a self-POST from a non-known-adult
+   unconditionally — there is no "row already exists, so let them finish paying"
+   carve-out.
+2. **A youth's own pending row reads `Awaiting confirmation`.** The "Payment
+   pending — select to finish payment" affordance is never shown to them. This
+   is true whether or not the household ever pays, names no money, and puts the
+   next action with someone else — so unlike a flat `Enrolled` it does not
+   become a lie if the payment is abandoned. A youth cannot infer a checkout
+   from it: pending could be capacity, review, or anything else. An ACTIVE row
+   still reads `Enrolled`.
+3. **The household summary is hidden from a youth entirely.** It names *other*
+   members' pending payments; suppressing only the qualifier would still leak
+   who owes what. The whole block goes.
+4. **Payment actions are hidden.** "Pay on Shopify" and "Request a scholarship
+   or payment plan" are not rendered for a youth.
+5. **Withdrawal is not a youth action.** A youth may not `DELETE` their own
+   enrollment — a lead does it. Beyond the consent symmetry, withdrawing a
+   scholarship-held seat fires `withdrawAndReleaseHold` and a Shopify inventory
+   release, which is a financial side effect a youth must not be able to
+   trigger.
+6. **Price stays public.** A program's cost is program information, on the card
+   and the directory, and is not a payment *situation* — no obligation, no
+   state, no action. A youth sees what a program costs; they never see that
+   money is owed or a way to pay it.
+7. **The enroll CTA states the rule, not the money.** A youth gets a disabled
+   "a household lead must enroll you" — the same message on free and paid
+   programs alike, because it names *who may act* rather than what it costs.
+   One message, no price-dependent branch.
+
+An **unverifiable-age** viewer is treated the opposite way throughout: they may
+well be an adult, so they keep the `dob` reason that routes into the intake
+panel. Hiding the enrollment surface from them would strand a brand-new adult
+with no lead — the dead-end this design exists to avoid. Known minor → hide;
+unverifiable → capture the age.
+
+## The viewer signal — a session claim
+
+Nothing client-side could previously tell a youth from an adult at render time,
+so every suppression above needs one signal. **Decision: a JWT claim**, stamped
+in `lib/authClaims.ts` beside the existing ones.
+
+Why the claim rather than a per-response `viewerIsMember`-style flag:
+
+- **It is not a stale token.** The `jwt` callback re-reads the Person from the
+  DB on every subsequent request and re-stamps all claims, deliberately, so a
+  revoked role cannot outlive its revocation (`session.updateAge` 15 minutes,
+  `maxAge` 8 hours). Freshness is bounded by that window, not by re-login.
+- **It costs no extra query.** Both callback branches use
+  `findUnique({ where, include })` with no `select`, so every Person scalar —
+  `dateOfBirth` and `isDeclaredAdult` included — is already loaded. The claim is
+  a derived boolean over data already in hand.
+- **Per-response scales as endpoints × signals.** Youth-gating alone would need
+  `GET /api/programs/[id]` and `/api/programs/mine`, and each addition is a
+  response-shape change to justify and a place to forget.
+- **Per-response cannot gate shared chrome** — nav, badges, layout belong to no
+  endpoint.
+- **The codebase already made this choice.** Five role flags plus
+  `householdLead`, `householdId`, `toolStatuses`, `programsLed`,
+  `canAccessStaging`, and `denied` all live in the token for exactly this
+  reason. A per-response flag would be the exception, not the safe path.
+
+Two constraints that ride with it:
+
+1. **Refresh on the remedy path.** Set-a-DOB-then-enroll is the one flow where
+   the refresh window would be visibly wrong — the member fixes their age and
+   the gate must open *now*, not up to 15 minutes later. The intake save calls
+   `useSession().update()` to force a re-stamp before returning to the
+   member-select.
+2. **Stamp the boolean, never the date.** `dateOfBirth` is
+   `@sensitivity:personal`; a derived `isKnownAdult` in the token is fine, the
+   raw date is not.
+
+`viewerIsMember` / `viewerMemberPricingEligible` stay as they are — an existing
+exception, not the pattern to copy.
+
+## Surface sweep
+
+Every participant-reachable surface that renders payment state or a payment
+action. Ops surfaces (`program-ops`, `finance-ops`, `membership-ops`) are
+role-gated and out of a youth's reach, so they are not listed.
+
+| Surface | What it shows | Action |
+|---|---|---|
+| `programs/[id]` member-select row | "Payment pending — select to finish payment" | Suppress (done) |
+| `programs/[id]` household summary | "*Name* — Enrolled, payment pending", incl. other members | Hide the block for youth |
+| `programs/[id]` primary CTA | "Continue enrollment" when the household owes | Falls back to the lead-required message |
+| `programs/[id]` "Pay on Shopify" | Checkout action | Hide for youth |
+| `programs/[id]` scholarship button | "Request a scholarship or payment plan" | Hide for youth |
+| `my-activities/programs` | "Payment due" badge per enrollment | Hide for youth |
+| `POST request-payment-plan` | Authorises on `isSelf`, no age gate | Add the known-adult self-gate (server) |
+| `DELETE participants` | Authorises self-removal, no age gate | Add the known-adult self-gate (server) |
+
+Checked and clear: the programs directory, `my-household`, `my-programs`,
+`FirstTimeIntakePanel`, and `attendance/current` (its "force checkout" is a
+kiosk departure, not a payment).
+
+**`membership/page.tsx` is a confirmed leak — checked, not closed.** The lead
+gate is on the *start* path only: `state?.isLead` guards the "Start application"
+button inside the `!state?.process` branch. Once a process exists the page falls
+into the process branches, and none of them check `isLead`. The intake state is
+household-scoped (`lib/membership/intake.ts` returns the household's `process`
+to any member; `isLead` is the only per-user field), so a youth in a household
+with an in-flight application lands straight in those branches.
+
+At `PENDING_PAYMENT` a youth sees "Your annual household dues are $X" and a
+"Pay here with Shopify →" button, and can click it. This is not UI-only:
+`GET /api/membership/payment` is `withAuth({})` — any authenticated user — and
+resolves the amount and checkout URL from the caller's household, so the data is
+served to a youth by the API itself. The same unguarded branches also expose the
+contract-signing and background-check tasks.
+
+Not everything is open: `POST /api/membership/request-payment-plan` does check
+lead membership and 403s a non-lead, and `renewal-status` returns
+`renewalDue: false` to non-leads. The hole is the payment display and checkout,
+not every membership action.
+
+This is org-membership dues, a different domain from program enrollment — see
+"Out of scope" below. It needs its own issue.
+
+## Open gaps
+
+None. Every decision is recorded above; what remains is build work.
 
 ## Threshold
 
@@ -108,16 +274,49 @@ from *who may initiate*).
 
 - Minor with no active household lead — you said ignore.
 - Waiver / consent capture at enroll time (`lastWaiverSign` exists, unused here).
-- Any change to payment, capacity, or the Shopify path.
+- Any change to payment *mechanics*, capacity, or the Shopify path. Payment UI
+  is now hidden from youth and withdrawal is gated, but no charge, hold, or
+  inventory rule changes — the gated `DELETE` still runs the same
+  `withdrawAndReleaseHold` when a lead performs it.
+- **Org-membership dues.** Program enrollment is the subject here. If the
+  `membership/page.tsx` check above turns up a leak, it is its own issue.
+- **Reconciling the missing-DOB posture across the app.** `leads.ts` reads an
+  unknown DOB as adult, this design reads it as not-adult. Both are deliberate;
+  making them agree is a decision, not a bug fix, and does not belong in this
+  change.
+- **Household-lead integrity.** A youth cannot hold `isHouseholdLead` —
+  `addHouseholdLead` refuses, and every promotion path routes through it — so
+  the lead-enrolls-a-household-member path this design relies on is sound. The
+  remaining edges (one route writing the flag directly, and what should bound
+  leadless or otherwise semi-valid household states) are issue #1471.
 
-## If/when we build it (sketch, not a spec)
+## Build shape
 
-- Enroll route: after the existing authz check and under the same
-  limits-enforced condition as the age check, refuse a non-known-adult
-  self-enroller with the two messages above.
-- Enroll page `enrollBlock`: on the viewer's own row, a known-minor → the
-  lead-required reason; an unverifiable age → the existing `dob` reason, which
-  already drops into the intake panel.
-- Tests: known minor self → refused; unverifiable-age self → refused; declared/
-  DOB adult self → allowed; admin override self (per the open question) →
-  allowed. Personas used elsewhere for non-age self-enroll must be known adults.
+- `isKnownAdult` in `lib/programAge.ts`, next to `checkProgramAge`, so the route
+  and the page judge adulthood by one rule.
+Server (the enforcement; each is a refusal a direct POST cannot talk past):
+
+- Enroll route `POST`: inside the limits-enforced block, after the age check,
+  refuse a non-known-adult self-enroller — 403, with the minor and unverifiable
+  messages above.
+- Enroll route `DELETE`: refuse a non-known-adult self-removal.
+- `request-payment-plan POST`: same self-gate.
+
+Client (the absence; every item waits on the viewer signal):
+
+- Enroll page `enrollBlock`: on the viewer's own row, a known minor → the
+  lead-required reason on a fresh enrollment and a plain `Enrolled` on an
+  existing one; an unverifiable age → the `dob` reason, which already drops into
+  the intake panel.
+- The rest of the sweep table: household summary, CTA label, "Pay on Shopify",
+  the scholarship button, and the `my-activities` payment badge.
+
+Tests — new cases: known minor self → refused; unverifiable-age self → refused;
+declared/DOB adult self → allowed; a lead enrolling a minor → still allowed; a
+youth cannot withdraw themselves.
+
+Tests — existing suites encode the old rule and must be re-pointed to a
+lead-enrolls-child shape, since any persona used for a non-age self-enroll now
+has to be a known adult: `programAgeBounds`, `programAgeStartDate`,
+`programsParticipantsAPI`, and `programsEnrollClosed` (integration), plus the
+enroll page suite.

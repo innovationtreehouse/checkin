@@ -1,4 +1,4 @@
-import { checkProgramAge, validateProgramAgeBounds, MAX_PROGRAM_AGE } from "@/lib/programAge";
+import { checkProgramAge, isKnownAdult, validateProgramAgeBounds, MAX_PROGRAM_AGE } from "@/lib/programAge";
 
 // as-of date pins calculateAge so the DOB cases don't drift with wall-clock time.
 const asOf = "2026-01-01";
@@ -41,6 +41,34 @@ describe("checkProgramAge", () => {
       label: "Too old",
     });
     expect(checkProgramAge({ dateOfBirth: "2000-01-01" }, { minAge: 16, maxAge: 40, asOf }).ok).toBe(true);
+  });
+});
+
+describe("isKnownAdult", () => {
+  const yearsAgo = (n: number) => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - n);
+    return d;
+  };
+
+  it("admits an 18+ DOB and a declared over-25 adult", () => {
+    expect(isKnownAdult({ dateOfBirth: yearsAgo(18) })).toBe(true);
+    expect(isKnownAdult({ dateOfBirth: yearsAgo(40) })).toBe(true);
+    expect(isKnownAdult({ dateOfBirth: null, isDeclaredAdult: true })).toBe(true);
+  });
+
+  it("refuses a under-18 DOB", () => {
+    expect(isKnownAdult({ dateOfBirth: yearsAgo(17) })).toBe(false);
+    expect(isKnownAdult({ dateOfBirth: yearsAgo(10) })).toBe(false);
+  });
+
+  it("fails closed on an unverifiable age", () => {
+    expect(isKnownAdult({ dateOfBirth: null })).toBe(false);
+    expect(isKnownAdult({ dateOfBirth: null, isDeclaredAdult: false })).toBe(false);
+  });
+
+  it("lets a real DOB outrank the declared-adult flag", () => {
+    expect(isKnownAdult({ dateOfBirth: yearsAgo(15), isDeclaredAdult: true })).toBe(false);
   });
 });
 

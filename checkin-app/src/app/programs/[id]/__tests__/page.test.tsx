@@ -68,8 +68,8 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
 }
 
 describe("ProgramEnrollmentPage", () => {
-    it("free program: enrolls the signed-in household member", async () => {
-        setSession({ id: 101 });
+    it("free program: a lead enrolls a household member", async () => {
+        setSession({ id: 100, ageBand: 'adult' });
         mockFetchJson({
             "/api/programs/10/participants": { ok: true },
             "/api/household": household,
@@ -93,8 +93,71 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
+    // A youth is shown no payment obligation, action, or status — their own or
+    // their household's. The refusal is an absence, not a door that won't open:
+    // the CTA names who may act and never mentions money, on free and paid alike.
+    it("shows a youth the lead-required CTA and no payment surface", async () => {
+        setSession({ id: 101, ageBand: 'youth' });
+        mockFetchJson({
+            "/api/household": household,
+            "/api/programs/10": baseProgram({
+                participants: [{ personId: 101, status: "PENDING", person: { name: "Kid One", householdId: 7 } }],
+                orgMemberPriceCents: 5000, minAge: null, maxAge: null,
+            }),
+        });
+        renderPage();
+
+        await screen.findByText("Robotics Club");
+        const cta = screen.getByRole("button", { name: "A household lead must enroll you" });
+        expect(cta).toBeDisabled();
+        // Never the payment-pending wording, and never the resume affordance.
+        expect(screen.queryByRole("button", { name: "Continue enrollment" })).not.toBeInTheDocument();
+        expect(screen.queryByText(/payment pending/i)).not.toBeInTheDocument();
+        expect(screen.queryByText("Already enrolled from your household:")).not.toBeInTheDocument();
+        // Price stays public — it is program information, not a payment situation.
+        expect(screen.getByText("$50.00")).toBeInTheDocument();
+    });
+
+    // The same household seen by an adult still offers the checkout, so the
+    // assertions above are about the viewer's age and not a broken fixture.
+    it("still shows the payment-pending resume to an adult in the same household", async () => {
+        // householdId is what links the pending row to the viewer in myEnrolled.
+        setSession({ id: 100, ageBand: 'adult', householdId: 7 });
+        mockFetchJson({
+            "/api/household": household,
+            "/api/programs/10": baseProgram({
+                participants: [{ personId: 101, status: "PENDING", person: { name: "Kid One", householdId: 7 } }],
+                orgMemberPriceCents: 5000, minAge: null, maxAge: null,
+            }),
+        });
+        renderPage();
+
+        await screen.findByText("Robotics Club");
+        expect(screen.getByRole("button", { name: "Continue enrollment" })).toBeEnabled();
+        expect(screen.getByText("Already enrolled from your household:")).toBeInTheDocument();
+    });
+
+    it("routes a viewer of unverifiable age into intake rather than blocking on a lead", async () => {
+        setSession({ id: 300, ageBand: 'unknown' });
+        mockFetchJson({
+            "/api/household": { household: { householdMembers: [{ id: 300, name: "New Adult", dateOfBirth: null }] } },
+            "/api/programs/10": baseProgram({ participants: [], minAge: null, maxAge: null }),
+        });
+        renderPage();
+
+        await screen.findByText("Robotics Club");
+        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
+        await screen.findByText("Which of your household wants to enroll?");
+
+        // A brand-new adult is "age unverifiable", not a minor — the remedy is the
+        // intake panel (DOB or "over 25"), never a lead they don't have.
+        expect(screen.getByText("(DOB missing)")).toBeInTheDocument();
+        expect(screen.queryByText("(A household lead must enroll you)")).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Finish setting up your household to enroll" })).toBeInTheDocument();
+    });
+
     it("first-time user finishes household setup, then enrolls a child (auth-first)", async () => {
-        setSession({ id: 500 });
+        setSession({ id: 500, ageBand: 'unknown' });
         let childAdded = false;
         const adult = { id: 500, name: "New Parent", dateOfBirth: null };
         const child = { id: 501, name: "New Kid", dateOfBirth: "2015-01-01" };
@@ -530,19 +593,20 @@ describe("ProgramEnrollmentPage", () => {
     // must be able to re-run checkout (participants POST 409s -> folded back in;
     // a FRESH single-use discount code is minted — the old one is 48h/one-use).
     it("lets a payment-pending member resume checkout with a fresh discount code", async () => {
-        setSession({ id: 101 });
+        setSession({ id: 100, ageBand: 'adult' });
         setShopifyStoreDomain("shop.example.com");
         // One-member household whose only participant is already PENDING — the
-        // resume case: nobody new to enroll, payment still owed.
+        // resume case: nobody new to enroll, payment still owed. The viewer is an
+        // adult: only a known adult may finish a checkout.
         const memberHousehold = { household: {
-            householdMembers: [{ id: 101, name: "Kid One", dateOfBirth: "2015-01-01" }],
+            householdMembers: [{ id: 100, name: "Jamie Guardian", dateOfBirth: "1990-01-01" }],
             orgMembership: { status: "ACTIVE" },
         } };
         const fetchMock = mockFetchJson({
             "/api/programs/10/discount-code": { code: "PRG10-FRESH" },
             "/api/household": memberHousehold,
             "/api/programs/10": baseProgram({
-                participants: [{ personId: 101, status: "PENDING" }],
+                participants: [{ personId: 100, status: "PENDING" }],
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
                 shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
             }),
@@ -564,10 +628,10 @@ describe("ProgramEnrollmentPage", () => {
 
         // Selectable and not disabled — but unchecked, so resuming the checkout
         // is a deliberate click like any other enrollment.
-        expect(await screen.findByLabelText("Kid One")).not.toBeChecked();
+        expect(await screen.findByLabelText("Jamie Guardian")).not.toBeChecked();
         expect(screen.getByText("(Payment pending — select to finish payment)")).toBeInTheDocument();
 
-        await selectMember("Kid One");
+        await selectMember("Jamie Guardian");
         fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
 
         expect(await screen.findByText("Redirecting to Shopify for secure payment...")).toBeInTheDocument();
@@ -771,7 +835,7 @@ describe("ProgramEnrollmentPage", () => {
     // signed-in caller would enroll a household lead who came only to pay for a
     // child — stranding an unpaid PENDING row that holds a capacity seat.
     it("does not pre-check the signed-in adult on a program with no upper age limit", async () => {
-        setSession({ id: 100 });
+        setSession({ id: 100, ageBand: 'adult' });
         mockFetchJson({
             "/api/household": household,
             "/api/programs/10": baseProgram({ participants: [], minAge: 9, maxAge: null }),

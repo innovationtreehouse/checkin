@@ -1,4 +1,33 @@
-import { calculateAge } from "@/lib/time";
+import { calculateAge, isYouth } from "@/lib/time";
+
+/**
+ * Whether we KNOW this person is an adult: declared over 25, or 18+ by DOB.
+ * Fails closed — an unknown age is not an adult — because the only caller is the
+ * self-enrollment gate, where "can't prove adult" must refuse rather than admit.
+ *
+ * A declared adult is trusted whoever set the flag, including the member
+ * themselves; see docs/designs/167-youth-enrollment-rules.md for why that
+ * self-attestation risk is accepted rather than closed.
+ */
+export function isKnownAdult(person: { dateOfBirth: Date | string | null; isDeclaredAdult?: boolean | null }): boolean {
+  // A real DOB outranks the flag, as in checkProgramAge: the flag exists to stand
+  // in for a missing DOB, not to contradict one on file.
+  return person.dateOfBirth ? !isYouth(person.dateOfBirth) : !!person.isDeclaredAdult;
+}
+
+/**
+ * The three age states the youth rules act on, as one value so an impossible
+ * pair can't be represented. `youth` and `unknown` are treated OPPOSITELY: a
+ * youth has the enrollment and payment surfaces hidden, while an unverifiable
+ * age keeps them and is routed to age capture — hiding from the latter would
+ * strand a brand-new adult who has no other household lead.
+ */
+export type AgeBand = "adult" | "youth" | "unknown";
+
+export function ageBand(person: { dateOfBirth: Date | string | null; isDeclaredAdult?: boolean | null }): AgeBand {
+  if (isKnownAdult(person)) return "adult";
+  return person.dateOfBirth ? "youth" : "unknown";
+}
 
 /**
  * Single source of truth for "can this person enroll in this age-gated program".

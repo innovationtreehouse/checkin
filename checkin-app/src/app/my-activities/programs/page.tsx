@@ -27,8 +27,11 @@ type UserProgram = {
 // approve a payment plan (gray, not actionable — don't imply it's settled).
 // ponytail: "Payment due" reads more like a warning than a success state — mechanical
 // off-palette-sweep target is theme-primary green; a maintainer may prefer gray/yellow here.
-function paymentPill(status: string, planRequested: boolean) {
+function paymentPill(status: string, planRequested: boolean, viewerIsYouth: boolean) {
   if (status === 'ACTIVE') return null;
+  // A youth is shown no payment state at all — "Awaiting confirmation" is true
+  // whoever owes it (docs/designs/167-youth-enrollment-rules.md).
+  if (viewerIsYouth) return <Badge color="gray" variant="filled">Awaiting confirmation</Badge>;
   return planRequested
     ? <Badge color="gray" variant="filled">Awaiting finance approval</Badge>
     : <Badge variant="filled">Payment due</Badge>;
@@ -37,6 +40,9 @@ function paymentPill(status: string, planRequested: boolean) {
 export default function MyProgramsDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
+  // See docs/designs/167-youth-enrollment-rules.md — a youth sees no payment state.
+  const viewerIsYouth = (session?.user as { ageBand?: string } | undefined)?.ageBand === 'youth';
 
   const [enrollments, setEnrollments] = useState<UserProgram[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,7 +108,7 @@ export default function MyProgramsDashboard() {
                 {showMembers && (
                   <Badge variant="light">{person.name ?? 'Member'}</Badge>
                 )}
-                {paymentPill(enrollStatus, isPaymentPlanRequested)}
+                {paymentPill(enrollStatus, isPaymentPlanRequested, viewerIsYouth)}
               </Group>
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>

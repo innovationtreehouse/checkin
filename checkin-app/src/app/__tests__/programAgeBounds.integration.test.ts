@@ -21,6 +21,7 @@ jest.mock('@/lib/notifications', () => ({
 
 describe('Program Age Bounds Integration Tests', () => {
     let testAdminId: number;
+    let guardianUserId: number;
     let validUserId: number;
     let underageUserId: number;
     let overageUserId: number;
@@ -33,18 +34,23 @@ describe('Program Age Bounds Integration Tests', () => {
 
     beforeAll(async () => {
         // Calculate Birthdates dynamically relative to execution time
+        // Built from UTC parts because calculateAge reads UTC fields: local-part
+        // construction shifts these by a day west of UTC, which flips the exact
+        // boundary personas late in the day.
         const now = new Date();
-        const dob16 = new Date(now.getFullYear() - 16, now.getMonth(), now.getDate());
-        const dob12 = new Date(now.getFullYear() - 12, now.getMonth(), now.getDate());
-        const dob20 = new Date(now.getFullYear() - 20, now.getMonth(), now.getDate());
+        const [uy, um, ud] = [now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()];
+        const utcDob = (yearsAgo: number, dayOffset = 0) => new Date(Date.UTC(uy - yearsAgo, um, ud + dayOffset));
+        const dob16 = utcDob(16);
+        const dob12 = utcDob(12);
+        const dob20 = utcDob(20);
         // Exact boundaries for program [minAge=14, maxAge=18].
         // Birthday is today => exactly N years old today (eligible at both ends).
-        const dobExactly14 = new Date(now.getFullYear() - 14, now.getMonth(), now.getDate());
-        const dobExactly18 = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
+        const dobExactly14 = utcDob(14);
+        const dobExactly18 = utcDob(18);
         // Birthday tomorrow, born 14 years ago => still 13 today (under).
-        const dobTurns14Tomorrow = new Date(now.getFullYear() - 14, now.getMonth(), now.getDate() + 1);
+        const dobTurns14Tomorrow = utcDob(14, 1);
         // Birthday yesterday, born 19 years ago => turned 19 already (over).
-        const dobTurned19Yesterday = new Date(now.getFullYear() - 19, now.getMonth(), now.getDate() - 1);
+        const dobTurned19Yesterday = utcDob(19, -1);
 
         // Clean up any leaked state from previous runs
         await prisma.auditLog.deleteMany({});
@@ -62,8 +68,22 @@ describe('Program Age Bounds Integration Tests', () => {
         });
         testAdminId = admin.id;
 
+        // Eligible-age youth live in a household with an adult lead: only a lead
+        // may enroll a participant under 18 (docs/designs/167-youth-enrollment-rules.md).
+        const guardianHousehold = await prisma.household.create({ data: { name: "Test HH" } });
+        const guardian = await prisma.person.create({
+            data: {
+                email: 'guardian-age-test@example.com',
+                name: 'Guardian Age Test',
+                dateOfBirth: utcDob(40),
+                isHouseholdLead: true,
+                householdId: guardianHousehold.id,
+            }
+        });
+        guardianUserId = guardian.id;
+
         const pValid = await prisma.person.create({
-            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, household: { create: { name: "Test HH" } } }
+            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, householdId: guardianHousehold.id }
         });
         validUserId = pValid.id;
 
@@ -83,7 +103,7 @@ describe('Program Age Bounds Integration Tests', () => {
         noDobUserId = pNoDob.id;
 
         const pExactlyMin = await prisma.person.create({
-            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, household: { create: { name: "Test HH" } } }
+            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, householdId: guardianHousehold.id }
         });
         exactlyMinUserId = pExactlyMin.id;
 
@@ -122,7 +142,7 @@ describe('Program Age Bounds Integration Tests', () => {
             await prisma.program.deleteMany({ where: { id: testProgramId } });
         }
 
-        const actorIds = [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId, exactlyMinUserId, exactlyMaxUserId, turns14TomorrowUserId, turned19YesterdayUserId].filter(id => id !== undefined);
+        const actorIds = [testAdminId, guardianUserId, validUserId, underageUserId, overageUserId, noDobUserId, exactlyMinUserId, exactlyMaxUserId, turns14TomorrowUserId, turned19YesterdayUserId].filter(id => id !== undefined);
         if (actorIds.length > 0) {
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: actorIds } }
@@ -138,10 +158,9 @@ describe('Program Age Bounds Integration Tests', () => {
         await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
     });
 
-    it('should allow self-enrollment for a participant within the valid age range', async () => {
-        // Mock session to standard valid user
+    it('should allow a household lead to enroll a participant within the valid age range', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: validUserId, isSysadmin: false, isBoardMember: false }
+            user: { id: guardianUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -213,9 +232,9 @@ describe('Program Age Bounds Integration Tests', () => {
         expect(data.requiresOverride).toBe(true);
     });
 
-    it('should allow self-enrollment for a participant who is EXACTLY minAge today (birthday today)', async () => {
+    it('should allow enrollment for a participant who is EXACTLY minAge today (birthday today)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: exactlyMinUserId, isSysadmin: false, isBoardMember: false }
+            user: { id: guardianUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
