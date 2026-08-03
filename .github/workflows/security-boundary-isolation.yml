@@ -27,6 +27,16 @@ name: Security boundary isolation
 # cherry-picks of already-merged PRs) replay changes that were isolation-
 # checked on main, and a sync merge inevitably mixes boundary and feature
 # files; those runs short-circuit to success below.
+#
+# EXCEPTION — whole-entity decommission. Isolation exists to stop ADDED
+# exposure from hiding in a feature diff; a boundary diff that only removes
+# entire top-level entries whose subjects cease to exist in the same PR (a
+# scopeBindings model dropped from schema.prisma; a defineRoute whose verb is
+# no longer served) cannot add exposure, and the drift check WELDS such a PR
+# to its migration (#1446). When check-boundary-decommission.js certifies
+# that shape — byte-strict, fail-closed: partial edits, additions, re-tiers,
+# reorders, and engine-file changes never qualify — the PR may also carry
+# prisma/migrations/** and file deletions, nothing else.
 on:
   pull_request:
     # rel/** stays in the trigger even though enforcement is main-only:
@@ -88,6 +98,8 @@ jobs:
               checkin-app/src/security/generated/*) return 1 ;;
               checkin-app/src/security/*) return 0 ;;
               checkin-app/scripts/security-generator.js) return 0 ;;
+              checkin-app/scripts/check-boundary-decommission.js) return 0 ;;
+              checkin-app/scripts/lib/boundary-decommission.js) return 0 ;;
             esac
             return 1
           }
@@ -100,6 +112,11 @@ jobs:
               docs/*|*/docs/*|*.md) return 0 ;;
               .github/CODEOWNERS) return 0 ;;
               .github/workflows/security-boundary-isolation.yml) return 0 ;;
+              # boundary files are their own companions — a boundary PR must be
+              # able to contain them
+              checkin-app/scripts/security-generator.js) return 0 ;;
+              checkin-app/scripts/check-boundary-decommission.js) return 0 ;;
+              checkin-app/scripts/lib/boundary-decommission.js) return 0 ;;
             esac
             return 1
           }
@@ -142,6 +159,15 @@ jobs:
           done
 
           if [ "${#VIOLATIONS[@]}" -gt 0 ]; then
+            # Whole-entity decommission exception (see header). Re-tiers never
+            # qualify, and the certifier fails closed on anything but pure
+            # whole-entry removals of subjects deleted in this same PR.
+            if [ -z "$RETIER" ] &&
+               node checkin-app/scripts/check-boundary-decommission.js --base "$BASE_SHA" -- "${VIOLATIONS[@]}"; then
+              echo "Decommission exception: boundary diff is whole-entry removals of dropped"
+              echo "subjects; non-companion files are the drop migration/deletions only."
+              exit 0
+            fi
             echo "::error::This PR changes the security boundary and must ship it ALONE."
             [ -n "$RETIER" ] && echo "::error::Re-tiered existing fields:$RETIER"
             echo "Boundary changes (registry grants, token grammar, handler/stripper,"
