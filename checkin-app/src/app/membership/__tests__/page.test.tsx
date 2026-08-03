@@ -194,6 +194,25 @@ describe("membership page", () => {
     expect(screen.getByRole("link", { name: /Pay here with Shopify/ })).toHaveAttribute("href", "https://shop.example/checkout");
   });
 
+  it("hides the dues and the checkout link from a non-lead household member", async () => {
+    setSession({ id: 2 });
+    const fetchMock = mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": state({
+        isLead: false,
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Membership application in progress")).toBeInTheDocument();
+    expect(screen.queryByText("$125.00", { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Pay here with Shopify/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/membership/payment"))).toBe(false);
+  });
+
   it("renders PENDING_BG_CLEARANCE", async () => {
     setSession({ id: 1 });
     mockFetchJson({ "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_BG_CLEARANCE" } }) });

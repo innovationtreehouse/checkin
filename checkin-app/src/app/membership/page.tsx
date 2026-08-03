@@ -282,16 +282,17 @@ export default function MembershipPage() {
     })();
   }, [sessionStatus, load]);
 
-  // When awaiting payment, fetch the dues amount and Shopify checkout link.
+  // When awaiting payment, fetch the dues amount and Shopify checkout link. Leads
+  // only — the route refuses anyone else, and the card hides the money from them.
   useEffect(() => {
-    if (state?.process?.status !== "PENDING_PAYMENT") return;
+    if (state?.process?.status !== "PENDING_PAYMENT" || !state.isLead) return;
     let cancelled = false;
     fetch("/api/membership/payment")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => { if (!cancelled && data) setPayment(data); })
       .catch(() => { /* shown as link-unavailable */ });
     return () => { cancelled = true; };
-  }, [state?.process?.status]);
+  }, [state?.process?.status, state?.isLead]);
 
   // Restore an in-flight payment holdoff after a tab refresh mid-Shopify-checkout.
   useEffect(() => {
@@ -897,6 +898,16 @@ export default function MembershipPage() {
                     Refresh status
                   </Button>
                 </Stack>
+              </Card>
+            ) : inStatus === "PENDING_PAYMENT" && !state.isLead ? (
+              /* Dues and the checkout link are the lead's business — a non-lead
+                 household member still learns the application is moving. */
+              <Card withBorder radius="md" padding="lg">
+                <Title order={2} mb="sm">Membership application in progress</Title>
+                <Text c="dimmed">
+                  Your household&apos;s membership application is in progress. Your household lead
+                  will complete it — nothing for you to do right now.
+                </Text>
               </Card>
             ) : inStatus === "PENDING_PAYMENT" ? (
               <Card withBorder radius="md" padding="lg">
