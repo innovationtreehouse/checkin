@@ -67,7 +67,35 @@ npx prisma migrate resolve --applied 20260703130000_squashed_init
 
 The ledger's checksum (what `migrate resolve`/`migrate deploy` compare against) is a sha256 of the migration's `migration.sql` — editing an already-applied file's contents (as #791 did, on migrations no environment had applied yet) is safe; editing one that's already recorded as applied anywhere is not.
 
-### 7. Misc rules with incident backing
+### 7. Dropping a security-bound model: one decommission PR
+
+Dropping a Prisma model that has a `SCOPE_BINDINGS` entry welds four changes
+into one green unit: `validateBindings` requires the binding to leave in the
+exact PR the model leaves `classifications.ts`, the freshness guard welds
+`classifications.ts` to `schema.prisma`, and the drift check welds the schema
+drop to its `DROP TABLE` migration. The boundary-isolation workflow permits
+that packaging through its **whole-entity decommission exception**
+(`scripts/check-boundary-decommission.js`, see the workflow header and #1446):
+
+1. **First release(s):** cut every reader/writer per rules 2–3, boundary
+   grants included, until nothing serves the model.
+2. **Decommission PR (one PR, all green):** remove the `model` from
+   `schema.prisma`, the `DROP TABLE` migration, the regenerated
+   `classifications.ts`, and the *entire* `SCOPE_BINDINGS` /
+   `ROW_SCOPE_KEY` / `OPT_OUT_PENDING_ROUTE` entries for that model, plus
+   test-oracle updates. The certifier admits the migration and file
+   deletions alongside the boundary removal — nothing else.
+
+The exception is byte-strict and fails closed: a partial edit inside a
+surviving binding (which can *widen* a grant — deleting one element of an
+`all:` match weakens it), an addition, a re-tier, or any engine-file change
+disqualifies the PR, and the boundary change must ship alone as usual. The
+same shape covers route kills: an entire `defineRoute` removal qualifies when
+the PR also deletes the route file/verb export. Fallback if certification is
+unwanted: park the model in `OPT_OUT_PENDING_ROUTE` in a boundary-only PR,
+then drop schema+migration separately.
+
+### 8. Misc rules with incident backing
 - **Postgres does not auto-index foreign key columns.** `Person.householdId` in PR #917 had no `@@index` anywhere in its migration history — collapsing the `HouseholdLead` join table into a flag on `Person` silently turned an indexed lookup into a full `Person` seq-scan on hot paths (check-in notification fan-out, nav badges). Add `@@index` for any relation scalar you actually query, in the same migration that adds the column.
 - **Same-timestamp migrations from two open PRs interleave lexicographically at deploy time.** Prisma applies migrations in filename order; if two schema PRs are both open, check what order their timestamps put them in once both land — a same-timestamp collision (verified harmless for #917/#918's specific case, checked via `git merge-tree`) isn't guaranteed harmless in general.
 - **Schema field changes need `/// @sensitivity:<tier>` annotations** (see `docs/security/SECURITY-POLICY.md`) with regenerated `classifications.ts` committed — this is a CI-enforced, CODEOWNERS-gated check, and it's a schema-adjacent step easy to forget in the middle of a migration-focused PR.
