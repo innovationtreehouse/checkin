@@ -27,4 +27,29 @@ describe("normalizeAdultDob", () => {
     expect(normalizeAdultDob(yearsAgo(26))).toEqual({ dateOfBirth: null, isDeclaredAdult: true });
     expect(normalizeAdultDob(yearsAgo(40))).toEqual({ dateOfBirth: null, isDeclaredAdult: true });
   });
+
+  // The 26th-birthday boundary decides a persisted DoB strip, so a UTC-midnight
+  // DoB read through local calendar fields would destroy the date a day early.
+  describe("26th-birthday boundary west of UTC", () => {
+    const realTz = process.env.TZ;
+    const DOB = "2000-07-24T00:00:00.000Z";
+    beforeAll(() => {
+      process.env.TZ = "America/Chicago";
+      jest.useFakeTimers();
+    });
+    afterAll(() => {
+      jest.useRealTimers();
+      if (realTz === undefined) delete process.env.TZ; else process.env.TZ = realTz;
+    });
+
+    it("keeps the DoB at noon on the day before the 26th birthday", () => {
+      jest.setSystemTime(new Date("2026-07-23T17:00:00.000Z"));
+      expect(normalizeAdultDob(DOB)).toEqual({ dateOfBirth: new Date(DOB), isDeclaredAdult: false });
+    });
+
+    it("strips the DoB on the 26th birthday", () => {
+      jest.setSystemTime(new Date("2026-07-24T17:00:00.000Z"));
+      expect(normalizeAdultDob(DOB)).toEqual({ dateOfBirth: null, isDeclaredAdult: true });
+    });
+  });
 });

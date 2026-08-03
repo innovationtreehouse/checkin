@@ -1,4 +1,4 @@
-import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth } from '../time';
+import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth, calculateAge } from '../time';
 
 describe('calendar-date helpers', () => {
   it('stores a picked date at UTC midnight', () => {
@@ -29,6 +29,41 @@ describe('calendar-date helpers', () => {
     expect(parseDateOnly('')).toBeNull();
     expect(parseDateOnly(null)).toBeNull();
     expect(formatDateOnly(null)).toBe('');
+  });
+});
+
+// A DOB is a calendar date stored at UTC midnight, so age must be read from the
+// UTC fields. Every case here is run with the process timezone west of UTC —
+// where a local-field read sees the DOB a day early.
+describe('calculateAge west of UTC', () => {
+  const realTz = process.env.TZ;
+  beforeAll(() => { process.env.TZ = 'America/Chicago'; });
+  afterAll(() => { if (realTz === undefined) delete process.env.TZ; else process.env.TZ = realTz; });
+
+  const DOB = '2008-07-24T00:00:00.000Z';
+
+  it('does not age someone up the day before their birthday', () => {
+    // noon Chicago on 23 July, the day before the 18th birthday
+    expect(calculateAge(DOB, '2026-07-23T17:00:00.000Z')).toBe(17);
+  });
+
+  it('ages them up on the birthday', () => {
+    expect(calculateAge(DOB, '2026-07-24T17:00:00.000Z')).toBe(18);
+  });
+
+  it('judges a program age gate as-of a UTC-midnight start date', () => {
+    // program.asOf is a calendar date; leap birth year vs non-leap eval year is
+    // the case where two local reads disagree by a day and the age comes out low
+    expect(calculateAge('2008-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')).toBe(18);
+    expect(calculateAge(DOB, '2026-07-24T00:00:00.000Z')).toBe(18);
+    expect(calculateAge(DOB, '2026-07-23T00:00:00.000Z')).toBe(17);
+  });
+
+  it('rolls the birthday over at UTC midnight, not org-local midnight', () => {
+    // Documented ceiling of reading both sides as UTC (see calculateAge): from
+    // 7 PM Chicago on the eve, UTC is already the birthday. Fixed by the
+    // org-timezone provider, not by reading local fields here.
+    expect(calculateAge(DOB, '2026-07-24T00:30:00.000Z')).toBe(18);
   });
 });
 

@@ -136,6 +136,45 @@ describe('Programs API Integration Tests', () => {
              expect(orgMemberOnly).toBeDefined(); // Revealed because admin
         });
 
+        // #1397: dues paid, background check still with the board — the catalog
+        // shows them members-only programs, same as an ACTIVE household.
+        it('reveals member-only programs to a household that has paid but is awaiting background clearance', async () => {
+             const paidPending = await prisma.person.create({
+                 data: {
+                     email: 'paid-pending-programs-api-test@example.com',
+                     name: 'Paid Pending',
+                     household: {
+                         create: {
+                             name: 'Test HH',
+                             orgMembership: {
+                                 create: {
+                                     status: 'NONE',
+                                     processes: { create: { kind: 'INITIAL', status: 'PENDING_BG_CLEARANCE', paidAt: new Date() } },
+                                 },
+                             },
+                         },
+                     },
+                 },
+                 select: { id: true, householdId: true },
+             });
+
+             try {
+                 (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPending.id } });
+
+                 const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+                 const res = await GET(req as unknown as import("next/server").NextRequest);
+                 expect(res.status).toBe(200);
+
+                 const programs = await res.json();
+                 const orgMemberOnly = programs.find((p: { name?: string }) => p.name === 'Member Only API Test Program');
+                 expect(orgMemberOnly).toBeDefined();
+             } finally {
+                 await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: paidPending.householdId } } });
+                 await prisma.orgMembership.deleteMany({ where: { householdId: paidPending.householdId } });
+                 await prisma.person.delete({ where: { id: paidPending.id } });
+             }
+        });
+
         // The catalog is deliberately anonymous-readable, so the projection — not a
         // route gate — is what keeps `personal`-tier data off the wire. Both the
         // cached anonymous path and the live session path must ship public columns only.

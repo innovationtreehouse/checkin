@@ -17,10 +17,11 @@ import type { Prisma } from "@/generated/prisma/client";
  * alone, or the full legacy pair. Legacy programs (no shopifyVariantId) keep
  * the original per-tier check.
  *
- * The JS predicate and the Prisma WHERE below MUST stay in lockstep: the count
- * query (nav/todo-counts) and the per-row/detail UI are the same condition on two
- * sides of the wire. Change one, change the other. programCheckout.test.ts guards
- * the predicate.
+ * The JS predicate and the Prisma WHERE below are the same condition on two sides
+ * of the wire — the count query (nav/todo-counts) and the per-row/detail UI.
+ * programCheckout.test.ts evaluates the WHERE in memory against the full price ×
+ * variant matrix and asserts it equals the predicate, so editing one half alone
+ * fails the suite.
  */
 type CheckoutFields = {
   orgMemberPriceCents?: number | null;

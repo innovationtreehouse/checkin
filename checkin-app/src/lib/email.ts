@@ -20,10 +20,9 @@ export async function sendEmail(to: string, subject: string, html: string): Prom
     if (!resend) {
         console.log(`[Email (no RESEND_API_KEY)] To: ${to} | Subject: ${subject}`);
         // Dev/local: capture the email so link/token flows are retrievable at /dev/sent-mail,
-        // and report success so gating callers follow the prod happy-path. Gated on
-        // devToolsActive (CHECKIN_ENV, fails safe to prod — NOT a NODE_ENV fuse, which is
-        // 'production' on every deployed instance incl. cloud-dev): a prod box that somehow
-        // lost its key still falls through to `return false` (fail loud, not fake success).
+        // and report success so gating callers follow the prod happy-path. devToolsActive
+        // fails safe to prod, so a prod box that somehow lost its key still falls through
+        // to `return false` (fail loud, not fake success).
         if (config.devToolsActive()) {
             return captureSentEmail(from, to, subject, html);
         }

@@ -12,6 +12,7 @@ type BrokenHousehold = { id: number; name: string; members: Member[] };
 export default function BrokenHouseholdsPage() {
   const [households, setHouseholds] = useState<BrokenHousehold[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [promoting, setPromoting] = useState<number | null>(null);
   // Per-household lead-assign result, shown in a card-local Alert. A page-corner
   // toast reads as "nothing happened" for a card far down; the card also doesn't
@@ -19,12 +20,14 @@ export default function BrokenHouseholdsPage() {
   const [notice, setNotice] = useState<Record<number, { ok: boolean; text: string }>>({});
 
   const fetchHouseholds = useCallback(async () => {
+    setError(false);
     try {
       const res = await fetch("/api/admin/broken-households");
       const data = await res.json();
       if (data.households) setHouseholds(data.households);
     } catch (err) {
       console.error("Failed to load broken households:", err);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -69,7 +72,14 @@ export default function BrokenHouseholdsPage() {
       </Text>
 
       <Box>
-        {households.length > 0 ? (
+        {error ? (
+          <Alert color="red" title="Couldn't load broken households.">
+            The list didn&apos;t load, so this isn&apos;t an all-clear.
+            <Button mt="sm" size="xs" variant="white" color="red" onClick={fetchHouseholds}>
+              Retry
+            </Button>
+          </Alert>
+        ) : households.length > 0 ? (
           <Stack gap="sm">
             {households.map((h) => (
               <Card key={h.id} withBorder radius="md" padding="md">

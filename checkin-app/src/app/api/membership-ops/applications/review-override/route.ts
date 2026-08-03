@@ -7,11 +7,14 @@ import { apiError } from "@/lib/api-response";
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/membership-ops/applications/review-override — board action on a BLOCKED application.
+ * POST /api/membership-ops/applications/review-override — board action on an
+ * application's background-check review.
  * Body: { processId, action: 'reset' | 'approve' }
- *   reset   — clear attestations, send back for re-review (re-ping reviewers)
- *   approve — board override: clear the check, activating if already paid else
- *             leaving it at PENDING_PAYMENT
+ *   reset   — clear attestations, send back for re-review (re-ping reviewers).
+ *             Reaches a BLOCKED review and one still in progress (undoing an
+ *             accidental approval); a cleared one is out of reach.
+ *   approve — board override on a BLOCKED review: clear the check, activating if
+ *             already paid else leaving it at PENDING_PAYMENT
  */
 export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
@@ -25,9 +28,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
         return apiError("processId and action (reset|approve) are required", 400);
     }
     try {
-        const outcome = await overrideBlocked(body.processId, auth.user.id, body.action, {
-            isSysadmin: auth.user.isSysadmin === true,
-        });
+        const outcome = await overrideBlocked(body.processId, auth.user.id, body.action);
         return NextResponse.json({ outcome });
     } catch (error) {
         if (error instanceof ReviewError) {

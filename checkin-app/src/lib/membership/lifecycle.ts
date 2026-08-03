@@ -10,16 +10,17 @@
  * `FOR UPDATE` lock, conditional `updateMany`, and partial-unique-index +
  * P2002 catch is unchanged and merely *fed* the status set it names.
  *
- * CLIENT-SAFETY (docs/designs/LIFECYCLE.md) — CRITICAL, pages import
- * this file: NOTHING here value-imports `@/generated/prisma`. `Prisma` and the
- * enums are `import type` only (erased at build); predicates take booleans, not
- * `Date | null`; the `where` fragments are plain object literals typed via the
- * generic. The enum-parity assertion is compile-time here (type-only) and
- * value-based only in the test.
+ * Client-safe — pages import this file, and a Prisma value here would pull the
+ * generated client into a page bundle. `no-restricted-imports` in
+ * `eslint.config.mjs` allows `@/generated/prisma` only as `import type`.
+ * Predicates therefore take booleans, not `Date | null`; the `where` fragments
+ * are plain object literals typed via the generic; enum parity is compile-time
+ * here and value-based only in the test.
  */
 import type { Prisma, OrgMembershipProcessStatus, OrgMembershipProcessKind } from "@/generated/prisma/client";
 import {
     type StateSet,
+    defineStateSet,
     fromStatusWhere,
     assertNever,
     defineValidator,
@@ -142,6 +143,25 @@ export const awaitingBgReview: StateSet<AwaitingBgRow, Where> = {
     },
 };
 
+// ── dues settled, background check outstanding ────────────────────────────────
+
+/**
+ * Dues paid in full, waiting on the board's background-check clearance. PROGRAM
+ * ACCESS reads this set: a household here gets the member rate and sees
+ * members-only programs even though its membership is not ACTIVE yet (#1397) —
+ * see lib/orgMembership.ts's DUES_SETTLED_PERSON_WHERE. It is NOT an answer to
+ * "is this a member"; ACTIVE stays that answer for every other benefit and every
+ * member-only audience.
+ *
+ * `paidAt` is redundant with the status today (activate() is the only writer and
+ * always stamps it) and is asserted anyway — the money question must not rest on
+ * a status invariant holding for a row some future path writes differently.
+ */
+export const duesSettledAwaitingBg = defineStateSet<Where>()({
+    statuses: ["PENDING_BG_CLEARANCE"],
+    flags: { paidAt: true },
+});
+
 // ── renewal grantability (fix #3) & settled-this-cycle (fix #4) ────────────────
 
 /**
@@ -152,7 +172,7 @@ export const awaitingBgReview: StateSet<AwaitingBgRow, Where> = {
  * settles to PENDING_BG_CLEARANCE, while a cleared one settles to ACTIVE — activate()
  * makes that split, BG is never bypassed. Both the list route's `renewalGrantable`
  * probe and `grantRenewalPayment`'s row lookup use this ONE fragment; the COI check
- * inside certifyPaymentPlan stays on top.
+ * inside certifyPaymentPlan stays on top for every actor.
  */
 export const grantableRenewalWhere: Where = {
     kind: "RENEWAL",

@@ -302,7 +302,7 @@ export async function createFamily(prisma: Db): Promise<string> {
     return `Created household "Test Family ${tag}" (lead + partner + 1 youth)`;
 }
 
-/** + Program — a program with a materials fee and a couple of active participants. */
+/** + Program — a program with a couple of active participants. */
 export async function createProgram(prisma: Db): Promise<string> {
     const tag = uid();
     const startAt = new Date();
@@ -318,17 +318,13 @@ export async function createProgram(prisma: Db): Promise<string> {
             maxParticipants: 20,
         },
     });
-    await prisma.fee.create({
-        // Integer cents: $25.00 member / $40.00 non-member.
-        data: { programId: program.id, name: "Materials", orgMemberPriceCents: 2500, nonOrgMemberPriceCents: 4000 },
-    });
     const enrollees = await prisma.person.findMany({ take: 2, orderBy: { id: "asc" } });
     for (const p of enrollees) {
         await prisma.programParticipant.create({
             data: { programId: program.id, personId: p.id, status: "ACTIVE" },
         });
     }
-    return `Created program "Test Program ${tag}" with a fee and ${enrollees.length} participants`;
+    return `Created program "Test Program ${tag}" with ${enrollees.length} participants`;
 }
 
 /** + Event — an event (tied to the latest program when one exists) with a few RSVPs. */

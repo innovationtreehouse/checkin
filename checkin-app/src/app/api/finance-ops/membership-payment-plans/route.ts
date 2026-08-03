@@ -58,7 +58,7 @@ export const POST = withAuth(
             // Reuse the membership activation path: certifies the plan and activates
             // without a Shopify payment (holding for background clearance if not yet
             // cleared). Then clear the request flag so it drops off the queue.
-            await certifyPaymentPlan(processId, auth.user.id, { isSysadmin: auth.user.isSysadmin === true, reason });
+            await certifyPaymentPlan(processId, auth.user.id, { reason });
             await prisma.orgMembershipProcess.update({
                 where: { id: processId },
                 data: { isPaymentPlanRequested: false },

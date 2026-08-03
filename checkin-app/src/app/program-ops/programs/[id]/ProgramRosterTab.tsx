@@ -33,6 +33,21 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
   const activeParticipants = program.participants.filter(p => p.status === 'ACTIVE');
   const pendingParticipants = program.participants.filter(p => p.status === 'PENDING');
 
+  // Roster mutations must never fail silently: a rejected remove (403 from a
+  // caller who isn't this program's lead, a 400, a 500) is otherwise
+  // indistinguishable from a successful one — the row just stays put.
+  const mutate = async (path: string, init: RequestInit): Promise<boolean> => {
+    try {
+      const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
+      if (res.ok) return true;
+      const data = await res.json().catch(() => ({}));
+      notifications.show({ color: 'red', message: data.error || `Request failed (${res.status}).`, autoClose: 6000 });
+    } catch {
+      notifications.show({ color: 'red', message: 'Network error — please try again.', autoClose: 6000 });
+    }
+    return false;
+  };
+
   // Volunteer + participant pickers both search this program's eligible members.
   const searchEligible = useCallback(async (query: string): Promise<ParticipantOption[]> => {
     const res = await fetch(`/api/programs/${programId}/eligible-participants?q=${encodeURIComponent(query)}`);
@@ -46,11 +61,11 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
     if (!newVolId) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/programs/${programId}/volunteers`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const ok = await mutate(`/api/programs/${programId}/volunteers`, {
+        method: 'POST',
         body: JSON.stringify({ participantId: parseInt(newVolId) })
       });
-      if (res.ok) { setNewVolId(""); setVolLabel(""); fetchProgram(); }
+      if (ok) { setNewVolId(""); setVolLabel(""); fetchProgram(); }
     } finally {
       setSaving(false);
     }
@@ -66,17 +81,15 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
     closeConfirmRemoveVol();
     const participantId = pendingRemoveVolId;
     setPendingRemoveVolId(null);
-    try {
-      await fetch(`/api/programs/${programId}/volunteers`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
-      fetchProgram();
-    } catch { }
+    const ok = await mutate(`/api/programs/${programId}/volunteers`, { method: 'DELETE', body: JSON.stringify({ participantId }) });
+    if (ok) fetchProgram();
   };
 
   const handleToggleCore = async (participantId: number, isCore: boolean) => {
     setSaving(true);
     try {
-      const res = await fetch(`/api/programs/${programId}/volunteers`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId, isCore }) });
-      if (res.ok) fetchProgram();
+      const ok = await mutate(`/api/programs/${programId}/volunteers`, { method: 'PATCH', body: JSON.stringify({ participantId, isCore }) });
+      if (ok) fetchProgram();
     } finally {
       setSaving(false);
     }
@@ -130,10 +143,8 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
     closeConfirmRemovePart();
     const participantId = pendingRemovePartId;
     setPendingRemovePartId(null);
-    try {
-      await fetch(`/api/programs/${programId}/participants`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ participantId }) });
-      fetchProgram();
-    } catch { }
+    const ok = await mutate(`/api/programs/${programId}/participants`, { method: 'DELETE', body: JSON.stringify({ participantId }) });
+    if (ok) fetchProgram();
   };
 
   return (

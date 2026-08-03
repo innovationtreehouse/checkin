@@ -109,7 +109,7 @@ export function findUnregisteredBareIncludeLegs(
     return findBareIncludeLegs(content);
 }
 
-interface Finding {
+export interface Finding {
     severity: 'error' | 'warn';
     rule: string;
     file: string;
@@ -119,6 +119,33 @@ interface Finding {
 const findings: Finding[] = [];
 function report(severity: Finding['severity'], rule: string, file: string, message: string, line?: number) {
     findings.push({ severity, rule, file, line, message });
+}
+
+/** Registry entries no route method serves, split by which half is missing.
+ *  No route FILE is the sanctioned register-first state — inert, nothing serves
+ *  the endpoint — so it warns. A file that exists but no longer exports the verb
+ *  is live policy/code drift, so it blocks. */
+export function findOrphanRegistryEntries(
+    registered: Iterable<string>,
+    routeMethods: ReadonlySet<string>,
+    routePaths: ReadonlySet<string>,
+): Finding[] {
+    return Array.from(registered)
+        .filter(key => !routeMethods.has(key))
+        .map(key => {
+            const [method, routePath] = key.split(' ');
+            const stale = routePaths.has(routePath);
+            return {
+                severity: stale ? ('error' as const) : ('warn' as const),
+                rule: 'orphan-registry',
+                file: 'src/security/registry.ts',
+                message: stale
+                    ? `registry entry ${key} is stale — ${routePath} has a route file, but it ` +
+                      `exports no ${method}. Drop the entry, or restore the export.`
+                    : `registry entry ${key} has no route file at ${routePath} — the ` +
+                      `register-first state while its route PR is pending.`,
+            };
+        });
 }
 
 function loadMigratedRoutes(): Set<string> {
@@ -224,8 +251,10 @@ function main() {
     const routeFiles = findRouteFiles(API_DIR);
 
     const allRouteEndpoints = new Set<string>();
+    const allRoutePaths = new Set<string>();
     for (const file of routeFiles) {
         const endpointPath = fileToEndpointPath(file);
+        allRoutePaths.add(endpointPath);
         const content = fs.readFileSync(file, 'utf-8');
         const verbs = extractExportedVerbs(content);
 
@@ -282,12 +311,7 @@ function main() {
         }
     }
 
-    for (const key of registered) {
-        if (!allRouteEndpoints.has(key)) {
-            report('error', 'orphan-registry', 'src/security/registry.ts',
-                `registry entry ${key} has no corresponding route file`);
-        }
-    }
+    findings.push(...findOrphanRegistryEntries(registered, allRouteEndpoints, allRoutePaths));
 
     // Keep the ratchet honest: a baseline entry whose route no longer exists
     // (deleted or migrated) must be pruned, or a later re-creation of the same

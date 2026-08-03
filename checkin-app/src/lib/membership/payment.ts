@@ -233,7 +233,7 @@ export async function activate(
     // Side effects outside the transaction: a slow/failed send must not roll back
     // the write, and only the call that actually recorded the change emits one.
     if (result.kind === "active") {
-        await sendCongrats(result.householdId);
+        await sendCongrats(result.householdId, result.isInitial);
         // Trigger C: a brand-new (INITIAL) member just activated (bg cleared before
         // payment landed) — open PERSON_BG for the household's program-attached adults.
         if (result.isInitial) await openPersonBgForNewMember(result.householdId, new Date());
@@ -243,7 +243,7 @@ export async function activate(
 }
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
-export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { isSysadmin?: boolean; reason?: string }) {
+export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { reason?: string }) {
     // Unlike the webhook path, a board certify is a deliberate action — reject
     // (not silently no-op) when the process isn't actually awaiting payment, so
     // certifying an already-ACTIVE or still-in-review grant surfaces a 409
@@ -253,11 +253,11 @@ export async function certifyPaymentPlan(processId: number, actorId: number, opt
     if (!process) throw new PaymentError("not_found", "Application not found.");
     if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
 
-    // Conflict of interest: a board member may not certify (mark paid + activate) their
-    // OWN household's membership — else they could activate their family without paying
-    // dues. Sysadmin bypasses.
-    if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId, { isSysadmin: opts?.isSysadmin })) {
-        throw new PaymentError("forbidden", "You cannot certify your own household's membership — a sysadmin must.");
+    // Conflict of interest: no actor may certify (mark paid + activate) their OWN
+    // household's membership — else they could activate their family without paying
+    // dues. No role bypasses this.
+    if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId)) {
+        throw new PaymentError("forbidden", "You cannot certify your own household's membership — someone outside your household must.");
     }
     return activate(processId, { via: "certified", actorId, reason: opts?.reason });
 }
@@ -267,13 +267,23 @@ export async function activateByProcessId(processId: number, shopifyOrderId: str
     return activate(processId, { via: "payment", shopifyOrderId, hasMembershipItem });
 }
 
-/** Send the one "welcome — your membership is active" email to a household's leads. */
-export async function sendCongrats(householdId: number) {
+/**
+ * Send the one "your membership is active" email to a household's leads. A
+ * renewal gets thanked for renewing — welcoming a family that has been here for
+ * years reads as if we don't know them.
+ */
+export async function sendCongrats(householdId: number, isInitial: boolean) {
     const base = config.baseUrl();
+    const subject = isInitial
+        ? "Welcome to the Treehouse — your membership is active!"
+        : "Thank you for renewing — your Treehouse membership is active!";
+    const lead = isInitial
+        ? "Congratulations! Your household membership is now active. Welcome to the Innovation Treehouse community."
+        : "Thank you for renewing! Your household membership is active again — we're glad to have your family back at the Innovation Treehouse.";
     await emailHouseholdLeads(
         householdId,
-        "Welcome to the Treehouse — your membership is active!",
-        `<p>Congratulations! Your household membership is now active. Welcome to the Innovation Treehouse community.</p><p><a href="${base}">Visit your dashboard</a></p>`,
+        subject,
+        `<p>${lead}</p><p><a href="${base}">Visit your dashboard</a></p>`,
         "Congrats email failed:",
     );
 }

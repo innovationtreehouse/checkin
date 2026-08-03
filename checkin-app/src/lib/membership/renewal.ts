@@ -342,7 +342,7 @@ export async function householdBgIsFresh(householdId: number, boundary: Date, re
  */
 export async function grantRenewalPayment(
     householdId: number,
-    actor: { actorId: number; isSysadmin: boolean; reason: string },
+    actor: { actorId: number; reason: string },
 ): Promise<import("@/generated/prisma/client").OrgMembershipProcess> {
     // Share the "payable renewal" predicate with the list route's renewalGrantable
     // probe (fix #3, grantableRenewalWhere): kind=RENEWAL, PENDING_PAYMENT — NOT
@@ -355,9 +355,9 @@ export async function grantRenewalPayment(
     });
     if (!process) throw new PaymentError("wrong_phase", "No renewal is awaiting payment.");
 
-    // COI is enforced INSIDE certifyPaymentPlan (single source): a board member
-    // certifying their own household throws PaymentError('forbidden'); sysadmin bypasses.
-    await certifyPaymentPlan(process.id, actor.actorId, { isSysadmin: actor.isSysadmin, reason: actor.reason });
+    // COI is enforced INSIDE certifyPaymentPlan (single source): certifying your own
+    // household throws PaymentError('forbidden'), whatever roles you hold.
+    await certifyPaymentPlan(process.id, actor.actorId, { reason: actor.reason });
 
     // Supplementary audit marker (traceability) — the PENDING_PAYMENT→ACTIVE
     // transition itself is already audited inside activate().
