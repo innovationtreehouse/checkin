@@ -210,8 +210,13 @@ defineRoute({
     authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
     // Bag: { OrgMembershipProcess } with membership (OrgMembership → household Household
-    // → householdMembers Person, leads flagged isHouseholdLead).
-    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person'],
+    // → householdMembers Person, leads flagged isHouseholdLead) and the process's
+    // attestations. Reviewers attest PER ADULT, so the card shows each lead's own
+    // approval count; the route selects `subjectPersonId` alone off each attestation.
+    // Widening that select is a policy decision, not a convenience: `reviewerId` is
+    // public-tier and would tell reviewer B that reviewer A already signed off, which
+    // the deliberate `_count`-only shape exists to prevent.
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person', 'BackgroundCheckAttestation'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'member', 'public']],
