@@ -32,3 +32,8 @@
 **Vulnerability:** Found early returns checking buffer lengths (e.g., `providedBuffer.length !== expectedBuffer.length`) on webhook secrets and cron auth tokens before using `crypto.timingSafeEqual`.
 **Learning:** Returning early on length mismatch leaks the exact length of the expected secret.
 **Prevention:** Hash both the expected and provided secrets to a fixed length (e.g., using SHA-256) before passing them to `crypto.timingSafeEqual` to avoid leaking secret lengths while still safely catching any mismatch.
+
+## 2026-07-28 - React CSS/HTML Injection Vulnerability in Email Viewer
+**Vulnerability:** Used `dangerouslySetInnerHTML` to render captured dev email bodies in `checkin-app/src/app/dev/sent-mail/page.tsx`.
+**Learning:** `dangerouslySetInnerHTML` poses a significant XSS risk when rendering arbitrary HTML, even in developer-only tools. A malicious payload within a captured email could execute scripts in the context of the dev dashboard.
+**Prevention:** Replace `dangerouslySetInnerHTML` with a sandboxed `iframe` using the `srcDoc` attribute. For emails, `sandbox="allow-popups allow-popups-to-escape-sandbox"` provides a secure environment that prevents script execution while still allowing embedded links to be clicked safely.
