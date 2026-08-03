@@ -334,143 +334,13 @@ async function setInitialShopifyInventory(
     }
 }
 
-export async function createShopifyProgramVariants(name: string, orgMemberPriceCents: number | null, nonOrgMemberPriceCents: number | null, maxParticipants: number | null = null) {
-  // ENV GATE: LOCAL ONLY (shopifyMockActive() ⇔ CHECKIN_ENV=local). No real store,
-  // so synthesize the variant ids the real store would return — otherwise a paid
-  // program stores null variants and the checkout → webhook path can't match. Only
-  // priced tiers get a variant, exactly like the real (dev/prod) branch below. Ids
-  // need not be globally unique: the inbound handler resolves the program by id, then
-  // matches line-items against that program's own variant set. dev/prod fall through
-  // to the real Shopify Admin API call below.
-  if (config.shopifyMockActive()) {
-    const slug = name.replace(/\W+/g, "-").toLowerCase().slice(0, 24);
-    return {
-      shopifyProductId: `dev-mock-product-${slug}`,
-      shopifyOrgMemberVariantId: orgMemberPriceCents && orgMemberPriceCents > 0 ? `dev-mock-variant-member-${slug}` : null,
-      shopifyNonOrgMemberVariantId: nonOrgMemberPriceCents && nonOrgMemberPriceCents > 0 ? `dev-mock-variant-nonmember-${slug}` : null,
-    };
-  }
-
-  const storeDomain = config.shopifyStoreDomain();
-  const accessToken = await getAccessToken();
-
-  if (!storeDomain || !accessToken) {
-    console.warn("Shopify integration is disabled: Missing credentials or unable to obtain access token");
-    return null;
-  }
-
-  // Hoisted so the catch can name an orphaned product (created, but variants/DB failed) for manual cleanup.
-  let productId: string | number | null = null;
-
-  try {
-    // Determine product title
-    const productTitle = `${name} Program Enrollment`;
-
-    // Variants go INLINE in the product-create call. Creating the product bare
-    // makes Shopify mint a "Default Title" variant (price $0, requires_shipping
-    // true), which then collides with any follow-up POST /variants.json that
-    // doesn't set a distinct option1 (422 "The variant 'Default Title' already
-    // exists") AND leaves a physical $0 variant on the product so checkout asks
-    // for a shipping address. Inline variants replace the default entirely.
-    const variants = [];
-
-    if (orgMemberPriceCents !== null && orgMemberPriceCents > 0) {
-        variants.push({
-            option1: "Member",
-            price: (orgMemberPriceCents / 100).toFixed(2),
-            requires_shipping: false,
-            inventory_management: maxParticipants ? 'shopify' : null,
-            inventory_policy: maxParticipants ? 'deny' : 'continue',
-        });
-    }
-
-    if (nonOrgMemberPriceCents !== null && nonOrgMemberPriceCents > 0) {
-        variants.push({
-            option1: "Non-Member",
-            price: (nonOrgMemberPriceCents / 100).toFixed(2),
-            requires_shipping: false,
-            inventory_management: maxParticipants ? 'shopify' : null,
-            inventory_policy: maxParticipants ? 'deny' : 'continue',
-        });
-    }
-
-    const productRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/products.json`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': accessToken,
-      },
-      body: JSON.stringify({
-        product: {
-          title: productTitle,
-          status: 'active',
-          product_type: "Educational Services",
-          ...(variants.length > 0 ? { options: [{ name: "Membership Type" }], variants } : {}),
-        }
-      })
-    }, "Shopify create product");
-
-    if (!productRes.ok) {
-        const errorData = await productRes.text();
-        console.error(`[Shopify API Error] ${productRes.status} ${productRes.statusText}`, errorData);
-        throw new Error(`Shopify API responded with status: ${productRes.status}`);
-    }
-
-    const productData = await productRes.json();
-    productId = productData.product.id;
-
-    let memberVariantId: string | null = null;
-    let nonMemberVariantId: string | null = null;
-
-    for (const created of productData.product.variants ?? []) {
-        if (created.option1 === "Member") {
-            memberVariantId = created.id.toString();
-        } else if (created.option1 === "Non-Member") {
-            nonMemberVariantId = created.id.toString();
-        } else {
-            continue; // e.g. a default variant on the no-priced-tiers path — nothing to track
-        }
-
-        // Set inventory level if maxParticipants is configured
-        if (maxParticipants) {
-            await setInitialShopifyInventory(storeDomain, accessToken, created.inventory_item_id, maxParticipants, created.option1);
-        }
-    }
-
-    return {
-        shopifyProductId: productId!.toString(),
-        shopifyOrgMemberVariantId: memberVariantId,
-        shopifyNonOrgMemberVariantId: nonMemberVariantId
-    };
-
-  } catch (error) {
-    console.error("[Shopify Error] Failed to create product/variants:", error);
-    if (productId) {
-        console.error("[Shopify] Orphaned product after variant failure, manual cleanup needed:", productId);
-    }
-
-    await reportShopifyFailure(
-        "createShopifyProgramVariants",
-        error,
-        { program: name, orphanedProductId: productId ?? null },
-        `An error occurred in the Shopify integration while creating variants for program: <strong>${escapeHtml(name)}</strong>.`,
-    );
-
-    // We log it but do not crash the app. Admin will need to create variants manually.
-    return null;
-  }
-}
-
 /**
  * Single-pool model (product decision 2026-07-06): mints ONE Shopify variant
  * per program, priced at the base/non-member rate — inventory IS the whole
  * program capacity, not a per-tier pool. Members buy the same variant and get
  * a per-enrollee discount code at checkout (see {@link mintMemberDiscountCode})
- * instead of a separate variant/pool. This is the creation path for NEW
- * programs going forward; {@link createShopifyProgramVariants} above stays
- * only for programs already on the legacy two-variant model — sync-shopify's
- * repair route picks between the two based on whether a program already has a
- * legacy variant configured (expand-only transition; see prisma/schema.prisma).
+ * instead of a separate variant/pool. This is the creation path for every
+ * program — both POST /api/programs and sync-shopify's repair route.
  */
 export async function createShopifySingleVariantProgram(
     name: string,
@@ -479,7 +349,12 @@ export async function createShopifySingleVariantProgram(
 ): Promise<{ shopifyProductId: string; shopifyVariantId: string } | null> {
     if (!basePriceCents || basePriceCents <= 0) return null; // free program: no Shopify object needed
 
-    // See createShopifyProgramVariants above for why this branch exists (CHECKIN_ENV=local mock).
+    // ENV GATE: LOCAL ONLY (shopifyMockActive() ⇔ CHECKIN_ENV=local). No real store,
+    // so synthesize the variant id the real store would return — otherwise a paid
+    // program stores a null variant and the checkout → webhook path can't match. The
+    // id need not be globally unique: the inbound handler resolves the program by id,
+    // then matches line-items against that program's own variant. dev/prod fall
+    // through to the real Shopify Admin API call below.
     if (config.shopifyMockActive()) {
         const slug = name.replace(/\W+/g, "-").toLowerCase().slice(0, 24);
         return {
@@ -579,10 +454,8 @@ export async function createShopifySingleVariantProgram(
  * POST /api/finance-ops/payment-plans/refuse (refusal, +1) — approval performs
  * NO Shopify operation (the applicant already holds the seat since apply-time).
  *
- * Single-pool preference: when `shopifyVariantId` is set (the single-pool
- * model), it IS the program's whole capacity and is the only id adjusted —
- * the legacy pair is ignored even if stale values linger on the row. Legacy
- * (two-variant) programs fall through to the pre-existing both-pools behavior.
+ * `shopifyVariantId` IS the program's whole capacity (single pool), so it is the
+ * only id adjusted; a program without one has nothing to adjust and no-ops.
  *
  * RELATIVE (inventory_levels/adjust, `available_adjustment: delta`) is deliberate,
  * not absolute set: Shopify decrements `available` itself as seats sell, and an
@@ -591,29 +464,22 @@ export async function createShopifySingleVariantProgram(
  * Shopify already has without the app needing to know that number.
  *
  * The schema doesn't persist inventory_item_id (only the variant id), so it's
- * resolved here per call via GET .../variants/{id}.json — one extra round trip per
- * configured variant, acceptable for an admin/scholarship-triggered edit.
+ * resolved here per call via GET .../variants/{id}.json — one extra round trip,
+ * acceptable for an admin/scholarship-triggered edit.
  *
- * Never throws: mirrors createShopifyProgramVariants' failure handling (log +
- * admin email), returns false so the caller can surface a non-fatal warning.
+ * Never throws: logs + emails the admin via reportShopifyFailure and returns
+ * false, so the caller can surface a non-fatal warning.
  */
 export async function adjustProgramInventory(
-    program: {
-        shopifyVariantId?: string | null;
-        shopifyOrgMemberVariantId: string | null;
-        shopifyNonOrgMemberVariantId: string | null;
-    },
+    program: { shopifyVariantId?: string | null },
     delta: number,
 ): Promise<boolean> {
-    const variantIds = program.shopifyVariantId
-        ? [program.shopifyVariantId]
-        : [program.shopifyOrgMemberVariantId, program.shopifyNonOrgMemberVariantId].filter((id): id is string => !!id);
+    const variantId = program.shopifyVariantId;
+    if (!variantId) return true;
 
-    if (variantIds.length === 0) return true;
-
-    // See createShopifyProgramVariants for why this branch exists (CHECKIN_ENV=local mock).
+    // See createShopifySingleVariantProgram for why this branch exists (CHECKIN_ENV=local mock).
     if (config.shopifyMockActive()) {
-        console.log(`[SHOPIFY] (mock) Would adjust inventory by ${delta} for variants: ${variantIds.join(", ")}`);
+        console.log(`[SHOPIFY] (mock) Would adjust inventory by ${delta} for variant: ${variantId}`);
         return true;
     }
 
@@ -626,7 +492,7 @@ export async function adjustProgramInventory(
     }
 
     try {
-        // Store's primary location — same lookup pattern as createShopifyProgramVariants.
+        // Store's primary location — same lookup pattern as setInitialShopifyInventory.
         const locRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/locations.json`, {
             headers: { 'X-Shopify-Access-Token': accessToken },
         }, "Shopify get locations");
@@ -635,33 +501,31 @@ export async function adjustProgramInventory(
         const locationId = locData.locations?.[0]?.id;
         if (!locationId) throw new Error("Shopify store has no locations configured");
 
-        for (const variantId of variantIds) {
-            const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/variants/${variantId}.json`, {
-                headers: { 'X-Shopify-Access-Token': accessToken },
-            }, "Shopify get variant");
-            if (!variantRes.ok) throw new Error(`Shopify variant lookup failed for ${variantId}: ${variantRes.status}`);
-            const variantData = await variantRes.json();
-            const inventoryItemId = variantData.variant?.inventory_item_id;
-            if (!inventoryItemId) throw new Error(`Shopify variant ${variantId} has no inventory_item_id`);
+        const variantRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/variants/${variantId}.json`, {
+            headers: { 'X-Shopify-Access-Token': accessToken },
+        }, "Shopify get variant");
+        if (!variantRes.ok) throw new Error(`Shopify variant lookup failed for ${variantId}: ${variantRes.status}`);
+        const variantData = await variantRes.json();
+        const inventoryItemId = variantData.variant?.inventory_item_id;
+        if (!inventoryItemId) throw new Error(`Shopify variant ${variantId} has no inventory_item_id`);
 
-            const adjustRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/adjust.json`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Shopify-Access-Token': accessToken,
-                },
-                body: JSON.stringify({
-                    location_id: locationId,
-                    inventory_item_id: inventoryItemId,
-                    available_adjustment: delta,
-                }),
-            }, "Shopify adjust inventory");
-            if (!adjustRes.ok) {
-                throw new Error(`Shopify inventory adjust failed for variant ${variantId}: ${adjustRes.status} ${await adjustRes.text()}`);
-            }
-
-            console.log(`[SHOPIFY] Adjusted inventory for variant ${variantId} by ${delta} at location ${locationId}`);
+        const adjustRes = await shopifyFetch(`https://${storeDomain}/admin/api/${SHOPIFY_API_VERSION}/inventory_levels/adjust.json`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': accessToken,
+            },
+            body: JSON.stringify({
+                location_id: locationId,
+                inventory_item_id: inventoryItemId,
+                available_adjustment: delta,
+            }),
+        }, "Shopify adjust inventory");
+        if (!adjustRes.ok) {
+            throw new Error(`Shopify inventory adjust failed for variant ${variantId}: ${adjustRes.status} ${await adjustRes.text()}`);
         }
+
+        console.log(`[SHOPIFY] Adjusted inventory for variant ${variantId} by ${delta} at location ${locationId}`);
 
         return true;
     } catch (error) {
@@ -670,12 +534,7 @@ export async function adjustProgramInventory(
         await reportShopifyFailure(
             "adjustProgramInventory",
             error,
-            {
-                shopifyVariantId: program.shopifyVariantId ?? null,
-                shopifyOrgMemberVariantId: program.shopifyOrgMemberVariantId,
-                shopifyNonOrgMemberVariantId: program.shopifyNonOrgMemberVariantId,
-                delta,
-            },
+            { shopifyVariantId: variantId, delta },
             `Failed to adjust Shopify inventory (delta ${delta}) after a program capacity change.`,
         );
 
@@ -718,7 +577,7 @@ export async function mintMemberDiscountCode(
 
     const code = `PRG${programId}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
-    // See createShopifyProgramVariants above for why this branch exists (CHECKIN_ENV=local mock).
+    // See createShopifySingleVariantProgram for why this branch exists (CHECKIN_ENV=local mock).
     if (config.shopifyMockActive()) {
         console.log(`[SHOPIFY] (mock) Would mint discount code ${code} for program ${programId} (-$${(amountOffCents / 100).toFixed(2)})`);
         return code;

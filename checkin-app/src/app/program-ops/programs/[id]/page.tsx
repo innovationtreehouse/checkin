@@ -44,8 +44,7 @@ export type ProgramDetail = {
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
   shopifyProductId: string | null;
-  shopifyOrgMemberVariantId: string | null;
-  shopifyNonOrgMemberVariantId: string | null;
+  shopifyVariantId: string | null;
 };
 
 export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
@@ -81,8 +80,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   // Shopify identifiers, editable by sysadmin/board only (manual repair when
   // there's no live Shopify to sync against).
   const [shopifyProductIdInput, setShopifyProductIdInput] = useState("");
-  const [orgVariantInput, setOrgVariantInput] = useState("");
-  const [nonOrgVariantInput, setNonOrgVariantInput] = useState("");
+  const [variantInput, setVariantInput] = useState("");
 
   // EntityPicker owns the transient query/results/loading; we keep only the selected id + its display label.
   const [mentorSearch, setMentorSearch] = useState("");
@@ -115,8 +113,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setNonMemberPrice(data.nonOrgMemberPriceCents !== null ? String(data.nonOrgMemberPriceCents / 100) : "");
         setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
         setShopifyProductIdInput(data.shopifyProductId ?? "");
-        setOrgVariantInput(data.shopifyOrgMemberVariantId ?? "");
-        setNonOrgVariantInput(data.shopifyNonOrgMemberVariantId ?? "");
+        setVariantInput(data.shopifyVariantId ?? "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
         setMessage("Program not found.");
@@ -185,8 +182,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shopifyProductId: shopifyProductIdInput || null,
-          shopifyOrgMemberVariantId: orgVariantInput || null,
-          shopifyNonOrgMemberVariantId: nonOrgVariantInput || null,
+          shopifyVariantId: variantInput || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -333,14 +329,14 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                   <Card withBorder radius="md" padding="md">
                     <Text fw={500} mb={4}>Shopify Checkout Identifiers</Text>
                     <Text size="xs" c="dimmed" mb="sm">
-                      Admin/Board only. A priced tier needs its variant ID or paid enrollment can&apos;t check out.
+                      Admin/Board only. A priced program needs its variant ID or paid enrollment can&apos;t check out.
+                      One variant covers both tiers — member pricing is a discount code applied at checkout.
                       Set these manually here (e.g. local/testing where there is no live Shopify), or use “Sync to Shopify” above to create them.
                     </Text>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                      <TextInput label="Member Variant ID" value={orgVariantInput} onChange={e => setOrgVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456789" />
-                      <TextInput label="Non-Member Variant ID" value={nonOrgVariantInput} onChange={e => setNonOrgVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456790" />
+                      <TextInput label="Variant ID" value={variantInput} onChange={e => setVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456789" />
+                      <TextInput label="Product ID (optional)" value={shopifyProductIdInput} onChange={e => setShopifyProductIdInput(e.currentTarget.value)} placeholder="e.g. 80123456789" />
                     </SimpleGrid>
-                    <TextInput mt="sm" label="Product ID (optional)" value={shopifyProductIdInput} onChange={e => setShopifyProductIdInput(e.currentTarget.value)} placeholder="e.g. 80123456789" />
                     <Group mt="sm">
                       <Button type="button" variant="light" size="xs" loading={syncing} onClick={handleSaveShopifyIds}>
                         Save Shopify IDs

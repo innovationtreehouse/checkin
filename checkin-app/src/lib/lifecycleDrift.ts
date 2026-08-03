@@ -120,13 +120,7 @@ async function healEnrollmentI1(): Promise<number> {
             programId: true,
             personId: true,
             inventoryHeldAt: true,
-            program: {
-                select: {
-                    shopifyVariantId: true,
-                    shopifyOrgMemberVariantId: true,
-                    shopifyNonOrgMemberVariantId: true,
-                },
-            },
+            program: { select: { shopifyVariantId: true } },
         },
     });
 

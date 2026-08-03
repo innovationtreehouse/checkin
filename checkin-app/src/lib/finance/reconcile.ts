@@ -139,14 +139,10 @@ export function isPaid(o: Pick<MirrorOrder, "financialStatus" | "cancelledAt" | 
  */
 export function membershipVariantIdSet(settings: {
     orgMembershipVariantId: string | null;
-    shopifyNormalVariantId: string | null;
-    shopifyVolunteerVariantId: string | null;
 } | null): Set<string> {
     return new Set(
         [
             settings?.orgMembershipVariantId,
-            settings?.shopifyNormalVariantId,
-            settings?.shopifyVolunteerVariantId,
             config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
         ].filter((v): v is string => !!v),
     );
@@ -260,7 +256,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
 
     // Membership-item gate, parity with the orders/paid webhook: recover only if the
     // order actually CONTAINS a membership product (its variant id), the same
-    // {orgMembership, normal, volunteer} variant set the webhook builds — mirrored
+    // membershipVariantIdSet the webhook builds — mirrored
     // onto order lines since #1048. A variant id is stable and can't drift; the old
     // total-price gate false-raised AMOUNT_MISMATCH on every couponed order (volunteer
     // rate, promo), whose sub-dues total is indistinguishable from an underpayment by
@@ -269,8 +265,6 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         where: { id: 1 },
         select: {
             orgMembershipVariantId: true,
-            shopifyNormalVariantId: true,
-            shopifyVolunteerVariantId: true,
             normalDuesCents: true,
             volunteerDuesCents: true,
             volunteerDiscountCode: true,
@@ -403,10 +397,8 @@ async function activateProgramFromOrder(order: MirrorOrder, programId: number, p
         // program recovery has no amount gate, so it never had the coupon false-positive
         // the membership path did, and widening it to a variant check is deferred (the
         // membership fix was the scoped concern). So hasProgramItem stays true here: the
-        // order is matched to THIS program's pending enrollments. Tier unknown → no
-        // legacy sibling-inventory mirror.
+        // order is matched to THIS program's pending enrollments.
         hasProgramItem: true,
-        purchasedOrgMember: null,
     });
     logger.info(`[reconcile] recovered program payment: program ${programId} ← order ${order.legacyId} (${res.activatedCount} activated)`);
     return true;

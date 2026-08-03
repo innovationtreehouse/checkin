@@ -35,8 +35,6 @@ const PUBLIC_PROGRAM_SELECT = {
     orgMemberPriceCents: true,
     nonOrgMemberPriceCents: true,
     shopifyProductId: true,
-    shopifyOrgMemberVariantId: true,
-    shopifyNonOrgMemberVariantId: true,
     shopifyVariantId: true,
 } as const;
 
@@ -199,11 +197,9 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
 
         // Single-pool model (product decision 2026-07-06): ONE Shopify variant,
-        // priced at the base/non-member rate — replaces the two-variant model for
-        // NEW program creation going forward (legacy programs keep working via
-        // the columns createShopifyProgramVariants still writes; see
-        // sync-shopify's repair route). ponytail: falls back to the member price
-        // only when no non-member price is set (e.g. a members-only-priced
+        // priced at the base/non-member rate; member pricing is a checkout-time
+        // discount code, not a second variant. ponytail: falls back to the member
+        // price only when no non-member price is set (e.g. a members-only-priced
         // program with no listed non-member tier) — normally sells at the
         // non-member/base rate per the design.
         const basePriceCents = nmPrice ?? mPrice ?? null;
