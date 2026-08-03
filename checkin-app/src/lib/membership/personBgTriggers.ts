@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 import { nextBoundary } from "@/lib/membership/renewal";
-import { LIVE_PERSON } from "@/lib/person/filters";
+import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
 
 /**
  * Triggers that OPEN a per-person background-check obligation (PERSON_BG process,
@@ -14,15 +14,6 @@ import { LIVE_PERSON } from "@/lib/person/filters";
  */
 
 const SYSTEM_ACTOR = 0;
-
-/** Person is attached to at least one program in any of the three roles. */
-const PROGRAM_ATTACHED_WHERE = {
-    OR: [
-        { programParticipants: { some: {} } },
-        { programVolunteers: { some: {} } },
-        { programsLed: { some: {} } },
-    ],
-};
 
 /**
  * Open one PERSON_BG obligation for `personId`, evaluated as of `asOf` (the annual
