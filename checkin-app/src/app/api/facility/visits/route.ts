@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
-import type { Visit } from "@/generated/prisma/client";
+import type { Prisma, Visit } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
+import { findAssociatedEventAt } from "@/lib/attendanceTransitions";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -24,6 +26,82 @@ export const GET = withAuth(
             return NextResponse.json({ visits });
         } catch (error) {
             logger.error("Fetch visits error:", error);
+            return apiError("Internal Server Error", 500);
+        }
+    }
+);
+
+// Staff insert-for-others at an arbitrary past time (design §3): the path for a
+// genuine unenrolled walk-in, which the event-roster mark (program-scoped, event
+// window) and the kiosk (live, badge-driven) cannot record. Unlike the
+// self-service route the target personId IS taken from the body — that is the
+// point of the endpoint — so the role gate is the whole boundary.
+export const POST = withAuth(
+    { roles: ['isSysadmin', 'isBoardMember'] },
+    async (req, auth) => {
+        try {
+            const { personId, arrivedAt, departedAt } = await req.json();
+
+            if (!personId) return apiError("personId is required.", 400);
+            if (!arrivedAt) return apiError("Arrival time is required", 400);
+            // Closed visits only. An open one would put someone on the live
+            // in-the-building roster on staff say-so, and leave an open visit
+            // nobody will badge out of; the kiosk owns live presence.
+            if (!departedAt) return apiError("Departure time is required.", 400);
+
+            const now = new Date();
+            const ar = parseVisitTime(arrivedAt, "arrival", now);
+            if (!ar.ok) return apiError(ar.error, 400);
+            const dr = parseVisitTime(departedAt, "departure", now);
+            if (!dr.ok) return apiError(dr.error, 400);
+            if (!departureAfterArrival(ar.value, dr.value)) {
+                return apiError("Departure time must be after arrival time", 400);
+            }
+            if (!withinMaxDuration(ar.value, dr.value)) {
+                return apiError("A visit cannot be longer than 24 hours.", 400);
+            }
+
+            const subjectId = Number(personId);
+            const person = await prisma.person.findFirst({
+                where: { id: subjectId, ...LIVE_PERSON },
+                select: { id: true },
+            });
+            if (!person) return apiError("Person not found.", 404);
+
+            const eventId = await findAssociatedEventAt(subjectId, ar.value);
+
+            // Same per-person advisory lock as every other visit write, so this
+            // insert can't race the kiosk or the facility-close sweep.
+            const visit = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${subjectId})`;
+                return tx.visit.create({
+                    data: {
+                        personId: subjectId,
+                        arrivedAt: ar.value,
+                        departedAt: dr.value,
+                        arrivedVia: "WEB",
+                        departedVia: "WEB",
+                        associatedEventId: eventId,
+                    },
+                });
+            });
+
+            if (auth.type === 'session') {
+                await prisma.auditLog.create({
+                    data: {
+                        actorId: auth.user.id,
+                        action: "CREATE",
+                        tableName: "Visit",
+                        affectedEntityId: visit.id,
+                        secondaryAffectedEntity: subjectId,
+                        newData: { arrivedAt: ar.value, departedAt: dr.value, type: "staff_entry" },
+                    },
+                });
+            }
+
+            return NextResponse.json({ visit }, { status: 201 });
+        } catch (error) {
+            logger.error("Create visit error:", error);
             return apiError("Internal Server Error", 500);
         }
     }
@@ -97,7 +175,9 @@ export const PATCH = withAuth(
             if ('error' in result) return apiError(result.error, result.status);
             const updatedVisit = result.visit;
 
-            // Log the manual edit in the audit trail
+            // Log the manual edit in the audit trail. secondaryAffectedEntity =
+            // the visit's person, so a correction review can tell self from
+            // acting-for-another by comparison alone (design §6.6).
             if (auth.type === 'session') {
                 await prisma.auditLog.create({
                     data: {
@@ -105,6 +185,8 @@ export const PATCH = withAuth(
                         action: "EDIT",
                         tableName: "Visit",
                         affectedEntityId: visitId,
+                        secondaryAffectedEntity: existing.personId,
+                        oldData: JSON.parse(JSON.stringify(existing)),
                         newData: JSON.parse(JSON.stringify(updatedVisit)),
                     },
                 });
@@ -162,6 +244,7 @@ export const DELETE = withAuth(
                         action: "DELETE",
                         tableName: "Visit",
                         affectedEntityId: visitId,
+                        secondaryAffectedEntity: removed.personId,
                         oldData: JSON.parse(JSON.stringify(removed)),
                     },
                 });
