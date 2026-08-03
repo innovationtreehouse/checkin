@@ -114,7 +114,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('contract + consent advance to PENDING_PAYMENT (not BG review) — payment unblocked', async () => {
-        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         expect(await statusOf(processId)).toBe('PENDING_EXTERNAL_ACTION'); // consent still missing
         await markBgConsent(processId, revA);
@@ -156,7 +156,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('reject after payment → BLOCKED, membership stays inactive', async () => {
-        const { processId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
         await certifyPaymentPlan(processId, revA); // paid → PENDING_BG_CLEARANCE
@@ -415,7 +415,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('a stray payment for a process not awaiting payment is ignored (no state corruption)', async () => {
-        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION'); // no checkout link exists for this phase
+        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION'); // no checkout link exists for this phase
         await activate(processId, { via: 'payment', shopifyOrderId: 'stray' });
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');

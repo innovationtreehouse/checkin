@@ -56,6 +56,11 @@ import { Pool } from "pg";
 import { loginAs, api } from "./helpers";
 
 type State = { process: { id: number; status: string } | null; membershipStatus: string | null };
+// The reviewer queue, narrowed to what this test needs: the household leads a
+// reviewer picks from when naming whose background check they reviewed.
+type ReviewQueue = {
+    queue: { id: number; orgMembership: { household: { householdMembers: { id: number }[] } | null } | null }[];
+};
 
 // payment.ts › sendCongrats — the one and only activation email, in its INITIAL
 // wording (this journey activates a brand-new membership; a RENEWAL is thanked for
@@ -147,11 +152,22 @@ describe("flow: membership post-payment activation fan-out", () => {
         const afterExternal = await api<State>(applicant, "/api/membership");
         expect(afterExternal.json.process?.status).toBe("PENDING_PAYMENT");
 
-        // Two DISTINCT reviewers approve the background check. Second approval clears it;
-        // unpaid, so it stays at PENDING_PAYMENT (bgClearedAt now set) — payment will activate.
-        const a1 = await api(board, "/api/membership/reviews", { method: "POST", body: JSON.stringify({ processId, result: "APPROVE" }) });
+        // A check is recorded against a NAMED adult, so a reviewer must say whose report
+        // they read. The queue GET is where a real reviewer gets those ids, so read them
+        // the same way rather than reaching into the DB.
+        const queue = await api<ReviewQueue>(board, "/api/membership/reviews");
+        expect(queue.status).toBe(200);
+        const queued = queue.json.queue.find((q) => q.id === processId);
+        expect(queued).toBeDefined();
+        const subjectPersonIds = (queued!.orgMembership?.household?.householdMembers ?? []).map((p) => p.id);
+        expect(subjectPersonIds.length).toBeGreaterThan(0);
+
+        // Two DISTINCT reviewers approve the background check, both naming the same adult(s).
+        // The second approval on a named adult clears it; unpaid, so it stays at
+        // PENDING_PAYMENT (bgClearedAt now set) — payment will activate.
+        const a1 = await api(board, "/api/membership/reviews", { method: "POST", body: JSON.stringify({ processId, result: "APPROVE", subjectPersonIds }) });
         expect(a1.status).toBe(200);
-        const a2 = await api(reviewer2, "/api/membership/reviews", { method: "POST", body: JSON.stringify({ processId, result: "APPROVE" }) });
+        const a2 = await api(reviewer2, "/api/membership/reviews", { method: "POST", body: JSON.stringify({ processId, result: "APPROVE", subjectPersonIds }) });
         expect(a2.status).toBe(200);
 
         const afterBg = await api<State>(applicant, "/api/membership");

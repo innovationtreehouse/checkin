@@ -115,7 +115,7 @@ describe('attest() concurrency', () => {
     });
 
     it('a REJECT audit carries the rejecting reviewer\'s id, not another reviewer\'s', async () => {
-        const { processId, leadId } = await makePendingProcess();
+        const { processId } = await makePendingProcess();
         // revB rejects; revA never touches this process.
         await attest(revB, processId, { result: 'REJECT' });
 
