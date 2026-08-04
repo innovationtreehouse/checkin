@@ -64,11 +64,11 @@ export default async function DevSentMailPage() {
                                 <span>{new Date(email.createdAt).toLocaleString()}</span>
                             </div>
                             <div style={{ fontWeight: 600, margin: "0.4rem 0 0.75rem" }}>{email.subject}</div>
-                            <div
-                                style={{ border: "1px solid rgba(0,0,0,0.08)", borderRadius: 6, padding: "0.75rem", background: "#fff", color: "#111" }}
-                                // Dev-only rendering of our own captured template HTML so embedded links/tokens
-                                // are clickable. Never runs in prod (page 404s); content is what we ourselves sent.
-                                dangerouslySetInnerHTML={{ __html: email.html }}
+                            <iframe
+                                title={`Email subject: ${email.subject}`}
+                                sandbox="allow-popups allow-popups-to-escape-sandbox"
+                                srcDoc={email.html}
+                                style={{ border: "1px solid rgba(0,0,0,0.08)", borderRadius: 6, padding: "0.75rem", background: "#fff", color: "#111", width: "100%", minHeight: "200px" }}
                             />
                         </li>
                     ))}
