@@ -9,6 +9,14 @@ import { calculateAge, formatDateTime } from '@/lib/time';
 import { formatPhone } from '@/lib/phone';
 import type { ProgramDetail, ParticipantOption } from './page';
 
+// Roster mutation routes answer with these advisory fields. A non-JSON body
+// (session-expiry HTML redirect, proxy error page) must not throw and skip the
+// roster refetch, so parse failures degrade to an empty object.
+type ApiFeedback = { notice?: string; warning?: string; error?: string };
+async function readJson(res: Response): Promise<ApiFeedback> {
+  try { return await res.json(); } catch { return {}; }
+}
+
 type ProgramRosterTabProps = {
   programId: string;
   program: Pick<ProgramDetail, 'volunteers' | 'participants' | 'startAt' | 'minAge' | 'maxAge'>;
@@ -36,16 +44,16 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
   // Roster mutations must never fail silently: a rejected remove (403 from a
   // caller who isn't this program's lead, a 400, a 500) is otherwise
   // indistinguishable from a successful one — the row just stays put.
-  const mutate = async (path: string, init: RequestInit): Promise<boolean> => {
+  const mutate = async (path: string, init: RequestInit): Promise<ApiFeedback | null> => {
     try {
       const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...init });
-      if (res.ok) return true;
-      const data = await res.json().catch(() => ({}));
+      const data = await readJson(res);
+      if (res.ok) return data;
       notifications.show({ color: 'red', message: data.error || `Request failed (${res.status}).`, autoClose: 6000 });
     } catch {
       notifications.show({ color: 'red', message: 'Network error — please try again.', autoClose: 6000 });
     }
-    return false;
+    return null;
   };
 
   // Volunteer + participant pickers both search this program's eligible members.
@@ -116,9 +124,12 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId: parseInt(newPartId), override: true })
       });
-      if (res.ok) { setNewPartId(""); setPartLabel(""); fetchProgram(); }
+      const data = await readJson(res);
+      if (res.ok) {
+        if (data.warning) notifications.show({ color: 'yellow', message: data.warning, autoClose: false });
+        setNewPartId(""); setPartLabel(""); fetchProgram();
+      }
       else {
-        const data = await res.json();
         if (res.status === 409) {
           // Race: benign double-submit / stale view — already enrolled.
           notifications.show({ color: "red", message: data.error || "Participant is already enrolled in this program.", autoClose: 4000 });
@@ -143,8 +154,12 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
     closeConfirmRemovePart();
     const participantId = pendingRemovePartId;
     setPendingRemovePartId(null);
-    const ok = await mutate(`/api/programs/${programId}/participants`, { method: 'DELETE', body: JSON.stringify({ participantId }) });
-    if (ok) fetchProgram();
+    const data = await mutate(`/api/programs/${programId}/participants`, { method: 'DELETE', body: JSON.stringify({ participantId }) });
+    if (data) {
+      if (data.notice) notifications.show({ color: 'blue', message: data.notice, autoClose: false });
+      if (data.warning) notifications.show({ color: 'yellow', message: data.warning, autoClose: false });
+      fetchProgram();
+    }
   };
 
   return (

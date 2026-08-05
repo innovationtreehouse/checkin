@@ -779,7 +779,11 @@ describe('Program Participants API Integration Tests', () => {
                     createParams(shopifyProgram.id) as unknown as never,
                 );
                 expect(res.status).toBe(200);
-                expect((await res.json()).warning).toBeUndefined();
+                const withdrawData = await res.json();
+                expect(withdrawData.warning).toBeUndefined();
+                // Scholarship release path already fires +1 (released:true); it is
+                // NOT the manual-restock notice case.
+                expect(withdrawData.notice).toBeUndefined();
                 expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1 for variant: dev-mock-variant-withdraw-partic'));
 
                 const row = await prisma.programParticipant.findUnique({
@@ -808,6 +812,108 @@ describe('Program Participants API Integration Tests', () => {
                 process.env.CHECKIN_ENV = prevCheckinEnv;
                 await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
                 await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        // Removing an ACTIVE seat frees the room but does NOT auto-restock
+        // Shopify (paid/comped seats are only put back on sale by a human). The
+        // route returns an advisory `notice` and fires NO +1 — the staffer
+        // decides whether to restock.
+        it('advises (notice) on ACTIVE removal from a capped Shopify program, and does NOT +1', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local'; // arms the adjustProgramInventory mock (logs the delta)
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const shopifyProgram = await prisma.program.create({
+                data: { name: 'Notice Shopify Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, shopifyVariantId: 'dev-mock-variant-notice-partic' },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: shopifyProgram.id, personId: commonId, status: 'ACTIVE' },
+                });
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } }); // self-removal
+
+                const res = await DELETE(
+                    new Request(`http://localhost:4000/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'DELETE',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: commonId }),
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(shopifyProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.notice).toMatch(/NOT put back on sale automatically/i);
+                expect(data.warning).toBeUndefined();
+                // Freed seat is NOT auto-restocked: no positive-delta Shopify call.
+                expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1'));
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        // A PENDING non-scholarship row never took a seat, so removing it frees
+        // nothing and carries no notice.
+        it('does NOT advise (no notice) when removing a PENDING participant with no hold', async () => {
+            const shopifyProgram = await prisma.program.create({
+                data: { name: 'Notice Pending Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, shopifyVariantId: 'dev-mock-variant-notice-pending' },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: shopifyProgram.id, personId: commonId, status: 'PENDING' },
+                });
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } }); // self-removal
+
+                const res = await DELETE(
+                    new Request(`http://localhost:4000/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'DELETE',
+                        body: JSON.stringify({ participantId: commonId }),
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(shopifyProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.notice).toBeUndefined();
+            } finally {
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        // Uncapped programs track no inventory (inventory_management=null), so an
+        // ACTIVE removal there frees no tracked seat — no notice, no Shopify call.
+        it('does NOT advise (no notice) on ACTIVE removal from an UNCAPPED program', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const uncappedProgram = await prisma.program.create({
+                data: { name: 'Notice Uncapped Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: null, shopifyVariantId: 'dev-mock-variant-notice-uncapped' },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: uncappedProgram.id, personId: commonId, status: 'ACTIVE' },
+                });
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } }); // self-removal
+
+                const res = await DELETE(
+                    new Request(`http://localhost:4000/api/programs/${uncappedProgram.id}/participants`, {
+                        method: 'DELETE',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: commonId }),
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(uncappedProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.notice).toBeUndefined();
+                expect(logSpy).not.toHaveBeenCalled();
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: uncappedProgram.id } });
+                await prisma.program.delete({ where: { id: uncappedProgram.id } });
             }
         });
     });

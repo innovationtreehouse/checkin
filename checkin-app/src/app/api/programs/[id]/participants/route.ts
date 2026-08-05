@@ -284,6 +284,13 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         if (released && !shopifyOk) {
             responseObj.warning = "Participant removed, but the Shopify inventory release failed. Capacity may be out of sync — check System Status > Link Status.";
         }
+
+        // Advise a manual Shopify restock only when an ACTIVE removal freed a
+        // tracked seat; `released` already handles the PENDING hold path (+1).
+        const hasShopifyVariant = !!(currentProgram.shopifyVariantId || currentProgram.shopifyOrgMemberVariantId || currentProgram.shopifyNonOrgMemberVariantId);
+        if (!released && enrollment.status === 'ACTIVE' && currentProgram.maxParticipants !== null && hasShopifyVariant) {
+            responseObj.notice = "Seat freed. This enrollment held a seat in Shopify; it was NOT put back on sale automatically. If you want it available for a paying family, add +1 to this program's inventory in Shopify.";
+        }
         return NextResponse.json(responseObj);
     } catch (error) {
         // P2025 = row to delete not found. Benign double-submit (participant
