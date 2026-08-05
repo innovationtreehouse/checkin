@@ -406,17 +406,19 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
-    it("shows an override prompt when enrollment requires admin override, then force-enrolls", async () => {
+    // This picker only ever lists the caller's own household, so every enrollment
+    // started here is conflicted and the server refuses the limit override even for
+    // a sysadmin. Offering Force Enroll would be a button that always re-fails —
+    // the refusal reason is shown instead, and the request never carries `override`.
+    it("offers no force-enroll on a requiresOverride refusal — shows the reason instead", async () => {
         setSession({ id: 5, isSysadmin: true });
+        const bodies: string[] = [];
         global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
             const url = typeof input === "string" ? input : input.toString();
             if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
             if (url.includes("/api/programs/10/participants")) {
-                const body = init?.body ? JSON.parse(init.body as string) : {};
-                if (!body.override) {
-                    return { ok: false, status: 403, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
-                }
-                return { ok: true, status: 200, json: async () => ({}) } as Response;
+                bodies.push(String(init?.body ?? ""));
+                return { ok: false, status: 400, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
             }
             if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ minAge: null, maxAge: null, leadMentorId: 5 }) } as Response;
             return { ok: false, status: 404, json: async () => ({}) } as Response;
@@ -428,39 +430,10 @@ describe("ProgramEnrollmentPage", () => {
         await selectMember("Kid One");
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
 
-        expect(await screen.findByText("Warning: Enrollment rules not met.")).toBeInTheDocument();
-        expect(screen.getByText("Too young for this program.")).toBeInTheDocument();
-
-        fireEvent.click(screen.getByRole("button", { name: "Force Enroll (Override)" }));
-        await waitFor(() => expect(screen.queryByText("Warning: Enrollment rules not met.")).not.toBeInTheDocument());
-        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" }));
-    });
-
-    it("disables the override button once the selection is emptied", async () => {
-        setSession({ id: 5, isSysadmin: true });
-        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
-            if (url.includes("/api/programs/10/participants")) {
-                return { ok: false, status: 403, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
-            }
-            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ minAge: null, maxAge: null, leadMentorId: 5 }) } as Response;
-            return { ok: false, status: 404, json: async () => ({}) } as Response;
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        await selectMember("Kid One");
-        fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        await screen.findByText("Warning: Enrollment rules not met.");
-
-        // The checkbox group stays live while the override alert is up, so
-        // unchecking must disable the override too — handleEnroll returns on an
-        // empty selection, and a live button would do nothing with no feedback.
-        expect(screen.getByRole("button", { name: "Force Enroll (Override)" })).toBeEnabled();
-        fireEvent.click(screen.getByLabelText("Kid One"));
-        expect(screen.getByRole("button", { name: "Force Enroll (Override)" })).toBeDisabled();
+        expect(await screen.findByText("Too young for this program.")).toBeInTheDocument();
+        expect(screen.queryByText("Warning: Enrollment rules not met.")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Force Enroll (Override)" })).not.toBeInTheDocument();
+        expect(bodies.every(b => !JSON.parse(b).override)).toBe(true);
     });
 
     it("shows a network-error message when enrollment throws", async () => {

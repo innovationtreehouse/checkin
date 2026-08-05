@@ -25,6 +25,8 @@ describe('Program Participants API Integration Tests', () => {
     let otherId: number;
     let boardId: number;   // board member who leads a household
     let depId: number;     // dependent (25yo) in the board member's household
+    let boardNonLeadId: number; // board member in that household who is NOT its lead
+    let dep2Id: number;    // second dependent (25yo) in the same household
     let memberId: number;  // person in a household with an ACTIVE OrgMembership
     let memberHouseholdId: number;
 
@@ -117,6 +119,23 @@ describe('Program Participants API Integration Tests', () => {
             data: { isHouseholdLead: true }
         });
 
+        // Same household, board flag, but NOT the lead — the case `isHouseholdLead`
+        // alone misses. Plus a second dependent so this actor has an own-household
+        // target that no other test has already enrolled.
+        const boardNonLead = await prisma.person.create({
+            data: { email: 'board-nonlead-partic-api-test@example.com', name: 'Board Non-Lead', householdId: boardHousehold.id }
+        });
+        boardNonLeadId = boardNonLead.id;
+        const dependent2 = await prisma.person.create({
+            data: {
+                email: 'dep2-partic-api-test@example.com',
+                name: 'Board Dependent Two',
+                dateOfBirth: new Date(Date.now() - (25 * 31556952000)),
+                householdId: boardHousehold.id
+            }
+        });
+        dep2Id = dependent2.id;
+
         // Create mock programs
         const standardProgram = await prisma.program.create({
             data: { name: 'Standard Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, orgMemberPriceCents: 1000, nonOrgMemberPriceCents: 1500 }
@@ -170,7 +189,7 @@ describe('Program Participants API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId, memberId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId, boardNonLeadId, dep2Id, memberId].filter(id => id !== undefined);
         const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId, memberOnlyProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
@@ -305,13 +324,37 @@ describe('Program Participants API Integration Tests', () => {
         });
 
         // INTENT LOCK: a board/isSysadmin override DELIBERATELY overfills a program
-        // past maxParticipants. The override is a confirmed action (the route first
-        // returns requiresOverride:true) and is meant to bypass every soft limit —
-        // closed enrollment, age, AND capacity. This 200 is correct, not a bug.
-        // The non-override path still cannot overbook (see the 400 test above and
-        // programsParticipantsConcurrency.integration.test.ts). Do not "fix" the
-        // capacity bypass at route.ts enforceLimits to make this fail.
-        it('should allow an admin override to enroll into a FULL program (deliberate overfill)', async () => {
+        // past maxParticipants FOR SOMEONE ELSE. The override is a confirmed action
+        // (the route first returns requiresOverride:true) and is meant to bypass
+        // every soft limit — closed enrollment, age, AND capacity. This 200 is
+        // correct, not a bug. The non-override path still cannot overbook (see the
+        // 400 test above and programsParticipantsConcurrency.integration.test.ts),
+        // and a conflicted actor cannot bypass at all (see the two tests below).
+        // Do not "fix" the capacity bypass at route.ts enforceLimits to make this
+        // fail — narrow it only to the conflicted case.
+        it('should allow an admin override to enroll a non-household person into a FULL program (deliberate overfill)', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: commonId, override: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.success).toBe(true);
+             expect(data.enrollment.status).toBe('ACTIVE'); // override → confirmed comp
+
+             // Program is now intentionally over its cap of 1.
+             const enrolled = await prisma.programParticipant.count({ where: { programId: fullProgramId } });
+             expect(enrolled).toBe(2);
+        });
+
+        // Conflict of interest: the override is a one-actor decision, so it cannot
+        // be spent on the actor's own seat. A sysadmin self-enrolling into a FULL
+        // program falls through to the ordinary enforced-limits path.
+        it('should NOT let a sysadmin override the capacity limit for their OWN enrollment', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
              const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
@@ -319,15 +362,38 @@ describe('Program Participants API Integration Tests', () => {
                  body: JSON.stringify({ participantId: adminId, override: true })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
-             expect(res.status).toBe(200);
+             expect(res.status).toBe(400);
 
              const data = await res.json();
-             expect(data.success).toBe(true);
-             expect(data.enrollment.status).toBe('ACTIVE'); // override → confirmed/paid bypass
+             expect(data.error).toMatch(/maximum capacity/);
+             expect(data.requiresOverride).toBe(true);
 
-             // Program is now intentionally over its cap of 1.
-             const enrolled = await prisma.programParticipant.count({ where: { programId: fullProgramId } });
-             expect(enrolled).toBe(2);
+             const row = await prisma.programParticipant.findUnique({
+                 where: { programId_personId: { programId: fullProgramId, personId: adminId } },
+             });
+             expect(row).toBeNull();
+        });
+
+        // Same rule one step out: own household is the actor's own interest too.
+        it('should NOT let a board member override the age limit for their OWN household member', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
+
+             // depId is 25 — outside the exact-age program's [18, 21] band.
+             const req = new Request(`http://localhost:4000/api/programs/${exactAgeProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: depId, override: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(exactAgeProgramId) as unknown as never);
+             expect(res.status).toBe(400);
+
+             const data = await res.json();
+             expect(data.error).toMatch(/maximum age is 21/);
+             expect(data.requiresOverride).toBe(true);
+
+             const row = await prisma.programParticipant.findUnique({
+                 where: { programId_personId: { programId: exactAgeProgramId, personId: depId } },
+             });
+             expect(row).toBeNull();
         });
 
         // A board member is also a parent. Enrolling their own dependent through
@@ -347,6 +413,24 @@ describe('Program Participants API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.enrollment.status).toBe('PENDING'); // pays like any parent
+        });
+
+        // "Own household" for the comp is shared-household, not lead-of-household:
+        // a board member who is an ordinary (non-lead) member of the household pays
+        // for their own household member too, and cannot buy the comp with an
+        // override.
+        it('should make a NON-LEAD board household member PAY (PENDING) for their own household member', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardNonLeadId, isBoardMember: true } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${standardProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: dep2Id, override: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(standardProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.enrollment.status).toBe('PENDING'); // not a comp
         });
 
         // The comp still belongs to genuine admin action: a board member

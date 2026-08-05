@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { checkProgramAge } from "@/lib/programAge";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { isDuesSettled } from "@/lib/orgMembership";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { apiError } from "@/lib/api-response";
@@ -63,28 +64,37 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         const override = body.override === true;
 
+        // Conflict of interest: an override and a comp are both one-actor
+        // decisions, so neither may be spent on yourself or your own household.
+        // Self is its own leg — an actor with no household is not caught by the
+        // household comparison, but is still enrolling themselves. This is the
+        // route's single notion of "own household"; `isHouseholdLead` above
+        // answers a different question (may you act for this person at all).
+        const isConflicted = isSelfEnrollment
+            || await hasHouseholdConflict(prisma, currentUserId, participantData?.householdId);
+
         // A board/isSysadmin enrolling someone OUTSIDE their own household (the
         // program-ops surface) is a real admin comp: it skips payment. A board
         // member enrolling their own self/dependent through the public program
-        // page is just a parent — they pay like anyone else. Without this, a
-        // board parent got a confusing "bypasses all payment / Force Enroll"
-        // prompt and a free enrollment instead of a Shopify checkout.
-        const isExternalAdmin = isSysAdminOrBoard && !isSelfEnrollment && !isHouseholdLead;
+        // page is just a parent — they pay like anyone else, whether or not they
+        // happen to be the household's lead.
+        const isExternalAdmin = isSysAdminOrBoard && !isConflicted;
 
         if (isExternalAdmin && !override) {
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
         // ponytail: a confirmed board/isSysadmin override INTENTIONALLY bypasses
-        // every soft limit — closed enrollment, age, AND capacity — so the board
-        // can deliberately overfill a program. This is intent, not a missing
-        // guard: see the requiresOverride:true responses the UI turns into a
-        // confirm button. Normal users always hit enforceLimits=true and cannot
-        // overbook (capacity is locked under FOR UPDATE in the tx below; tested in
+        // every soft limit — closed enrollment, members-only, age, AND capacity —
+        // for OTHERS, so the board can deliberately overfill a program. This is
+        // intent, not a missing guard: see the requiresOverride:true responses the
+        // UI turns into a confirm button. Normal users, and any conflicted actor,
+        // always hit enforceLimits=true and cannot overbook (capacity is locked
+        // under FOR UPDATE in the tx below; tested in
         // programsParticipantsConcurrency.integration.test.ts and the FULL-program
         // override test in programsParticipantsAPI.integration.test.ts). Do not
-        // narrow this so it also gates normal users.
-        const enforceLimits = !override || (!isSysAdminOrBoard);
+        // narrow this so it also gates the non-conflicted admin path.
+        const enforceLimits = !override || !isSysAdminOrBoard || isConflicted;
 
         // Validation Checks
         if (enforceLimits) {
