@@ -53,3 +53,32 @@ The failure is silent by construction. Forgetting produces no error, no failed
 test and no wrong-looking code — just a row that should not have been there,
 counted, rendered, or accepted as proof of who someone is. It is found when
 someone notices the number is wrong, which is not a mechanism.
+
+---
+
+## We name the role, not the vendor
+
+- **A rule that governs agents says "agent", never a product name.** More than
+  one works in this repo: `AGENTS.md` is the shared contract, and `CLAUDE.md`,
+  `GEMINI.md` and `.jules/sentinel.md` carry what is specific to each. A
+  convention written against one product binds that product alone — every other
+  agent is exempt from it while appearing to be covered.
+
+- **Where an artifact records which agent produced it, the agent supplies its
+  own name.** The rule fixes the field, not the answer. "Ends with a line naming
+  the agent" is a rule; "ends with `Posted by <product>`" is that product's
+  configuration written into everyone's rulebook.
+
+- **Product-specific detail belongs in that product's own instruction file** —
+  where a reader already looks for it, and where it can be deleted along with
+  the tool.
+
+This does not reach *records* of work already done. A comment that says which
+agent wrote it is a fact about that comment and stays true; the convention
+governs the rule, not the audit trail it produced.
+
+The failure is a rule that looks universal and is not. It reads as satisfied,
+because the named product does obey it and reviewers watch it obey — while the
+same work done by any other agent is silently unbound. It surfaces when the
+lineup changes, and the convention turns out to have described a vendor rather
+than a practice.
