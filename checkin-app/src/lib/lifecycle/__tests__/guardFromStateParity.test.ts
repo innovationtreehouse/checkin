@@ -11,6 +11,7 @@ import {
     TRANSITIONS as MEMB_TX,
     ALL_STATUSES as MEMB_STATES,
     fromWhere as membFromWhere,
+    personBgOpen,
     type ProcessStatus,
 } from '../../membership/lifecycle';
 
@@ -120,11 +121,15 @@ describe('CAS guard ↔ TRANSITIONS from-state parity (#1080)', () => {
         }
     });
 
-    it('the personBg idempotency guard is left literal, and its states are valid', () => {
-        const src = read('lib/membership/personBgTriggers.ts');
-        // still a raw {in:[…]} literal (NOT fromWhere) — documented as an existence set
-        expect(/status:\s*\{\s*in:\s*\[\s*"PENDING_BG_REVIEW",\s*"BLOCKED"\s*\]/.test(src)).toBe(true);
-        expect(src).not.toMatch(/fromWhere\(/);
-        for (const s of ['PENDING_BG_REVIEW', 'BLOCKED']) expect(MEMB_STATES).toContain(s);
+    it('the personBg existence set lives in the definition, and both consumers spread it', () => {
+        // An existence set, not a from-state (the PERSON_BG edge is ∅→PENDING_BG_REVIEW),
+        // so it is a StateSet rather than fromWhere — and both sites read the SAME one:
+        // the create-idempotency guard and the merge's duplicate resolution.
+        for (const file of ['lib/membership/personBgTriggers.ts', 'app/api/membership-ops/participants/merge/route.ts']) {
+            expect({ file, spreads: /\.\.\.personBgOpen\.where/.test(read(file)) }).toEqual({ file, spreads: true });
+        }
+        expect(read('lib/membership/personBgTriggers.ts')).not.toMatch(/fromWhere\(/);
+        expect([...personBgOpen.statuses].sort()).toEqual(['BLOCKED', 'PENDING_BG_REVIEW']);
+        for (const s of personBgOpen.statuses) expect(MEMB_STATES).toContain(s);
     });
 });

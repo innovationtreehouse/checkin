@@ -101,6 +101,21 @@ export const IN_FLIGHT_RENEWAL: readonly ProcessStatus[] = [
     "RENEWAL_PENDING_BG",
 ];
 
+/**
+ * A PERSON_BG obligation still outstanding for its subject: awaiting review, or
+ * BLOCKED (a manual follow-up the board owns, never auto-reopened). NOT a
+ * transition from-state — the PERSON_BG entry edge is ∅→PENDING_BG_REVIEW — so it
+ * stays an existence set rather than going through `fromWhere`.
+ *
+ * ONE definition because two sites must agree on it: `openPersonBg`'s
+ * create-idempotency guard, and the person merge's duplicate resolution. If they
+ * disagreed, a status the merge didn't count as open would let a survivor end up
+ * owing two concurrent 2-of-N reviews.
+ */
+export const personBgOpen = defineStateSet<Where>()({
+    statuses: ["PENDING_BG_REVIEW", "BLOCKED"],
+});
+
 // ── awaiting BG review (fix #1) ────────────────────────────────────────────────
 // Encodes review.ts:75 / AWAITING_BG_WHERE:97 EXACTLY, from one source. Not a
 // single defineStateSet: it's an OR of two sub-rules, both requiring

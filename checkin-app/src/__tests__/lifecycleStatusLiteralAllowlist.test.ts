@@ -105,8 +105,8 @@ function isDefinitionModule(rel: string): boolean {
  * is why files like facility/trends, renewal-status, notifications, payment.ts, and
  * orgMembership.ts (all single-status reads) are absent; likewise single-status CAS guards
  * (activateEnrollment PENDING→ACTIVE, archive ARCHIVED→target) and sets spelled with a
- * canonical constant (renewal's `{ in: [...IN_FLIGHT_RENEWAL] }`, which carries no bare
- * literal and cannot drift).
+ * canonical constant (renewal's `{ in: [...IN_FLIGHT_RENEWAL] }` and the PERSON_BG
+ * existence set's `...personBgOpen.where`, which carry no bare literal and cannot drift).
  */
 const ALLOWLIST: Record<string, string> = {
     // ── CAS transition guards now source their from-state status from the definition (#1080) ──
@@ -117,12 +117,6 @@ const ALLOWLIST: Record<string, string> = {
     // parity test (guardFromStateParity.test.ts) is what keeps them honest now. (renewal's
     // beginRenewalForUser read is a LONE single-status literal, which the sharpened scanner no
     // longer flags either, so it isn't listed.)
-
-    // Not a transition from-state: the PERSON_BG edge is ∅→PENDING_BG_REVIEW (no from-row).
-    // An idempotency EXISTENCE SET (already open/blocked → skip), broader than any one
-    // from-state, so it stays a literal set rather than misrepresent it via fromWhere.
-    'lib/membership/personBgTriggers.ts':
-        'PERSON_BG create idempotency existence set: where status in {PENDING_BG_REVIEW,BLOCKED}.',
 
     // ── invariant-driven reconciler (Phase 4) ──
     'lib/lifecycleDrift.ts':
