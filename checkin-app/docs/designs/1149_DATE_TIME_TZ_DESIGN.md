@@ -9,9 +9,9 @@ design covers the whole class and stands on its own. Tracked by
 [#1346](https://github.com/innovationtreehouse/checkin/issues/1346).
 
 **Status:** design of record, partially implemented — Finding 2 and the step-1
-helpers shipped in #1366; the rest is tracked by #1346. No schema or migration
-has changed, and the [storage decision](#open-decision-calendar-date-storage-model)
-is still open. **Date:** 2026-07-24.
+helpers shipped in #1366; Finding 12 (the calendar-date storage model) shipped as
+**Model B**, every semantic calendar date now `@db.Date`. The rest is tracked by
+#1346. **Date:** 2026-07-24 (storage decision recorded 2026-08-05).
 
 ## The defect class (recap)
 
@@ -38,9 +38,9 @@ designs the fix):
    The hardcoded client zone silently disagrees with the configured org zone the
    moment a non-Central region deploys — the TODO already flagged atop `time.ts`.
 
-Every semantic calendar-date field in `schema.prisma` is a `DateTime` (a
-timestamped instant), never `@db.Date` — the schema doesn't encode the
-instant/date distinction, so it can't enforce it. See Finding 12 and
+Every semantic calendar-date field in `schema.prisma` *was* a `DateTime` (a
+timestamped instant), so the schema didn't encode the instant/date distinction
+and couldn't enforce it. All six are now `@db.Date` — see Finding 12 and
 [the storage decision](#open-decision-calendar-date-storage-model).
 
 ---
@@ -248,7 +248,7 @@ same midnight-UTC DOBs that display one day early (Findings 4-5) and can trip th
 age gate (Finding 7). Bulk import means many rows at once.
 **Direction:** fold into the Finding-1 convention decision.
 
-### 12. Semantic calendar-dates modeled as `DateTime`, not `@db.Date` — LATENT (structural root)
+### 12. Semantic calendar-dates modeled as `DateTime`, not `@db.Date` — SHIPPED
 
 **Category:** 7 · **Severity:** latent (root enabler of the whole class)
 
@@ -260,12 +260,25 @@ wall-clock, so each writer/reader must independently agree on a tz — and they
 don't (Findings 1-6). A `@db.Date` column stores a pure calendar date with no
 time/zone, which would make the entire off-by-one class structurally impossible.
 
-**Direction:** this is the schema half of the [Architecture](#architecture-the-tz-root).
-Whether these columns become `@db.Date` (schema-enforced calendar dates) or stay
-`DateTime`-by-convention is the [OPEN storage decision](#open-decision-calendar-date-storage-model)
-— left to the group, evaluated on its own merits (no pre-rejection from a
-display-only lens). Note `@db.Date` alone never fixes display (Prisma still reads
-UTC-midnight) — the read layer is designed separately.
+**Shipped — Model B, all six columns.** Each is now `@db.Date`, one migration per
+column so a partial rollback stays possible:
+`BoardSettings.orgMembershipYearBoundary`, `Program.startAt`, `Program.endAt`,
+`OrgMembership.memberSince`, `Person.lastBackgroundCheck`, `Person.dateOfBirth`
+(last — most writers, and the exact-match consumer). Every migration is
+`ALTER COLUMN … TYPE date USING ("col"::date)`, which self-backfills: each row
+keeps its own calendar day. `Event.startAt`/`endAt` stay `DateTime` — they are
+genuine instants, not calendar dates.
+
+The one *functional* win lands on DOB: import dedup (`where: { dateOfBirth: parsedDob }`)
+is exact-match, so a noon-stored DOB used to miss a midnight probe and create a
+duplicate Person. Verified against a live Postgres — all three stored conventions
+(midnight/noon/late) collapse to one `date`, and an exact-match probe that
+previously matched 1 of 4 rows now matches 4 of 4.
+
+`@db.Date` alone still never fixes *display* — Prisma reads a `date` back as a
+UTC-midnight `Date`, so `formatDateOnly` (step 1/2) remains required. B *adds to*
+the read layer, it does not replace it. See the
+[storage decision](#open-decision-calendar-date-storage-model).
 
 ---
 
@@ -317,7 +330,7 @@ dictates storage + read + age handling:
 | Kind | Meaning | Store | Render | Examples |
 |---|---|---|---|---|
 | **Instant** | a moment on the timeline | `DateTime` (timestamptz, UTC) | in the **resolved org display tz** | `Visit.arrivedAt/departedAt`, `Event.startAt/endAt`, all audit `*At`, `expires`, `pendingSince`, `paidAt`, `announcedAt` |
-| **Calendar date** | a day, no time, no zone | `date` **or** `DateTime`-at-UTC-midnight (the [open decision](#open-decision-calendar-date-storage-model)) | **UTC-pinned** (zone-independent); age via `getUTC*` | `dateOfBirth`, `lastBackgroundCheck`, `Program.startAt/endAt`, `OrgMembership.memberSince`, `orgMembershipYearBoundary` |
+| **Calendar date** | a day, no time, no zone | `date` (`@db.Date` — [Model B, decided](#open-decision-calendar-date-storage-model)) | **UTC-pinned** (zone-independent); age via `getUTC*` | `dateOfBirth`, `lastBackgroundCheck`, `Program.startAt/endAt`, `OrgMembership.memberSince`, `orgMembershipYearBoundary` |
 | **Wall-clock time-of-day** | "15:00" entered for an event | composed with a date into an **instant** via `fromZonedTime(org tz)` | via the instant it produces | event start/end *time* (events/route.ts — already correct) |
 
 Today `formatDate` applies a wall-clock zone (`America/Chicago`) to **both**
@@ -412,13 +425,17 @@ per-field decision inputs:
 | `Person.lastBackgroundCheck` | Consistency-only. Single writer; `bgValidUntilBoundary` (renewal.ts:75-83) already truncates to a UTC day (a no-op under `@db.Date`). |
 | `BoardSettings.orgMembershipYearBoundary` | Consistency-only. All consumers already UTC (`nextBoundary` `getUTC*`, display `timeZone:'UTC'`). |
 
-> **DECISION OWED (group):** Model A, Model B, or hybrid — and if hybrid, which
-> columns. The trade is **schema honesty / bug-un-reintroducibility** (B) vs
-> **minimal migration on live data** (A). This design does **not** pre-pick; the
-> minimize-migration and schema-honesty weights are both legitimate. Whatever is
-> chosen, the read/write/age/tz-source layer (Sequencing steps 1-6) is the same.
+> **DECIDED — Model B, in full (not hybrid).** Everything semantically a calendar
+> date becomes a Postgres `date`; all six columns, no exceptions. The point is
+> that the **schema** enforces the classification, so a future `new Date(str)` +
+> `formatDate` cannot reintroduce the off-by-one class findings 1-6 are made of.
+> "Consistency-only, no functional win" (the right-hand column above) is
+> therefore **not** grounds to leave a column behind — that column reads as an
+> argument about which migration is most *urgent*, not about which classification
+> is *true*. The read/write/age/tz-source layer (Sequencing steps 1-6) is
+> unchanged either way. Shipped: see [Finding 12](#12-semantic-calendar-dates-modeled-as-datetime-not-dbdate--shipped).
 
-**`@db.Date` mechanics, if Model B or hybrid is chosen:** migration is
+**`@db.Date` mechanics (this is what shipped):** migration is
 `ALTER COLUMN … TYPE date USING (col::date)` — a direct date-part cast that
 preserves each row's calendar day, self-backfilling. **Do NOT write
 `USING (col AT TIME ZONE 'UTC')::date`:** these columns are `timestamp(3)` *without*
@@ -465,19 +482,17 @@ user sees and makes the class un-reintroducible:**
    F10 (facility/trends) — `Visit`/aggregate **instants**, compute in UTC or the
    org tz. Not calendar-date candidates.
 
-**Gated on the storage decision:**
+**The storage decision — SHIPPED:**
 
-7. Apply the chosen storage model. **Model A:** step 3 makes new rows consistent;
-   also close the DOB dedup gap for *existing* mixed rows with a same-UTC-day
-   **range query** at import/preview:256 + import:242. **Model B / hybrid:**
-   migrate the chosen columns to `@db.Date` (self-backfilling, per mechanics
-   above); `parseDateOnly` for those becomes "hand off the calendar date, DB
-   truncates," and the dedup gap closes by construction.
+7. **Model B applied to all six calendar-date columns** (self-backfilling, per the
+   mechanics above). `parseDateOnly` for those is now "hand off the calendar date,
+   the DB truncates," and the DOB dedup gap at import/preview:256 + import:242
+   closes by construction — no range query needed.
 
 ---
 
 *Date/time/timezone design of record. The program-date display fix (reported as
 issue #1149) is one slice absorbed into this design, shipped in #1366 along with
-the step-1 helpers. Schema and migrations are unchanged pending the storage
-decision; remaining work is tracked by
+the step-1 helpers. The storage decision is settled (Model B) and the six
+`@db.Date` migrations have shipped; remaining work is tracked by
 [#1346](https://github.com/innovationtreehouse/checkin/issues/1346).*

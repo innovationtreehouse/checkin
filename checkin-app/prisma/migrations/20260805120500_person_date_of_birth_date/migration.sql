@@ -1,0 +1,13 @@
+-- Person.dateOfBirth is a calendar date, not an instant — the strongest case in
+-- the set. Writers disagreed on midnight-vs-noon UTC (F1), and import dedup
+-- (`where: { dateOfBirth: parsedDob }`, import/preview/route.ts + import/route.ts)
+-- is an exact-match consumer, so a noon-stored DOB missed a midnight probe and
+-- created a duplicate Person. `date` collapses every convention at the DB, which
+-- closes that dedup gap by construction.
+--
+-- `col::date`, never `(col AT TIME ZONE 'UTC')::date` — this is a timestamp
+-- WITHOUT time zone, so AT TIME ZONE would resolve the cast in the connection's
+-- TimeZone and shift every row back a day west of UTC. On DOB that is a wrong
+-- birthday and a wrong age gate. Plain ::date keeps each row's own calendar day
+-- and self-backfills.
+ALTER TABLE "Person" ALTER COLUMN "dateOfBirth" TYPE date USING ("dateOfBirth"::date);

@@ -81,7 +81,7 @@ model Person {
   /// (self/household/board + explicit per-program grants), while 'pii' is the
   /// contact-identity band (email/phone) that program leads etc. may hold.
   /// @sensitivity:personal
-  dateOfBirth          DateTime?
+  dateOfBirth          DateTime? @db.Date
   /// Set when a lead marks a member as 25+ without recording a DoB, so the
   /// member shows as "Adult" instead of "Age Unavailable". @sensitivity:internal
   isDeclaredAdult      Boolean   @default(false)
@@ -90,7 +90,7 @@ model Person {
   /// @sensitivity:internal
   waiverSignedBy       Int?
   /// @sensitivity:internal
-  lastBackgroundCheck  DateTime?
+  lastBackgroundCheck  DateTime? @db.Date
   /// Set when Resend reports a bounce/complaint for this person's address
   /// (webhooks/resend); cleared on a later `email.delivered` for the same
   /// address (self-healing). Role/audit metadata about deliverability, not the
@@ -406,7 +406,7 @@ model OrgMembership {
   /// @sensitivity:public
   id          Int                 @id @default(autoincrement())
   /// @sensitivity:public
-  memberSince DateTime            @default(now())
+  memberSince DateTime            @default(now()) @db.Date
   /// @sensitivity:public
   status      OrgMembershipStatus @default(NONE)
   /// @sensitivity:public
@@ -525,7 +525,7 @@ model BoardSettings {
   /// @sensitivity:public
   volunteerDuesCents         Int       @default(0)
   /// @sensitivity:public
-  orgMembershipYearBoundary  DateTime?
+  orgMembershipYearBoundary  DateTime? @db.Date
   /// Shopify variant ID of the membership product everyone checks out through.
   /// The "Pay with Shopify" link is built from it SERVER-SIDE (ensurePaymentLink
   /// in lib/membership/payment.ts) as
@@ -839,9 +839,9 @@ model Program {
   leadMentorId                   Int?
   leadMentor                     Person?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
-  startAt                        DateTime?
+  startAt                        DateTime? @db.Date
   /// @sensitivity:public
-  endAt                          DateTime?
+  endAt                          DateTime? @db.Date
   /// @sensitivity:public
   phase                          ProgramPhase     @default(PLANNING)
   /// @sensitivity:public
