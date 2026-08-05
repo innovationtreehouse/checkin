@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Badge, Card, Center, Checkbox, Group, Stack, Table, Text, Title } from "@mantine/core";
+import Link from "next/link";
+import { Alert, Anchor, Badge, Card, Center, Checkbox, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { calculateAge, formatDateOnly } from "@/lib/time";
 import { memberYearStarts } from "@/lib/programYear";
@@ -92,6 +93,18 @@ export default function TurningEighteenPage() {
           &ldquo;next&rdquo; column ages in on that boundary. Read-only.
         </Text>
       </Card>
+
+      <Alert color="blue" variant="light" title="Why this differs from the agreement lists">
+        <Text size="sm">
+          This roster judges age <b>as of the member-year start</b>, because that is the cohort
+          the board plans the year around. The individual-agreement lists on{" "}
+          <Anchor component={Link} href="/membership-audit/compliance">Compliance</Anchor> judge
+          age <b>as of today</b>, because an agreement is opened the day someone turns 18 — a
+          minor cannot be bound by their own signature. Both are right for their own purpose, so
+          the two will not match: anyone with a birthday between today and the next member-year
+          start appears there but not here.
+        </Text>
+      </Alert>
 
       <Checkbox
         label="Hide those not in a program"
