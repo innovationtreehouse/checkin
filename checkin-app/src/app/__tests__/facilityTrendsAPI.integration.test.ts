@@ -15,6 +15,8 @@
 import { GET } from '@/app/api/facility/trends/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { getAppSettings } from '@/lib/appSettings';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -37,16 +39,28 @@ describe('Facility trends API', () => {
     // into the month, so the whole seed lands in a single calendar-month bucket no matter
     // when the suite runs. The route buckets on arrivedAt only, so departures that spill
     // past midnight into the next month are fine.
-    const NOW = new Date();
-    const monthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-    const ANCHOR = new Date(Math.max(NOW.getTime(), monthStart(NOW).getTime() + 60 * 60 * 1000));
-    // The bucket the assertions inspect, keyed the way the route keys it (local month start).
-    const BUCKET_START = monthStart(ANCHOR);
+    //
+    // The month the anchor sits in is the ORG timezone's, since that is what the route
+    // buckets against — resolved in beforeAll because the zone comes from AppSettings.
+    let ANCHOR: Date;
+    // The bucket the assertions inspect, keyed the way the route keys it (org-zone month start).
+    let BUCKET_START: Date;
     const arrival = (minutesBefore: number) => new Date(ANCHOR.getTime() - minutesBefore * 60 * 1000);
     const departure = (minutesBefore: number, hours: number) =>
         new Date(arrival(minutesBefore).getTime() + hours * 60 * 60 * 1000);
 
     beforeAll(async () => {
+        const { timezone } = await getAppSettings();
+        const monthStart = (d: Date) => {
+            const z = toZonedTime(d, timezone);
+            z.setDate(1);
+            z.setHours(0, 0, 0, 0);
+            return fromZonedTime(z, timezone);
+        };
+        const NOW = new Date();
+        ANCHOR = new Date(Math.max(NOW.getTime(), monthStart(NOW).getTime() + 60 * 60 * 1000));
+        BUCKET_START = monthStart(ANCHOR);
+
         const admin = await prisma.person.create({
             data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         });

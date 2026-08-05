@@ -7,14 +7,13 @@
  * carries the server's DST offset into the bounds — the window edge lands an
  * hour off, clipping visits at the boundary.
  *
- * Runs with the process timezone forced to America/Chicago; the assertions are
+ * Runs with the process timezone pinned to America/Chicago; the assertions are
  * exact UTC instants, so they fail against the local-field implementation.
  */
 
-process.env.TZ = "America/Chicago";
-
 import { getServerSession } from "next-auth/next";
 import prisma from "@/lib/prisma";
+import { pinTimezone } from "@/test-helpers/tz";
 import { GET as profileVisitsGET } from "@/app/api/profile/visits/route";
 import { GET as householdVisitsGET } from "@/app/api/household/visits/route";
 
@@ -56,6 +55,9 @@ describe.each([
     ["GET /api/profile/visits", profileVisitsGET as unknown as (req: Request) => Promise<unknown>],
     ["GET /api/household/visits", householdVisitsGET as unknown as (req: Request) => Promise<unknown>],
 ])("%s — ±7-day window is UTC", (_name, route) => {
+    pinTimezone();
+
+
     // 2026-03-04 parses to 2026-03-04T00:00:00Z = Mar 3 18:00 in Chicago, so the
     // local day-of-month (3) differs from the UTC one (4). The +7 edge crosses the
     // 2026-03-08 DST start, where local-field arithmetic yields 2026-03-10T23:00Z.

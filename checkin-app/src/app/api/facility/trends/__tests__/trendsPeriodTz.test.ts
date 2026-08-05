@@ -6,16 +6,15 @@
  * `toLocaleDateString` carrying no zone, so both followed the SERVER's timezone
  * instead of the org timezone every other server-side date path honors.
  *
- * The process timezone is forced to America/Chicago and the org timezone is
+ * The process timezone is pinned to America/Chicago and the org timezone is
  * America/New_York, so a visit in the first hour of a period in the org zone is
  * still the previous period in the server zone — the bucket and its label both
  * fail against the local-field implementation.
  */
 
-process.env.TZ = "America/Chicago";
-
 import { getServerSession } from "next-auth/next";
 import prisma from "@/lib/prisma";
+import { pinTimezone } from "@/test-helpers/tz";
 import { GET } from "@/app/api/facility/trends/route";
 import type { TrendBucket } from "@/app/api/facility/trends/route";
 
@@ -68,6 +67,9 @@ async function bucketFor(arrivedAtIso: string, period: string): Promise<TrendBuc
 }
 
 describe("GET /api/facility/trends — buckets and labels use the org timezone", () => {
+    pinTimezone();
+
+
     // 2026-03-01T05:30Z = Mar 1 00:30 in New York, but Feb 28 23:30 in Chicago.
     it("buckets a first-of-month visit into the org zone's month", async () => {
         const bucket = await bucketFor("2026-03-01T05:30:00.000Z", "month");
