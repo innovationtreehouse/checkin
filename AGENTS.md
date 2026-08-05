@@ -157,6 +157,7 @@ Read these before changing the relevant area — start here, then follow links.
 **Project-wide**
 - `README.md` — what the app is + Quick Start; OS setup: `docs/setup/SETUP_LINUX.md`, `docs/setup/SETUP_MACOS.md`.
 - `CONSTITUTION.md` — project principles//ground rules.
+- `docs/WRITING_STANDARD.md` — how agents write: docs prose, PR/issue bodies, review comments, session replies. Voice only; the Comments section above still governs code comments.
 - `GEMINI.md`, `.jules/sentinel.md` — instructions for other agents (Gemini, Jules); keep cross-consistent with this file.
 - `TRADEMARKS.md` — naming/brand constraints.
 
