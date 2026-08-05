@@ -4,6 +4,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { formatPhone } from "@/lib/phone";
+import { formatDateOnly } from "@/lib/time";
 import { PageLoader } from "@/components/ui/PageLoader";
 
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
@@ -174,9 +175,7 @@ export default function CompliancePage() {
               {h.reasons.includes("STALE_BG") && (
                 <Text size="sm" c="dimmed" mb="xs">
                   Last background check:{" "}
-                  {h.lastBackgroundCheck
-                    ? new Date(h.lastBackgroundCheck).toLocaleDateString()
-                    : "Never"}
+                  {h.lastBackgroundCheck ? formatDateOnly(h.lastBackgroundCheck) : "Never"}
                 </Text>
               )}
               <Text size="sm" c="dimmed" mb="xs">Household Leads:</Text>
