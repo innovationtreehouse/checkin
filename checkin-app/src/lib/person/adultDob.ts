@@ -1,4 +1,4 @@
-import { calculateAge } from "@/lib/time";
+import { calculateAge, parseDateOnly } from "@/lib/time";
 import { MAX_PROGRAM_AGE } from "@/lib/programAge";
 
 /**
@@ -20,12 +20,17 @@ import { MAX_PROGRAM_AGE } from "@/lib/programAge";
  * Route EVERY interactive path that persists Person.dateOfBirth through this. The
  * nightly cron + the #1165 backfill migration are the safety net for rows that
  * slip past (e.g. bulk import); this is the write-time guard so it can't creep back.
+ *
+ * A DoB is a calendar date, so a date string is parsed through `parseDateOnly` —
+ * this is the choke-point that owns the UTC-midnight storage convention for
+ * interactive writes. Callers pass a bare "yyyy-MM-dd", never a timed string.
+ * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
  */
 export function normalizeAdultDob(
   dob: Date | string | null | undefined,
 ): { dateOfBirth: Date | null; isDeclaredAdult?: boolean } {
   if (dob === null || dob === undefined || dob === "") return { dateOfBirth: null };
-  const d = new Date(dob);
+  const d = typeof dob === "string" ? parseDateOnly(dob)! : dob;
   if (calculateAge(d) > MAX_PROGRAM_AGE) return { dateOfBirth: null, isDeclaredAdult: true };
   return { dateOfBirth: d, isDeclaredAdult: false };
 }

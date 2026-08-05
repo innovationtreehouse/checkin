@@ -28,6 +28,16 @@ describe("normalizeAdultDob", () => {
     expect(normalizeAdultDob(yearsAgo(40))).toEqual({ dateOfBirth: null, isDeclaredAdult: true });
   });
 
+  // F1: this is the choke-point that owns the calendar-date storage convention
+  // for interactive DoB writes. One convention, or the same person's stored DoB
+  // shifts by a calendar day depending on which form last touched it — and a
+  // non-midnight DoB silently fails SQL age filters cut at UTC midnight (#1447).
+  it("stores a date-only string at UTC midnight", () => {
+    const teenBirthYear = new Date().getUTCFullYear() - 14;
+    expect(normalizeAdultDob(`${teenBirthYear}-05-04`).dateOfBirth!.toISOString())
+      .toBe(`${teenBirthYear}-05-04T00:00:00.000Z`);
+  });
+
   // The 26th-birthday boundary decides a persisted DoB strip, so a UTC-midnight
   // DoB read through local calendar fields would destroy the date a day early.
   describe("26th-birthday boundary west of UTC", () => {

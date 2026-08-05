@@ -292,6 +292,39 @@ describe('saveIntake', () => {
         });
     });
 
+    // Intake used to write DoB with a bare `new Date`, bypassing the #1165 guard
+    // that every other interactive path funnels through: signup could persist an
+    // exact DoB for a 26+ person, with only the nightly cron as the net.
+    it('strips a 26+ DoB at signup and declares the person an adult', async () => {
+        prisma.person.create.mockResolvedValue({ id: 55 });
+
+        await saveIntake(1, {
+            primaryParent: { dob: '1985-04-01' },
+            secondaryParent: { name: 'New Parent', dob: '1980-02-02' },
+        });
+
+        expect(prisma.person.update).toHaveBeenCalledWith({
+            where: { id: 1 },
+            data: { dateOfBirth: null, isDeclaredAdult: true },
+        });
+        expect(prisma.person.create).toHaveBeenCalledWith({
+            data: { householdId: 7, name: 'New Parent', dateOfBirth: null, isDeclaredAdult: true, allergies: null },
+        });
+    });
+
+    // F1: one calendar-date convention across every DoB writer. A DoB stored at
+    // any other time of day fails SQL age filters cut at UTC midnight (#1447).
+    it('stores a kept DoB at UTC midnight', async () => {
+        const childBirthYear = new Date().getUTCFullYear() - 12;
+
+        await saveIntake(1, { children: [{ id: 4, dob: `${childBirthYear}-05-04` }] });
+
+        expect(prisma.person.update).toHaveBeenCalledWith({
+            where: { id: 4 },
+            data: { dateOfBirth: new Date(`${childBirthYear}-05-04T00:00:00.000Z`), isDeclaredAdult: false },
+        });
+    });
+
     it('secondary parent already a household member → update + addLeadOrRecord', async () => {
         await saveIntake(1, { secondaryParent: { id: 4, name: 'Existing Parent' } });
 

@@ -70,10 +70,13 @@ edit form (noon UTC), the *stored value shifts forward by a calendar day* and
 the display "corrects itself." Same person, same field, two different stored
 dates depending on which UI last touched it.
 
-**Direction:** pick ONE convention for `dateOfBirth` and use it at every writer.
-Cheapest: standardize on noon-UTC (the existing safe outlier) so display is
-tz-robust without touching every reader; OR standardize on midnight-UTC and read
-with `formatDateOnly` everywhere. Do not leave both.
+**Resolved — UTC midnight at every writer.** Step 2 made every calendar-date
+reader UTC-pinned through `formatDateOnly`, which settles the noon-vs-midnight
+fork in favour of midnight: `parseDateOnly` is the write-side seam and
+`normalizeAdultDob` routes through it, the `+"T12:00:00Z"` at
+household/member:59 is gone, and `intake.ts` + `importDob.ts` (Finding 11) now
+funnel through the same convention. Rows written at noon UTC before that are
+**not** backfilled — that is step 7's, alongside the storage decision.
 
 ### 2. Program `startAt`/`endAt` off-by-one — BUG (CONFIRMED; reported as #1149) — SHIPPED (#1366)
 
