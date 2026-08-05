@@ -60,6 +60,38 @@ defineRoute({
     ],
 });
 
+// Staff insert of a past visit for ANOTHER person (AT3, #1254) — the walk-in
+// neither the kiosk (live only, personId from the badge) nor the event roster
+// mark (program-scoped, event window) can record. Unlike the self-service
+// routes above, the target personId comes from the REQUEST BODY, so the role
+// gate is the entire subject boundary — there is no 'their_own' leg to fall
+// back on and no scope resolver in play. Sysadmin and board only: the same set
+// the sibling GET/PATCH/DELETE on /api/facility/visits carry and the same set
+// facility-ops/visits gates the page on, which must stay equal (their drifting
+// apart was AT13/#1259). Widening to isOperations is an open decision, #1476.
+//
+// Its own endpoint rather than a POST on /api/facility/visits: adding a verb to
+// an existing legacy route file cannot satisfy this registry's own lints in any
+// PR ordering — registry-first trips `orphan-registry` (the file exports no such
+// verb yet), route-first trips `new-route-old-authz`, and shipping both together
+// trips boundary isolation. A new path has no route file, which is exactly the
+// register-first state `orphan-registry` warns for. See #1491.
+//
+// The response echoes the single Visit just created, so everyones:internal
+// covers the tombstone columns the model carries (deletedAt/deletedById — both
+// null on a fresh row, declared rather than accidentally stripped).
+defineRoute({
+    endpoint: 'POST /api/facility/visits/insert',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'visit',
+    // Bag: { Visit }.
+    returns: ['Visit'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
