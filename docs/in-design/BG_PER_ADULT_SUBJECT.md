@@ -651,8 +651,8 @@ per-subject eligibility means nothing for a reviewer to do.
    [Deliberate departure](#deliberate-departure-the-dashboard-gains-an-action). Worth recording that
    the "first mutation on that page" framing was already stale: `Record external check & submit`
    (`POST /api/membership-audit/person-bg`) was there before this.
-4. **Supplier affirmation stays out of scope.** The appendix lists it as unresolved with no code and
-   no backlog context; nothing here scopes it.
+4. **Supplier affirmation is not a real slice.** Owner-confirmed 2026-08-02: the supplier is PDF-only
+   with no API, so there is nothing to affirm programmatically. Dropped, not deferred.
 
 ### Still open — board process, not code
 
@@ -681,7 +681,7 @@ plainly, no closing keyword. The other former slices, none of them dependencies:
 | consent link/email | [#961](https://github.com/innovationtreehouse/checkin/issues/961) 18+ student nudges — PERSON_BG has no in-app consent orchestration; the only path is the board's manual `submitPersonBgForReview` → `markBgConsent` (`personBgSubmit.ts:14`) |
 | self-attest widening | [#1452](https://github.com/innovationtreehouse/checkin/issues/1452) (SA17) — self-attest must accept a bare PERSON_BG obligation; blocks #961 |
 | enforcement/grace blocking | SA18 — warn-only is by design (`backlog/CUJS.md:235`), board-gated by SA5. Explicitly **not** proposed here |
-| supplier affirmation | unresolved — no code, no backlog context beyond the INDEX line; needs clarification before anyone scopes it |
+| supplier affirmation | **not a real slice** (owner-confirmed 2026-08-02) — the background-check supplier is PDF-only with no API, so there is nothing to programmatically affirm. The term propagated undefined from an early deferred list. Dropped, not deferred |
 
 **Resolves a flagged backlog TODO.** `docs/backlog/INDEX.md:303` retired SA2 warning *"⚠ likely also
 moots SA1's 'blanket-stamp→per-adult migration' sub-part — verify when SA1 is scoped."* Verified
