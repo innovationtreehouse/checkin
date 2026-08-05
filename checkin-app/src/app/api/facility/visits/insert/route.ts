@@ -20,7 +20,12 @@ export const POST = withAuth(
     { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
-            const { personId, arrivedAt, departedAt } = await req.json();
+            // A missing or malformed body is a client mistake, not a server
+            // fault: 400 it rather than letting req.json() throw into the 500
+            // path (which also logs, turning a bad request into error noise).
+            const body = await req.json().catch(() => null);
+            if (!body || typeof body !== "object") return apiError("Invalid JSON", 400);
+            const { personId, arrivedAt, departedAt } = body;
 
             if (!personId) return apiError("personId is required.", 400);
             if (!arrivedAt) return apiError("Arrival time is required", 400);

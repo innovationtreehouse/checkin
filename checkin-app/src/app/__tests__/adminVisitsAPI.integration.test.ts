@@ -426,6 +426,19 @@ describe('Admin Visits API Integration Tests', () => {
             })).status).toBe(400);
         });
 
+        it('400s a missing or malformed body rather than 500ing', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
+            const bodyless = POST(new Request('http://localhost:4000/api/facility/visits/insert', {
+                method: 'POST',
+            }) as unknown as import("next/server").NextRequest);
+            expect((await bodyless).status).toBe(400);
+
+            const malformed = POST(new Request('http://localhost:4000/api/facility/visits/insert', {
+                method: 'POST', headers: { 'content-type': 'application/json' }, body: '{oops',
+            }) as unknown as import("next/server").NextRequest);
+            expect((await malformed).status).toBe(400);
+        });
+
         it('404s an unknown person instead of creating an orphan visit', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
             const res = await post({ personId: 999999999, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
