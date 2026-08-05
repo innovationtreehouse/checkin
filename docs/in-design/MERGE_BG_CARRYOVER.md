@@ -1,45 +1,67 @@
 # Merge-time background-check carryover
 
-**Issue:** [#1396](https://github.com/innovationtreehouse/checkin/issues/1396) — participant merge
-transfers `Person.lastBackgroundCheck` to the survivor but never re-evaluates the derived
-`OrgMembershipProcess.bgClearedAt`, so an application stays parked at background-check review.
+Issue: [#1396](https://github.com/innovationtreehouse/checkin/issues/1396)
+· Scope, related work, and why this is a design rather than a patch in the
+[appendix](#appendix--why-this-is-a-design-and-what-scoping-found).
 
-**Status:** design. No production code accompanies this doc.
+## Problem
 
-## Why a doc and not a PR
+Two records for the same person get merged, as happens whenever a family is entered twice. The
+surviving record inherits the newer background-check date, on the reasoning that it is the same
+human either way.
 
-The issue's suggested shape ("extract `clearBackgroundCheck`'s household block, call it inside
-the merge transaction") is right and is ~100 lines. Five things sit underneath it that a PR
-description can't hold:
+Their family's membership application does not notice. It stays parked, waiting on a
+background check the household demonstrably already has. The board is asked to run a fresh
+two-person review of a check that exists and is still valid, and the family waits while they do.
 
-0. **A merge has two sides, and the issue reasons about one.** Both people can sit in households
-   with in-flight processes, and both can hold an open `PERSON_BG`. That cross product does
-   collapse — to "the keeper's household process, always" — but only via a pre-transaction lead
-   guard nobody would think to look for, and the collapse is the *result* of the analysis, not an
-   assumption you may start from (see [Two sides, not one](#two-sides-not-one)). Working it
-   through also turns up four live bugs unrelated to #1396 — one of them (the merge never compares
-   the two households' membership states) more serious than #1396 itself.
-1. **The #900/#907 note clause is a policy question the code cannot answer.** Eight non-terminal
-   statuses can carry `bgClearedAt = null`; the carryover acts on three. Whether the note clause
-   applies at each depends on what the board *means* by a note — a gate on the pre-payment review,
-   or a standing "human touches this first" flag — and nothing in the schema records whether a
-   human ever read one. The two readings disagree at exactly the two states holding the fix's
-   entire value (see [The predicate](#the-predicate)). The issue's "reuse the full predicate"
-   advice silently picks one, and picks it wrong at the state it names.
-2. **Provenance breaks in a way it doesn't for intake/renewal.** The merge is the first
-   `bgClearedAt` stamp whose originating approval is not in the stamped household's own history.
-   Open question, deliberately unresolved below.
-3. **It turns an ungated route into a privileged one.** The merge has no conflict-of-interest
-   check because deduplicating people isn't a membership decision. The carryover makes it one —
-   including a path to `ACTIVE` — while every sibling clearance path is COI-gated
-   (see [Conflict of interest](#conflict-of-interest)). That is a correctness requirement the issue doesn't
-   mention, and it is the reason this can't be a quiet 100-line patch.
-4. **The emails and the audit contract are decisions, not defaults.** The merge is the first path
-   that can flip a household to `ACTIVE` as a side effect of an operator's data cleanup.
+Nothing is *wrong* in the data — the date is real and the application really is unapproved. The two
+simply stopped agreeing, because merging a person updates the date without revisiting anything
+derived from it.
 
-The declared lifecycle machine (`LIFECYCLE.md`) turns out **not** to be a major driver — the
-analysis below reduces to a single new edge. Recorded here because the first read suggested
-otherwise.
+## Objective
+
+**When a merge gives a household a valid background check it did not previously have, the
+household's in-flight application should notice.**
+
+Two constraints. It must not weaken any existing review requirement — in particular it must not
+release an application a human is deliberately holding. And it must not become a way for one board
+member to advance their own household's membership.
+
+## Executive summary
+
+| | |
+|---|---|
+| **Families** | An application blocked only by a check the household already holds stops waiting. No change to anything they do. |
+| **Board** | One less redundant two-person review per affected merge. A merge that *cannot* safely clear says so, and nudges the reviewers instead of failing silently. |
+| **Where it applies** | Three application states, none of them the one the issue names — see [state matrix](#the-state-matrix). |
+| **Deliberately unchanged** | Household freshness rollups, the two-reviewer rule, and any application held for a human to read a note. |
+| **New guard** | The merge gains a conflict-of-interest check. Without one the carryover is a way to clear your own family. |
+| **Cost** | A shared helper extracted from the existing clearance path, one call inside the merge's existing transaction, one threaded database-client parameter. No schema change. |
+| **Blocked on** | Three board decisions, below. One of them determines most of the value. |
+
+The reason this is not a small patch: the mechanical change *is* small, and almost everything
+load-bearing about it is a policy question the code cannot answer on its own.
+
+## Rules this design obeys
+
+The rules register (`docs/rules/`) does not exist yet — [#1445](https://github.com/innovationtreehouse/checkin/pull/1445)
+introduces it. Collapse this to a pointer once it lands.
+
+1. **A valid prior check satisfies the requirement without a fresh review.** Already settled
+   policy, not a concession made here: application intake and renewal both accept a still-valid
+   household check as a complete substitute for the two-reviewer pass, with no reviewers involved.
+2. **One human may not stand in for a second reviewer.** A review still open to its second reviewer
+   is never force-cleared by one person. Rule 1 is not a loophole in this — it is the requirement
+   being *met by evidence*, not a judgement substituted for the missing reviewer.
+3. **Nobody decides their own household's compliance.** Every other path that touches
+   background-check clearance refuses when the actor shares a household with the applicant, and no
+   role bypasses it. The merge currently has no such check because deduplicating people is not a
+   membership decision — this design makes it one.
+4. **An applicant's note reaches a human before payment opens.** What that obliges once payment has
+   opened is [open question 0](#open-questions); it is the question this design most needs answered.
+
+Rules 1 and 2 together are why this is a legitimate clearance rather than an override. Rule 3 is
+the one requirement here that is not negotiable on cost.
 
 ## Two sides, not one
 
@@ -48,19 +70,19 @@ A merge has two people, each possibly in a household with its own in-flight proc
 
 **The predicate reads exactly one thing:** live household leads and their dates.
 `householdBgIsFresh(H)` ⟺ ∃ person in `H` with `isHouseholdLead: true`, `LIVE_PERSON`, and
-`lastBackgroundCheck ≥ threshold` ([renewal.ts:319](../../src/lib/membership/renewal.ts:319)).
+`lastBackgroundCheck ≥ threshold` ([renewal.ts:319](../../checkin-app/src/lib/membership/renewal.ts:319)).
 
 **The merge writes exactly two inputs to it:**
 
 1. the keeper's `lastBackgroundCheck` — **can only increase**, since `resolveKeeperUpdate` always
    takes the newer of the two and this is never a radio
-   ([route.ts:93](../../src/app/api/membership-ops/participants/merge/route.ts:93));
+   ([route.ts:93](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:93));
 2. the tombstone's `isHouseholdLead` → `false`, plus `mergedIntoId` set, which drops it out of
-   `LIVE_PERSON` ([route.ts:215](../../src/app/api/membership-ops/participants/merge/route.ts:215)).
+   `LIVE_PERSON` ([route.ts:215](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:215)).
 
 **And a pre-tx guard bounds the second one.** The merge refuses outright when the tombstone is a
 lead of a household that still has other members
-([route.ts:157](../../src/app/api/membership-ops/participants/merge/route.ts:157)):
+([route.ts:157](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:157)):
 
 ```
 if (isLead && householdOthersCount > 0) → 400
@@ -99,14 +121,14 @@ the guard never inspects). Post-merge the household holds a live in-flight proce
 member — possibly with `bgClearedAt` already stamped from a check that has now walked out.
 
 **"Empty" is imprecise.** The merge does not move `householdId`
-([route.ts:355](../../src/app/api/membership-ops/participants/merge/route.ts:355)), so the
+([route.ts:355](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:355)), so the
 tombstone stays in the household as a row. `LIVE_PERSON` is only `{ mergedIntoId: null }`
-([person/filters.ts:12](../../src/lib/person/filters.ts:12)) — a filter, not a delete. The
+([person/filters.ts:12](../../checkin-app/src/lib/person/filters.ts:12)) — a filter, not a delete. The
 household is **live-empty**: code that applies `LIVE_PERSON` sees zero members, code that doesn't
 sees one.
 
 The right disposal is `archiveApplication`
-([archive.ts:16](../../src/lib/membership/archive.ts:16)) — *"Board disposal of an abandoned
+([archive.ts:16](../../checkin-app/src/lib/membership/archive.ts:16)) — *"Board disposal of an abandoned
 application"*, which is exactly what this is. It is terminal-but-restorable
 (`restoreApplication` replays the target from the audit log), idempotent, and already a declared
 `TRANSITIONS` edge from every pre-terminal status. A process whose household has no live members
@@ -129,7 +151,7 @@ application disposal, not clearance — so it wants its own issue and its own PR
 
 **1b. A live-empty household is not inert — it becomes a permanent false board to-do.** The shared
 "needs a lead" predicate carries no live-person filter
-([household/filters.ts:12](../../src/lib/household/filters.ts:12)):
+([household/filters.ts:12](../../checkin-app/src/lib/household/filters.ts:12)):
 
 ```ts
 export const BROKEN_HOUSEHOLD_WHERE: Prisma.HouseholdWhereInput = {
@@ -145,7 +167,7 @@ permanently:
   member (that `include` has no live filter either);
 - adds a row to `/api/membership-audit/unclaimed-households`, via the `BROKEN` arm of
   `UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE`;
-- increments **two** nav to-do badges ([todo-counts/route.ts:396](../../src/app/api/nav/todo-counts/route.ts:396)).
+- increments **two** nav to-do badges ([todo-counts/route.ts:396](../../checkin-app/src/app/api/nav/todo-counts/route.ts:396)).
 
 And it is unfixable from the UI by design — the list's own comment says empty households are shown
 "even though there's no one to promote". The board gets a monotonically growing pile of to-dos it
@@ -181,7 +203,7 @@ derived **live from the person's household**:
 const denied = orgMembershipStatusBlocksLogin(p.household?.orgMembership?.status);
 ```
 
-([authClaims.ts:34](../../src/lib/authClaims.ts:34); `denied` then clears every role flag,
+([authClaims.ts:34](../../checkin-app/src/lib/authClaims.ts:34); `denied` then clears every role flag,
 `householdLead`, `toolStatuses` and `programsLed`.) Merge a duplicate sitting in a `DENIED`
 household into a record in a clean household and the surviving human is simply not denied any
 more — on the next token refresh. The schema comment calls `DENIED` a login block "for every
@@ -216,7 +238,7 @@ await tx.orgMembershipProcess.updateMany({ where: { subjectPersonId: mergeId }, 
 
 There is **no dedupe and no constraint** behind it: `personBgTriggers` carefully checks for an
 existing open row before creating one
-([personBgTriggers.ts:56](../../src/lib/membership/personBgTriggers.ts:56)), and the two partial
+([personBgTriggers.ts:56](../../checkin-app/src/lib/membership/personBgTriggers.ts:56)), and the two partial
 unique indexes are on `orgMembershipId` only — neither covers `subjectPersonId`. So a merge can
 leave **one human with two concurrent 2-of-N reviews**, each needing its own attestations. Worth
 its own issue; it is also why [PERSON_BG](#person_bg-is-a-separate-question) stays scoped out here
@@ -224,7 +246,7 @@ its own issue; it is also why [PERSON_BG](#person_bg-is-a-separate-question) sta
 
 **4. The lead guard counts tombstones — another live bug.** `householdOthersCount` is computed
 without a `LIVE_PERSON` filter
-([route.ts:156](../../src/app/api/membership-ops/participants/merge/route.ts:156)):
+([route.ts:156](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:156)):
 
 ```ts
 const householdOthersCount = mergeParticipant.household?.householdMembers.filter(p => p.id !== mergeId).length || 0;
@@ -241,7 +263,7 @@ That is a derived fact from monotonicity, not a scoping choice.
 ## The predicate
 
 The freshness half is uncontroversial: `householdBgIsFresh`
-([renewal.ts:319](../../src/lib/membership/renewal.ts:319)) filters `isHouseholdLead: true` +
+([renewal.ts:319](../../checkin-app/src/lib/membership/renewal.ts:319)) filters `isHouseholdLead: true` +
 `LIVE_PERSON`, so the merge only changes the answer when the tombstone was **not** already a live
 lead of the survivor's household.
 
@@ -256,14 +278,14 @@ read it at `PENDING_PAYMENT` or later.
 
 | read | transition | effect of a note |
 |---|---|---|
-| [intake.ts:390](../../src/lib/membership/intake.ts:390) | `INTAKE → PENDING_EXTERNAL_ACTION` | don't stamp `bgClearedAt` |
-| [renewal.ts:192](../../src/lib/membership/renewal.ts:192) | `PENDING_RENEWAL → PENDING_EXTERNAL_ACTION` | don't stamp |
-| [external.ts:112](../../src/lib/membership/external.ts:112) | `PENDING_EXTERNAL_ACTION → {PENDING_PAYMENT ∣ PENDING_BG_REVIEW}` | hold at `PENDING_BG_REVIEW` |
-| [review.ts:448](../../src/lib/membership/review.ts:448) | `BLOCKED → reset target` | resume at `PENDING_BG_REVIEW` |
+| [intake.ts:390](../../checkin-app/src/lib/membership/intake.ts:390) | `INTAKE → PENDING_EXTERNAL_ACTION` | don't stamp `bgClearedAt` |
+| [renewal.ts:192](../../checkin-app/src/lib/membership/renewal.ts:192) | `PENDING_RENEWAL → PENDING_EXTERNAL_ACTION` | don't stamp |
+| [external.ts:112](../../checkin-app/src/lib/membership/external.ts:112) | `PENDING_EXTERNAL_ACTION → {PENDING_PAYMENT ∣ PENDING_BG_REVIEW}` | hold at `PENDING_BG_REVIEW` |
+| [review.ts:448](../../checkin-app/src/lib/membership/review.ts:448) | `BLOCKED → reset target` | resume at `PENDING_BG_REVIEW` |
 
 **But where the code reads it does not establish what the board means by it.** `intakeNotes` is a
 bare `String?` — free-text "anything else we should know?", carrying hardship / medical / family
-disclosures ([people/search/route.ts:91](../../src/app/api/people/search/route.ts:91)). Nothing in
+disclosures ([people/search/route.ts:91](../../checkin-app/src/app/api/people/search/route.ts:91)). Nothing in
 the schema records whether a human has ever *read* one. There is no `noteAcknowledgedAt`.
 
 So there are two defensible readings, and the code cannot distinguish them:
@@ -276,7 +298,7 @@ So there are two defensible readings, and the code cannot distinguish them:
 
 The second reading is not hypothetical: reviewers are deliberately granted `everyones:pii` on
 `GET /api/membership/reviews` **so they can read this field**
-([schema.prisma:266-274](../../prisma/schema.prisma:266)). It is written to be read by humans.
+([schema.prisma:266-274](../../checkin-app/prisma/schema.prisma:266)). It is written to be read by humans.
 
 The two readings agree at three states and disagree at the two that carry the fix's entire value.
 Below, each state is answered under both.
@@ -292,18 +314,18 @@ and the row advances straight to `PENDING_PAYMENT`, skipping the review #907 exi
 
 **The quorum objection does not apply here.** It is tempting to reach for `overrideBlocked`'s rule
 — *"force-clearing a review still open to its second reviewer is what the two-reviewer rule
-forbids"* ([review.ts:361](../../src/lib/membership/review.ts:361)) — since a `PENDING_BG_REVIEW`
+forbids"* ([review.ts:361](../../checkin-app/src/lib/membership/review.ts:361)) — since a `PENDING_BG_REVIEW`
 row is exactly that. It is the wrong analogy:
 
 - `overrideBlocked approve` is one human **substituting their judgment** for the missing second
   reviewer. Quorum exists to stop that.
 - The carryover is the requirement being **satisfied by evidence**. Intake and renewal already
   treat a still-valid prior check as a *complete* substitute for the 2-of-N review — zero
-  attestations, no reviewers involved ([intake.ts:390](../../src/lib/membership/intake.ts:390)).
+  attestations, no reviewers involved ([intake.ts:390](../../checkin-app/src/lib/membership/intake.ts:390)).
   That is settled policy, not a loophole.
 
 The partial attestation is likewise not an obstacle. A `REJECT` moves the row to `BLOCKED`
-immediately ([review.ts:230](../../src/lib/membership/review.ts:230)), so a row still sitting at
+immediately ([review.ts:230](../../checkin-app/src/lib/membership/review.ts:230)), so a row still sitting at
 `PENDING_BG_REVIEW` holds zero or one **APPROVE**. It simply no longer needs a second one.
 
 **The actual obstacle is field overloading.** `bgClearedAt` means two things at once:
@@ -313,7 +335,7 @@ immediately ([review.ts:230](../../src/lib/membership/review.ts:230)), so a row 
 
 `clearBackgroundCheck` sets the field for both because in its world they always co-occur: two
 reviewers approved **and** had the note on screen. And because the reviewer queue keys on
-`bgClearedAt: null` ([lifecycle.ts:139](../../src/lib/membership/lifecycle.ts:139)), stamping
+`bgClearedAt: null` ([lifecycle.ts:139](../../checkin-app/src/lib/membership/lifecycle.ts:139)), stamping
 fact 1 silently removes the row from the only surface where fact 2 ever happens. That is exactly
 the "stamping `bgClearedAt` alone strands the application" failure identified on the issue.
 
@@ -325,19 +347,19 @@ the "stamping `bgClearedAt` alone strands the application" failure identified on
 | note deleted since the hold | nothing remains for a human to read | **clear it** — stamp + converge, same as any other state |
 
 The second row is a real case: leads can delete a note at any time
-([household/settings/route.ts:28](../../src/app/api/household/settings/route.ts:28)) and nothing
+([household/settings/route.ts:28](../../checkin-app/src/app/api/household/settings/route.ts:28)) and nothing
 re-advances the held row when they do. It sits there with its cause gone. The carryover is a
 legitimate way out.
 
 **Do not stay silent in the first case.** The operator changed the facts under a held application
 and should learn it. The merge already owns the mechanism: `analyze` surfaces conflicts and the
-POST **400s** until the operator answers ([route.ts:180](../../src/app/api/membership-ops/participants/merge/route.ts:180)).
+POST **400s** until the operator answers ([route.ts:180](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:180)).
 Disclose the held application, ping the reviewers, and audit that a merge made this household
 fresh without clearing it.
 
 **Cost of showing the note text.** `intakeNotes` is `@sensitivity:pii` carrying hardship/medical/
 family narrative, and the analyze route's `select` excludes it *deliberately*
-([analyze/route.ts:27](../../src/app/api/membership-ops/participants/merge/analyze/route.ts:27)).
+([analyze/route.ts:27](../../checkin-app/src/app/api/membership-ops/participants/merge/analyze/route.ts:27)).
 The route is board/sysadmin-only and is **not** in the security registry (16 registered routes;
 merge is not among them), so this needs no boundary PR — but it reverses a documented exclusion
 and must be a stated decision, not a drive-by field addition. The cheaper variant discloses only
@@ -357,7 +379,7 @@ null only by having passed `advanceExternalIfComplete` with `holdForNote` **fals
 inherits that through `activate()`.
 
 So a note visible on such a household *now* was added afterward (leads can edit it at any time,
-[household/settings/route.ts:28](../../src/app/api/household/settings/route.ts:28)) and has
+[household/settings/route.ts:28](../../checkin-app/src/app/api/household/settings/route.ts:28)) and has
 **provably been read by nobody**. "The gate ran and passed" is wrong — the gate ran and found
 nothing. There is no adjudicated-note case at these states.
 
@@ -390,9 +412,9 @@ collapse both readings into one rule.
 
 **Blocker for the PR:** `householdBgIsFresh` closes over the module `prisma` client. To run inside
 the merge's `$transaction` and see the keeper update from step 2, it needs a `db: DbClient`
-parameter. Three call sites: [intake.ts:390](../../src/lib/membership/intake.ts:390),
-[renewal.ts:191](../../src/lib/membership/renewal.ts:191),
-[api/membership-audit/compliance/route.ts:53](../../src/app/api/membership-audit/compliance/route.ts:53).
+parameter. Three call sites: [intake.ts:390](../../checkin-app/src/lib/membership/intake.ts:390),
+[renewal.ts:191](../../checkin-app/src/lib/membership/renewal.ts:191),
+[api/membership-audit/compliance/route.ts:53](../../checkin-app/src/app/api/membership-audit/compliance/route.ts:53).
 
 ## The state matrix
 
@@ -416,7 +438,7 @@ The carryover acts on **three** states. The note clause is settled at one
 where the value is. Notes on the rows that aren't obvious:
 
 **`PENDING_EXTERNAL_ACTION` is stamp-only on purpose.** `advanceExternalIfComplete`
-([external.ts:90](../../src/lib/membership/external.ts:90)) reads the module `prisma` client and
+([external.ts:90](../../checkin-app/src/lib/membership/external.ts:90)) reads the module `prisma` client and
 opens its own transaction — it cannot be called from inside the merge's. Stamping alone is
 sufficient and safe: the row is already waiting on a contract signature or consent, and the
 existing advance path picks the stamp up when that arrives. Calling `advanceExternalIfComplete`
@@ -424,8 +446,8 @@ after the merge commits is possible but reintroduces the exact non-atomicity #13
 
 **`PENDING_PAYMENT` must not be skipped just because its status doesn't change.** Stamping there
 is the whole point: it drops the row out of the reviewer queue
-([lifecycle.ts:129](../../src/lib/membership/lifecycle.ts:129)) and pre-decides `activate()`'s
-`activating = !!process.bgClearedAt` branch ([payment.ts:208](../../src/lib/membership/payment.ts:208)).
+([lifecycle.ts:129](../../checkin-app/src/lib/membership/lifecycle.ts:129)) and pre-decides `activate()`'s
+`activating = !!process.bgClearedAt` branch ([payment.ts:208](../../checkin-app/src/lib/membership/payment.ts:208)).
 
 **`PENDING_BG_REVIEW` becomes a no-op, which mostly deletes the issue's headline case.** See
 [the predicate](#the-predicate) for why a live note read there opens a hole rather than closing
@@ -437,7 +459,7 @@ release it — but it means the fix's value lives entirely in the parallel-track
 
 The issue's repro says "an in-flight application sitting at background-check review". For a
 household `INITIAL`, `PENDING_BG_REVIEW` is reachable only three ways
-([lifecycle.ts:258](../../src/lib/membership/lifecycle.ts:258)):
+([lifecycle.ts:258](../../checkin-app/src/lib/membership/lifecycle.ts:258)):
 
 - `advanceExternalIfComplete` with `holdForNote` — **requires an intake note**
 - `personBgTriggers` — that's a `PERSON_BG`, not a household application
@@ -457,14 +479,14 @@ reading, a household with a live note gets nothing at any state, and the fix shr
 
 A `PENDING_BG_REVIEW` row whose note is later deleted stays held forever — nothing re-runs
 `advanceExternalIfComplete` on a note edit
-([household/settings/route.ts:28](../../src/app/api/household/settings/route.ts:28) writes the
+([household/settings/route.ts:28](../../checkin-app/src/app/api/household/settings/route.ts:28) writes the
 note and nothing else). Reviewers still have to act on a hold whose cause is gone. Pre-existing,
 unrelated to merge, worth its own issue.
 
 ### PERSON_BG is a separate question
 
 Merge re-points `subjectPersonId` to the keeper
-([merge/route.ts:326](../../src/app/api/membership-ops/participants/merge/route.ts:326)), so a
+([merge/route.ts:326](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:326)), so a
 `PERSON_BG` at `PENDING_BG_REVIEW` follows the survivor. But `householdBgIsFresh` is a *household
 leads* predicate — the wrong question for a `PERSON_BG`, which asks about one specific person.
 Clearing a `PERSON_BG` from a merge needs a person-scoped freshness predicate that doesn't exist.
@@ -483,8 +505,8 @@ background-check clearance is COI-gated:
 
 | path | gate |
 |---|---|
-| `attest` | `sharesHousehold(reviewer, applicant)` → refuse ([review.ts:223](../../src/lib/membership/review.ts:223)) |
-| `overrideBlocked` | `hasHouseholdConflict(actor, applicant)` → refuse, *"No role bypasses this"* ([review.ts:376](../../src/lib/membership/review.ts:376)) |
+| `attest` | `sharesHousehold(reviewer, applicant)` → refuse ([review.ts:223](../../checkin-app/src/lib/membership/review.ts:223)) |
+| `overrideBlocked` | `hasHouseholdConflict(actor, applicant)` → refuse, *"No role bypasses this"* ([review.ts:376](../../checkin-app/src/lib/membership/review.ts:376)) |
 | `certifyPaymentPlan` / `grantRenewalPayment` | COI check on every actor, sysadmin included (#1391) |
 | **merge (proposed carryover)** | **none** |
 
@@ -512,7 +534,7 @@ policy preference.
 Attestations are keyed `@@unique([processId, reviewerId])` and mean *"reviewer X attested on THIS
 application."* Copying them onto the survivor's process would fabricate two board members'
 signatures on an application neither saw, and a board reset
-([review.ts:395](../../src/lib/membership/review.ts:395)) deletes by `processId` — copies would
+([review.ts:395](../../checkin-app/src/lib/membership/review.ts:395)) deletes by `processId` — copies would
 either be destroyed by an unrelated reset or survive the withdrawal of the original approval.
 **Not copying attestations is settled.**
 
@@ -526,9 +548,9 @@ What is not settled is whether the *link* to the approvers survives.
 | **merge (proposed)** | a check on the **tombstone's** household | **no** |
 
 `clearBackgroundCheck` stamps `lastBackgroundCheck` on every lead of *its* household
-([review.ts:302](../../src/lib/membership/review.ts:302)), and merge deliberately leaves
+([review.ts:302](../../checkin-app/src/lib/membership/review.ts:302)), and merge deliberately leaves
 `householdId` on the old household
-([merge/route.ts:355](../../src/app/api/membership-ops/participants/merge/route.ts:355)). So the
+([merge/route.ts:355](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:355)). So the
 survivor's household history does not contain the process that produced the date. Merge is the
 first stamp that breaks the chain to the humans who approved.
 
@@ -556,8 +578,8 @@ The precedent is split, and merge is the first event that lands on the wrong sid
 
 | path | stamps | emails fired |
 |---|---|---|
-| `clearBackgroundCheck` → `ACTIVE` | yes | `sendCongrats` + `openPersonBgForNewMember` (INITIAL only) — [review.ts:250](../../src/lib/membership/review.ts:250) |
-| `clearBackgroundCheck` → `PENDING_PAYMENT` | yes | `notifyPaymentOpen` — [review.ts:259](../../src/lib/membership/review.ts:259) |
+| `clearBackgroundCheck` → `ACTIVE` | yes | `sendCongrats` + `openPersonBgForNewMember` (INITIAL only) — [review.ts:250](../../checkin-app/src/lib/membership/review.ts:250) |
+| `clearBackgroundCheck` → `PENDING_PAYMENT` | yes | `notifyPaymentOpen` — [review.ts:259](../../checkin-app/src/lib/membership/review.ts:259) |
 | intake shortcut | yes | **none** |
 | renewal shortcut | yes | **none** |
 | merge (proposed) | yes | ??? |
@@ -579,7 +601,7 @@ Only one state can send anything, since `PENDING_BG_REVIEW` is a no-op:
 - **Stamp-only rows.** Nothing to announce. No email.
 
 **Recommendation:** fire `sendCongrats` + Trigger C, matching `clearBackgroundCheck` exactly, and post-transaction
-like every other side effect in this module ([payment.ts:233](../../src/lib/membership/payment.ts:233)
+like every other side effect in this module ([payment.ts:233](../../checkin-app/src/lib/membership/payment.ts:233)
 — "a slow/failed send must not roll back the write"). The alternative — a silent activation — is
 worse than a surprising email. **Confirm with @thpr before building**; a dedupe cleanup that mails
 families is the kind of thing that should not be discovered in production.
@@ -587,7 +609,7 @@ families is the kind of thing that should not be discovered in production.
 ## Idempotency
 
 - **Repeat merge** is already blocked: the tombstone CAS
-  ([merge/route.ts:205](../../src/app/api/membership-ops/participants/merge/route.ts:205)) throws
+  ([merge/route.ts:205](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:205)) throws
   `AlreadyMergedError` on the second attempt, so the carryover cannot run twice for one pair.
 - **Merge racing a reviewer's 2nd approval** is guarded upstream: `attest` gates on
   `awaitingBgReview.has`, which requires `bgClearedAt = null`. Whichever lands first excludes the
@@ -614,7 +636,7 @@ change `bgClearedAt`, not `status`, so they declare no edge at all.
 This is smaller than it first looked — the lifecycle-machine surface is **not** what makes this
 doc-scale. The predicate analysis above is.
 
-Per `LIFECYCLE.md`:
+Per [`LIFECYCLE.md`](../../checkin-app/docs/designs/LIFECYCLE.md):
 - Rule 3 — the CAS guard's from-state clause comes from `fromWhere(edge)`, not a hand-written
   `status:`. The guard↔`TRANSITIONS` parity test enforces it.
 - Rule 5 — regenerate `docs/generated/lifecycle/membership.md`; the artifacts-drift test fails
@@ -624,7 +646,7 @@ Per `LIFECYCLE.md`:
 
 ## Shape
 
-Extract from `clearBackgroundCheck` ([review.ts:295-317](../../src/lib/membership/review.ts:295))
+Extract from `clearBackgroundCheck` ([review.ts:295-317](../../checkin-app/src/lib/membership/review.ts:295))
 everything except the household-lead date stamp — that stamp is what the merge has *already* done
 by moving `lastBackgroundCheck`, and re-running it would overwrite the carried date with `now()`,
 silently extending the recheck window past what any human approved.
@@ -645,9 +667,9 @@ read-only GET and needs no transaction.
 
 - **Retraction.** Merging a sole-member household lead who held the only fresh check live-empties
   that household — the tombstone CAS clears `isHouseholdLead`
-  ([merge/route.ts:215](../../src/app/api/membership-ops/participants/merge/route.ts:215)). This is
+  ([merge/route.ts:215](../../checkin-app/src/app/api/membership-ops/participants/merge/route.ts:215)). This is
   live behaviour today, and it already surfaces through
-  [compliance/route.ts:53](../../src/app/api/membership-audit/compliance/route.ts:53), which
+  [compliance/route.ts:53](../../checkin-app/src/app/api/membership-audit/compliance/route.ts:53), which
   re-runs the predicate per household at read time. **Automatic carryover advances only, never
   retracts** — withdrawing a clearance is a board action.
 - **Program-enrollment paths** keyed off the same freshness.
@@ -689,3 +711,58 @@ the fix.
    silent. Recommendation: fire them.
 3. **`PENDING_EXTERNAL_ACTION`** — stamp-only (recommended, atomic) or stamp-then-call
    `advanceExternalIfComplete` post-commit (moves further, reintroduces the #1396 non-atomicity).
+
+## Appendix — why this is a design, and what scoping found
+
+### Why not a ~100-line patch
+
+The issue's suggested shape — extract `clearBackgroundCheck`'s household block and call it inside
+the merge transaction — is right, and it really is about that size. Four things sit underneath it
+that a PR description cannot hold.
+
+**A merge has two sides, and the issue reasons about one.** Both people can sit in households with
+in-flight processes, and both can hold an open `PERSON_BG`. That cross product does collapse — to
+"the keeper's household process, always" — but only via a pre-transaction lead guard nobody would
+think to look for, and the collapse is the *result* of the analysis rather than a safe starting
+assumption. See [Two sides, not one](#two-sides-not-one).
+
+**The note clause is a policy question the code cannot answer.** Eight non-terminal statuses can
+carry an uncleared background check; the carryover acts on three. Whether the note clause applies
+at each depends on what the board *means* by a note, and nothing in the schema records whether a
+human has ever read one. The two readings disagree at exactly the two states holding the fix's
+value. The issue's "reuse the full predicate" advice silently picks one, and picks it wrong at the
+state it names. See [The predicate](#the-predicate).
+
+**Provenance breaks in a way it does not for intake or renewal.** Those reuse a prior check from
+the *same* household, so the approving reviewers stay one query away. A merge pulls a date from the
+tombstone's household, which the survivor's history does not contain. See
+[Provenance](#provenance).
+
+**It turns an ungated route into a privileged one.** See rule 3 above and
+[Conflict of interest](#conflict-of-interest).
+
+One thing that looked like a driver and was not: the declared lifecycle machine. The analysis
+reduces to a single new edge. Recorded because the first read suggested otherwise.
+
+### Live bugs found while scoping
+
+None are introduced by this design; none are dependencies. Each is tracked separately.
+
+| Finding | Severity |
+|---|---|
+| The merge never compares the two households' membership states, so a paid membership can be stranded on a household with no live members, and a denied household can be escaped by merging out of it | **More serious than #1396** |
+| `LIVE_PERSON` is applied inconsistently, so a household left holding only merged-away members becomes a permanent unactionable board to-do and reaches the keyholder emergency sheet | Moderate |
+| The merge's lead guard counts merged-away records, spuriously refusing valid merges | Moderate |
+| A merge can leave one person with two concurrent `PERSON_BG` reviews | Moderate |
+
+### Related work
+
+- [#1260](https://github.com/innovationtreehouse/checkin/issues/1260) per-adult background-check
+  subjects — design merged as [`BG_PER_ADULT_SUBJECT.md`](BG_PER_ADULT_SUBJECT.md). **Sequence that
+  slice first.** Both rewrite the same household clearance branch, so a textual conflict is
+  certain; rebase this onto it. They compose semantically — that design makes clearance stamp
+  named subjects, while this carryover deliberately stamps nobody, reusing an existing date rather
+  than minting a new one. Its *Merge is an ongoing source* section is the other half of
+  [Provenance](#provenance).
+- [#1429](https://github.com/innovationtreehouse/checkin/issues/1429) volunteer-onset trigger —
+  independent; no interaction with the merge path.
