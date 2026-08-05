@@ -94,9 +94,9 @@ export default function MergeParticipants() {
 
   const [previewMode, setPreviewMode] = useState(false);
 
-  // Set when the two records' households carry different Treehouse membership
-  // status — the merge server-side refuses (see the API's membershipGuard).
-  const [membershipMismatch, setMembershipMismatch] = useState<{ a: string; b: string } | null>(null);
+  // Why the merge is refused on household-membership grounds, per direction —
+  // the rule turns on which record is merged away (see the API's membershipGuard).
+  const [membershipBlock, setMembershipBlock] = useState<{ aAsKeeper: string | null; bAsKeeper: string | null } | null>(null);
 
   // One choice per true conflict field ('keep' | 'merge'); default 'keep' (the
   // keeper's value). Recomputed below (derived from analyzedA/analyzedB + keepId)
@@ -105,6 +105,13 @@ export default function MergeParticipants() {
 
   const mergeParticipant = keepId === analyzedA?.id ? analyzedB : analyzedA;
   const keepParticipant = keepId === analyzedA?.id ? analyzedA : analyzedB;
+
+  // The membership rule turns on which record is merged away, so the block
+  // follows the current keeper — and Swap Kept/Merged can clear it outright.
+  const keeperIsA = keepId === analyzedA?.id;
+  const membershipBlockReason = (keeperIsA ? membershipBlock?.aAsKeeper : membershipBlock?.bAsKeeper) ?? null;
+  const swapDirectionBlock = (keeperIsA ? membershipBlock?.bAsKeeper : membershipBlock?.aAsKeeper) ?? null;
+  const swapClearsMembershipBlock = !!membershipBlockReason && !swapDirectionBlock;
 
   const conflicts: ConflictField[] = keepParticipant && mergeParticipant
     ? CONFLICT_FIELDS.filter((f) => {
@@ -159,7 +166,7 @@ export default function MergeParticipants() {
           if (d.participants) {
             setAnalyzedA(d.participants[0]);
             setAnalyzedB(d.participants[1]);
-            setMembershipMismatch(d.membershipMismatch ?? null);
+            setMembershipBlock(d.membershipBlock ?? null);
 
             // Recommend keeping the one with more activity or better data
             const score = (p: ParticipantMergeView) => {
@@ -186,7 +193,7 @@ export default function MergeParticipants() {
       setAnalyzedB(null);
       setKeepId(null);
       setPreviewMode(false);
-      setMembershipMismatch(null);
+      setMembershipBlock(null);
     }
   }, [pA, pB]);
 
@@ -373,12 +380,10 @@ export default function MergeParticipants() {
                 </Button>
               </Group>
 
-              {membershipMismatch && (
-                <Alert color="red" variant="light" fw={700} title="Membership status differs">
-                  {analyzedA.name || `ID ${analyzedA.id}`}&apos;s household is {membershipMismatch.a} and{" "}
-                  {analyzedB.name || `ID ${analyzedB.id}`}&apos;s household is {membershipMismatch.b}. A merge never
-                  moves a membership between households, so it would either strand the membership or drop the
-                  restriction. Resolve the membership on these households first, then merge.
+              {membershipBlockReason && (
+                <Alert color="red" variant="light" fw={700} title="Household membership blocks this merge">
+                  {membershipBlockReason}
+                  {swapClearsMembershipBlock && " Swapping which record is kept clears this."}
                 </Alert>
               )}
 
@@ -437,7 +442,7 @@ export default function MergeParticipants() {
               )}
 
               <Group justify="flex-end">
-                <Button size="md" disabled={isLeadWithOthers || !!membershipMismatch} onClick={() => setPreviewMode(true)}>
+                <Button size="md" disabled={isLeadWithOthers || !!membershipBlockReason} onClick={() => setPreviewMode(true)}>
                   Proceed to Preview
                 </Button>
               </Group>

@@ -229,9 +229,11 @@ export const POST = withAuth(
                 return apiError("Cannot merge: the to-be-deleted participant is the lead of a household with other members.", 400);
             }
 
+            // householdMembers is LIVE_PERSON-filtered above, so this is the count of
+            // people who would still be left to use the household's membership.
             const membershipBlock = membershipMergeBlock(
-                householdMembershipStatus(keepParticipant.household),
-                householdMembershipStatus(mergeParticipant.household),
+                { status: householdMembershipStatus(keepParticipant.household) },
+                { status: householdMembershipStatus(mergeParticipant.household), liveOthers: householdOthersCount },
             );
             if (membershipBlock) {
                 return apiError(membershipBlock, 400);
