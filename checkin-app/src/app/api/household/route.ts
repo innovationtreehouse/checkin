@@ -9,6 +9,7 @@ import { isOrgAccount } from "@/lib/orgAccount";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
@@ -23,7 +24,7 @@ export const GET = withAuth(
                 include: {
                     household: {
                         include: {
-                            householdMembers: { select: HOUSEHOLD_PEER_SELECT },
+                            householdMembers: { where: LIVE_PERSON, select: HOUSEHOLD_PEER_SELECT },
                             orgMembership: true,
                         }
                     }

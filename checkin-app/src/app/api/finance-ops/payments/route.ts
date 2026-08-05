@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { ordersByLegacyIds, type MirrorOrder } from "@/lib/shopifyRead/client";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * GET /api/finance-ops/payments — the board's queue of reconciler-detected
@@ -41,7 +42,7 @@ export const GET = withAuth(
                                           name: true,
                                           // The household lead carries the contact email shown in the queue.
                                           householdMembers: {
-                                              where: { isHouseholdLead: true },
+                                              where: { isHouseholdLead: true, ...LIVE_PERSON },
                                               select: { name: true, email: true },
                                               take: 1,
                                           },

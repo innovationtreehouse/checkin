@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { handler, unauthorized } from "@/security/handler";
 import { eligibleReviewProcessIds, attest, ReviewError } from "@/lib/membership/review";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export const GET = handler("GET /api/membership/reviews", async ({ auth }) => {
                             // signal a volunteer-only household uses to ask the reviewer to
                             // mark them volunteer. Classified pii; reviewers hold that band.
                             intakeNotes: true,
-                            householdMembers: { where: { isHouseholdLead: true }, select: { id: true, name: true, email: true } },
+                            householdMembers: { where: { isHouseholdLead: true, ...LIVE_PERSON }, select: { id: true, name: true, email: true } },
                         },
                     },
                 },

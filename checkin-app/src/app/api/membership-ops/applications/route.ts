@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { handler } from "@/security/handler";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export const GET = handler("GET /api/membership-ops/applications", async ({ req 
                     household: {
                         select: {
                             name: true,
-                            householdMembers: { select: { id: true, name: true, email: true, isHouseholdLead: true } },
+                            householdMembers: { where: LIVE_PERSON, select: { id: true, name: true, email: true, isHouseholdLead: true } },
                         },
                     },
                 },

@@ -139,7 +139,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         where: { id: { in: [...reasons.keys()] } },
         include: {
             householdMembers: {
-                where: { isHouseholdLead: true },
+                where: { isHouseholdLead: true, ...LIVE_PERSON },
                 select: { id: true, name: true, phone: true, email: true, lastBackgroundCheck: true },
             },
         },
