@@ -48,6 +48,7 @@ describe("Merge Participants API", () => {
     // Extra rows/ids a given test creates beyond the base fixture — cleaned up
     // generically in afterEach so each test doesn't hand-roll teardown ordering.
     let extraPersonIds: number[];
+    let extraHouseholdIds: number[];
     let createdProgramId: number | undefined;
     let createdToolId: number | undefined;
     let createdEventId: number | undefined;
@@ -78,6 +79,7 @@ describe("Merge Participants API", () => {
         pMergeId = pMerge.id;
 
         extraPersonIds = [];
+        extraHouseholdIds = [];
         createdProgramId = undefined;
         createdToolId = undefined;
         createdEventId = undefined;
@@ -108,6 +110,7 @@ describe("Merge Participants API", () => {
         if (createdProgramId) await prisma.program.deleteMany({ where: { id: createdProgramId } });
         if (createdCorporationId) await prisma.corporation.deleteMany({ where: { id: createdCorporationId } });
         if (householdId) await prisma.household.deleteMany({ where: { id: householdId } });
+        if (extraHouseholdIds.length) await prisma.household.deleteMany({ where: { id: { in: extraHouseholdIds } } });
     });
 
     it("should successfully merge two participants", async () => {
@@ -296,6 +299,49 @@ describe("Merge Participants API", () => {
         expect(res.status).toBe(400);
         const data = await res.json();
         expect(data.error).toContain("lead of a household with other members");
+    });
+
+    // The lead guard counts LIVE household members only: a tombstone left in the
+    // household by an earlier merge is not another member.
+    it("merges a household lead whose only other household row is a tombstone", async () => {
+        const hh = await prisma.household.create({ data: { name: "Lead + Tombstone Household" } });
+        extraHouseholdIds.push(hh.id);
+
+        const lead = await prisma.person.create({
+            data: { name: "Lead Person", householdId: hh.id, isHouseholdLead: true }
+        });
+        const ghost = await prisma.person.create({
+            data: { name: "Already Merged", householdId: hh.id, mergedIntoId: pKeepId }
+        });
+        extraPersonIds.push(lead.id, ghost.id);
+
+        // name is the only conflict — the lead carries no email/googleId, so the
+        // keeper's identity is untouched and no `identity` choice is needed.
+        const res = await POST(mergeReq(pKeepId, lead.id, { name: "keep" }));
+        expect({ status: res.status, data: await res.json() }).toEqual({ status: 200, data: { success: true } });
+
+        expect((await prisma.person.findUnique({ where: { id: lead.id } }))?.mergedIntoId).toBe(pKeepId);
+        // ghost stays put — a tombstone is never cleaned up by a merge.
+        expect((await prisma.person.findUnique({ where: { id: ghost.id } }))?.householdId).toBe(hh.id);
+    });
+
+    it("analyze omits a tombstoned household member from householdMembers", async () => {
+        const hh = await prisma.household.create({ data: { name: "Analyze Tombstone Household" } });
+        extraHouseholdIds.push(hh.id);
+
+        const lead = await prisma.person.create({
+            data: { name: "Analyze Lead", householdId: hh.id, isHouseholdLead: true }
+        });
+        const ghost = await prisma.person.create({
+            data: { name: "Analyze Ghost", householdId: hh.id, mergedIntoId: pKeepId }
+        });
+        extraPersonIds.push(lead.id, ghost.id);
+
+        const res = await analyzeGET(analyzeReq(pKeepId, lead.id));
+        expect(res.status).toBe(200);
+        const { participants } = await res.json();
+        const members = participants[1].household.householdMembers as { id: number }[];
+        expect(members.map(m => m.id)).toEqual([lead.id]);
     });
 
     // Matrix 4

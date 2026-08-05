@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -51,6 +52,9 @@ export const GET = withAuth(
                                 id: true,
                                 name: true,
                                 householdMembers: {
+                                    // Tombstones are not members: the page's
+                                    // isLeadWithOthers guard must match the POST's.
+                                    where: LIVE_PERSON,
                                     select: { id: true, name: true, isHouseholdLead: true }
                                 }
                             }

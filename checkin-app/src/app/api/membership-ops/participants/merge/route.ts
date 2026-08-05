@@ -4,6 +4,7 @@ import type { Person } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -138,7 +139,9 @@ export const POST = withAuth(
                     corporationMembers: true,
                     household: {
                         include: {
-                            householdMembers: true
+                            // The lead guard below asks "would this leave live members
+                            // leaderless" — tombstones are not members.
+                            householdMembers: { where: LIVE_PERSON }
                         }
                     }
                 }
