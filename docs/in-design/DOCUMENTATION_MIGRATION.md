@@ -221,55 +221,94 @@ if a domain comes out with dozens of rules, it has almost certainly captured
 mechanism rather than policy, so re-apply the test before accepting the volume.
 Splitting the file is not the fix.
 
-### 3.5 Classify each rule: policy or procedure
+### 3.5 Classify each rule
 
-Standard §3.2 splits every domain file into a **Policy** section above a
-**Procedure** section. The mine cannot make that call on its own — a PR diff
-shows what the code does, never whether a board policy required it.
+Standard §3.2 gives every domain file three sections: **Policy**, then
+**Assumptions**, then **Procedure**. Classify as you write, reading the policy
+text alongside the mined rule rather than deferring every judgement to a later
+pass. The corpus is available (§3.6), so the tier is answerable at the moment
+the rule is drafted.
 
-So the sweep produces everything as **procedure by default**, and a separate
-pass promotes what is genuinely policy-backed:
+What still needs care:
 
-1. Draft every mined rule under Procedure. Never guess at policy authority; an
-   unsupported promotion is the same defect as writing an unratified policy as
-   settled.
-2. Flag candidates — anything touching dues, background checks, eligibility and
-   age gates, refunds, volunteer status, or access and certification is likely
-   to have a policy behind it. These are the ones worth checking.
-3. The owner checks each candidate against the policy corpus (§3.6) and either
-   promotes it with a citation by **policy name and article/section** — never a
-   page, never a path — or leaves it as procedure.
+- **Never promote to Policy without reading the article.** Search the corpus for
+  the rule, not for the topic. Several candidates in the first sweep read as
+  obviously policy-backed and turned out not to be — the college-age dependent
+  rule among them, where the policy defines a term that sounds right and covers
+  something narrower.
+- **Cite by policy name and article or section.** Never a page, a path, or a
+  URL. A citation should break when the policy is amended, which is exactly when
+  it should be re-read.
+- **A rule stricter than its policy says so.** The risk is a later reader
+  relaxing it while believing they are aligning to policy.
+- **Anything holding only because someone outside the app maintains it is an
+  Assumption**, not a Procedure line and not a divergence.
 
-Expect this to reclassify a meaningful share of the membership and finance
-rules, and almost none of the attendance or tooling ones.
-
-**A rule can also be neither.** If a candidate turns out to contradict the
-policy it supposedly implements, that is not a documentation finding — it is a
-compliance finding, and it goes to the owner directly rather than into any file.
+**A rule can also be none of the three.** Where a candidate turns out to be the
+app implementing a policy more loosely than the policy states, it is a
+divergence: it goes in the domain file's closing section (standard §3.7) and is
+also tracked as work. Recording it does not resolve it, and it is not a feature
+request — what closes it is the policy.
 
 ### 3.6 The policy corpus
 
-Canonical policies are on **Google Drive** (standard §3.5).
+Canonical policies live on **Google Drive** (standard §3.5), and a complete
+download of them is available locally to work from. That download is what makes
+§3.5 possible in one pass rather than two.
 
-Consequences for this step:
+- **Check the download's provenance once, at the start of a sweep.** It is sound
+  while it is a current export; the failure it guards against is a copy taken
+  before an amendment, which would enshrine a superseded rule behind a citation
+  that reads as correct.
+- **Citations stay verifiable.** Anyone with Drive access can check a policy-tier
+  rule against the policy it names — unlike the PR corpus (§3.1), this input is
+  not owner-only, so the tier carries real weight.
+- **Read the surrounding article, not the matching line.** Definitions carry
+  scope that a keyword match hides: a term may be defined more narrowly than its
+  everyday sense, and a rule built on the everyday sense will cite an article
+  that does not support it.
 
-- **Confirm on Drive before promoting.** A local or cached copy is fine for
-  finding candidates and drafting; the citation is only sound once checked
-  against Drive. A copy predating an amendment would enshrine a superseded rule
-  behind a citation that looks correct.
-- **Citations stay verifiable.** Anyone with Drive access can check a
-  policy-tier rule against the policy it names — unlike the PR corpus (§3.1),
-  this input is not owner-only, so the tier carries real weight.
-- **Cite name plus article/section only.** Not a page, not a path, not a Drive
-  URL.
+### 3.7 The second source — session transcripts
 
-### 3.7 Owner review
+A PR diff cannot record a decision that produced no diff, and cannot show a road
+deliberately not taken. Session transcripts can. Mining them as a second,
+independent pass yields a different kind of rule: the rejected alternative, the
+thing settled in conversation and never built, the reason behind a number.
 
-The register states board and operations decisions. A rule inferred from a PR
-diff is a *candidate* decision until the owner confirms it. Present each domain
-file for review before it merges; some candidates will turn out to be
-accidents-of-implementation rather than decisions, and those must not be
+Run it after the PR sweep, diffed against the drafts, so each finding arrives
+attached to the line it bears on. Two properties of that output govern how it is
+used:
+
+- **A report describing a decision is more reliable than one describing a
+  mechanism.** Decisions hold; mechanisms get settled after the conversation
+  that discussed them. Several findings in the first pass asserted the opposite
+  of what shipped, all of them mechanism.
+- **"No counterpart in the draft" and "cut on purpose" are indistinguishable
+  from outside.** Only whoever ran the earlier review can tell them apart, which
+  is why this pass hands findings over rather than applying them.
+
+**Verify every finding against the current tree before folding it.** Not the
+schema alone — the enforcement path. A state can be derived rather than stored,
+and a behaviour can live in a function rather than a column; searching for a
+field name and concluding "not built" is the specific mistake to avoid. This
+verification is worth its cost independently: the first pass surfaced two
+defects the reports had not found, both while checking something else.
+
+### 3.8 Owner review
+
+The register states board and operations decisions. A rule inferred from a diff
+or a transcript is a *candidate* until the owner confirms it. Present each
+domain file for review before it merges — grouped by what you propose to do with
+each finding, including the ones you propose to reject, since a silent rejection
+is invisible to the person reviewing. Some candidates will turn out to be
+accidents of implementation rather than decisions, and those must not be
 enshrined as rules.
+
+**Present, then wait.** Do not fold a domain while the answer is outstanding,
+and do not read "go ahead" on one domain as approval of the next. The rule is
+not ceremony: both times it was skipped during the first sweep, rules reached
+the register that the owner then had to catch — including one describing a kind
+of person the app does not have.
 
 ---
 
@@ -324,8 +363,35 @@ The ops-bucket definition already covers it.
 arguably its own thing).
 
 **Leave alone entirely:** `docs/security/`, `checkin-app/docs/generated/`,
-`docs/backlog/`, `checkin-app/docs/VOCABULARY.md`, and the deploy/migration docs
-under `checkin-app/docs/`.
+`docs/backlog/`, and the deploy/migration docs under `checkin-app/docs/`.
+
+**`checkin-app/docs/VOCABULARY.md` stays where it is, but three kinds of content
+leave it.** It is the canonical dictionary and should remain one; it currently
+also carries:
+
+- **Build conventions** — that identifiers and prose use the canonical word, that
+  a serialized wire key is a contract rather than a free rename, that age is
+  always derived through the shared helper. These belong in `docs/conventions.md`.
+- **A migration log** — the rename status section and the model-rename pattern
+  note, which cites PR numbers and git history. That is a lesson from past work;
+  per the standard it belongs in a design doc, not in a reference someone opens
+  to look up a term.
+- **Domain facts filed as "reference facts"** — the membership year, which is a
+  policy fact; the single facility and the integration vendors, which are
+  operating assumptions. Defined terms among them, such as *Treehouse Card*,
+  stay.
+
+Rules embedded in its tables move the same way — the per-tool versus global
+certifier grant, age gates enforced outside the software, core volunteers'
+authority being organisational.
+
+**This is already duplicated, not hypothetical.** The rules register now states
+the single facility and the certifier grant, both of which also remain in the
+dictionary. Resolving that is part of this step, not a follow-up.
+
+That covers content leaving the dictionary. Content flowing the other way —
+terms whose definitions are also constraints — is open question 3 in §8, and is
+not settled by this step.
 
 ### 5.1 Reference sweep — do this BEFORE any move or delete
 
@@ -399,6 +465,22 @@ do it last, after the rules register exists, so nothing moves twice.
    and finance-payments collapse into one?
 2. **Who owns a rules file?** CODEOWNERS on `docs/rules/` would route rule
    changes to the board or owner automatically. Worth it, or too heavy?
+3. **Where a definition is also a constraint.** Several terms are stated in both
+   the vocabulary register and the rules register: two deep, tripod, member
+   family, adult, youth, student, visitor, the tool levels and their age
+   minimums. Some of these constrain behaviour — code counting bare adults
+   violates what "two deep" means, which is a divergence the rules register
+   already records — and some only fix a word.
+
+   The tempting split is to leave the name in the dictionary and move the
+   constraint to the rules. **That makes the dictionary worse**: someone looking
+   up "member family" and getting the name without the two-adult cap has been
+   given a partial answer, which is the one thing a dictionary must not do.
+
+   So the duplication may be correct — each register complete for its own
+   purpose, overlapping by design — and the real question is how the two stay in
+   step rather than how to divide them. Needs a decision with the vocabulary
+   owner present, not one taken during a sweep.
 
 **Decided:**
 
