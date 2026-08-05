@@ -6,8 +6,8 @@ import { calculateAge, isYouth } from "@/lib/time";
  * self-enrollment gate, where "can't prove adult" must refuse rather than admit.
  *
  * A declared adult is trusted whoever set the flag, including the member
- * themselves; see docs/designs/167-youth-enrollment-rules.md for why that
- * self-attestation risk is accepted rather than closed.
+ * themselves: docs/rules/programs.md takes an unverified self-declaration as a
+ * risk knowingly accepted.
  */
 export function isKnownAdult(person: { dateOfBirth: Date | string | null; isDeclaredAdult?: boolean | null }): boolean {
   // A real DOB outranks the flag, as in checkProgramAge: the flag exists to stand

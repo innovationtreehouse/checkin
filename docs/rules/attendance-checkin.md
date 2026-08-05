@@ -116,6 +116,27 @@ Things the app takes as true because they are handled outside it.
   responsible adult, and for someone too young to correct their own record it is
   the only way one gets fixed.  [Decision]
 
+- There are no separately recorded hours to correct. Hours are counted from
+  visits, so correcting somebody's hours is correcting the visit underneath them.  [Decision]
+
+- Correcting a time replaces where that time came from: a badge-measured arrival
+  a member edits is their own report afterwards, not a measurement. Correcting
+  the same time twice is weighed the second time as overwriting a self-report.  [Decision]
+
+- Removing a visit marks it removed rather than erasing it: it stops counting
+  wherever visits are listed, counted or totalled, and it can be put back.  [Decision — *Principle: decisions are reversible*]
+
+- Significance is the size of a change weighted by how authoritative the value it
+  overwrote was. A measured badge outweighs somebody else's observation of a
+  member, which outweighs the member's own earlier report. Every removal is
+  raised whatever it overwrote, because erasing a record is notable at any size.  [Decision]
+
+- A departure that the building closing or the overnight sweep stamped is a
+  placeholder the member is meant to fix, so correcting one is never raised
+  however large the correction. The suppression keys on where the value came
+  from, not on its size: the sweep stamps at its own run time, so the least
+  trustworthy guess is exactly the one producing the largest correction.  [Decision]
+
 - A visit cannot run longer than 24 hours.  [Decision]
 
 - The board and sysadmins edit or delete any visit, and record one for someone
