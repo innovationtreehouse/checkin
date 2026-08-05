@@ -282,7 +282,6 @@ export const POST = withAuth(
                 try {
                     const process = await grantRenewalPayment(householdId, {
                         actorId: auth.user.id,
-                        isSysadmin: auth.user.isSysadmin === true,
                         reason: trimmedReason,
                     });
                     return NextResponse.json({ success: true, process });
@@ -296,12 +295,12 @@ export const POST = withAuth(
             }
 
             if (active) {
-                // Conflict of interest: a board member may not grant their OWN household
-                // ACTIVE membership — that bypasses payment AND the background check for
-                // their own family. Sysadmin bypasses. (Mirrors the deny branch's
+                // Conflict of interest: no actor may grant their OWN household ACTIVE
+                // membership — that bypasses payment AND the background check for their
+                // own family. No role bypasses this. (Mirrors the deny branch's
                 // board-member protection, and certifyPaymentPlan's guard.)
-                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId, { isSysadmin: auth.user.isSysadmin === true })) {
-                    return apiError("You cannot activate your own household's membership — a sysadmin must.", 403);
+                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId)) {
+                    return apiError("You cannot activate your own household's membership — someone outside your household must.", 403);
                 }
                 const membership = await prisma.orgMembership.upsert({
                     where: { householdId },

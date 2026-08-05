@@ -32,19 +32,24 @@ describe('Program Age Bounds Integration Tests', () => {
     let testProgramId: number;
 
     beforeAll(async () => {
-        // Calculate Birthdates dynamically relative to execution time
+        // Calculate Birthdates dynamically relative to execution time.
+        // Built in UTC because calculateAge() compares UTC date components — a
+        // local-midnight fixture lands on the wrong UTC day off-zero-offset and
+        // shifts the "day before/after the birthday" cases by a year.
         const now = new Date();
-        const dob16 = new Date(now.getFullYear() - 16, now.getMonth(), now.getDate());
-        const dob12 = new Date(now.getFullYear() - 12, now.getMonth(), now.getDate());
-        const dob20 = new Date(now.getFullYear() - 20, now.getMonth(), now.getDate());
+        const dobYearsAgo = (years: number, dayOffset = 0) =>
+            new Date(Date.UTC(now.getUTCFullYear() - years, now.getUTCMonth(), now.getUTCDate() + dayOffset));
+        const dob16 = dobYearsAgo(16);
+        const dob12 = dobYearsAgo(12);
+        const dob20 = dobYearsAgo(20);
         // Exact boundaries for program [minAge=14, maxAge=18].
         // Birthday is today => exactly N years old today (eligible at both ends).
-        const dobExactly14 = new Date(now.getFullYear() - 14, now.getMonth(), now.getDate());
-        const dobExactly18 = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
+        const dobExactly14 = dobYearsAgo(14);
+        const dobExactly18 = dobYearsAgo(18);
         // Birthday tomorrow, born 14 years ago => still 13 today (under).
-        const dobTurns14Tomorrow = new Date(now.getFullYear() - 14, now.getMonth(), now.getDate() + 1);
+        const dobTurns14Tomorrow = dobYearsAgo(14, 1);
         // Birthday yesterday, born 19 years ago => turned 19 already (over).
-        const dobTurned19Yesterday = new Date(now.getFullYear() - 19, now.getMonth(), now.getDate() - 1);
+        const dobTurned19Yesterday = dobYearsAgo(19, -1);
 
         // Clean up any leaked state from previous runs
         await prisma.auditLog.deleteMany({});

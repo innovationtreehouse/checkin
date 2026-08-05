@@ -348,45 +348,57 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
     }
 }
 
-/** Board override on a BLOCKED application: reset for re-review, or force-clear the check. */
-export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve", opts?: { isSysadmin?: boolean }) {
+/**
+ * Board action on a background-check review: `reset` returns it to neutral (zero
+ * attestations, ready for re-review), `approve` force-clears a BLOCKED one.
+ *
+ * `reset` reaches a review that is BLOCKED **or** still in progress — an
+ * accidental first approval is the same "restart this review" as a board reset,
+ * so both share one definition. A review that has already CLEARED is out of
+ * reach: its side effects (the guardians' lastBackgroundCheck stamp, activation,
+ * the opened PERSON_BG rows, the sent mail) have already fanned out, and
+ * deleting the attestations would leave a cleared row with nothing behind it.
+ * `approve` stays BLOCKED-only — force-clearing a review still open to its
+ * second reviewer is what the two-reviewer rule forbids.
+ */
+export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve") {
     const process = await prisma.orgMembershipProcess.findUnique({
         where: { id: processId },
         include: { orgMembership: { select: { household: { select: { intakeNotes: true } } } } },
     });
     if (!process) throw new ReviewError("not_found", "Application not found.");
-    if (process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
+    if (action === "approve" && process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
-    // Conflict of interest: a board member may not override their OWN household's blocked
+    // Conflict of interest: no actor may override their OWN household's blocked
     // application — else they could force-clear their family's failed background check, the
-    // very thing attest()'s same-household gate forbids. Sysadmin bypasses (opts.isSysadmin).
+    // very thing attest()'s same-household gate forbids. No role bypasses this.
     const applicantHouseholdId = await applicantHousehold(prisma, process);
-    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId, { isSysadmin: opts?.isSysadmin })) {
-        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — a sysadmin must.");
+    if (await hasHouseholdConflict(prisma, actorId, applicantHouseholdId)) {
+        throw new ReviewError("same_household_applicant", "You cannot override your own household's application — someone outside your household must.");
     }
 
     if (action === "reset") {
-        // Restore the review state that matches the cycle. The check runs in parallel,
-        // so a household process returns to PENDING_BG_CLEARANCE if it had already
-        // paid, else PENDING_PAYMENT. An unpaid one with a household intake note
-        // re-holds at PENDING_BG_REVIEW — the reset restarts review, and a note keeps
-        // payment gated on it (#907). Renewals follow the same household path, except
-        // one blocked BEFORE consent was recorded (only legacy RENEWAL_PENDING_BG
-        // rows — every current renewal path records consent before review can block)
-        // restarts at the external step itself — the parallel queue only lists
-        // PENDING_PAYMENT/PENDING_BG_CLEARANCE rows WITH consent, so parking an
-        // unconsented renewal there would strand it.
-        const reviewStatus: OrgMembershipProcessStatus =
-            process.kind === "PERSON_BG" ? "PENDING_BG_REVIEW"
-            : process.kind === "RENEWAL" && !process.bgConsentAt ? "PENDING_EXTERNAL_ACTION"
-            : process.paidAt ? "PENDING_BG_CLEARANCE"
-            : process.orgMembership?.household.intakeNotes?.trim() ? "PENDING_BG_REVIEW"
-            : "PENDING_PAYMENT";
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { processId } });
-        await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: reviewStatus, bgClearedAt: null, stageEnteredAt: new Date() } });
-        await audit(prisma, actorId, processId, { status: "BLOCKED" }, { status: reviewStatus, action: "board reset" });
+        const status = await prisma.$transaction(async (tx) => {
+            // FOR UPDATE per attest()'s contract: without it a concurrent second
+            // attestation could clear the check between the phase test and the delete,
+            // leaving a cleared process with no attestations behind it.
+            await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
+            const fresh = await tx.orgMembershipProcess.findUnique({ where: { id: processId }, select: { status: true, bgConsentAt: true, bgClearedAt: true } });
+            if (!fresh) throw new ReviewError("not_found", "Application not found.");
+            const blocked = fresh.status === "BLOCKED";
+            if (!blocked && !awaitingBgReview.has({ status: fresh.status, bgConsentAt: !!fresh.bgConsentAt, bgClearedAt: !!fresh.bgClearedAt })) {
+                throw new ReviewError("wrong_phase", "This background-check review is neither blocked nor still in progress.");
+            }
+            // A blocked application resumes at the review status its cycle calls for; one
+            // still in review already sits there, so only its attestations go.
+            const reviewStatus = blocked ? blockedResetStatus(process) : fresh.status;
+            await tx.backgroundCheckAttestation.deleteMany({ where: { processId } });
+            await tx.orgMembershipProcess.update({ where: { id: processId }, data: { status: reviewStatus, bgClearedAt: null, stageEnteredAt: new Date() } });
+            await audit(tx, actorId, processId, { status: fresh.status }, { status: reviewStatus, action: "board reset" });
+            return reviewStatus;
+        });
         await notifyReviewers();
-        return { status: reviewStatus };
+        return { status };
     }
 
     // FOR UPDATE per clearBackgroundCheck's contract: serializes a board approve
@@ -408,6 +420,33 @@ export async function overrideBlocked(processId: number, actorId: number, action
     // A cleared PERSON_BG resolves to ACTIVE; a household process gates on PENDING_PAYMENT.
     const status: OrgMembershipProcessStatus = activated ? "ACTIVE" : process.subjectPersonId ? "ACTIVE" : "PENDING_PAYMENT";
     return { status };
+}
+
+type BlockedResetRow = {
+    kind: string;
+    bgConsentAt: Date | null;
+    paidAt: Date | null;
+    orgMembership: { household: { intakeNotes: string | null } } | null;
+};
+
+/**
+ * The review status a BLOCKED application resumes at when the board resets it.
+ * The check runs in parallel, so a household process returns to
+ * PENDING_BG_CLEARANCE if it had already paid, else PENDING_PAYMENT. An unpaid one
+ * with a household intake note re-holds at PENDING_BG_REVIEW — the reset restarts
+ * review, and a note keeps payment gated on it (#907). Renewals follow the same
+ * household path, except one blocked BEFORE consent was recorded (only legacy
+ * RENEWAL_PENDING_BG rows — every current renewal path records consent before
+ * review can block) restarts at the external step itself: the parallel queue only
+ * lists PENDING_PAYMENT/PENDING_BG_CLEARANCE rows WITH consent, so parking an
+ * unconsented renewal there would strand it.
+ */
+function blockedResetStatus(process: BlockedResetRow): OrgMembershipProcessStatus {
+    return process.kind === "PERSON_BG" ? "PENDING_BG_REVIEW"
+        : process.kind === "RENEWAL" && !process.bgConsentAt ? "PENDING_EXTERNAL_ACTION"
+        : process.paidAt ? "PENDING_BG_CLEARANCE"
+        : process.orgMembership?.household.intakeNotes?.trim() ? "PENDING_BG_REVIEW"
+        : "PENDING_PAYMENT";
 }
 
 /**

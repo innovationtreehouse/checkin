@@ -32,6 +32,34 @@ defineRoute({
     ],
 });
 
+// Self-correction of the caller's OWN visit: PATCH edits the times, DELETE
+// tombstones the row. `[id]` is a Visit id, NOT a person id, so 'self' cannot
+// express the gate — it compares the id param against auth.user.id. Ownership
+// is enforced in the route body, which 404s any id that is not the caller's own
+// live row; their_own (Visit.personId) is the per-row field backstop. The grant
+// stops at 'personal' (arrivedAt/departedAt); 'internal' tombstone fields stay
+// stripped.
+defineRoute({
+    endpoint: 'PATCH /api/attendance/manual/[id]',
+    authorize: 'authenticated',
+    envelope: 'visit',
+    // Bag: { Visit }.
+    returns: ['Visit'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/attendance/manual/[id]',
+    authorize: 'authenticated',
+    // No bag — the response is { success, flagged }, no model data.
+    envelope: null,
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
@@ -182,8 +210,13 @@ defineRoute({
     authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
     // Bag: { OrgMembershipProcess } with membership (OrgMembership → household Household
-    // → householdMembers Person, leads flagged isHouseholdLead).
-    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person'],
+    // → householdMembers Person, leads flagged isHouseholdLead) and the process's
+    // attestations. Reviewers attest PER ADULT, so the card shows each lead's own
+    // approval count; the route selects `subjectPersonId` alone off each attestation.
+    // Widening that select is a policy decision, not a convenience: `reviewerId` is
+    // public-tier and would tell reviewer B that reviewer A already signed off, which
+    // the deliberate `_count`-only shape exists to prevent.
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person', 'BackgroundCheckAttestation'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'member', 'public']],

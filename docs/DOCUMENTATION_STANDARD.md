@@ -244,6 +244,29 @@ instead of deleting it. It stays true and has no home in the rules register.
 A doc describing finished work that has nothing durable to say is sprawl. Delete
 it.
 
+### 4.1 How it opens
+
+A working doc is read by someone who does not yet know the problem. Order it so
+they learn it first:
+
+1. **Problem** — in plain English. What goes wrong, and for whom.
+2. **Objective** — what is true once this is done.
+3. **Executive summary** — the outcome: what changes for each affected group,
+   what deliberately does not change, what it costs.
+4. **Then** the rules the work relies on or intends to change (§5), mechanism,
+   detailed design, migration, tests.
+
+**The problem statement must be readable by someone who has never opened the
+code.** No symbol names, no file paths, no line numbers. If the opening needs
+any of them, it is describing the symptom in the source rather than the problem.
+
+**Provenance goes last.** Issue decomposition, related-issue lists, and backlog
+cross-references belong in an appendix; alternatives considered belong below the
+design they were rejected in favour of. Both justify the design to a reviewer;
+neither explains it to a reader, and above the problem they displace it. A doc
+that opens with a decomposition table has not stated its problem — a reader
+hits rejected options before learning what is being solved.
+
 ---
 
 ## 5. Enforcement
@@ -287,3 +310,6 @@ and no test should be built to pretend otherwise.
 10. **Do not create empty domain files** in anticipation of future rules.
 11. **Prefer cutting to adding.** Every line should be a rule a change could
     violate; anything else dilutes the ones that matter.
+12. **Open a working doc with the problem in plain English** — then objective,
+    then outcome. Provenance and alternatives go below the design, never above
+    the problem (§4.1).

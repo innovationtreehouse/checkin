@@ -446,9 +446,9 @@ describe('Trusted Adults service', () => {
         expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
     });
 
-    // Conflict of interest on the OVERRIDE path — mirrors decideReview's rule. A board
-    // member who leads the disclosing household must not override its own review (they'd
-    // force-approve their own trusted adult). Only a sysadmin is the remedy that bypasses.
+    // Conflict of interest on the OVERRIDE path — mirrors decideReview's rule, and no
+    // role is exempt. A board member who leads the disclosing household must not override
+    // its own review (they'd force-approve their own trusted adult); nor may a sysadmin.
     it('refuses a board member overriding their OWN household review, leaving DB + audit untouched', async () => {
         const ta = await discloseOne();
         const reviewId = ta.reviews[0].id;
@@ -463,17 +463,6 @@ describe('Trusted Adults service', () => {
         expect(after!.decidedById).toBeNull();
         const auditAfter = await latestAudit(ta.id);
         expect(auditAfter?.id).toBe(auditBefore?.id); // no new audit row appended
-    });
-
-    it('allows a sysadmin to override their own household review (the deliberate remedy)', async () => {
-        const ta = await discloseOne();
-        // Same actor whose board role is conflicted, but acting AS sysadmin → bypass.
-        const approved = await overrideReview(ta.reviews[0].id, boardLeadId, 'approve', SHARED, { isSysadmin: true });
-        expect(approved.status).toBe('APPROVED');
-
-        const audit = await latestAudit(ta.id);
-        expect(audit?.actorId).toBe(boardLeadId);
-        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'APPROVED', override: 'approve' });
     });
 
     it('allows a cross-household board member to override (no conflict)', async () => {

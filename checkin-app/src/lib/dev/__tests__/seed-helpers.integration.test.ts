@@ -63,15 +63,14 @@ describe("dev seed-helpers (integration)", () => {
         expect(household?.householdMembers.length).toBe(3);
     });
 
-    it("+ Program adds a program with a fee and two participants", async () => {
+    it("+ Program adds a program with two participants", async () => {
         const summary = await createProgram(prisma);
         expect(summary).toMatch(/Test Program/);
         const program = await prisma.program.findFirst({
             where: { name: { startsWith: "Test Program" } },
-            include: { fees: true, participants: true },
+            include: { participants: true },
             orderBy: { id: "desc" },
         });
-        expect(program?.fees.length).toBe(1);
         expect(program?.participants.length).toBe(2);
     });
 

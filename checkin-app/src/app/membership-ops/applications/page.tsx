@@ -73,12 +73,11 @@ export default function AdminMembershipPage() {
 function ApplicationsBoard() {
   const { data: session } = useSession();
   const me = session?.user;
-  // Conflict of interest: a board member may not certify/override their OWN household's
-  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked). Sysadmin
-  // is the deliberate remedy and keeps the buttons. The disabled state is UX only — the
-  // server is the real enforcement.
+  // Conflict of interest: no actor may certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked).
+  // The disabled state is UX only — the server is the real enforcement.
   const ownHousehold = (r: ProcessRow) =>
-    me?.isSysadmin !== true && sharesHousehold(me?.householdId, r.orgMembership?.householdId);
+    sharesHousehold(me?.householdId, r.orgMembership?.householdId);
   const [rows, setRows] = useState<ProcessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -181,6 +180,24 @@ function ApplicationsBoard() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  // An awaiting row only ever holds APPROVE attestations (any REJECT blocks it).
+  const approvals = (r: ProcessRow) => r.attestations.filter((a) => a.result === "APPROVE").length;
+
+  const confirmResetReview = (r: ProcessRow) => {
+    modals.openConfirmModal({
+      title: "Start this background-check review over?",
+      children: (
+        <Text size="sm">
+          This discards the {approvals(r)} approval(s) recorded for <strong>{householdLabel(r)}</strong>{" "}
+          and asks the reviewers to start again. Use it when an approval was recorded by
+          mistake — the check itself has not cleared yet, so nothing else changes.
+        </Text>
+      ),
+      labels: { confirm: "Clear approvals", cancel: "Cancel" },
+      onConfirm: () => override(r.id, "reset"),
+    });
   };
 
   // Disposing an abandoned application removes it from the board list. Confirm
@@ -381,9 +398,18 @@ function ApplicationsBoard() {
               )}
 
               {awaitingBg(r) && (
-                <Text size="sm" c="dimmed" mt="md">
-                  Background check (in parallel) — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
-                </Text>
+                <Group mt="md" gap="md" wrap="wrap" align="center">
+                  <Text size="sm" c="dimmed">
+                    Background check (in parallel) — <Text component="span" fw={600}>{approvals(r)}/2</Text> approvals recorded.
+                  </Text>
+                  {/* The board's way back from a reviewer's misclick: the review is still
+                      open, so clearing the attestations undoes it with nothing to unwind. */}
+                  {approvals(r) > 0 && (
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => confirmResetReview(r)}>
+                      Clear approvals — start the review over
+                    </Button>
+                  )}
+                </Group>
               )}
 
               {r.status === "PENDING_PAYMENT" && (
@@ -393,7 +419,7 @@ function ApplicationsBoard() {
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                   {ownHousehold(r) && (
-                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — someone outside your household must.</Text>
                   )}
                 </Group>
               )}
@@ -420,7 +446,7 @@ function ApplicationsBoard() {
                     </Button>
                   </Group>
                   {ownHousehold(r) && (
-                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — someone outside your household must.</Text>
                   )}
                 </Alert>
               )}

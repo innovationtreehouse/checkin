@@ -243,7 +243,7 @@ export async function activate(
 }
 
 /** Board override: certify a payment plan and activate without a Shopify payment. */
-export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { isSysadmin?: boolean; reason?: string }) {
+export async function certifyPaymentPlan(processId: number, actorId: number, opts?: { reason?: string }) {
     // Unlike the webhook path, a board certify is a deliberate action — reject
     // (not silently no-op) when the process isn't actually awaiting payment, so
     // certifying an already-ACTIVE or still-in-review grant surfaces a 409
@@ -253,11 +253,11 @@ export async function certifyPaymentPlan(processId: number, actorId: number, opt
     if (!process) throw new PaymentError("not_found", "Application not found.");
     if (process.status !== "PENDING_PAYMENT") throw new PaymentError("wrong_phase", "This application is not awaiting payment.");
 
-    // Conflict of interest: a board member may not certify (mark paid + activate) their
-    // OWN household's membership — else they could activate their family without paying
-    // dues. Sysadmin bypasses.
-    if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId, { isSysadmin: opts?.isSysadmin })) {
-        throw new PaymentError("forbidden", "You cannot certify your own household's membership — a sysadmin must.");
+    // Conflict of interest: no actor may certify (mark paid + activate) their OWN
+    // household's membership — else they could activate their family without paying
+    // dues. No role bypasses this.
+    if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId)) {
+        throw new PaymentError("forbidden", "You cannot certify your own household's membership — someone outside your household must.");
     }
     return activate(processId, { via: "certified", actorId, reason: opts?.reason });
 }
