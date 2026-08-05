@@ -293,34 +293,59 @@ describe('Admin Participants API Integration Tests', () => {
             // Cleanup is handled by afterEach
         });
 
-        it('rejects the over-25 declaration when the person has a date of birth on file', async () => {
+        it('sets the over-25 declaration on a person with no date of birth', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
             });
 
-            // A 12-year-old: a declared-adult flag on this row would make them match
-            // the adults filter in /api/people/search and count as a supervising
-            // adult in the check-in safety calc.
+            const adult = await prisma.person.create({
+                data: { email: 'edit-test-user-nodob@example.com', name: 'Adult No DOB', household: { create: { name: "Test HH" } } },
+            });
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${adult.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ isDeclaredAdult: true })
+            });
+
+            const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: adult.id.toString() }) });
+            expect(res.status).toBe(200);
+
+            const dbCheck = await prisma.person.findUnique({ where: { id: adult.id } });
+            expect(dbCheck?.isDeclaredAdult).toBe(true);
+        });
+
+        it('drops the over-25 declaration when the person has a date of birth on file', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            // A 12-year-old already carrying a stale flag, as a bulk import that writes
+            // a DOB without touching it leaves them. The edit form resubmits the whole
+            // record, so an unrelated name edit must still save AND heal the pair — a
+            // declared-adult flag here would make them match the adults filter in
+            // /api/people/search and count as a supervising adult in the safety calc.
             const youth = await prisma.person.create({
                 data: {
                     email: 'edit-test-user-dob@example.com',
                     name: 'Youth With DOB',
                     dateOfBirth: new Date(Date.UTC(2014, 0, 15)),
+                    isDeclaredAdult: true,
                     household: { create: { name: "Test HH" } },
                 },
             });
 
             const req = new Request(`http://localhost:4000/api/membership-ops/participants/${youth.id}`, {
                 method: 'PUT',
-                body: JSON.stringify({ isDeclaredAdult: true })
+                body: JSON.stringify({ name: 'Youth Renamed', isDeclaredAdult: true })
             });
 
             const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: youth.id.toString() }) });
-            expect(res.status).toBe(400);
+            expect(res.status).toBe(200);
 
             const dbCheck = await prisma.person.findUnique({ where: { id: youth.id } });
+            expect(dbCheck?.name).toBe('Youth Renamed');
             expect(dbCheck?.isDeclaredAdult).toBe(false);
-            // The DOB is the authoritative value — refusing the flag must not clear it.
+            // The DOB is the authoritative value — dropping the flag must not clear it.
             expect(dbCheck?.dateOfBirth).toEqual(new Date(Date.UTC(2014, 0, 15)));
         });
 
