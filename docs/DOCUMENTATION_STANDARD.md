@@ -363,6 +363,37 @@ neither explains it to a reader, and above the problem they displace it. A doc
 that opens with a decomposition table has not stated its problem — a reader
 hits rejected options before learning what is being solved.
 
+### 4.2 Keep the permanent text apart from the migration to it
+
+A working doc that changes a standing rule carries two things with different
+lifetimes: **the rule, which outlives the change**, and **the one-time cutover**
+— current counts, by-hand steps, where in-flight work lands, what has to be
+decided first. The second expires the day the change runs.
+
+Written as one document they interleave, and two things follow. The permanent
+text gets stated twice — once as the design, again as the block to paste into
+its real home — so a later edit lands in one copy and not the other. And the
+extract step below stops being a file move and becomes a judgement call over
+every paragraph, made by whoever merges, months after the reasoning.
+
+**Split them while writing, not at merge.** Two files:
+
+- `<name>.md` — the permanent text and nothing else. Not where it is going, not
+  how it gets there, not what it replaces: those expire, and a file that has to
+  be edited before it lands is a file that will land wrong. Landing it should be
+  a copy.
+- `<name>-migration.md` — everything that stops being true once the change runs,
+  including the destination itself. Its last step is "apply the other file,
+  delete both".
+
+Naming the destination inside the permanent file is the easy version of this
+mistake to make, and the one that survives review: it reads like a helpful
+header rather than what it is.
+
+Most changes have no cutover and need no second file. The test is not whether
+the doc is long enough to split, but whether any of it **expires on a date you
+can name**.
+
 ---
 
 ## 5. Enforcement
@@ -402,7 +433,9 @@ and no test should be built to pretend otherwise.
 6. **A choice not to do something is a deliberate limit, not a gap.** Say so, so
    nobody closes it as an oversight.
 7. **A working doc is fine while building — put it in `docs/in-design/`.** No
-   `Status:` header ceremony; the folder carries that meaning.
+   `Status:` header ceremony; the folder carries that meaning. If it also
+   carries a one-time cutover, that goes in a second file (§4.2) — never mixed
+   into the text destined to become permanent.
 8. **Never cite a doc in `docs/in-design/` as ground truth**, or one scheduled
    to be deleted. It describes something that is not yet true, or will not exist.
 9. **At merge, extract and delete.** Move the standing rules into the domain
