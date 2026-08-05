@@ -82,8 +82,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         where: { id: visitId }
     });
 
-    if (!originalVisit || originalVisit.departedAt) {
-        return []; // Already checked out or doesn't exist
+    if (!originalVisit || originalVisit.departedAt || originalVisit.deletedAt) {
+        return []; // Already checked out, tombstoned, or doesn't exist
     }
 
     // Chunks recreated below are all segments of one physical visit: they keep

@@ -33,24 +33,24 @@ describe('Program Age Bounds Integration Tests', () => {
     let testProgramId: number;
 
     beforeAll(async () => {
-        // Calculate Birthdates dynamically relative to execution time
-        // Built from UTC parts because calculateAge reads UTC fields: local-part
-        // construction shifts these by a day west of UTC, which flips the exact
-        // boundary personas late in the day.
+        // Calculate Birthdates dynamically relative to execution time.
+        // Built in UTC because calculateAge() compares UTC date components — a
+        // local-midnight fixture lands on the wrong UTC day off-zero-offset and
+        // shifts the "day before/after the birthday" cases by a year.
         const now = new Date();
-        const [uy, um, ud] = [now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()];
-        const utcDob = (yearsAgo: number, dayOffset = 0) => new Date(Date.UTC(uy - yearsAgo, um, ud + dayOffset));
-        const dob16 = utcDob(16);
-        const dob12 = utcDob(12);
-        const dob20 = utcDob(20);
+        const dobYearsAgo = (years: number, dayOffset = 0) =>
+            new Date(Date.UTC(now.getUTCFullYear() - years, now.getUTCMonth(), now.getUTCDate() + dayOffset));
+        const dob16 = dobYearsAgo(16);
+        const dob12 = dobYearsAgo(12);
+        const dob20 = dobYearsAgo(20);
         // Exact boundaries for program [minAge=14, maxAge=18].
         // Birthday is today => exactly N years old today (eligible at both ends).
-        const dobExactly14 = utcDob(14);
-        const dobExactly18 = utcDob(18);
+        const dobExactly14 = dobYearsAgo(14);
+        const dobExactly18 = dobYearsAgo(18);
         // Birthday tomorrow, born 14 years ago => still 13 today (under).
-        const dobTurns14Tomorrow = utcDob(14, 1);
+        const dobTurns14Tomorrow = dobYearsAgo(14, 1);
         // Birthday yesterday, born 19 years ago => turned 19 already (over).
-        const dobTurned19Yesterday = utcDob(19, -1);
+        const dobTurned19Yesterday = dobYearsAgo(19, -1);
 
         // Clean up any leaked state from previous runs
         await prisma.auditLog.deleteMany({});
@@ -75,7 +75,7 @@ describe('Program Age Bounds Integration Tests', () => {
             data: {
                 email: 'guardian-age-test@example.com',
                 name: 'Guardian Age Test',
-                dateOfBirth: utcDob(40),
+                dateOfBirth: dobYearsAgo(40),
                 isHouseholdLead: true,
                 householdId: guardianHousehold.id,
             }

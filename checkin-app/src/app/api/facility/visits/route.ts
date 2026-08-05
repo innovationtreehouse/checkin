@@ -11,6 +11,7 @@ export const GET = withAuth(
         try {
             const visits = await prisma.visit.findMany({
                 take: 50,
+                where: { deletedAt: null },
                 orderBy: { arrivedAt: "desc" },
                 include: {
                     person: {
@@ -38,7 +39,7 @@ export const PATCH = withAuth(
             }
 
             const existing = await prisma.visit.findUnique({ where: { id: visitId } });
-            if (!existing) {
+            if (!existing || existing.deletedAt) {
                 return apiError("Visit not found.", 404); // also turns a bad id into a clean 404
             }
 
@@ -108,14 +109,19 @@ export const DELETE = withAuth(
             }
 
             const existing = await prisma.visit.findUnique({ where: { id: visitId } });
-            if (!existing) {
+            if (!existing || existing.deletedAt) {
                 return apiError("Visit not found.", 404);
             }
 
-            await prisma.visit.delete({ where: { id: visitId } });
+            // Tombstone, matching the member's own self-delete: a deleted visit
+            // keeps its row so the deletion stays reviewable and reversible.
+            await prisma.visit.update({
+                where: { id: visitId },
+                data: { deletedAt: new Date(), deletedById: auth.type === 'session' ? auth.user.id : null },
+            });
 
-            // Log the manual deletion in the audit trail — keep the deleted row in oldData
-            // since it no longer exists anywhere else.
+            // Log the manual deletion in the audit trail — oldData carries the
+            // pre-delete row so the review needs no join.
             if (auth.type === 'session') {
                 await prisma.auditLog.create({
                     data: {

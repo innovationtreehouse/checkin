@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError, logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { addHouseholdLead, HouseholdLeadLimitError, HouseholdLeadYouthError } from "@/lib/household/leads";
 
 export const POST = withAuth<{ params: Promise<{ id: string }> }>(
     { roles: ['isSysadmin', 'isBoardMember'] },
@@ -30,45 +31,54 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             return apiError("Participant not found", 404);
         }
 
-        let targetHouseholdId: number;
-
-        if (createNew) {
-            const newHousehold = await prisma.household.create({
-                data: {
-                    name: `${participant.name || 'User'}'s Household`,
-                }
-            });
-            targetHouseholdId = newHousehold.id;
-            // New household starts as a visitor (no membership) — membership is
-            // earned via the application process or set on the households page.
-            // Leadership (isHouseholdLead) is set on the person.update below.
-        } else {
-            targetHouseholdId = parseInt(householdId);
-            if (isNaN(targetHouseholdId)) {
+        // Validate the destination before the write transaction below.
+        const requestedHouseholdId = createNew ? null : parseInt(householdId);
+        if (requestedHouseholdId !== null) {
+            if (isNaN(requestedHouseholdId)) {
                 return apiError("Invalid household ID", 400);
             }
 
-            const household = await prisma.household.findUnique({ where: { id: targetHouseholdId } });
+            const household = await prisma.household.findUnique({ where: { id: requestedHouseholdId } });
             if (!household) {
                 return apiError("Household not found", 404);
             }
         }
 
-        // a1 leadership (HOUSEHOLD_LEAD_MODEL.md): createNew makes the person the
-        // sole lead of the household we just created; a real move into another
-        // household de-leads them (they lead their OWN household — re-promote if
-        // they should lead the new one). A same-household no-op leaves the flag
-        // untouched, matching the prior behavior that only cleaned up on a change.
-        const leadFlag = createNew
-            ? { isHouseholdLead: true }
-            : participant.householdId !== targetHouseholdId
-                ? { isHouseholdLead: false }
-                : {};
+        // a1 leadership (HOUSEHOLD_LEAD_MODEL.md): a person leads their OWN
+        // household, so a change of household always clears the flag, and
+        // createNew then re-promotes them in the household created here. The
+        // promotion goes through addHouseholdLead — the only writer of
+        // isHouseholdLead: true — which owns the youth exclusion and the lead cap
+        // under a Household row lock. It rejects a person whose householdId isn't
+        // the target household, so the move must be written first; one
+        // transaction keeps the whole reassign atomic and puts the helper's lock
+        // in it. A same-household no-op leaves the flag untouched.
+        const { updatedParticipant, targetHouseholdId } = await prisma.$transaction(async (tx) => {
+            // New household starts as a visitor (no membership) — membership is
+            // earned via the application process or set on the households page.
+            const targetHouseholdId = requestedHouseholdId ?? (await tx.household.create({
+                data: { name: `${participant.name || 'User'}'s Household` },
+            })).id;
 
-        const updatedParticipant = await prisma.person.update({
-            where: { id: participantId },
-            data: { householdId: targetHouseholdId, ...leadFlag },
-            include: { household: true }
+            const updated = await tx.person.update({
+                where: { id: participantId },
+                data: {
+                    householdId: targetHouseholdId,
+                    ...(participant.householdId !== targetHouseholdId ? { isHouseholdLead: false } : {}),
+                },
+                include: { household: true }
+            });
+
+            if (!createNew) return { updatedParticipant: updated, targetHouseholdId };
+
+            // A rejected promotion aborts the whole reassign: the household just
+            // created would have no possible lead, so it must not exist. The throw
+            // rolls back the create and the move with it.
+            const { created } = await addHouseholdLead(tx, targetHouseholdId, participantId);
+            return {
+                updatedParticipant: { ...updated, isHouseholdLead: updated.isHouseholdLead || created },
+                targetHouseholdId,
+            };
         });
 
         await prisma.auditLog.create({
@@ -84,6 +94,12 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
 
         return NextResponse.json({ success: true, participant: updatedParticipant });
     } catch (error) {
+        if (error instanceof HouseholdLeadYouthError) {
+            return apiError("A youth cannot lead a household, so they cannot be given one of their own. Assign them to an existing household instead.", 400);
+        }
+        if (error instanceof HouseholdLeadLimitError) {
+            return apiError(error.message, 400);
+        }
         await logBackendError(error, "POST /api/membership-ops/participants/[id]/household");
         return apiError(`Internal server error`, 500);
     }

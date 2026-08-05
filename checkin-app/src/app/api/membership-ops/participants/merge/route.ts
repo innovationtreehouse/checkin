@@ -244,7 +244,7 @@ export const POST = withAuth(
                 // closes open visits by scan-service regardless of person, so it can't leak.
                 // ponytail: leave-the-row over inventing a departedAt; revisit only if a real
                 // "two humans, one badge, both open" case appears — it can't, same human.
-                const keeperHasOpenVisit = await tx.visit.findFirst({ where: { personId: keepId, departedAt: null }, select: { id: true } });
+                const keeperHasOpenVisit = await tx.visit.findFirst({ where: { personId: keepId, departedAt: null, deletedAt: null }, select: { id: true } });
                 moved.visits = (await tx.visit.updateMany({
                     where: { personId: mergeId, ...(keeperHasOpenVisit ? { departedAt: { not: null } } : {}) },
                     data: { personId: keepId }

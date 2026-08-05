@@ -111,8 +111,8 @@ follows: an actor may not decide their own household's case, and no role is
 exempt. The enroll route never adopted it — `enforceLimits` keys only off
 `override` and the actor's roles, never off *who the enrollment is for* — so a
 sysadmin or board member can currently self-override past closed enrollment,
-age bounds, members-only, and capacity. That is a pre-existing hole, being
-fixed separately.
+age bounds, members-only, and capacity. That is a pre-existing hole, fixed
+separately in #1463.
 
 Once a conflicted actor can no longer reach the override exemption at all,
 "inside `enforceLimits`" and "outside `enforceLimits`" are the same behaviour
@@ -264,7 +264,7 @@ lead membership and 403s a non-lead, and `renewal-status` returns
 not every membership action.
 
 This is org-membership dues, a different domain from program enrollment — see
-"Out of scope" below. It needs its own issue.
+"Out of scope" below. Fixed separately in #1473.
 
 ## Open gaps
 
@@ -284,8 +284,9 @@ from *who may initiate*).
   is now hidden from youth and withdrawal is gated, but no charge, hold, or
   inventory rule changes — the gated `DELETE` still runs the same
   `withdrawAndReleaseHold` when a lead performs it.
-- **Org-membership dues.** Program enrollment is the subject here. If the
-  `membership/page.tsx` check above turns up a leak, it is its own issue.
+- **Org-membership dues.** Program enrollment is the subject here. The
+  `membership/page.tsx` leak found by the sweep above was real, and was fixed
+  separately in #1473.
 - **Reconciling the missing-DOB posture across the app.** `leads.ts` reads an
   unknown DOB as adult, this design reads it as not-adult. Both are deliberate;
   making them agree is a decision, not a bug fix, and does not belong in this
@@ -293,8 +294,9 @@ from *who may initiate*).
 - **Household-lead integrity.** A youth cannot hold `isHouseholdLead` —
   `addHouseholdLead` refuses, and every promotion path routes through it — so
   the lead-enrolls-a-household-member path this design relies on is sound. The
-  remaining edges (one route writing the flag directly, and what should bound
-  leadless or otherwise semi-valid household states) are issue #1471.
+  remaining edges are issue #1471 — the route that wrote the flag directly is
+  fixed in #1472, and what should bound leadless or otherwise semi-valid
+  household states is still open there.
 
 ## Build shape
 

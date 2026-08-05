@@ -7,6 +7,7 @@ import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { LIVE_VISIT } from "@/lib/visit/filters";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -42,7 +43,7 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
                     }
                 }
             },
-            visits: true,
+            visits: { where: LIVE_VISIT },
             rsvps: {
                 where: { person: LIVE_PERSON },
                 include: { person: true }
@@ -218,17 +219,21 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     where: {
                         personId: Number(participantId),
                         associatedEventId: eventId,
-                        departedAt: null
+                        departedAt: null,
+                        ...LIVE_VISIT
                     }
                 });
                 if (openVisit) {
                     return apiError("Participant is currently checked in — check them out before marking Absent", 400);
                 }
                 // Only closed visits remain; safe to remove on an Absent correction.
+                // Never hard-delete a tombstone: it is the reviewable record of
+                // an earlier self-deletion.
                 await prisma.visit.deleteMany({
                     where: {
                         personId: Number(participantId),
-                        associatedEventId: eventId
+                        associatedEventId: eventId,
+                        ...LIVE_VISIT
                     }
                 });
             } else if (status === 'Present') {
@@ -257,7 +262,8 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 const existingVisit = await prisma.visit.findFirst({
                     where: {
                         personId: Number(participantId),
-                        associatedEventId: eventId
+                        associatedEventId: eventId,
+                        ...LIVE_VISIT
                     }
                 });
 
