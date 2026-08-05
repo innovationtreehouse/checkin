@@ -1070,14 +1070,23 @@ model Visit {
   /// @sensitivity:public
   associatedEventId Int?
 
+  /// Tombstone: a deleted visit keeps its row (reviewable + reversible); every
+  /// user-facing read filters through LIVE_VISIT (lib/visit/filters.ts).
+  /// Null == live. @sensitivity:internal
+  deletedAt         DateTime?
+  /// Actor who tombstoned the row; the audit trail is the full provenance.
+  /// @sensitivity:internal
+  deletedById       Int?
+
   person Person @relation(fields: [personId], references: [id])
   event  Event?      @relation(fields: [associatedEventId], references: [id])
 
   @@index([personId, departedAt]) // Active visits lookup in /api/scan
-  // Partial unique index "Visit_one_open_per_participant" — at most one open visit
-  // (departedAt IS NULL) per participant. Prisma's DSL can't express a partial
-  // unique index, so it lives in the 20260629180000_visit_one_open_per_participant
-  // raw-SQL migration. DB-level backstop against double check-in races.
+  // Partial unique index "Visit_one_open_per_participant" — at most one open,
+  // live visit (departedAt IS NULL AND deletedAt IS NULL) per participant.
+  // Prisma's DSL can't express a partial unique index, so it lives in raw SQL
+  // (recreated in 20260726120000_visit_tombstone). DB-level backstop against
+  // double check-in races.
 }
 
 model AuditLog {

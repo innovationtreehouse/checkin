@@ -11,6 +11,7 @@ import crypto from 'crypto';
 import { normalizeAuditData } from '@/lib/auditPayload';
 import { POST as SHOPIFY_WEBHOOK } from '@/app/api/webhooks/shopify/route';
 import { POST as CERTIFY } from '@/app/api/membership-ops/applications/certify-payment/route';
+import { GET as PAYMENT } from '@/app/api/membership/payment/route';
 import { ensurePaymentLink, ensurePaymentLinkForUser, activate } from '@/lib/membership/payment';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
@@ -49,6 +50,7 @@ describe('Membership payment API', () => {
     let normalProc: number, normalMembership: number;
     let volProc: number;
     let certProc: number;
+    let gateProc: number, gateLeadId: number, gateNonLeadId: number;
     const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
     const prevStoreDomain = process.env.SHOPIFY_STORE_DOMAIN;
     let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; orgMembershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
@@ -103,6 +105,16 @@ describe('Membership payment API', () => {
         normalMembership = normal.orgMembershipId;
         volProc = (await makeProc('Vol', true)).processId;
         certProc = (await makeProc('Cert', false)).processId;
+
+        // A household awaiting payment with both a lead and a non-lead member, for
+        // the GET /api/membership/payment lead gate below.
+        const gate = await makeProc('Gate', false);
+        gateProc = gate.processId;
+        const gLead = await prisma.person.create({ data: { email: `gate-lead-${TAG}@example.com`, name: 'Gate Lead', householdId: gate.householdId } });
+        await prisma.person.update({ where: { id: gLead.id }, data: { isHouseholdLead: true } });
+        gateLeadId = gLead.id;
+        const gMember = await prisma.person.create({ data: { email: `gate-member-${TAG}@example.com`, name: 'Gate Member', householdId: gate.householdId } });
+        gateNonLeadId = gMember.id;
     });
 
     afterAll(async () => {
@@ -131,6 +143,47 @@ describe('Membership payment API', () => {
     it('resolves the payment link for the calling user', async () => {
         const res = await ensurePaymentLinkForUser(leadId);
         expect(res.amountCents).toBe(10000);
+    });
+
+    // ── GET /api/membership/payment: dues + checkout are lead-only ────────────
+    const paymentReq = () => new Request('http://localhost:4000/api/membership/payment') as never;
+
+    it('serves the dues amount and checkout link to a household lead', async () => {
+        asUser(gateLeadId);
+        const res = await PAYMENT(paymentReq());
+        expect(res.status).toBe(200);
+        const body = await res.json();
+        expect(body.amountCents).toBe(10000);
+        expect(body.checkoutUrl).toContain(`attributes[Membership_Process_ID]=${gateProc}`);
+    });
+
+    it('refuses a non-lead household member (no dues, no checkout link)', async () => {
+        asUser(gateNonLeadId);
+        const res = await PAYMENT(paymentReq());
+        expect(res.status).toBe(403);
+        const body = await res.json();
+        expect(body.error).toMatch(/household lead/);
+        expect(body.amountCents).toBeUndefined();
+        expect(body.checkoutUrl).toBeUndefined();
+    });
+
+    it('still serves a board member who is not a household lead', async () => {
+        asBoard(gateNonLeadId);
+        const res = await PAYMENT(paymentReq());
+        expect(res.status).toBe(200);
+        expect((await res.json()).amountCents).toBe(10000);
+    });
+
+    it('still serves a sysadmin who is not a household lead', async () => {
+        await prisma.person.update({ where: { id: gateNonLeadId }, data: { isSysadmin: true } });
+        try {
+            asUser(gateNonLeadId);
+            const res = await PAYMENT(paymentReq());
+            expect(res.status).toBe(200);
+            expect((await res.json()).amountCents).toBe(10000);
+        } finally {
+            await prisma.person.update({ where: { id: gateNonLeadId }, data: { isSysadmin: false } });
+        }
     });
 
     it('orders/paid webhook activates the membership (and is idempotent)', async () => {

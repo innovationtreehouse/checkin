@@ -7,6 +7,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { withinMaxDuration } from "@/lib/visitTimes";
+import { LIVE_VISIT } from "@/lib/visit/filters";
 
 // Self-service manual visit entry. INTENTIONAL by design: a member records a
 // visit for THEMSELVES only (participantId is forced to auth.user.id, never taken
@@ -85,7 +86,7 @@ export const POST = withAuth({}, async (req, auth) => {
             // provided) is just a historical record, so multiple are fine.
             if (!departureTime) {
                 const openVisit = await tx.visit.findFirst({
-                    where: { personId: userId, departedAt: null }
+                    where: { personId: userId, departedAt: null, ...LIVE_VISIT }
                 });
                 if (openVisit) return { visit: openVisit, freshCheckin: false };
 
@@ -96,7 +97,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 // keyholder check-in is either committed-and-seen or not yet.
                 if (!auth.user.isKeyholder) {
                     const activeKeyholders = await tx.visit.count({
-                        where: { departedAt: null, person: { isKeyholder: true } }
+                        where: { departedAt: null, person: { isKeyholder: true }, ...LIVE_VISIT }
                     });
                     if (activeKeyholders === 0) return { facilityClosed: true as const };
                 }
@@ -145,6 +146,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 action: "CREATE",
                 tableName: "Visit",
                 affectedEntityId: visit.id,
+                secondaryAffectedEntity: Number(userId),
                 newData: { arrivedAt, departedAt, type: "manual_entry" }
             }
         });
