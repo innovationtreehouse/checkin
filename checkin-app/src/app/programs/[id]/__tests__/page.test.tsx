@@ -59,8 +59,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         enrollmentStatus: "OPEN",
         orgMemberPriceCents: null,
         nonOrgMemberPriceCents: null,
-        shopifyOrgMemberVariantId: null,
-        shopifyNonOrgMemberVariantId: null,
+        shopifyVariantId: null,
         minAge: 5,
         maxAge: 18,
         ...overrides,
@@ -237,7 +236,7 @@ describe("ProgramEnrollmentPage", () => {
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({
                 color: "red",
                 autoClose: false,
-                message: "Cannot enroll: no pricing variant set for this program tier — set one in program-ops.",
+                message: "Cannot enroll: no pricing variant set for this program — set one in program-ops.",
             })),
         );
         expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/10/participants", expect.anything());
@@ -452,13 +451,13 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
-    it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
+    it("redirects to Shopify checkout for a priced enrollment with a configured variant", async () => {
         setSession({ id: 101 });
         setShopifyStoreDomain("shop.example.com"); // redirect requires a store domain
         const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
         mockFetchJson({
             "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
+            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyVariantId: "gid://variant" }),
             "/api/programs/10/participants": { ok: true },
         });
         renderPage();
@@ -482,7 +481,7 @@ describe("ProgramEnrollmentPage", () => {
             "/api/household": memberHousehold,
             "/api/programs/10": baseProgram({
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
-                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                shopifyVariantId: "gid://single-pool",
             }),
             "/api/programs/10/participants": { ok: true },
         });
@@ -517,7 +516,7 @@ describe("ProgramEnrollmentPage", () => {
             "/api/programs/10": baseProgram({
                 participants: [{ personId: 101, status: "PENDING" }],
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
-                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                shopifyVariantId: "gid://single-pool",
             }),
             "/api/programs/10/participants": () => ({ error: "Participant is already enrolled in this program." }),
         });
@@ -549,26 +548,6 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
-    it("does NOT fetch a discount code for a legacy two-variant program", async () => {
-        setSession({ id: 101 });
-        setShopifyStoreDomain("shop.example.com");
-        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
-        const fetchMock = mockFetchJson({
-            "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
-            "/api/programs/10/participants": { ok: true },
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        await selectMember("Kid One");
-        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
-
-        await screen.findByText("Redirecting to Shopify for secure payment...");
-        expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/discount-code"))).toBe(false);
-    });
-
     // Membership-duration guard: pricing decisions use the server-computed
     // viewerMemberPricingEligible flag over the household-status-derived isMember,
     // so a current member not covered through the program's end doesn't get the
@@ -581,7 +560,7 @@ describe("ProgramEnrollmentPage", () => {
             "/api/household": memberHousehold,
             "/api/programs/10": baseProgram({
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
-                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                shopifyVariantId: "gid://single-pool",
                 viewerIsMember: true, viewerMemberPricingEligible: false,
             }),
             "/api/programs/10/participants": { ok: true },

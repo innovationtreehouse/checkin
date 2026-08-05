@@ -31,13 +31,10 @@ type ProgramDetail = {
   enrollmentStatus: string;
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
-  // Single-pool model (product decision 2026-07-06): when set, this is the
-  // ONE variant for both tiers — member pricing comes from a checkout-time
-  // discount code (see handleEnroll), not a separate variant. Legacy programs
-  // leave this null and keep using the pair below.
+  // Single-pool model (product decision 2026-07-06): the ONE variant for both
+  // tiers — member pricing comes from a checkout-time discount code (see
+  // handleEnroll), not a separate variant.
   shopifyVariantId: string | null;
-  shopifyOrgMemberVariantId: string | null;
-  shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
@@ -273,15 +270,15 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
         }
         pricingEligible = program.viewerMemberPricingEligible ?? isMember;
-        // Single-pool programs sell the SAME variant to everyone — the discount
-        // code (below, at redirect time) does the member pricing, not a variant pick.
-        variantId = program.shopifyVariantId || (pricingEligible ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
+        // Every program sells the SAME variant to everyone — the discount code
+        // (below, at redirect time) does the member pricing, not a variant pick.
+        variantId = program.shopifyVariantId;
         storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
             ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
-            : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
+            : "Cannot enroll: no pricing variant set for this program — set one in program-ops." });
           return; // no enrollment created — payment path is broken
         }
       }

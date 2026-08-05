@@ -490,7 +490,7 @@ describe('Program payment-plan routes', () => {
                     expect(data.warning).toBeUndefined();
 
                     expect(logSpy).toHaveBeenCalledWith(
-                        expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-apply-pp'),
+                        expect.stringContaining('Would adjust inventory by -1 for variant: dev-mock-variant-apply-pp'),
                     );
                 } finally {
                     logSpy.mockRestore();

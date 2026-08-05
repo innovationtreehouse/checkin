@@ -613,7 +613,7 @@ describe('Individual Program API Integration Tests', () => {
                     leadMentorId: leadId,
                     orgMemberPriceCents: 5000,
                     maxParticipants: 20,
-                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-capacity',
+                    shopifyVariantId: 'dev-mock-variant-capacity',
                 },
             });
             cappedProgramId = capped.id;
@@ -625,7 +625,7 @@ describe('Individual Program API Integration Tests', () => {
                     leadMentorId: leadId,
                     orgMemberPriceCents: 5000,
                     maxParticipants: null,
-                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-uncapped',
+                    shopifyVariantId: 'dev-mock-variant-uncapped',
                 },
             });
             uncappedProgramId = uncapped.id;

@@ -19,8 +19,6 @@ type Program = {
   orgMemberPriceCents?: number | null;
   nonOrgMemberPriceCents?: number | null;
   shopifyVariantId?: string | null;
-  shopifyOrgMemberVariantId?: string | null;
-  shopifyNonOrgMemberVariantId?: string | null;
   _count?: { participants?: number; events?: number };
 };
 

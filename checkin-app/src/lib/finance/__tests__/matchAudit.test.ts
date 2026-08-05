@@ -72,11 +72,9 @@ beforeEach(() => {
     mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set());
     prismaMock.boardSettings.findUnique.mockResolvedValue({
         orgMembershipVariantId: '111',
-        shopifyNormalVariantId: null,
-        shopifyVolunteerVariantId: '112',
     });
     prismaMock.program.findMany.mockResolvedValue([
-        { id: 7, name: 'Robotics', shopifyVariantId: '222', shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null },
+        { id: 7, name: 'Robotics', shopifyVariantId: '222' },
     ]);
     prismaMock.orgMembershipProcess.findMany.mockResolvedValue([]);
     prismaMock.programParticipant.findMany.mockResolvedValue([]);
@@ -98,7 +96,7 @@ it('reports configured:false without touching prisma or the mirror data when unw
 it('asks the mirror for exactly the union of settings + program variants', async () => {
     await runMatchAudit();
     const asked = mirrorMock.ordersForVariants.mock.calls[0][0] as string[];
-    expect([...asked].sort()).toEqual(['111', '112', '222']);
+    expect([...asked].sort()).toEqual(['111', '222']);
 });
 
 describe('order buckets (Shopify → activation)', () => {
@@ -337,15 +335,7 @@ describe('enrollment buckets', () => {
         const sweep = prismaMock.programParticipant.findMany.mock.calls[1][0];
         expect(sweep.where.status).toBe('ACTIVE');
         expect(sweep.where.OR).toContainEqual({ shopifyOrderId: { not: null } });
-        expect(sweep.where.OR).toContainEqual({
-            program: {
-                OR: [
-                    { shopifyVariantId: { not: null } },
-                    { shopifyOrgMemberVariantId: { not: null } },
-                    { shopifyNonOrgMemberVariantId: { not: null } },
-                ],
-            },
-        });
+        expect(sweep.where.OR).toContainEqual({ program: { shopifyVariantId: { not: null } } });
     });
 
     describe('ADMIN_COMPED', () => {

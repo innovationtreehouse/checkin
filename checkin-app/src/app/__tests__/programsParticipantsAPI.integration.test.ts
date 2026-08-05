@@ -484,7 +484,7 @@ describe('Program Participants API Integration Tests', () => {
                 expect(data.enrollment.status).toBe('ACTIVE'); // comp
                 expect(data.warning).toBeUndefined();
                 // The comp took a seat out of the Shopify pool: relative -1 on the variant.
-                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-comp-partic'));
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by -1 for variant: dev-mock-variant-comp-partic'));
                 // Comp is ACTIVE and NOT a hold: I1/I2/I3 keep inventoryHeldAt PENDING-only.
                 const row = await prisma.programParticipant.findUnique({
                     where: { programId_personId: { programId: shopifyProgram.id, personId: otherId } },
@@ -780,7 +780,7 @@ describe('Program Participants API Integration Tests', () => {
                 );
                 expect(res.status).toBe(200);
                 expect((await res.json()).warning).toBeUndefined();
-                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1 for variants: dev-mock-variant-withdraw-partic'));
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1 for variant: dev-mock-variant-withdraw-partic'));
 
                 const row = await prisma.programParticipant.findUnique({
                     where: { programId_personId: { programId: shopifyProgram.id, personId: commonId } },
