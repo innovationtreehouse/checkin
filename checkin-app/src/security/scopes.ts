@@ -31,7 +31,8 @@ export type CtxSet =
     | 'participantIdsInScopePrograms'
     | 'householdIdsInScopePrograms'
     | 'eventIdsInScopePrograms'
-    | 'activeVisitorIds';
+    | 'activeVisitorIds'
+    | 'ledHouseholdMemberIds';
 export type CtxFlag = 'isKeyholder' | 'isKiosk';
 
 export type ScopePredicate = (row: Record<string, unknown>, ctx: CallerContext) => boolean;

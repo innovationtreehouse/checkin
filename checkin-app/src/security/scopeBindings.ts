@@ -93,8 +93,14 @@ export const SCOPE_BINDINGS = {
         their_own: { field: 'personId', eqCtx: 'selfId' },
         their_program_participants: { field: 'personId', inCtx: 'participantIdsInScopePrograms' },
     },
+    // No householdId column: a Visit reaches a household only through its
+    // person, so `led_households` matches personId against the caller's led
+    // household roster rather than comparing a householdId field. It is the
+    // lead-only scope, NOT `their_households` — a non-lead sibling has no claim
+    // on another member's arrival/departure times.
     Visit: {
         their_own: { field: 'personId', eqCtx: 'selfId' },
+        led_households: { field: 'personId', inCtx: 'ledHouseholdMemberIds' },
         all_current_visitors: {
             all: [{ flag: 'isKeyholder' }, { field: 'departedAt', isNull: true }],
         },

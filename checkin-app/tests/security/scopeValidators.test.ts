@@ -92,6 +92,25 @@ describe('validateRouteGrants — seam check', () => {
         expect(validateRouteGrants(routes, bindings)).toEqual([]);
     });
 
+    // The CI gate below passes only if the seam is actually EVALUATED for the
+    // self-correction grant — a route whose `returns` is missing is skipped, so
+    // "green" alone does not prove the grant was checked. Strip led_households
+    // from the Visit binding and the real spec must go red.
+    it('bites on the real self-correction spec when Visit loses its led_households binding', () => {
+        const patch = [...allRoutes()].find(
+            ([ep]) => ep === 'PATCH /api/attendance/manual/[id]',
+        )?.[1];
+        expect(patch?.returns).toEqual(['Visit']);
+        const errs = validateRouteGrants([patch as RouteGrantSpec], {
+            ...SCOPE_BINDINGS,
+            Visit: {
+                their_own: SCOPE_BINDINGS.Visit.their_own,
+                all_current_visitors: SCOPE_BINDINGS.Visit.all_current_visitors,
+            },
+        });
+        expect(errs.some(e => e.includes("grants 'led_households:*'"))).toBe(true);
+    });
+
     it('skips a route that has not declared `returns` (incremental coverage)', () => {
         const routes: RouteGrantSpec[] = [
             { endpoint: '/api/undeclared', orderedView: [['authenticated', ['their_households:pii']]] },

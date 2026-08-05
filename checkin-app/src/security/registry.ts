@@ -32,13 +32,21 @@ defineRoute({
     ],
 });
 
-// Self-correction of the caller's OWN visit: PATCH edits the times, DELETE
-// tombstones the row. `[id]` is a Visit id, NOT a person id, so 'self' cannot
-// express the gate — it compares the id param against auth.user.id. Ownership
-// is enforced in the route body, which 404s any id that is not the caller's own
-// live row; their_own (Visit.personId) is the per-row field backstop. The grant
-// stops at 'personal' (arrivedAt/departedAt); 'internal' tombstone fields stay
-// stripped.
+// Self-correction of a visit the caller may act for: PATCH edits the times,
+// DELETE tombstones the row. `[id]` is a Visit id, NOT a person id, so 'self'
+// cannot express the gate — it compares the id param against auth.user.id.
+// Subject ownership is enforced in the route body, which 404s any id the caller
+// may not act for; the two per-row tokens are the field backstop for the two
+// legitimate subjects:
+//   their_own      — Visit.personId === caller (a member editing their own row)
+//   led_households — Visit.personId is in a household the caller LEADS (AT3,
+//                    #1254: the lead is the responsible adult for members who
+//                    cannot self-serve). Lead-only, not household-wide: a
+//                    non-lead sibling holds neither token and sees nothing.
+// Both are needed — under led_households a plain member editing their own visit
+// is not a household match, so their_own is what keeps self-correction working.
+// The grant stops at 'personal' (arrivedAt/departedAt); 'internal' tombstone
+// fields stay stripped.
 defineRoute({
     endpoint: 'PATCH /api/attendance/manual/[id]',
     authorize: 'authenticated',
@@ -46,7 +54,7 @@ defineRoute({
     // Bag: { Visit }.
     returns: ['Visit'],
     orderedView: [
-        ['authenticated', ['their_own:personal', 'member', 'public']],
+        ['authenticated', ['their_own:personal', 'led_households:personal', 'member', 'public']],
     ],
 });
 
@@ -56,7 +64,7 @@ defineRoute({
     // No bag — the response is { success, flagged }, no model data.
     envelope: null,
     orderedView: [
-        ['authenticated', ['their_own:personal', 'member', 'public']],
+        ['authenticated', ['their_own:personal', 'led_households:personal', 'member', 'public']],
     ],
 });
 

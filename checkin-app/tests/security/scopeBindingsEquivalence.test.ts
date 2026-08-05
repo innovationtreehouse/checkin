@@ -173,6 +173,7 @@ function ctx(opts: Partial<CallerContext> = {}): CallerContext {
         householdIdsInScopePrograms: new Set(),
         eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
+        ledHouseholdMemberIds: new Set(),
         ...opts,
     };
 }
@@ -181,6 +182,14 @@ const PERSONAS: Record<string, CallerContext> = {
     anonymous: ctx(),
     selfOnlyMember: ctx({ selfId: 5, householdId: 2 }),
     householdCoMember: ctx({ selfId: 6, householdId: 2 }),
+    // Lead of household 2 — the only persona with a non-empty led roster, which
+    // is what makes led_households strictly narrower than their_households:
+    // householdCoMember above shares household 2 and holds neither.
+    householdLead: ctx({
+        selfId: 6,
+        householdId: 2,
+        ledHouseholdMemberIds: new Set([5, 6, 9]),
+    }),
     programLead: ctx({
         selfId: 10,
         householdId: 4,
@@ -278,6 +287,15 @@ function eq(a: Set<string>, b: Set<string>): boolean {
  * via a 'keyholders:pii' token instead of a blanket 'everyones:pii'. On any
  * object row, a keyholder caller therefore holds 'keyholders' where the
  * snapshot did not. That is the second expected diff.
+ *
+ * Visit.led_households (#1254): the switch's Visit case bound only their_own +
+ * all_current_visitors, so a household lead held nothing on a member's visit —
+ * which would strip arrivedAt/departedAt from exactly the rows the AT3
+ * act-for-members capability returns. Visit carries no householdId, so the
+ * binding matches personId against ctx.ledHouseholdMemberIds (populated only
+ * for leads). On a Visit row whose personId is in that roster, a lead therefore
+ * holds 'led_households' where the snapshot did not. That is the third
+ * expected diff.
  */
 function expectedFromSnapshot(
     model: string,
@@ -296,6 +314,15 @@ function expectedFromSnapshot(
     }
     if (model === 'Person' && row && typeof row === 'object' && callerCtx.isKeyholder) {
         expected.add('keyholders');
+    }
+    if (
+        model === 'Visit' &&
+        row &&
+        typeof row === 'object' &&
+        typeof row.personId === 'number' &&
+        callerCtx.ledHouseholdMemberIds.has(row.personId)
+    ) {
+        expected.add('led_households');
     }
     return expected;
 }
