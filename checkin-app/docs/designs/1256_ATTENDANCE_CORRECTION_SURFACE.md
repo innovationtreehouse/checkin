@@ -171,11 +171,16 @@ filterable by `tableName`/`action`/date. This is AT12's foundation (§4).
 Audit coverage across visit-write paths: **every human edit path logs** a `Visit`
 audit row — manual `CREATE`, the self/household-lead `EDIT`/`DELETE`,
 `facility/visits` `EDIT`/`DELETE`, the staff insert, the events roster mark,
-`manualEditAttendance`, `my-programs/conflicts/resolve`,
-`membership-ops/.../merge`. Each carries `actorId` = who acted and
-`secondaryAffectedEntity` = whose visit it is, so acting-for-another reads off
-the inequality without a join (§6.6). `manualEditAttendance` was the one gap —
-it wrote nothing at all — closed by AT3.
+`manualEditAttendance`, and `my-programs/conflicts/resolve`. Each carries
+`actorId` = who acted and `secondaryAffectedEntity` = whose visit it is, so
+acting-for-another reads off the inequality without a join (§6.6).
+`manualEditAttendance` was the one gap — it wrote nothing at all — closed by AT3.
+
+The participant **merge** (`membership-ops/.../merge`) is deliberately not on
+that list. It re-parents visits with `updateMany` and audits `Person` and
+`OrgMembershipProcess`, never `Visit`: a merge changes who owns an attendance
+fact, not the fact itself, so it is an identity operation rather than a
+correction and AT12 should not surface it as one.
 
 The automated / baseline paths do **not** log — kiosk `scan`, the `attendance`
 check-in (writes only a `SYSTEM_NOTIFY` row), and **both** machine closes
@@ -385,6 +390,32 @@ machine-close suppression is a source rule, not a threshold, and is not a knob.
   `secondaryAffectedEntity` = the subject, `newData.type = "self_correction"`,
   plus the significance object so AT12 can filter to the flagged ones without
   re-deriving (§4).
+
+### Which paths raise the live flag
+
+The real-time board email fires on the **self and household-lead** corrections
+only (`attendance/manual/[id]`). The staff and lead paths — `facility/visits`
+`PATCH`/`DELETE`, `manualEditAttendance`, `my-programs/conflicts/resolve` —
+deliberately do **not** raise it, for two reasons:
+
+- **The delete floor would make it noise.** `deleteSignificance` always flags, by
+  design: a member erasing their own visit should always be seen. But marking a
+  roster Absent, or resolving a duplicate-visit conflict, is a lead's routine
+  weekly workflow, not an anomaly. Wiring the floor into those paths emails the
+  board on every ordinary correction, which trains everyone to ignore the alert
+  and costs the signal its whole value.
+- **On `facility/visits` the actor is the recipient.** That route is gated to
+  sysadmin/board, so a flag would be the board notifying itself.
+
+This costs AT12 nothing. §"No new model" below is explicit that significance is
+**recomputed** from the audit row's old/new values rather than read off it — and
+every path above writes the source fields (`arrivedVia`/`departedVia`) into
+`oldData`, so the correction-review screen can score all of them. The
+`newData.significance` object that `attendance/manual/[id]` persists is a
+convenience for filtering, not the mechanism.
+
+If the board later wants leads' corrections in the live feed, the lever is the
+recipient set (§6.3) plus a per-path threshold — not the delete floor.
 
 ### Who gets flagged (scope — decision owed)
 Default recipient: **board**. For a `LEAD_MARKED` change, the lead who made the

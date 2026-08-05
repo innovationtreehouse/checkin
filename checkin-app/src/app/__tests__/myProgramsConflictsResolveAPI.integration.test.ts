@@ -136,16 +136,20 @@ describe('My-programs conflicts resolve API', () => {
             const data = await res.json();
             expect(data).toEqual({ success: true, deletedVisitId: anchor.id });
 
+            // Tombstoned, not removed: the row survives so the resolution stays
+            // reviewable and reversible, and drops out of every LIVE_VISIT read.
             const gone = await prisma.visit.findUnique({ where: { id: anchor.id } });
-            expect(gone).toBeNull();
+            expect(gone?.deletedAt).toBeInstanceOf(Date);
+            expect(gone?.deletedById).toBe(leadId);
             const survives = await prisma.visit.findUnique({ where: { id: sibling.id } });
-            expect(survives).not.toBeNull();
+            expect(survives?.deletedAt).toBeNull();
 
             const audit = await prisma.auditLog.findFirst({
                 where: { actorId: leadId, tableName: 'Visit', affectedEntityId: anchor.id, action: 'DELETE' },
             });
             expect(audit).toBeDefined();
-            expect(audit?.secondaryAffectedEntity).toBe(eventId);
+            // The subject, not the event; the event stays in oldData.
+            expect(audit?.secondaryAffectedEntity).toBe(participantId);
             expect((audit?.oldData as { personId: number })?.personId).toBe(participantId);
         } finally {
             await prisma.visit.deleteMany({ where: { id: { in: [anchor.id, sibling.id] } } });
@@ -163,7 +167,7 @@ describe('My-programs conflicts resolve API', () => {
             const res = await callAs({ id: adminId, isSysadmin: true }, { visitId: anchor.id });
             expect(res.status).toBe(200);
             const gone = await prisma.visit.findUnique({ where: { id: anchor.id } });
-            expect(gone).toBeNull();
+            expect(gone?.deletedAt).toBeInstanceOf(Date);
         } finally {
             await prisma.visit.deleteMany({ where: { id: { in: [anchor.id, sibling.id] } } });
         }

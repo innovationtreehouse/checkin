@@ -150,11 +150,11 @@ describe('Event Attendance API Integration Tests', () => {
         await prisma.visit.deleteMany({
             where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
         });
-        // Clear audit rows so each test asserts exactly its own write.
-        // Per-Visit audit rows carry the event in secondaryAffectedEntity;
-        // testEventId is fresh per run, so this is leak-proof.
+        // Clear audit rows so each test asserts exactly its own write. A Visit
+        // audit row carries the SUBJECT in secondaryAffectedEntity, so scope by
+        // this suite's participants — fresh ids per run, so still leak-proof.
         await prisma.auditLog.deleteMany({
-            where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+            where: { tableName: 'Visit', secondaryAffectedEntity: { in: [testParticipant1Id, testParticipant2Id] } }
         });
     });
 
@@ -195,7 +195,7 @@ describe('Event Attendance API Integration Tests', () => {
                 where: { personId: { in: [testParticipant1Id, testParticipant2Id] }, associatedEventId: testEventId }
             });
             const audits = await prisma.auditLog.count({
-                where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+                where: { tableName: 'Visit', secondaryAffectedEntity: { in: [testParticipant1Id, testParticipant2Id] } }
             });
             return { visits, audits };
         }
@@ -270,10 +270,11 @@ describe('Event Attendance API Integration Tests', () => {
             expect(visits[0].arrivedAt).not.toBeNull();
             expect(visits[0].departedAt).not.toBeNull();
 
-            // Audit: exactly one row keyed by the new Visit's PK, event in
-            // secondaryAffectedEntity, crediting the acting lead mentor.
+            // Audit: exactly one row keyed by the new Visit's PK, the SUBJECT in
+            // secondaryAffectedEntity, crediting the acting lead mentor — so
+            // actorId !== secondaryAffectedEntity marks it as acting-for-another.
             const auditRows = await prisma.auditLog.findMany({
-                where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+                where: { tableName: 'Visit', secondaryAffectedEntity: { in: [testParticipant1Id, testParticipant2Id] } }
             });
             expect(auditRows.length).toBe(1);
             expect(auditRows[0].actorId).toBe(testLeadMentorId);
@@ -322,10 +323,10 @@ describe('Event Attendance API Integration Tests', () => {
             expect(visits[0].associatedEventId).toBe(testEventId); // It was successfully linked
             expect(visits[0].arrivedAt.getTime()).toBe(earlyArrival.getTime()); // Validates it used the existing visit
 
-            // Audit: exactly one row keyed by the linked Visit's PK, event in
-            // secondaryAffectedEntity, crediting the acting admin.
+            // Audit: exactly one row keyed by the linked Visit's PK, the SUBJECT
+            // in secondaryAffectedEntity, crediting the acting admin.
             const auditRows = await prisma.auditLog.findMany({
-                where: { tableName: 'Visit', secondaryAffectedEntity: testEventId }
+                where: { tableName: 'Visit', secondaryAffectedEntity: { in: [testParticipant1Id, testParticipant2Id] } }
             });
             expect(auditRows.length).toBe(1);
             expect(auditRows[0].actorId).toBe(testAdminId);

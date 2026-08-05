@@ -241,7 +241,9 @@ describe('AuditLog Integration Tests', () => {
                 action: 'EDIT',
                 tableName: 'Visit',
                 affectedEntityId: testVisitId,
-                secondaryAffectedEntity: testEventId
+                // The SUBJECT, not the event — a Visit audit row names whose
+                // visit it is, so actorId !== this marks acting-for-another.
+                secondaryAffectedEntity: testParticipantId
             },
             orderBy: { timestamp: 'desc' }
         });
