@@ -300,6 +300,33 @@ defineRoute({
     ],
 });
 
+// The "who is 18 as of the member-year start" roster (Membership Audit). Ships
+// the CLASSIFIED INPUTS, not a verdict: dateOfBirth plus the board's year
+// boundary, so the two as-of ages are derived client-side — the stripper drops
+// ad-hoc computed fields, same reason GET /api/finance-ops/payment-plans ships
+// startAt + boundary instead of a next-year boolean.
+//
+// The grant is deliberately NARROWER than the sibling audit views' everyones:*:
+// this response needs exactly dateOfBirth ('personal') on top of public identity
+// (name, household name, program name). No email/phone, so no ':pii'; no
+// lastBackgroundCheck, so no ':internal'. A later widening has to show up here.
+//
+// ProgramParticipant rides along to mark which of these people are enrolled in a
+// program. That edge is all-public-tier — row EXISTENCE is the sensitive part —
+// so admission is the real boundary, and this view is board/sysadmin only.
+defineRoute({
+    endpoint: 'GET /api/membership-audit/turning-18',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { Person } with household (Household) and programParticipants
+    // (ProgramParticipant → program Program), plus { BoardSettings }.
+    returns: ['Person', 'Household', 'ProgramParticipant', 'Program', 'BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'member', 'public']],
+        ['isBoardMember', ['everyones:personal', 'member', 'public']],
+    ],
+});
+
 // Board's membership payment-plan approval queue. Returns PENDING_PAYMENT
 // OrgMembershipProcess rows the household asked to pay by plan, with the
 // membership + household nested. Board/sysadmin only, and they hold everyones:*
