@@ -292,5 +292,63 @@ describe('Admin Participants API Integration Tests', () => {
 
             // Cleanup is handled by afterEach
         });
+
+        it('rejects the over-25 declaration when the person has a date of birth on file', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            // A 12-year-old: a declared-adult flag on this row would make them match
+            // the adults filter in /api/people/search and count as a supervising
+            // adult in the check-in safety calc.
+            const youth = await prisma.person.create({
+                data: {
+                    email: 'edit-test-user-dob@example.com',
+                    name: 'Youth With DOB',
+                    dateOfBirth: new Date(Date.UTC(2014, 0, 15)),
+                    household: { create: { name: "Test HH" } },
+                },
+            });
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${youth.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ isDeclaredAdult: true })
+            });
+
+            const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: youth.id.toString() }) });
+            expect(res.status).toBe(400);
+
+            const dbCheck = await prisma.person.findUnique({ where: { id: youth.id } });
+            expect(dbCheck?.isDeclaredAdult).toBe(false);
+            // The DOB is the authoritative value — refusing the flag must not clear it.
+            expect(dbCheck?.dateOfBirth).toEqual(new Date(Date.UTC(2014, 0, 15)));
+        });
+
+        it('allows clearing the over-25 declaration on a person with a date of birth', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const youth = await prisma.person.create({
+                data: {
+                    email: 'edit-test-user-dob@example.com',
+                    name: 'Youth With DOB',
+                    dateOfBirth: new Date(Date.UTC(2014, 0, 15)),
+                    isDeclaredAdult: true,
+                    household: { create: { name: "Test HH" } },
+                },
+            });
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${youth.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ isDeclaredAdult: false })
+            });
+
+            const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: youth.id.toString() }) });
+            expect(res.status).toBe(200);
+
+            const dbCheck = await prisma.person.findUnique({ where: { id: youth.id } });
+            expect(dbCheck?.isDeclaredAdult).toBe(false);
+        });
     });
 });
