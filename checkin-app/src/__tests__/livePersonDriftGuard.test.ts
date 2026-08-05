@@ -193,10 +193,6 @@ const ALLOWLIST: Record<string, string> = {
 
     // ── unresolved: listed so the guard stays green, NOT because it is correct ──
     'app/api/safety/emergency-contacts/route.ts': 'NEEDS REVIEW — deliberately left unfiltered pending a product call. This is the evacuation roster: every member carries its open `visits` and `isPresent` is derived from them, and a merge leaves a concurrently-open visit on the TOMBSTONE (see lib/scan-service.ts). Filtering here would therefore trade a duplicate ghost row for the chance of reporting a household absent while someone is still in the building. Which way a safety surface should fail is not a call to make from a drift guard.',
-
-    // ── fixed in flight elsewhere (drop these when the PR lands) ───────────────
-    'app/api/membership-ops/participants/merge/route.ts': 'The `householdMembers: true` pull feeding the household-lead guard counts tombstones, so a legitimate merge can be falsely blocked — a real bug, already fixed by the in-flight PR #1448 (`where: LIVE_PERSON`). Listed only so this widened guard can land independently of it; remove the entry when #1448 merges.',
-    'app/api/membership-ops/participants/merge/analyze/route.ts': 'Same in-flight fix (PR #1448) for the analyze view\'s `householdMembers` pull, which must agree with the POST\'s guard; remove the entry when #1448 merges.',
 };
 
 // ── scanner (walk / captureObject copied from lifecycleStatusLiteralAllowlist.test.ts) ──
@@ -211,6 +207,35 @@ function walk(dir: string, out: string[] = []): string[] {
         }
     }
     return out;
+}
+
+/** A copy of `src` with comment bodies blanked to spaces — same length, so every
+ *  index computed below still lines up with the original. Without it a relation
+ *  name quoted in a comment ("a plain `householdMembers: true` returns…") reads as
+ *  a site, and a LIVE_PERSON mentioned in one reads as its filter. */
+function maskComments(s: string): string {
+    const out = s.split('');
+    for (let i = 0; i < s.length; i++) {
+        const c = s[i];
+        const d = s[i + 1];
+        if (c === '/' && d === '/') {
+            while (i < s.length && s[i] !== '\n') out[i++] = ' ';
+        } else if (c === '/' && d === '*') {
+            const end = s.indexOf('*/', i + 2);
+            const stop = end < 0 ? s.length : end + 2;
+            while (i < stop) {
+                if (s[i] !== '\n') out[i] = ' ';
+                i++;
+            }
+        } else if (c === "'" || c === '"' || c === '`') {
+            i++;
+            while (i < s.length && s[i] !== c) {
+                if (s[i] === '\\') i++;
+                i++;
+            }
+        }
+    }
+    return out.join('');
 }
 
 /** Capture the object literal at/after `from`, skipping strings & comments so a
@@ -314,7 +339,7 @@ function enclosingCallArgsStart(s: string, pos: number): number {
 function scan(): Set<string> {
     const hits = new Set<string>();
     for (const file of walk(SRC)) {
-        const src = readFileSync(file, 'utf8');
+        const src = maskComments(readFileSync(file, 'utf8'));
         const rel = relative(SRC, file).split(sep).join('/');
 
         PERSON_CALL_RE.lastIndex = 0;
