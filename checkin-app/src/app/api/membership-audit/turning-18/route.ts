@@ -1,9 +1,7 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { withAuth } from "@/lib/auth";
+import { handler } from "@/security/handler";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { birthCutoff, memberYearStarts } from "@/lib/programYear";
-import { calculateAge } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
 
@@ -18,23 +16,24 @@ export const dynamic = "force-dynamic";
  * scoping the query — students in non-member households belong on the roster too,
  * and the view differentiates them instead of dropping them.
  *
- * People with no date of birth can't be judged at all, so they're returned as a
- * count: an unmeasurable row is a data-hygiene task, not an empty table cell.
+ * Ships the classified INPUTS (dateOfBirth + the year boundary) and lets the page
+ * derive both as-of ages: the stripper drops ad-hoc computed fields, so an
+ * `ageAtNext` on the row would never reach the wire.
+ *
+ * LIVE_PERSON is load-bearing — a merged-away person keeps its row as a tombstone
+ * and would otherwise show up as a second entry for someone already listed.
  */
-export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
-    const settings = await prisma.boardSettings.findUnique({
-        where: { id: 1 },
-        select: { orgMembershipYearBoundary: true },
-    });
-    // No configured boundary means there is no member year to judge against.
-    if (!settings?.orgMembershipYearBoundary) {
-        return NextResponse.json({ currentYearStart: null, nextYearStart: null, rows: [], unknownDobCount: 0 });
-    }
-    const { current, next } = memberYearStarts(settings.orgMembershipYearBoundary, new Date());
+export const GET = handler('GET /api/membership-audit/turning-18', async () => {
+    const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+    // No configured boundary means there is no member year to judge against; the
+    // page says so rather than rendering an age nobody chose the basis for.
+    if (!settings?.orgMembershipYearBoundary) return { BoardSettings: settings, Person: [] };
+
+    const { next } = memberYearStarts(settings.orgMembershipYearBoundary, new Date());
 
     const people = await prisma.person.findMany({
         // 18 by the NEXT boundary is the superset — anyone already 18 at the
-        // current one clears it too, and the per-row ages tell the two apart.
+        // current one clears it too, and the two rendered ages tell them apart.
         where: { ...LIVE_PERSON, isHouseholdLead: false, dateOfBirth: { lte: birthCutoff(next) } },
         select: {
             id: true,
@@ -49,30 +48,5 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         orderBy: { name: "asc" },
     });
 
-    // isDeclaredAdult carries no DOB by design (a lead marked them 25+), so those
-    // are known adults with nothing to chase — not a hygiene gap.
-    const unknownDobCount = await prisma.person.count({
-        where: { ...LIVE_PERSON, isHouseholdLead: false, dateOfBirth: null, isDeclaredAdult: false },
-    });
-
-    const rows = people.map((p) => {
-        const dob = p.dateOfBirth as Date; // the lte filter above guarantees one
-        return {
-            personId: p.id,
-            name: p.name || `Person #${p.id}`,
-            householdId: p.household.id,
-            householdName: p.household.name,
-            dateOfBirth: dob.toISOString(),
-            ageAtCurrent: calculateAge(dob, current),
-            ageAtNext: calculateAge(dob, next),
-            programs: p.programParticipants.map((pp) => pp.program),
-        };
-    });
-
-    return NextResponse.json({
-        currentYearStart: current.toISOString(),
-        nextYearStart: next.toISOString(),
-        rows,
-        unknownDobCount,
-    });
+    return { BoardSettings: settings, Person: people };
 });

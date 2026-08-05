@@ -3,31 +3,29 @@
 import { useState, useEffect } from "react";
 import { Badge, Card, Center, Checkbox, Group, Stack, Table, Text, Title } from "@mantine/core";
 import { PageLoader } from "@/components/ui/PageLoader";
+import { calculateAge, formatDateOnly } from "@/lib/time";
+import { memberYearStarts } from "@/lib/programYear";
 
 type ProgramRef = { id: number; name: string };
-type Row = {
-  personId: number;
-  name: string;
-  householdId: number;
-  householdName: string | null;
-  dateOfBirth: string;
-  ageAtCurrent: number;
-  ageAtNext: number;
-  programs: ProgramRef[];
+type PersonRow = {
+  id: number;
+  name: string | null;
+  dateOfBirth: string | null;
+  household: { id: number; name: string | null } | null;
+  programParticipants: { program: ProgramRef }[];
 };
 type Payload = {
-  currentYearStart: string | null;
-  nextYearStart: string | null;
-  rows: Row[];
-  unknownDobCount: number;
+  BoardSettings: { orgMembershipYearBoundary: string | null } | null;
+  Person: PersonRow[];
 };
-
-const fmt = (iso: string) => new Date(iso).toLocaleDateString(undefined, { timeZone: "UTC" });
 
 /**
  * Membership Audit view: non-lead household members who are 18+ as of the current
  * member-year start and as of the next one, so the board can act on both the
  * standing adults and the ones aging in. Read-only.
+ *
+ * The endpoint ships dateOfBirth + the year boundary; both as-of ages are derived
+ * here, because the security stripper drops computed fields from a response.
  */
 export default function TurningEighteenPage() {
   const [data, setData] = useState<Payload | null>(null);
@@ -63,7 +61,8 @@ export default function TurningEighteenPage() {
     );
   }
 
-  if (!data.currentYearStart || !data.nextYearStart) {
+  const boundary = data.BoardSettings?.orgMembershipYearBoundary;
+  if (!boundary) {
     return (
       <Card withBorder radius="md" padding="lg">
         <Text c="dimmed">
@@ -74,24 +73,24 @@ export default function TurningEighteenPage() {
     );
   }
 
-  const rows = enrolledOnly ? data.rows.filter((r) => r.programs.length > 0) : data.rows;
+  const { current, next } = memberYearStarts(new Date(boundary));
+  const rows = (data.Person ?? [])
+    .filter((p) => p.dateOfBirth && (!enrolledOnly || p.programParticipants.length > 0))
+    .map((p) => ({
+      ...p,
+      ageAtCurrent: calculateAge(p.dateOfBirth!, current),
+      ageAtNext: calculateAge(p.dateOfBirth!, next),
+    }));
 
   return (
     <Stack>
       <Card withBorder radius="md" padding="lg">
         <Text c="dimmed">
           Household members (excluding household leads) who are 18 or older as of{" "}
-          <strong>{fmt(data.currentYearStart)}</strong> — the current member year — or as of{" "}
-          <strong>{fmt(data.nextYearStart)}</strong>, the next one. Someone 18 only in the
+          <strong>{formatDateOnly(current)}</strong> — the current member year — or as of{" "}
+          <strong>{formatDateOnly(next)}</strong>, the next one. Someone 18 only in the
           &ldquo;next&rdquo; column ages in on that boundary. Read-only.
         </Text>
-        {data.unknownDobCount > 0 && (
-          <Text size="sm" c="orange" mt="xs">
-            {data.unknownDobCount} household{" "}
-            {data.unknownDobCount === 1 ? "member has" : "members have"} no date of birth on
-            file and could not be judged.
-          </Text>
-        )}
       </Card>
 
       <Checkbox
@@ -103,7 +102,7 @@ export default function TurningEighteenPage() {
       {rows.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">
-            {enrolledOnly && data.rows.length > 0
+            {enrolledOnly && (data.Person?.length ?? 0) > 0
               ? "Nobody on this list is enrolled in a program."
               : "Nobody turns 18 by the next member year."}
           </Text>
@@ -116,17 +115,17 @@ export default function TurningEighteenPage() {
                 <Table.Th>Name</Table.Th>
                 <Table.Th>Household</Table.Th>
                 <Table.Th>Date of birth</Table.Th>
-                <Table.Th>Age {fmt(data.currentYearStart)}</Table.Th>
-                <Table.Th>Age {fmt(data.nextYearStart)}</Table.Th>
+                <Table.Th>Age {formatDateOnly(current)}</Table.Th>
+                <Table.Th>Age {formatDateOnly(next)}</Table.Th>
                 <Table.Th>Programs</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {rows.map((r) => (
-                <Table.Tr key={r.personId}>
-                  <Table.Td fw={600}>{r.name}</Table.Td>
-                  <Table.Td>{r.householdName || `Household #${r.householdId}`}</Table.Td>
-                  <Table.Td>{fmt(r.dateOfBirth)}</Table.Td>
+                <Table.Tr key={r.id}>
+                  <Table.Td fw={600}>{r.name || `Person #${r.id}`}</Table.Td>
+                  <Table.Td>{r.household?.name || `Household #${r.household?.id ?? "?"}`}</Table.Td>
+                  <Table.Td>{formatDateOnly(r.dateOfBirth)}</Table.Td>
                   <Table.Td>
                     {r.ageAtCurrent >= 18 ? (
                       r.ageAtCurrent
@@ -141,10 +140,10 @@ export default function TurningEighteenPage() {
                     </Group>
                   </Table.Td>
                   <Table.Td>
-                    {r.programs.length > 0 ? (
+                    {r.programParticipants.length > 0 ? (
                       <Group gap={6}>
-                        {r.programs.map((p) => (
-                          <Badge key={p.id} variant="light">{p.name}</Badge>
+                        {r.programParticipants.map((pp) => (
+                          <Badge key={pp.program.id} variant="light">{pp.program.name}</Badge>
                         ))}
                       </Group>
                     ) : (
