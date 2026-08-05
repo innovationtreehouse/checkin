@@ -99,12 +99,19 @@ describe('live-empty households (only member is a merge tombstone)', () => {
         expect(broken.members.map((m: { name: string }) => m.name)).toEqual([`Live ${TAG}`]);
     });
 
-    it('GET /api/membership-audit/unclaimed-households skips it', async () => {
+    it('GET /api/membership-audit/unclaimed-households skips it and hides the tombstone', async () => {
         const { households } = await json(await UNCLAIMED_GET(req()));
         const ids = households.map((h: { id: number }) => h.id);
         expect(ids).toContain(brokenHh);
         expect(ids).not.toContain(ghostHh);
         expect(ids).not.toContain(keeperHh);
+
+        // This list names people to chase, so a tombstone's name and its rewritten
+        // address must not be offered as a contact.
+        const broken = households.find((h: { id: number }) => h.id === brokenHh);
+        expect(broken.members).toEqual([
+            { id: expect.any(Number), name: `Live ${TAG}`, email: `live-${TAG}@example.com` },
+        ]);
     });
 
     it('GET /api/safety/emergency-contacts skips it and hides the tombstone', async () => {
