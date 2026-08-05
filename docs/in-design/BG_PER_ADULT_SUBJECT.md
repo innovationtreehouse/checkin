@@ -37,10 +37,10 @@ one checked adult, not all of them), and the families applying should not have t
 
 | | |
 |---|---|
-| **Reviewers** | Gain one checkbox group on the review card — *whose check did you review?* Still one Approve click. |
+| **Reviewers** | Gain one subject picker on the review card — *whose check did you review?* The first approval settles it; the second confirms. Still one Approve click. |
 | **Applicants** | **No change at all.** Same consent checkbox, same copy, same flow. |
-| **Data** | Only the adults a reviewer named get a check date. One nullable FK column on an existing table; no new table. |
-| **Board force-approve** | Names its subjects too — today's override path would otherwise stamp nobody. |
+| **Data** | Only the adult a review named gets a check date. One nullable FK column on an existing table; no new table. |
+| **Board force-approve** | Names its subject too — today's override path would otherwise stamp nobody. |
 | **Membership** | Unchanged. Still one checked adult; household freshness rollups and activation timing untouched. |
 | **Existing bad data** | Corrected by the board through a worklist on the compliance dashboard they already use — no script, no SQL, no prod access. |
 | **Cost** | One column, one reviewer-UI change, and one unique-constraint change that needs hand-written SQL. |
@@ -197,42 +197,41 @@ can never point at a person who does not exist.
 
 ### Reviewer surface
 
-The card gains one checkbox group above the existing Approve/Reject buttons:
+The card gains one subject picker above the existing Approve/Reject buttons. The **first** reviewer
+chooses; everyone after them sees the choice, not the picker:
 
 ```
-Rivera Household (application #482)
-Alex Rivera <alex@…>, Sam Rivera <sam@…>
+Rivera Household (application #482)            Rivera Household (application #482)
+Alex Rivera <alex@…>, Sam Rivera <sam@…>       Alex Rivera <alex@…>, Sam Rivera <sam@…>
+0/2 approvals so far.                          1/2 approvals so far.
 
-Whose check(s) did you review?
-  ☑ Alex Rivera          — 1 of 2 approvals
-  ☐ Sam Rivera           — 0 of 2 approvals
-
-  [ Attest — check is clean ]   [ Reject ]
+Whose check did you review?                    This review is for Alex Rivera
+  ( ) Alex Rivera                              Named by the first reviewer. Approve only
+  ( ) Sam Rivera                               if the report you read is theirs — if it
+                                               names someone else, reject.
+  [ Attest ]   [ Reject ]                      [ Attest ]   [ Reject ]
 ```
 
-One `POST` as today, now carrying `subjectPersonIds: number[]`; `attest` writes one attestation row
-per selected subject inside the existing transaction. **The reviewer clicks Approve once**, exactly
-as now — the selection is the only addition. Usually it will be a single name.
+One `POST` as today, now carrying `subjectPersonIds`; `attest` writes one attestation row inside the
+existing transaction. **The reviewer clicks Approve once**, exactly as now — the subject is the only
+addition.
 
-- **Per-subject approve counts**, not one process count. A subject is cleared at 2 approvals from
-  distinct-household reviewers.
-- **Reject stays whole-process.** A reviewer concerned about *any* PDF rejects, which blocks the
-  household exactly as today. Per-subject verdicts change no outcome and are not built; adding them
-  later is additive (`result` moves onto the per-subject row).
-- **Selection required on APPROVE.** An empty selection is a 400, not a silent no-op — a reviewer
+- **One adult per review.** Naming two at once is a 400. A second adult with their own check is a
+  `PERSON_BG` obligation, not a second subject competing inside this process.
+- **Reject stays whole-process.** A reviewer concerned about the report — or about *who* it names —
+  rejects, which blocks the household exactly as today.
+- **A subject is required on APPROVE.** An empty selection is a 400, not a silent no-op — a reviewer
   who approves without naming anyone is the blanket-stamp bug in human form.
-- The card lists **all live household leads**, so a reviewer holding a PDF for a lead the system
-  thinks is already fresh (a family who re-checked early) can still name them.
+- Before anyone has approved, the picker lists **all live household leads**, including one the system
+  already thinks is fresh (a family who re-checked early).
 - `isMarkedVolunteer` and the intake note stay **process-level** (household properties).
   `applyVolunteerStatus`'s existing `attestations.some(a => a.isMarkedVolunteer)` is unchanged.
 
-**Eligibility filtering shifts from per-process to per-subject.** `eligibleReviewProcessIds`
-([`review.ts:161`](../../checkin-app/src/lib/membership/review.ts)) currently drops a process once the reviewer
-has any attestation on it; now it drops it only when the reviewer has attested every outstanding
-named subject. Same for `reviewQueueCounts`'s `approvedAwaitingSecond`, which now also excludes what
-is still actionable — otherwise a half-named row is counted green AND gray. The
-same-household-reviewer and same-household-applicant exclusions stay **process-scoped** — a
-reviewer's household-mate should not touch any part of that family's review.
+**Eligibility stays per-process**, exactly as before this design: one attestation per reviewer settles
+their part either way, so `eligibleReviewProcessIds` still drops a process once the reviewer has
+attested it, and `reviewQueueCounts` is unchanged. The same-household-reviewer and
+same-household-applicant exclusions stay process-scoped — a reviewer's household-mate should not
+touch any part of that family's review.
 
 One consequence not anticipated above: a household with **no live lead** has nobody to name, so it
 drops out of every reviewer's queue rather than sitting there un-actionable. It stays visible to the
@@ -264,15 +263,24 @@ if (cleared.length) {
 }
 ```
 
-**`bgClearedAt` fires on the FIRST subject to reach two approvals** — per rule 1, one checked adult
-satisfies the membership obligation. The payment/activation convergence, `applyVolunteerStatus`, the
-`FOR UPDATE` lock, and the audit row are all unchanged. Membership timing does not move.
+**A review covers ONE adult, and the first approval settles which.** The reviewer who approves first
+names the person; a later reviewer confirms that same person or rejects. `bgClearedAt` fires on the
+second approval, per rule 1 — one checked adult satisfies the membership obligation. The
+payment/activation convergence, `applyVolunteerStatus`, the `FOR UPDATE` lock, and the audit row are
+all unchanged. Membership timing does not move.
 
-**A second subject left at 1/2 is not stranded, and needs no special handling.** Once `bgClearedAt`
-is set the process leaves the reviewer queue (`awaitingBgReview` gates on `bgClearedAt: null`,
-[`lifecycle.ts:131`](../../checkin-app/src/lib/membership/lifecycle.ts)), so a half-approved second subject stops
-accumulating there. That is correct: their obligation is a *volunteer* obligation, and it belongs on
-the `PERSON_BG` track, which already picks them up —
+*An earlier revision let each reviewer name freely and counted approvals per subject. That created a
+**split-subject stall**: reviewer 1 names Alex, reviewer 2 names Sam, neither reaches 2/2,
+`bgClearedAt` never fires, and the process waits on a third reviewer sharing a household with neither
+— a pool that can be empty on a small board, and a stall that could not occur before this design. It
+was written up as accepted, on the grounds that binding reviewer 2 to reviewer 1's choice would
+defeat the independence the two-reviewer rule protects. That reasoning conflates two things: the rule
+exists so two people independently judge whether a report is **clean**, and the subject is not a
+judgement — it is a name read off the report. Fixing it costs the rule nothing.*
+
+**A second adult is a separate obligation, not a rival subject.** A household process settles one
+adult; another adult with their own check belongs on the `PERSON_BG` track, which already picks them
+up —
 
 - **Trigger C** (`openPersonBgForNewMember`) fires on INITIAL activation for every program-attached
   household member, and
@@ -281,17 +289,10 @@ the `PERSON_BG` track, which already picks them up —
 Both call `openPersonBg`, which now — with no false stamp — correctly reads them as `NEEDED`. The
 handoff is free.
 
-**New failure mode: the split-subject stall.** If reviewer 1 names only Alex and reviewer 2 names only
-Sam, *neither* reaches 2/2, `bgClearedAt` never fires, and the process sits in the queue awaiting a
-third reviewer who shares a household with neither of the first two. On a small board that pool can be
-empty, and it is a stall that **cannot occur today** — one attestation per reviewer means two
-approvals always converge.
-
-Accepted, not designed away: the alternative is letting one reviewer's subject choice bind the other's,
-which defeats the independence the two-reviewer rule exists for. Two things keep it from being silent —
-the `subjects[]` payload renders per-subject counts on the card, so reviewer 2 sees Alex sitting at 1/2
-before choosing, and the board's force-approve (above) resolves any stall outright. Reviewers should be
-told to name every adult whose PDF they actually read, not just one.
+**Disagreement escalates through REJECT.** If reviewer 2 believes the settled subject is wrong (a
+misread report, a mis-recorded name), naming someone else is refused with a 400; they reject, which
+blocks the household and hands it to the board — a visible, actionable signal instead of a silent
+stall. The board's force-approve may then name any live lead, including a different one.
 
 **Legacy rows stamp nothing.** A pre-deploy attestation carries no subject, so it counts toward
 nobody and no `Person` row is written for it. Conservative on purpose: better a household that reads
@@ -324,11 +325,11 @@ as `subjectOverride`, and those adults are stamped on the board member's authori
 attempted, because there is nothing to count.
 
 - The board's action UI (`/membership-ops/applications`, the `review-override` POST) gains the same
-  lead checkbox group as the reviewer card.
+  lead picker as the reviewer card, and may name any live lead.
 - **Non-empty selection required** on a household process, same 400 as `attest`. An override that
   names nobody is the blanket-stamp bug wearing a different hat.
 - `reset` is unaffected — it deletes attestations and returns the process to review, where the normal
-  per-subject flow applies.
+  per-adult flow applies.
 - The existing conflict-of-interest gate on `overrideBlocked`
   ([`:364`](../../checkin-app/src/lib/membership/review.ts), `hasHouseholdConflict`, sysadmin-bypassable) already
   stops a board member force-clearing their own household. Naming subjects does not widen it.
@@ -382,7 +383,7 @@ design; superseded on every axis:
 | Catches "family submitted only one form" | no — the box gets ticked anyway | yes — the second subject never reaches 2 approvals |
 | Schema | new table | one nullable FK column |
 | Applicant UI | new per-lead checkbox flow | **unchanged** |
-| Reviewer UI | display-only | one checkbox group |
+| Reviewer UI | display-only | one subject picker |
 
 It also overstated the requirement to the family: two checkboxes read as "both adults must do this",
 which contradicts rule 1.
@@ -583,7 +584,7 @@ path. Not worth it to avoid a dozen button clicks.
   `ProgramParticipant`/`ProgramVolunteer`/`RSVP`/`Visit` only — all-public-tier models whose row
   existence is the sensitive fact. `BackgroundCheckAttestation` is not one of them (`result`, `note`,
   `isMarkedVolunteer` are `internal`).
-- **`tsc` is not sufficient.** The approval-counting change (per-process → per-subject) is semantic
+- **`tsc` is not sufficient.** The clearance change (blanket stamp → the named adult) is semantic
   and type-identical. Covered by integration tests, not the compiler. Run `test:integration`
   `--runInBand`.
 
@@ -605,8 +606,9 @@ removal. New coverage, mirroring the `PERSON_BG` safety assertion at
   `NEEDED`, Sam appears in `peopleNeedingBgCheck`, and Trigger C opens a `PERSON_BG` for Sam. Today
   all three are false.
 - Both reviewers name both leads ⇒ both stamped.
-- Reviewer 1 names Alex, reviewer 2 names Sam ⇒ **nobody** stamped, both at 1/2, process stays queued
-  (the split-subject stall — an accepted new failure mode, asserted so it stays deliberate).
+- Reviewer 1 names Alex, reviewer 2 tries to name Sam ⇒ 400; confirming Alex instead clears Alex and
+  leaves Sam unstamped. A reviewer who disagrees rejects, and the household blocks.
+- Naming two adults in one attestation ⇒ 400 (a review covers one adult).
 - APPROVE with an empty subject selection on a household process ⇒ 400.
 - **Board force-approve stamps its named subjects.** `overrideBlocked(…, "approve", { subjectPersonIds: [alex] })`
   on a BLOCKED process carrying one APPROVE + one REJECT ⇒ Alex stamped, `bgClearedAt` set. Without
@@ -627,7 +629,7 @@ removal. New coverage, mirroring the `PERSON_BG` safety assertion at
 - A survivor holding a merged-away record's background-check date appears in the merge sub-list.
 
 Shipped as `checkin-app/src/app/__tests__/bgPerAdultSubject.integration.test.ts`, plus reviewer- and
-board-card unit coverage for the checkbox groups and the "Clear this date" button.
+board-card unit coverage for the subject pickers and the "Clear this date" button.
 
 A flow test is optional — the journey is already covered end-to-end and the change is service-level.
 None was added.
@@ -635,8 +637,8 @@ None was added.
 **Every pre-existing suite that attested had to be updated**, because approving now requires naming
 someone: `membershipReviewAPI`, `membershipBgNonBlocking`, `membershipRenewalAPI`,
 `membershipReviewConcurrency`, and the two ops page tests. `notificationsAPI` needed a *fixture*
-change rather than a call change — its awaiting-review household had no leads, which under
-per-subject eligibility means nothing for a reviewer to do.
+change rather than a call change — its awaiting-review household had no leads, so there is nobody a
+reviewer could name.
 
 ## Decisions taken
 
@@ -653,14 +655,27 @@ per-subject eligibility means nothing for a reviewer to do.
    (`POST /api/membership-audit/person-bg`) was there before this.
 4. **Supplier affirmation is not a real slice.** Owner-confirmed 2026-08-02: the supplier is PDF-only
    with no API, so there is nothing to affirm programmatically. Dropped, not deferred.
+5. **A review covers one adult, settled by the first approval.** Owner call, replacing an earlier
+   revision where each reviewer named freely. That version could strand a household when two
+   reviewers named different adults; this one cannot, and a reviewer who disagrees with the settled
+   subject rejects instead. See [Clearance](#clearance).
 
 ### Still open — board process, not code
 
-**"Cannot tell" rows.** Given the low stakes (a wrong call costs a redundant re-check, never a
-membership), is "when in doubt, clear the stamp and let the nag run" acceptable, or does the board
-want the Averity PDFs reconciled first? This decides whether the list is a few minutes' work or an
-afternoon. **It does not change the software** — the row is labelled the same either way, nothing is
-pre-selected, and one button clears one date.
+**"Cannot tell" rows.** Where the consent actor is not one of the stamped leads (the board used the
+backstop) or no consent row exists, the app has nothing distinguishing the two adults. Does the board
+clear on thin evidence, or reconcile against the Averity reports first? This decides whether the list
+is a few minutes' work or an afternoon. **It does not change the software** — the row is labelled the
+same either way, nothing is pre-selected, and one button clears one date.
+
+Worth sharpening one claim made above, though: "a wrong call costs a redundant re-check" holds only
+for clearing ONE stamp when you know which. On a cannot-tell row you do not, so clearing one at
+random closes the safety hole **half the time** — pick wrong and the genuinely unchecked adult keeps
+a false stamp and stays invisible, which is the whole defect. The honest options are to clear
+**both** (guaranteed to surface the unchecked adult; costs one redundant re-check and leaves the
+household reading `STALE_BG` until someone re-verifies, since `householdBgIsFresh` is "any lead
+fresh") or to reconcile the reports. Clearing one at random is not defensible on a safety path. If
+the answer is "clear both", the card copy should say so rather than implying one click per row.
 
 **Whether remediation surfaces anyone at all.** Every consumer of the nag treats
 `BoardSettings.bgRecheckMonths <= 0` as "policy not configured, do not enforce":

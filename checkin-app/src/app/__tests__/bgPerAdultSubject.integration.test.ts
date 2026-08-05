@@ -131,33 +131,45 @@ describe('Per-adult background-check subjects', () => {
         expect(personBgVerdict(sam, boundary, threshold)).toBe('NEEDED');
     });
 
-    it('names both adults when both reviewers read both reports', async () => {
-        const hh = await twoLeadHousehold('BothNamed');
+    it('a review names one adult — naming two at once is refused', async () => {
+        const hh = await twoLeadHousehold('OneOnly');
         as(rev1, { isBackgroundCheckReviewer: true });
-        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex, hh.sam] }) as never);
-        as(rev2, { isBackgroundCheckReviewer: true });
-        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex, hh.sam] }) as never);
-
-        expect(await bgDate(hh.alex)).not.toBeNull();
-        expect(await bgDate(hh.sam)).not.toBeNull();
+        const res = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex, hh.sam] }) as never);
+        expect(res.status).toBe(400);
+        expect((await res.json()).code).toBe('invalid_subject');
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: hh.processId } })).toBe(0);
     });
 
-    // ── The accepted new failure mode ────────────────────────────────────────
-    it('split subjects stall the review rather than clearing anyone', async () => {
-        const hh = await twoLeadHousehold('SplitStall');
+    // ── The first approval settles who the review is about ───────────────────
+    it('the second reviewer cannot switch the review to a different adult', async () => {
+        const hh = await twoLeadHousehold('SubjectSettled');
         as(rev1, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
-        as(rev2, { isBackgroundCheckReviewer: true });
-        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.sam] }) as never);
 
-        // Neither adult reached two approvals, so nobody is stamped and the process
-        // stays in review. Deliberate: letting one reviewer's choice bind the other's
-        // would defeat the independence the two-reviewer rule exists for.
+        // Naming Sam instead would leave Alex and Sam both at one approval and the
+        // review waiting on a third reviewer. Disagreement goes through REJECT.
+        as(rev2, { isBackgroundCheckReviewer: true });
+        const wrong = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.sam] }) as never);
+        expect(wrong.status).toBe(400);
+        expect((await wrong.json()).code).toBe('invalid_subject');
+
+        // Confirming the settled subject clears it on the second approval.
+        const right = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
+        expect((await right.json()).outcome.status).toBe('PENDING_PAYMENT');
+        expect(await bgDate(hh.alex)).not.toBeNull();
+        expect(await bgDate(hh.sam)).toBeNull();
+    });
+
+    it('a reviewer who disagrees with the settled subject rejects instead', async () => {
+        const hh = await twoLeadHousehold('SubjectDispute');
+        as(rev1, { isBackgroundCheckReviewer: true });
+        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
+
+        as(rev2, { isBackgroundCheckReviewer: true });
+        const res = await ATTEST(req({ processId: hh.processId, result: 'REJECT', note: 'Report names Sam, not Alex' }) as never);
+        expect((await res.json()).outcome.status).toBe('BLOCKED');
         expect(await bgDate(hh.alex)).toBeNull();
         expect(await bgDate(hh.sam)).toBeNull();
-        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: hh.processId } });
-        expect(proc?.bgClearedAt).toBeNull();
-        expect(proc?.status).toBe('PENDING_BG_REVIEW');
     });
 
     // ── Naming is mandatory ──────────────────────────────────────────────────
@@ -191,20 +203,14 @@ describe('Per-adult background-check subjects', () => {
         expect(rows[0].subjectPersonId).toBeNull();
     });
 
-    // ── Eligibility is per-subject ───────────────────────────────────────────
-    it('a reviewer who named one lead still has the other to name', async () => {
-        const hh = await twoLeadHousehold('StillEligible');
+    // ── One attestation per reviewer settles their part ──────────────────────
+    it('a reviewer drops out of the queue once they have attested', async () => {
+        const hh = await twoLeadHousehold('OnceOnly');
         as(rev1, { isBackgroundCheckReviewer: true });
+        expect(await eligibleReviewProcessIds(rev1)).toContain(hh.processId);
         await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
 
-        expect(await eligibleReviewProcessIds(rev1)).toContain(hh.processId);
-        as(rev1, { isBackgroundCheckReviewer: true });
-        const second = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.sam] }) as never);
-        expect(second.status).toBe(200);
-
-        // Both named now — nothing left for this reviewer to attest.
         expect(await eligibleReviewProcessIds(rev1)).not.toContain(hh.processId);
-        // ...and naming the same adult twice is still refused.
         const dup = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
         expect(dup.status).toBe(409);
         expect((await dup.json()).code).toBe('already_attested');
@@ -229,7 +235,7 @@ describe('Per-adult background-check subjects', () => {
     });
 
     // ── Board force-approve ──────────────────────────────────────────────────
-    it('a force-approve stamps the adults it names and no others', async () => {
+    it('a force-approve stamps the adult it names and no others', async () => {
         const hh = await twoLeadHousehold('ForceNamed');
         as(rev1, { isBackgroundCheckReviewer: true });
         await ATTEST(req({ processId: hh.processId, result: 'REJECT', note: 'Needs a second look' }) as never);
@@ -239,7 +245,7 @@ describe('Per-adult background-check subjects', () => {
         expect(res.status).toBe(200);
 
         // Counting attestations here would stamp nobody — a blocked process never holds
-        // a second approval — so the board asserts its subjects instead.
+        // a second approval — so the board asserts its subject instead.
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: hh.processId } });
         expect(proc?.bgClearedAt).not.toBeNull();
         expect(await bgDate(hh.alex)).not.toBeNull();

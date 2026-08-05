@@ -41,7 +41,7 @@ const queue = {
 // The same household with no approvals yet — the first-reviewer confirmation.
 const firstApprovalQueue = { queue: [{ ...queue.queue[0], id: 101, attestations: [], _count: { attestations: 0 } }] };
 
-const nameSubject = (label: string) => fireEvent.click(screen.getByRole("checkbox", { name: label }));
+const nameSubject = (label: string) => fireEvent.click(screen.getByRole("radio", { name: label }));
 
 describe("membership-ops/review page", () => {
   it("loads and renders the review queue", async () => {
@@ -51,22 +51,23 @@ describe("membership-ops/review page", () => {
 
     expect(await screen.findByText("The Smiths")).toBeInTheDocument();
     expect(screen.getByText("Pat Smith <pat@example.com>", { exact: false })).toBeInTheDocument();
-    // Approvals are counted per adult, not per application — a household-mate sitting
-    // at 0 of 2 is exactly what a second reviewer needs to see before choosing.
-    expect(screen.getByRole("checkbox", { name: "Pat Smith — 1 of 2 approvals" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Sam Smith — 0 of 2 approvals" })).toBeInTheDocument();
+    // The first approval settled who this review is about, so the second reviewer
+    // confirms that person rather than being offered the choice again.
+    expect(screen.getByText("This review is for Pat Smith")).toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(screen.getByText("1/2 approvals so far.")).toBeInTheDocument();
     // The applicant's freeform note is surfaced on the card (the volunteer signal).
     expect(screen.getByText("We're volunteer only — no students.")).toBeInTheDocument();
   });
 
   it("cannot approve a household without naming whose check was reviewed", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/membership/reviews": queue });
+    mockFetchJson({ "/api/membership/reviews": firstApprovalQueue });
     renderPage();
     await screen.findByText("The Smiths");
 
     expect(screen.getByRole("button", { name: "Attest — check is clean" })).toBeDisabled();
-    nameSubject("Sam Smith — 0 of 2 approvals");
+    nameSubject("Sam Smith");
     expect(screen.getByRole("button", { name: "Attest — check is clean" })).toBeEnabled();
   });
 
@@ -76,7 +77,6 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
-    nameSubject("Pat Smith — 1 of 2 approvals");
     fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
     // Pat already holds one approval, so naming Pat is the SECOND — the confirm names
     // the consequence of a clearing approve rather than a generic "are you sure?".
@@ -103,7 +103,6 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
-    nameSubject("Pat Smith — 1 of 2 approvals");
     fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
 
@@ -117,7 +116,7 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
-    nameSubject("Pat Smith — 0 of 2 approvals");
+    nameSubject("Pat Smith");
     fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
     expect(await screen.findByText("Record your approval?")).toBeInTheDocument();
     expect(screen.getByText(/A second\s+reviewer must also\s+approve/)).toBeInTheDocument();
@@ -190,6 +189,6 @@ describe("membership-ops/review page", () => {
     // The volunteer-only checkbox is a household-application concept — hidden for PERSON_BG.
     expect(screen.queryByText("This is a volunteer only family (no students)")).not.toBeInTheDocument();
     // So is naming a subject: the process already names the person it is about.
-    expect(screen.queryByText("Whose check(s) did you review?")).not.toBeInTheDocument();
+    expect(screen.queryByText("Whose check did you review?")).not.toBeInTheDocument();
   });
 });

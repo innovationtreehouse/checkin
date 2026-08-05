@@ -155,10 +155,10 @@ describe("AdminMembershipPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Reset for re-review" }));
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Sent back for re-review." })));
 
-        // A force-approve stamps the adults it names, so it stays disabled until one is
+        // A force-approve stamps the adult it names, so it stays disabled until one is
         // named — an unnamed override would clear the check against nobody.
         expect(screen.getByRole("button", { name: /Override/ })).toBeDisabled();
-        fireEvent.click(screen.getByRole("checkbox", { name: "Lead One" }));
+        fireEvent.click(screen.getByRole("radio", { name: "Lead One" }));
         fireEvent.click(screen.getByRole("button", { name: /Override/ }));
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Overridden to payment." })));
     });

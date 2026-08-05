@@ -159,10 +159,13 @@ describe("flow: membership post-payment activation fan-out", () => {
         expect(queue.status).toBe(200);
         const queued = queue.json.queue.find((q) => q.id === processId);
         expect(queued).toBeDefined();
-        const subjectPersonIds = (queued!.orgMembership?.household?.householdMembers ?? []).map((p) => p.id);
-        expect(subjectPersonIds.length).toBeGreaterThan(0);
+        const leadIds = (queued!.orgMembership?.household?.householdMembers ?? []).map((p) => p.id);
+        expect(leadIds.length).toBeGreaterThan(0);
+        // A review covers ONE adult, and the first approval settles which — so both
+        // reviewers name the same person.
+        const subjectPersonIds = [leadIds[0]];
 
-        // Two DISTINCT reviewers approve the background check, both naming the same adult(s).
+        // Two DISTINCT reviewers approve the background check, both naming the same adult.
         // The second approval on a named adult clears it; unpaid, so it stays at
         // PENDING_PAYMENT (bgClearedAt now set) — payment will activate.
         const a1 = await api(board, "/api/membership/reviews", { method: "POST", body: JSON.stringify({ processId, result: "APPROVE", subjectPersonIds }) });

@@ -159,9 +159,23 @@ export function subjectIds(raw: unknown): number[] | undefined {
 }
 
 /**
- * The adults a household process has cleared: those two reviewers both named.
- * A subject-less attestation (a REJECT, a PERSON_BG, or a legacy row attested
- * before per-adult subjects existed) names nobody and counts toward no one.
+ * The adult a household review is about, fixed by whoever approved first. A review
+ * covers ONE adult: the second reviewer confirms that person's report rather than
+ * choosing again, so two reviewers can never split across different people. A
+ * second adult with their own check is a separate obligation on the PERSON_BG
+ * track, not a competing subject here.
+ *
+ * Null when nothing is settled yet, or on a subject-less attestation — a REJECT, a
+ * PERSON_BG, or a legacy row attested before per-adult subjects existed.
+ */
+export function establishedSubject(attestations: { result: string; subjectPersonId: number | null }[]): number | null {
+    return attestations.find((a) => a.result === "APPROVE" && a.subjectPersonId !== null)?.subjectPersonId ?? null;
+}
+
+/**
+ * The adult a household process has cleared: the established subject, once two
+ * reviewers have approved it. Returned as a list because it drives an `in` write
+ * and is empty until the second approval lands.
  */
 export function subjectsWithTwoApprovals(attestations: { result: string; subjectPersonId: number | null }[]): number[] {
     const approvals = new Map<number, number>();
@@ -174,14 +188,13 @@ export function subjectsWithTwoApprovals(attestations: { result: string; subject
 
 /**
  * IDs of the applications this reviewer may currently attest (eligibility
- * filtered: not their own household, subjects still outstanding for them, no
- * household-mate already on it). The route turns these into model rows for the
- * stripper; the notifications endpoint just counts them.
+ * filtered: not their own household, not already attested, no household-mate
+ * already on it). The route turns these into model rows for the stripper; the
+ * notifications endpoint just counts them.
  *
- * Eligibility is PER-SUBJECT on a household process: a reviewer who named Alex but
- * not Sam still has Sam to attest, so the application stays in their queue. It
- * leaves when they have named every live lead — or when the check clears, which
- * drops it from awaitingBgReview outright.
+ * A review covers one adult, so one attestation per reviewer settles their part of
+ * it either way — the application leaves their queue once they have attested, and
+ * leaves everyone's when the check clears.
  */
 export async function eligibleReviewProcessIds(reviewerId: number): Promise<number[]> {
     const reviewer = await loadReviewer(reviewerId);
@@ -192,15 +205,9 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
         orderBy: { stageEnteredAt: "asc" },
         select: {
             id: true,
-            subjectPersonId: true,
-            orgMembership: {
-                select: {
-                    householdId: true,
-                    household: { select: { householdMembers: { where: { isHouseholdLead: true, ...LIVE_PERSON }, select: { id: true } } } },
-                },
-            },
+            orgMembership: { select: { householdId: true } },
             subjectPerson: { select: { householdId: true } },
-            attestations: { select: { reviewerId: true, subjectPersonId: true, reviewer: { select: { householdId: true } } } },
+            attestations: { select: { reviewerId: true, reviewer: { select: { householdId: true } } } },
         },
     });
 
@@ -209,16 +216,9 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
             // Applicant household = subject's for a PERSON_BG, else the membership's.
             const applicantHouseholdId = p.subjectPerson?.householdId ?? p.orgMembership?.householdId ?? null;
             if (sharesHousehold(reviewer.householdId, applicantHouseholdId)) return false; // own household
-            const mine = p.attestations.filter((a) => a.reviewerId === reviewer.id);
-            const others = p.attestations.filter((a) => a.reviewerId !== reviewer.id);
-            if (others.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) return false; // shares household with other reviewer
-            // A PERSON_BG is one attestation per reviewer; a household one is one per lead.
-            if (p.subjectPersonId) return mine.length === 0;
-            const named = new Set(mine.map((a) => a.subjectPersonId));
-            const leads = p.orgMembership?.household?.householdMembers ?? [];
-            // A household with no live lead has nobody to name, so there is nothing this
-            // reviewer can attest; it stays visible to the board on the applications view.
-            return leads.some((l) => !named.has(l.id));
+            if (p.attestations.some((a) => a.reviewerId === reviewer.id)) return false; // already attested
+            if (p.attestations.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) return false; // shares household with other reviewer
+            return true;
         })
         .map((p) => p.id);
 }
@@ -228,18 +228,16 @@ export async function eligibleReviewProcessIds(reviewerId: number): Promise<numb
  *   - canActOn: applications this reviewer may attest right now (green).
  *   - approvedAwaitingSecond: applications this reviewer already approved that
  *     still await a second reviewer (gray). An awaiting process only ever holds
- *     APPROVE attestations and needs 2 to clear on some subject, so "attested by
- *     me and nothing left for me to name" == "approved by me, not yet done".
- *     Excluding canActOn matters now that a half-named household stays actionable:
- *     without it the same row would be counted green AND gray.
+ *     APPROVE attestations and needs 2 to clear, so "this reviewer has an
+ *     attestation on it" == "approved by me, not yet done".
  */
 export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn: number; approvedAwaitingSecond: number }> {
     const reviewer = await loadReviewer(reviewerId);
     if (!reviewer || !canReviewBackgroundChecks(reviewer)) return { canActOn: 0, approvedAwaitingSecond: 0 };
-    const canActOnIds = await eligibleReviewProcessIds(reviewerId);
-    const approvedAwaitingSecond = await prisma.orgMembershipProcess.count({
-        where: { ...awaitingBgReview.where, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } }, id: { notIn: canActOnIds } },
-    });
+    const [canActOnIds, approvedAwaitingSecond] = await Promise.all([
+        eligibleReviewProcessIds(reviewerId),
+        prisma.orgMembershipProcess.count({ where: { ...awaitingBgReview.where, ...QUEUE_EXCLUDES_UNSUBMITTED_PERSON_BG, attestations: { some: { reviewerId } } } }),
+    ]);
     return { canActOn: canActOnIds.length, approvedAwaitingSecond };
 }
 
@@ -249,10 +247,12 @@ export async function reviewQueueCounts(reviewerId: number): Promise<{ canActOn:
  * activating the membership if dues are already paid, else leaving it at
  * PENDING_PAYMENT.
  *
- * `subjectPersonIds` names the adults whose Averity reports this reviewer read;
- * approving a household without naming anyone is rejected, not silently accepted.
- * One row is written per named subject, so a reviewer holding two reports on one
- * family records both in a single click.
+ * `subjectPersonIds` carries the ONE adult whose Averity report this reviewer read.
+ * Approving a household without naming anyone is rejected, not silently accepted.
+ * The first approval fixes who the review is about; a later reviewer either
+ * confirms that person or rejects, so the two can never split across different
+ * adults. A second adult's own check is a PERSON_BG obligation, not a rival
+ * subject here.
  */
 export async function attest(
     reviewerId: number,
@@ -282,28 +282,34 @@ export async function attest(
         if (!awaitingBgReview.has({ status: process.status, bgConsentAt: !!process.bgConsentAt, bgClearedAt: !!process.bgClearedAt })) throw new ReviewError("wrong_phase", "This application is not awaiting background-check review.");
         const applicantHouseholdId = await applicantHousehold(tx, process);
         if (sharesHousehold(reviewer.householdId, applicantHouseholdId)) throw new ReviewError("same_household_applicant", "You cannot review an applicant in your own household.");
-        const mine = process.attestations.filter((a) => a.reviewerId === reviewerId);
-        const others = process.attestations.filter((a) => a.reviewerId !== reviewerId);
-        if (others.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
+        if (process.attestations.some((a) => a.reviewerId === reviewerId)) throw new ReviewError("already_attested", "You have already reviewed this application.");
+        if (process.attestations.some((a) => sharesHousehold(reviewer.householdId, a.reviewer.householdId))) throw new ReviewError("same_household_reviewer", "Another reviewer from your household has already reviewed this application.");
 
-        // Which adults this attestation covers. A REJECT is whole-process and a
-        // PERSON_BG already names its subject on the process, so both record one
-        // subject-less row; only a household APPROVE names people.
+        // The adult this attestation covers. A REJECT is whole-process and a PERSON_BG
+        // already names its subject on the process, so both record a subject-less row;
+        // only a household APPROVE names someone.
         const isHousehold = !process.subjectPersonId;
-        let subjects: (number | null)[] = [null];
+        let subjectPersonId: number | null = null;
         if (isHousehold && input.result === "APPROVE") {
             const requested = [...new Set(input.subjectPersonIds ?? [])];
-            if (!requested.length) throw new ReviewError("invalid_subject", "Say whose background check you reviewed.");
-            const candidates = new Set(await liveHouseholdLeadIds(tx, applicantHouseholdId));
-            if (requested.some((id) => !candidates.has(id))) throw new ReviewError("invalid_subject", "That person is not a household lead on this application.");
-            if (requested.some((id) => mine.some((a) => a.subjectPersonId === id))) throw new ReviewError("already_attested", "You have already reviewed this application for that person.");
-            subjects = requested;
-        } else if (mine.some((a) => a.subjectPersonId === null)) {
-            throw new ReviewError("already_attested", "You have already reviewed this application.");
+            if (requested.length !== 1) throw new ReviewError("invalid_subject", "Name the one adult whose background check you reviewed.");
+            // Whoever approved first fixed who this review is about; the second reviewer
+            // confirms that person's report rather than choosing again. Without this two
+            // reviewers can name different adults, leaving both at one approval and the
+            // review waiting on a third.
+            const settled = establishedSubject(process.attestations);
+            if (settled !== null && requested[0] !== settled) {
+                throw new ReviewError("invalid_subject", "This review is already about a different adult. Reject it if that subject is wrong.");
+            }
+            if (settled === null) {
+                const candidates = new Set(await liveHouseholdLeadIds(tx, applicantHouseholdId));
+                if (!candidates.has(requested[0])) throw new ReviewError("invalid_subject", "That person is not a household lead on this application.");
+            }
+            subjectPersonId = requested[0];
         }
 
-        await tx.backgroundCheckAttestation.createMany({
-            data: subjects.map((subjectPersonId) => ({ processId, reviewerId, subjectPersonId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer, note: input.note ?? null })),
+        await tx.backgroundCheckAttestation.create({
+            data: { processId, reviewerId, subjectPersonId, result: input.result, isMarkedVolunteer: !!input.isMarkedVolunteer, note: input.note ?? null },
         });
 
         if (input.result === "REJECT") {
@@ -313,9 +319,9 @@ export async function attest(
             return { status: "BLOCKED" as const, notifyPaidReject: !!process.paidAt };
         }
 
-        const withThis = [...process.attestations, ...subjects.map((subjectPersonId) => ({ result: "APPROVE", subjectPersonId }))];
+        const withThis = [...process.attestations, { result: "APPROVE", subjectPersonId }];
         const approvals = withThis.filter((a) => a.result === "APPROVE").length;
-        // A household clears when SOME named adult reaches two approvals (one checked
+        // A household clears when its named adult reaches two approvals (one checked
         // adult satisfies membership); a PERSON_BG counts the process as it always has.
         const clears = isHousehold ? subjectsWithTwoApprovals(withThis).length > 0 : approvals >= REQUIRED_APPROVALS;
         if (clears) {
@@ -501,9 +507,11 @@ export async function overrideBlocked(processId: number, actorId: number, action
     let subjectOverride: number[] | undefined;
     if (!process.subjectPersonId) {
         const requested = [...new Set(subjectPersonIds ?? [])];
-        if (!requested.length) throw new ReviewError("invalid_subject", "Say whose background check this override covers.");
+        if (requested.length !== 1) throw new ReviewError("invalid_subject", "Name the one adult whose background check this override covers.");
+        // The board is the escape hatch, so it may name any live lead — including one
+        // different from whatever a partial review settled on.
         const candidates = new Set(await liveHouseholdLeadIds(prisma, applicantHouseholdId));
-        if (requested.some((id) => !candidates.has(id))) throw new ReviewError("invalid_subject", "That person is not a household lead on this application.");
+        if (!candidates.has(requested[0])) throw new ReviewError("invalid_subject", "That person is not a household lead on this application.");
         subjectOverride = requested;
     }
 
