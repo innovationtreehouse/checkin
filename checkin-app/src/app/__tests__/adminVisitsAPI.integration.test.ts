@@ -6,7 +6,8 @@
  * Tests GET and PATCH /api/facility/visits for viewing and editing check-in records
  */
 
-import { GET, POST, PATCH, DELETE } from '@/app/api/facility/visits/route';
+import { GET, PATCH, DELETE } from '@/app/api/facility/visits/route';
+import { POST } from '@/app/api/facility/visits/insert/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -376,7 +377,7 @@ describe('Admin Visits API Integration Tests', () => {
     // roster mark (program-scoped, event window) can record a past visit for
     // someone who was simply never badged in.
     describe('POST /api/facility/visits — staff insert for others', () => {
-        const post = (body: unknown) => POST(new Request('http://localhost:4000/api/facility/visits', {
+        const post = (body: unknown) => POST(new Request('http://localhost:4000/api/facility/visits/insert', {
             method: 'POST', body: JSON.stringify(body),
         }) as unknown as import("next/server").NextRequest);
 

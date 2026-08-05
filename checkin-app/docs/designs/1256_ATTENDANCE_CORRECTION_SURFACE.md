@@ -101,26 +101,35 @@ there is no existence oracle on other people's visit ids. Delete is a tombstone
 (below). See §2 for the model and §3 for the proxy weighting.
 
 ### Staff edit — facility-wide
-`GET/POST/PATCH/DELETE /api/facility/visits`
+`GET/PATCH/DELETE /api/facility/visits`
 ([route.ts](../../src/app/api/facility/visits/route.ts)) gate
 `roles: ['isSysadmin', 'isBoardMember']`.
 - `PATCH` edits `arrivedAt`/`departedAt`, re-validates order + 24h max, forbids
   reopening a closed visit, audit `EDIT`.
 - `DELETE` tombstones (it hard-deleted before AT5), audit `DELETE` with the
   pre-delete row in `oldData`.
-- `POST` is AT3's insert-for-others (below).
 - The UI page gate matches the API gate — `useRequireRole(['isSysadmin',
   'isBoardMember'])`. The two sets drifting apart was AT13, fixed in
   [#1350](https://github.com/innovationtreehouse/checkin/pull/1350); §1 defines the target
   they must stay aligned to.
 
 ### Staff insert-for-others at an arbitrary past time
-`POST /api/facility/visits`, same gate. The walk-in path neither the kiosk (live
-only) nor the event roster mark (program-scoped, event window) can record.
+`POST /api/facility/visits/insert`
+([route.ts](../../src/app/api/facility/visits/insert/route.ts)), same gate. The
+walk-in path neither the kiosk (live only) nor the event roster mark
+(program-scoped, event window) can record.
 Unlike the self-service route, the target `personId` **is** taken from the body —
 that is the point of the endpoint — so the role gate is the whole boundary.
 Closed visits only: an open one would put someone on the live in-the-building
-roster on staff say-so and leave a visit nobody will badge out of. Advisory-lock
+roster on staff say-so and leave a visit nobody will badge out of.
+
+Its own path rather than a `POST` on the sibling collection: adding a verb to an
+existing legacy route file cannot satisfy the security lints in any PR ordering
+(registry-first trips `orphan-registry`, route-first trips
+`new-route-old-authz`, both together trip boundary isolation). A new path is the
+register-first state `orphan-registry` already warns for. Tracked as
+[#1491](https://github.com/innovationtreehouse/checkin/issues/1491); if that is fixed the
+endpoint can fold back onto `/api/facility/visits`. Advisory-lock
 wrapped, `WEB` on both fields, event association via `findAssociatedEventAt`,
 audited with `secondaryAffectedEntity` = the subject.
 
@@ -161,7 +170,7 @@ filterable by `tableName`/`action`/date. This is AT12's foundation (§4).
 
 Audit coverage across visit-write paths: **every human edit path logs** a `Visit`
 audit row — manual `CREATE`, the self/household-lead `EDIT`/`DELETE`,
-`facility/visits` `POST`/`EDIT`/`DELETE`, the events roster mark,
+`facility/visits` `EDIT`/`DELETE`, the staff insert, the events roster mark,
 `manualEditAttendance`, `my-programs/conflicts/resolve`,
 `membership-ops/.../merge`. Each carries `actorId` = who acted and
 `secondaryAffectedEntity` = whose visit it is, so acting-for-another reads off
@@ -431,7 +440,7 @@ AT3 is the non-`self` rows of the matrix.
   the surface: its Absent branch tombstones instead of hard-deleting, and both
   branches write an audit row — previously it wrote none at all, the one human
   visit-write path that did not.
-- **Insert-for-others at an arbitrary past time** — `POST /api/facility/visits`
+- **Insert-for-others at an arbitrary past time** — `POST /api/facility/visits/insert`
   under the staff gate. The target `personId` **is** taken from the body here,
   unlike the self-service route. Closed visits only (see "The write surface").
 

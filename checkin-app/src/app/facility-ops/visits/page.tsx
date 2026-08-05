@@ -167,7 +167,7 @@ export default function AdminVisitsPage() {
     }
     setAdding(true);
     try {
-      const res = await fetch('/api/facility/visits', {
+      const res = await fetch('/api/facility/visits/insert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
