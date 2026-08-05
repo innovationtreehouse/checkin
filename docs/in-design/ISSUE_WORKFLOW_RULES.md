@@ -1,11 +1,3 @@
-# Issue workflow — the rules
-
-Destination: replaces `AGENTS.md` § "Issue workflow (org project 1)" in full.
-Everything below the rule is that section's text, ready to paste.
-Getting there is `ISSUE_WORKFLOW_MIGRATION.md`.
-
----
-
 ## Issue workflow (org project 1)
 
 Org **project 1** is the canonical triage surface. Its Status field is a
