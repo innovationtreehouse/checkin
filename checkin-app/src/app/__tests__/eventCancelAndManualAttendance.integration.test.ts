@@ -217,6 +217,86 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
         });
     });
 
+    // ─── 2b. PRESENT vs AN OPEN VISIT THIS EVENT DOESN'T OWN ────────────────
+
+    describe('manualEditAttendance — Present while an open visit exists elsewhere', () => {
+        it('adopts an unassociated open visit into the event instead of failing the one-open-visit index', async () => {
+            const event = await makeEvent('manual-present-walkin', -1 * HOUR);
+            // Ordinary walk-in badge-in: open, not tied to any event.
+            const walkIn = await prisma.visit.create({
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - 90 * MIN), departedAt: null, associatedEventId: null },
+            });
+
+            const newArrival = new Date(Date.now() - 80 * MIN);
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: newArrival.toISOString(),
+                departedAt: null,
+            });
+            expect(res.status).toBe(200);
+
+            const visits = await prisma.visit.findMany({ where: { personId: participantId } });
+            expect(visits.length).toBe(1);              // no second visit written
+            expect(visits[0].id).toBe(walkIn.id);       // the walk-in row itself
+            expect(visits[0].associatedEventId).toBe(event.id);
+            expect(visits[0].departedAt).toBeNull();    // still on-site
+            expect(visits[0].arrivedAt.getTime()).toBe(newArrival.getTime());
+        });
+
+        it('rejects with an actionable 400 when the open visit belongs to another event', async () => {
+            const other = await makeEvent('manual-present-other', -3 * HOUR);
+            const event = await makeEvent('manual-present-target', -1 * HOUR);
+            const openElsewhere = await prisma.visit.create({
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - 150 * MIN), departedAt: null, associatedEventId: other.id },
+            });
+
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: new Date(Date.now() - 50 * MIN).toISOString(),
+                departedAt: null,
+            });
+            expect(res.status).toBe(400);
+            const body = await res.json();
+            expect(body.error).toMatch(/checked in/i);
+
+            // Nothing written: the other event keeps its open visit.
+            const visits = await prisma.visit.findMany({ where: { personId: participantId } });
+            expect(visits.length).toBe(1);
+            expect(visits[0].id).toBe(openElsewhere.id);
+            expect(visits[0].associatedEventId).toBe(other.id);
+        });
+
+        it('closes the open walk-in in place when a departure time is supplied', async () => {
+            const event = await makeEvent('manual-present-close-walkin', -2 * HOUR);
+            const walkIn = await prisma.visit.create({
+                data: { personId: participantId, arrivedAt: new Date(Date.now() - 150 * MIN), departedAt: null, associatedEventId: null },
+            });
+
+            const arrival = new Date(Date.now() - 140 * MIN);
+            const departure = new Date(Date.now() - 60 * MIN);
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: arrival.toISOString(),
+                departedAt: departure.toISOString(),
+            });
+            expect(res.status).toBe(200);
+
+            // A closed result can't collide with the index, so the walk-in is left
+            // alone and this event gets its own closed record.
+            const visits = await prisma.visit.findMany({ where: { personId: participantId }, orderBy: { id: 'asc' } });
+            expect(visits.length).toBe(2);
+            expect(visits.find(v => v.id === walkIn.id)!.departedAt).toBeNull();
+            const forEvent = visits.find(v => v.associatedEventId === event.id)!;
+            expect(forEvent.departedAt!.getTime()).toBe(departure.getTime());
+        });
+    });
+
     // ─── 3. PAST-EVENT GUARD ────────────────────────────────────────────────
 
     describe('past-event editTime — rejected', () => {
