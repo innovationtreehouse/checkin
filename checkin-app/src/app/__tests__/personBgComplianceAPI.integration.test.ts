@@ -117,8 +117,12 @@ describe('GET /api/membership-audit/compliance — person BG buckets', () => {
 
     afterAll(async () => {
         await cleanup();
+        // Unconditional: a row this suite created must go, or its boundary leaks into
+        // suites that share this DB and expect none.
         if (savedSettings) {
             await prisma.boardSettings.update({ where: { id: 1 }, data: savedSettings });
+        } else {
+            await prisma.boardSettings.delete({ where: { id: 1 } }).catch(() => {});
         }
     });
 
