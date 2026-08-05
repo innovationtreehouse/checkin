@@ -99,7 +99,9 @@ than a practice.
   its local fields flips on the person's own birthday.
 
 - **A moment is displayed in the zone the organisation configured**, never one
-  compiled in.  — *Principle: this codebase is not this organisation*
+  compiled in. The exception is a native local-time input, which is local to
+  whoever is typing in it by definition.
+  — *Principle: this codebase is not this organisation*
 
 - **A day is never taken from a moment.** Keeping the date part of "now" answers
   in whatever zone the process happens to be running in. A day comes from a day.
