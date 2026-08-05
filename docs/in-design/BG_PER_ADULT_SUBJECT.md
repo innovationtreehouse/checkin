@@ -520,11 +520,14 @@ which is why backlog **SA2** ("wipe polluted blanket BG data") was retired on 20
 polluted data exists"*. That retirement was about pre-import pollution. New pollution has been
 accruing from every household clearance since — the blanket `updateMany` never stopped running.
 
-**2026-07-01 was confirmed by the board while this was being built**, but the section still ships
-with **no filter applied** and shows the date as a hint on the "cleared since" control. A list that
-already hides everything before the cutoff cannot be used to confirm the cutoff — the board reads the
-real distribution first, then narrows. Cheap to validate, expensive to assume, and it costs one input
-instead of a redeploy if the date turns out to be wrong.
+**The date is not load-bearing.** The board confirmed 2026-07-01, and confirmed that **no approvals
+happened between 2026-07-01 and the 2026-07-21 re-import** — 07-01 was simply an easy date to type
+that sits safely before the first affected clearance. So the "does the cutoff predate the re-import"
+question has no rows in it either way, and nothing downstream turns on the exact value.
+
+The section therefore ships with **no filter applied**, showing every clearance, and surfaces the
+date as a hint on the "cleared since" control. Unfiltered is the more informative default and costs
+nothing; narrowing is one input, not a redeploy.
 The SA2 row in `docs/backlog/INDEX.md` should be updated with what the list shows.
 
 ### Order of operations
@@ -637,8 +640,9 @@ per-subject eligibility means nothing for a reviewer to do.
 
 ## Decisions taken
 
-1. **Cutoff — 2026-07-01 confirmed.** Shipped as the default value of the "cleared since" control,
-   still editable. See [Cutoff](#cutoff--a-filter-control-not-a-hardcoded-date).
+1. **Cutoff — 2026-07-01 confirmed, and not load-bearing.** No approvals fall between it and the
+   re-import, so the exact value decides nothing. The list opens unfiltered and offers the date as a
+   hint. See [Cutoff](#cutoff--a-filter-control-not-a-hardcoded-date).
 2. **Reviewer subject list — leads only.** A report naming someone who is not a live household lead
    has nowhere to go on the card; the reviewer rejects, and that adult's obligation belongs on the
    `PERSON_BG` track, which already owns non-lead adults (see [Scope](#scope)). The card offers no

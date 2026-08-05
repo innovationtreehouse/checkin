@@ -8,9 +8,9 @@ import { formatPhone } from "@/lib/phone";
 import { formatDateOnly } from "@/lib/time";
 import { PageLoader } from "@/components/ui/PageLoader";
 
-// The board's stated cutoff for blanket-stamped background checks — everyone was
-// re-imported per-adult around then. Shown as a hint, NOT applied as a default: a
-// filter that hides everything before the cutoff cannot be used to confirm the cutoff.
+// The board's cutoff for blanket-stamped background checks: a round date chosen to sit
+// safely before the first affected clearance, not a boundary anything depends on. Shown
+// as a hint rather than applied, so the list opens on everything.
 const BLANKET_STAMP_CUTOFF = "2026-07-01";
 
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
@@ -300,7 +300,7 @@ export default function CompliancePage() {
         <TextInput
           type="date"
           label="Cleared since"
-          description={`Showing every clearance. The board's stated cutoff is ${BLANKET_STAMP_CUTOFF} — narrow to it once the dates below confirm it.`}
+          description={`Showing every clearance. Narrow to ${BLANKET_STAMP_CUTOFF} to hide anything predating the per-adult re-import.`}
           value={clearedSince}
           onChange={(e) => setClearedSince(e.currentTarget.value)}
           maw={260}
