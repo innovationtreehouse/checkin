@@ -178,7 +178,6 @@ describe('isLegalTransition covers §5', () => {
         expect(isLegalTransition('INTAKE', 'PENDING_EXTERNAL_ACTION')).toBe(true);
         expect(isLegalTransition('PENDING_RENEWAL', 'PENDING_EXTERNAL_ACTION')).toBe(true);
         expect(isLegalTransition('PENDING_EXTERNAL_ACTION', 'PENDING_PAYMENT')).toBe(true);
-        expect(isLegalTransition('PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW')).toBe(true);
         expect(isLegalTransition('PENDING_PAYMENT', 'ACTIVE')).toBe(true);
         expect(isLegalTransition('PENDING_PAYMENT', 'PENDING_BG_CLEARANCE')).toBe(true);
         expect(isLegalTransition('PENDING_BG_REVIEW', 'PENDING_PAYMENT')).toBe(true);
@@ -211,6 +210,8 @@ describe('isLegalTransition covers §5', () => {
     });
 
     test('rejects undeclared edges', () => {
+        // The external advance always opens payment — an intake note no longer holds it.
+        expect(isLegalTransition('PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW')).toBe(false);
         expect(isLegalTransition('INTAKE', 'ACTIVE')).toBe(false);
         expect(isLegalTransition('ACTIVE', 'PENDING_PAYMENT')).toBe(false);
         expect(isLegalTransition('ARCHIVED', 'ACTIVE')).toBe(false);
