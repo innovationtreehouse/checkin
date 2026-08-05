@@ -52,17 +52,59 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const programId = parseInt(params.id, 10);
     if (isNaN(programId)) throw badRequest('Invalid program ID');
 
+    // Explicit select, not include: whole rows would ship every pii/personal
+    // column a lead mentor's view happens to grant (googleId, dateOfBirth,
+    // allergies, the payment-plan flags) plus any column added later. The id /
+    // programId / personId / householdId keys below are ROW_SCOPE_KEYs — drop
+    // one and scopesHeld() fails closed and strips the row for the very roles
+    // this route serves (see the emergencyContacts note).
     const program = await prisma.program.findUnique({
         where: { id: programId },
-        include: {
-            volunteers: { where: { person: LIVE_PERSON }, include: { person: true } },
+        select: {
+            id: true,
+            name: true,
+            leadMentorId: true,
+            startAt: true,
+            endAt: true,
+            phase: true,
+            enrollmentStatus: true,
+            orgMemberOnly: true,
+            announceOnOpen: true,
+            minAge: true,
+            maxAge: true,
+            maxParticipants: true,
+            orgMemberPriceCents: true,
+            nonOrgMemberPriceCents: true,
+            shopifyProductId: true,
+            shopifyVariantId: true,
+            shopifyOrgMemberVariantId: true,
+            shopifyNonOrgMemberVariantId: true,
+            volunteers: {
+                where: { person: LIVE_PERSON },
+                select: {
+                    programId: true,
+                    personId: true,
+                    isCore: true,
+                    person: { select: { id: true, name: true, email: true } },
+                },
+            },
             participants: {
                 where: { person: LIVE_PERSON },
-                include: {
+                select: {
+                    programId: true,
+                    personId: true,
+                    status: true,
+                    pendingSince: true,
                     person: {
-                        include: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone: true,
+                            householdId: true,
                             household: {
-                                include: {
+                                select: {
+                                    id: true,
                                     emergencyContacts: {
                                         where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
                                         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -77,8 +119,18 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                     },
                 },
             },
-            events: { orderBy: { startAt: 'asc' } },
-            leadMentor: true,
+            events: {
+                orderBy: { startAt: 'asc' },
+                select: {
+                    id: true,
+                    programId: true,
+                    name: true,
+                    startAt: true,
+                    endAt: true,
+                    attendanceConfirmedAt: true,
+                },
+            },
+            leadMentor: { select: { id: true, name: true, email: true } },
             _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } } } },
         },
     });
