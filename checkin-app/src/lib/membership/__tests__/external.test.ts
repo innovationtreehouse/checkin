@@ -70,8 +70,19 @@ const { loadAgreementPdf, stampWatermark, AgreementUnavailableError } = require(
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { notifyReviewers, applyVolunteerStatus } = require('@/lib/membership/review');
 
+// resetAllMocks, NOT clearAllMocks: clear wipes recorded calls but KEEPS
+// implementations, so a `mockResolvedValue` set in one test silently answers every
+// later test in the file. Harmless only for as long as no later test exercises a
+// path that reaches the same prisma method. Reset drops implementations too, so
+// each test states the prisma responses it depends on and nothing else.
+//
+// The three factory-level defaults below are re-established here, since reset
+// clears those as well.
 beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    prisma.boardSettings.findUnique.mockResolvedValue(null); // signingMockActive: no dev override
+    notifyReviewers.mockResolvedValue(undefined);
+    applyVolunteerStatus.mockResolvedValue(undefined);
     config.zohoAvailable.mockReturnValue(true);
     config.zohoMockActive.mockReturnValue(true);
     config.isProd.mockReturnValue(false);
@@ -423,6 +434,7 @@ describe('getOrCreateContractSigningUrl', () => {
             zohoSign.createRequest.mockResolvedValue({ requestId: 'req-stg', actionId: 'act-stg', documentId: 'doc-stg' });
             zohoSign.submitRequest.mockResolvedValue(undefined);
             zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-stg');
+            prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 }); // wins the id claim
 
             await getOrCreateContractSigningUrl(1);
 
