@@ -69,7 +69,9 @@ describe("membership-audit/compliance page", () => {
     // Both leads get a button — the evidence is a label, not a decision.
     expect(screen.getAllByRole("button", { name: "Clear this date" })).toHaveLength(2);
     // The board's confirmed cutoff is the default, so the list starts narrowed.
-    expect(fetchMock.mock.calls[0][0]).toContain("bgClearedSince=2026-07-01");
+    // Unfiltered on load: a list that already hides everything before the cutoff
+    // cannot be used to confirm the cutoff.
+    expect(fetchMock.mock.calls[0][0]).not.toContain("bgClearedSince");
   });
 
   it("clears one lead's date through the existing board-gated PUT", async () => {

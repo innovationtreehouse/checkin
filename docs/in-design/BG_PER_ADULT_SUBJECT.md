@@ -520,10 +520,12 @@ which is why backlog **SA2** ("wipe polluted blanket BG data") was retired on 20
 polluted data exists"*. That retirement was about pre-import pollution. New pollution has been
 accruing from every household clearance since — the blanket `updateMany` never stopped running.
 
-**2026-07-01 was confirmed by the board while this was being built**, so the section ships with that
-as the *default* value of a "cleared since" control — not as a hardcoded constant. If the real
-distribution of clearance dates starts earlier, widening it is one input instead of a redeploy.
-`docs/backlog/INDEX.md:303` currently asserts the opposite and should be updated with what the list shows.
+**2026-07-01 was confirmed by the board while this was being built**, but the section still ships
+with **no filter applied** and shows the date as a hint on the "cleared since" control. A list that
+already hides everything before the cutoff cannot be used to confirm the cutoff — the board reads the
+real distribution first, then narrows. Cheap to validate, expensive to assume, and it costs one input
+instead of a redeploy if the date turns out to be wrong.
+The SA2 row in `docs/backlog/INDEX.md` should be updated with what the list shows.
 
 ### Order of operations
 

@@ -8,9 +8,9 @@ import { formatPhone } from "@/lib/phone";
 import { formatDateOnly } from "@/lib/time";
 import { PageLoader } from "@/components/ui/PageLoader";
 
-// The board's stated cutoff for blanket-stamped background checks: everyone was
-// re-imported per-adult on this date. Only a default — the control stays editable so
-// the real distribution of clearance dates can widen it.
+// The board's stated cutoff for blanket-stamped background checks — everyone was
+// re-imported per-adult around then. Shown as a hint, NOT applied as a default: a
+// filter that hides everything before the cutoff cannot be used to confirm the cutoff.
 const BLANKET_STAMP_CUTOFF = "2026-07-01";
 
 type Lead = { id: number; name: string | null; phone: string | null; email: string | null };
@@ -104,7 +104,7 @@ export default function CompliancePage() {
   const [peopleMissingDob, setPeopleMissingDob] = useState<PersonRow[]>([]);
   const [blanketStamped, setBlanketStamped] = useState<BlanketStampedRow[]>([]);
   const [mergeInherited, setMergeInherited] = useState<MergeInheritedRow[]>([]);
-  const [clearedSince, setClearedSince] = useState(BLANKET_STAMP_CUTOFF);
+  const [clearedSince, setClearedSince] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -300,7 +300,7 @@ export default function CompliancePage() {
         <TextInput
           type="date"
           label="Cleared since"
-          description="Widen this if the dates below start earlier than expected."
+          description={`Showing every clearance. The board's stated cutoff is ${BLANKET_STAMP_CUTOFF} — narrow to it once the dates below confirm it.`}
           value={clearedSince}
           onChange={(e) => setClearedSince(e.currentTarget.value)}
           maw={260}
