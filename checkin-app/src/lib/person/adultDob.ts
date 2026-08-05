@@ -22,9 +22,9 @@ import { MAX_PROGRAM_AGE } from "@/lib/programAge";
  * slip past (e.g. bulk import); this is the write-time guard so it can't creep back.
  *
  * A DoB is a calendar date, so a date string is parsed through `parseDateOnly` —
- * this is the choke-point that owns the UTC-midnight storage convention for
- * interactive writes. Callers pass a bare "yyyy-MM-dd", never a timed string.
- * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+ * this is the choke-point that owns the calendar-date convention for interactive
+ * writes. Callers pass a bare "yyyy-MM-dd", never a timed string.
+ * See docs/conventions.md, "A day is not a moment".
  */
 export function normalizeAdultDob(
   dob: Date | string | null | undefined,

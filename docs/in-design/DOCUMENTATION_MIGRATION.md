@@ -335,9 +335,13 @@ name collision.
 **→ `docs/in-design/`** — unbuilt proposals. These are working docs by another
 name: `SHOPIFY_MEMBER_SEGMENT_PRICING.md`, `KIOSK_RESILIENCE.md`,
 `MEMBERSHIP_SYNC.md`, `PROGRAM_INSTANCE_RESTRUCTURE.md`,
-`resilient-load-swr.md`, and the numbered set (`167-`, `354-`, `975-`, `1149_`,
-`1224_`, `1256_`, `1333-`). They keep their normal lifecycle from here: extract
-and delete when they land, delete outright when abandoned.
+`resilient-load-swr.md`, and the numbered set (`167-`, `354-`, `975-`, `1224_`,
+`1256_`, `1333-`). They keep their normal lifecycle from here: extract and delete
+when they land, delete outright when abandoned.
+
+`1149_` has already been through that lifecycle and is gone: its standing rule is
+`docs/conventions.md`, "A day is not a moment", and the unbuilt remainder is
+tracked as backlog PL17.
 
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
