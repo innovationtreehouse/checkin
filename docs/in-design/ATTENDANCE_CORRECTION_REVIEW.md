@@ -51,9 +51,12 @@ enforces and widens with everything else when that lands.
 **Nothing new is stored.** The screen reads the existing audit trail. There is
 no correction record, no review queue, no approved/rejected state.
 
-**Cost:** three PRs, plus a small fold-in to an open one. A registry entry,
-alone, first. Then the route and the page. The fold-in is worth more than the
-rest put together; see §2.
+**Cost:** two PRs — a registry entry, alone, first; then the route and the page.
+
+**Gated on #1478.** Two requirements on the audit writers have to land before
+this is buildable. They are raised as a blocking review on that PR, not carried
+in this document; §7 states them and why they cannot be worked around at read
+time.
 
 **Deliberately not included:** an acknowledged/reviewed state per correction, an
 undo button, and any calibration control for the significance thresholds. §5
@@ -86,9 +89,9 @@ Every writer that logs a `Visit` row on `origin/main` at `0441d65c`:
 | 7 | `facility/visits/route.ts:159-166` | DELETE | **not set**; person is inside a whole-row `oldData` | before, with sources | no |
 | 8 | `my-programs/conflicts/resolve/route.ts:63-79` | DELETE | **`visit.associatedEventId`**, which is nullable; person is in `oldData.personId` | before, with sources | no |
 
-Paths under `checkin-app/src/app/api/`. #1478 adds four more writers and repairs
-two of these; §2 gives the post-merge census. Three consequences follow, and
-they are the whole of this design's difficulty.
+Paths under `checkin-app/src/app/api/`. #1478 adds further writers and repairs
+some of these; §7 states what this design needs from it. Three consequences
+follow, and they are the whole of this design's difficulty.
 
 **The self-versus-staff test does not work.** Governing design §6.6 offers
 `actorId === secondaryAffectedEntity` as the cheap proof of a self-correction.
@@ -125,93 +128,48 @@ older audit row may belong to a person since merged away. Merges delete nothing
 and `Person.mergedIntoId` records the survivor, so the drill-down resolves the
 name and can follow the pointer.
 
-## 2. Fixing the actor axis
+## 2. The actor axis, and what it requires of the writers
 
-Part of this is already fixed in a PR that is still open, and it is worth being
-exact about which part, because the remainder is what this section asks for.
+**This screen requires one invariant: every visit audit write stores the subject
+person in `secondaryAffectedEntity`.** #1478 (AT3) declares exactly that rule.
+Where the writers do not yet satisfy it, that is a defect in #1478 and is tracked
+as a blocking review on that PR — not here. This design does not restate the
+findings; it depends on them being resolved, and §7 makes that gate explicit.
 
-**#1478 (AT3) fixes two of the five broken writers and adds four correct ones.**
-It sets `secondaryAffectedEntity` to `existing.personId` and `removed.personId`
-at the two `facility/visits` sites — rows 6 and 7 — and adds the missing
-`oldData` to the edit, which is what makes row 6 diffable at all. It also
-introduces four new writers, all storing the subject person: three in
-`events/[id]/route.ts` (the `manualEditAttendance` action, storing `targetId`)
-and one in `facility/visits/insert/route.ts` (storing `subjectId`). Its §6.6
-rewrite states the resulting invariant: *every visit audit write sets
-`secondaryAffectedEntity` to the subject person*.
+The design decision worth recording is what this screen must *not* do about it.
 
-**Three writers do not get the memo.** #1478 touches
-`events/[id]/attendance/route.ts` only to change `arrivedVia`/`departedVia` to
-`LEAD_MARKED`; both audit writes there still store `eventId`. And
-`my-programs/conflicts/resolve/route.ts` is not in its diff at all, though its
-integration test is.
+**Do not special-case the exceptions at read time.** That means encoding "this
+column means a person, except on these paths, where it means an event, except
+when it is null" into a filter, which must then be kept in step with every future
+writer. The column would carry two meanings permanently, and the next person to
+add a visit audit write has no way to know which convention applies. A screen is
+the wrong place to hold an invariant about a write, and a read-side workaround
+for rows written before the fix can never be retired — a reader cannot tell which
+convention an old row followed, because nothing on the row records it.
 
-**Read those two paths carefully — they differ by one segment and behave
-oppositely.** `events/[id]/route.ts` is the
-`manualEditAttendance` action, which #1478 adds and which stores the subject
-correctly. `events/[id]/attendance/route.ts` is the roster mark, which stores
-the event id. An earlier pass of this analysis conflated them and concluded the
-work was already done.
+That is why the invariant has to hold at the writers before this screen is built,
+rather than being absorbed into it.
 
-So the census on #1478's head is **twelve visit audit writers, nine correct and
-three broken**:
-
-| Route | Writers | Subject stored |
-|---|---|---|
-| `attendance/manual/route.ts` | 1 | the member (also the actor) |
-| `attendance/manual/[id]/route.ts` | 2 | `visit.personId` |
-| `events/[id]/route.ts` *(new)* | 3 | `targetId` |
-| `facility/visits/route.ts` *(repaired)* | 2 | `existing.personId` / `removed.personId` |
-| `facility/visits/insert/route.ts` *(new)* | 1 | `subjectId` |
-| `events/[id]/attendance/route.ts` | 2 | **the event id** |
-| `my-programs/conflicts/resolve/route.ts` | 1 | **`visit.associatedEventId`**, nullable |
-
-Nine of twelve is not an invariant. The PR's own stated rule is false the day it
-merges, and it is false on exactly the paths a reader is least likely to check,
-because the correct `events/[id]/route.ts` sits next to the broken
-`events/[id]/attendance/route.ts`.
-
-**Recommendation: normalise `secondaryAffectedEntity` to the subject person on
-every visit audit write, and close the remaining three inside #1478.**
-
-The alternative, having this screen special-case three routes at read time,
-means encoding "this column means a person, except on these paths, where it
-means an event, except when it is null" into a filter that must then be kept in
-step with every future writer. The column would carry two types forever, and the
-next person to add a visit audit write has no way to know which convention
-applies. A screen is the wrong place to hold an invariant about a write.
-
-**What it costs inside #1478:** three lines in two files.
-`events/[id]/attendance/route.ts` already has the subject in scope as `pId` at
-both sites, so each becomes `secondaryAffectedEntity: pId` — the event id is not
-lost, because `newData.associatedEventId` already carries it.
-`my-programs/conflicts/resolve/route.ts` becomes
-`secondaryAffectedEntity: visit.personId`, and its `oldData` already carries
-`associatedEventId` in its own field, so again nothing is lost. Two existing
-integration tests gain an assertion each. #1478 already owns the invariant,
-already edits both files' siblings, and is already reviewed as a unit.
-
-**What it costs after #1478 merges:** a follow-up PR making the same three
-changes, plus a permanent read-side fallback in this screen for every row
-written between the two merges, because those rows keep an event id in the
-column and nothing distinguishes them from correctly normalised rows except
-their age. The fallback is available — `newData.participantId` on the events
-rows, `oldData.personId` on the conflicts row — so the damage is bounded. The
-cost is that the workaround never goes away, since the screen cannot tell which
-convention an old row followed.
-
-**Then the actor axis is a comparison, no join:**
+**Given the invariant, the actor axis is a comparison, no join:**
 
 - `actorId === secondaryAffectedEntity` → **self**
 - `actorId !== secondaryAffectedEntity` → **proxy**, meaning one person changed
   another person's record: a household lead, a program lead, ops, board or
   sysadmin
 
-The screen splits proxy no further. Telling a household lead from a board member
-requires role state as of the edit, which nothing stores, and the board's
-question is "did somebody else change this person's record", which the two-way
-split answers. `newData.type` stays useful as a label on the drill-down
-(`manual_entry`, `self_correction`, `staff_entry`,
+The screen splits proxy no further, and #1502 is the reason to say why
+explicitly rather than by omission. That PR gives the boundary layer a formal
+name for one kind of proxy — `led_households`, a household lead acting for a
+member of the household they lead. It is tempting to reuse it here. It does not
+work: `led_households` is resolved for the *viewer* at request time from the
+caller's current household leadership, never recorded on the audit row. It
+cannot say what relationship held when the edit happened, which is the only
+question this screen asks. Reconstructing that needs role state as of the edit,
+which nothing stores.
+
+The board's question is "did somebody else change this person's record", and the
+two-way split answers it. `newData.type` stays useful as a label on the
+drill-down (`manual_entry`, `self_correction`, `staff_entry`,
 `lead_attendance_correction`), where it accurately names the route; it is not
 the axis.
 
@@ -241,9 +199,10 @@ own header that those thresholds are v1 defaults awaiting board calibration.
    makes recalibration observable: the board changes a threshold and can see, on
    any historical row, what the change would have done.
 3. **Every write path that edits or deletes a visit persists significance.**
-   Today only rows 2 and 3 do.
+   This is a second requirement on the writers, tracked with the first as a
+   blocking review on #1478 rather than restated here. §7 gates on it.
 
-Point 3 is the one that needs arguing, because the lazy option is to leave the
+Point 3 is the one that needs arguing, because the cheap option is to leave the
 flagged lens covering member self-corrections only and let staff corrections
 show up in the unflagged feed. Reject that: a lens with a hole it does not
 declare is worse than no lens. A board member reading "no flagged corrections
@@ -254,20 +213,9 @@ governing design weights *the value being overwritten*, not the person
 overwriting it; moving a scanner-measured arrival two hours is equally notable
 whoever does it.
 
-#1478 makes this sharper than it looks. It introduces `PROXY_MULTIPLIER = 2` and
-a `byProxy` option precisely to say that an adult changing another person's
-record counts double — and then adds three writers in `events/[id]/route.ts`
-where a program lead corrects a member's attendance, none of which score at all.
-The multiplier is reached from one file. Every other proxy path in the system
-scores nothing, including the three the same PR introduces.
-
-The cost is small and lands in files #1478 already edits:
-`editSignificance`/`deleteSignificance` exist, are exported, take the `byProxy`
-option, and are already imported by `attendance/manual/[id]/route.ts`. The call
-sites to add are `facility/visits` PATCH and DELETE, `conflicts/resolve` DELETE,
-and the `manualEditAttendance` EDIT and DELETE — roughly four lines each. All of
-them already carry the `oldData` those calls need, `facility/visits` because
-#1478 just added it and `manualEditAttendance` because it was written that way.
+The screen cannot compensate for this at read time. A row that never scored
+carries no `oldData` in some cases and no times at all in others (§1), so there
+is nothing to recompute from — the gap is only closable at the write.
 
 **Rows that carry no significance are not "unflagged", they are outside the
 lens.** A create has no earlier value to overwrite, and the significance model
@@ -375,8 +323,8 @@ needs, and discards the rest.
 ```
 
 `before` and `after` are null on rows that carry no times (§3). `score` is null
-where no significance was persisted, which after the §3 write change means
-creates and association edits only.
+where no significance was persisted, which once §7's second requirement lands
+means creates and association edits only.
 
 Query parameters: `from`, `to`, `period` (`day|week|month`), `kind`,
 `actorClass`, `flagged`, `page`. Base filter `tableName: 'Visit'`, pinned in the
@@ -443,6 +391,30 @@ and the read-versus-recompute split in §3, the gate and the trends bucketing in
    this screen. Promoting them to `BoardSettings` is a small change to make once
    somebody has an opinion about what the number should be.
 
+## 7. What this design is gated on
+
+This screen is not implementable until the substrate it reads is correct. Two
+requirements sit on the writers, both raised as a blocking review on **#1478**
+and neither restated here:
+
+1. **`secondaryAffectedEntity` holds the subject person on every visit audit
+   write.** §2's actor axis is a direct comparison against this column; without
+   the invariant the axis returns a wrong answer silently rather than failing.
+2. **Every edit and delete path persists `newData.significance`.** §3's flagged
+   view reads this column, and a row that never scored cannot be scored
+   retroactively.
+
+Both are small and land in files #1478 already touches. Neither is a boundary
+change, so neither disturbs its isolation.
+
+**Sequence:** #1478 resolves the two requirements → this design merges → the
+`defineRoute` entry ships alone (§4) → the route and the page.
+
+Merging this document before #1478 resolves them would leave a design describing
+a substrate that does not exist, and would invite an implementation that quietly
+works around the gap at read time — which §2 argues is the one thing this screen
+must not do.
+
 ---
 
 ## Appendix: provenance
@@ -453,11 +425,12 @@ and the read-versus-recompute split in §3, the gate and the trends bucketing in
   §4 (this screen) and §6.6 (the subject-id convention). Its claims about the
   participant merge, the self-versus-staff test and read-time recomputation are
   corrected in §1 and §2 above.
-- Depends on #1478 (AT3), open. §2 and §3 each ask for a change inside it.
+- **Gated on #1478 (AT3)**, open. The two writer requirements are raised as a
+  blocking review there, not carried in this document. §7.
 - Blocked from widening by #1476 (ops gate), an open decision. §4.
 - Unblocked by #1423 (org-timezone bucketing), merged. §4.
-- Registry-first precedent: #1492, then #1478. Earlier: #1395, then #1357.
-- Sequence: (a) the changes in §2 and §3 folded into #1478; (b) the
-  `defineRoute` entry alone; (c) the route and the page.
+- Registry-first precedent: #1502 (visit scopes, boundary-only) alongside its
+  app-only sibling #1478, and #1492 before #1478. Earlier: #1395, then #1357.
+- Sequence in §7.
 - Code claims verified against `origin/main` at `0441d65c` and #1478 at
-  `882b72c6`.
+  `6d128500`.
