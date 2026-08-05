@@ -143,6 +143,7 @@ export const POST = withKiosk(
                 where: {
                     personId: participant.id,
                     departedAt: null,
+                    deletedAt: null,
                 },
                 orderBy: { arrivedAt: "desc" },
             });

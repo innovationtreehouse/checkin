@@ -18,7 +18,7 @@ export const GET = withAuth(
                             phone: true,
                             isHouseholdLead: true,
                             visits: {
-                                where: { departedAt: null },
+                                where: { departedAt: null, deletedAt: null },
                                 select: { id: true }
                             }
                         }

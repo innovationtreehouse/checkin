@@ -14,6 +14,7 @@ export const GET = handler('GET /api/profile', async ({ auth }) => {
         where: { id: auth.user.id },
         include: {
             visits: {
+                where: { deletedAt: null },
                 orderBy: { arrivedAt: 'desc' },
                 take: 50,
                 include: { event: true },

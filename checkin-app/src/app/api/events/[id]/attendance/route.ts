@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { LIVE_VISIT } from "@/lib/visit/filters";
 
 export const POST = withAuth({}, async (req, auth, { params }: { params: Promise<{ id: string }> }) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -72,6 +73,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             const relevantVisits = await tx.visit.findMany({
                 where: {
                     personId: { in: uniqueParticipantIds },
+                    ...LIVE_VISIT,
                     OR: [
                         { associatedEventId: eventId },
                         {
