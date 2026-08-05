@@ -184,6 +184,25 @@ defineRoute({
     ],
 });
 
+// Board opens an individual membership agreement for one adult child (#1224).
+// The response echoes only the obligation it just opened — the route selects
+// id/kind/status and nothing else, so no person, household or Zoho field is in
+// the bag to begin with. `status` is the sole internal-tier field, hence a grant
+// that stops at internal with no pii/personal band: this endpoint has no reason
+// to name anyone. Who currently owes an agreement is a different question, asked
+// through the compliance dashboard's own entry.
+defineRoute({
+    endpoint: 'POST /api/membership-audit/person-agreement',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'process',
+    // Bag: { OrgMembershipProcess }, no relations.
+    returns: ['OrgMembershipProcess'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:internal', 'public']],
+    ],
+});
+
 // Board's in-flight membership applications. Exposes every applicant household's
 // PII (parents + children names/emails), so only isSysadmin/board may see it, and
 // the field grant is explicit per role.
