@@ -88,9 +88,6 @@ const AUTHZ_TESTED = new Set<string>([
     'membership-audit/compliance',
     // POST deny-path (403 non-board) in personBgManualSubmit.integration.test.ts.
     'membership-audit/person-bg',
-    // POST deny-paths (401 anon / 403 non-board) in person-agreement/__tests__/route.test.ts,
-    // which also assert a denied request never opens an obligation against the subject.
-    'membership-audit/person-agreement',
     'membership-audit/households-missing-contact',
     'membership-audit/unclaimed-households',
     'membership-ops/applications/archive',

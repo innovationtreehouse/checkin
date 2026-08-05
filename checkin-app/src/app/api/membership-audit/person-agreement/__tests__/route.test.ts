@@ -7,6 +7,7 @@
  * two refusals the board needs to see a reason for. A denied caller must never reach the
  * service: opening an agreement writes an obligation against a named person.
  */
+import type { NextRequest } from 'next/server';
 import { POST } from '../route';
 import { PersonAgreementError } from '@/lib/membership/personAgreementTriggers';
 
@@ -29,12 +30,14 @@ jest.mock('@/lib/membership/personAgreementTriggers', () => {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const mockSession = require('next-auth/next').getServerSession;
 
+// A plain Request cast to NextRequest — next/server's class isn't constructible under
+// jest, and handler() only ever reads url + json() off it.
 function req(body: unknown = { personId: 7 }) {
     return new Request('http://localhost/api/membership-audit/person-agreement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-    });
+    }) as unknown as NextRequest;
 }
 
 const board = { user: { id: 3, isSysadmin: false, isBoardMember: true } };
@@ -71,6 +74,20 @@ describe('POST /api/membership-audit/person-agreement', () => {
         const res = await POST(req());
         expect(res.status).toBe(200);
         expect(openMock).toHaveBeenCalledWith(7, 3);
+    });
+
+    // The registry grant is internal+public and the route selects three fields, so
+    // nothing identifying the subject can ride back out on the confirmation.
+    it('echoes only the obligation — no subjectPersonId, no Zoho ids', async () => {
+        mockSession.mockResolvedValue(board);
+        openMock.mockResolvedValue({
+            id: 42, kind: 'PERSON_AGREEMENT', status: 'PENDING_EXTERNAL_ACTION',
+            subjectPersonId: 7, zohoEnvelopeId: 'req-secret', zohoActionId: 'act-secret',
+        });
+
+        const body = await (await POST(req())).json();
+
+        expect(body.process).toEqual({ id: 42, kind: 'PERSON_AGREEMENT', status: 'PENDING_EXTERNAL_ACTION' });
     });
 
     it('409 with the reason when the subject is a household lead', async () => {
