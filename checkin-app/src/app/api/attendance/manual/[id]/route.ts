@@ -11,6 +11,7 @@ import { escapeHtml } from "@/lib/email-templates/base";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { formatDateTime } from "@/lib/time";
+import { resolveDisplayTimezone } from "@/lib/appSettings";
 
 // Self-correction of a member's own visits, and a household lead's correction
 // of their household members' (trust-first, see
@@ -145,8 +146,10 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         });
 
         if (significance.flagged) {
+            // Server-side: no TimezoneProvider here, so the configured zone is passed in.
+            const timeZone = await resolveDisplayTimezone();
             flagBoard("edit", surviving.id, auth.user.name ?? `person #${userId}`, byProxy, significance.score,
-                `${formatDateTime(visit.arrivedAt)} → ${formatDateTime(nextArrived)}`);
+                `${formatDateTime(visit.arrivedAt, { timeZone })} → ${formatDateTime(nextArrived, { timeZone })}`);
         }
 
         return NextResponse.json({ visit: surviving, flagged: significance.flagged });
@@ -195,8 +198,9 @@ export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id
         });
 
         // Every delete flags — the floor (§2).
+        const timeZone = await resolveDisplayTimezone();
         flagBoard("delete", visitId, auth.user.name ?? `person #${userId}`, byProxy, significance.score,
-            `Visit ${formatDateTime(visit.arrivedAt)} – ${visit.departedAt ? formatDateTime(visit.departedAt) : "(open)"} tombstoned.`);
+            `Visit ${formatDateTime(visit.arrivedAt, { timeZone })} – ${visit.departedAt ? formatDateTime(visit.departedAt, { timeZone }) : "(open)"} tombstoned.`);
 
         return NextResponse.json({ success: true, flagged: true });
     } catch (error: unknown) {

@@ -1,5 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import RootLayout from "../layout";
+import { APP_TIMEZONE, formatDateTime, setDisplayTimezone } from "@/lib/time";
+
+// The layout's own DB read: stubbed so this stays a composition test, but its value
+// still has to reach the formatters — that wiring is the point of the second case.
+jest.mock("@/lib/appSettings", () => ({
+  resolveDisplayTimezone: jest.fn().mockResolvedValue("Asia/Tokyo"),
+}));
 
 // Root layout is just html/body + provider wiring, no gating of its own — every
 // provider below has its own tests (or is trivial); mock them to passthroughs so
@@ -68,13 +75,32 @@ beforeAll(() => {
 
 const CHILD = "child-marker";
 
+// 9:30 PM Aug 31 in Chicago, 11:30 AM Sep 1 in Tokyo.
+const INSTANT = "2026-09-01T02:30:00.000Z";
+
+// Formats during its own render — i.e. inside the provider the layout wraps it in.
+function Stamp() {
+  return <div>{formatDateTime(INSTANT)}</div>;
+}
+
 describe("RootLayout", () => {
-  it("renders its children inside the provider chrome", () => {
+  afterEach(() => setDisplayTimezone(APP_TIMEZONE));
+
+  it("renders its children inside the provider chrome", async () => {
     render(
-      <RootLayout>
-        <div>{CHILD}</div>
-      </RootLayout>,
+      await RootLayout({
+        children: <div>{CHILD}</div>,
+      }),
     );
     expect(screen.getByText(CHILD)).toBeInTheDocument();
+  });
+
+  it("formats a child's instants in the org's configured timezone", async () => {
+    render(
+      await RootLayout({
+        children: <Stamp />,
+      }),
+    );
+    expect(screen.getByText(/9\/1\/2026/)).toBeInTheDocument();
   });
 });
