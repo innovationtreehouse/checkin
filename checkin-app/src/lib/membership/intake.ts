@@ -114,7 +114,7 @@ export async function getIntakeState(userId: number) {
 
     const external = process ? await getExternalStatus(process) : null;
 
-    // The caller's own individual agreement (#1224), if they have one open. Person-scoped,
+    // The caller's own individual agreement, if they have one open. Person-scoped,
     // so it never appears in membership.processes above (orgMembershipId is null) and is
     // independent of the household's own application state — an adult child in a settled
     // member household still has one to sign.

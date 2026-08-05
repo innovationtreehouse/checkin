@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/membership-audit/person-agreement — board/sysadmin opens an individual
- * membership agreement for one adult child (#1224). Body: { personId }.
+ * membership agreement for one adult child. Body: { personId }.
  *
  * The escape hatch for people the nightly rule doesn't reach: not program-attached, or
  * over its age ceiling (the board can tell an adult child from a spouse; the automatic

@@ -169,8 +169,11 @@ Procedure below is built on them.
 - Declining a scholarship or payment-plan request is a conversation between two
   people. The app has no deny route and needs none.
 
-- Adult children in a member household are handled by hand. Nothing in the app
-  gates on their status.
+- Both signing adults in a household are marked as household leads. The app
+  records no relationship between members, so lead status and age are together
+  what separate a spouse from an adult child. A household running with one lead
+  and an unmarked spouse is indistinguishable from one with an adult child, and
+  marking the spouse a lead is what restores the distinction.
 
 ---
 
@@ -303,8 +306,43 @@ Procedure below is built on them.
 - A check covers the adult who took it. One person's clearance never satisfies
   another's.  [Decision]
 
-- An adult child who needs a background check needs their own sign-in, and the
-  lead supplies an email address for them.  [Decision]
+- An adult child carrying an obligation of their own — a background check or an
+  individual agreement — needs their own sign-in, and the lead supplies an email
+  address for them.  [Decision]
+
+### Individual agreement for adult children
+
+- An adult child of a household lead signs their own membership agreement rather
+  than being covered by the household's. A spouse does not: a spouse stays on the
+  household agreement.  [Decision]
+
+- It is signed again every membership year, as the household agreement is.
+  [Decision — *Policy: Membership Policy, Art. III §III.1*]
+
+- Age for this obligation is judged as of the day it is opened, because it opens
+  when the person turns 18 — deliberately unlike the background-check rule above,
+  which judges age at the membership-year boundary. The two populations therefore
+  differ for anyone with a birthday between today and the next boundary, and
+  aligning them would either ask a minor to sign or leave a new adult uncovered
+  for up to a year.  [Decision]
+
+- Opened automatically only for a household member who is not a lead, is aged 18
+  to 25 with a date of birth on file, is attached to a program, and is in a member
+  household. A non-lead adult over 25 is left out: at that age, not being a lead
+  reads as a spouse the household has not marked, not as an adult child.
+  [Decision — deliberate limit]
+
+- Never opened for a household lead, who signs the household's agreement. An open
+  individual agreement on a lead would take the place of the household one in the
+  signing flow and stall the household's activation or renewal.  [Decision]
+
+- The board may open one by hand for someone the automatic rule leaves out — not
+  attached to a program, or over 25 — but never for a lead, and never for someone
+  whose age is unknown.  [Decision]
+
+- It gates nothing. An unsigned individual agreement never blocks participation,
+  check-in, or the household's own membership.  [Decision — deliberate limit;
+  *Principle: people decide about people*]
 
 ---
 

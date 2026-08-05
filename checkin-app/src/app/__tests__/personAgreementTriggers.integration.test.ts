@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 /**
- * Integration tests for PERSON_AGREEMENT (#1224): the nightly population predicate, the
+ * Integration tests for PERSON_AGREEMENT: the nightly population predicate, the
  * per-cycle dedup, the manual board open, and the signature completing the obligation.
  *
  * These run against a real DB on purpose. The population is a nested relation filter

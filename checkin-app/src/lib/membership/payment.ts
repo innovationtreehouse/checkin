@@ -238,7 +238,7 @@ export async function activate(
         // Trigger C: a brand-new (INITIAL) member just activated (bg cleared before
         // payment landed) — open PERSON_BG for the household's program-attached adults.
         if (result.isInitial) await openPersonBgForNewMember(result.householdId, new Date());
-        // #1224: same activation, the agreement side — an adult child signs their own.
+        // Same activation, the agreement side — an adult child signs their own.
         if (result.isInitial) await openPersonAgreementForNewMember(result.householdId, new Date());
     }
     if (result.kind === "paid_while_blocked" || result.kind === "underpaid") await notifyBoardPaidReject(processId);

@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 /**
- * Unit tests for POST /api/membership-audit/person-agreement (#1224) — the deny paths
+ * Unit tests for POST /api/membership-audit/person-agreement — the deny paths
  * (401 anon / 403 plain member, through the REAL withAuth with a mocked session) and the
  * two refusals the board needs to see a reason for. A denied caller must never reach the
  * service: opening an agreement writes an obligation against a named person.

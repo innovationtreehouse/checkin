@@ -132,7 +132,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         }
     }
 
-    // 5. Individual adult-child membership agreements (#1224). Independent of the BG
+    // 5. Individual adult-child membership agreements. Independent of the BG
     //    recheck policy — this is a signature obligation, not a check.
     //    - awaiting: opened and not yet signed. The board's chase list.
     //    - notRequested: non-lead adults in member households that the nightly rule

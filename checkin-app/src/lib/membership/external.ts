@@ -152,7 +152,7 @@ export async function advanceExternalIfComplete(processId: number) {
 /**
  * Record that the membership contract was signed (idempotent), then maybe advance.
  *
- * A PERSON_AGREEMENT (#1224) completes on the signature alone — it has no membership,
+ * A PERSON_AGREEMENT completes on the signature alone — it has no membership,
  * no payment and no BG gate — so it flips straight to the terminal ACTIVE in the same
  * conditional write and skips advanceExternalIfComplete entirely (which would deref a
  * null orgMembershipId).
@@ -299,7 +299,7 @@ async function clearDeadSigningRequest(processId: number, requestId: string, act
  * is the backstop.
  *
  * Otherwise the caller's own open PERSON_AGREEMENT wins — they are signing for
- * themselves, so the household lead-only gate does not apply to them (#1224).
+ * themselves, so the household lead-only gate does not apply to them.
  */
 async function resolveSigningProcess(
     userId: number,
@@ -389,7 +389,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
 
     // The household gates apply only to the household agreement. Signing your OWN
     // agreement needs neither a household application in flight nor a lead role — that
-    // bypass is the whole point of #1224.
+    // bypass is the point of the individual agreement.
     if (!isOwnAgreement) {
         if (!user.householdId) throw new ExternalError("no_household", "You must create a household first.");
         if (!user.isHouseholdLead && !user.isSysadmin) {

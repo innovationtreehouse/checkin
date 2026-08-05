@@ -88,13 +88,13 @@ export const GET = withCron(async () => {
             logger.info(`Nightly cron: purged DoB for ${adultDobPurged} member(s) now over 25 (#1165).`);
         }
 
-        // 4. #1224: open individual membership agreements for adult children (18-25,
+        // 4. Open individual membership agreements for adult children (18-25,
         // non-lead, program-attached, in a member household). Runs nightly rather than
         // at the membership-year boundary because an annual pass misses everyone who
         // starts qualifying after it fires. Idempotent — one per person per cycle.
         const personAgreements = await runPersonAgreementSweep(now);
         if (personAgreements.opened > 0) {
-            logger.info(`Nightly cron: opened ${personAgreements.opened} individual membership agreement(s) (#1224).`);
+            logger.info(`Nightly cron: opened ${personAgreements.opened} individual membership agreement(s).`);
         }
 
         return NextResponse.json({

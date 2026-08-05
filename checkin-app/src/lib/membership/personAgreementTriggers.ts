@@ -4,13 +4,13 @@ import { renewalWindow } from "@/lib/membership/renewal";
 import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
 
 /**
- * Triggers that OPEN a per-person membership-agreement obligation (PERSON_AGREEMENT,
- * #1224). An 18+ child of the household lead is a legal adult and cannot be bound by
- * their parent's signature, so they sign their own agreement.
+ * Triggers that OPEN a per-person membership-agreement obligation (PERSON_AGREEMENT).
+ * An 18+ child of the household lead is a legal adult and cannot be bound by their
+ * parent's signature, so they sign their own agreement.
  *
- * Design: checkin-app/docs/designs/1224_PERSON_AGREEMENT.md. Two things diverge from
- * personBgTriggers.ts on purpose — age is judged as-of NOW (not as-of the boundary)
- * and the trigger runs NIGHTLY (not annually). Both are load-bearing; see below.
+ * Rules: docs/rules/membership.md. Two things diverge from personBgTriggers.ts on
+ * purpose — age is judged as-of NOW (not as-of the boundary) and the trigger runs
+ * NIGHTLY (not annually). Both are load-bearing; see below.
  */
 
 const SYSTEM_ACTOR = 0;
@@ -19,14 +19,14 @@ const SYSTEM_ACTOR = 0;
  * Automatic-population age rule: a DOB on file and 18–25 as of `now`.
  *
  * The band is the spouse guard. `isDeclaredAdult` means "over 25, no DOB" — set by the
- * intake checkbox and stamped by the #1165 nightly purge as people cross 26. A non-lead
+ * intake checkbox and stamped by the nightly DOB purge as people cross 26. A non-lead
  * adult over 25 is a spouse the household never marked as a lead, or an adult child who
  * should have their own household by now: household hygiene, not a signature obligation.
  * A non-lead 18–25 with a DOB is a child who turned 18.
  *
- * The ceiling is explicit even though #1165 makes it redundant today (a DOB implies ≤25),
- * because the implicit version has a reachable hole: a household adds a 30-year-old spouse
- * with a DOB and doesn't mark them a lead — until the next purge runs they'd qualify.
+ * The ceiling is explicit even though the purge makes it redundant today (a DOB implies
+ * ≤25), because the implicit version has a reachable hole: a household adds a 30-year-old
+ * spouse with a DOB and doesn't mark them a lead — until the next purge runs they'd qualify.
  *
  * Age is as-of `now`, NOT as-of the membership-year boundary. Boundary-relative age (what
  * personBgVerdict does) evaluated by a nightly job would flag a 17-year-old whose 18th

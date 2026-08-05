@@ -52,7 +52,7 @@ interface IntakeState {
   membershipStatus: OrgMembershipStatus | null;
   process: { id: number; kind: string; status: OrgMembershipProcessStatus; isPaymentPlanRequested?: boolean } | null;
   external: ExternalStatus | null;
-  /** The caller's own unsigned individual agreement (#1224), independent of the household's. */
+  /** The caller's own unsigned individual agreement, independent of the household's. */
   personAgreement: { id: number; started: boolean } | null;
   prefill: {
     household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;

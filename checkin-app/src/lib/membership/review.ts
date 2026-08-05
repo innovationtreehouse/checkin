@@ -254,7 +254,7 @@ export async function attest(
             // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
             // for any program-attached ≥18 person in the household (as-of activation).
             if (result.isInitial) await openPersonBgForNewMember(result.householdId!, new Date());
-            // #1224: same activation, the agreement side — an adult child signs their own.
+            // Same activation, the agreement side — an adult child signs their own.
             if (result.isInitial) await openPersonAgreementForNewMember(result.householdId!, new Date());
         } else if (result.householdId) {
             // Household process cleared into PENDING_PAYMENT (a PERSON_BG has no
@@ -416,7 +416,7 @@ export async function overrideBlocked(processId: number, actorId: number, action
         // Trigger C: a board force-clear can be the first activation of a brand-new
         // (INITIAL) member — open PERSON_BG for the household's program-attached adults.
         if (isInitial) await openPersonBgForNewMember(householdId!, new Date());
-        // #1224: same activation, the agreement side — an adult child signs their own.
+        // Same activation, the agreement side — an adult child signs their own.
         if (isInitial) await openPersonAgreementForNewMember(householdId!, new Date());
     } else if (householdId) {
         // Household process cleared into PENDING_PAYMENT — payment just opened (#907).

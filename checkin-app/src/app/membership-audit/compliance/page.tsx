@@ -113,7 +113,7 @@ export default function CompliancePage() {
     }
   };
 
-  // Open an individual membership agreement for one adult child (#1224). For people the
+  // Open an individual membership agreement for one adult child. For people the
   // nightly rule skips because they're over its age ceiling — the board judges adult
   // child vs. unmarked spouse, which no field records.
   const requestAgreement = async (personId: number) => {

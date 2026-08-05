@@ -302,7 +302,7 @@ export const TRANSITIONS: readonly Transition<TState, string, ProcessKind>[] = [
     // Advance (§5 #7)
     { from: "PENDING_EXTERNAL_ACTION", to: "PENDING_PAYMENT", event: "advanceExternalIfComplete", actor: "system", guardSite: "external.ts:113 updateMany" },
     { from: "PENDING_EXTERNAL_ACTION", to: "PENDING_BG_REVIEW", event: "advanceExternalIfComplete", actor: "system", guardSite: "external.ts:113 updateMany (household note held, #907)" },
-    // Signature completes a person-scoped agreement outright — no payment, no BG gate (#1224)
+    // Signature completes a person-scoped agreement outright — no payment, no BG gate
     { from: "PENDING_EXTERNAL_ACTION", to: "ACTIVE", event: "markContractSigned", actor: "subject", guardSite: "external.ts updateMany where contractSignedAt=null", kind: "PERSON_AGREEMENT" },
     // Payment convergence (§5 #8, #12)
     { from: "PENDING_PAYMENT", to: "ACTIVE", event: "activate", actor: "shopify/board", guardSite: "payment.ts:204 FOR UPDATE (bgClearedAt set)" },

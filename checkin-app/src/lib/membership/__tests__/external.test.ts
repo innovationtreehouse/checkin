@@ -334,7 +334,7 @@ describe('getOrCreateContractSigningUrl', () => {
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'wrong_phase' });
     });
 
-    // #1224: the one gate that opens. A non-lead still can't sign the HOUSEHOLD agreement
+    // The one gate that opens. A non-lead still can't sign the HOUSEHOLD agreement
     // (the test above), but signs their own individual one — no lead role, and no household
     // application in flight, which is the normal state for an adult child in a settled
     // member household.

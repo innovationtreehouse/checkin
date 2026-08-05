@@ -1,7 +1,7 @@
 import { inAgreementAgeBand, hasKnownAdultAge, agreementCycleFloor } from "@/lib/membership/personAgreementTriggers";
 
 /**
- * The two pure rules behind PERSON_AGREEMENT (#1224): who the automatic pass picks, and
+ * The two pure rules behind PERSON_AGREEMENT: who the automatic pass picks, and
  * when a prior agreement stops covering the current cycle. Both are the parts that decide
  * whether a real person is asked to sign, so they're pinned here rather than left to the
  * DB-backed trigger test.
