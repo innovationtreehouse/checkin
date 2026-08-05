@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
-import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import Link from "next/link";
+import { Alert, Anchor, Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { formatPhone } from "@/lib/phone";
 import { formatDateOnly } from "@/lib/time";
@@ -249,6 +250,20 @@ export default function CompliancePage() {
         color="grape"
         people={peopleMissingDob}
       />
+
+      {(peopleAwaitingAgreement.length > 0 || peopleNeedingAgreement.length > 0) && (
+        <Alert color="blue" variant="light" title="Why this list differs from the 18+ roster">
+          <Text size="sm">
+            The agreement lists below judge age <b>as of today</b>, because an agreement is
+            opened the day someone turns 18 — a minor cannot be bound by their own signature.{" "}
+            <Anchor component={Link} href="/membership-audit/turning-18">The 18+ roster</Anchor>{" "}
+            judges age <b>as of the start of the member year</b>, because that is the cohort the
+            board plans the year around. Both are right for their own purpose, so the two lists
+            will not match: anyone with a birthday between today and the next member-year start
+            appears here but not there.
+          </Text>
+        </Alert>
+      )}
 
       <PersonSection
         title="Individual agreement outstanding"

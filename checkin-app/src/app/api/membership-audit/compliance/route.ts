@@ -141,8 +141,11 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
     //    ponytail: the manual route accepts any personId, but this list only surfaces
     //    program-attached candidates — reaching someone not in a program needs a person
     //    picker we don't have a surface for yet.
+    // subjectPerson is filtered through LIVE_PERSON as a relation filter: an obligation
+    // whose subject was merged away must not stay on the board's chase list — the person
+    // it names no longer exists to chase.
     const openAgreements = await prisma.orgMembershipProcess.findMany({
-        where: { kind: "PERSON_AGREEMENT", status: "PENDING_EXTERNAL_ACTION" },
+        where: { kind: "PERSON_AGREEMENT", status: "PENDING_EXTERNAL_ACTION", subjectPerson: { is: LIVE_PERSON } },
         select: { subjectPerson: { select: { id: true, name: true, householdId: true } } },
     });
     const peopleAwaitingAgreement: PersonRow[] = openAgreements
