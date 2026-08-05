@@ -5,14 +5,18 @@ import prisma from "@/lib/prisma";
 import { processPostEventEmails } from "@/lib/postEventEmails";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { LIVE_VISIT } from "@/lib/visit/filters";
 
 export const GET = withCron(async () => {
         const now = new Date();
 
         // 1. Find all users who are currently checked in (abandoned visits)
+        // A tombstoned open visit is not abandoned — it's deleted; closing it
+        // would rewrite a record the member chose to erase.
         const abandonedVisits = await prisma.visit.findMany({
             where: {
-                departedAt: null
+                departedAt: null,
+                ...LIVE_VISIT
             },
             include: {
                 person: true

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Badge, Group, Table, Text, TextInput, Title } from "@mantine/core";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
-import { formatDate, formatVisitRange, formatDateTime } from "@/lib/time";
+import { formatDateOnly, formatVisitRange, formatDateTime } from "@/lib/time";
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -47,7 +47,7 @@ export default function HouseholdCheckins() {
 
       <Text size="sm" c="dimmed" mb="lg">
         {filterDate ? (
-          <>Showing activity from <strong>{formatDate(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000)}</strong> to <strong>{formatDate(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000)}</strong></>
+          <>Showing activity from <strong>{formatDateOnly(new Date(filterDate).getTime() - 7 * 24 * 60 * 60 * 1000)}</strong> to <strong>{formatDateOnly(new Date(filterDate).getTime() + 7 * 24 * 60 * 60 * 1000)}</strong></>
         ) : (
           <>Showing activity for the <strong>past 7 days</strong></>
         )}

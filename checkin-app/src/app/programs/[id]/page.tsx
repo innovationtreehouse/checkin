@@ -31,13 +31,10 @@ type ProgramDetail = {
   enrollmentStatus: string;
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
-  // Single-pool model (product decision 2026-07-06): when set, this is the
-  // ONE variant for both tiers — member pricing comes from a checkout-time
-  // discount code (see handleEnroll), not a separate variant. Legacy programs
-  // leave this null and keep using the pair below.
+  // Single-pool model (product decision 2026-07-06): the ONE variant for both
+  // tiers — member pricing comes from a checkout-time discount code (see
+  // handleEnroll), not a separate variant.
   shopifyVariantId: string | null;
-  shopifyOrgMemberVariantId: string | null;
-  shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
@@ -64,7 +61,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [enrolling, setEnrolling] = useState(false);
   const [message, setMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [requiresOverride, setRequiresOverride] = useState(false);
 
   const [showEnrollmentSelection, setShowEnrollmentSelection] = useState(false);
   const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[]>([]);
@@ -236,14 +232,14 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     }
   };
 
-  const handleEnroll = async (override = false) => {
+  const handleEnroll = async () => {
     if (!session) {
       router.push('/');
       return;
     }
     if (selectedParticipantIds.length === 0) return;
 
-    const isPayingOnShopify = !override && (program?.orgMemberPriceCents || program?.nonOrgMemberPriceCents);
+    const isPayingOnShopify = program?.orgMemberPriceCents || program?.nonOrgMemberPriceCents;
 
     setEnrolling(true);
     setMessage("");
@@ -274,15 +270,15 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
         }
         pricingEligible = program.viewerMemberPricingEligible ?? isMember;
-        // Single-pool programs sell the SAME variant to everyone — the discount
-        // code (below, at redirect time) does the member pricing, not a variant pick.
-        variantId = program.shopifyVariantId || (pricingEligible ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
+        // Every program sells the SAME variant to everyone — the discount code
+        // (below, at redirect time) does the member pricing, not a variant pick.
+        variantId = program.shopifyVariantId;
         storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
             ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
-            : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
+            : "Cannot enroll: no pricing variant set for this program — set one in program-ops." });
           return; // no enrollment created — payment path is broken
         }
       }
@@ -292,7 +288,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         const res = await fetch(`/api/programs/${id}/participants`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ participantId, override })
+          body: JSON.stringify({ participantId })
         });
 
         // Only the error path carries a JSON body we need (error/requiresOverride);
@@ -301,7 +297,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         outcomes.push({ participantId, ok: res.ok, status: res.status, error: data.error, requiresOverride: data.requiresOverride });
       }
 
-      const { enrolledIds, errors, needsOverride } = aggregateEnrollOutcomes(outcomes);
+      const { enrolledIds, errors } = aggregateEnrollOutcomes(outcomes);
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
@@ -318,7 +314,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           } else {
             notifications.show({ color: "red", autoClose: false, message: "Enrolled, but the mock payment failed — fire it from the Debug → Shopify tool." });
           }
-          setRequiresOverride(false);
           fetchProgram();
         } else if (isPayingOnShopify && program && variantId && storeDomain) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
@@ -342,12 +337,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           return; // spinner stays; page unloads on redirect
         } else {
           notifications.show({ message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
-          setRequiresOverride(false);
           fetchProgram();
         }
       }
 
-      if (needsOverride) setRequiresOverride(true);
       if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
       notifications.show({ color: "red", message: "Network error during enrollment.", autoClose: false });
@@ -564,7 +557,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 <Button
                   fullWidth
                   size="md"
-                  onClick={() => handleEnroll(false)}
+                  onClick={() => handleEnroll()}
                   disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
                   loading={enrolling}
                 >
@@ -587,22 +580,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
               </Stack>
               )}
 
-              {requiresOverride && canManage && (
-                <Alert color="yellow" variant="light" mt="lg" title="Warning: Enrollment rules not met.">
-                  <Text size="sm" mb="md">
-                    As an Admin or Lead Mentor, you can bypass this restriction. Are you sure you want
-                    to force enroll?
-                  </Text>
-                  <Button
-                    color="yellow"
-                    fullWidth
-                    onClick={() => handleEnroll(true)}
-                    disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
-                  >
-                    Force Enroll (Override)
-                  </Button>
-                </Alert>
-              )}
+              {/* No force-enroll here: this picker only ever offers the caller's
+                  own household, so every enrollment from this page is conflicted
+                  and the server refuses the limit override. The refusal reason
+                  shows in the red message Alert above. Comping someone else is
+                  program-ops (ProgramRosterTab). */}
               </>
               )}
             </Card>

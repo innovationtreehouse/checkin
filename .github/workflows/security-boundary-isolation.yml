@@ -21,11 +21,18 @@ name: Security boundary isolation
 # The sanctioned flow for a new registered route: land the registry entry in
 # its own PR first (a defineRoute for an endpoint nothing serves yet is
 # inert), then land the route handler in the feature PR.
+#
+# Enforcement applies only to PRs into main — the branch where boundary
+# changes first land and get reviewed. Release-line PRs (main→rel/* syncs,
+# cherry-picks of already-merged PRs) replay changes that were isolation-
+# checked on main, and a sync merge inevitably mixes boundary and feature
+# files; those runs short-circuit to success below.
 on:
   pull_request:
-    # pull_request triggers evaluate against the BASE branch's workflow file,
-    # so this must exist on both main (every future rel/* cut inherits it)
-    # and rel/1.0 (so current release-line PRs get checks).
+    # rel/** stays in the trigger even though enforcement is main-only:
+    # `isolation` is a required status check on the rel/* branch protections,
+    # and a required context with no dispatched run never reports, hanging
+    # the PR on "Expected" forever. The rel/* run exists to report success.
     branches: [main, 'rel/**']
   # If `isolation` is a REQUIRED check, the merge queue expects it on the
   # merge_group ref too — without this trigger no run is dispatched, the
@@ -43,13 +50,17 @@ jobs:
         if: github.event_name == 'merge_group'
         run: echo "merge_group event — isolation already checked on the PR; nothing to do."
 
+      - name: Skip on release-line PRs (enforced where the change landed — main)
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        run: echo "base is ${{ github.base_ref }} — isolation is enforced on PRs into main; release-line PRs replay already-reviewed changes. Nothing to do."
+
       - uses: actions/checkout@v5
-        if: github.event_name != 'merge_group'
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
         with:
           fetch-depth: 0
 
       - name: Check boundary changes ship alone
-        if: github.event_name != 'merge_group'
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |

@@ -170,7 +170,7 @@ export const DEV_MOCK_SHOPIFY_WEBHOOK_SECRET = 'dev-shopify-mock-webhook-secret'
 
 /**
  * Synthetic membership variant id used when the Shopify mock is active. Programs
- * synthesize dev-mock-variant ids at creation (shopify.ts › createShopifyProgramVariants),
+ * synthesize a dev-mock-variant id at creation (shopify.ts › createShopifySingleVariantProgram),
  * but the membership variant is manual BoardSettings config that a local seed never
  * populates — so with no fallback the mock orders/paid webhook can't match a membership
  * order (webhooks/shopify/route.ts) and the dev fire tool 409s. Both the mock firer and

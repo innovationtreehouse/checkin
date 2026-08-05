@@ -117,8 +117,6 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 const membershipVariantIds = new Set(
                     [
                         settings?.orgMembershipVariantId,
-                        settings?.shopifyNormalVariantId,
-                        settings?.shopifyVolunteerVariantId,
                         // Local mock's self-fired order carries this synthetic id (config).
                         config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
                     ].filter((v): v is string => !!v),
@@ -167,25 +165,9 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // built from — not order total. Fail CLOSED: no variant
                 // configured on the Program, or
                 // no line-item match, means we do NOT activate.
-                // Single-pool model (product decision 2026-07-06): shopifyVariantId,
-                // when set, is matched alongside the legacy pair during the
-                // transition — old programs never get shopifyVariantId, new ones
-                // never get the legacy pair, so this is additive, not a widening
-                // of what any one program accepts.
                 const program = await prisma.program.findUnique({ where: { id: programId } });
-                const programVariantIds = new Set(
-                    [program?.shopifyVariantId, program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
-                        (v): v is string => !!v,
-                    ),
-                );
-                const hasProgramItem = (order.line_items ?? []).some((li) => programVariantIds.has(String(li.variant_id)));
-
-                // Which tier Shopify actually sold — needed for the legacy two-pool
-                // sibling-inventory mirror. buildShopifyCheckoutUrl fixes ONE variant per
-                // order (one household = one tier per checkout), so if hasProgramItem
-                // matched and this is false, the non-member tier is the one purchased.
-                const purchasedOrgMember = !!program?.shopifyOrgMemberVariantId &&
-                    (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyOrgMemberVariantId);
+                const hasProgramItem = !!program?.shopifyVariantId &&
+                    (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyVariantId);
 
                 // Shared choke point — same path the reconciler uses to recover a
                 // MISSED webhook (lib/programs/activateEnrollment). Idempotent; the
@@ -195,7 +177,6 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                     personIds: participantIds,
                     shopifyOrderId: order.id ? String(order.id) : "",
                     hasProgramItem,
-                    purchasedOrgMember,
                 });
 
                 outcome = `program ${programId}: activated ${activatedCount} of ${participantIds.length} participant(s)`;

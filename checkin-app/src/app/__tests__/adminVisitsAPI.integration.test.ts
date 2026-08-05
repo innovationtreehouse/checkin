@@ -338,7 +338,7 @@ describe('Admin Visits API Integration Tests', () => {
             expect(data.error).toBe('Visit not found.');
         });
 
-        it('should delete the visit and log to audit with oldData when an admin requests it', async () => {
+        it('should tombstone the visit and log to audit with oldData when an admin requests it', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true }
             });
@@ -358,8 +358,11 @@ describe('Admin Visits API Integration Tests', () => {
             const data = await res.json();
             expect(data.success).toBe(true);
 
-            const gone = await prisma.visit.findUnique({ where: { id: doomed.id } });
-            expect(gone).toBeNull();
+            // Staff deletes tombstone like member self-deletes: the row survives,
+            // stamped with who erased it.
+            const tombstoned = await prisma.visit.findUnique({ where: { id: doomed.id } });
+            expect(tombstoned?.deletedAt).toBeInstanceOf(Date);
+            expect(tombstoned?.deletedById).toBe(testAdminId);
 
             const auditLog = await prisma.auditLog.findFirst({
                 where: { actorId: testAdminId, action: 'DELETE', tableName: 'Visit', affectedEntityId: doomed.id }

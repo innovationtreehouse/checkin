@@ -59,8 +59,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         enrollmentStatus: "OPEN",
         orgMemberPriceCents: null,
         nonOrgMemberPriceCents: null,
-        shopifyOrgMemberVariantId: null,
-        shopifyNonOrgMemberVariantId: null,
+        shopifyVariantId: null,
         minAge: 5,
         maxAge: 18,
         ...overrides,
@@ -237,7 +236,7 @@ describe("ProgramEnrollmentPage", () => {
             expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({
                 color: "red",
                 autoClose: false,
-                message: "Cannot enroll: no pricing variant set for this program tier — set one in program-ops.",
+                message: "Cannot enroll: no pricing variant set for this program — set one in program-ops.",
             })),
         );
         expect(fetchMock).not.toHaveBeenCalledWith("/api/programs/10/participants", expect.anything());
@@ -406,17 +405,19 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
-    it("shows an override prompt when enrollment requires admin override, then force-enrolls", async () => {
+    // This picker only ever lists the caller's own household, so every enrollment
+    // started here is conflicted and the server refuses the limit override even for
+    // a sysadmin. Offering Force Enroll would be a button that always re-fails —
+    // the refusal reason is shown instead, and the request never carries `override`.
+    it("offers no force-enroll on a requiresOverride refusal — shows the reason instead", async () => {
         setSession({ id: 5, isSysadmin: true });
+        const bodies: string[] = [];
         global.fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
             const url = typeof input === "string" ? input : input.toString();
             if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
             if (url.includes("/api/programs/10/participants")) {
-                const body = init?.body ? JSON.parse(init.body as string) : {};
-                if (!body.override) {
-                    return { ok: false, status: 403, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
-                }
-                return { ok: true, status: 200, json: async () => ({}) } as Response;
+                bodies.push(String(init?.body ?? ""));
+                return { ok: false, status: 400, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
             }
             if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ minAge: null, maxAge: null, leadMentorId: 5 }) } as Response;
             return { ok: false, status: 404, json: async () => ({}) } as Response;
@@ -428,39 +429,10 @@ describe("ProgramEnrollmentPage", () => {
         await selectMember("Kid One");
         fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
 
-        expect(await screen.findByText("Warning: Enrollment rules not met.")).toBeInTheDocument();
-        expect(screen.getByText("Too young for this program.")).toBeInTheDocument();
-
-        fireEvent.click(screen.getByRole("button", { name: "Force Enroll (Override)" }));
-        await waitFor(() => expect(screen.queryByText("Warning: Enrollment rules not met.")).not.toBeInTheDocument());
-        expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Successfully enrolled!" }));
-    });
-
-    it("disables the override button once the selection is emptied", async () => {
-        setSession({ id: 5, isSysadmin: true });
-        global.fetch = jest.fn(async (input: RequestInfo | URL) => {
-            const url = typeof input === "string" ? input : input.toString();
-            if (url.includes("/api/household")) return { ok: true, status: 200, json: async () => household } as Response;
-            if (url.includes("/api/programs/10/participants")) {
-                return { ok: false, status: 403, json: async () => ({ error: "Too young for this program.", requiresOverride: true }) } as Response;
-            }
-            if (url.includes("/api/programs/10")) return { ok: true, status: 200, json: async () => baseProgram({ minAge: null, maxAge: null, leadMentorId: 5 }) } as Response;
-            return { ok: false, status: 404, json: async () => ({}) } as Response;
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        await selectMember("Kid One");
-        fireEvent.click(screen.getByRole("button", { name: "Complete Enrollment" }));
-        await screen.findByText("Warning: Enrollment rules not met.");
-
-        // The checkbox group stays live while the override alert is up, so
-        // unchecking must disable the override too — handleEnroll returns on an
-        // empty selection, and a live button would do nothing with no feedback.
-        expect(screen.getByRole("button", { name: "Force Enroll (Override)" })).toBeEnabled();
-        fireEvent.click(screen.getByLabelText("Kid One"));
-        expect(screen.getByRole("button", { name: "Force Enroll (Override)" })).toBeDisabled();
+        expect(await screen.findByText("Too young for this program.")).toBeInTheDocument();
+        expect(screen.queryByText("Warning: Enrollment rules not met.")).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "Force Enroll (Override)" })).not.toBeInTheDocument();
+        expect(bodies.every(b => !JSON.parse(b).override)).toBe(true);
     });
 
     it("shows a network-error message when enrollment throws", async () => {
@@ -479,13 +451,13 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
-    it("redirects to Shopify checkout for a priced enrollment with a configured member variant", async () => {
+    it("redirects to Shopify checkout for a priced enrollment with a configured variant", async () => {
         setSession({ id: 101 });
         setShopifyStoreDomain("shop.example.com"); // redirect requires a store domain
         const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
         mockFetchJson({
             "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
+            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyVariantId: "gid://variant" }),
             "/api/programs/10/participants": { ok: true },
         });
         renderPage();
@@ -509,7 +481,7 @@ describe("ProgramEnrollmentPage", () => {
             "/api/household": memberHousehold,
             "/api/programs/10": baseProgram({
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
-                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                shopifyVariantId: "gid://single-pool",
             }),
             "/api/programs/10/participants": { ok: true },
         });
@@ -544,7 +516,7 @@ describe("ProgramEnrollmentPage", () => {
             "/api/programs/10": baseProgram({
                 participants: [{ personId: 101, status: "PENDING" }],
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
-                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                shopifyVariantId: "gid://single-pool",
             }),
             "/api/programs/10/participants": () => ({ error: "Participant is already enrolled in this program." }),
         });
@@ -576,26 +548,6 @@ describe("ProgramEnrollmentPage", () => {
         );
     });
 
-    it("does NOT fetch a discount code for a legacy two-variant program", async () => {
-        setSession({ id: 101 });
-        setShopifyStoreDomain("shop.example.com");
-        const memberHousehold = { household: { ...household.household, orgMembership: { status: "ACTIVE" } } };
-        const fetchMock = mockFetchJson({
-            "/api/household": memberHousehold,
-            "/api/programs/10": baseProgram({ orgMemberPriceCents: 5000, minAge: null, maxAge: null, shopifyOrgMemberVariantId: "gid://member", shopifyNonOrgMemberVariantId: "gid://nonmember" }),
-            "/api/programs/10/participants": { ok: true },
-        });
-        renderPage();
-        await screen.findByText("Robotics Club");
-        fireEvent.click(screen.getByRole("button", { name: "Enroll" }));
-        await screen.findByText("Which of your household wants to enroll?");
-        await selectMember("Kid One");
-        fireEvent.click(screen.getByRole("button", { name: "Pay on Shopify" }));
-
-        await screen.findByText("Redirecting to Shopify for secure payment...");
-        expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/discount-code"))).toBe(false);
-    });
-
     // Membership-duration guard: pricing decisions use the server-computed
     // viewerMemberPricingEligible flag over the household-status-derived isMember,
     // so a current member not covered through the program's end doesn't get the
@@ -608,7 +560,7 @@ describe("ProgramEnrollmentPage", () => {
             "/api/household": memberHousehold,
             "/api/programs/10": baseProgram({
                 orgMemberPriceCents: 4000, nonOrgMemberPriceCents: 5000, minAge: null, maxAge: null,
-                shopifyVariantId: "gid://single-pool", shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+                shopifyVariantId: "gid://single-pool",
                 viewerIsMember: true, viewerMemberPricingEligible: false,
             }),
             "/api/programs/10/participants": { ok: true },

@@ -131,10 +131,10 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     const [settings, programs, variantCoverage] = await Promise.all([
         prisma.boardSettings.findUnique({
             where: { id: 1 },
-            select: { orgMembershipVariantId: true, shopifyNormalVariantId: true, shopifyVolunteerVariantId: true },
+            select: { orgMembershipVariantId: true },
         }),
         prisma.program.findMany({
-            select: { id: true, name: true, shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+            select: { id: true, name: true, shopifyVariantId: true },
         }),
         mirror.lineVariantStats(),
     ]);
@@ -144,9 +144,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     const membershipVariants = membershipVariantIdSet(settings ?? null);
     const programByVariant = new Map<string, { id: number; name: string }>();
     for (const p of programs) {
-        for (const v of [p.shopifyVariantId, p.shopifyOrgMemberVariantId, p.shopifyNonOrgMemberVariantId]) {
-            if (v) programByVariant.set(v, { id: p.id, name: p.name });
-        }
+        if (p.shopifyVariantId) programByVariant.set(p.shopifyVariantId, { id: p.id, name: p.name });
     }
     const allVariants = [...membershipVariants, ...programByVariant.keys()];
 
@@ -280,11 +278,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
                 person: LIVE_PERSON,
                 OR: [
                     { shopifyOrderId: { not: null } },
-                    { program: { OR: [
-                        { shopifyVariantId: { not: null } },
-                        { shopifyOrgMemberVariantId: { not: null } },
-                        { shopifyNonOrgMemberVariantId: { not: null } },
-                    ] } },
+                    { program: { shopifyVariantId: { not: null } } },
                 ],
             },
             select: {

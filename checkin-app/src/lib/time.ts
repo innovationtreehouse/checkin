@@ -115,13 +115,20 @@ export function parseDateOnly(value: string | null | undefined): Date | null {
  * `asOf` defaults to now (the common case). Program age gates pass the program's
  * start date so the bound is judged as-of when the program begins, not when the
  * person happens to register.
+ *
+ * Both sides are read via getUTC* because a DOB is a calendar date stored at UTC
+ * midnight — local fields off that instant read a day early west of UTC.
+ * ponytail: that pins the birthday rollover to UTC midnight (7 PM Chicago) for
+ * the default `asOf = now`, so an evening lookup can register a birthday a few
+ * hours early. Upgrade path is the org-timezone provider (design Axis 2 /
+ * Sequencing step 5), not a local-field read here — mixing the two is the bug.
  */
 export function calculateAge(dob: Date | string, asOf: Date | string = new Date()): number {
     const birthDate = new Date(dob);
     const today = new Date(asOf);
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const m = today.getMonth() - birthDate.getMonth();
-    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    let age = today.getUTCFullYear() - birthDate.getUTCFullYear();
+    const m = today.getUTCMonth() - birthDate.getUTCMonth();
+    if (m < 0 || (m === 0 && today.getUTCDate() < birthDate.getUTCDate())) age--;
     return age;
 }
 

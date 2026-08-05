@@ -4,6 +4,7 @@ import type { Person } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = 'force-dynamic';
 
@@ -138,7 +139,9 @@ export const POST = withAuth(
                     corporationMembers: true,
                     household: {
                         include: {
-                            householdMembers: true
+                            // The lead guard below asks "would this leave live members
+                            // leaderless" — tombstones are not members.
+                            householdMembers: { where: LIVE_PERSON }
                         }
                     }
                 }
@@ -244,7 +247,7 @@ export const POST = withAuth(
                 // closes open visits by scan-service regardless of person, so it can't leak.
                 // ponytail: leave-the-row over inventing a departedAt; revisit only if a real
                 // "two humans, one badge, both open" case appears — it can't, same human.
-                const keeperHasOpenVisit = await tx.visit.findFirst({ where: { personId: keepId, departedAt: null }, select: { id: true } });
+                const keeperHasOpenVisit = await tx.visit.findFirst({ where: { personId: keepId, departedAt: null, deletedAt: null }, select: { id: true } });
                 moved.visits = (await tx.visit.updateMany({
                     where: { personId: mergeId, ...(keeperHasOpenVisit ? { departedAt: { not: null } } : {}) },
                     data: { personId: keepId }

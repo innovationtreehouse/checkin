@@ -46,6 +46,7 @@ export const GET = withAuth(
                     person: {
                         householdId: user.householdId
                     },
+                    deletedAt: null,
                     arrivedAt: {
                         gte: startDate,
                         lte: endDate

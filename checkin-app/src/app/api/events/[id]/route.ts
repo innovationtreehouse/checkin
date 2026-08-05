@@ -7,6 +7,7 @@ import { handler, notFound, forbidden, badRequest } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { LIVE_VISIT } from "@/lib/visit/filters";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -27,28 +28,55 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
     const eventId = parseInt(params.id, 10);
     if (isNaN(eventId)) throw badRequest('Invalid event ID');
 
+    // Explicit select, not include: whole rows would ship every pii/personal/
+    // internal Person and ProgramParticipant column to this event's lead mentors
+    // and core volunteers, whose view grants their_program_participants on all
+    // three tiers. Ids and the join keys below are not rendered — they are the
+    // scope keys scopesHeld() reads to resolve their_program_participants /
+    // their_own; drop one and the row strips to nothing for those roles.
     const event = await prisma.event.findUnique({
         where: { id: eventId },
-        include: {
+        select: {
+            id: true,
+            programId: true,
+            name: true,
+            startAt: true,
+            endAt: true,
+            attendanceConfirmedAt: true,
+            recurringGroupId: true,
+            attendanceConfirmedBy: { select: { name: true } },
             program: {
-                include: {
+                select: {
+                    id: true,
+                    name: true,
+                    leadMentorId: true,
                     volunteers: {
                         where: { person: LIVE_PERSON },
-                        include: { person: true }
+                        select: {
+                            programId: true,
+                            personId: true,
+                            isCore: true,
+                            person: { select: { id: true, name: true, email: true } }
+                        }
                     },
                     participants: {
                         where: { person: LIVE_PERSON },
-                        include: { person: true }
+                        select: {
+                            programId: true,
+                            personId: true,
+                            status: true,
+                            person: { select: { id: true, name: true, email: true } }
+                        }
                     }
                 }
             },
-            visits: true,
+            visits: {
+                where: LIVE_VISIT,
+                select: { id: true, personId: true, arrivedAt: true, departedAt: true }
+            },
             rsvps: {
                 where: { person: LIVE_PERSON },
-                include: { person: true }
-            },
-            attendanceConfirmedBy: {
-                select: { name: true }
+                select: { eventId: true, personId: true, status: true }
             }
         }
     });
@@ -210,28 +238,10 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 }
             }
 
-            if (status === 'Absent') {
-                // An open visit (departedAt = null) means they physically scanned in
-                // and are currently on-site. Deleting it would destroy the live
-                // roster of who's in the building — reject instead.
-                const openVisit = await prisma.visit.findFirst({
-                    where: {
-                        personId: Number(participantId),
-                        associatedEventId: eventId,
-                        departedAt: null
-                    }
-                });
-                if (openVisit) {
-                    return apiError("Participant is currently checked in — check them out before marking Absent", 400);
-                }
-                // Only closed visits remain; safe to remove on an Absent correction.
-                await prisma.visit.deleteMany({
-                    where: {
-                        personId: Number(participantId),
-                        associatedEventId: eventId
-                    }
-                });
-            } else if (status === 'Present') {
+            // Input validation before the lock — it depends on nothing we read.
+            let dep: Date | null = null;
+            let arrival: Date | null = null;
+            if (status === 'Present') {
                 if (!arrivedAt) {
                     return apiError("Arrival time is required for Present status", 400);
                 }
@@ -239,8 +249,8 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 const now = new Date();
                 const ar = parseVisitTime(arrivedAt, "arrival", now);
                 if (!ar.ok) return apiError(ar.error, 400);
+                arrival = ar.value;
 
-                let dep: Date | null = null;
                 if (departedAt) {
                     const dr = parseVisitTime(departedAt, "departure", now);
                     if (!dr.ok) return apiError(dr.error, 400);
@@ -252,38 +262,81 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     }
                     dep = dr.value;
                 }
+            }
 
-                // Check if there is an existing visit
-                const existingVisit = await prisma.visit.findFirst({
-                    where: {
-                        personId: Number(participantId),
-                        associatedEventId: eventId
+            // Read-modify-write on this person's visit state, exactly like /api/scan
+            // and /api/attendance/manual: take the per-person advisory xact lock so a
+            // correction can't race a kiosk scan or the facility-close sweep, and
+            // re-read the visit state inside the lock. Returns an error message to
+            // surface as a 400, or null on success.
+            const failure = await prisma.$transaction(async (tx): Promise<string | null> => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${targetId})`;
+
+                if (status === 'Absent') {
+                    // An open visit (departedAt = null) means they physically scanned in
+                    // and are currently on-site. Deleting it would destroy the live
+                    // roster of who's in the building — reject instead.
+                    const openVisit = await tx.visit.findFirst({
+                        where: { personId: targetId, associatedEventId: eventId, departedAt: null, ...LIVE_VISIT }
+                    });
+                    if (openVisit) {
+                        return "Participant is currently checked in — check them out before marking Absent";
                     }
+                    // Only closed visits remain; safe to remove on an Absent correction.
+                    // Never hard-delete a tombstone: it is the reviewable record of
+                    // an earlier self-deletion.
+                    await tx.visit.deleteMany({
+                        where: { personId: targetId, associatedEventId: eventId, ...LIVE_VISIT }
+                    });
+                    return null;
+                }
+
+                if (status !== 'Present') return null;
+
+                // A person has at most one open LIVE visit
+                // (Visit_one_open_per_participant excludes tombstones), so this finds
+                // it whichever event — if any — it belongs to.
+                const openVisit = await tx.visit.findFirst({
+                    where: { personId: targetId, departedAt: null, ...LIVE_VISIT }
                 });
 
+                // A Present mark with no departure leaves the person open, and their
+                // existing open visit IS that presence. Adopt an ordinary walk-in
+                // (unassociated) into this event rather than writing a second open
+                // visit, which the one-open-visit index rejects outright.
+                const adoptable = openVisit !== null && (
+                    openVisit.associatedEventId === eventId ||
+                    (dep === null && openVisit.associatedEventId === null)
+                );
+                if (dep === null && openVisit && !adoptable) {
+                    return "Participant is currently checked in for another session. Check them out, or set a departure time, before marking them Present here.";
+                }
+
+                const existingVisit = adoptable ? openVisit : await tx.visit.findFirst({
+                    where: { personId: targetId, associatedEventId: eventId, ...LIVE_VISIT }
+                });
+
+                const times = {
+                    arrivedAt: arrival!,
+                    departedAt: dep,
+                    arrivedVia: "WEB",
+                    departedVia: departedAt ? "WEB" : null
+                } satisfies Prisma.VisitUncheckedUpdateInput;
+
                 if (existingVisit) {
-                    await prisma.visit.update({
+                    await tx.visit.update({
                         where: { id: existingVisit.id },
-                        data: {
-                            arrivedAt: ar.value,
-                            departedAt: dep,
-                            arrivedVia: "WEB",
-                            departedVia: departedAt ? "WEB" : null
-                        }
+                        data: { ...times, associatedEventId: eventId }
                     });
                 } else {
-                    await prisma.visit.create({
-                        data: {
-                            personId: Number(participantId),
-                            associatedEventId: eventId,
-                            arrivedAt: ar.value,
-                            departedAt: dep,
-                            arrivedVia: "WEB",
-                            departedVia: departedAt ? "WEB" : null
-                        }
+                    await tx.visit.create({
+                        data: { ...times, personId: targetId, associatedEventId: eventId }
                     });
                 }
-            }
+                return null;
+            }, { maxWait: 5000, timeout: 15000 });
+
+            if (failure) return apiError(failure, 400);
 
             return NextResponse.json({ success: true });
         }

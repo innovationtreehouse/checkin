@@ -35,6 +35,7 @@ export const GET = withAuth(
             const visits = await prisma.visit.findMany({
                 where: {
                     personId: userId,
+                    deletedAt: null,
                     arrivedAt: {
                         gte: startDate,
                         lte: endDate

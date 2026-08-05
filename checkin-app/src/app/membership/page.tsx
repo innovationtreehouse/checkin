@@ -282,16 +282,17 @@ export default function MembershipPage() {
     })();
   }, [sessionStatus, load]);
 
-  // When awaiting payment, fetch the dues amount and Shopify checkout link.
+  // When awaiting payment, fetch the dues amount and Shopify checkout link. Leads
+  // only — the route refuses anyone else, and the card hides the money from them.
   useEffect(() => {
-    if (state?.process?.status !== "PENDING_PAYMENT") return;
+    if (state?.process?.status !== "PENDING_PAYMENT" || !state.isLead) return;
     let cancelled = false;
     fetch("/api/membership/payment")
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => { if (!cancelled && data) setPayment(data); })
       .catch(() => { /* shown as link-unavailable */ });
     return () => { cancelled = true; };
-  }, [state?.process?.status]);
+  }, [state?.process?.status, state?.isLead]);
 
   // Restore an in-flight payment holdoff after a tab refresh mid-Shopify-checkout.
   useEffect(() => {
@@ -650,6 +651,10 @@ export default function MembershipPage() {
   const isIntake = inStatus === "INTAKE";
   const isActive = state?.membershipStatus === "ACTIVE";
   const isRenewal = state?.process?.kind === "RENEWAL";
+  // Steps whose every action is the lead's — household details, contract signing,
+  // background-check consent, dues and checkout. Each backing route refuses a
+  // non-lead, so rendering the controls for one would only produce a 403.
+  const isLeadOnlyStep = isIntake || inStatus === "PENDING_EXTERNAL_ACTION" || inStatus === "PENDING_PAYMENT";
 
   return (
     <Container size="lg" pb="md">
@@ -691,6 +696,14 @@ export default function MembershipPage() {
             )}
           </Card>
         )
+      ) : isRenewal && inStatus === "PENDING_RENEWAL" && !state.isLead ? (
+        <Card withBorder radius="md" padding="xl" maw={640}>
+          <Title order={2}>Your household is up for renewal</Title>
+          <Text c="dimmed" mt="sm">
+            Your household lead will confirm the renewal — nothing for you to do right now. Your
+            membership stays active in the meantime.
+          </Text>
+        </Card>
       ) : isRenewal && inStatus === "PENDING_RENEWAL" ? (
         <Card withBorder radius="md" padding="xl" maw={640}>
           <Title order={2}>Time to renew</Title>
@@ -723,7 +736,15 @@ export default function MembershipPage() {
           </Box>
 
           <Box style={{ flex: "1 1 420px", minWidth: "min(320px, 100%)" }}>
-            {isIntake ? (
+            {!state.isLead && isLeadOnlyStep ? (
+              <Card withBorder radius="md" padding="lg">
+                <Title order={2} mb="sm">Membership application in progress</Title>
+                <Text c="dimmed">
+                  Your household&apos;s membership application is in progress. Your household lead
+                  will complete it — nothing for you to do right now.
+                </Text>
+              </Card>
+            ) : isIntake ? (
               <Card withBorder radius="md" padding="lg">
                 <Stack gap="lg">
                   <section>

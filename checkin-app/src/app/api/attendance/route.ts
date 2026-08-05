@@ -9,6 +9,7 @@ import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { LIVE_VISIT } from "@/lib/visit/filters";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -125,7 +126,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
             include: { person: true }
         });
 
-        if (!visit) {
+        if (!visit || visit.deletedAt) {
             return apiError("Visit not found", 404);
         }
 
@@ -204,7 +205,8 @@ export const POST = withAuth({}, async (req, auth) => {
                 const activeVisit = await tx.visit.findFirst({
                     where: {
                         personId: participant.id,
-                        departedAt: null
+                        departedAt: null,
+                        ...LIVE_VISIT
                     }
                 });
 
@@ -217,7 +219,7 @@ export const POST = withAuth({}, async (req, auth) => {
                 // racing keyholder check-in is either fully committed or not yet seen.
                 if (!participant.isKeyholder) {
                     const activeKeyholders = await tx.visit.count({
-                        where: { departedAt: null, person: { isKeyholder: true } }
+                        where: { departedAt: null, person: { isKeyholder: true }, ...LIVE_VISIT }
                     });
                     if (activeKeyholders === 0) {
                         return { facilityClosed: true as const };

@@ -9,6 +9,7 @@ import { MergedBadge } from "@/components/ui/MergedBadge";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { formatPhone } from "@/lib/phone";
+import { formatDateOnly } from "@/lib/time";
 
 interface ParticipantMergeView {
   id: number;
@@ -59,9 +60,11 @@ function identityOptionLabel(p: { email?: string; googleId?: string; emailVerifi
 }
 
 function formatFieldValue(field: ConflictField, value: unknown): string {
+  // dateOfBirth is the only date-kind field in CONFLICT_FIELDS, so the calendar-date
+  // (UTC-pinned) read is right for every value that reaches this branch.
   if (field === "dateOfBirth" && typeof value === "string") {
     const d = new Date(value);
-    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
+    return isNaN(d.getTime()) ? String(value) : formatDateOnly(d);
   }
   if (field === "phone" && typeof value === "string") return formatPhone(value);
   return String(value ?? "—");

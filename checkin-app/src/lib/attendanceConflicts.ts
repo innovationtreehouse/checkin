@@ -111,14 +111,14 @@ export async function getLeadConflicts(userId: number): Promise<AttendanceConfli
   // Only participants with at least one visit anchored to a led event can have a
   // conflict in this lead's scope — fetch their full visit set, then cluster.
   const anchored = await prisma.visit.findMany({
-    where: { associatedEventId: { in: [...ledEventName.keys()] } },
+    where: { associatedEventId: { in: [...ledEventName.keys()] }, deletedAt: null },
     select: { personId: true },
   });
   const participantIds = [...new Set(anchored.map((v) => v.personId))];
   if (participantIds.length === 0) return [];
 
   const visits = await prisma.visit.findMany({
-    where: { personId: { in: participantIds } },
+    where: { personId: { in: participantIds }, deletedAt: null },
     select: {
       id: true,
       personId: true,
