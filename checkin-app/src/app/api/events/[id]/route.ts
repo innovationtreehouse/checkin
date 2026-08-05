@@ -28,28 +28,55 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
     const eventId = parseInt(params.id, 10);
     if (isNaN(eventId)) throw badRequest('Invalid event ID');
 
+    // Explicit select, not include: whole rows would ship every pii/personal/
+    // internal Person and ProgramParticipant column to this event's lead mentors
+    // and core volunteers, whose view grants their_program_participants on all
+    // three tiers. Ids and the join keys below are not rendered — they are the
+    // scope keys scopesHeld() reads to resolve their_program_participants /
+    // their_own; drop one and the row strips to nothing for those roles.
     const event = await prisma.event.findUnique({
         where: { id: eventId },
-        include: {
+        select: {
+            id: true,
+            programId: true,
+            name: true,
+            startAt: true,
+            endAt: true,
+            attendanceConfirmedAt: true,
+            recurringGroupId: true,
+            attendanceConfirmedBy: { select: { name: true } },
             program: {
-                include: {
+                select: {
+                    id: true,
+                    name: true,
+                    leadMentorId: true,
                     volunteers: {
                         where: { person: LIVE_PERSON },
-                        include: { person: true }
+                        select: {
+                            programId: true,
+                            personId: true,
+                            isCore: true,
+                            person: { select: { id: true, name: true, email: true } }
+                        }
                     },
                     participants: {
                         where: { person: LIVE_PERSON },
-                        include: { person: true }
+                        select: {
+                            programId: true,
+                            personId: true,
+                            status: true,
+                            person: { select: { id: true, name: true, email: true } }
+                        }
                     }
                 }
             },
-            visits: { where: LIVE_VISIT },
+            visits: {
+                where: LIVE_VISIT,
+                select: { id: true, personId: true, arrivedAt: true, departedAt: true }
+            },
             rsvps: {
                 where: { person: LIVE_PERSON },
-                include: { person: true }
-            },
-            attendanceConfirmedBy: {
-                select: { name: true }
+                select: { eventId: true, personId: true, status: true }
             }
         }
     });
