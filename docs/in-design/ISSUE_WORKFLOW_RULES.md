@@ -151,8 +151,10 @@ the shape is discussable, not that the work is scheduled.
   only implementation PR was closed unmerged looks identical, from Status alone,
   to one being actively worked.
 - **Stamp agent-authored comments.** Anything an agent writes on an issue or a
-  PR ends with `_Posted by Claude._`, so a reader can tell a machine's reading
-  of the code from a human's decision about the product.
+  PR ends with a line naming the agent that wrote it — `_Posted by <agent>._` —
+  so a reader can tell a machine's reading of the code from a human's decision
+  about the product. More than one agent works here; the rule fixes the field,
+  and each supplies its own name.
 - **This board is not automated, deliberately.** No label-mirror sync, no CLI
   wrapper, no bot moving items between states beyond the two built-in workflows
   already in use (Item closed, Pull request merged). The `blocked` label is
