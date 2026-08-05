@@ -77,8 +77,6 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
             nonOrgMemberPriceCents: true,
             shopifyProductId: true,
             shopifyVariantId: true,
-            shopifyOrgMemberVariantId: true,
-            shopifyNonOrgMemberVariantId: true,
             volunteers: {
                 where: { person: LIVE_PERSON },
                 select: {
