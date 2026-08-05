@@ -59,7 +59,12 @@ order:
    PR moves to **Design review** (#1258 at minimum).
 7. Decompose #975 into parent + one child per release (§5.3); label the Release 2
    child `blocked` with its gate in the body.
-8. Paste `ISSUE_WORKFLOW_RULES.md` over the `AGENTS.md` § "Issue workflow (org
+8. Backfill Iteration on everything at Planning or beyond. **34 items** qualify
+   and carry none today — 31 Planning, 2 In review, 1 In progress — against 11
+   items total currently in Iteration 2. Leave Ideation/Reporting unset; that is
+   the rule, not an omission. Until this runs, the `iteration:@current` view
+   shows 11 of the 44 items that are actually in flight.
+9. Paste `ISSUE_WORKFLOW_RULES.md` over the `AGENTS.md` § "Issue workflow (org
    project 1)", then delete both working docs.
 
 Built-in project workflows need no change. "Item closed" and "Pull request
