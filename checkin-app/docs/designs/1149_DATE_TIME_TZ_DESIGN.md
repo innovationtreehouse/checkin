@@ -5,11 +5,13 @@ timezones. It began as an audit of the program-date off-by-one reported in issue
 #1149 and grew: the same defect recurs across the app because there is **no
 canonical date/time layer** and the code **conflates instants with calendar
 dates**. The program-date display bug is just one *slice* of this problem — this
-design covers the whole class and stands on its own. (No owning GitHub issue yet —
-the worktree name `issue-354-…` refers to an unrelated dead-schema ticket; file a
-tracking issue if one is wanted.)
+design covers the whole class and stands on its own. Tracked by
+[#1346](https://github.com/innovationtreehouse/checkin/issues/1346).
 
-**Status:** design — no product code, schema, or migration changed. **Date:** 2026-07-24.
+**Status:** design of record, partially implemented — Finding 2 and the step-1
+helpers shipped in #1366; the rest is tracked by #1346. No schema or migration
+has changed, and the [storage decision](#open-decision-calendar-date-storage-model)
+is still open. **Date:** 2026-07-24.
 
 ## The defect class (recap)
 
@@ -73,7 +75,7 @@ Cheapest: standardize on noon-UTC (the existing safe outlier) so display is
 tz-robust without touching every reader; OR standardize on midnight-UTC and read
 with `formatDateOnly` everywhere. Do not leave both.
 
-### 2. Program `startAt`/`endAt` off-by-one — BUG (CONFIRMED; reported as #1149)
+### 2. Program `startAt`/`endAt` off-by-one — BUG (CONFIRMED; reported as #1149) — SHIPPED (#1366)
 
 **Category:** 1 · **Severity:** bug
 
@@ -88,8 +90,16 @@ Display: [programs/page.tsx:130](checkin-app/src/app/programs/page.tsx),
 The originally-reported case. The edit-form input read
 [program-ops/programs/[id]/page.tsx:104](checkin-app/src/app/program-ops/programs/[id]/page.tsx)
 uses `.split('T')[0]` (UTC slice), so the *input* round-trips; only the
-`formatDate` *display* is wrong. Fixed by this design: `formatDateOnly` at the
-three display sites (Sequencing step 2).
+`formatDate` *display* is wrong.
+
+**Shipped in #1366**, which also landed the `formatDateOnly`/`parseDateOnly`
+helpers this design's Sequencing step 1 calls for. Four display sites read
+UTC-pinned (the three above plus the local `fmtDate` at
+[program-ops/programs/page.tsx:41](checkin-app/src/app/program-ops/programs/page.tsx)),
+and the three writers (`POST /api/programs`, `PATCH /api/programs/[id]`,
+`PATCH …/settings`) route through `parseDateOnly`. Storage was already
+conforming (UTC midnight), so no migration; the
+[open storage decision](#open-decision-calendar-date-storage-model) is untouched.
 
 ### 3. `OrgMembership.memberSince` displayed in local tz, written in UTC — BUG
 
@@ -124,10 +134,15 @@ rendering shows the day before. Direct consumer of the Finding-1 root cause.
 
 **Category:** 5 · **Severity:** bug
 
-[membership-ops/participants/merge/page.tsx:48](checkin-app/src/app/membership-ops/participants/merge/page.tsx)
-— `d.toLocaleDateString()` with no `timeZone`, used to render DOB (and any date
-value) in the merge diff. UTC-midnight DOB → local render → off by one.
-**Direction:** `formatDateOnly` for the DOB rows.
+[membership-ops/participants/merge/page.tsx:64](checkin-app/src/app/membership-ops/participants/merge/page.tsx)
+— `d.toLocaleDateString()` with no `timeZone`, rendering DOB in the merge diff.
+UTC-midnight DOB → local render → off by one.
+
+The `formatFieldValue` helper it lives in looks generic, but its date branch is
+gated on `field === "dateOfBirth"` and `ConflictField` is
+`"name" | "phone" | "dateOfBirth"` — DOB is the only date-kind field that can
+reach it, so no instant is at risk of being UTC-pinned by mistake.
+**Direction:** `formatDateOnly` in place.
 
 ### 6. `lastBackgroundCheck` shown via bare `toLocaleDateString()` — BUG
 
@@ -172,15 +187,24 @@ standardize DOB storage (Finding 1) so the two never disagree.
 
 ### 8. Visit-filter window mixes UTC parse with local `getDate`/`setDate` — LATENT
 
-**Category:** 5 · **Severity:** latent (±1 day on a 15-day window; low blast radius)
+**Category:** 5 · **Severity:** latent (one DST hour at a window edge; low blast radius)
 
 [profile/visits/route.ts:21-25](checkin-app/src/app/api/profile/visits/route.ts)
 and [household/visits/route.ts:21-25](checkin-app/src/app/api/household/visits/route.ts)
 — `const baseDate = new Date(filterDateStr)` (UTC midnight) then
 `startDate.setDate(baseDate.getDate() - 7)` (`getDate`/`setDate` are **local**).
-On a non-UTC server the local day-of-month read off a UTC-midnight instant can be
-the previous day, shifting the ±7-day window by one. Cosmetic on a wide window,
-but the parse/read tz mismatch is the same defect.
+
+The misread does **not** shift the window by a day. `setDate(getDate() ± 7)` is
+relative arithmetic that preserves the local wall time, so the day-of-month
+misread cancels; the residue is the **DST offset** when a window edge crosses a
+transition — one hour, on 56 of 730 days under `America/Chicago`:
+
+| filter date | `lte` bound, local math | UTC-correct |
+|---|---|---|
+| `2025-03-04` | `2025-03-10T23:00:00Z` | `2025-03-11T00:00:00Z` |
+
+So it clips or over-includes an hour at one edge, never a day. Still the same
+parse/read tz mismatch, and the fix is unchanged.
 **Direction:** compute the window with UTC arithmetic, or from the date-only
 string directly.
 
@@ -449,6 +473,8 @@ user sees and makes the class un-reintroducible:**
 
 ---
 
-*Date/time/timezone design of record. No product code, schema, or migrations were
-changed. The program-date display fix (reported as issue #1149) is one slice
-absorbed into this design.*
+*Date/time/timezone design of record. The program-date display fix (reported as
+issue #1149) is one slice absorbed into this design, shipped in #1366 along with
+the step-1 helpers. Schema and migrations are unchanged pending the storage
+decision; remaining work is tracked by
+[#1346](https://github.com/innovationtreehouse/checkin/issues/1346).*
