@@ -246,28 +246,27 @@ Checked and clear: the programs directory, `my-household`, `my-programs`,
 `FirstTimeIntakePanel`, and `attendance/current` (its "force checkout" is a
 kiosk departure, not a payment).
 
-**`membership/page.tsx` is a confirmed leak — checked, not closed.** The lead
-gate is on the *start* path only: `state?.isLead` guards the "Start application"
-button inside the `!state?.process` branch. Once a process exists the page falls
-into the process branches, and none of them check `isLead`. The intake state is
+**`membership/page.tsx` was a leak, and #1473 closed it.** The lead gate used to
+sit on the *start* path only: `state?.isLead` guarded the "Start application"
+button inside the `!state?.process` branch, and once a process existed every
+downstream branch rendered unguarded. Because the intake state is
 household-scoped (`lib/membership/intake.ts` returns the household's `process`
-to any member; `isLead` is the only per-user field), so a youth in a household
-with an in-flight application lands straight in those branches.
+to any member, with `isLead` the only per-user field), a youth in a household
+with an in-flight application landed straight in those branches — seeing "Your
+annual household dues are $X" and a live "Pay here with Shopify →" button.
 
-At `PENDING_PAYMENT` a youth sees "Your annual household dues are $X" and a
-"Pay here with Shopify →" button, and can click it. This is not UI-only:
-`GET /api/membership/payment` is `withAuth({})` — any authenticated user — and
-resolves the amount and checkout URL from the caller's household, so the data is
-served to a youth by the API itself. The same unguarded branches also expose the
-contract-signing and background-check tasks.
+It was not UI-only: `GET /api/membership/payment` was `withAuth({})` — any
+authenticated caller — and resolved the amount and checkout URL from the
+caller's own household.
 
-Not everything is open: `POST /api/membership/request-payment-plan` does check
-lead membership and 403s a non-lead, and `renewal-status` returns
-`renewalDue: false` to non-leads. The hole is the payment display and checkout,
-not every membership action.
+#1473 gated that route on `householdLeadship` (403 for a non-lead) and put the
+same check on every lead-only step of the page. Already correct before it, and
+left alone: `POST /api/membership/request-payment-plan` checks lead membership,
+and `renewal-status` returns `renewalDue: false` to non-leads.
 
 This is org-membership dues, a different domain from program enrollment — see
-"Out of scope" below. Fixed separately in #1473.
+"Out of scope" below. Recorded because this design's rule (a youth is never
+shown a payment obligation) is what that fix satisfies on the dues side.
 
 ## Open gaps
 
