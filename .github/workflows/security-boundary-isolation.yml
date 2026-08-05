@@ -63,11 +63,25 @@ jobs:
         if: github.event_name == 'pull_request' && github.base_ref == 'main'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_SHA" || true
-          mapfile -t CHANGED < <(git diff --name-only "$BASE_SHA"...HEAD)
-          [ "${#CHANGED[@]}" -eq 0 ] && { echo "No changes."; exit 0; }
+          # Diff the PR's OWN head, not the checked-out merge ref. On a
+          # pull_request, checkout resolves refs/pull/N/merge — the branch
+          # merged with the current tip of main — so HEAD carries main's newest
+          # commits. Diffing against HEAD would sweep in main's advance (any
+          # src/security/* it landed) and mis-flag it as this PR's boundary
+          # change. BASE_SHA...HEAD_SHA is merge-base(base,head)→head: only the
+          # branch's real changes. fetch-depth:0 already has both parents of the
+          # merge ref (= base.sha and head.sha) local, so no fetch is needed;
+          # if either SHA is unreachable the diff below fails loud, never a
+          # silent unaudited pass.
+          if ! CHANGED_RAW=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA"); then
+            echo "::error::Could not diff $BASE_SHA...$HEAD_SHA — a SHA is unreachable. Failing rather than passing this PR unaudited."
+            exit 1
+          fi
+          [ -z "$CHANGED_RAW" ] && { echo "No changes."; exit 0; }
+          mapfile -t CHANGED <<< "$CHANGED_RAW"
 
           is_boundary() { # policy/runtime files — the security boundary itself
             case "$1" in
@@ -100,7 +114,7 @@ jobs:
           RETIER=""
           CLS=checkin-app/src/security/generated/classifications.ts
           if printf '%s\n' "${CHANGED[@]}" | grep -qx "$CLS"; then
-            DIFF=$(git diff "$BASE_SHA"...HEAD -- "$CLS")
+            DIFF=$(git diff "$BASE_SHA"..."$HEAD_SHA" -- "$CLS")
             # `|| true`: under set -euo pipefail, grep's exit 1 on zero matches
             # would kill the script mid-step with no verdict — which failed every
             # PR whose classifications diff was PURELY ADDITIVE (the exact case
