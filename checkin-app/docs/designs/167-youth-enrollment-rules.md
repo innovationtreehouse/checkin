@@ -111,8 +111,8 @@ follows: an actor may not decide their own household's case, and no role is
 exempt. The enroll route never adopted it — `enforceLimits` keys only off
 `override` and the actor's roles, never off *who the enrollment is for* — so a
 sysadmin or board member can currently self-override past closed enrollment,
-age bounds, members-only, and capacity. That is a pre-existing hole, fixed
-separately in #1463.
+age bounds, members-only, and capacity. That was a pre-existing hole, closed
+separately by #1463.
 
 Once a conflicted actor can no longer reach the override exemption at all,
 "inside `enforceLimits`" and "outside `enforceLimits`" are the same behaviour
@@ -120,8 +120,11 @@ for every case the self-gate can reach: the gate only fires when actor ==
 target, and limits are then always enforced. So the gate lives **inside**
 `enforceLimits` — one exemption rule, at one layer.
 
-**Ordering dependency:** that only holds once the conflict-of-interest fix has
-landed. Until it does, an admin can `override` past this gate on themselves.
+**Dependency satisfied.** #1463 landed first, so `enforceLimits` now reads
+`!override || !isSysAdminOrBoard || isConflicted` — a conflicted actor, which a
+self-enroller always is, can no longer reach the override exemption. The
+self-gate therefore runs on every path it applies to, and its placement inside
+`enforceLimits` is safe rather than merely equivalent.
 
 ## Known adult — DOB outranks the declared-adult flag
 
