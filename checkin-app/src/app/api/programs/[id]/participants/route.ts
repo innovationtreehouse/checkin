@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
-import { checkProgramAge } from "@/lib/programAge";
+import { checkProgramAge, isKnownAdult } from "@/lib/programAge";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { isDuesSettled } from "@/lib/orgMembership";
 import { adjustProgramInventory } from "@/lib/shopify";
@@ -132,6 +132,17 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                             : "Participant is outside this program's age range.";
                 return NextResponse.json({ error, requiresOverride: true }, { status: 400 });
             }
+
+            // Only a KNOWN adult may commit THEMSELVES to a program (and to its
+            // Shopify charge). Everyone else needs a household lead to enroll
+            // them — the guardian-consent line at 18, independent of the
+            // program's own minAge/maxAge above. Unverifiable age refuses too,
+            // and routes to the age capture the enroll page already offers.
+            if (isSelfEnrollment && participantData && !isKnownAdult(participantData)) {
+                return apiError(participantData.dateOfBirth
+                    ? "A household lead must enroll a participant under 18."
+                    : "Add your date of birth (or confirm you are over 25) before enrolling yourself.", 403);
+            }
         }
 
         const isFree = currentProgram.orgMemberPriceCents === null && currentProgram.nonOrgMemberPriceCents === null;
@@ -256,6 +267,19 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
 
         if (!isSelfRemoval && !isLeadMentor && !isSysAdminOrBoard) {
             return apiError("Forbidden: Not authorized to remove this participant", 403);
+        }
+
+        // Withdrawal is a household lead's action, not a youth's: beyond matching
+        // the enroll gate, withdrawing a scholarship-held seat releases inventory
+        // back to Shopify below — a financial side effect a youth must not fire.
+        if (isSelfRemoval && !isSysAdminOrBoard) {
+            const self = await prisma.person.findUnique({
+                where: { id: participantId },
+                select: { dateOfBirth: true, isDeclaredAdult: true },
+            });
+            if (self && !isKnownAdult(self)) {
+                return apiError("A household lead must withdraw a participant under 18.", 403);
+            }
         }
 
         // Hold-ledger (product decision 2026-07-06): withdrawal is one of the

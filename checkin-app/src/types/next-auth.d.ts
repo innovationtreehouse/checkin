@@ -1,3 +1,4 @@
+import type { AgeBand } from "@/lib/programAge";
 import "next-auth";
 import "next-auth/jwt";
 
@@ -17,6 +18,10 @@ declare module "next-auth" {
       isOperations?: boolean;
       householdId?: number | null;
       householdLead?: boolean;
+      // adult / youth / unknown — the derived band only, never the date
+      // (dateOfBirth is @sensitivity:personal). Gates the youth surfaces in
+      // docs/designs/167-youth-enrollment-rules.md; the routes are the boundary.
+      ageBand?: AgeBand;
       // Program ids this user is the lead mentor of. Client-side row gate only
       // (the API is the real boundary); mirrors access-resolvers' programsLed.
       programsLed?: number[];
@@ -65,6 +70,8 @@ declare module "next-auth/jwt" {
     isOperations?: boolean;
     householdId?: number | null;
     householdLead?: boolean;
+    // See Session.user.ageBand above — derived band, never the DOB.
+    ageBand?: AgeBand;
     programsLed?: number[];
     toolStatuses?: { toolId: number; level: string }[];
     // ops-stg access gate escape hatch — see Session.user.canAccessStaging above.

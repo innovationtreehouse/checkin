@@ -27,6 +27,7 @@ const NOW = new Date('2026-06-15T12:00:00.000Z');
 
 describe('Program Age Bounds Integration Tests', () => {
     let testAdminId: number;
+    let guardianUserId: number;
     let validUserId: number;
     let underageUserId: number;
     let overageUserId: number;
@@ -74,8 +75,22 @@ describe('Program Age Bounds Integration Tests', () => {
         });
         testAdminId = admin.id;
 
+        // Eligible-age youth live in a household with an adult lead: only a lead
+        // may enroll a participant under 18 (docs/designs/167-youth-enrollment-rules.md).
+        const guardianHousehold = await prisma.household.create({ data: { name: "Test HH" } });
+        const guardian = await prisma.person.create({
+            data: {
+                email: 'guardian-age-test@example.com',
+                name: 'Guardian Age Test',
+                dateOfBirth: dobYearsAgo(40),
+                isHouseholdLead: true,
+                householdId: guardianHousehold.id,
+            }
+        });
+        guardianUserId = guardian.id;
+
         const pValid = await prisma.person.create({
-            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, household: { create: { name: "Test HH" } } }
+            data: { email: 'valid-age-test@example.com', name: 'Valid Age Test', dateOfBirth: dob16, householdId: guardianHousehold.id }
         });
         validUserId = pValid.id;
 
@@ -95,7 +110,7 @@ describe('Program Age Bounds Integration Tests', () => {
         noDobUserId = pNoDob.id;
 
         const pExactlyMin = await prisma.person.create({
-            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, household: { create: { name: "Test HH" } } }
+            data: { email: 'exactly-min-age-test@example.com', name: 'Exactly Min Age Test', dateOfBirth: dobExactly14, householdId: guardianHousehold.id }
         });
         exactlyMinUserId = pExactlyMin.id;
 
@@ -134,7 +149,7 @@ describe('Program Age Bounds Integration Tests', () => {
             await prisma.program.deleteMany({ where: { id: testProgramId } });
         }
 
-        const actorIds = [testAdminId, validUserId, underageUserId, overageUserId, noDobUserId, exactlyMinUserId, exactlyMaxUserId, turns14TomorrowUserId, turned19YesterdayUserId].filter(id => id !== undefined);
+        const actorIds = [testAdminId, guardianUserId, validUserId, underageUserId, overageUserId, noDobUserId, exactlyMinUserId, exactlyMaxUserId, turns14TomorrowUserId, turned19YesterdayUserId].filter(id => id !== undefined);
         if (actorIds.length > 0) {
             await prisma.auditLog.deleteMany({
                 where: { actorId: { in: actorIds } }
@@ -150,10 +165,9 @@ describe('Program Age Bounds Integration Tests', () => {
         await prisma.programParticipant.deleteMany({ where: { programId: testProgramId } });
     });
 
-    it('should allow self-enrollment for a participant within the valid age range', async () => {
-        // Mock session to standard valid user
+    it('should allow a household lead to enroll a participant within the valid age range', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: validUserId, isSysadmin: false, isBoardMember: false }
+            user: { id: guardianUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {
@@ -225,9 +239,9 @@ describe('Program Age Bounds Integration Tests', () => {
         expect(data.requiresOverride).toBe(true);
     });
 
-    it('should allow self-enrollment for a participant who is EXACTLY minAge today (birthday today)', async () => {
+    it('should allow enrollment for a participant who is EXACTLY minAge today (birthday today)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({
-            user: { id: exactlyMinUserId, isSysadmin: false, isBoardMember: false }
+            user: { id: guardianUserId, isSysadmin: false, isBoardMember: false }
         });
 
         const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/participants`, {

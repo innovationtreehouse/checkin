@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { formatDateOnly } from '@/lib/time';
-import { checkProgramAge } from '@/lib/programAge';
+import { checkProgramAge, type AgeBand } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
@@ -47,11 +47,11 @@ type ProgramDetail = {
   viewerMemberPricingEligible?: boolean;
 };
 
-type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
+type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null; ageBand?: AgeBand };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: session, status } = useSession();
+  const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
   const isLocalInstance = useIsLocalInstance();
   const shopifyStoreDomain = useShopifyStoreDomain();
@@ -97,22 +97,41 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // Why a member can't be enrolled. Shared by the default selection and the row
   // render so an ineligible member is never auto-selected and then POSTed (which
   // returned a confusing "Date of Birth is missing" for over-25 adults).
-  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'pending' | 'age' | 'dob' | null; label: string } => {
+  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'pending' | 'awaiting' | 'age' | 'dob' | 'lead' | null; label: string } => {
+    // Only a known adult may commit THEMSELVES to a program and its charge — the
+    // enroll route refuses the rest, so the viewer's own row must never offer it.
+    const viewer = session?.user as SessionUser | undefined;
+    const selfBlocked = member.id === viewer?.id && viewer?.ageBand !== 'adult';
     const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
     // ACTIVE = paid/free/override (truly done) — locked. PENDING = payment still
     // owed: SELECTABLE, so the household can re-run checkout to finish paying
     // (the participants POST 409s and aggregateEnrollOutcomes folds a 409 back
     // into the checkout set — the same idempotent path as a double-click).
     if (enrolledRow) {
-        return enrolledRow.status === 'ACTIVE'
-            ? { reason: 'enrolled', label: 'Enrolled' }
-            : { reason: 'pending', label: 'Payment pending — select to finish payment' };
+        if (enrolledRow.status === 'ACTIVE') return { reason: 'enrolled', label: 'Enrolled' };
+        // A youth is never shown the payment behind a pending row — the resume
+        // affordance is a checkout they may not reach. "Awaiting confirmation"
+        // stays true whether or not the household ever pays.
+        if (selfBlocked) {
+            return viewer?.ageBand === 'youth'
+                ? { reason: 'awaiting', label: 'Awaiting confirmation' }
+                : { reason: 'dob', label: 'DOB missing' };
+        }
+        return { reason: 'pending', label: 'Payment pending — select to finish payment' };
     }
     if (!program) return { reason: null, label: '' };
     // Same eligibility rule as the enroll route: a declared over-25 adult clears
     // a youth minimum like "16 and up" without a DOB on file.
     const check = checkProgramAge(member, { minAge: program.minAge, maxAge: program.maxAge, asOf: program.startAt ?? undefined });
-    return check.ok ? { reason: null, label: '' } : { reason: check.reason, label: check.label };
+    if (!check.ok) return { reason: check.reason, label: check.label };
+    // An unverifiable age keeps the 'dob' reason so the row still routes into the
+    // intake panel, where a DOB or "over 25" can be set.
+    if (selfBlocked) {
+      return viewer?.ageBand === 'youth'
+        ? { reason: 'lead', label: 'A household lead must enroll you' }
+        : { reason: 'dob', label: 'DOB missing' };
+    }
+    return { reason: null, label: '' };
   };
 
   // Load the caller's household into the member-select, and decide whether they
@@ -179,6 +198,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // emergency contact are now saved) and drop into the normal member-select.
   const handleIntakeSaved = async () => {
     setShowIntake(false);
+    // Intake just set a DOB or the over-25 flag. Re-stamp the session so the
+    // ageBand claim reflects it NOW — the jwt callback refreshes on its own
+    // schedule, and this is the one flow where waiting would leave a member who
+    // just proved their age still blocked from enrolling.
+    await updateSession();
     await populateHousehold();
   };
 
@@ -378,6 +402,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     }));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
+  // A youth is shown no payment obligation, action, or status — their own or
+  // their household's (docs/designs/167-youth-enrollment-rules.md). An
+  // unverifiable age is NOT a youth: they keep every affordance so they can
+  // reach the intake panel and establish an age.
+  const viewerIsYouth = user?.ageBand === 'youth';
 
   const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`
     : program.minAge !== null ? `ages ${program.minAge} and up`
@@ -437,7 +466,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 {program.orgMemberOnly && <Text><strong>Eligibility:</strong> Treehouse Members only</Text>}
               </>
             )}
-            {myEnrolled.length > 0 && (
+            {myEnrolled.length > 0 && !viewerIsYouth && (
               <>
                 <Divider />
                 <Text><strong>Already enrolled from your household:</strong></Text>
@@ -475,11 +504,14 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           {!showEnrollmentSelection ? (
             <Group justify="center" wrap="wrap">
               {session ? (
-                <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed}>
+                <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed || viewerIsYouth}>
                   {/* A payment-pending household reads "Continue enrollment" — the
                       button resumes their checkout (see the pending picker state),
-                      it doesn't start a new one. */}
-                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : myEnrolled.some((m) => !m.active) ? "Continue enrollment" : "Enroll"}
+                      it doesn't start a new one. A youth is told who may act
+                      instead, which holds whether or not the program is priced. */}
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</>
+                    : viewerIsYouth ? "A household lead must enroll you"
+                    : myEnrolled.some((m) => !m.active) ? "Continue enrollment" : "Enroll"}
                 </Button>
               ) : (
                 // Auth-first: route through /signin (which picks Google vs. the
@@ -525,8 +557,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               label={member.name || 'Unnamed Participant'}
                             />
                             {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
-                            {reason === 'pending' && <Text size="sm" c="yellow">({label})</Text>}
-                            {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
+                            {(reason === 'pending' || reason === 'awaiting') && <Text size="sm" c="yellow">({label})</Text>}
+                            {disabled && reason !== 'enrolled' && reason !== 'awaiting' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>
                       );
@@ -564,7 +596,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                   {hasPrice ? "Pay on Shopify" : "Complete Enrollment"}
                 </Button>
 
-                {hasPrice && !isClosed && (
+                {hasPrice && !isClosed && !viewerIsYouth && (
                   <Button
                     fullWidth
                     size="md"

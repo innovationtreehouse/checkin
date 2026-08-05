@@ -411,6 +411,7 @@ export const authOptions: NextAuthOptions = {
                 }
                 session.user.householdId = token.householdId;
                 session.user.householdLead = token.householdLead ?? false;
+                session.user.ageBand = token.ageBand ?? "unknown";
                 session.user.programsLed = token.programsLed ?? [];
                 session.user.toolStatuses = token.toolStatuses || [];
                 session.user.impersonatedBy = token.impersonatedBy ?? null;

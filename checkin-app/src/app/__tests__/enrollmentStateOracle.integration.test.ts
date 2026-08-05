@@ -36,7 +36,14 @@ describe('enrollment state — validator oracle over real transitions', () => {
 
     beforeAll(async () => {
         const self = await prisma.person.create({
-            data: { name: 'Oracle Self', email: `self-${TAG}@example.com`, household: { create: { name: 'HH' } } },
+            // Adult DOB: the oracle drives self-service transitions (request a
+            // payment plan), which only a known adult may do.
+            data: {
+                name: 'Oracle Self',
+                email: `self-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: 'HH' } },
+            },
         });
         selfId = self.id;
         const board = await prisma.person.create({

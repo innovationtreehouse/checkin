@@ -90,13 +90,27 @@ describe('Program payment-plan routes', () => {
         boardKinId = boardKin.id;
 
         const self = await prisma.person.create({
-            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            // Adult DOB: this persona requests its OWN payment plan, and only a
+            // known adult may (docs/designs/167-youth-enrollment-rules.md).
+            data: {
+                name: 'PP Self',
+                email: `self-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            },
         });
         selfId = self.id;
         householdIds.push(self.householdId);
 
         const other = await prisma.person.create({
-            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            // Adult DOB: this persona self-enrolls and self-requests in tests whose
+            // subject is capacity / ACK copy, not the youth gate.
+            data: {
+                name: 'PP Other',
+                email: `other-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            },
         });
         otherId = other.id;
         householdIds.push(other.householdId);
@@ -963,6 +977,8 @@ describe('Program payment-plan routes', () => {
                     name: `Email ${label}`,
                     email,
                     householdId,
+                    // Adult DOB: these personas request their own payment plans.
+                    dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
                     isHouseholdLead: opts.isHouseholdLead ?? false,
                 },
             });

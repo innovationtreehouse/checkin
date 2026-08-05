@@ -25,6 +25,7 @@ describe('Program Participants API Integration Tests', () => {
     let otherId: number;
     let boardId: number;   // board member who leads a household
     let depId: number;     // dependent (25yo) in the board member's household
+    let youthDepId: number; // youth dependent in the same household
     let boardNonLeadId: number; // board member in that household who is NOT its lead
     let dep2Id: number;    // second dependent (25yo) in the same household
     let memberId: number;  // person in a household with an ACTIVE OrgMembership
@@ -66,13 +67,28 @@ describe('Program Participants API Integration Tests', () => {
 
         // Create Admin
         const admin = await prisma.person.create({
-            data: { email: 'admin-partic-api-test@example.com', name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } }
+            // Adult DOB: this persona self-enrolls in the conflict-of-interest
+            // capacity test, which must reach the capacity limit rather than stop
+            // at the known-adult self-gate.
+            data: {
+                email: 'admin-partic-api-test@example.com',
+                name: 'Admin',
+                isSysadmin: true,
+                dateOfBirth: new Date(Date.now() - (35 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            }
         });
         adminId = admin.id;
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-partic-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
+            // Adult DOB: this persona self-enrolls in the double-submit test below.
+            data: {
+                email: 'lead-partic-api-test@example.com',
+                name: 'Lead',
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            }
         });
         leadId = lead.id;
 
@@ -114,9 +130,18 @@ describe('Program Participants API Integration Tests', () => {
             }
         });
         depId = dependent.id;
+        const youthDependent = await prisma.person.create({
+            data: {
+                email: 'youthdep-partic-api-test@example.com',
+                name: 'Board Youth Dependent',
+                dateOfBirth: new Date(Date.now() - (10 * 31556952000)),
+                householdId: boardHousehold.id
+            }
+        });
+        youthDepId = youthDependent.id;
         await prisma.person.update({
             where: { id: boardId },
-            data: { isHouseholdLead: true }
+            data: { isHouseholdLead: true, dateOfBirth: new Date(Date.now() - (40 * 31556952000)) }
         });
 
         // Same household, board flag, but NOT the lead — the case `isHouseholdLead`
@@ -189,7 +214,7 @@ describe('Program Participants API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId, boardNonLeadId, dep2Id, memberId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, leadId, commonId, otherId, boardId, depId, youthDepId, boardNonLeadId, dep2Id, memberId].filter(id => id !== undefined);
         const validProgramIds = [standardProgramId, freeProgramId, fullProgramId, exactAgeProgramId, memberOnlyProgramId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
@@ -639,6 +664,65 @@ describe('Program Participants API Integration Tests', () => {
              expect(data.enrollment.status).toBe('ACTIVE');
         });
 
+        // Only a KNOWN adult may commit themselves. A youth needs a household
+        // lead; an unverifiable age is refused too and routed to age capture.
+        it('should block a youth from self-enrolling, even into a free program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: otherId } }); // 10 years old
+
+             const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
+                 method: 'POST',
+                 body: JSON.stringify({ participantId: otherId })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
+             expect(res.status).toBe(403);
+             expect((await res.json()).error).toMatch(/household lead must enroll/i);
+
+             const row = await prisma.programParticipant.findUnique({
+                 where: { programId_personId: { programId: freeProgramId, personId: otherId } },
+             });
+             expect(row).toBeNull();
+        });
+
+        it('should block a self-enroller whose age is unverifiable, pointing them at age capture', async () => {
+             const noAge = await prisma.person.create({
+                 data: { email: 'noage-partic-api-test@example.com', name: 'No Age', household: { create: { name: "Test HH" } } }
+             });
+             try {
+                 (getServerSession as jest.Mock).mockResolvedValue({ user: { id: noAge.id } });
+
+                 const res = await POST(
+                     new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
+                         method: 'POST',
+                         body: JSON.stringify({ participantId: noAge.id })
+                     }) as unknown as import("next/server").NextRequest,
+                     createParams(freeProgramId) as unknown as never,
+                 );
+                 expect(res.status).toBe(403);
+                 // Not the lead-required message: the remedy is to establish an age.
+                 expect((await res.json()).error).toMatch(/date of birth|over 25/i);
+             } finally {
+                 await prisma.programParticipant.deleteMany({ where: { personId: noAge.id } });
+                 await prisma.person.delete({ where: { id: noAge.id } });
+                 await prisma.household.deleteMany({ where: { householdMembers: { none: {} }, name: "Test HH" } });
+             }
+        });
+
+        // The gate is about who INITIATES: a lead enrolling their own child is
+        // the supported path and must keep working.
+        it('should let a household lead enroll a youth in their household', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId } }); // lead, no board flag on the session
+
+             const res = await POST(
+                 new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
+                     method: 'POST',
+                     body: JSON.stringify({ participantId: youthDepId })
+                 }) as unknown as import("next/server").NextRequest,
+                 createParams(freeProgramId) as unknown as never,
+             );
+             expect(res.status).toBe(200);
+             expect((await res.json()).enrollment.personId).toBe(youthDepId);
+        });
+
         it('should return 409 (not 500) when enrolling the same participant twice', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 
@@ -714,14 +798,42 @@ describe('Program Participants API Integration Tests', () => {
              expect(row).toBeNull();
         });
         
-        it('should allow a common user to drop out of their own program', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: otherId } });
+        // A youth may not withdraw themselves: beyond matching the enroll gate,
+        // withdrawing a scholarship-held seat releases Shopify inventory, a
+        // financial side effect that is the household lead's to trigger.
+        it('should block a youth from dropping out of their own program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: otherId } }); // 10 years old
 
              const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
                  method: 'DELETE',
-                 body: JSON.stringify({ participantId: otherId }) // self-removal
+                 body: JSON.stringify({ participantId: otherId })
              });
              const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             expect(res.status).toBe(403);
+             expect((await res.json()).error).toMatch(/household lead must withdraw/i);
+
+             // Still enrolled — the refusal wrote nothing.
+             const row = await prisma.programParticipant.findUnique({
+                 where: { programId_personId: { programId: fullProgramId, personId: otherId } },
+             });
+             expect(row).not.toBeNull();
+        });
+
+        it('should allow an adult to drop out of their own program', async () => {
+             // An earlier POST test may already have seated them; make the fixture
+             // independent of test order.
+             await prisma.programParticipant.upsert({
+                 where: { programId_personId: { programId: freeProgramId, personId: commonId } },
+                 create: { programId: freeProgramId, personId: commonId, status: 'ACTIVE' },
+                 update: { status: 'ACTIVE' },
+             });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
+                 method: 'DELETE',
+                 body: JSON.stringify({ participantId: commonId }) // self-removal
+             });
+             const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
              expect(res.status).toBe(200);
 
              const data = await res.json();
@@ -729,15 +841,15 @@ describe('Program Participants API Integration Tests', () => {
         });
 
         it('should be idempotent (200, not 500) when un-enrolling a participant twice', async () => {
-             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: otherId } });
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             // otherId already self-removed from fullProgram in the test above.
+             // commonId already self-removed from freeProgram in the test above.
              // A second delete hits a missing row (Prisma P2025) — must stay 200.
-             const req = new Request(`http://localhost:4000/api/programs/${fullProgramId}/participants`, {
+             const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}/participants`, {
                  method: 'DELETE',
-                 body: JSON.stringify({ participantId: otherId })
+                 body: JSON.stringify({ participantId: commonId })
              });
-             const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(fullProgramId) as unknown as never);
+             const res = await DELETE(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
              expect(res.status).toBe(200);
              const data = await res.json();
              expect(data.success).toBe(true);
