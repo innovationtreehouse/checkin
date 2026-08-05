@@ -8,6 +8,7 @@ import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
+import { normalizeAdultDob } from "@/lib/person/adultDob";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -218,8 +219,6 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     const householdId = user.householdId!;
     const householdMemberIds = new Set((user.household?.householdMembers ?? []).map((p) => p.id));
 
-    const toDate = (d?: string | null) => (d ? new Date(d) : null);
-
     // Promote a guardian to household lead. The per-household cap (#269) is a
     // soft stop here, not a hard failure: the guardian's other details are still
     // saved (above), and the rest of the form (children) still saves below. We
@@ -275,8 +274,11 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
-                ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
-                ...(input.primaryParent.over25 !== undefined && { isDeclaredAdult: input.primaryParent.dob ? false : !!input.primaryParent.over25 }),
+                // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a
+                // 26+ DoB is stripped and forces the flag on; an empty DoB honors
+                // the checkbox.
+                ...(input.primaryParent.dob !== undefined && normalizeAdultDob(input.primaryParent.dob)),
+                ...(input.primaryParent.over25 !== undefined && !input.primaryParent.dob && { isDeclaredAdult: !!input.primaryParent.over25 }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -290,8 +292,8 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
-                    ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
-                    ...(sp.over25 !== undefined && { isDeclaredAdult: sp.dob ? false : !!sp.over25 }),
+                    ...(sp.dob !== undefined && normalizeAdultDob(sp.dob)),
+                    ...(sp.over25 !== undefined && !sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
@@ -303,8 +305,8 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
-                    dateOfBirth: toDate(sp.dob),
-                    isDeclaredAdult: sp.dob ? false : !!sp.over25,
+                    ...normalizeAdultDob(sp.dob),
+                    ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     allergies: sp.allergies ?? null,
                 },
             });
@@ -320,7 +322,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
-                    ...(child.dob !== undefined && { dateOfBirth: toDate(child.dob) }),
+                    ...(child.dob !== undefined && normalizeAdultDob(child.dob)),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
@@ -330,7 +332,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: child.name,
                     ...(child.email && { email: child.email.toLowerCase() }),
-                    dateOfBirth: toDate(child.dob),
+                    ...normalizeAdultDob(child.dob),
                     allergies: child.allergies ?? null,
                 },
             });

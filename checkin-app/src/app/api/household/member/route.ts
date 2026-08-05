@@ -56,7 +56,7 @@ export const PATCH = withAuth(
                         // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a
                         // 26+ DoB is stripped and forces the flag on; an empty DoB honors
                         // the checkbox. `undefined` dob leaves the field unchanged.
-                        ...(dob !== undefined ? normalizeAdultDob(dob === "" ? null : dob + "T12:00:00Z") : {}),
+                        ...(dob !== undefined ? normalizeAdultDob(dob) : {}),
                         ...(over25 !== undefined && !dob ? { isDeclaredAdult: !!over25 } : {}),
                         allergies: allergies !== undefined ? (allergies === "" ? null : allergies) : undefined,
                     },
