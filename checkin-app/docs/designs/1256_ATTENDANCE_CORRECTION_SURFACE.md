@@ -11,8 +11,8 @@ household-lead correction, staff insert-for-others, the program-lead tombstone
 + audit, and the `VisitSource` split. AT13 landed separately in
 [#1350](https://github.com/innovationtreehouse/checkin/pull/1350). **Still open:** AT12 (§4,
 unbuilt), the `isOperations` gate decision (§6.1), dropping the legacy `SYSTEM`
-enum value (§3, contract stage), and the advisory-lock gap tracked as parallel
-work (§7). Sections below are written in the present tense and describe the code
+enum value (§3, contract stage). The advisory-lock work tracked as §7 has
+landed. Sections below are written in the present tense and describe the code
 as it stands; anything not built says so in its heading or carries a 🟡.
 
 ## Why one design, not three
@@ -571,7 +571,7 @@ add the group-by. Do not build a second generic audit browser.
   edit can't race the sweep. Both converge on one rule — **every visit write
   (self, staff, automated) goes through the advisory-lock + one-open-visit
   guard** — while keeping the single-edit and bulk-close code paths distinct.
-  Two routes do not yet satisfy that rule; see §7.
+  Every visit-write path satisfies that rule as of #1475 (§7).
 
 ---
 
@@ -603,33 +603,33 @@ add the group-by. Do not build a second generic audit browser.
 
 ---
 
-## 7. Parallel work
+## 7. Parallel work — landed
 
-Tracked outside this surface's PRs, but on the same substrate. Both are
-**pre-existing** — neither was introduced by AT3/AT5.
+Both items here were **pre-existing** — neither introduced by AT3/AT5 — and both
+have since landed on `main` in
+[#1475](https://github.com/innovationtreehouse/checkin/pull/1475), independently of this
+surface's PRs.
 
-**Advisory-lock gap on two visit-write paths.** `PATCH`/`DELETE
-/api/facility/visits` and the whole `manualEditAttendance` branch do a
-read-then-write on `Visit` with no per-person advisory lock, so §5's "every visit
-write" rule is not yet satisfied. Exposure is mild for the facility route (`PATCH`
-can only close a visit, never reopen one, so it cannot itself create a second open
-visit) — the cost is a pre-check invalidated before the write lands.
+**The advisory-lock gap is closed.** `PATCH`/`DELETE /api/facility/visits` and
+the whole `manualEditAttendance` branch now take the per-person advisory lock and
+re-read visit state inside it, so §5's rule — *every* visit write, self, staff or
+automated, goes through the lock plus the one-open-visit guard — holds across the
+surface.
 
-The concrete symptom in `manualEditAttendance`'s Absent branch: it reads the
-doomed visits, then tombstones them and writes their audit rows from that
-snapshot. The tombstone update is correctly filtered by `LIVE_VISIT`, so a visit
-someone else deletes in the gap is skipped — but the audit row for it is written
-anyway, crediting this lead with a deletion they did not perform. Two DELETE rows
-for one deletion, and `Visit.deletedById` (not the audit feed) holds the truth. A
-partial batch mismatches silently; a racing *edit* instead of a delete leaves one
-row with a stale `oldData`. All of it closes if the branch takes the lock and
-re-asserts under it.
+That also closed an audit-fidelity window AT3 would otherwise have left in the
+Absent branch: it read the doomed visits, then tombstoned them and wrote their
+audit rows from that snapshot. A visit someone else deleted in the gap was
+correctly skipped by the `LIVE_VISIT`-filtered update but still got an audit row,
+crediting this lead with a deletion they did not perform. Under the lock the rows
+audited are exactly the rows tombstoned.
 
-Adjacent, and worth proving before fixing: `manualEditAttendance`'s Present branch
-looks up an existing visit scoped to `associatedEventId`, but the one-open-visit
-index is scoped to `personId` alone. A participant with an open *unassociated*
-walk-in, marked Present with a blank departure, may therefore hit a unique
-violation surfacing as a bare 500. Reasoned from the code, not yet reproduced.
+**The one-open-visit collision was real.** `manualEditAttendance`'s Present branch
+looked up an existing visit scoped to `associatedEventId` while the
+`Visit_one_open_per_participant` index is scoped to `personId` alone, so a
+participant with an open *unassociated* walk-in, marked Present with a blank
+departure, hit a unique violation surfacing as a bare 500. The fix adopts an
+adoptable open visit into the event instead of writing a second one, and returns
+a 400 naming the problem when the open visit belongs to another session.
 
 ---
 
