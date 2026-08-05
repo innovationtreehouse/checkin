@@ -16,10 +16,11 @@ where a document lives, what class it belongs to, or when it is deleted;
 Two places keep their own rules, which override this one:
 
 - **Code comments.** `AGENTS.md` limits a comment to what someone editing that
-  line needs, usually one line and rarely more than four. "Take the space the
+  line needs, and says to keep it short, usually one line. "Take the space the
   idea requires" in §3 governs prose and never a comment block.
-- **User-facing copy.** `docs/VOCABULARY.md` fixes product terms. Where it
-  defines a term, use it exactly, even when a plainer word would read better.
+- **User-facing copy.** `checkin-app/docs/VOCABULARY.md` fixes product terms.
+  Where it defines a term, use it exactly, even when a plainer word would read
+  better.
 
 **Applies to new and edited text.** Existing files conform as someone touches
 them. There is no sweep.
