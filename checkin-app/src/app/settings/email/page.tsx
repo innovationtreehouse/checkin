@@ -131,7 +131,8 @@ export default function EmailSettingsPage() {
           <Title order={3} mb="xs">Email sender identity</Title>
           <Text size="sm" c="dimmed" mb="md">
             Controls the sender on <strong>every</strong> outbound email (check-in receipts, membership
-            notices, board alerts). Leave blank to use the environment default sender.
+            notices, board alerts). Leave blank to use the sender configured in the environment —
+            with neither set, outbound email is disabled.
           </Text>
 
           <Alert color={wasSet ? "yellow" : "blue"} variant="light" mb="md">
@@ -161,7 +162,7 @@ export default function EmailSettingsPage() {
           <Stack gap="md">
             <TextInput
               label="From address"
-              description={'Bare address or "Name <addr@domain>". Blank = environment default.'}
+              description={'Bare address or "Name <addr@domain>". Blank = the environment sender.'}
               placeholder="Innovation Treehouse <noreply@updates.innovationtreehouse.org>"
               w={440}
               value={emailFrom}
