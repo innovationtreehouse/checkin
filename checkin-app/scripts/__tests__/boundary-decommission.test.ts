@@ -299,6 +299,23 @@ describe('certifyDecommission', () => {
         expect(r.reasons.join()).toContain('outbound');
     });
 
+    it('rejects deleting the middleware.ts auth gate — it is a boundary file, not decommissionable app code', () => {
+        const MIDDLEWARE = 'checkin-app/src/middleware.ts';
+        const r = certifyDecommission({
+            changed: [
+                { status: 'M', path: BINDINGS },
+                { status: 'M', path: SCHEMA },
+                { status: 'A', path: MIGRATION },
+                { status: 'D', path: MIDDLEWARE },
+            ],
+            violations: [MIGRATION, MIDDLEWARE],
+            readBase: files({}),
+            readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
+        });
+        expect(r.ok).toBe(false);
+        expect(r.reasons.join()).toContain('middleware.ts');
+    });
+
     it('rejects modified app code riding along, while allowing deletions and migrations', () => {
         const r = certifyDecommission({
             changed: [
@@ -322,6 +339,7 @@ describe('isBoundaryPath', () => {
     it('mirrors the workflow: security src yes, generated no, certifier scripts yes', () => {
         expect(isBoundaryPath('checkin-app/src/security/registry.ts')).toBe(true);
         expect(isBoundaryPath('checkin-app/src/security/generated/classifications.ts')).toBe(false);
+        expect(isBoundaryPath('checkin-app/src/middleware.ts')).toBe(true);
         expect(isBoundaryPath('checkin-app/scripts/security-generator.js')).toBe(true);
         expect(isBoundaryPath('checkin-app/scripts/lib/boundary-decommission.js')).toBe(true);
         expect(isBoundaryPath('checkin-app/src/lib/fees.ts')).toBe(false);
