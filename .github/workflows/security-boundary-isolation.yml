@@ -124,8 +124,9 @@ jobs:
           }
 
           BOUNDARY_TOUCHED=0
+          BOUNDARY_FILES=()
           for f in "${CHANGED[@]}"; do
-            if is_boundary "$f"; then BOUNDARY_TOUCHED=1; fi
+            if is_boundary "$f"; then BOUNDARY_TOUCHED=1; BOUNDARY_FILES+=("$f"); fi
           done
 
           # Re-tier detection: an existing field moving between tiers in the
@@ -164,8 +165,13 @@ jobs:
             # Whole-entity decommission exception (see header). Re-tiers never
             # qualify, and the certifier fails closed on anything but pure
             # whole-entry removals of subjects deleted in this same PR.
+            # Pass the boundary set (is_boundary above is the single source of
+            # truth) so the certifier never re-derives "what is a boundary file".
             if [ -z "$RETIER" ] &&
-               node checkin-app/scripts/check-boundary-decommission.js --base "$BASE_SHA" -- "${VIOLATIONS[@]}"; then
+               node checkin-app/scripts/check-boundary-decommission.js \
+                 --base "$BASE_SHA" \
+                 --boundary "${BOUNDARY_FILES[@]}" \
+                 -- "${VIOLATIONS[@]}"; then
               echo "Decommission exception: boundary diff is whole-entry removals of dropped"
               echo "subjects; non-companion files are the drop migration/deletions only."
               exit 0

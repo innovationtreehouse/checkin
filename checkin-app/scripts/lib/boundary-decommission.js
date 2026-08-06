@@ -34,18 +34,6 @@ const DECLARATIVE_FILES = {
 const SCHEMA_FILE = 'checkin-app/prisma/schema.prisma';
 const MIGRATIONS_DIR = 'checkin-app/prisma/migrations/';
 
-// Mirrors is_boundary in the workflow, plus the certifier's own files.
-function isBoundaryPath(p) {
-    if (p.startsWith('checkin-app/src/security/generated/')) return false;
-    if (p.startsWith('checkin-app/src/security/')) return true;
-    return [
-        'checkin-app/src/middleware.ts',
-        'checkin-app/scripts/security-generator.js',
-        'checkin-app/scripts/check-boundary-decommission.js',
-        'checkin-app/scripts/lib/boundary-decommission.js',
-    ].includes(p);
-}
-
 // ── line utilities ─────────────────────────────────────────────────────────
 
 // Strip single-quoted strings, then a trailing // comment, so braces inside
@@ -281,17 +269,18 @@ function exportsVerb(source, verb) {
 // ── certification ──────────────────────────────────────────────────────────
 
 /**
- * @param {{ changed: ChangedFile[], violations: string[], readBase: FileReader, readHead: FileReader }} args
- *   changed: git diff --name-status rows (merge-base...head); violations: paths
- *   the workflow found to be neither boundary nor companion.
+ * @param {{ changed: ChangedFile[], boundaryChanged: string[], violations: string[], readBase: FileReader, readHead: FileReader }} args
+ *   changed: git diff --name-status rows (merge-base...head); boundaryChanged:
+ *   the subset the workflow's is_boundary matched (the single source of truth
+ *   for what a boundary file is); violations: paths the workflow found to be
+ *   neither boundary nor companion.
  * @returns {{ ok: boolean, reasons: string[], removedModels: string[], removedEndpoints: string[] }}
  */
-function certifyDecommission({ changed, violations, readBase, readHead }) {
+function certifyDecommission({ changed, boundaryChanged, violations, readBase, readHead }) {
     /** @type {string[]} */ const reasons = [];
     /** @type {string[]} */ const removedModels = [];
     /** @type {string[]} */ const removedEndpoints = [];
 
-    const boundaryChanged = changed.filter(c => isBoundaryPath(c.path)).map(c => c.path);
     const declarative = Object.values(DECLARATIVE_FILES);
     for (const p of boundaryChanged) {
         if (!declarative.includes(p)) {
@@ -379,7 +368,6 @@ module.exports = {
     DECLARATIVE_FILES,
     certifyDecommission,
     diffSegmentations,
-    isBoundaryPath,
     segmentByContainers,
     segmentTopLevelCalls,
 };

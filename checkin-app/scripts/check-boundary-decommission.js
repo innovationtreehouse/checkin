@@ -7,7 +7,12 @@
  * invoked by .github/workflows/security-boundary-isolation.yml when a boundary
  * PR carries non-companion files:
  *
- *   node checkin-app/scripts/check-boundary-decommission.js --base <sha> -- [violation...]
+ *   node checkin-app/scripts/check-boundary-decommission.js \
+ *     --base <sha> --boundary [file...] -- [violation...]
+ *
+ * --boundary is the set of changed files the workflow's is_boundary matched;
+ * that shell function is the single source of truth for "what is a boundary
+ * file", so the certifier never re-derives it.
  *
  * Exit 0: the boundary diff is a certified whole-entity decommission and every
  * violation is a migration or a deletion. Exit 1 with reasons otherwise, and
@@ -29,12 +34,15 @@ function gitShow(rev, path) {
 
 function main(argv) {
     const baseIdx = argv.indexOf('--base');
+    const boundaryIdx = argv.indexOf('--boundary');
     const sepIdx = argv.indexOf('--');
     if (baseIdx === -1 || !argv[baseIdx + 1]) {
-        console.error('usage: check-boundary-decommission.js --base <sha> -- [violation...]');
+        console.error('usage: check-boundary-decommission.js --base <sha> --boundary [file...] -- [violation...]');
         return 1;
     }
     const baseSha = argv[baseIdx + 1];
+    const boundaryEnd = sepIdx === -1 ? argv.length : sepIdx;
+    const boundaryChanged = boundaryIdx === -1 ? [] : argv.slice(boundaryIdx + 1, boundaryEnd);
     const violations = sepIdx === -1 ? [] : argv.slice(sepIdx + 1);
 
     // Same three-dot semantics as the workflow's file list: compare against
@@ -52,6 +60,7 @@ function main(argv) {
 
     const result = certifyDecommission({
         changed,
+        boundaryChanged,
         violations,
         readBase: p => gitShow(mergeBase, p),
         readHead: p => gitShow('HEAD', p),
