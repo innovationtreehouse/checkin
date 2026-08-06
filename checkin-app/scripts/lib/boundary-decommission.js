@@ -34,22 +34,25 @@ const DECLARATIVE_FILES = {
 const SCHEMA_FILE = 'checkin-app/prisma/schema.prisma';
 const MIGRATIONS_DIR = 'checkin-app/prisma/migrations/';
 
-// Mirrors is_boundary in the workflow, plus the certifier's own files.
-function isBoundaryPath(p) {
-    if (p.startsWith('checkin-app/src/security/generated/')) return false;
-    if (p.startsWith('checkin-app/src/security/')) return true;
-    return [
-        'checkin-app/scripts/security-generator.js',
-        'checkin-app/scripts/check-boundary-decommission.js',
-        'checkin-app/scripts/lib/boundary-decommission.js',
-    ].includes(p);
-}
+// No local copy of "what is a boundary file": the workflow's is_boundary is the
+// only definition, and the caller passes the set it computed. A second copy here
+// would drift fail-open — a path the shell calls boundary and this file does not
+// escapes the engine-file rejection below.
 
 // ── line utilities ─────────────────────────────────────────────────────────
 
 // Strip single-quoted strings, then a trailing // comment, so braces inside
-// either don't skew depth tracking. Handles \' escapes; the declarative files
-// use no template or double-quoted strings.
+// either don't skew depth tracking. Handles \' escapes.
+//
+// KNOWN LIMIT, not enforced: only single quotes and `//` are understood. A brace
+// inside a double-quoted string, a template literal or a `/* */` block is
+// invisible here, and could let one entry's segment swallow the next —
+// checkRoundTrip verifies the line partition, not the nesting, so it would not
+// catch that. Rejecting those constructs file-wide is not viable: both
+// declarative files carry backticks and quotes in their own header docblocks,
+// where they are harmless. A per-container check is the real fix; until then a
+// removal can only ever narrow, so the failure mode is an over-broad narrowing,
+// never a widening.
 function stripStringsAndComments(line) {
     let out = '';
     let inStr = false;
@@ -280,17 +283,25 @@ function exportsVerb(source, verb) {
 // ── certification ──────────────────────────────────────────────────────────
 
 /**
- * @param {{ changed: ChangedFile[], violations: string[], readBase: FileReader, readHead: FileReader }} args
+ * @param {{ changed: ChangedFile[], violations: string[], boundary: string[], readBase: FileReader, readHead: FileReader }} args
  *   changed: git diff --name-status rows (merge-base...head); violations: paths
- *   the workflow found to be neither boundary nor companion.
+ *   the workflow found to be neither boundary nor companion; boundary: the paths
+ *   the workflow's is_boundary matched — the single definition, passed in rather
+ *   than re-derived here.
  * @returns {{ ok: boolean, reasons: string[], removedModels: string[], removedEndpoints: string[] }}
  */
-function certifyDecommission({ changed, violations, readBase, readHead }) {
+function certifyDecommission({ changed, violations, boundary, readBase, readHead }) {
     /** @type {string[]} */ const reasons = [];
     /** @type {string[]} */ const removedModels = [];
     /** @type {string[]} */ const removedEndpoints = [];
 
-    const boundaryChanged = changed.filter(c => isBoundaryPath(c.path)).map(c => c.path);
+    // Fail closed: without the caller's boundary set there is nothing to certify
+    // against, and defaulting to "none" would certify any diff at all.
+    if (!Array.isArray(boundary)) {
+        return { ok: false, reasons: ['no boundary file set supplied by the caller'], removedModels, removedEndpoints };
+    }
+    const boundarySet = new Set(boundary);
+    const boundaryChanged = changed.filter(c => boundarySet.has(c.path)).map(c => c.path);
     const declarative = Object.values(DECLARATIVE_FILES);
     for (const p of boundaryChanged) {
         if (!declarative.includes(p)) {
@@ -352,22 +363,39 @@ function certifyDecommission({ changed, violations, readBase, readHead }) {
     }
 
     // Every removed route entry's verb must stop being served in this same PR.
+    // The base file must resolve AND export the verb first: absence at head only
+    // proves the endpoint died if the mapping pointed at a file that served it.
+    // Otherwise a route group, catch-all, rewrite or `route.tsx` makes readHead
+    // return null for a path that was never right, certifying a live endpoint.
     for (const endpoint of removedEndpoints) {
         const [verb] = endpoint.split(' ');
         const file = endpointToRouteFile(endpoint);
+        const base = readBase(file);
+        if (base == null || !exportsVerb(base, verb)) {
+            reasons.push(`${endpoint}: ${file} does not export ${verb} at base — endpoint-to-file mapping unverified`);
+            continue;
+        }
         const head = readHead(file);
         if (head != null && exportsVerb(head, verb)) {
             reasons.push(`${endpoint}: registry entry removed but ${file} still exports ${verb}`);
         }
     }
 
-    // The exception admits only the two file classes that welded the PR shut:
-    // the drop migration, and deletions of the decommissioned code itself.
+    // The exception admits the drop migration, and deletions the decommission
+    // itself implies — the route files of the endpoints whose entries left.
+    // Any other deletion ships separately: a file nothing imports can be a
+    // security control (middleware, a cron entry), and deleting one breaks no
+    // build, so "it is a deletion" is not evidence that it is part of the drop.
+    const impliedDeletions = new Set(removedEndpoints.map(endpointToRouteFile));
     const deleted = new Set(changed.filter(c => c.status === 'D').map(c => c.path));
     for (const v of violations) {
-        if (!v.startsWith(MIGRATIONS_DIR) && !deleted.has(v)) {
-            reasons.push(`${v}: neither a migration nor a deletion — modified/added app code must ship separately`);
-        }
+        if (v.startsWith(MIGRATIONS_DIR)) continue;
+        if (deleted.has(v) && impliedDeletions.has(v)) continue;
+        reasons.push(
+            deleted.has(v)
+                ? `${v}: deleted, but not a route file of a removed registry entry — unrelated deletions must ship separately`
+                : `${v}: neither a migration nor a deletion — modified/added app code must ship separately`,
+        );
     }
 
     return { ok: reasons.length === 0, reasons, removedModels, removedEndpoints };
@@ -378,7 +406,6 @@ module.exports = {
     DECLARATIVE_FILES,
     certifyDecommission,
     diffSegmentations,
-    isBoundaryPath,
     segmentByContainers,
     segmentTopLevelCalls,
 };

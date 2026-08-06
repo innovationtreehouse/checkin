@@ -28,12 +28,12 @@
 /.github/                             @dkaygithub @jee7s @thpr
 
 # The CI lint and the codegen — bypass routes if changed.
-/checkin-app/scripts/check-route-coverage.ts      @dkaygithub @jee7s @thpr
-/checkin-app/scripts/security-generator.js        @dkaygithub @jee7s @thpr
+/checkin-app/scripts/check-route-coverage.ts        @dkaygithub @jee7s @thpr
+/checkin-app/scripts/security-generator.js          @dkaygithub @jee7s @thpr
 /checkin-app/scripts/check-boundary-decommission.js @dkaygithub @jee7s @thpr
-/checkin-app/scripts/lib/boundary-decommission.js @dkaygithub @jee7s @thpr
-/checkin-app/scripts/migrated-routes.txt          @dkaygithub @jee7s @thpr
-/checkin-app/scripts/legacy-authz-routes.txt      @dkaygithub @jee7s @thpr
+/checkin-app/scripts/lib/boundary-decommission.js   @dkaygithub @jee7s @thpr
+/checkin-app/scripts/migrated-routes.txt            @dkaygithub @jee7s @thpr
+/checkin-app/scripts/legacy-authz-routes.txt        @dkaygithub @jee7s @thpr
 /checkin-app/scripts/tsconfig.json                @dkaygithub @jee7s @thpr
 
 # Git hooks.

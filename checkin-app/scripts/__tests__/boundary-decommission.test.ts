@@ -8,7 +8,6 @@ import {
     BINDINGS_CONTAINERS,
     certifyDecommission,
     diffSegmentations,
-    isBoundaryPath,
     segmentByContainers,
     segmentTopLevelCalls,
 } from '../lib/boundary-decommission';
@@ -228,6 +227,7 @@ describe('certifyDecommission', () => {
                 { status: 'A', path: MIGRATION },
             ],
             violations: [MIGRATION],
+            boundary: [BINDINGS],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
         });
@@ -240,6 +240,7 @@ describe('certifyDecommission', () => {
         const r = certifyDecommission({
             changed: [{ status: 'M', path: BINDINGS }, { status: 'A', path: MIGRATION }],
             violations: [MIGRATION],
+            boundary: [BINDINGS],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment }),
         });
@@ -254,6 +255,7 @@ describe('certifyDecommission', () => {
                 { status: 'M', path: 'checkin-app/src/security/scopes.ts' },
             ],
             violations: [],
+            boundary: [BINDINGS, 'checkin-app/src/security/scopes.ts'],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
         });
@@ -274,7 +276,8 @@ describe('certifyDecommission', () => {
                     { status, path: ROUTE_FILE },
                 ],
                 violations: [ROUTE_FILE],
-                readBase: files({}),
+                boundary: [REGISTRY],
+                readBase: files({ [ROUTE_FILE]: 'export async function GET() {}' }),
                 readHead: files({ [REGISTRY]: registryWithoutFees, [ROUTE_FILE]: routeHead }),
             });
 
@@ -292,6 +295,7 @@ describe('certifyDecommission', () => {
         const r = certifyDecommission({
             changed: [{ status: 'M', path: REGISTRY }],
             violations: [],
+            boundary: [REGISTRY],
             readBase: files({}),
             readHead: files({ [REGISTRY]: head }),
         });
@@ -299,7 +303,7 @@ describe('certifyDecommission', () => {
         expect(r.reasons.join()).toContain('outbound');
     });
 
-    it('rejects modified app code riding along, while allowing deletions and migrations', () => {
+    it('rejects modified app code AND deletions the decommission does not imply', () => {
         const r = certifyDecommission({
             changed: [
                 { status: 'M', path: BINDINGS },
@@ -309,21 +313,65 @@ describe('certifyDecommission', () => {
                 { status: 'M', path: 'checkin-app/src/lib/membership.ts' },
             ],
             violations: [MIGRATION, 'checkin-app/src/lib/fees.ts', 'checkin-app/src/lib/membership.ts'],
+            boundary: [BINDINGS],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
         });
         expect(r.ok).toBe(false);
-        expect(r.reasons).toHaveLength(1);
-        expect(r.reasons[0]).toContain('membership.ts');
+        // fees.ts is deleted but is not a route file of a removed entry, so it no
+        // longer rides along on "it is a deletion" alone.
+        expect(r.reasons).toHaveLength(2);
+        expect(r.reasons.join()).toContain('fees.ts');
+        expect(r.reasons.join()).toContain('membership.ts');
+    });
+
+    it('refuses to certify a deleted security control that nothing imports', () => {
+        // The reported hole: middleware.ts is the site-wide auth gate, imported by
+        // nothing, so its deletion breaks no build and was admitted as "a deletion".
+        const MIDDLEWARE = 'checkin-app/src/middleware.ts';
+        const r = certifyDecommission({
+            changed: [
+                { status: 'M', path: BINDINGS },
+                { status: 'M', path: SCHEMA },
+                { status: 'A', path: MIGRATION },
+                { status: 'D', path: MIDDLEWARE },
+            ],
+            violations: [MIGRATION, MIDDLEWARE],
+            boundary: [BINDINGS],
+            readBase: files({}),
+            readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
+        });
+        expect(r.ok).toBe(false);
+        expect(r.reasons.join()).toContain('middleware.ts');
+    });
+
+    it('refuses a route kill when the endpoint-to-file mapping cannot be verified', () => {
+        // readBase returns null for the derived path — the endpoint may be inert,
+        // or the path may simply be wrong (route group, catch-all, route.tsx).
+        // Absence at head proves nothing either way, so it must not certify.
+        const REGISTRY = 'checkin-app/src/security/registry.ts';
+        const start = lineOf(REGISTRY_BASE, "// Payments history");
+        const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
+        const r = certifyDecommission({
+            changed: [{ status: 'M', path: REGISTRY }],
+            violations: [],
+            boundary: [REGISTRY],
+            readBase: files({}),
+            readHead: files({ [REGISTRY]: registryWithoutFees }),
+        });
+        expect(r.ok).toBe(false);
+        expect(r.reasons.join()).toContain('mapping unverified');
+    });
+
+    it('fails closed when the caller supplies no boundary set', () => {
+        const r = certifyDecommission({
+            changed: [{ status: 'M', path: BINDINGS }],
+            violations: [],
+            readBase: files({}),
+            readHead: files({ [BINDINGS]: bindingsWithoutFeePayment }),
+        } as unknown as Parameters<typeof certifyDecommission>[0]);
+        expect(r.ok).toBe(false);
+        expect(r.reasons.join()).toContain('boundary file set');
     });
 });
 
-describe('isBoundaryPath', () => {
-    it('mirrors the workflow: security src yes, generated no, certifier scripts yes', () => {
-        expect(isBoundaryPath('checkin-app/src/security/registry.ts')).toBe(true);
-        expect(isBoundaryPath('checkin-app/src/security/generated/classifications.ts')).toBe(false);
-        expect(isBoundaryPath('checkin-app/scripts/security-generator.js')).toBe(true);
-        expect(isBoundaryPath('checkin-app/scripts/lib/boundary-decommission.js')).toBe(true);
-        expect(isBoundaryPath('checkin-app/src/lib/fees.ts')).toBe(false);
-    });
-});

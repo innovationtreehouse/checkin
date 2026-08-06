@@ -97,6 +97,10 @@ jobs:
             case "$1" in
               checkin-app/src/security/generated/*) return 1 ;;
               checkin-app/src/security/*) return 0 ;;
+              # Site-wide auth gate: the org-login redirect and the denied-account
+              # bounce. Nothing imports it, so deleting or weakening it breaks no
+              # build and no test — exactly why it belongs behind this rule.
+              checkin-app/src/middleware.ts) return 0 ;;
               checkin-app/scripts/security-generator.js) return 0 ;;
               checkin-app/scripts/check-boundary-decommission.js) return 0 ;;
               checkin-app/scripts/lib/boundary-decommission.js) return 0 ;;
@@ -106,6 +110,7 @@ jobs:
           is_companion() { # allowed to accompany a boundary change
             case "$1" in
               checkin-app/src/security/*) return 0 ;;                # incl. generated
+              checkin-app/src/middleware.ts) return 0 ;;
               checkin-app/tests/security/*) return 0 ;;
               */__tests__/*|*.test.ts|*.test.tsx|*.spec.ts) return 0 ;;
               checkin-app/prisma/schema.prisma) return 0 ;;          # @sensitivity annotations
@@ -122,8 +127,9 @@ jobs:
           }
 
           BOUNDARY_TOUCHED=0
+          BOUNDARY_FILES=()
           for f in "${CHANGED[@]}"; do
-            if is_boundary "$f"; then BOUNDARY_TOUCHED=1; fi
+            if is_boundary "$f"; then BOUNDARY_TOUCHED=1; BOUNDARY_FILES+=("$f"); fi
           done
 
           # Re-tier detection: an existing field moving between tiers in the
@@ -163,7 +169,8 @@ jobs:
             # qualify, and the certifier fails closed on anything but pure
             # whole-entry removals of subjects deleted in this same PR.
             if [ -z "$RETIER" ] &&
-               node checkin-app/scripts/check-boundary-decommission.js --base "$BASE_SHA" -- "${VIOLATIONS[@]}"; then
+               node checkin-app/scripts/check-boundary-decommission.js \
+                 --base "$BASE_SHA" --boundary "${BOUNDARY_FILES[@]}" -- "${VIOLATIONS[@]}"; then
               echo "Decommission exception: boundary diff is whole-entry removals of dropped"
               echo "subjects; non-companion files are the drop migration/deletions only."
               exit 0

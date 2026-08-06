@@ -7,11 +7,17 @@
  * invoked by .github/workflows/security-boundary-isolation.yml when a boundary
  * PR carries non-companion files:
  *
- *   node checkin-app/scripts/check-boundary-decommission.js --base <sha> -- [violation...]
+ *   node checkin-app/scripts/check-boundary-decommission.js \
+ *       --base <sha> --boundary <path...> -- [violation...]
+ *
+ * `--boundary` is the set the workflow's is_boundary matched. It is passed in
+ * rather than re-derived so there is one definition of "boundary file"; a second
+ * copy here would drift fail-open. Omitting it is a non-certification.
  *
  * Exit 0: the boundary diff is a certified whole-entity decommission and every
- * violation is a migration or a deletion. Exit 1 with reasons otherwise, and
- * the workflow falls back to its ship-alone error. Runs on bare node.
+ * violation is the drop migration or an implied route-file deletion. Exit 1 with
+ * reasons otherwise, and the workflow falls back to its ship-alone error. Runs on
+ * bare node.
  */
 
 const { execFileSync } = require('child_process');
@@ -27,11 +33,25 @@ function gitShow(rev, path) {
     }
 }
 
+// Values of `--flag a b c`, stopping at the next flag or the `--` separator.
+function flagValues(argv, flag, end) {
+    const i = argv.indexOf(flag);
+    if (i === -1) return null;
+    const out = [];
+    for (let j = i + 1; j < end; j++) {
+        if (argv[j].startsWith('--')) break;
+        out.push(argv[j]);
+    }
+    return out;
+}
+
 function main(argv) {
-    const baseIdx = argv.indexOf('--base');
     const sepIdx = argv.indexOf('--');
-    if (baseIdx === -1 || !argv[baseIdx + 1]) {
-        console.error('usage: check-boundary-decommission.js --base <sha> -- [violation...]');
+    const end = sepIdx === -1 ? argv.length : sepIdx;
+    const baseIdx = argv.indexOf('--base');
+    const boundary = flagValues(argv, '--boundary', end);
+    if (baseIdx === -1 || !argv[baseIdx + 1] || boundary == null) {
+        console.error('usage: check-boundary-decommission.js --base <sha> --boundary <path...> -- [violation...]');
         return 1;
     }
     const baseSha = argv[baseIdx + 1];
@@ -45,14 +65,17 @@ function main(argv) {
         .filter(Boolean)
         .map(line => {
             const [status, ...rest] = line.split('\t');
-            // R/C rows carry two paths; a rename of a boundary file is an edit
-            // of both names, so surface each for the path checks.
+            // R/C rows carry two paths; only the destination is kept. A rename
+            // therefore reads as a change to the new name alone — the old name
+            // never appears, so it can never be mistaken for a deletion the
+            // decommission implies.
             return { status: status[0], path: rest[rest.length - 1] };
         });
 
     const result = certifyDecommission({
         changed,
         violations,
+        boundary,
         readBase: p => gitShow(mergeBase, p),
         readHead: p => gitShow('HEAD', p),
     });
@@ -68,4 +91,6 @@ function main(argv) {
     return 0;
 }
 
-process.exit(main(process.argv.slice(2)));
+// exitCode, not process.exit(): the latter can truncate buffered stdout when it
+// is a pipe, which is how the workflow runs this.
+process.exitCode = main(process.argv.slice(2));
