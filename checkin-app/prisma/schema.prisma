@@ -1100,6 +1100,12 @@ model Visit {
   /// @sensitivity:internal
   deletedById       Int?
 
+  /// When the kiosk last showed this keyholder the "others are still here"
+  /// force-close warning. A force close only proceeds if the scan follows a
+  /// fresh stamp, so an ordinary double-tap cannot close the building.
+  /// @sensitivity:internal
+  forceCloseWarnedAt DateTime?
+
   person Person @relation(fields: [personId], references: [id])
   event  Event?      @relation(fields: [associatedEventId], references: [id])
 
