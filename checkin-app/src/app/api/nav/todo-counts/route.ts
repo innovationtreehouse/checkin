@@ -396,8 +396,8 @@ export const GET = withAuth({}, async (_req, auth) => {
             prisma.household.count({
                 where: UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE,
             }),
-            // "Broken" households: no household lead at all. Mirrors
-            // /api/admin/broken-households. Includes empty households.
+            // "Broken" households: live members, none of them a lead. Mirrors
+            // /api/admin/broken-households.
             prisma.household.count({
                 where: BROKEN_HOUSEHOLD_WHERE,
             }),
