@@ -1,6 +1,7 @@
 -- BoardSettings.orgMembershipYearBoundary is a calendar date, not an instant.
 -- Storing it as `date` makes the classification a schema invariant instead of a
--- convention every writer has to remember (1149_DATE_TIME_TZ_DESIGN.md, F12).
+-- convention every writer has to remember (docs/conventions.md, "A day is not
+-- a moment").
 --
 -- The cast is `col::date`, NOT `(col AT TIME ZONE 'UTC')::date`. This column is
 -- TIMESTAMP(3) WITHOUT time zone, so AT TIME ZONE reinterprets the naive value as

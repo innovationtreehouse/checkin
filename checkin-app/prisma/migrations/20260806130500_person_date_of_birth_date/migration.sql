@@ -1,5 +1,5 @@
 -- Person.dateOfBirth is a calendar date, not an instant — the strongest case in
--- the set. Writers disagreed on midnight-vs-noon UTC (F1), and import dedup
+-- the set. Writers disagreed on midnight-vs-noon UTC, and import dedup
 -- (`where: { dateOfBirth: parsedDob }`, import/preview/route.ts + import/route.ts)
 -- is an exact-match consumer, so a noon-stored DOB missed a midnight probe and
 -- created a duplicate Person. `date` collapses every convention at the DB, which
