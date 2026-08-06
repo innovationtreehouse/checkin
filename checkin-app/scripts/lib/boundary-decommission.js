@@ -39,6 +39,7 @@ function isBoundaryPath(p) {
     if (p.startsWith('checkin-app/src/security/generated/')) return false;
     if (p.startsWith('checkin-app/src/security/')) return true;
     return [
+        'checkin-app/src/middleware.ts',
         'checkin-app/scripts/security-generator.js',
         'checkin-app/scripts/check-boundary-decommission.js',
         'checkin-app/scripts/lib/boundary-decommission.js',
@@ -294,7 +295,7 @@ function certifyDecommission({ changed, violations, readBase, readHead }) {
     const declarative = Object.values(DECLARATIVE_FILES);
     for (const p of boundaryChanged) {
         if (!declarative.includes(p)) {
-            reasons.push(`${p}: engine/tooling boundary file — direction undecidable, never decommission-eligible`);
+            reasons.push(`${p}: non-declarative boundary file — direction undecidable, never decommission-eligible`);
         }
     }
     if (reasons.length) return { ok: false, reasons, removedModels, removedEndpoints };
