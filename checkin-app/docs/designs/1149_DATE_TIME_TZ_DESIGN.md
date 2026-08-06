@@ -412,13 +412,18 @@ per-field decision inputs:
 | `Person.lastBackgroundCheck` | Consistency-only. Single writer; `bgValidUntilBoundary` (renewal.ts:75-83) already truncates to a UTC day (a no-op under `@db.Date`). |
 | `BoardSettings.orgMembershipYearBoundary` | Consistency-only. All consumers already UTC (`nextBoundary` `getUTC*`, display `timeZone:'UTC'`). |
 
-> **DECISION OWED (group):** Model A, Model B, or hybrid — and if hybrid, which
-> columns. The trade is **schema honesty / bug-un-reintroducibility** (B) vs
-> **minimal migration on live data** (A). This design does **not** pre-pick; the
-> minimize-migration and schema-honesty weights are both legitimate. Whatever is
-> chosen, the read/write/age/tz-source layer (Sequencing steps 1-6) is the same.
+> **DECIDED (2026-08-05, owner): Model B, in full.** Anything semantically a
+> calendar date becomes a Postgres `date`. **Not hybrid** — the value being bought
+> is that the *schema* enforces the classification, so a future `new Date(str)` +
+> `formatDate` cannot reintroduce the off-by-one class; "consistency-only, no
+> functional win" is therefore not a reason to leave a column as `DateTime`. The
+> six columns are `Person.dateOfBirth`, `Person.lastBackgroundCheck`,
+> `Program.startAt`, `Program.endAt`, `OrgMembership.memberSince`,
+> `BoardSettings.orgMembershipYearBoundary`. `Event.startAt`/`endAt` are genuine
+> datetimes and stay `DateTime`. The read/write/age/tz-source layer (Sequencing
+> steps 1-6) is unaffected — `formatDateOnly` is still required on reads.
 
-**`@db.Date` mechanics, if Model B or hybrid is chosen:** migration is
+**`@db.Date` mechanics:** migration is
 `ALTER COLUMN … TYPE date USING (col::date)` — a direct date-part cast that
 preserves each row's calendar day, self-backfilling. **Do NOT write
 `USING (col AT TIME ZONE 'UTC')::date`:** these columns are `timestamp(3)` *without*

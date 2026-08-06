@@ -129,6 +129,10 @@ Things the app takes as true because they are handled outside it.
 - Only what the app sells reconciles: a membership, or a program. Donations and
   merchandise pass through untouched.  [Decision]
 
+- There is no fee ledger. What a family owes and has paid for a program is the
+  enrollment's own state and the store order behind it, never a separate record of
+  charges and payments kept alongside.  [Decision — deliberate limit]
+
 - Reconciliation problems surface on the finance board, where payments live. A
   payment crosses membership and programs, so neither of those views alone is the
   place to raise one.  [Decision]
