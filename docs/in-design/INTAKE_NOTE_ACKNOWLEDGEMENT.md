@@ -80,14 +80,57 @@ model IntakeNoteAcknowledgement {
 text rather than a hash keeps the audit answerable — "what did they actually
 read" is the question a dispute asks, and a hash cannot answer it.
 
-### The gate
+### The gate sits before ACTIVE, not before payment
 
-Advancement out of `PENDING_EXTERNAL_ACTION` requires the external actions to be
-complete **and** either no live note, or a live note whose current text matches
-an acknowledgement on this process.
+**Decided.** An applicant willing to complete payment should be allowed to
+complete it. Nothing about an unread note should stand between a family and the
+checkout they are ready to finish; the note is the organisation's obligation, not
+theirs, and making them wait on it charges them for our queue.
+
+So membership does not become `ACTIVE` while a live note is unacknowledged.
+Payment, contract, and background-check consent all proceed exactly as they do
+today.
+
+**This costs more than the alternative did, and the cost is the reason to build
+it carefully.** Gating before payment would have been one predicate in
+`advanceExternalIfComplete`. `ACTIVE` has **five** entry edges
+(`lifecycle.ts` `TRANSITIONS`):
+
+| From | Event | Site |
+|---|---|---|
+| `PENDING_PAYMENT` | `activate` | `payment.ts:204` |
+| `PENDING_PAYMENT` | `grantRenewalPayment` → `activate` | `renewal.ts:339` |
+| `PENDING_BG_REVIEW` | `clearBackgroundCheck` | `review.ts:256/304` |
+| `PENDING_BG_CLEARANCE` | `clearBackgroundCheck` | `review.ts:326` |
+| `BLOCKED` | `overrideBlocked approve` | `review.ts:411` |
+
+Five sites is five places to forget, and the repo's own convention says an
+invariant everyone must remember is not an invariant
+(`docs/conventions.md`). **The check belongs in one predicate that every edge
+calls**, next to the existing `FOR UPDATE` guards rather than beside them — the
+two `PENDING_PAYMENT` edges already funnel through `activate()`, so the real
+count is three call sites, and a drift test should pin that no new edge into
+`ACTIVE` bypasses it.
 
 Nothing here reads `bgClearedAt`. The background-check track is untouched, and a
 household with a valid check keeps its shortcut.
+
+### What a paid-but-unread note means for money
+
+Gating after payment accepts a consequence #1499 named for its own design: a
+household that wanted volunteer dues, or was asking for hardship consideration,
+**has already paid full dues** by the time anyone reads the sentence saying so.
+
+That is not an argument against the decision — it is the price of not making a
+willing payer wait. But it means the note-reading surface has to be able to hand
+off to the existing remedies rather than dead-end: the volunteer designation
+(`applyVolunteerStatus`), the scholarship hold ledger, and whatever refund or
+credit path finance already uses. **Acknowledging is still not deciding** (§"What
+this is not"); the reader's job is to route, and the routing targets already
+exist.
+
+The alternative reading — block payment — was rejected precisely because it
+punishes the applicant for an organisational delay.
 
 ### Where it surfaces
 
@@ -116,28 +159,23 @@ coupling does not also remove the reader.
 
 ## Open questions
 
-1. **Where exactly does the gate sit?** "Then the application proceeds" reads as
-   *before the next step*, which is payment. That matches #907's intent and is
-   the strict reading. The looser alternative is gating the final flip to
-   `ACTIVE`, which lets the family pay while the note waits. Recommendation:
-   before payment, because a note that asks about money should be read before
-   money changes hands.
+1. **What happens if nobody reads it?** The one that still needs an answer, and
+   the one most likely to bite. Because the gate sits before `ACTIVE` rather than
+   before payment, an unread note now strands a household that has **already
+   paid** — which is a worse place to stall than the checkout was. Options: a
+   staleness notice to the board after N days; auto-activate after N days with
+   the obligation left open and visible; or a hard commitment that the list is
+   worked before some cadence. This has no technical answer.
 
-2. **What happens if nobody reads it?** A gate with no service commitment is a
-   stall, and this one blocks a family who has done everything asked of them.
-   Options: a staleness notice to the board after N days; or auto-advance after
-   N days with the obligation left open and visible. This is the question most
-   likely to bite in practice and it has no technical answer.
-
-3. **Does every edit re-open the obligation, or only a material one?** Fixing a
+2. **Does every edit re-open the obligation, or only a material one?** Fixing a
    typo should not send a household back to the queue. A trimmed, case-folded
    comparison is the cheap approximation; anything cleverer is guessing at intent.
 
-4. **Who counts as "the board"?** Board members only, or background-check
+3. **Who counts as "the board"?** Board members only, or background-check
    reviewers too? The queue's existing gate is
    `canReviewBackgroundChecks` (`review.ts`), which is broader.
 
-5. **Do renewals need re-reading?** A household that wrote a note three years ago
+4. **Do renewals need re-reading?** A household that wrote a note three years ago
    and renews every year: is that one obligation or one per cycle? Recommendation:
    per cycle, because the note is attached to the process, and a note that still
    says something worth saying is worth re-reading.
