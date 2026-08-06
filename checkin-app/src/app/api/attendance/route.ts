@@ -172,9 +172,10 @@ export const POST = withAuth({}, async (req, auth) => {
                 return apiError("participantId is required", 400);
             }
 
-            // Verify participant exists
-            const participant = await prisma.person.findUnique({
-                where: { id: participantId }
+            // Verify participant exists. LIVE_PERSON: a merge tombstone must not be
+            // checked into the building — it would create a Visit nobody can act on.
+            const participant = await prisma.person.findFirst({
+                where: { id: participantId, ...LIVE_PERSON }
             });
 
             if (!participant) {
