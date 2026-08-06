@@ -1,4 +1,4 @@
-import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, setDisplayTimezone, getDisplayTimezone, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth, calculateAge } from '../time';
+import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, setDisplayTimezone, getDisplayTimezone, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth, calculateAge, orgCalendarDay } from '../time';
 
 describe('calendar-date helpers', () => {
   it('stores a picked date at UTC midnight', () => {
@@ -59,11 +59,51 @@ describe('calculateAge west of UTC', () => {
     expect(calculateAge(DOB, '2026-07-23T00:00:00.000Z')).toBe(17);
   });
 
-  it('rolls the birthday over at UTC midnight, not org-local midnight', () => {
-    // Documented ceiling of reading both sides as UTC (see calculateAge): from
-    // 7 PM Chicago on the eve, UTC is already the birthday. Fixed by a caller
-    // passing the org-zone calendar day, not by reading local fields here.
-    expect(calculateAge(DOB, '2026-07-24T00:30:00.000Z')).toBe(18);
+  it('reads an explicit asOf as the calendar day it is', () => {
+    // Program gates pass a @db.Date value — already a day, so it is read as stored
+    // rather than re-derived through a zone.
+    expect(calculateAge(DOB, '2026-07-24T00:00:00.000Z')).toBe(18);
+  });
+});
+
+// The default asOf is a day, not the raw instant: reading "now" as a UTC day rolls
+// the birthday over at 7 PM Chicago the evening before, granting adult status early.
+describe('calculateAge default asOf', () => {
+  const DOB = '2008-07-24T00:00:00.000Z';
+  afterEach(() => jest.useRealTimers());
+
+  it('holds the birthday until midnight in the org zone', () => {
+    // 7:30 PM Chicago on the eve — UTC has already turned over to the birthday
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-24T00:30:00.000Z'));
+    expect(calculateAge(DOB)).toBe(17);
+    expect(isYouth(DOB)).toBe(true);
+  });
+
+  it('rolls over once the org zone reaches the birthday', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-24T05:00:00.000Z')); // midnight Chicago
+    expect(calculateAge(DOB)).toBe(18);
+    expect(isYouth(DOB)).toBe(false);
+  });
+
+  it('follows the org zone across daylight saving', () => {
+    // CST is UTC-6, so the winter eve runs an hour later in UTC than the summer one
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-15T05:00:00.000Z'));
+    expect(calculateAge('2008-01-15T00:00:00.000Z')).toBe(17);
+    jest.setSystemTime(new Date('2026-01-15T06:00:00.000Z'));
+    expect(calculateAge('2008-01-15T00:00:00.000Z')).toBe(18);
+  });
+});
+
+describe('orgCalendarDay', () => {
+  it('takes the day from the org zone and returns it at UTC midnight', () => {
+    expect(orgCalendarDay('2026-07-24T00:30:00.000Z').toISOString()).toBe('2026-07-23T00:00:00.000Z');
+    expect(orgCalendarDay('2026-07-24T05:00:00.000Z').toISOString()).toBe('2026-07-24T00:00:00.000Z');
+  });
+
+  it('defaults to now', () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-01T02:30:00.000Z')); // 9:30 PM Aug 31 Chicago
+    expect(orgCalendarDay().toISOString()).toBe('2026-08-31T00:00:00.000Z');
+    jest.useRealTimers();
   });
 });
 
