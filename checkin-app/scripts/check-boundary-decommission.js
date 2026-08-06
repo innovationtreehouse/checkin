@@ -8,7 +8,13 @@
  * PR carries non-companion files:
  *
  *   node checkin-app/scripts/check-boundary-decommission.js \
- *       --base <sha> --boundary <path...> -- [violation...]
+ *       --base <sha> --head <sha> --boundary <path...> -- [violation...]
+ *
+ * `--head` is the PR's own head sha, never the checked-out `HEAD`: on a
+ * pull_request run that is `refs/pull/N/merge`, the base merged with the current
+ * tip of main, so it sweeps in main's advance. #1501 moved the workflow off that
+ * ref for the same reason; the certifier has to use the same one or it audits a
+ * different tree than the workflow did.
  *
  * `--boundary` is the set the workflow's is_boundary matched. It is passed in
  * rather than re-derived so there is one definition of "boundary file"; a second
@@ -49,18 +55,20 @@ function main(argv) {
     const sepIdx = argv.indexOf('--');
     const end = sepIdx === -1 ? argv.length : sepIdx;
     const baseIdx = argv.indexOf('--base');
+    const headIdx = argv.indexOf('--head');
     const boundary = flagValues(argv, '--boundary', end);
-    if (baseIdx === -1 || !argv[baseIdx + 1] || boundary == null) {
-        console.error('usage: check-boundary-decommission.js --base <sha> --boundary <path...> -- [violation...]');
+    if (baseIdx === -1 || !argv[baseIdx + 1] || headIdx === -1 || !argv[headIdx + 1] || boundary == null) {
+        console.error('usage: check-boundary-decommission.js --base <sha> --head <sha> --boundary <path...> -- [violation...]');
         return 1;
     }
     const baseSha = argv[baseIdx + 1];
+    const headSha = argv[headIdx + 1];
     const violations = sepIdx === -1 ? [] : argv.slice(sepIdx + 1);
 
     // Same three-dot semantics as the workflow's file list: compare against
     // the merge base, so a stale PR branch isn't blamed for main's changes.
-    const mergeBase = git(['merge-base', baseSha, 'HEAD']).trim();
-    const changed = git(['diff', '--name-status', `${mergeBase}..HEAD`])
+    const mergeBase = git(['merge-base', baseSha, headSha]).trim();
+    const changed = git(['diff', '--name-status', `${mergeBase}..${headSha}`])
         .split('\n')
         .filter(Boolean)
         .map(line => {
@@ -77,7 +85,7 @@ function main(argv) {
         violations,
         boundary,
         readBase: p => gitShow(mergeBase, p),
-        readHead: p => gitShow('HEAD', p),
+        readHead: p => gitShow(headSha, p),
     });
 
     if (!result.ok) {

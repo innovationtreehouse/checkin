@@ -170,7 +170,8 @@ jobs:
             # whole-entry removals of subjects deleted in this same PR.
             if [ -z "$RETIER" ] &&
                node checkin-app/scripts/check-boundary-decommission.js \
-                 --base "$BASE_SHA" --boundary "${BOUNDARY_FILES[@]}" -- "${VIOLATIONS[@]}"; then
+                 --base "$BASE_SHA" --head "$HEAD_SHA" \
+                 --boundary "${BOUNDARY_FILES[@]}" -- "${VIOLATIONS[@]}"; then
               echo "Decommission exception: boundary diff is whole-entry removals of dropped"
               echo "subjects; non-companion files are the drop migration/deletions only."
               exit 0
