@@ -285,7 +285,23 @@ export type OriginState = "∅";
 type TState = ProcessStatus | OriginState;
 
 /**
- * The 14 machine edges (docs/designs/LIFECYCLE.md), each carrying the (unchanged) enforcement site
+ * Every pre-terminal status the board can archive from — and, reversed, the only
+ * statuses unarchive can restore to (§5 #13). ACTIVE is never archivable; the
+ * legacy RENEWAL_PENDING_BG is unreachable, so nothing is ever archived from it
+ * and it is not a restore target either.
+ */
+export const ARCHIVABLE_STATUSES = [
+    "INTAKE",
+    "PENDING_EXTERNAL_ACTION",
+    "PENDING_BG_REVIEW",
+    "PENDING_PAYMENT",
+    "PENDING_BG_CLEARANCE",
+    "PENDING_RENEWAL",
+    "BLOCKED",
+] as const satisfies readonly ProcessStatus[];
+
+/**
+ * The machine edges (docs/designs/LIFECYCLE.md), each carrying the (unchanged) enforcement site
  * it feeds. Not a runtime executor — powers isLegalTransition + reachability in
  * tests/doc-artifacts. Flag-only stamps (contractSignedAt/bgConsentAt) are not
  * status edges and are omitted; they gate the advance, not a state change.
@@ -323,13 +339,24 @@ export const TRANSITIONS: readonly Transition<TState, string, ProcessKind>[] = [
     { from: "BLOCKED", to: "PENDING_EXTERNAL_ACTION", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (RENEWAL, no consent)", kind: "RENEWAL", legacy: true },
     { from: "BLOCKED", to: "ACTIVE", event: "overrideBlocked approve", actor: "board/sysadmin", guardSite: "review.ts:411 FOR UPDATE (paid)" },
     // Archive (§5 #13) — every pre-terminal status
-    ...(["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_BG_REVIEW", "PENDING_PAYMENT", "PENDING_BG_CLEARANCE", "PENDING_RENEWAL", "BLOCKED"] as const).map(
+    ...ARCHIVABLE_STATUSES.map(
         (from): Transition<TState, string, ProcessKind> => ({
             from,
             to: "ARCHIVED",
             event: "archiveApplication",
             actor: "board",
             guardSite: "archive.ts:13 (status≠ACTIVE, idempotent)",
+        }),
+    ),
+    // Unarchive (§5 #13 reversed) — back to the status the archive write captured.
+    // ARCHIVED is where processes come to rest, but it is not sealed.
+    ...ARCHIVABLE_STATUSES.map(
+        (to): Transition<TState, string, ProcessKind> => ({
+            from: "ARCHIVED",
+            to,
+            event: "unarchiveApplication",
+            actor: "board",
+            guardSite: "archive.ts:88 updateMany CAS + P2002",
         }),
     ),
 ];

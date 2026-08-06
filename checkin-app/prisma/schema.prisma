@@ -467,6 +467,11 @@ model OrgMembershipProcess {
   kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
   status                OrgMembershipProcessStatus
+  /// The status ARCHIVED collapsed — captured by the archive write itself, since
+  /// afterwards there is nothing left to read. Unarchive restores from this and
+  /// clears it; null on every process that is not (or never was) archived.
+  /// @sensitivity:internal
+  archivedFromStatus    OrgMembershipProcessStatus?
   /// @sensitivity:internal
   stageEnteredAt        DateTime?               @default(now())
   /// @sensitivity:public

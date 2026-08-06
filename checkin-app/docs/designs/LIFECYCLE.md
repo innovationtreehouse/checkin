@@ -43,6 +43,14 @@ Dues + background-check + renewal. BG and payment are **parallel tracks** that c
 PERSON_BG`. `RENEWAL_PENDING_BG` is dead-but-guarded legacy (the reachability test asserts it's
 unreachable). Full diagram/table: `../generated/lifecycle/membership.md`.
 
+**Archive is reversible, so ARCHIVED is not sealed.** The board can archive from any
+pre-terminal status (never `ACTIVE`); that write captures the collapsed phase in
+`OrgMembershipProcess.archivedFromStatus`, and `unarchiveApplication` restores from the column —
+never from the audit trail (`docs/rules/principles.md`, *Decisions are reversible*). Both
+directions of edges are generated from one list, `ARCHIVABLE_STATUSES`
+(`lib/membership/lifecycle.ts`), so archive and restore cannot disagree. ARCHIVED is where a
+disposed application comes to rest — an accepting state with an outbound edge, not a terminal one.
+
 **Who fires the payment edge (`PENDING_PAYMENT → ACTIVE`).** The generated matrix records that
 the edge is *legal*, not who drives it. The recovery choke point is `activate()` (renewals route
 through it too — `grantRenewalPayment` is the board-only renewal path, actor `board/sysadmin`).
