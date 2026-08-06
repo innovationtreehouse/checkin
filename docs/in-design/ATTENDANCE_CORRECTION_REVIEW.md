@@ -3,8 +3,8 @@
 Issue: [#1258](https://github.com/innovationtreehouse/checkin/issues/1258) (backlog AT12)
 
 Governing design: `checkin-app/docs/designs/1256_ATTENDANCE_CORRECTION_SURFACE.md` §4.
-This is a proposal; nothing here is built, and §1 and §2 correct three of its
-claims.
+This is a proposal; nothing here is built. §1 and §2 disprove three of its §4
+claims, and §7 puts correcting them in the implementation PR's scope.
 
 ---
 
@@ -68,8 +68,7 @@ says why for each.
 ## 1. The substrate: what the audit trail actually records
 
 The screen has three axes: kind, actor class, and time. Kind and time come off
-the audit row directly. Actor class does not, and this is where the governing
-design's §4 rests on a premise that is not true.
+the audit row directly. Actor class does not.
 
 `AuditLog` carries `actorId`, `action`, `tableName`, `affectedEntityId`,
 `secondaryAffectedEntity`, `oldData` and `newData` (`checkin-app/prisma/schema.prisma`).
@@ -77,57 +76,36 @@ Every field is `@sensitivity:internal`. Both id columns are bare `Int` with no
 foreign key and no discriminator; nothing in the schema says what
 `secondaryAffectedEntity` points at, and nothing stops two meanings sharing it.
 
-Every writer that logs a `Visit` row on `origin/main` at `0441d65c`:
+**The actor axis is sound on `main` today.** An earlier draft of this section
+catalogued five writers that stored a non-person id in `secondaryAffectedEntity`;
+#1478 closed the last three, and all twelve visit audit writes now store the
+subject. That history is not repeated here — §2 states the invariant the screen
+depends on, and §7 records that it is met.
 
-| # | Writer | Action | Subject identity | Before/after times | Significance |
-|---|---|---|---|---|---|
-| 1 | `attendance/manual/route.ts:143-151` | CREATE | `Number(userId)`, the member, who is also the actor | after only; a create has no before | no |
-| 2 | `attendance/manual/[id]/route.ts:127-136` | EDIT | `visit.personId` | both, with the old sources | **yes** |
-| 3 | `attendance/manual/[id]/route.ts:176-185` | DELETE | `visit.personId` | before, with sources | **yes** |
-| 4 | `events/[id]/attendance/route.ts:117-125` | EDIT | **the event id**; the person is in `newData.participantId` | none; sets `associatedEventId`, touches no time | no |
-| 5 | `events/[id]/attendance/route.ts:147-155` | CREATE | **the event id**; the person is in `newData.participantId` | none | no |
-| 6 | `facility/visits/route.ts:102-109` | EDIT | **not set** | **after only; no `oldData` at all** | no |
-| 7 | `facility/visits/route.ts:159-166` | DELETE | **not set**; person is inside a whole-row `oldData` | before, with sources | no |
-| 8 | `my-programs/conflicts/resolve/route.ts:63-79` | DELETE | **`visit.associatedEventId`**, which is nullable; person is in `oldData.personId` | before, with sources | no |
+What survives is narrower, and §3 rests on it. Two shapes of audit row carry no
+diffable content, and no fix changes that because there is nothing to record:
 
-Paths under `checkin-app/src/app/api/`. #1478 has since added further writers and
-repaired the broken ones; §7 states what this design still needs. Three
-consequences follow, and they are the whole of this design's difficulty.
+| Writer | Why there is nothing to diff |
+|---|---|
+| `events/[id]/attendance/route.ts` — roster mark (CREATE and EDIT) | Stores no times at all. A create has no earlier value, and the edit sets `associatedEventId` without moving a clock. |
+| `facility/visits/route.ts` — EDIT, rows written before #1478 | Stored no `oldData`. #1478 added it, so only the pre-fix tail is affected. |
 
-**The self-versus-staff test does not work.** Governing design §6.6 offers
-`actorId === secondaryAffectedEntity` as the cheap proof of a self-correction.
-Rows 4, 5 and 8 put an event id in that column and rows 6 and 7 leave it null.
-Both columns are `Int`, so the comparison does not fail on a type; it returns
-"self" whenever a person id and an event id collide, which they will, because
-both sequences start at 1. A screen whose primary axis is "did this person edit
-their own record or someone else's" cannot rest on a test that answers wrong
-without saying so.
+**Significance therefore cannot be recomputed uniformly**, which is the whole of
+§3's argument. `editSignificance` needs the old times and the old
+`arrivedVia`/`departedVia` to weight them
+(`checkin-app/src/lib/visit/significance.ts`); neither shape above supplies them.
 
-**The fallback does not work either.** §4 offers `newData.type` as the
-discriminator: `manual_entry` and `self_correction` mean self, absence means
-staff. #1478 makes a household lead's proxy correction write
-`type: "self_correction"` with an actor who is not the subject, which is exactly
-the case the axis exists to separate. A marker naming the *route* cannot answer
-a question about the *relationship between two people*.
-
-**Significance cannot be recomputed uniformly.** §4 says "the same significance
-function runs at read time". `editSignificance` needs the old times and the old
-`arrivedVia`/`departedVia` to weight them (`checkin-app/src/lib/visit/significance.ts`).
-Row 6 stores no `oldData`, so there is nothing to diff. Rows 4 and 5 store no
-times at all, because a roster mark has no earlier value and an association
-change moves no clock.
-
-**The participant merge is a documentation error, not a gap.** The governing
-design's audit-coverage inventory lists it as a `Visit` audit writer. It is not
-one: the merge re-parents visits with
+**The participant merge is a documentation error in the governing design, not a
+gap in the data.** Its audit-coverage inventory lists the merge as a `Visit`
+audit writer. It is not one: the merge re-parents visits with
 `tx.visit.updateMany` and logs `tableName: "OrgMembershipProcess"` and
 `tableName: "Person"` only. That behaviour is right and should stay — a merge
 moves rows between two records of the same human and changes no attendance fact,
-so auditing it as a correction would fill the feed with non-corrections. The
-claim should come out of that inventory. One consequence does survive: a subject id in an
-older audit row may belong to a person since merged away. Merges delete nothing
-and `Person.mergedIntoId` records the survivor, so the drill-down resolves the
-name and can follow the pointer.
+so auditing it as a correction would fill the feed with non-corrections. One
+consequence does survive into this screen: a subject id on an older row may
+belong to a person since merged away. Merges delete nothing and
+`Person.mergedIntoId` records the survivor, so the drill-down resolves the name
+and can follow the pointer.
 
 ## 2. The actor axis, and what it requires of the writers
 
@@ -280,56 +258,74 @@ first line of defence; handlers still owe a tight select. That applies with
 force here, because the handler reshapes JSON into fields the stripper cannot
 map back to a model.
 
-### Response shape
+### Response shape — UNRESOLVED, and it gates the registry entry
 
-**Do not copy `checkin-app/src/app/api/system-status/audit-log/route.ts`.** It
-returns `{ ...r, actorName }`: every column of every row, including raw
-`oldData` and `newData`. That is a sysadmin forensic tool, and it is the shape
-this screen exists to avoid.
+An earlier draft of this section specified a derived body — `{ buckets, rows,
+total, page, pageSize }` with fields like `kind`, `actorClass`, `flagged`,
+`before`, `after`. **That cannot pass the boundary**, and the registry entry
+cannot ship until the shape is settled, because the entry lands alone and inert
+*ahead* of the handler: getting it wrong means a merged boundary PR describing a
+response that cannot exist.
 
-Every field below is named explicitly. `oldData` and `newData` never reach the
-client; the handler reads them, extracts the four time-and-source values it
-needs, and discards the rest.
+Two mechanisms make it impossible, both verified on `main` at `8a420411`:
 
-```jsonc
-{
-  "buckets": [
-    {
-      "periodStart": "2026-07-01T05:00:00.000Z",
-      "label": "July 2026",
-      "counts":  { "insert": 3, "edit": 12, "delete": 2 },
-      "byActor": { "self": 11, "proxy": 6 },
-      "flagged": 4
-    }
-  ],
-  "rows": [
-    {
-      "id": 9182,
-      "timestamp": "2026-07-22T18:41:03.219Z",
-      "kind": "edit",                    // insert | edit | delete
-      "actorClass": "proxy",             // self | proxy
-      "actorId": 41,   "actorName": "…",
-      "subjectId": 77, "subjectName": "…",
-      "visitId": 1204,
-      "label": "self_correction",        // newData.type, or null
-      "flagged": true,
-      "score": 360,                      // persisted; null where none
-      "before": { "arrivedAt": "…", "departedAt": "…",
-                  "arrivedVia": "SCANNER", "departedVia": "AUTO_CLOSE" },
-      "after":  { "arrivedAt": "…", "departedAt": "…" }
-    }
-  ],
-  "total": 17, "page": 1, "pageSize": 50
-}
-```
+- `stripBag` (`checkin-app/src/security/stripper.ts:29-32`) iterates the bag's
+  top-level keys and **drops any key that is not a model name**, with a console
+  warning. `buckets`, `rows`, `total`, `page` and `pageSize` are not models.
+- `stripValue` (`stripper.ts:63-64`) copies only fields present in
+  `classifications[model]`. `kind`, `actorClass`, `actorName`, `subjectName`,
+  `flagged`, `score`, `before` and `after` are derived names, not `AuditLog`
+  columns, so each is dropped.
 
-`before` and `after` are null on rows that carry no times (§3). `score` is null
-where no significance was persisted, which once §7's second requirement lands
-means creates and association edits only.
+Under the entry printed above, that route returns `{}`. There is no escape
+hatch: `handler()` always strips (`handler.ts` step 6), all 76 entries in
+`classifications` are real Prisma models, and `_count` is special-cased only for
+*relation* counts — not arbitrary groupings. And a new route cannot simply stay
+on `withAuth`, because `check-route-coverage.ts`'s `new-route-old-authz` rule
+blocks an unregistered new route even in advisory mode.
 
-Query parameters: `from`, `to`, `period` (`day|week|month`), `kind`,
-`actorClass`, `flagged`, `page`. Base filter `tableName: 'Visit'`, pinned in the
-handler and never taken from the request.
+**None of the 19 registered routes returns an aggregate**, so there is no
+precedent to copy. This design is the first, which is why the question lands
+here rather than in the route PR.
+
+**The three options, with their real costs:**
+
+1. **Ship model rows, derive on the client.** Bag is `{ AuditLog, Person, Visit }`.
+   Passes the boundary today with no new machinery. The cost is exactly what
+   this section originally set out to avoid: `oldData`/`newData` are `internal`,
+   the view grants `everyones:internal`, so they ship **whole** and the client
+   extracts `before`/`after` — the `system-status/audit-log` shape. It also
+   breaks §3's pagination argument, because bucket counts computed from one page
+   describe only that page.
+2. **Two requests.** Paginated rows as in (1), plus a separate counts endpoint.
+   Does not help: a count is still not a model field, so the second response
+   faces the identical problem.
+3. **Extend the boundary** to declare derived or projected views. This is the
+   right answer and it is not this design's to make — PR #1518's per-caller-view
+   `select` proposes exactly this mechanism. If that lands, the original shape
+   becomes expressible as declared policy.
+
+**Recommendation: (1) for v1, with the tight-select principle explicitly
+suspended and the reason recorded**, and the screen's default view scoped to a
+bounded range so a page is the whole range rather than a slice of it. Revisit
+under #1518. What must not happen is (1) shipped silently as though it were the
+intended design — §4's own argument against the forensic-log shape then applies
+to this screen, and nothing in the code would say why.
+
+Whatever is chosen, `returns` must include **`Visit`**: `before`/`after` carry
+`arrivedAt`, `departedAt`, `arrivedVia` and `departedVia`, which are `Visit`
+fields, and the entry above omits it.
+
+Query parameters: `from`, `to`, `period`, `kind`, `actorClass`, `flagged`,
+`page`. Base filter `tableName: 'Visit'`, pinned in the handler and never taken
+from the request.
+
+**`period` cannot offer `day`.** `PeriodType` is `"week" | "month" | "quarter" |
+"year"` (`facility/trends/route.ts:9`) and `getPeriodStart`'s final `else`
+buckets to **year**, so an unrecognised value silently yields year buckets
+rather than an error. Either accept the four values that exist, or widen the
+extracted helper and say so in the PR that extracts it. This design takes the
+four that exist.
 
 **Bucketing reuses `getPeriodStart` from
 `checkin-app/src/app/api/facility/trends/route.ts:19`.** #1423 merged and that
@@ -414,13 +410,47 @@ merged with the other two items fixed, and it is now its own change rather than
 four lines inside an existing one — the cost §2 predicts for deferring this class
 of fix.
 
-**Sequence:** #1523 lands → this design merges → the `defineRoute` entry ships
-alone (§4) → the route and the page.
+**Sequence:** resolve §4's response shape → #1523 lands → this design merges →
+the `defineRoute` entry ships alone (§4) → the route and the page. The §4 shape
+is independent of #1523 and is the one that blocks the registry entry, so it goes
+first even though #1523 gates the screen.
 
 Merging this document before #1523 would leave a design whose flagged view reads
 a column most writers do not fill, and would invite an implementation that quietly
 works around the gap at read time — which §2 argues is the one thing this screen
 must not do.
+
+### What must outlive this document
+
+This file is deleted at merge (`DOCUMENTATION_STANDARD.md` §4 — *extract, then
+delete*). Two things must be extracted first, or they die with it.
+
+**1. Extract the invariant to `docs/rules/attendance-checkin.md`:**
+
+> Every write that audits a `Visit` stores the subject person in
+> `secondaryAffectedEntity` — the person whose attendance changed, never the
+> event, never the actor when they differ.
+
+It passes the register's own bar cleanly: a change could violate it, and the
+change is obvious. It currently lives in three code comments and merged design
+prose, and `docs/rules/attendance-checkin.md` does not mention it at all —
+verified on `main`. §7 calling it "Satisfied" is exactly the phrasing that stops
+someone extracting it, because a satisfied requirement reads as finished rather
+than as a rule to keep. This screen's actor axis is a bare integer comparison
+against that column; a future writer who breaks it makes the screen answer
+wrongly and silently.
+
+**2. Correct three claims in `1256_ATTENDANCE_CORRECTION_SURFACE.md` §4.** They
+are disproved here and nowhere else, and this document's deletion takes the
+corrections with it. **Add the §4 edit to the implementation PR's scope:**
+
+- line 559 — `newData.type` as the self-versus-staff discriminator. It names the
+  route, not the relationship; #1478 writes `type: "self_correction"` for a
+  household lead acting on someone else.
+- line 564 — significance recomputed at read time. §1 shows two row shapes carry
+  nothing to recompute from.
+- line 575 — the gate as `sysadmin + board + ops`. Ops cannot reach the section
+  (§4); the entry ships at the two roles the layout enforces.
 
 ---
 
@@ -441,5 +471,5 @@ must not do.
 - Registry-first precedent: #1502 (visit scopes, boundary-only) alongside its
   app-only sibling #1478, and #1492 before #1478. Earlier: #1395, then #1357.
 - Sequence in §7.
-- Code claims verified against `origin/main` at `0441d65c` and #1478 at
-  `6d128500`.
+- Code claims verified against `origin/main` at `8a420411`. #1478 is merged;
+  the commits that satisfied requirement 1 are on `main` at `d4b38c5b`.
