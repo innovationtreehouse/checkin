@@ -75,8 +75,12 @@ export default function TurningEighteenPage() {
   }
 
   const { current, next } = memberYearStarts(new Date(boundary));
-  const rows = (data.Person ?? [])
-    .filter((p) => p.dateOfBirth && (!enrolledOnly || p.programParticipants.length > 0))
+  // A null dateOfBirth here means age unknown, not age 26+ — the endpoint only
+  // sends those without the 25+ declaration. They can't be placed in the table.
+  const unknownDobCount = (data.Person ?? []).filter((p) => !p.dateOfBirth).length;
+  const dated = (data.Person ?? []).filter((p) => p.dateOfBirth);
+  const rows = dated
+    .filter((p) => !enrolledOnly || p.programParticipants.length > 0)
     .map((p) => ({
       ...p,
       ageAtCurrent: calculateAge(p.dateOfBirth!, current),
@@ -92,7 +96,23 @@ export default function TurningEighteenPage() {
           <strong>{formatDateOnly(next)}</strong>, the next one. Someone 18 only in the
           &ldquo;next&rdquo; column ages in on that boundary. Read-only.
         </Text>
+        <Text c="dimmed" mt="xs">
+          Effectively an 18&ndash;25 list: a birthdate is dropped once someone turns 26, so
+          nobody older has an age to judge. Their absence is not a signal.
+        </Text>
       </Card>
+
+      {unknownDobCount > 0 && (
+        <Alert color="yellow" variant="light" title="Ages we cannot judge">
+          <Text size="sm">
+            {unknownDobCount === 1
+              ? "1 household member has no date of birth on file and is"
+              : `${unknownDobCount} household members have no date of birth on file and are`}{" "}
+            not marked 25 or over, so their age is unknown. They are missing from the table
+            below and could be turning 18 — add a birthdate on their household to place them.
+          </Text>
+        </Alert>
+      )}
 
       <Alert color="blue" variant="light" title="Why this differs from the agreement lists">
         <Text size="sm">
@@ -115,9 +135,9 @@ export default function TurningEighteenPage() {
       {rows.length === 0 ? (
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">
-            {enrolledOnly && (data.Person?.length ?? 0) > 0
+            {enrolledOnly && dated.length > 0
               ? "Nobody on this list is enrolled in a program."
-              : "Nobody turns 18 by the next member year."}
+              : "Nobody with a birthdate on file turns 18 by the next member year."}
           </Text>
         </Card>
       ) : (

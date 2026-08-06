@@ -16,6 +16,10 @@ export const dynamic = "force-dynamic";
  * scoping the query — students in non-member households belong on the roster too,
  * and the view differentiates them instead of dropping them.
  *
+ * People with no DOB and no 25+ declaration ride along with a null dateOfBirth:
+ * their age is unknown, so the page counts them as a hygiene note instead of
+ * placing them in the table.
+ *
  * Ships the classified INPUTS (dateOfBirth + the year boundary) and lets the page
  * derive both as-of ages: the stripper drops ad-hoc computed fields, so an
  * `ageAtNext` on the row would never reach the wire.
@@ -32,9 +36,20 @@ export const GET = handler('GET /api/membership-audit/turning-18', async () => {
     const { next } = memberYearStarts(settings.orgMembershipYearBoundary, new Date());
 
     const people = await prisma.person.findMany({
-        // 18 by the NEXT boundary is the superset — anyone already 18 at the
-        // current one clears it too, and the two rendered ages tell them apart.
-        where: { ...LIVE_PERSON, isHouseholdLead: false, dateOfBirth: { lte: birthCutoff(next) } },
+        where: {
+            ...LIVE_PERSON,
+            isHouseholdLead: false,
+            OR: [
+                // 18 by the NEXT boundary is the superset — anyone already 18 at the
+                // current one clears it too, and the two rendered ages tell them apart.
+                { dateOfBirth: { lte: birthCutoff(next) } },
+                // No DOB and no 25+ declaration is age UNKNOWN, not age 26+ (the purge
+                // that strips a DOB always sets isDeclaredAdult). NULL never satisfies
+                // the cutoff, so without this arm a 17-year-old with no birthdate on
+                // file — exactly who this roster is for — would be silently absent.
+                { dateOfBirth: null, isDeclaredAdult: false },
+            ],
+        },
         select: {
             id: true,
             name: true,

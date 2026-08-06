@@ -42,6 +42,8 @@ describe('GET /api/membership-audit/turning-18', () => {
     let adultId: number;
     let youthId: number;
     let leadId: number;
+    let unknownDobId: number;
+    let declaredAdultId: number;
     let savedBoundary: Date | null = null;
 
     const cleanup = async () => {
@@ -94,6 +96,18 @@ describe('GET /api/membership-audit/turning-18', () => {
         });
         leadId = lead.id;
         await prisma.person.update({ where: { id: leadId }, data: { isHouseholdLead: true } });
+
+        // No DOB, no 25+ declaration: age unknown, could be turning 18.
+        const unknown = await prisma.person.create({
+            data: { name: `${TAG} unknown dob`, householdId, dateOfBirth: null, isDeclaredAdult: false },
+        });
+        unknownDobId = unknown.id;
+
+        // No DOB because a lead declared them 25+ — nothing to chase, stays off the roster.
+        const declared = await prisma.person.create({
+            data: { name: `${TAG} declared adult`, householdId, dateOfBirth: null, isDeclaredAdult: true },
+        });
+        declaredAdultId = declared.id;
     });
 
     afterAll(async () => {
@@ -130,6 +144,19 @@ describe('GET /api/membership-audit/turning-18', () => {
         const ids = ((await res.json()).Person as Row[]).map(p => p.id);
         expect(ids).not.toContain(leadId);
         expect(ids).not.toContain(youthId);
+    });
+
+    it('includes the unknown-age people with a null DOB, and excludes the declared 25+', async () => {
+        const res = await get();
+        const rows = (await res.json()).Person as Row[];
+
+        // NULL never satisfies the SQL age cutoff, so this arm is the only thing
+        // keeping a birthdate-less 17-year-old visible to the board.
+        const unknown = rows.find(p => p.id === unknownDobId);
+        expect(unknown).toBeDefined();
+        expect(unknown!.dateOfBirth).toBeNull();
+
+        expect(rows.map(p => p.id)).not.toContain(declaredAdultId);
     });
 
     it('forbids a non-board caller', async () => {
