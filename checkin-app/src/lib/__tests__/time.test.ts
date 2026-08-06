@@ -1,4 +1,4 @@
-import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth, calculateAge } from '../time';
+import { formatDate, formatTime, formatDateTime, formatVisitRange, APP_TIMEZONE, setDisplayTimezone, getDisplayTimezone, toDatetimeLocal, fromDatetimeLocal, formatDateOnly, parseDateOnly, isYouth, calculateAge } from '../time';
 
 describe('calendar-date helpers', () => {
   it('stores a picked date at UTC midnight', () => {
@@ -61,8 +61,8 @@ describe('calculateAge west of UTC', () => {
 
   it('rolls the birthday over at UTC midnight, not org-local midnight', () => {
     // Documented ceiling of reading both sides as UTC (see calculateAge): from
-    // 7 PM Chicago on the eve, UTC is already the birthday. Fixed by the
-    // org-timezone provider, not by reading local fields here.
+    // 7 PM Chicago on the eve, UTC is already the birthday. Fixed by a caller
+    // passing the org-zone calendar day, not by reading local fields here.
     expect(calculateAge(DOB, '2026-07-24T00:30:00.000Z')).toBe(18);
   });
 });
@@ -137,6 +137,40 @@ describe('time.ts formatting utilities', () => {
     expect(formatDate(null)).toBe('');
     expect(formatTime(null)).toBe('');
     expect(formatDateTime(null)).toBe('');
+  });
+});
+
+// The org's display zone is a setting, not a constant: move it and every instant
+// formatter must move with it, while the calendar-date reader must not.
+describe('configured display timezone', () => {
+  const instant = '2026-09-01T02:30:00.000Z'; // 9:30 PM Aug 31 Chicago, 11:30 AM Sep 1 Tokyo
+  afterEach(() => setDisplayTimezone(APP_TIMEZONE));
+
+  it('defaults to APP_TIMEZONE', () => {
+    expect(getDisplayTimezone()).toBe(APP_TIMEZONE);
+    expect(formatDate(instant)).toBe('8/31/2026');
+  });
+
+  it('moves every instant formatter to the configured zone', () => {
+    setDisplayTimezone('Asia/Tokyo');
+    expect(formatDate(instant)).toBe('9/1/2026');
+    expect(formatTime(instant, { hour: 'numeric', minute: '2-digit' })).toBe('11:30 AM');
+    expect(formatDateTime(instant)).toContain('9/1/2026');
+    expect(formatVisitRange(instant)).toBe('11:30 AM-');
+  });
+
+  it('leaves the calendar-date reader UTC-pinned — a day has no zone', () => {
+    setDisplayTimezone('Asia/Tokyo');
+    expect(formatDateOnly('2026-09-01T00:00:00.000Z')).toBe('9/1/2026');
+    setDisplayTimezone('Pacific/Honolulu');
+    expect(formatDateOnly('2026-09-01T00:00:00.000Z')).toBe('9/1/2026');
+  });
+
+  it('treats an empty configured zone as the fallback', () => {
+    setDisplayTimezone('');
+    expect(getDisplayTimezone()).toBe(APP_TIMEZONE);
+    setDisplayTimezone(null);
+    expect(getDisplayTimezone()).toBe(APP_TIMEZONE);
   });
 });
 

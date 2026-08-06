@@ -59,14 +59,22 @@ export const POST = withAuth({}, async (req, auth) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.visit.delete({ where: { id: visit.id } });
+    // Tombstone, never a row removal — the same reversible delete every other
+    // visit-write path takes (design §3). Resolving a conflict is a judgement
+    // about which of two overlapping records is real; it must be possible to
+    // back that judgement out.
+    await tx.visit.update({
+      where: { id: visit.id },
+      data: { deletedAt: new Date(), deletedById: user.id },
+    });
     await tx.auditLog.create({
       data: {
         actorId: user.id,
         action: "DELETE",
         tableName: "Visit",
         affectedEntityId: visit.id,
-        secondaryAffectedEntity: visit.associatedEventId,
+        // The subject, not the event — the event is in oldData below.
+        secondaryAffectedEntity: visit.personId,
         oldData: {
           personId: visit.personId,
           arrivedAt: visit.arrivedAt,

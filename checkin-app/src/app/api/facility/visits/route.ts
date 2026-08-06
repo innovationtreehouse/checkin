@@ -97,7 +97,9 @@ export const PATCH = withAuth(
             if ('error' in result) return apiError(result.error, result.status);
             const updatedVisit = result.visit;
 
-            // Log the manual edit in the audit trail
+            // Log the manual edit in the audit trail. secondaryAffectedEntity =
+            // the visit's person, so a correction review can tell self from
+            // acting-for-another by comparison alone (design §6.6).
             if (auth.type === 'session') {
                 await prisma.auditLog.create({
                     data: {
@@ -105,6 +107,8 @@ export const PATCH = withAuth(
                         action: "EDIT",
                         tableName: "Visit",
                         affectedEntityId: visitId,
+                        secondaryAffectedEntity: existing.personId,
+                        oldData: JSON.parse(JSON.stringify(existing)),
                         newData: JSON.parse(JSON.stringify(updatedVisit)),
                     },
                 });
@@ -162,6 +166,7 @@ export const DELETE = withAuth(
                         action: "DELETE",
                         tableName: "Visit",
                         affectedEntityId: visitId,
+                        secondaryAffectedEntity: removed.personId,
                         oldData: JSON.parse(JSON.stringify(removed)),
                     },
                 });

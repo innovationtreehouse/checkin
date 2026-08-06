@@ -112,35 +112,38 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                         data: { associatedEventId: eventId }
                     });
                     actions.push(updated);
-                    // Audit keyed by the actual Visit row (secondary = event), so a
-                    // suspect visit is reverse-lookupable by its own PK.
+                    // Audit keyed by the actual Visit row, with the SUBJECT in
+                    // secondaryAffectedEntity — the one meaning that column carries
+                    // on a Visit row, so `actorId === secondaryAffectedEntity` is a
+                    // reliable self-vs-proxy test. The event is not lost: it is in
+                    // newData.associatedEventId.
                     await tx.auditLog.create({
                         data: {
                             actorId: currentUserId,
                             action: 'EDIT',
                             tableName: 'Visit',
                             affectedEntityId: updated.id,
-                            secondaryAffectedEntity: eventId,
+                            secondaryAffectedEntity: pId,
                             newData: { participantId: pId, associatedEventId: eventId, synthetic: false }
                         }
                     });
                 } else {
                     // Create a synthetic visit since they were marked attended but didn't badge in.
-                    // arrivedVia/departedVia = SYSTEM flags this as fabricated, not measured: the
-                    // event window is a placeholder, not a real badge-in/out duration. SYSTEM on
-                    // *arrivedVia* is the unique marker — real visits only ever use SCANNER/WEB there
-                    // (cron uses SYSTEM only on departedVia). Building-hours analytics (facility/trends)
-                    // exclude arrivedVia=SYSTEM so this placeholder window isn't counted as real hours.
-                    // Keep departedAt set (not null): null would mark it "open", tripping the nightly
-                    // auto-checkout and the one-open-visit-per-participant index.
+                    // LEAD_MARKED on BOTH fields flags this as asserted, not measured: the event
+                    // window is a placeholder, not a real badge-in/out duration. It is the unique
+                    // marker on *arrivedVia* — real visits only ever use SCANNER/WEB there, and the
+                    // machine closers write only departedVia. Building-hours analytics
+                    // (facility/trends) exclude arrivedVia=LEAD_MARKED so this placeholder window
+                    // isn't counted as real hours. Keep departedAt set (not null): null would mark
+                    // it "open", tripping the nightly auto-checkout and the one-open-visit index.
                     const newVisit = await tx.visit.create({
                         data: {
                             personId: pId,
                             associatedEventId: eventId,
                             arrivedAt: event.startAt,
                             departedAt: event.endAt,
-                            arrivedVia: "SYSTEM",
-                            departedVia: "SYSTEM"
+                            arrivedVia: "LEAD_MARKED",
+                            departedVia: "LEAD_MARKED"
                         }
                     });
                     actions.push(newVisit);
@@ -150,7 +153,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                             action: 'CREATE',
                             tableName: 'Visit',
                             affectedEntityId: newVisit.id,
-                            secondaryAffectedEntity: eventId,
+                            secondaryAffectedEntity: pId,
                             newData: { participantId: pId, associatedEventId: eventId, synthetic: true }
                         }
                     });

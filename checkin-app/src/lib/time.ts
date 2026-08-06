@@ -1,31 +1,49 @@
-// ponytail: default/fallback timezone. The editable org timezone lives in AppSettings
-// (lib/appSettings.ts) and is honored server-side (event creation, trends). Client-side
-// display helpers below still use this constant — wire them to AppSettings via a layout
-// provider if/when a second-region deploy needs client display in a non-Central zone.
+/**
+ * Seed default and offline fallback only — NOT the display zone. The organisation's
+ * display zone is the editable `AppSettings.timezone` (lib/appSettings.ts), which the
+ * server resolves per request and installs here via `setDisplayTimezone`.
+ */
 export const APP_TIMEZONE = 'America/Chicago';
 
+let displayTimezone: string = APP_TIMEZONE;
+
 /**
- * Returns a localized date string formatted in the application's central timezone
+ * Install the organisation's configured display zone for the instant formatters below.
+ * Client components get it from `<TimezoneProvider>` (fed by the root layout); server
+ * callers, which run in a separate module instance, pass `{ timeZone }` per call instead.
+ * An empty value falls back to APP_TIMEZONE.
+ */
+export function setDisplayTimezone(timezone: string | null | undefined): void {
+    displayTimezone = timezone || APP_TIMEZONE;
+}
+
+/** The zone the instant formatters are currently rendering in. */
+export function getDisplayTimezone(): string {
+    return displayTimezone;
+}
+
+/**
+ * Returns a localized date string for an instant, in the organisation's display timezone
  */
 export function formatDate(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleDateString(undefined, { timeZone: APP_TIMEZONE, ...options });
+    return new Date(date).toLocaleDateString(undefined, { timeZone: displayTimezone, ...options });
 }
 
 /**
- * Returns a localized time string formatted in the application's central timezone
+ * Returns a localized time string in the organisation's display timezone
  */
 export function formatTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleTimeString(undefined, { timeZone: APP_TIMEZONE, ...options });
+    return new Date(date).toLocaleTimeString(undefined, { timeZone: displayTimezone, ...options });
 }
 
 /**
- * Returns a combined localized date and time string formatted in the application's central timezone
+ * Returns a combined localized date and time string in the organisation's display timezone
  */
 export function formatDateTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleString(undefined, { timeZone: APP_TIMEZONE, ...options });
+    return new Date(date).toLocaleString(undefined, { timeZone: displayTimezone, ...options });
 }
 
 /**
@@ -100,8 +118,9 @@ export function formatDateOnly(date: Date | string | number | null | undefined, 
 /**
  * Parse an <input type="date"> value ("yyyy-MM-dd") into the calendar-date
  * storage convention: UTC midnight (what `new Date` does to a bare date).
- * The single write-side seam if the storage model ever changes (the design
- * doc's open decision). A value already carrying a time parses as-is.
+ * The single write-side seam for calendar dates; the `@db.Date` columns behind
+ * it truncate anything timed that slips past. A value already carrying a time
+ * parses as-is. See docs/conventions.md, "A day is not a moment".
  */
 export function parseDateOnly(value: string | null | undefined): Date | null {
     return value ? new Date(value) : null;
@@ -120,8 +139,8 @@ export function parseDateOnly(value: string | null | undefined): Date | null {
  * midnight — local fields off that instant read a day early west of UTC.
  * ponytail: that pins the birthday rollover to UTC midnight (7 PM Chicago) for
  * the default `asOf = now`, so an evening lookup can register a birthday a few
- * hours early. Upgrade path is the org-timezone provider (design Axis 2 /
- * Sequencing step 5), not a local-field read here — mixing the two is the bug.
+ * hours early. The upgrade is a caller passing the org-zone calendar day as
+ * `asOf` — a day comes from a day — not a local-field read here.
  */
 export function calculateAge(dob: Date | string, asOf: Date | string = new Date()): number {
     const birthDate = new Date(dob);

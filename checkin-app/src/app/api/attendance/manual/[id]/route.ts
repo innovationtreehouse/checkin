@@ -5,37 +5,42 @@ import type { Prisma } from "@/generated/prisma/client";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
 import { editSignificance, deleteSignificance } from "@/lib/visit/significance";
+import { visitSubject } from "@/lib/visit/scope";
 import { emailBoardMembers } from "@/lib/emailRecipients";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { formatDateTime } from "@/lib/time";
+import { resolveDisplayTimezone } from "@/lib/appSettings";
 
-// Self-correction of the member's OWN visits (trust-first, see
-// docs/designs/1256_ATTENDANCE_CORRECTION_SURFACE.md §2): the edit always
+// Self-correction of a member's own visits, and a household lead's correction
+// of their household members' (trust-first, see
+// docs/designs/1256_ATTENDANCE_CORRECTION_SURFACE.md §2/§3): the edit always
 // applies — the only gates are validity (times parse, departure after arrival,
-// ≤ 24h, no reopening) and ownership. Integrity is post-hoc: every change is
-// audited, and a significant one (big delta × trusted old source, or any
-// delete) is flagged to the board. Recurring-audit note: arbitrary backdate is
-// accepted on purpose here exactly as on the sibling POST — self-reported
-// hours are not a security boundary.
+// ≤ 24h, no reopening) and scope. Integrity is post-hoc: every change is
+// audited, and a significant one (big delta × trusted old source, doubled when
+// an adult edits someone else's record, or any delete) is flagged to the board.
+// Recurring-audit note: arbitrary backdate is accepted on purpose here exactly
+// as on the sibling POST — self-reported hours are not a security boundary.
 
-async function loadOwnVisit(id: number, userId: number) {
+async function loadEditableVisit(id: number, actorId: number) {
     const visit = await prisma.visit.findUnique({ where: { id } });
-    // Not-yours and tombstoned both read as 404 — no existence oracle on other
-    // people's visit ids.
-    if (!visit || visit.deletedAt || visit.personId !== userId) return null;
+    // Out-of-scope and tombstoned both read as 404 — no existence oracle on
+    // other people's visit ids.
+    if (!visit || visit.deletedAt) return null;
+    if (!(await visitSubject(actorId, visit.personId))) return null;
     return visit;
 }
 
-function flagBoard(kind: "edit" | "delete", visitId: number, actorName: string, score: number, detail: string) {
+function flagBoard(kind: "edit" | "delete", visitId: number, actorName: string, byProxy: boolean, score: number, detail: string) {
     // Fire-and-forget (errors logged and swallowed inside the helper): the
     // flag is oversight, never a gate on the member's response.
     // actorName is the member's self-editable profile name: escape it, it is
     // untrusted markup in the board's inbox.
+    const whose = byProxy ? "a household member's" : "one of their own";
     void emailBoardMembers(
-        `Attendance: significant self-${kind} of visit #${visitId}`,
-        `<p>${escapeHtml(actorName)} ${kind === "delete" ? "deleted" : "changed"} one of their own visits ` +
+        `Attendance: significant ${byProxy ? "household" : "self"}-${kind} of visit #${visitId}`,
+        `<p>${escapeHtml(actorName)} ${kind === "delete" ? "deleted" : "changed"} ${whose} visit ` +
         `(significance ${score}).</p><p>${detail}</p>` +
         `<p>Full before/after is in the audit trail (Visit #${visitId}).</p>`,
         "Self-correction board flag failed:",
@@ -54,8 +59,9 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const { arrivedAt, departedAt } = body;
         if (!arrivedAt && !departedAt) return apiError("Nothing to change.", 400);
 
-        const visit = await loadOwnVisit(visitId, userId);
+        const visit = await loadEditableVisit(visitId, userId);
         if (!visit) return apiError("Visit not found.", 404);
+        const byProxy = visit.personId !== userId;
 
         const now = new Date();
         let nextArrived = visit.arrivedAt;
@@ -84,22 +90,25 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             return apiError("A visit cannot be longer than 24 hours.", 400);
         }
 
-        const significance = editSignificance(visit, { arrivedAt: nextArrived, departedAt: nextDeparted });
+        const significance = editSignificance(visit, { arrivedAt: nextArrived, departedAt: nextDeparted }, { byProxy });
 
         const closingOpenVisit = !visit.departedAt && !!nextDeparted;
 
         // Same per-person advisory lock as every other visit write: an edit
-        // must not race the kiosk, the sweep, or a concurrent submit. When the
-        // edit CLOSES an open visit, only the arrival is written here — the
-        // departure goes through processVisitCheckout below, outside this lock
-        // (as on the sibling POST); it refuses already-closed or tombstoned
-        // visits, and it owns the back-to-back event chunking.
+        // must not race the kiosk, the sweep, or a concurrent submit. The lock
+        // is keyed on the visit's PERSON, not the actor — that is the key the
+        // one-open-visit invariant is per, so a lead's edit serializes against
+        // the member's own kiosk scan. When the edit CLOSES an open visit, only
+        // the arrival is written here — the departure goes through
+        // processVisitCheckout below, outside this lock (as on the sibling
+        // POST); it refuses already-closed or tombstoned visits, and it owns
+        // the back-to-back event chunking.
         const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
-            // Ownership and liveness re-asserted under the lock: a DELETE that
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(visit.personId)})`;
+            // Scope and liveness re-asserted under the lock: a DELETE that
             // landed since the pre-check must not have its tombstone overwritten.
             const live = await tx.visit.findFirst({
-                where: { id: visitId, personId: userId, deletedAt: null },
+                where: { id: visitId, personId: visit.personId, deletedAt: null },
                 select: { id: true },
             });
             if (!live) return null;
@@ -137,8 +146,10 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         });
 
         if (significance.flagged) {
-            flagBoard("edit", surviving.id, auth.user.name ?? `person #${userId}`, significance.score,
-                `${formatDateTime(visit.arrivedAt)} → ${formatDateTime(nextArrived)}`);
+            // Server-side: no TimezoneProvider here, so the configured zone is passed in.
+            const timeZone = await resolveDisplayTimezone();
+            flagBoard("edit", surviving.id, auth.user.name ?? `person #${userId}`, byProxy, significance.score,
+                `${formatDateTime(visit.arrivedAt, { timeZone })} → ${formatDateTime(nextArrived, { timeZone })}`);
         }
 
         return NextResponse.json({ visit: surviving, flagged: significance.flagged });
@@ -155,19 +166,20 @@ export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id
         const visitId = Number((await ctx.params).id);
         if (!Number.isInteger(visitId)) return apiError("Invalid visit id", 400);
 
-        const visit = await loadOwnVisit(visitId, userId);
+        const visit = await loadEditableVisit(visitId, userId);
         if (!visit) return apiError("Visit not found.", 404);
+        const byProxy = visit.personId !== userId;
 
-        const significance = deleteSignificance(visit);
+        const significance = deleteSignificance(visit, { byProxy });
 
         // Tombstone, never a row removal: the deletion is reviewable in AT12
         // and reversible by clearing deletedAt. Same advisory lock as above, and
-        // ownership/liveness re-asserted inside it so a racing second delete is
+        // scope/liveness re-asserted inside it so a racing second delete is
         // a 404 rather than a re-stamped deletedAt.
         const tombstoned = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(visit.personId)})`;
             return tx.visit.updateMany({
-                where: { id: visitId, personId: userId, deletedAt: null },
+                where: { id: visitId, personId: visit.personId, deletedAt: null },
                 data: { deletedAt: new Date(), deletedById: userId },
             });
         });
@@ -186,8 +198,9 @@ export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id
         });
 
         // Every delete flags — the floor (§2).
-        flagBoard("delete", visitId, auth.user.name ?? `person #${userId}`, significance.score,
-            `Visit ${formatDateTime(visit.arrivedAt)} – ${visit.departedAt ? formatDateTime(visit.departedAt) : "(open)"} tombstoned.`);
+        const timeZone = await resolveDisplayTimezone();
+        flagBoard("delete", visitId, auth.user.name ?? `person #${userId}`, byProxy, significance.score,
+            `Visit ${formatDateTime(visit.arrivedAt, { timeZone })} – ${visit.departedAt ? formatDateTime(visit.departedAt, { timeZone }) : "(open)"} tombstoned.`);
 
         return NextResponse.json({ success: true, flagged: true });
     } catch (error: unknown) {

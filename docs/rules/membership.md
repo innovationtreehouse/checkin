@@ -257,6 +257,17 @@ Procedure below is built on them.
 - The board can activate a household with no payment by certifying a payment
   plan.  [Decision — *Policy: Membership Policy, Art. XIII*]
 
+- A household that has settled its dues but is still waiting on its background
+  check is a member for program pricing and for reaching members-only programs,
+  and for nothing else. Mailing audiences, outreach, the store's member list,
+  people search and payment-plan eligibility all continue to ask whether the
+  membership is active. The narrowness is the rule: widening the shared question
+  would hand every other benefit to a household that has not cleared.  [Decision]
+
+- A background check that is later rejected does not unwind a program place
+  already bought at the member price. The money is taken and the place is held;
+  the board settles it with the family.  [Decision — *Principle: people decide about people*]
+
 ### Renewal
 
 - A renewal needs a new background check unless a lead's is still valid at the

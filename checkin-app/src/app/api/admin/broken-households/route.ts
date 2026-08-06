@@ -8,11 +8,9 @@ import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
-// "Broken" households have no household lead at all (zero HouseholdLead rows).
+// "Broken" households have live members but no household lead among them.
 // Most arrive this way via Zoho import without a designated primary contact —
 // a registered family that nobody can claim, because claiming requires a lead.
-// Empty households (no participants) are included so the board can see them,
-// even though there's no one to promote.
 export const GET = withAuth(
     { roles: ["isSysadmin", "isBoardMember"] },
     async () => {
