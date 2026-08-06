@@ -97,6 +97,7 @@ jobs:
             case "$1" in
               checkin-app/src/security/generated/*) return 1 ;;
               checkin-app/src/security/*) return 0 ;;
+              checkin-app/src/middleware.ts) return 0 ;;             # site-wide org-login/access gate
               checkin-app/scripts/security-generator.js) return 0 ;;
               checkin-app/scripts/check-boundary-decommission.js) return 0 ;;
               checkin-app/scripts/lib/boundary-decommission.js) return 0 ;;
@@ -114,6 +115,7 @@ jobs:
               .github/workflows/security-boundary-isolation.yml) return 0 ;;
               # boundary files are their own companions — a boundary PR must be
               # able to contain them
+              checkin-app/src/middleware.ts) return 0 ;;
               checkin-app/scripts/security-generator.js) return 0 ;;
               checkin-app/scripts/check-boundary-decommission.js) return 0 ;;
               checkin-app/scripts/lib/boundary-decommission.js) return 0 ;;
