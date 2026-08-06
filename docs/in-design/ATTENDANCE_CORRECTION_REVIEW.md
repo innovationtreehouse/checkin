@@ -53,10 +53,11 @@ no correction record, no review queue, no approved/rejected state.
 
 **Cost:** two PRs — a registry entry, alone, first; then the route and the page.
 
-**Gated on #1478.** Two requirements on the audit writers have to land before
-this is buildable. They are raised as a blocking review on that PR, not carried
-in this document; §7 states them and why they cannot be worked around at read
-time.
+**Gated on #1523.** Two requirements sit on the audit writers. #1478 satisfied
+the first — every visit audit write now stores the subject person. The second,
+persisting significance on every edit and delete path, is tracked as #1523 and is
+what this design still waits on. §7 states both and why neither can be worked
+around at read time.
 
 **Deliberately not included:** an acknowledged/reviewed state per correction, an
 undo button, and any calibration control for the significance thresholds. §5
@@ -89,9 +90,9 @@ Every writer that logs a `Visit` row on `origin/main` at `0441d65c`:
 | 7 | `facility/visits/route.ts:159-166` | DELETE | **not set**; person is inside a whole-row `oldData` | before, with sources | no |
 | 8 | `my-programs/conflicts/resolve/route.ts:63-79` | DELETE | **`visit.associatedEventId`**, which is nullable; person is in `oldData.personId` | before, with sources | no |
 
-Paths under `checkin-app/src/app/api/`. #1478 adds further writers and repairs
-some of these; §7 states what this design needs from it. Three consequences
-follow, and they are the whole of this design's difficulty.
+Paths under `checkin-app/src/app/api/`. #1478 has since added further writers and
+repaired the broken ones; §7 states what this design still needs. Three
+consequences follow, and they are the whole of this design's difficulty.
 
 **The self-versus-staff test does not work.** Governing design §6.6 offers
 `actorId === secondaryAffectedEntity` as the cheap proof of a self-correction.
@@ -131,10 +132,10 @@ name and can follow the pointer.
 ## 2. The actor axis, and what it requires of the writers
 
 **This screen requires one invariant: every visit audit write stores the subject
-person in `secondaryAffectedEntity`.** #1478 (AT3) declares exactly that rule.
-Where the writers do not yet satisfy it, that is a defect in #1478 and is tracked
-as a blocking review on that PR — not here. This design does not restate the
-findings; it depends on them being resolved, and §7 makes that gate explicit.
+person in `secondaryAffectedEntity`.** #1478 (AT3) declared that rule and closed
+the writers that broke it; all twelve now satisfy it on `main`. This design does
+not restate how that was found — it depends on the invariant holding, and §7
+records it as met.
 
 The design decision worth recording is what this screen must *not* do about it.
 
@@ -199,8 +200,8 @@ own header that those thresholds are v1 defaults awaiting board calibration.
    makes recalibration observable: the board changes a threshold and can see, on
    any historical row, what the change would have done.
 3. **Every write path that edits or deletes a visit persists significance.**
-   This is a second requirement on the writers, tracked with the first as a
-   blocking review on #1478 rather than restated here. §7 gates on it.
+   A requirement on the writers, tracked as #1523 rather than restated here.
+   §7 gates on it.
 
 Point 3 is the one that needs arguing, because the cheap option is to leave the
 flagged lens covering member self-corrections only and let staff corrections
@@ -394,24 +395,30 @@ and the read-versus-recompute split in §3, the gate and the trends bucketing in
 ## 7. What this design is gated on
 
 This screen is not implementable until the substrate it reads is correct. Two
-requirements sit on the writers, both raised as a blocking review on **#1478**
-and neither restated here:
+requirements sit on the writers. Neither is restated here; both are tracked where
+they are actionable.
 
 1. **`secondaryAffectedEntity` holds the subject person on every visit audit
    write.** §2's actor axis is a direct comparison against this column; without
    the invariant the axis returns a wrong answer silently rather than failing.
+   **Satisfied.** #1478 closed the three remaining writers, and all twelve visit
+   audit writes on `main` now store the subject.
 2. **Every edit and delete path persists `newData.significance`.** §3's flagged
    view reads this column, and a row that never scored cannot be scored
-   retroactively.
+   retroactively — some of those rows carry no `oldData`, and some carry no times
+   at all, so there is nothing to recompute from. **Open: #1523.** One file of
+   seven scores today.
 
-Both are small and land in files #1478 already touches. Neither is a boundary
-change, so neither disturbs its isolation.
+Requirement 2 outlived its host. It was raised on #1478 as non-blocking, #1478
+merged with the other two items fixed, and it is now its own change rather than
+four lines inside an existing one — the cost §2 predicts for deferring this class
+of fix.
 
-**Sequence:** #1478 resolves the two requirements → this design merges → the
-`defineRoute` entry ships alone (§4) → the route and the page.
+**Sequence:** #1523 lands → this design merges → the `defineRoute` entry ships
+alone (§4) → the route and the page.
 
-Merging this document before #1478 resolves them would leave a design describing
-a substrate that does not exist, and would invite an implementation that quietly
+Merging this document before #1523 would leave a design whose flagged view reads
+a column most writers do not fill, and would invite an implementation that quietly
 works around the gap at read time — which §2 argues is the one thing this screen
 must not do.
 
@@ -425,8 +432,10 @@ must not do.
   §4 (this screen) and §6.6 (the subject-id convention). Its claims about the
   participant merge, the self-versus-staff test and read-time recomputation are
   corrected in §1 and §2 above.
-- **Gated on #1478 (AT3)**, open. The two writer requirements are raised as a
-  blocking review there, not carried in this document. §7.
+- **Gated on #1523**, open — significance persistence, the one writer requirement
+  still outstanding. §7.
+- **#1478 (AT3)** merged, satisfying the subject-person invariant this design's
+  actor axis rests on. §2.
 - Blocked from widening by #1476 (ops gate), an open decision. §4.
 - Unblocked by #1423 (org-timezone bucketing), merged. §4.
 - Registry-first precedent: #1502 (visit scopes, boundary-only) alongside its
