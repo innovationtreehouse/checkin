@@ -105,10 +105,10 @@ export function fromDatetimeLocal(value: string | null | undefined): string {
 }
 
 /**
- * Format a calendar-date field (program dates, DOB, memberSince — stored at UTC
- * midnight by convention) UTC-pinned, so the stored calendar day renders
- * unshifted in every zone. Counterpart to formatDate, which is for instants.
- * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+ * Format a calendar-date field (program dates, DOB, memberSince — `@db.Date`
+ * columns, which Prisma reads back at UTC midnight) UTC-pinned, so the stored
+ * calendar day renders unshifted in every zone. Counterpart to formatDate,
+ * which is for instants. See docs/conventions.md, "A day is not a moment".
  */
 export function formatDateOnly(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
     if (!date) return '';
@@ -118,8 +118,9 @@ export function formatDateOnly(date: Date | string | number | null | undefined, 
 /**
  * Parse an <input type="date"> value ("yyyy-MM-dd") into the calendar-date
  * storage convention: UTC midnight (what `new Date` does to a bare date).
- * The single write-side seam if the storage model ever changes (the design
- * doc's open decision). A value already carrying a time parses as-is.
+ * The single write-side seam for calendar dates; the `@db.Date` columns behind
+ * it truncate anything timed that slips past. A value already carrying a time
+ * parses as-is. See docs/conventions.md, "A day is not a moment".
  */
 export function parseDateOnly(value: string | null | undefined): Date | null {
     return value ? new Date(value) : null;

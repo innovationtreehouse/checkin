@@ -1,10 +1,10 @@
 /**
  * Pin the process timezone to a zone west of UTC for the duration of a suite.
  *
- * Calendar-date fields are stored at UTC midnight; rendering one through a
+ * Calendar-date fields read back at UTC midnight; rendering one through a
  * wall-clock zone west of UTC yields the previous day. These tests only prove
  * that if the process is actually in such a zone — CI runs in UTC, where the
- * bug is invisible. See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+ * bug is invisible. See docs/conventions.md, "A day is not a moment".
  *
  * A jest lifecycle wrapper, not a React hook — call it inside a describe block.
  */

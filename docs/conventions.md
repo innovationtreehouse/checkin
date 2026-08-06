@@ -82,3 +82,32 @@ because the named product does obey it and reviewers watch it obey — while the
 same work done by any other agent is silently unbound. It surfaces when the
 lineup changes, and the convention turns out to have described a vendor rather
 than a practice.
+
+---
+
+## A day is not a moment
+
+- **Every temporal field is one kind or the other, and the column type says
+  which.** A moment is a point on the timeline: a visit arrival, an event's
+  start, an audit stamp. A day has no time and no zone: a date of birth, a
+  program's start and end, a membership's start, a background-check day, the
+  membership-year boundary. Days are stored as a database `date`, so the
+  classification survives a writer who has never read this file.
+
+- **A day is read, rendered and aged without a zone.** Putting a wall-clock zone
+  on one yields the day before for every reader west of it, and an age taken from
+  its local fields flips on the person's own birthday.
+
+- **A moment is displayed in the zone the organisation configured**, never one
+  compiled in. The exception is a native local-time input, which is local to
+  whoever is typing in it by definition.
+  — *Principle: this codebase is not this organisation*
+
+- **A day is never taken from a moment.** Keeping the date part of "now" answers
+  in whatever zone the process happens to be running in; a day comes from a day.
+
+Nothing in the type system separates the two: both are a date object in the code,
+and in a UTC test environment both are right. The failure appears later as a
+birthday rendered a day early, an age gate that turns someone away on the morning
+they qualify, or a second record for a person because a lookup by exact date
+missed a row stored at a different time of day.
