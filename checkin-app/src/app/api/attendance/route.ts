@@ -10,6 +10,7 @@ import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
+import { systemActor } from "@/lib/auditActor";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -280,7 +281,7 @@ export const POST = withAuth({}, async (req, auth) => {
             // Log that we sent the notification to prevent spam from multiple kiosks
             await prisma.auditLog.create({
                 data: {
-                    actorId: 0, // System actor
+                    ...systemActor("kiosk:two-deep"),
                     action: 'CREATE',
                     tableName: 'SYSTEM_NOTIFY',
                     affectedEntityId: 0,

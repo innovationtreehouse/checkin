@@ -6,6 +6,7 @@ import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
 import { openPersonAgreementForNewMember } from "@/lib/membership/personAgreementTriggers";
 import { config } from "@/lib/config";
+import { systemActor, personOrSystemActor } from "@/lib/auditActor";
 
 /**
  * Payment phase (PENDING_PAYMENT -> ACTIVE).
@@ -20,7 +21,6 @@ import { config } from "@/lib/config";
  * that flips the membership ACTIVE, records how, and sends one congrats email.
  */
 
-const SYSTEM_ACTOR = 0;
 
 export class PaymentError extends Error {
     constructor(public readonly code: "not_found" | "wrong_phase" | "forbidden", message: string) {
@@ -150,7 +150,7 @@ export async function activate(
             await tx.orgMembershipProcess.update({ where: { id: processId }, data: { paidAt: now, ...payMeta } });
             await tx.auditLog.create({
                 data: {
-                    actorId: opts.actorId ?? SYSTEM_ACTOR,
+                    ...personOrSystemActor(opts.actorId, "webhook:shopify-order"),
                     action: "EDIT",
                     tableName: "OrgMembershipProcess",
                     affectedEntityId: processId,
@@ -189,7 +189,7 @@ export async function activate(
             // still not a silent no-op though: audit it and alert the board.
             await tx.auditLog.create({
                 data: {
-                    actorId: SYSTEM_ACTOR,
+                    ...systemActor("webhook:shopify-order"),
                     action: "EDIT",
                     tableName: "OrgMembershipProcess",
                     affectedEntityId: processId,
@@ -216,7 +216,7 @@ export async function activate(
         }
         await tx.auditLog.create({
             data: {
-                actorId: opts.actorId ?? SYSTEM_ACTOR,
+                ...personOrSystemActor(opts.actorId, "webhook:shopify-order"),
                 action: "EDIT",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,

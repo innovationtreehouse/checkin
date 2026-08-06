@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { ReviewError } from "@/lib/membership/review";
 import { normalizeAuditData } from "@/lib/auditPayload";
 import { fromWhere } from "@/lib/membership/lifecycle";
+import { personActor } from "@/lib/auditActor";
 
 /**
  * Board disposal of an abandoned application. Transitions the process to the
@@ -23,7 +24,7 @@ export async function archiveApplication(processId: number, actorId: number) {
         prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: "ARCHIVED", stageEnteredAt: new Date() } }),
         prisma.auditLog.create({
             data: {
-                actorId: actorId || 0,
+                ...personActor(actorId),
                 action: "EDIT",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
@@ -91,7 +92,7 @@ export async function unarchiveApplication(processId: number, actorId: number) {
             if (count !== 1) return;
             await tx.auditLog.create({
                 data: {
-                    actorId: actorId || 0,
+                    ...personActor(actorId),
                     action: "EDIT",
                     tableName: "OrgMembershipProcess",
                     affectedEntityId: processId,

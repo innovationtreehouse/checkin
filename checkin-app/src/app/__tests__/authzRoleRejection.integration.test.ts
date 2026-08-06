@@ -210,7 +210,7 @@ describe('Protected-route role rejection', () => {
         { name: 'GET /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_GET(nreq('http://localhost/api/settings/membership/volunteer-designations')) },
         { name: 'POST /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_POST(nreq('http://localhost/api/settings/membership/volunteer-designations', 'POST', {})) },
         { name: 'DELETE /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_DELETE(nreq('http://localhost/api/settings/membership/volunteer-designations', 'DELETE')) },
-        { name: 'GET /api/system-status/audit-log (sysadmin-only)', invoke: () => AUDIT_LOG_GET(nreq('http://localhost/api/system-status/audit-log')) },
+        { name: 'GET /api/system-status/audit-log', invoke: () => AUDIT_LOG_GET(nreq('http://localhost/api/system-status/audit-log')) },
         { name: 'GET /api/system-status/errors', invoke: () => SS_ERRORS_GET(nreq('http://localhost/api/system-status/errors')) },
         { name: 'GET /api/system-status/links', invoke: () => SS_LINKS_GET(nreq('http://localhost/api/system-status/links')) },
         // links/[id] is a GLOBAL admin resource (integrationErrorLog keyed by a

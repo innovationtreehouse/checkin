@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { certifyPaymentPlan, PaymentError } from "./payment";
 import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { systemActor } from "@/lib/auditActor";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -21,7 +22,6 @@ import { LIVE_PERSON } from "@/lib/person/filters";
  * nothing writes it anymore (a migration moved open rows to the request flow).
  */
 
-const SYSTEM_ACTOR = 0;
 const RENEWAL_LEAD_MONTHS = 2;
 
 // The in-flight-renewal status list now lives ONCE in lib/membership/lifecycle
@@ -211,7 +211,7 @@ export async function beginRenewal(processId: number) {
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { actorId: SYSTEM_ACTOR, action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: "PENDING_EXTERNAL_ACTION", ...(clearNow ? { bgClearedAt: true } : {}) } },
+            data: { ...systemActor("system:membership-renewal-advance"), action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: "PENDING_EXTERNAL_ACTION", ...(clearNow ? { bgClearedAt: true } : {}) } },
         });
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
@@ -249,7 +249,7 @@ export async function createRenewalProcess(orgMembershipId: number) {
                 data: { orgMembershipId, kind: "RENEWAL", status: "PENDING_RENEWAL" },
             });
             await tx.auditLog.create({
-                data: { actorId: SYSTEM_ACTOR, action: "CREATE", tableName: "OrgMembershipProcess", affectedEntityId: created.id, newData: { kind: "RENEWAL", status: "PENDING_RENEWAL" } },
+                data: { ...systemActor("system:renewal-open"), action: "CREATE", tableName: "OrgMembershipProcess", affectedEntityId: created.id, newData: { kind: "RENEWAL", status: "PENDING_RENEWAL" } },
             });
             return created;
         });
