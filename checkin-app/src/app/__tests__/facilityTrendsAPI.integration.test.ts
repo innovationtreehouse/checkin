@@ -8,8 +8,9 @@
  * authzRoleRejection.integration.test.ts — this file focuses on the success
  * path: bucketing visits by period, the volunteer/participant split (by program
  * enrollment — ProgramParticipant, NOT age), structured (event-associated) vs
- * unstructured hours, the `arrivedVia=SYSTEM` exclusion (synthetic "marked
- * present" visits), the `programId` filter, and the invalid-period 400.
+ * unstructured hours, the `arrivedVia=LEAD_MARKED` exclusion (synthetic "marked
+ * present" visits, plus its pre-split `SYSTEM` spelling), the `programId`
+ * filter, and the invalid-period 400.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
@@ -106,15 +107,22 @@ describe('Facility trends API', () => {
         const unstructured = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(1), departedAt: departure(1, 1), arrivedVia: 'WEB' },
         });
-        // Synthetic "marked present" visit (arrivedVia SYSTEM) — must be excluded entirely.
+        // Synthetic "marked present" visit (arrivedVia LEAD_MARKED) — the event
+        // window is a placeholder, not measured time, so it is excluded entirely.
         const synthetic = await prisma.visit.create({
-            data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
+            data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'LEAD_MARKED', associatedEventId: eventId },
+        });
+        // The same thing in its pre-split spelling. A rolling deploy's drain
+        // window lets the previous release keep writing SYSTEM, so the exclusion
+        // must still catch it — 3h that must not reach structuredHours.
+        const legacySynthetic = await prisma.visit.create({
+            data: { personId: volunteerId, arrivedAt: arrival(3), departedAt: departure(3, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
         // Still-open visit (no departedAt) — excluded (departedAt: { not: null } in the where).
         const open = await prisma.visit.create({
             data: { personId: youthId, arrivedAt: arrival(0), arrivedVia: 'WEB' },
         });
-        visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, open.id);
+        visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, legacySynthetic.id, open.id);
     });
 
     afterAll(async () => {

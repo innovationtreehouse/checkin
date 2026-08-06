@@ -90,9 +90,13 @@ export const GET = withAuth(
                 departedAt: { not: null },
                 deletedAt: null,
                 // Exclude synthetic "marked present" visits (events attendance route): their
-                // arrivedAt/departedAt is the event window, not a measured duration. arrivedVia=SYSTEM
-                // is the marker — real visits use SCANNER/WEB on arrival.
-                arrivedVia: { not: "SYSTEM" },
+                // arrivedAt/departedAt is the event window, not a measured duration.
+                // arrivedVia=LEAD_MARKED is the marker — real visits use SCANNER/WEB on
+                // arrival. Legacy SYSTEM is listed too: the previous release can still write
+                // it through a rolling deploy's drain window, and it meant the same thing on
+                // this field. The departure-side split (FACILITY_CLOSE / AUTO_CLOSE) does not
+                // reach here — this keys on arrival only.
+                arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] },
             };
 
             if (programId) {

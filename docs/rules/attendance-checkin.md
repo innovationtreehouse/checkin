@@ -105,10 +105,20 @@ Things the app takes as true because they are handled outside it.
   no limit on how far, and the audit trail stands in for one. They cannot edit it
   once it is in.  [Decision]
 
+- A household lead corrects a recorded visit for anyone in their household —
+  inserting a past one, changing its times, or removing it — on the same terms as
+  correcting their own. Only the lead, not every household member: the lead is the
+  responsible adult, and for someone too young to correct their own record it is
+  the only way one gets fixed.  [Decision]
+
 - A visit cannot run longer than 24 hours.  [Decision]
 
-- The board and sysadmins edit or delete any visit. Adding one for someone else
-  is scoped to an event roster or a live scan, never an arbitrary past time.  [Decision]
+- The board and sysadmins edit or delete any visit, and record one for someone
+  else at any past time — the walk-in nobody badged in.  [Decision]
+
+- A visit recorded for someone else is always a closed one: it says they came and
+  left. Putting someone on the list of who is in the building now follows from a
+  badge at the kiosk, never from staff saying so.  [Decision — deliberate limit]
 
 - Facility hours split by program enrollment, not age: anyone present and not
   enrolled counts on the volunteer side.  [Decision]
@@ -132,9 +142,8 @@ program. This is a record of who was at one session of one program.
 
 ## Policy requirements not yet enforced here
 
-- **Correcting a visit is settled design rather than policy, and is not built.**
-  A member cannot correct their own visit and a household lead cannot correct one
-  for their household. Both were decided; the implementation is pending.
+- **A member cannot correct their own visit.** Settled design rather than policy,
+  and not built. It was decided; the implementation is pending.
 
 - **The supervision check is weaker than the policy on three counts.** It counts
   adults present. Policy requires two adults who are *volunteers*, who are *not
