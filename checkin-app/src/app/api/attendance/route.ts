@@ -139,8 +139,11 @@ export const DELETE = withAuth({}, async (req, auth) => {
         const isHouseholdCheckOut = Boolean(user.householdId && visit.person.householdId === user.householdId && user.householdLead);
         const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
+        // Out of scope reads exactly as missing (same status, same message): a
+        // caller not entitled to the visit learns nothing about whether the id
+        // exists. docs/rules/principles.md — no existence oracle.
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
-            return apiError("Forbidden: You are not authorized to check out this user.", 403);
+            return apiError("Visit not found", 404);
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
@@ -183,11 +186,15 @@ export const POST = withAuth({}, async (req, auth) => {
                 return apiError("Participant not found", 404);
             }
 
-            // Check Permissions
+            // Check Permissions. Out of scope reads exactly as missing (same
+            // status, same message), so an id the caller may not check in is
+            // indistinguishable from one that does not exist — otherwise any
+            // signed-in member could walk the person id space.
+            // docs/rules/principles.md — no existence oracle.
             const isSelf = participant.id === Number(user.id);
             const isHouseholdCheckIn = Boolean(user.householdId && participant.householdId === user.householdId && user.householdLead);
             if (!isSelf && !isHouseholdCheckIn && !isAdmin) {
-                return apiError("Forbidden: You are not authorized to check in this user.", 403);
+                return apiError("Participant not found", 404);
             }
 
             const arrivalTime = new Date();

@@ -325,10 +325,27 @@ describe('General Attendance API Integration Tests', () => {
                  body: JSON.stringify({ type: 'MANUAL_CHECKIN', participantId: adminId })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest) as Response;
-             expect(res.status).toBe(403);
-             
+             // 404, not 403: an id the caller may not check in must be
+             // indistinguishable from one that does not exist.
+             expect(res.status).toBe(404);
+
              const data = await res.json();
-             expect(data.error).toMatch(/Forbidden/);
+             expect(data.error).toBe('Participant not found');
+        });
+
+        it('a blocked check-in is indistinguishable from a nonexistent participant', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+
+             const request = (participantId: number) => new Request(`http://localhost:4000/api/attendance`, {
+                 method: 'POST',
+                 body: JSON.stringify({ type: 'MANUAL_CHECKIN', participantId })
+             });
+
+             const blocked = await POST(request(adminId) as unknown as import("next/server").NextRequest) as Response;
+             const missing = await POST(request(99999999) as unknown as import("next/server").NextRequest) as Response;
+
+             expect(blocked.status).toBe(missing.status);
+             expect(await blocked.json()).toEqual(await missing.json());
         });
 
         it('should block checking in a user that is already checked in', async () => {
@@ -455,10 +472,12 @@ describe('General Attendance API Integration Tests', () => {
              });
 
              const res = await DELETE(req as unknown as import("next/server").NextRequest) as Response;
-             expect(res.status).toBe(403);
-             
+             // 404, not 403: a visit id the caller may not touch must be
+             // indistinguishable from one that does not exist.
+             expect(res.status).toBe(404);
+
              const data = await res.json();
-             expect(data.error).toMatch(/Forbidden/);
+             expect(data.error).toBe('Visit not found');
         });
 
         it('should allow a common user to check themselves out', async () => {
