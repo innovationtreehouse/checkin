@@ -388,7 +388,7 @@ export async function submitIntake(userId: number) {
     // payment (#907), and the review track is the only surface that shows it —
     // the application instead holds at PENDING_BG_REVIEW (advanceExternalIfComplete).
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : null;
     const bgFresh = !household.intakeNotes?.trim() && (await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0));
 
     const advanced = await prisma.orgMembershipProcess.update({

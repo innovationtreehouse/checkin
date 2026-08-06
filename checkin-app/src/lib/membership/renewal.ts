@@ -187,7 +187,7 @@ export async function beginRenewal(processId: number) {
     });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : null;
     const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
     const hasNote = !!membership.household.intakeNotes?.trim();
 
@@ -313,11 +313,12 @@ export async function beginRenewalForUser(userId: number) {
 
 /**
  * True if EITHER guardian (household lead) has a background check still valid at the boundary,
- * i.e. lastBackgroundCheck >= boundary - recheckMonths. When recheckMonths is 0 (the
- * board hasn't set the policy), nothing counts as fresh — renewals re-run review.
+ * i.e. lastBackgroundCheck >= boundary - recheckMonths. Unset policy — recheckMonths 0 or a
+ * null boundary (no membership year configured) — means nothing counts as fresh; renewals
+ * re-run review rather than measuring freshness against an invented boundary.
  */
-export async function householdBgIsFresh(householdId: number, boundary: Date, recheckMonths: number): Promise<boolean> {
-    if (recheckMonths <= 0) return false;
+export async function householdBgIsFresh(householdId: number, boundary: Date | null, recheckMonths: number): Promise<boolean> {
+    if (recheckMonths <= 0 || !boundary) return false;
     const threshold = monthsBefore(boundary, recheckMonths);
     const fresh = await prisma.person.findFirst({
         where: { householdId, isHouseholdLead: true, lastBackgroundCheck: { gte: threshold }, ...LIVE_PERSON },
