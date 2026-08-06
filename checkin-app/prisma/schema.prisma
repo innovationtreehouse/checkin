@@ -405,8 +405,11 @@ enum TrustedAdultDecisionKind {
 model OrgMembership {
   /// @sensitivity:public
   id          Int                 @id @default(autoincrement())
+  /// Defaulted in the database to the UTC day. `now()` would cast in the
+  /// connection's TimeZone, so the same instant would default to a different
+  /// calendar day per session (docs/conventions.md, "A day is not a moment").
   /// @sensitivity:public
-  memberSince DateTime            @default(now()) @db.Date
+  memberSince DateTime            @default(dbgenerated("((now() AT TIME ZONE 'UTC'::text))::date")) @db.Date
   /// @sensitivity:public
   status      OrgMembershipStatus @default(NONE)
   /// @sensitivity:public

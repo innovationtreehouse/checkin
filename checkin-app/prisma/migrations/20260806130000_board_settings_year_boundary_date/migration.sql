@@ -1,12 +1,5 @@
--- BoardSettings.orgMembershipYearBoundary is a calendar date, not an instant.
--- Storing it as `date` makes the classification a schema invariant instead of a
--- convention every writer has to remember (docs/conventions.md, "A day is not
--- a moment").
---
--- The cast is `col::date`, NOT `(col AT TIME ZONE 'UTC')::date`. This column is
--- TIMESTAMP(3) WITHOUT time zone, so AT TIME ZONE reinterprets the naive value as
--- a timestamptz instant and the ::date then resolves it in the CONNECTION's
--- TimeZone — west of UTC that silently decrements every row by a day. Plain
--- ::date takes the date part with no zone involved, so each row keeps its own
--- calendar day and the cast self-backfills.
+-- Calendar date, so the column becomes `date` (docs/conventions.md, "A day is
+-- not a moment"). Cast with `col::date`, never `(col AT TIME ZONE 'UTC')::date`:
+-- the column is a naive timestamp, so AT TIME ZONE would resolve the cast in the
+-- session's TimeZone and shift rows west of UTC back a day.
 ALTER TABLE "BoardSettings" ALTER COLUMN "orgMembershipYearBoundary" TYPE date USING ("orgMembershipYearBoundary"::date);

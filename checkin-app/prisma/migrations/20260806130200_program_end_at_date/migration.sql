@@ -1,7 +1,6 @@
--- Program.endAt is a calendar date (the day a program ends), not an instant.
--- Contrast Event.endAt, which is a genuine datetime and stays TIMESTAMP(3).
---
--- `col::date`, never `(col AT TIME ZONE 'UTC')::date` — this is a timestamp
--- WITHOUT time zone, so AT TIME ZONE would resolve the cast in the connection's
--- TimeZone and shift every row back a day west of UTC. Self-backfilling.
+-- Calendar date, so the column becomes `date`. Contrast Event.endAt, a genuine
+-- datetime that stays a timestamp. Cast with `col::date`, never
+-- `(col AT TIME ZONE 'UTC')::date`: the column is a naive timestamp, so AT TIME
+-- ZONE would resolve the cast in the session's TimeZone and shift rows west of
+-- UTC back a day.
 ALTER TABLE "Program" ALTER COLUMN "endAt" TYPE date USING ("endAt"::date);
