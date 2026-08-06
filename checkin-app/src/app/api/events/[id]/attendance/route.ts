@@ -26,9 +26,13 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         const currentUserId = auth.user.id;
         const isLeadMentor = event.program?.leadMentorId === currentUserId;
-        const isSysAdminOrBoardOrKeyholder = auth.user.isSysadmin || auth.user.isBoardMember || auth.user.isKeyholder;
+        // A keyholder marks a program's roster, where the enrollment filter below
+        // bounds their targets. A program-less event has no such bound, so it is
+        // board/sysadmin only — they alone may record a visit for anyone.
+        const isPrivileged = auth.user.isSysadmin || auth.user.isBoardMember
+            || (event.programId != null && !!auth.user.isKeyholder);
 
-        if (!isLeadMentor && !isSysAdminOrBoardOrKeyholder) {
+        if (!isLeadMentor && !isPrivileged) {
             return apiError("Forbidden: Not authorized to validate attendance", 403);
         }
 
@@ -45,9 +49,8 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         // system (other households/programs). Enrollment/volunteer membership —
         // not an existing overlapping Visit — is the authority; unknown ids are
         // rejected (a genuine unenrolled walk-in needs a separate manual step).
-        // A program-less event is reachable only by admin/board (the lead/core-vol
-        // gate above requires a program), so there is no cross-program IDOR there
-        // and no enrollment set to check — skip the filter in that case.
+        // A program-less event has no enrollment set to filter against; the gate
+        // above narrows it to board/sysadmin, who may record a visit for anyone.
         const programId = event.programId;
         if (programId != null) {
             const [enrolled, volunteering] = await Promise.all([

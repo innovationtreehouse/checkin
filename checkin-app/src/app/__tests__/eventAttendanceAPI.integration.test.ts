@@ -25,6 +25,10 @@ describe('Event Attendance API Integration Tests', () => {
     // Cross-tenant attacker: lead of a DIFFERENT program (IDOR boundary).
     let foreignLeadId: number;
     let foreignProgramId: number;
+    // Keyholder who is neither board nor sysadmin, plus a standalone
+    // (program-less) event — the unfenced-target boundary.
+    let keyholderId: number;
+    let standaloneEventId: number;
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -32,7 +36,7 @@ describe('Event Attendance API Integration Tests', () => {
             where: { person: { email: { contains: 'event-attendance-test' } } }
         });
         await prisma.event.deleteMany({
-            where: { name: 'Attendance Test Event' }
+            where: { name: { in: ['Attendance Test Event', 'Attendance Test Standalone Event'] } }
         });
         await prisma.program.deleteMany({
             where: { name: 'Attendance Test Program' }
@@ -89,6 +93,11 @@ describe('Event Attendance API Integration Tests', () => {
         });
         foreignProgramId = foreignProgram.id;
 
+        const keyholder = await prisma.person.create({
+            data: { email: 'keyholder-event-attendance-test@example.com', name: 'Keyholder Att Test', isKeyholder: true, household: { create: { name: "Test HH" } } }
+        });
+        keyholderId = keyholder.id;
+
         const now = new Date();
         const pastStart = new Date(now.getTime() - 2 * 60 * 60 * 1000); // 2 hours ago
         const pastEnd = new Date(now.getTime() - 1 * 60 * 60 * 1000); // 1 hour ago
@@ -102,6 +111,16 @@ describe('Event Attendance API Integration Tests', () => {
             }
         });
         testEventId = event.id;
+
+        const standaloneEvent = await prisma.event.create({
+            data: {
+                name: 'Attendance Test Standalone Event',
+                programId: null,
+                startAt: pastStart,
+                endAt: pastEnd
+            }
+        });
+        standaloneEventId = standaloneEvent.id;
 
         // Attendance can only be written for participants enrolled (or volunteering)
         // in the event's program — enroll the two targets so the happy-path writes
@@ -117,10 +136,10 @@ describe('Event Attendance API Integration Tests', () => {
     afterAll(async () => {
         // Clean up
         await prisma.visit.deleteMany({
-            where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { personId: { in: [testParticipant1Id, testParticipant2Id, testUserId] } }
         });
         await prisma.event.deleteMany({
-            where: { id: testEventId }
+            where: { id: { in: [testEventId, standaloneEventId] } }
         });
         // FK: enrollments reference the program — clear before deleting it.
         await prisma.programParticipant.deleteMany({
@@ -129,7 +148,7 @@ describe('Event Attendance API Integration Tests', () => {
         await prisma.program.deleteMany({
             where: { id: { in: [testProgramId, foreignProgramId] } }
         });
-        const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id, foreignLeadId];
+        const participantIds = [testAdminId, testUserId, testLeadMentorId, testParticipant1Id, testParticipant2Id, foreignLeadId, keyholderId];
 
         // RESTRICT: delete participants before their (auto-created) households.
         const householdIds = (await prisma.person.findMany({
@@ -148,13 +167,13 @@ describe('Event Attendance API Integration Tests', () => {
     afterEach(async () => {
         // Clear visits created during tests
         await prisma.visit.deleteMany({
-            where: { personId: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { personId: { in: [testParticipant1Id, testParticipant2Id, testUserId] } }
         });
         // Clear audit rows so each test asserts exactly its own write. A Visit
         // audit row carries the SUBJECT in secondaryAffectedEntity, so scope by
         // this suite's participants — fresh ids per run, so still leak-proof.
         await prisma.auditLog.deleteMany({
-            where: { tableName: 'Visit', secondaryAffectedEntity: { in: [testParticipant1Id, testParticipant2Id] } }
+            where: { tableName: 'Visit', secondaryAffectedEntity: { in: [testParticipant1Id, testParticipant2Id, testUserId] } }
         });
     });
 
@@ -356,6 +375,74 @@ describe('Event Attendance API Integration Tests', () => {
             expect(res.status).toBe(400);
             const after = await prisma.visit.count({ where: { personId: testUserId, associatedEventId: testEventId } });
             expect(after).toBe(before);
+        });
+
+        // A program-less event has no enrollment set, so the target filter never
+        // runs — the actor gate is the only authz on participantIds there. It must
+        // therefore admit board/sysadmin alone, who may record a visit for anyone.
+        describe('program-less (standalone) event', () => {
+            async function standaloneWriteCount() {
+                const visits = await prisma.visit.count({
+                    where: { personId: testUserId }
+                });
+                const audits = await prisma.auditLog.count({
+                    where: { tableName: 'Visit', secondaryAffectedEntity: testUserId }
+                });
+                return { visits, audits };
+            }
+
+            it('IDOR: a keyholder who is neither board nor sysadmin cannot mark attendance (403, no Visit written)', async () => {
+                (getServerSession as jest.Mock).mockResolvedValue({
+                    user: { id: keyholderId, isSysadmin: false, isBoardMember: false, isKeyholder: true }
+                });
+                const before = await standaloneWriteCount();
+
+                // testUserId is enrolled in nothing and unrelated to this event.
+                const req = new Request(`http://localhost:4000/api/events/${standaloneEventId}/attendance`, {
+                    method: 'POST',
+                    body: JSON.stringify({ participantIds: [testUserId] })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(standaloneEventId) }) });
+
+                expect(res.status).toBe(403);
+                expect(await standaloneWriteCount()).toEqual(before);
+            });
+
+            it('a board member can mark attendance for anyone', async () => {
+                (getServerSession as jest.Mock).mockResolvedValue({
+                    user: { id: testAdminId, isSysadmin: false, isBoardMember: true, isKeyholder: false }
+                });
+
+                const req = new Request(`http://localhost:4000/api/events/${standaloneEventId}/attendance`, {
+                    method: 'POST',
+                    body: JSON.stringify({ participantIds: [testUserId] })
+                });
+                const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(standaloneEventId) }) });
+
+                expect(res.status).toBe(200);
+                expect(await res.json()).toEqual({ success: true, processed: 1 });
+                expect(await prisma.visit.count({
+                    where: { personId: testUserId, associatedEventId: standaloneEventId }
+                })).toBe(1);
+            });
+        });
+
+        it('a keyholder can still mark an enrolled participant on a program event', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: keyholderId, isSysadmin: false, isBoardMember: false, isKeyholder: true }
+            });
+
+            const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
+                method: 'POST',
+                body: JSON.stringify({ participantIds: [testParticipant1Id] })
+            });
+            const res = await POST(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(testEventId) }) });
+
+            expect(res.status).toBe(200);
+            expect(await res.json()).toEqual({ success: true, processed: 1 });
+            expect(await prisma.visit.count({
+                where: { personId: testParticipant1Id, associatedEventId: testEventId }
+            })).toBe(1);
         });
     });
 });
