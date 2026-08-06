@@ -8,7 +8,6 @@ import {
     BINDINGS_CONTAINERS,
     certifyDecommission,
     diffSegmentations,
-    isBoundaryPath,
     segmentByContainers,
     segmentTopLevelCalls,
 } from '../lib/boundary-decommission';
@@ -227,6 +226,7 @@ describe('certifyDecommission', () => {
                 { status: 'M', path: 'checkin-app/src/security/generated/classifications.ts' },
                 { status: 'A', path: MIGRATION },
             ],
+            boundaryChanged: [BINDINGS],
             violations: [MIGRATION],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
@@ -239,6 +239,7 @@ describe('certifyDecommission', () => {
     it('rejects a binding removal whose model survives in the schema', () => {
         const r = certifyDecommission({
             changed: [{ status: 'M', path: BINDINGS }, { status: 'A', path: MIGRATION }],
+            boundaryChanged: [BINDINGS],
             violations: [MIGRATION],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment }),
@@ -253,6 +254,7 @@ describe('certifyDecommission', () => {
                 { status: 'M', path: BINDINGS },
                 { status: 'M', path: 'checkin-app/src/security/scopes.ts' },
             ],
+            boundaryChanged: [BINDINGS, 'checkin-app/src/security/scopes.ts'],
             violations: [],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
@@ -273,6 +275,7 @@ describe('certifyDecommission', () => {
                     { status: 'M', path: REGISTRY },
                     { status, path: ROUTE_FILE },
                 ],
+                boundaryChanged: [REGISTRY],
                 violations: [ROUTE_FILE],
                 readBase: files({}),
                 readHead: files({ [REGISTRY]: registryWithoutFees, [ROUTE_FILE]: routeHead }),
@@ -291,6 +294,7 @@ describe('certifyDecommission', () => {
         const head = dropLines(REGISTRY_BASE, [start - 1, start + 3]);
         const r = certifyDecommission({
             changed: [{ status: 'M', path: REGISTRY }],
+            boundaryChanged: [REGISTRY],
             violations: [],
             readBase: files({}),
             readHead: files({ [REGISTRY]: head }),
@@ -308,6 +312,7 @@ describe('certifyDecommission', () => {
                 { status: 'A', path: MIGRATION },
                 { status: 'D', path: MIDDLEWARE },
             ],
+            boundaryChanged: [BINDINGS, MIDDLEWARE],
             violations: [MIGRATION, MIDDLEWARE],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
@@ -325,6 +330,7 @@ describe('certifyDecommission', () => {
                 { status: 'D', path: 'checkin-app/src/lib/fees.ts' },
                 { status: 'M', path: 'checkin-app/src/lib/membership.ts' },
             ],
+            boundaryChanged: [BINDINGS],
             violations: [MIGRATION, 'checkin-app/src/lib/fees.ts', 'checkin-app/src/lib/membership.ts'],
             readBase: files({}),
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
@@ -332,16 +338,5 @@ describe('certifyDecommission', () => {
         expect(r.ok).toBe(false);
         expect(r.reasons).toHaveLength(1);
         expect(r.reasons[0]).toContain('membership.ts');
-    });
-});
-
-describe('isBoundaryPath', () => {
-    it('mirrors the workflow: security src yes, generated no, certifier scripts yes', () => {
-        expect(isBoundaryPath('checkin-app/src/security/registry.ts')).toBe(true);
-        expect(isBoundaryPath('checkin-app/src/security/generated/classifications.ts')).toBe(false);
-        expect(isBoundaryPath('checkin-app/src/middleware.ts')).toBe(true);
-        expect(isBoundaryPath('checkin-app/scripts/security-generator.js')).toBe(true);
-        expect(isBoundaryPath('checkin-app/scripts/lib/boundary-decommission.js')).toBe(true);
-        expect(isBoundaryPath('checkin-app/src/lib/fees.ts')).toBe(false);
     });
 });
