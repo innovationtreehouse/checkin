@@ -3,8 +3,8 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
-import { agreementCycleFloor } from "@/lib/membership/personAgreementTriggers";
-import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
+import { agreementCycleFloor, autoPopulationWhere } from "@/lib/membership/personAgreementTriggers";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -159,12 +159,13 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
             reason: "AGREEMENT_OUTSTANDING",
         }));
 
+    // The same population the nightly rule uses, minus its age band — these are the
+    // over-25s it deliberately skips. Sharing the predicate keeps the board's candidate
+    // list from offering people the automatic pass would never have considered.
     const overCeiling = await prisma.person.findMany({
         where: {
-            isHouseholdLead: false,
+            ...autoPopulationWhere(new Date()),
             isDeclaredAdult: true,
-            household: { orgMembership: { status: "ACTIVE" } },
-            ...PROGRAM_ATTACHED_WHERE,
             ...LIVE_PERSON,
         },
         select: { id: true, name: true, householdId: true },

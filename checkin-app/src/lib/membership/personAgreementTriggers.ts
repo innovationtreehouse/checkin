@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { calculateAge } from "@/lib/time";
 import { renewalWindow } from "@/lib/membership/renewal";
-import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Triggers that OPEN a per-person membership-agreement obligation (PERSON_AGREEMENT).
@@ -147,16 +147,49 @@ export function findOpenPersonAgreement(personId: number) {
     });
 }
 
+/** How far back a finished program still counts as "in the building". */
+const ATTACHMENT_LOOKBACK_MONTHS = 12;
+
 /**
- * The automatic population: non-lead, in a member household, live, program-attached, and
- * inside the age band. The age band can't be expressed in Prisma (calculateAge is UTC
- * month/day math), so it's applied per-person inside openPersonAgreement.
+ * A program that is running, or ended within the lookback. NOT the shared
+ * PROGRAM_ATTACHED_WHERE, which is attached-to-any-program-ever: attachment rows are
+ * never cleared when a program ends, so the unbounded predicate would re-ask someone
+ * who took one class at 18 every cycle until they age out of the band. The age band
+ * bounds who is asked, not how many times.
+ *
+ * NULLs are open, not excluded — a naive `startAt <= now AND endAt >= since` silently
+ * drops undated programs through SQL three-valued logic, and an ongoing program with no
+ * endAt is precisely the case that should count.
  */
-const AUTO_POPULATION_WHERE = {
-    isHouseholdLead: false,
-    household: { orgMembership: { status: "ACTIVE" as const } },
-    ...PROGRAM_ATTACHED_WHERE,
-};
+function recentProgramWhere(now: Date) {
+    const since = new Date(now);
+    since.setUTCMonth(since.getUTCMonth() - ATTACHMENT_LOOKBACK_MONTHS);
+    return {
+        AND: [
+            { OR: [{ endAt: null }, { endAt: { gte: since } }] },
+            { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+        ],
+    };
+}
+
+/**
+ * The automatic population: non-lead, in a member household, live, recently
+ * program-attached, and inside the age band. The age band can't be expressed in Prisma
+ * (calculateAge is UTC month/day math), so it's applied per-person inside
+ * openPersonAgreement.
+ */
+export function autoPopulationWhere(now: Date) {
+    const program = recentProgramWhere(now);
+    return {
+        isHouseholdLead: false,
+        household: { orgMembership: { status: "ACTIVE" as const } },
+        OR: [
+            { programParticipants: { some: { program } } },
+            { programVolunteers: { some: { program } } },
+            { programsLed: { some: program } },
+        ],
+    };
+}
 
 /**
  * Nightly pass. Opens the first agreement for anyone who has started qualifying, and a
@@ -172,7 +205,7 @@ export async function runPersonAgreementSweep(now: Date) {
     if (!settings?.orgMembershipYearBoundary) return { opened: 0, reason: "no membership-year boundary configured" };
 
     const floor = agreementCycleFloor(settings.orgMembershipYearBoundary, now);
-    const people = await prisma.person.findMany({ where: { ...AUTO_POPULATION_WHERE, ...LIVE_PERSON }, select: { id: true } });
+    const people = await prisma.person.findMany({ where: { ...autoPopulationWhere(now), ...LIVE_PERSON }, select: { id: true } });
 
     let opened = 0;
     for (const p of people) {
@@ -193,7 +226,7 @@ export async function openPersonAgreementForNewMember(householdId: number, asOf:
 
     const floor = agreementCycleFloor(settings.orgMembershipYearBoundary, asOf);
     const people = await prisma.person.findMany({
-        where: { householdId, ...AUTO_POPULATION_WHERE, ...LIVE_PERSON },
+        where: { householdId, ...autoPopulationWhere(asOf), ...LIVE_PERSON },
         select: { id: true },
     });
     for (const p of people) await openPersonAgreement(p.id, asOf, floor);

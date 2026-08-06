@@ -58,8 +58,10 @@ async function makePerson(
     });
 }
 
-async function attachToProgram(slug: string, personId: number) {
-    const program = await prisma.program.create({ data: { name: `${TAG} ${slug} program` } });
+async function attachToProgram(slug: string, personId: number, dates: { startAt?: Date; endAt?: Date } = {}) {
+    const program = await prisma.program.create({
+        data: { name: `${TAG} ${slug} program`, startAt: dates.startAt ?? null, endAt: dates.endAt ?? null },
+    });
     await prisma.programParticipant.create({ data: { programId: program.id, personId } });
     return program.id;
 }
@@ -137,6 +139,33 @@ describe('PERSON_AGREEMENT triggers', () => {
         expect(await agreementCountFor(minor.id)).toBe(0); // can't be bound by their own signature
         expect(await agreementCountFor(unattached.id)).toBe(0);
         expect(await agreementCountFor(outsider.id)).toBe(0);
+    });
+
+    // Attachment rows are never cleared when a program ends, so an unbounded
+    // attached-ever predicate would re-ask someone who took one class at 18 every cycle
+    // until they age out of the band. The lookback is what stops that.
+    it('stops asking once the only program ended more than a year ago', async () => {
+        const monthsAgo = (n: number) => {
+            const d = new Date();
+            d.setUTCMonth(d.getUTCMonth() - n);
+            return d;
+        };
+        const hh = await makeMemberHousehold('lapsed');
+        const finishedLongAgo = await makePerson('lapsed-finished', hh.id, { dateOfBirth: AGE_20 });
+        await attachToProgram('lapsed-old', finishedLongAgo.id, { startAt: monthsAgo(20), endAt: monthsAgo(14) });
+        // Ended inside the lookback — still counts for one more cycle.
+        const finishedRecently = await makePerson('lapsed-recent', hh.id, { dateOfBirth: AGE_20 });
+        await attachToProgram('lapsed-recent', finishedRecently.id, { startAt: monthsAgo(10), endAt: monthsAgo(2) });
+        // No end date at all reads as still running, which is the point of the NULL rule:
+        // an ongoing program must not expire its own members out of the population.
+        const ongoing = await makePerson('lapsed-ongoing', hh.id, { dateOfBirth: AGE_20 });
+        await attachToProgram('lapsed-ongoing', ongoing.id);
+
+        await runPersonAgreementSweep(new Date());
+
+        expect(await agreementCountFor(finishedLongAgo.id)).toBe(0);
+        expect(await agreementCountFor(finishedRecently.id)).toBe(1);
+        expect(await agreementCountFor(ongoing.id)).toBe(1);
     });
 
     it('is idempotent — a second nightly run opens nothing', async () => {
