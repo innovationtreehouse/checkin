@@ -443,14 +443,19 @@ correction. The section disappears when the list empties.
 
 ### Where the evidence comes from
 
-The route computes the list; **no human runs a query.** Two lookups, both exact:
+The route computes the list; **no human runs a query.** Two lookups:
 
 1. **Which households were blanket-stamped.** In `clearBackgroundCheck` a single
    `const now = new Date()` ([`review.ts:300`](../../checkin-app/src/lib/membership/review.ts)) is written to
-   *both* every lead's `lastBackgroundCheck` **and** the process's `bgClearedAt`. So the join key is
-   equality to the millisecond, not a heuristic: household processes (`subjectPersonId` null) with
-   `bgClearedAt` set, joined to leads whose `lastBackgroundCheck` equals it, keeping only groups of
-   more than one.
+   *both* every lead's `lastBackgroundCheck` **and** the process's `bgClearedAt`: household processes
+   (`subjectPersonId` null) with `bgClearedAt` set, joined to leads stamped at the same moment,
+   keeping only groups of more than one.
+
+   **Match on the UTC calendar day, not the instant.** `Person.lastBackgroundCheck` is `@db.Date`
+   (#1521) and truncates to midnight, while `bgClearedAt` keeps its time — so an equality join
+   matches *nothing*, and the worklist would report a clean database no matter how much pollution
+   existed. Day-granularity is coarser than the instant this design originally assumed, but a
+   household clears at most once a day, so it separates the same cases.
 
    Three classes fall out on their own and need no special-casing: single-lead households (group of
    one), fresh-check-shortcut rows (`intake.ts:397` / `renewal.ts:210` stamp `bgClearedAt` without

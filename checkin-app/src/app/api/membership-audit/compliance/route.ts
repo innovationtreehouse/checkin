@@ -7,6 +7,9 @@ import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
+/** Calendar day of an instant, UTC — how `@db.Date` columns come back from Prisma. */
+const utcDay = (d: Date) => d.toISOString().slice(0, 10);
+
 /**
  * Board-only, PULL-ONLY membership compliance dashboard: households that have
  * fallen out of compliance but were NOT auto-terminated (the system deliberately
@@ -142,9 +145,11 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     }
 
     // 5. Blanket-stamped background checks (#1260). Before per-adult subjects, clearing
-    //    a household check stamped EVERY lead with the process's own bgClearedAt — one
-    //    `new Date()` wrote both, so equality to the millisecond is an exact join key,
-    //    not a heuristic. Three classes fall out on their own: single-lead households
+    //    a household check stamped EVERY lead from the same `new Date()` that set the
+    //    process's bgClearedAt. They are compared by UTC DAY, not instant:
+    //    `Person.lastBackgroundCheck` is `@db.Date` and truncates to midnight, while
+    //    `bgClearedAt` keeps its time, so an equality join matches nothing at all.
+    //    Three classes fall out on their own: single-lead households
     //    (never two matching leads), the fresh-check intake/renewal shortcut (stamps
     //    bgClearedAt without touching any Person, so it matches none), and PERSON_BG
     //    (excluded by subjectPersonId). A clearance under per-adult rules is excluded
@@ -181,7 +186,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             process: p,
             household: p.orgMembership?.household ?? null,
             stamped: (p.orgMembership?.household?.householdMembers ?? []).filter(
-                (l) => l.lastBackgroundCheck?.getTime() === p.bgClearedAt!.getTime(),
+                (l) => l.lastBackgroundCheck !== null && utcDay(l.lastBackgroundCheck) === utcDay(p.bgClearedAt!),
             ),
         }))
         .filter((s) => s.household !== null && s.stamped.length > 1 && s.process.attestations.every((a) => a.subjectPersonId === null));
