@@ -147,9 +147,9 @@ describe('background check is non-blocking', () => {
         expect(await membershipStatusOf(orgMembershipId)).toBe('NONE'); // NOT active without a valid check
 
         // Review clears in parallel; the 2nd approval converges to ACTIVE.
-        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_BG_CLEARANCE');
-        await attest(revB, processId, { result: 'APPROVE' });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(orgMembershipId)).toBe('ACTIVE');
         // Guardians' lastBackgroundCheck stamped.
@@ -159,11 +159,11 @@ describe('background check is non-blocking', () => {
     });
 
     it('check clears before payment → stays PENDING_PAYMENT, then paying activates', async () => {
-        const { processId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        await attest(revA, processId, { result: 'APPROVE' });
-        await attest(revB, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // cleared, but unpaid → not active
         expect(await membershipStatusOf(orgMembershipId)).toBe('NONE');
         await certifyPaymentPlan(processId, revA);
@@ -182,10 +182,10 @@ describe('background check is non-blocking', () => {
     });
 
     it('reject BEFORE the payment webhook → payment still recorded + board notified (no dropped money)', async () => {
-        const { processId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);            // → PENDING_PAYMENT
-        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         await attest(revB, processId, { result: 'REJECT' }); // → BLOCKED, not yet paid
         expect(await statusOf(processId)).toBe('BLOCKED');
 
@@ -276,7 +276,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('an intake note holds payment at PENDING_BG_REVIEW until the review clears (#907)', async () => {
-        const { processId, householdId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, householdId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: 'please treat us as a volunteer household' } });
 
         await markContractSigned(processId);
@@ -288,8 +288,8 @@ describe('background check is non-blocking', () => {
 
         // The reviewers (who are shown the note) clear the check → payment opens
         // with dues already settled by their volunteer mark.
-        await attest(revA, processId, { result: 'APPROVE', isMarkedVolunteer: true });
-        await attest(revB, processId, { result: 'APPROVE', isMarkedVolunteer: true });
+        await attest(revA, processId, { result: 'APPROVE', isMarkedVolunteer: true, subjectPersonIds: [leadId] });
+        await attest(revB, processId, { result: 'APPROVE', isMarkedVolunteer: true, subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
         expect(await isVolunteerOf(orgMembershipId)).toBe(true);
         await certifyPaymentPlan(processId, revA);
@@ -374,10 +374,10 @@ describe('background check is non-blocking', () => {
     });
 
     it('reset returns a still-open review to neutral (the misclicked approval), but not a cleared one', async () => {
-        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        await attest(revA, processId, { result: 'APPROVE' }); // 1 of 2 — review still open
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] }); // 1 of 2 — review still open
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
 
         // The review never left its phase, so the reset only drops the attestations.
@@ -389,9 +389,9 @@ describe('background check is non-blocking', () => {
 
         // The withdrawn approval is genuinely gone: the same reviewer may attest again,
         // and it takes two more approvals to clear.
-        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // 1 of 2 again, not cleared
-        await attest(revB, processId, { result: 'APPROVE' });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         const cleared = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(cleared?.bgClearedAt).not.toBeNull();
 
@@ -415,11 +415,11 @@ describe('background check is non-blocking', () => {
     });
 
     it('paying twice is idempotent (one activation)', async () => {
-        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        await attest(revA, processId, { result: 'APPROVE' });
-        await attest(revB, processId, { result: 'APPROVE' }); // cleared, PENDING_PAYMENT
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] }); // cleared, PENDING_PAYMENT
         // The idempotent payment path is the Shopify webhook (activate), which a
         // retry hits twice; the deliberate board certify rejects a non-payment phase.
         await activate(processId, { via: 'payment', shopifyOrderId: 'pay-1' }); // ACTIVE

@@ -177,6 +177,7 @@ model Person {
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  bgAttestationsAsSubject BackgroundCheckAttestation[] @relation("BgAttestationSubject")
   personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
@@ -526,6 +527,14 @@ model BackgroundCheckAttestation {
   /// @sensitivity:public
   reviewerId      Int
   reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
+  /// The adult whose Averity check this attestation covers, read off the PDF by the
+  /// reviewer. Null on PERSON_BG (the process already names its subject), on any
+  /// REJECT (a rejection is whole-process), and on legacy household rows attested
+  /// before per-adult subjects existed. Clearance stamps only named subjects, so a
+  /// null one stamps nobody.
+  /// @sensitivity:public
+  subjectPersonId Int?
+  subjectPerson   Person?      @relation("BgAttestationSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:internal
   result          AttestationResult
   /// @sensitivity:internal
@@ -535,7 +544,13 @@ model BackgroundCheckAttestation {
   /// @sensitivity:public
   createdAt       DateTime          @default(now())
 
-  @@unique([processId, reviewerId])
+  /// Applied as raw SQL with `NULLS NOT DISTINCT` (see the migration): Postgres
+  /// otherwise treats every (process, reviewer, NULL) row as distinct, which would
+  /// let a PERSON_BG reviewer attest twice. Prisma cannot express that attribute, so
+  /// a regenerated migration would silently weaken it.
+  /// Named explicitly: the generated name would be 67 chars, past Postgres's 63-char
+  /// identifier limit.
+  @@unique([processId, reviewerId, subjectPersonId], map: "BgAttestation_processId_reviewerId_subjectPersonId_key")
 }
 
 model VolunteerDesignation {

@@ -374,16 +374,3 @@ Procedure below is built on them.
 - It gates nothing. An unsigned individual agreement never blocks participation,
   check-in, or the household's own membership.  [Decision — deliberate limit;
   *Principle: people decide about people*]
-
----
-
-## Policy requirements not yet enforced here
-
-- **A household clearance stamps every lead, not the person who was checked.**
-  The household path carries one consent and one clearance for the whole
-  application, then writes that date onto each of its leads, with nothing tying
-  it to whoever submitted. This answers the household question correctly — policy
-  wants one adult checked — but the date is a per-person fact, and the
-  program-attached surface reads it per person. A lead who never took a check
-  reads there as covered rather than needed.
-
