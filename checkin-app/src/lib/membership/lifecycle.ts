@@ -45,7 +45,7 @@ export type ProcessStatus =
     | "RENEWAL_PENDING_BG"
     | "ARCHIVED";
 
-export type ProcessKind = "INITIAL" | "RENEWAL" | "PERSON_BG";
+export type ProcessKind = "INITIAL" | "RENEWAL" | "PERSON_BG" | "PERSON_AGREEMENT";
 
 // Compile-time parity: these fail to compile if the schema enum drifts from the
 // local union (docs/designs/LIFECYCLE.md). `import type` keeps the enum out of
@@ -295,12 +295,15 @@ export const TRANSITIONS: readonly Transition<TState, string, ProcessKind>[] = [
     { from: "∅", to: "INTAKE", event: "startIntake", actor: "applicant", guardSite: "intake.ts:154 FOR UPDATE + membership_one_inflight_initial + P2002", kind: "INITIAL" },
     { from: "∅", to: "PENDING_RENEWAL", event: "createRenewalProcess", actor: "cron/board", guardSite: "renewal.ts:243 FOR UPDATE + membership_one_inflight_renewal + P2002", kind: "RENEWAL" },
     { from: "∅", to: "PENDING_BG_REVIEW", event: "personBgTriggers", actor: "system", guardSite: "personBgTriggers", kind: "PERSON_BG" },
+    { from: "∅", to: "PENDING_EXTERNAL_ACTION", event: "personAgreementTriggers", actor: "system/board", guardSite: "personAgreementTriggers FOR UPDATE + handled-this-cycle guard", kind: "PERSON_AGREEMENT" },
     // External step (§5 #3,#4)
     { from: "INTAKE", to: "PENDING_EXTERNAL_ACTION", event: "submitIntake", actor: "applicant", guardSite: "intake.ts:392", kind: "INITIAL" },
     { from: "PENDING_RENEWAL", to: "PENDING_EXTERNAL_ACTION", event: "beginRenewal", actor: "member", guardSite: "renewal.ts:219 updateMany where status=PENDING_RENEWAL", kind: "RENEWAL" },
     // Advance (§5 #7)
     { from: "PENDING_EXTERNAL_ACTION", to: "PENDING_PAYMENT", event: "advanceExternalIfComplete", actor: "system", guardSite: "external.ts:113 updateMany" },
     { from: "PENDING_EXTERNAL_ACTION", to: "PENDING_BG_REVIEW", event: "advanceExternalIfComplete", actor: "system", guardSite: "external.ts:113 updateMany (household note held, #907)" },
+    // Signature completes a person-scoped agreement outright — no payment, no BG gate
+    { from: "PENDING_EXTERNAL_ACTION", to: "ACTIVE", event: "markContractSigned", actor: "subject", guardSite: "external.ts updateMany where contractSignedAt=null", kind: "PERSON_AGREEMENT" },
     // Payment convergence (§5 #8, #12)
     { from: "PENDING_PAYMENT", to: "ACTIVE", event: "activate", actor: "shopify/board", guardSite: "payment.ts:204 FOR UPDATE (bgClearedAt set)" },
     { from: "PENDING_PAYMENT", to: "PENDING_BG_CLEARANCE", event: "activate", actor: "shopify/board", guardSite: "payment.ts:204 FOR UPDATE (not cleared)" },

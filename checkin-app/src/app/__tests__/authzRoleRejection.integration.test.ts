@@ -48,6 +48,7 @@ import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH } from '@/app/api/faci
 import { POST as FAC_VISITS_INSERT_POST } from '@/app/api/facility/visits/insert/route';
 import { GET as MISSING_CONTACT_GET } from '@/app/api/membership-audit/households-missing-contact/route';
 import { GET as UNCLAIMED_GET } from '@/app/api/membership-audit/unclaimed-households/route';
+import { GET as TURNING_18_GET } from '@/app/api/membership-audit/turning-18/route';
 import { POST as CERTIFY_PAYMENT_POST } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { POST as APP_EXTERNAL_POST } from '@/app/api/membership-ops/applications/external/route';
 import { POST as REVIEW_OVERRIDE_POST } from '@/app/api/membership-ops/applications/review-override/route';
@@ -192,6 +193,7 @@ describe('Protected-route role rejection', () => {
         { name: 'POST /api/facility/visits/insert', invoke: () => FAC_VISITS_INSERT_POST(nreq('http://localhost/api/facility/visits/insert', 'POST', {})) },
         { name: 'GET /api/membership-audit/households-missing-contact', invoke: () => MISSING_CONTACT_GET(nreq('http://localhost/api/membership-audit/households-missing-contact')) },
         { name: 'GET /api/membership-audit/unclaimed-households', invoke: () => UNCLAIMED_GET(nreq('http://localhost/api/membership-audit/unclaimed-households')) },
+        { name: 'GET /api/membership-audit/turning-18', invoke: () => TURNING_18_GET(nreq('http://localhost/api/membership-audit/turning-18')) },
         { name: 'POST /api/membership-ops/applications/certify-payment', invoke: () => CERTIFY_PAYMENT_POST(nreq('http://localhost/api/membership-ops/applications/certify-payment', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/external', invoke: () => APP_EXTERNAL_POST(nreq('http://localhost/api/membership-ops/applications/external', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/review-override', invoke: () => REVIEW_OVERRIDE_POST(nreq('http://localhost/api/membership-ops/applications/review-override', 'POST', {})) },

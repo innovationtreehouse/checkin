@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
+import { agreementCycleFloor, autoPopulationWhere } from "@/lib/membership/personAgreementTriggers";
 import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
@@ -263,8 +264,74 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             fromName: source!.name || `Person #${source!.id}`,
         }));
 
+    // 7. Individual adult-child membership agreements. Independent of the BG
+    //    recheck policy — this is a signature obligation, not a check.
+    //    - awaiting: opened and not yet signed. The board's chase list.
+    //    - notRequested: non-lead adults in member households that the nightly rule
+    //      SKIPS because they're past its age ceiling (isDeclaredAdult = over 25). The
+    //      board decides whether each is an adult child or an unmarked spouse.
+    //    ponytail: the manual route accepts any personId, but this list only surfaces
+    //    program-attached candidates — reaching someone not in a program needs a person
+    //    picker we don't have a surface for yet.
+    // subjectPerson is filtered through LIVE_PERSON as a relation filter: an obligation
+    // whose subject was merged away must not stay on the board's chase list — the person
+    // it names no longer exists to chase.
+    const openAgreements = await prisma.orgMembershipProcess.findMany({
+        where: { kind: "PERSON_AGREEMENT", status: "PENDING_EXTERNAL_ACTION", subjectPerson: { is: LIVE_PERSON } },
+        select: { subjectPerson: { select: { id: true, name: true, householdId: true } } },
+    });
+    const peopleAwaitingAgreement: PersonRow[] = openAgreements
+        .filter((p) => p.subjectPerson)
+        .map((p) => ({
+            personId: p.subjectPerson!.id,
+            name: p.subjectPerson!.name || `Person #${p.subjectPerson!.id}`,
+            householdId: p.subjectPerson!.householdId,
+            programId: null,
+            programName: null,
+            reason: "AGREEMENT_OUTSTANDING",
+        }));
+
+    // The same population the nightly rule uses, minus its age band — these are the
+    // over-25s it deliberately skips. Sharing the predicate keeps the board's candidate
+    // list from offering people the automatic pass would never have considered.
+    const overCeiling = await prisma.person.findMany({
+        where: {
+            ...autoPopulationWhere(new Date()),
+            isDeclaredAdult: true,
+            ...LIVE_PERSON,
+        },
+        select: { id: true, name: true, householdId: true },
+        orderBy: { name: "asc" },
+    });
+    const floor = settings?.orgMembershipYearBoundary ? agreementCycleFloor(settings.orgMembershipYearBoundary, new Date()) : null;
+    const handled = await prisma.orgMembershipProcess.findMany({
+        where: {
+            kind: "PERSON_AGREEMENT",
+            subjectPersonId: { in: overCeiling.map((p) => p.id) },
+            OR: [
+                { status: "PENDING_EXTERNAL_ACTION" },
+                // No boundary configured ⇒ no cycle to roll, so any settled one counts.
+                { status: { in: ["ACTIVE", "ARCHIVED"] }, ...(floor ? { stageEnteredAt: { gte: floor } } : {}) },
+            ],
+        },
+        select: { subjectPersonId: true },
+    });
+    const handledIds = new Set(handled.map((h) => h.subjectPersonId));
+    const peopleNeedingAgreement: PersonRow[] = overCeiling
+        .filter((p) => !handledIds.has(p.id))
+        .map((p) => ({
+            personId: p.id,
+            name: p.name || `Person #${p.id}`,
+            householdId: p.householdId,
+            programId: null,
+            programName: null,
+            reason: "AGREEMENT_NOT_REQUESTED",
+        }));
+
+    const agreementLists = { peopleAwaitingAgreement, peopleNeedingAgreement };
+
     if (reasons.size === 0) {
-        return NextResponse.json({ households: [], peopleNeedingBgCheck, peopleMissingDob, blanketStamped, mergeInheritedBgChecks });
+        return NextResponse.json({ households: [], peopleNeedingBgCheck, peopleMissingDob, blanketStamped, mergeInheritedBgChecks, ...agreementLists });
     }
 
     const households = await prisma.household.findMany({
@@ -300,5 +367,5 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         };
     });
 
-    return NextResponse.json({ households: result, peopleNeedingBgCheck, peopleMissingDob, blanketStamped, mergeInheritedBgChecks });
+    return NextResponse.json({ households: result, peopleNeedingBgCheck, peopleMissingDob, blanketStamped, mergeInheritedBgChecks, ...agreementLists });
 });

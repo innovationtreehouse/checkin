@@ -118,6 +118,15 @@ const ALLOWLIST: Record<string, string> = {
     // beginRenewalForUser read is a LONE single-status literal, which the sharpened scanner no
     // longer flags either, so it isn't listed.)
 
+    // Not a transition from-state: the PERSON_AGREEMENT edge is ∅→PENDING_EXTERNAL_ACTION
+    // (no from-row). This is the "already handled this cycle" existence set — in flight, OR
+    // terminal since the cycle floor — spanning an in-flight AND a terminal status, which no
+    // single StateSet expresses. Owned by personAgreementTriggers.handledThisCycleWhere; this
+    // board read is the same set, inline. (The trigger module itself carries no `where:` block
+    // for it — the set lives in a helper's return object — so it never reaches this scanner.)
+    'app/api/membership-audit/compliance/route.ts':
+        'PERSON_AGREEMENT handled-this-cycle set, read to list over-25 non-leads with no agreement yet: status=PENDING_EXTERNAL_ACTION, or status in {ACTIVE,ARCHIVED} since the cycle floor.',
+
     // ── invariant-driven reconciler (Phase 4) ──
     'lib/lifecycleDrift.ts':
         'I1 heal query: where status=ACTIVE,inventoryHeldAt not null — the off-diagram violation set itself (has no StateSet; it is precisely what validate() rejects).',

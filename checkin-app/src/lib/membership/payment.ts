@@ -4,6 +4,7 @@ import { logger } from "@/lib/logger";
 import { emailHouseholdLeads } from "@/lib/emailRecipients";
 import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
+import { openPersonAgreementForNewMember } from "@/lib/membership/personAgreementTriggers";
 import { config } from "@/lib/config";
 
 /**
@@ -237,6 +238,8 @@ export async function activate(
         // Trigger C: a brand-new (INITIAL) member just activated (bg cleared before
         // payment landed) — open PERSON_BG for the household's program-attached adults.
         if (result.isInitial) await openPersonBgForNewMember(result.householdId, new Date());
+        // Same activation, the agreement side — an adult child signs their own.
+        if (result.isInitial) await openPersonAgreementForNewMember(result.householdId, new Date());
     }
     if (result.kind === "paid_while_blocked" || result.kind === "underpaid") await notifyBoardPaidReject(processId);
     return prisma.orgMembershipProcess.findUnique({ where: { id: processId } });

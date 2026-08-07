@@ -150,6 +150,29 @@ standing as a soft reservation, and never trust it as the only signal.
 Project-field writes need the `project` token scope; if GraphQL returns
 INSUFFICIENT_SCOPES, have the user run `gh auth refresh -s project`.
 
+## Reviewing a PR
+
+A review comment earns its place only if a careful human reading the diff would
+**miss** the problem. Everything the merge itself surfaces is already known —
+saying it again is noise the reader has to scroll past to find the real finding.
+
+Do **not** comment on:
+
+- **Merge state** — behind `main`, needs a rebase, conflicts, stale branch. The
+  merge box says this.
+- **CI state** — failing tests, lint, type errors, coverage drops. The checks
+  say this, with the actual output.
+- Anything else a bot or the GitHub UI already reports on the PR.
+
+Do comment on what only reading the code reveals — a silent behavior change, a
+missed caller, a broken invariant, a data-loss or security hole, a migration
+that isn't safe against the old code still serving traffic.
+
+Exception: a mechanical failure is worth a comment when the **cause** is
+non-obvious and named — "these three tests fail because the rename missed
+`scopeBindings.ts`" is a finding; "tests are broken" is not. Nothing to say
+means say nothing, or approve.
+
 ## Docs map
 
 Read these before changing the relevant area — start here, then follow links.

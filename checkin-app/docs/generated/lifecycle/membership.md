@@ -26,6 +26,7 @@ stateDiagram-v2
     PENDING_BG_REVIEW --> ARCHIVED: archiveApplication
     PENDING_BG_REVIEW --> BLOCKED: attest REJECT
     PENDING_BG_REVIEW --> PENDING_PAYMENT: clearBackgroundCheck
+    PENDING_EXTERNAL_ACTION --> ACTIVE: markContractSigned · PERSON_AGREEMENT
     PENDING_EXTERNAL_ACTION --> ARCHIVED: archiveApplication
     PENDING_EXTERNAL_ACTION --> PENDING_BG_REVIEW: advanceExternalIfComplete
     PENDING_EXTERNAL_ACTION --> PENDING_PAYMENT: advanceExternalIfComplete
@@ -38,6 +39,7 @@ stateDiagram-v2
     PENDING_RENEWAL --> PENDING_EXTERNAL_ACTION: beginRenewal · RENEWAL
     [*] --> INTAKE: startIntake · INITIAL
     [*] --> PENDING_BG_REVIEW: personBgTriggers · PERSON_BG
+    [*] --> PENDING_EXTERNAL_ACTION: personAgreementTriggers · PERSON_AGREEMENT
     [*] --> PENDING_RENEWAL: createRenewalProcess · RENEWAL
     ACTIVE --> [*]
     ARCHIVED --> [*]
@@ -47,19 +49,19 @@ stateDiagram-v2
 
 A blank (`—`) cell is a **deliberate** absent edge — a decision to ratify, not an oversight.
 
-| state ╲ event | activate | advanceExternalIfComplete | archiveApplication | attest REJECT | beginRenewal | clearBackgroundCheck | createRenewalProcess | grantRenewalPayment | overrideBlocked approve | overrideBlocked reset | personBgTriggers | startIntake | submitIntake |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ∅ | — | — | — | — | — | — | PENDING_RENEWAL | — | — | — | PENDING_BG_REVIEW | INTAKE | — |
-| INTAKE | — | — | ARCHIVED | — | — | — | — | — | — | — | — | — | PENDING_EXTERNAL_ACTION |
-| PENDING_EXTERNAL_ACTION | — | PENDING_BG_REVIEW, PENDING_PAYMENT | ARCHIVED | — | — | — | — | — | — | — | — | — | — |
-| PENDING_BG_REVIEW | — | — | ARCHIVED | BLOCKED | — | ACTIVE, PENDING_PAYMENT | — | — | — | — | — | — | — |
-| PENDING_PAYMENT | ACTIVE, PENDING_BG_CLEARANCE | — | ARCHIVED | BLOCKED | — | — | — | ACTIVE | — | — | — | — | — |
-| PENDING_BG_CLEARANCE | — | — | ARCHIVED | BLOCKED | — | ACTIVE | — | — | — | — | — | — | — |
-| ACTIVE | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| BLOCKED | — | — | ARCHIVED | — | — | — | — | — | ACTIVE | PENDING_BG_CLEARANCE, PENDING_BG_REVIEW, PENDING_EXTERNAL_ACTION, PENDING_PAYMENT | — | — | — |
-| PENDING_RENEWAL | — | — | ARCHIVED | — | PENDING_EXTERNAL_ACTION | — | — | — | — | — | — | — | — |
-| RENEWAL_PENDING_BG | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| ARCHIVED | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| state ╲ event | activate | advanceExternalIfComplete | archiveApplication | attest REJECT | beginRenewal | clearBackgroundCheck | createRenewalProcess | grantRenewalPayment | markContractSigned | overrideBlocked approve | overrideBlocked reset | personAgreementTriggers | personBgTriggers | startIntake | submitIntake |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ∅ | — | — | — | — | — | — | PENDING_RENEWAL | — | — | — | — | PENDING_EXTERNAL_ACTION | PENDING_BG_REVIEW | INTAKE | — |
+| INTAKE | — | — | ARCHIVED | — | — | — | — | — | — | — | — | — | — | — | PENDING_EXTERNAL_ACTION |
+| PENDING_EXTERNAL_ACTION | — | PENDING_BG_REVIEW, PENDING_PAYMENT | ARCHIVED | — | — | — | — | — | ACTIVE | — | — | — | — | — | — |
+| PENDING_BG_REVIEW | — | — | ARCHIVED | BLOCKED | — | ACTIVE, PENDING_PAYMENT | — | — | — | — | — | — | — | — | — |
+| PENDING_PAYMENT | ACTIVE, PENDING_BG_CLEARANCE | — | ARCHIVED | BLOCKED | — | — | — | ACTIVE | — | — | — | — | — | — | — |
+| PENDING_BG_CLEARANCE | — | — | ARCHIVED | BLOCKED | — | ACTIVE | — | — | — | — | — | — | — | — | — |
+| ACTIVE | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| BLOCKED | — | — | ARCHIVED | — | — | — | — | — | — | ACTIVE | PENDING_BG_CLEARANCE, PENDING_BG_REVIEW, PENDING_EXTERNAL_ACTION, PENDING_PAYMENT | — | — | — | — |
+| PENDING_RENEWAL | — | — | ARCHIVED | — | PENDING_EXTERNAL_ACTION | — | — | — | — | — | — | — | — | — | — |
+| RENEWAL_PENDING_BG | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| ARCHIVED | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 
 ## Reachability
 

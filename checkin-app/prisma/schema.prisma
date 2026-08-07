@@ -363,6 +363,11 @@ enum OrgMembershipProcessKind {
   // membership: orgMembershipId is null and subjectPersonId points at the person
   // being checked. Runs through the same two-reviewer gate as household checks.
   PERSON_BG
+  // Per-person membership agreement for an adult child (#1224). Like PERSON_BG,
+  // orgMembershipId is null and subjectPersonId is the signer. An 18+ child of the
+  // signer is a legal adult and can't be bound by their parent's signature, so they
+  // sign their own. Opens at PENDING_EXTERNAL_ACTION; the signature flips it to ACTIVE.
+  PERSON_AGREEMENT
 }
 
 enum OrgMembershipProcessStatus {
