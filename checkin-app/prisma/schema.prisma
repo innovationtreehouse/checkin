@@ -1127,6 +1127,10 @@ model AuditLog {
   timestamp               DateTime    @default(now())
   /// @sensitivity:internal
   actorId                 Int
+  /// Which automated path wrote this row (`cron:nightly`, `webhook:shopify`, …)
+  /// when actorId is the system sentinel; null for a person's own action.
+  /// @sensitivity:internal
+  actorSystem             String?
   /// @sensitivity:internal
   action                  AuditAction
   /// @sensitivity:internal
@@ -1139,6 +1143,9 @@ model AuditLog {
   oldData                 Json?
   /// @sensitivity:internal
   newData                 Json?
+
+  @@index([actorId])
+  @@index([actorSystem])
 }
 
 model Account {

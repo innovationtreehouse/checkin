@@ -290,6 +290,7 @@ export const classifications = {
         id: 'internal',
         timestamp: 'internal',
         actorId: 'internal',
+        actorSystem: 'internal',
         action: 'internal',
         tableName: 'internal',
         affectedEntityId: 'internal',

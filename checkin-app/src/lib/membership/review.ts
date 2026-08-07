@@ -9,6 +9,7 @@ import { config } from "@/lib/config";
 import { canonicalizeEmail } from "@/lib/emailNormalize";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
 import { openPersonAgreementForNewMember } from "@/lib/membership/personAgreementTriggers";
+import { personActor, type AuditActor } from "@/lib/auditActor";
 import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest";
 import { type DbClient, type TxClient } from "@/lib/db-client";
 import { awaitingBgReview } from "@/lib/membership/lifecycle";
@@ -35,7 +36,6 @@ import { LIVE_PERSON } from "@/lib/person/filters";
  * The system never sees the check itself — only the attestations.
  */
 
-const SYSTEM_ACTOR = 0;
 const REQUIRED_APPROVALS = 2;
 
 /**
@@ -231,7 +231,7 @@ export async function attest(
 
         if (input.result === "REJECT") {
             await tx.orgMembershipProcess.update({ where: { id: processId }, data: { status: "BLOCKED", stageEnteredAt: new Date() } });
-            await audit(tx, reviewerId, processId, { status: process.status }, { status: "BLOCKED", reason: "reviewer reject", ...(input.note ? { note: input.note } : {}) });
+            await audit(tx, personActor(reviewerId), processId, { status: process.status }, { status: "BLOCKED", reason: "reviewer reject", ...(input.note ? { note: input.note } : {}) });
             // A paid household that fails review needs a manual refund — flag the board (post-tx).
             return { status: "BLOCKED" as const, notifyPaidReject: !!process.paidAt };
         }
@@ -292,7 +292,7 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
         const now = new Date();
         await tx.person.update({ where: { id: process.subjectPersonId }, data: { lastBackgroundCheck: now } });
         await tx.orgMembershipProcess.update({ where: { id: processId }, data: { bgClearedAt: now, status: "ACTIVE", stageEnteredAt: now } });
-        await audit(tx, actorId, processId, { status: process.status }, { status: "ACTIVE", bgCleared: true, subjectPersonId: process.subjectPersonId });
+        await audit(tx, personActor(actorId), processId, { status: process.status }, { status: "ACTIVE", bgCleared: true, subjectPersonId: process.subjectPersonId });
         return { activated: false, householdId: null, isInitial: false };
     }
 
@@ -316,7 +316,7 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
         await tx.orgMembership.update({ where: { id: process.orgMembershipId! }, data: { status: "ACTIVE" } });
     }
 
-    await audit(tx, actorId, processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true });
+    await audit(tx, personActor(actorId), processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true });
     return { activated: paid, householdId, isInitial: process.kind === "INITIAL" };
 }
 
@@ -397,7 +397,7 @@ export async function overrideBlocked(processId: number, actorId: number, action
             const reviewStatus = blocked ? blockedResetStatus(process) : fresh.status;
             await tx.backgroundCheckAttestation.deleteMany({ where: { processId } });
             await tx.orgMembershipProcess.update({ where: { id: processId }, data: { status: reviewStatus, bgClearedAt: null, stageEnteredAt: new Date() } });
-            await audit(tx, actorId, processId, { status: fresh.status }, { status: reviewStatus, action: "board reset" });
+            await audit(tx, personActor(actorId), processId, { status: fresh.status }, { status: reviewStatus, action: "board reset" });
             return reviewStatus;
         });
         await notifyReviewers();
@@ -470,10 +470,10 @@ async function notifyPaymentOpen(householdId: number) {
     );
 }
 
-function audit(db: DbClient, actorId: number, processId: number, oldData: object, newData: object) {
+function audit(db: DbClient, actor: AuditActor, processId: number, oldData: object, newData: object) {
     return db.auditLog.create({
         data: {
-            actorId: actorId || SYSTEM_ACTOR,
+            ...actor,
             action: "EDIT",
             tableName: "OrgMembershipProcess",
             affectedEntityId: processId,

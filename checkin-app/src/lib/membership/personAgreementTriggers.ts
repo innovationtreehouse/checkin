@@ -2,6 +2,7 @@ import prisma from "@/lib/prisma";
 import { calculateAge, orgCalendarDay } from "@/lib/time";
 import { renewalWindow } from "@/lib/membership/renewal";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { personOrSystemActor } from "@/lib/auditActor";
 
 /**
  * Triggers that OPEN a per-person membership-agreement obligation (PERSON_AGREEMENT).
@@ -13,7 +14,6 @@ import { LIVE_PERSON } from "@/lib/person/filters";
  * NIGHTLY (not annually). Both are load-bearing; see below.
  */
 
-const SYSTEM_ACTOR = 0;
 
 /**
  * Automatic-population age rule: a DOB on file and 18–25 as of `now`.
@@ -103,7 +103,7 @@ export async function openPersonAgreement(
     personId: number,
     now: Date,
     floor: Date,
-    { manual = false, actorId = SYSTEM_ACTOR }: { manual?: boolean; actorId?: number } = {},
+    { manual = false, actorId }: { manual?: boolean; actorId?: number } = {},
 ) {
     return prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "Person" WHERE id = ${personId} FOR UPDATE`;
@@ -131,7 +131,7 @@ export async function openPersonAgreement(
         });
         await tx.auditLog.create({
             data: {
-                actorId,
+                ...personOrSystemActor(actorId, "system:person-agreement-open"),
                 action: "CREATE",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: created.id,
