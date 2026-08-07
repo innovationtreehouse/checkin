@@ -151,6 +151,33 @@ describe('Membership settings + volunteer designations API', () => {
         expect(data.warning).toBeTruthy();
     });
 
+    it('treats inbox variants of a designated email as already designated', async () => {
+        asBoard(boardId);
+        const base = `voldedupe-${TAG}@gmail.com`;
+        const first = await DESIG_POST(jsonReq('POST', { email: base }));
+        expect(first.status).toBe(201);
+        const { designation } = await first.json();
+
+        for (const variant of [`voldedupe-${TAG}+treehouse@gmail.com`, `vol.dedupe-${TAG}@googlemail.com`, ` VolDedupe-${TAG}@gmail.com `]) {
+            const res = await DESIG_POST(jsonReq('POST', { email: variant }));
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.warning).toBe('This email is already designated.');
+            expect(data.designation.id).toBe(designation.id);
+        }
+
+        expect(await prisma.volunteerDesignation.count({ where: { email: { contains: `voldedupe-${TAG}` } } })).toBe(1);
+    });
+
+    it('dedupes against a row stored before canonicalization', async () => {
+        asBoard(boardId);
+        const legacy = await prisma.volunteerDesignation.create({ data: { email: `legacyvol-${TAG}+tag@gmail.com` } });
+        const res = await DESIG_POST(jsonReq('POST', { email: `legacy.vol-${TAG}@gmail.com` }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).designation.id).toBe(legacy.id);
+        expect(await prisma.volunteerDesignation.count({ where: { email: { contains: `legacyvol-${TAG}` } } })).toBe(1);
+    });
+
     it('rejects an invalid email', async () => {
         asBoard(boardId);
         const res = await DESIG_POST(jsonReq('POST', { email: 'not-an-email' }));
