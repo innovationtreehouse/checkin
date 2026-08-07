@@ -140,7 +140,15 @@ Things the app takes as true because they are handled outside it.
 - A failed discount degrades to undiscounted checkout, never an error.  [Decision — deliberate limit]
 
 - A program priced on a tier with nothing wired to sell it is broken and is
-  reported as such. A free tier has nothing to wire and is never reported.  [Decision]
+  reported as such. A free tier has nothing to wire and is never reported, and a
+  tier priced at zero is free — it is never sold, never reported, and never waits
+  on a payment.  [Decision]
+
+- Such a program takes no enrollment that would have to be paid for. The place is
+  refused outright rather than admitted and left waiting on a payment that can
+  never arrive. An administrator's comped place never reaches the store and is
+  seated as normal; nobody else's confirmation makes the program sellable, so
+  none is offered.  [Decision — *Principle: fail closed*]
 
 > **Candidate, not settled — for owner ratification.** Member pricing requires
 > the membership to cover the program's end date, not merely be active today; a
