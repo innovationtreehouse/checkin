@@ -3,12 +3,10 @@ import prisma from "@/lib/prisma";
 /**
  * Detection (read-only) of duplicate / overlapping attendance Visit rows.
  *
- * Duplicates arise because /api/events/[id]/attendance validates attendance
- * inside a $transaction with NO per-participant advisory lock (unlike /api/scan
- * and /api/attendance/manual, which take pg_advisory_xact_lock). Two leads
- * validating the same event concurrently — or a validation racing a live kiosk
- * scan — can each miss the other's row and both create a Visit for the same
- * participant over the same window.
+ * Duplicates arise across write paths rather than within one: a staff insert at
+ * a past time, a lead's Present correction, and a live kiosk scan each write a
+ * Visit for the same person, and nothing rejects two that merely overlap — the
+ * one-open-visit index only stops two OPEN ones.
  *
  * This module ONLY surfaces those overlaps so a lead can resolve them by hand.
  * It adds no constraint, lock, or write-path change (a prevention layer was
