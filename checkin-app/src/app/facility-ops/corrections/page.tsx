@@ -1,0 +1,233 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Badge, Group, SegmentedControl, Stack, Switch, Table, Text } from "@mantine/core";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { PageLoader } from "@/components/ui/PageLoader";
+import { formatDateTime } from "@/lib/time";
+
+type PeriodType = "week" | "month" | "quarter" | "year";
+type AuditAction = "CREATE" | "EDIT" | "DELETE" | "BECOME_ADMIN";
+
+type VisitPick = {
+  id?: number;
+  personId?: number;
+  arrivedAt?: string | null;
+  departedAt?: string | null;
+  arrivedVia?: string | null;
+  departedVia?: string | null;
+  associatedEventId?: number | null;
+} | null;
+
+type AuditRow = {
+  id: number;
+  timestamp: string;
+  actorId: number;
+  action: AuditAction;
+  tableName: string;
+  affectedEntityId: number;
+  secondaryAffectedEntity: number | null;
+  newData: { type?: string; significance?: { score: number; flagged: boolean } };
+};
+
+type PersonRef = { id: number; name: string | null; mergedIntoId: number | null };
+
+type Payload = { AuditLog: AuditRow[]; Person: PersonRef[]; Visit: VisitPick[][] };
+
+// Must match MAX_ROWS in the route — used only to detect and trim the "+1
+// probe" row the server includes as the "there's more" signal (design §3;
+// v1 has no pagination).
+const MAX_ROWS = 500;
+
+const TYPE_LABEL: Record<string, string> = {
+  manual_entry: "Manual entry",
+  self_correction: "Self correction",
+  staff_entry: "Staff entry",
+  lead_attendance_correction: "Attendance correction",
+};
+
+// `newData.type` names the ROUTE, not the actor relationship (design §2) — a
+// household lead correcting a member still writes "self_correction". It's a
+// label here, never the self/proxy axis; see actorClass below for that.
+function kindLabel(row: AuditRow): string {
+  if (row.newData.type && TYPE_LABEL[row.newData.type]) return TYPE_LABEL[row.newData.type];
+  switch (row.action) {
+    case "CREATE": return "Insert";
+    case "EDIT": return "Edit";
+    case "DELETE": return "Delete";
+    default: return row.action;
+  }
+}
+
+// The actor axis is a bare comparison (design §2): actorId vs the subject
+// stored in secondaryAffectedEntity. `null` only for rows written before the
+// invariant held everywhere (#1478) — shown as unknown, never guessed at.
+function actorClass(row: AuditRow): "self" | "proxy" | "unknown" {
+  if (row.secondaryAffectedEntity == null) return "unknown";
+  return row.actorId === row.secondaryAffectedEntity ? "self" : "proxy";
+}
+
+function nameFor(id: number | null, people: Map<number, PersonRef>): string {
+  if (id == null) return "—";
+  const p = people.get(id);
+  if (!p) return `Person #${id}`;
+  return p.mergedIntoId ? `${p.name ?? `Person #${id}`} (merged)` : p.name ?? `Person #${id}`;
+}
+
+// A key ABSENT from the pick (vs. present-but-null) means the writer never
+// touched that field — render "—", never infer a value (design §4/§6.6 R-4:
+// arrivedVia/departedVia are never stamped onto a self-correction's newData).
+function VisitTimes({ v }: { v: VisitPick }) {
+  if (!v || (!("arrivedAt" in v) && !("departedAt" in v))) {
+    return <Text c="dimmed" size="sm">—</Text>;
+  }
+  return (
+    <Stack gap={2}>
+      {"arrivedAt" in v && (
+        <Text size="sm">In: {v.arrivedAt ? formatDateTime(v.arrivedAt) : "—"}</Text>
+      )}
+      {"departedAt" in v && (
+        <Text size="sm">Out: {v.departedAt ? formatDateTime(v.departedAt) : "—"}</Text>
+      )}
+    </Stack>
+  );
+}
+
+// A row with no significance was never scored (design §3) — a create, or the
+// events-attendance roster edit, which moves no clock. That is NOT the same
+// as "reviewed and found insignificant", so it gets its own muted label.
+function ScoreBadge({ sig }: { sig?: { score: number; flagged: boolean } }) {
+  if (!sig) return <Text c="dimmed" size="sm">Not scored</Text>;
+  return sig.flagged
+    ? <Badge color="red" variant="light">Flagged · {sig.score}</Badge>
+    : <Badge color="gray" variant="light">{sig.score}</Badge>;
+}
+
+function ActorBadge({ cls }: { cls: "self" | "proxy" | "unknown" }) {
+  if (cls === "self") return <Badge color="gray" variant="light">Self</Badge>;
+  if (cls === "proxy") return <Badge color="orange" variant="light">Proxy</Badge>;
+  return <Text c="dimmed" size="sm">—</Text>;
+}
+
+export default function CorrectionsPage() {
+  const { ready, loading: authLoading } = useRequireRole(["isSysadmin", "isBoardMember"]);
+
+  const [period, setPeriod] = useState<PeriodType>("month");
+  // Defaults to the significant changes (executive summary); the full feed
+  // is one switch away.
+  const [flaggedOnly, setFlaggedOnly] = useState(true);
+  const [data, setData] = useState<Payload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!ready) return;
+    setLoading(true);
+    const params = new URLSearchParams({ period, flagged: String(flaggedOnly) });
+    fetch(`/api/facility/corrections?${params}`)
+      .then((res) => {
+        if (!res.ok) throw new Error("request failed");
+        return res.json();
+      })
+      .then((body: Payload) => { setData(body); setError(""); })
+      .catch(() => setError("Failed to load corrections."))
+      .finally(() => setLoading(false));
+  }, [ready, period, flaggedOnly]);
+
+  const people = useMemo(() => new Map((data?.Person ?? []).map((p) => [p.id, p])), [data]);
+
+  if (authLoading) return <PageLoader />;
+  if (!ready) return null;
+
+  const allRows = data?.AuditLog ?? [];
+  const allVisits = data?.Visit ?? [];
+  const overflowed = allRows.length > MAX_ROWS;
+  const rows = overflowed ? allRows.slice(0, MAX_ROWS) : allRows;
+  const visits = overflowed ? allVisits.slice(0, MAX_ROWS) : allVisits;
+
+  return (
+    <Stack>
+      <Text c="dimmed">
+        Attendance corrections read off the audit trail — self and staff edits, deletes and
+        manual entries. Nothing here is stored separately; this is a view, not a queue.
+      </Text>
+
+      <Group justify="space-between" wrap="wrap">
+        <SegmentedControl
+          value={period}
+          onChange={(v) => setPeriod(v as PeriodType)}
+          data={[
+            { label: "Week", value: "week" },
+            { label: "Month", value: "month" },
+            { label: "Quarter", value: "quarter" },
+            { label: "Year", value: "year" },
+          ]}
+        />
+        <Switch
+          label="Flagged only"
+          checked={flaggedOnly}
+          onChange={(e) => setFlaggedOnly(e.currentTarget.checked)}
+        />
+      </Group>
+
+      {error && <Alert color="red">{error}</Alert>}
+
+      {overflowed && (
+        <Alert color="yellow" variant="light">
+          More than {MAX_ROWS} corrections in this range — showing the most recent {MAX_ROWS}.
+          Narrow the period to see the rest.
+        </Alert>
+      )}
+
+      {loading && rows.length === 0 ? (
+        <PageLoader />
+      ) : (
+        <Table.ScrollContainer minWidth={900}>
+          <Table verticalSpacing="sm" highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>When</Table.Th>
+                <Table.Th>Kind</Table.Th>
+                <Table.Th>Actor</Table.Th>
+                <Table.Th>Subject</Table.Th>
+                <Table.Th>Before</Table.Th>
+                <Table.Th>After</Table.Th>
+                <Table.Th>Score</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.length === 0 ? (
+                <Table.Tr>
+                  <Table.Td colSpan={7} ta="center">
+                    <Text c="dimmed" py="md">No corrections in this range.</Text>
+                  </Table.Td>
+                </Table.Tr>
+              ) : (
+                rows.map((r, i) => {
+                  const cls = actorClass(r);
+                  const [before, after] = visits[i] ?? [null, null];
+                  return (
+                    <Table.Tr key={r.id}>
+                      <Table.Td>{formatDateTime(r.timestamp)}</Table.Td>
+                      <Table.Td>{kindLabel(r)}</Table.Td>
+                      <Table.Td>
+                        <Group gap={6} wrap="nowrap">
+                          <span>{nameFor(r.actorId, people)}</span>
+                          <ActorBadge cls={cls} />
+                        </Group>
+                      </Table.Td>
+                      <Table.Td>{nameFor(r.secondaryAffectedEntity, people)}</Table.Td>
+                      <Table.Td><VisitTimes v={before} /></Table.Td>
+                      <Table.Td><VisitTimes v={after} /></Table.Td>
+                      <Table.Td><ScoreBadge sig={r.newData.significance} /></Table.Td>
+                    </Table.Tr>
+                  );
+                })
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+    </Stack>
+  );
+}

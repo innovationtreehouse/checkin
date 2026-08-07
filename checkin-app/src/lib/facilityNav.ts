@@ -9,4 +9,5 @@ export const FACILITY_NAV_LINKS: NavLink[] = [
   { name: "Raw Badge Events", href: "/facility-ops/badges", icon: "📡" },
   { name: "Print ID Badges", href: "/facility-ops/print-badges", icon: "🖨️" },
   { name: "Participation Trends", href: "/facility-ops/trends", icon: "📈" },
+  { name: "Corrections", href: "/facility-ops/corrections", icon: "🛠️" },
 ];

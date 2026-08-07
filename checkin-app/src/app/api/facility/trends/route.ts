@@ -4,31 +4,12 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { getAppSettings } from "@/lib/appSettings";
 import { apiError } from "@/lib/api-response";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
-
-type PeriodType = "week" | "month" | "quarter" | "year";
+import { toZonedTime } from "date-fns-tz";
+import { getPeriodStart, type PeriodType } from "@/lib/timePeriods";
 
 function getHoursBetween(arrived: Date, departed: Date | null): number {
     if (!departed) return 0;
     return (departed.getTime() - arrived.getTime()) / (1000 * 60 * 60);
-}
-
-// Period boundaries and labels are the org's wall clock, not the server's:
-// toZonedTime shifts an instant so its local calendar fields read as the org
-// zone's, and fromZonedTime converts such a wall clock back to an instant.
-function getPeriodStart(date: Date, period: PeriodType, timeZone: string): Date {
-    const d = toZonedTime(date, timeZone);
-    if (period === "week") {
-        d.setDate(d.getDate() - d.getDay());
-    } else if (period === "month") {
-        d.setDate(1);
-    } else if (period === "quarter") {
-        d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
-    } else {
-        d.setMonth(0, 1);
-    }
-    d.setHours(0, 0, 0, 0);
-    return fromZonedTime(d, timeZone);
 }
 
 function formatPeriodLabel(date: Date, period: PeriodType, locale: string, timeZone: string): string {

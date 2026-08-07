@@ -99,6 +99,7 @@ export const PAGES: PageEntry[] = [
   { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD },
+  { href: '/facility-ops/corrections', label: 'Corrections', section: 'Facility Ops', keywords: 'audit attendance edit delete flagged significance review', visible: BOARD },
 
   // Membership Ops — board
   { href: '/membership-ops', label: 'Membership Ops', section: 'Membership Ops', visible: BOARD },
