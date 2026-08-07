@@ -7,9 +7,10 @@ Issue: [#1260](https://github.com/innovationtreehouse/checkin/issues/1260)
 implementation [#1470](https://github.com/innovationtreehouse/checkin/pull/1470). This doc has been
 edited to match what shipped, so the design below describes the code rather than a proposal — but it
 is still a working doc. Per `docs/DOCUMENTATION_STANDARD.md` §4 it gets **deleted** at merge, with any
-standing rules extracted into `docs/rules/membership.md` — which does not exist yet
-([#1445](https://github.com/innovationtreehouse/checkin/pull/1445) is still open). That extraction is
-the last step, not this file's continued existence.
+standing rules extracted into `docs/rules/membership.md` — which now exists (#1445 merged). The
+register already carries this design's rule (*"A check covers the adult who took it. One person's
+clearance never satisfies another's"*), so the extraction owes nothing new; what it owed was the
+**deletion** of the register's "not yet enforced" entry describing the blanket stamp, done in this PR.
 
 ## Problem
 
@@ -52,9 +53,9 @@ evidence.
 
 ## Rules this design obeys
 
-Canonical home is the rules register, `docs/rules/membership.md` § *Background checks*
-([#1445](https://github.com/innovationtreehouse/checkin/pull/1445), open) — **collapse this to a
-pointer once that merges.** Restated here only because the design is unreadable without them.
+Canonical home is the rules register, `docs/rules/membership.md` § *Background checks* (#1445,
+merged). Restated here only because the design is unreadable without them; the register is the
+authority if the two ever disagree.
 
 1. **Membership requires ONE background-checked adult lead** — not all of them. *(Membership Policy,
    Art. VI §VI.1)*

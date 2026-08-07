@@ -321,14 +321,6 @@ Procedure below is built on them.
 
 ## Policy requirements not yet enforced here
 
-- **A household clearance stamps every lead, not the person who was checked.**
-  The household path carries one consent and one clearance for the whole
-  application, then writes that date onto each of its leads, with nothing tying
-  it to whoever submitted. This answers the household question correctly — policy
-  wants one adult checked — but the date is a per-person fact, and the
-  program-attached surface reads it per person. A lead who never took a check
-  reads there as covered rather than needed.
-
 - **A household that loses its only checked adult mid-year keeps its membership.**
   Removing or demoting that person leaves the household active with youth still
   enrolled, and nothing responds. Whether the answer is a block, a grace period,
