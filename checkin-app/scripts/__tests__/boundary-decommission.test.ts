@@ -11,6 +11,7 @@ import {
     segmentByContainers,
     segmentTopLevelCalls,
 } from '../lib/boundary-decommission';
+import { parseArgs } from '../check-boundary-decommission';
 
 const BINDINGS_BASE = `/**
  * SCOPE_BINDINGS — the declarative per-row scope table.
@@ -111,6 +112,30 @@ const bindingsWithoutFeePayment = dropLines(
     BINDINGS_BASE,
     [lineOf(BINDINGS_BASE, 'FeePayment: {'), lineOf(BINDINGS_BASE, 'FeePayment: {') + 3],
 );
+
+describe('parseArgs', () => {
+    // The shell → argv → lib wire is now the sole carrier of the boundary set;
+    // pin its slicing so a workflow invocation-line edit can't silently drift.
+    it('splits --base / --boundary / -- into the certifier inputs', () => {
+        expect(parseArgs(['--base', 'X', '--boundary', 'a', 'b', '--', 'v'])).toEqual({
+            baseSha: 'X',
+            boundaryChanged: ['a', 'b'],
+            violations: ['v'],
+        });
+    });
+
+    it('yields an empty boundary set when --boundary is omitted', () => {
+        expect(parseArgs(['--base', 'X', '--', 'v'])).toEqual({
+            baseSha: 'X',
+            boundaryChanged: [],
+            violations: ['v'],
+        });
+    });
+
+    it('reports a missing --base as a null baseSha so main() rejects', () => {
+        expect(parseArgs(['--boundary', 'a', '--', 'v']).baseSha).toBeNull();
+    });
+});
 
 describe('segmentation', () => {
     it('round-trips and names every top-level entry, single-line entries included', () => {
@@ -234,6 +259,22 @@ describe('certifyDecommission', () => {
         expect(r.reasons).toEqual([]);
         expect(r.ok).toBe(true);
         expect(r.removedModels).toEqual(['FeePayment']);
+    });
+
+    it('fails closed on an empty boundary set — omitting --boundary rejects, never certifies', () => {
+        const r = certifyDecommission({
+            changed: [
+                { status: 'M', path: BINDINGS },
+                { status: 'M', path: SCHEMA },
+                { status: 'A', path: MIGRATION },
+            ],
+            boundaryChanged: [],
+            violations: [MIGRATION],
+            readBase: files({}),
+            readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
+        });
+        expect(r.ok).toBe(false);
+        expect(r.reasons.join()).toContain('no whole-entry removals found in the boundary diff');
     });
 
     it('rejects a binding removal whose model survives in the schema', () => {
