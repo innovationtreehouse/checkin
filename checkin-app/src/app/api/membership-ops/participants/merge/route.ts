@@ -40,6 +40,29 @@ function valuesConflict(a: unknown, b: unknown): boolean {
     return a !== b;
 }
 
+/**
+ * Pre-image of every field a merge can rewrite on EITHER side — the tombstone's
+ * mangled identity and the keeper's overwritten name/email/DOB alike. Captured
+ * before the transaction, because afterwards neither is readable.
+ */
+function personPreImage(p: Person) {
+    return {
+        id: p.id,
+        googleId: p.googleId,
+        email: p.email,
+        emailVerified: p.emailVerified,
+        emailSuppressed: p.emailSuppressed,
+        phone: p.phone,
+        name: p.name,
+        dateOfBirth: p.dateOfBirth,
+        image: p.image,
+        lastWaiverSign: p.lastWaiverSign,
+        lastBackgroundCheck: p.lastBackgroundCheck,
+        isHouseholdLead: p.isHouseholdLead,
+        householdId: p.householdId,
+    };
+}
+
 /** A login identity is present iff email OR googleId is non-empty. */
 function hasIdentity(p: { email: string | null; googleId: string | null }): boolean {
     return !isEmpty(p.email) || !isEmpty(p.googleId);
@@ -145,7 +168,7 @@ async function archiveDuplicatePersonBg(tx: TxClient, personId: number, actorId:
         // row wins, and we leave it alone.
         const { count } = await tx.orgMembershipProcess.updateMany({
             where: { id: loser.id, ...personBgOpen.where },
-            data: { status: "ARCHIVED", stageEnteredAt: new Date() },
+            data: { status: "ARCHIVED", archivedFromStatus: loser.status, stageEnteredAt: new Date() },
         });
         if (count !== 1) continue;
         await tx.auditLog.create({
@@ -450,21 +473,12 @@ export const POST = withAuth(
                             tableName: "Person",
                             affectedEntityId: keepId,
                             secondaryAffectedEntity: mergeId,
-                            // Full pre-image of every field the merge rewrites (tombstone)
-                            // or moves (backfill) on the merged-away Person, captured
-                            // before either update ran.
+                            // Both pre-images, captured before either update ran: the
+                            // merged-away Person at the top level, the keeper — whose
+                            // name/email/DOB a field choice can overwrite — under `keeper`.
                             oldData: {
-                                id: mergeParticipant.id,
-                                googleId: mergeParticipant.googleId,
-                                email: mergeParticipant.email,
-                                phone: mergeParticipant.phone,
-                                name: mergeParticipant.name,
-                                dateOfBirth: mergeParticipant.dateOfBirth,
-                                image: mergeParticipant.image,
-                                lastWaiverSign: mergeParticipant.lastWaiverSign,
-                                lastBackgroundCheck: mergeParticipant.lastBackgroundCheck,
-                                isHouseholdLead: mergeParticipant.isHouseholdLead,
-                                householdId: mergeParticipant.householdId,
+                                ...personPreImage(mergeParticipant),
+                                keeper: personPreImage(keepParticipant),
                             },
                             newData: { keepId, fieldChoices: choices, moved },
                         }

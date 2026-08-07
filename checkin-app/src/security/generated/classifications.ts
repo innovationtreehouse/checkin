@@ -82,6 +82,7 @@ export const classifications = {
         subjectPersonId: 'public',
         kind: 'public',
         status: 'internal',
+        archivedFromStatus: 'internal',
         stageEnteredAt: 'internal',
         createdAt: 'public',
         zohoEnvelopeId: 'internal',
