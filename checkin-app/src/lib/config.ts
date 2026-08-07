@@ -209,7 +209,12 @@ export const config = {
 
     // Email
     resendApiKey: (): string | null => process.env.RESEND_API_KEY || null,
-    emailFrom: () => process.env.EMAIL_FROM || 'CheckMeIn <onboarding@resend.dev>',
+    // The env-level From. Null when unset so an unconfigured instance is
+    // distinguishable from a configured one: getEmailSenderIdentity prefers
+    // BoardSettings.emailFromAddress and falls back here, and sendEmail refuses to
+    // send when neither supplies an address. A hardcoded default would be a sender
+    // no domain has verified, so every send would be attempted and rejected.
+    emailFrom: (): string | null => process.env.EMAIL_FROM || null,
     // Resend's inbound bounce/complaint webhook signs with Svix under this shared
     // secret (Resend dashboard → Webhooks → signing secret, "whsec_..."). Null when
     // unset — the webhook route's verify fn fails closed with a 500 config error,
