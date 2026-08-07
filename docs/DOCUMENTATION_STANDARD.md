@@ -178,21 +178,35 @@ share one tag.
 | `[Decision — *Policy: …*]` | The app's specific expression of a policy stated generally above — a threshold picked, a proxy chosen, need-to-know made concrete for one field. Sometimes **stricter** than the policy requires, in which case say so: the risk is someone relaxing it while believing they are aligning to policy. |
 | `[Decision — *Principle: …*]` | The domain's application of a cross-cutting rule. States only what the domain adds. |
 | `[Decision — deliberate limit]` | The **absence** is chosen. The one most likely to be "fixed" by someone helpful. |
+| `[Short of policy — *Policy: …*]` | The app models this and models it **weaker** than the cited policy. Not renegotiable in review and not a target to build toward casually: what closes it is the policy. Tracked as work as well as stated (§3.7). |
 | `[Unsettled — …]` | Genuinely not agreed. **Do not cite as precedent.** |
+
+`[Decision — deliberate limit]` and `[Short of policy — …]` are the pair most
+easily confused, and they demand opposite actions. A deliberate limit says *do
+not fix this* — the absence was chosen, and closing it would undo something. A
+shortfall says *do fix this, but not casually* — the board has already decided
+and the app has not caught up. Reading one as the other is how a deliberate limit
+gets "closed" by a helpful change, or a real shortfall gets defended as
+intentional.
 
 ### 3.7 Recording a divergence
 
-A domain file may end with a section for board rules the app does not implement,
-or implements more loosely than the policy states. Four things are **not**
-divergences, and putting them there is the failure mode this section exists to
-prevent:
+A divergence is a board rule the app implements more loosely than the policy
+states. Four things are **not** divergences, and calling one a divergence is the
+failure mode this section exists to prevent:
 
 - **A policy value held in configuration.** The app is built to be configurable;
   keeping a setting aligned to policy is operational work.
 - **A rule the data model already guarantees.** One price column rather than a
   per-person amount means "the same for everyone" needs no assertion. The
   absence of a check is not the absence of the constraint.
-- **Anything handled outside the app.** That is an assumption (§3.2).
+- **Anything handled outside the app.** That is an assumption (§3.2), and the
+  distinction is the whole test: an assumption says the job is being done
+  somewhere else, a divergence says the job is not being done. Writing a
+  deficiency as an assumption — "we assume leads check this" — is the easiest way
+  to make a gap read as settled, and it is more tempting now that there is no
+  section to collect gaps in. If nothing outside the app actually does the job,
+  it is not an assumption.
 - **A deliberate balance.** Choosing not to block someone at the door for an
   obligation better chased in conversation is a decision, and belongs in
   Procedure as a deliberate limit.
@@ -202,11 +216,31 @@ than the policy — a supervision check counting bare adults where policy requir
 two unrelated non-student volunteers. Before recording one, read the enforcement
 path, not just the write path that creates the value.
 
-**Recording it is not the end of it.** A divergence stays in the domain file,
-where it qualifies the rules around it, and is also tracked as work. It is not a
-feature request: what closes it is the policy, not a judgement about what is
-worth building, and the app meanwhile reports as acceptable something the board
-has said is not.
+**Where it goes: at the rule it qualifies, never in a list of its own.** State it
+on the Procedure line a reader would otherwise take as enforced — one sentence
+saying what the app actually does and how that falls short — tagged
+`[Short of policy — *Policy: …*]` per §3.6. A reader who finds
+their answer stops reading, so a rule stated in one place and qualified in
+another is read as unqualified.
+
+Domain files used to end with a section collecting these. That section is gone,
+and it is not to be reintroduced: it sat a hundred lines from the rules it
+contradicted, and every entry in it was eventually found to be one of four things
+— shipped and stale, never a divergence at all, a gap the tracker should own, or
+a question nobody had answered. None of those needed a list.
+
+**Recording it is not the end of it.** A divergence is tracked as work as well as
+stated. It is not a feature request: what closes it is the policy, not a
+judgement about what is worth building, and the app meanwhile reports as
+acceptable something the board has said is not. Two consequences worth stating,
+because both have already bitten:
+
+- **The work that closes a divergence updates the rule in the same change.** An
+  implementation PR that fixes the behaviour and leaves the register describing
+  the old one has moved the error rather than fixed it.
+- **A gap the app does not model at all is not a divergence** — there is no rule
+  to qualify. It belongs to the tracker alone, with enough detail on the issue to
+  say which register file gains rules when it is built.
 
 ### 3.8 Format
 

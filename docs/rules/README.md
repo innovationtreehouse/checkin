@@ -21,14 +21,19 @@ several rules here are narrower than the discussion that produced them.
 
 ## Divergences
 
-Each file may end with a section naming board rules the app implements more
-loosely than the policy states. Those stay here, where they qualify the rules
-they sit under — **and** they are tracked as work, because a divergence from
-board policy is not something a domain file can resolve by describing it.
+Where the app implements a board rule more loosely than the policy states, that
+is stated **on the rule it qualifies** — not collected into a section of its own.
+A reader who finds their answer stops reading, so a rule qualified somewhere else
+is read as unqualified.
 
-Recording one is therefore not the end of it. It is not a feature request
-either: what closes it is the policy, not a judgement about what is worth
-building.
+It is also tracked as work, because a divergence from board policy is not
+something a domain file can resolve by describing it. Recording one is therefore
+not the end of it, and it is not a feature request either: what closes it is the
+policy, not a judgement about what is worth building.
+
+A gap the app does not model at all is not a divergence — there is no rule to
+qualify, and it belongs to the tracker alone. See `docs/DOCUMENTATION_STANDARD.md`
+§3.7 for the full test.
 
 ## Files
 

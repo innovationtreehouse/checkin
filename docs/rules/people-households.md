@@ -148,13 +148,18 @@ Things the app takes as true because they are handled outside it.
 - Where someone signs in with Google, the address they sign in with is the
   address they are contacted at. There is no second one to diverge from it.  [Decision]
 
-- A person is never deleted. A merged record stays as a tombstone and drops out
-  of every list, count and roster rather than out of the database.  [Decision — *Principle: decisions are reversible*]
+- A person is never lost. A merged record is kept and marked as merged rather
+  than removed, and drops out of every live list, count and roster. A record of
+  what happened still names them, because hiding a since-merged identity there
+  would falsify the history rather than protect anyone.  [Decision — *Principle: decisions are reversible*]
 
 - A merge moves email, sign-in identity and verification together as one unit,
   never split across the two records.  [Decision]
 
-- A merged person's pre-merge state is recorded so the merge can be undone.  [Decision — *Principle: decisions are reversible*]
+- A merged person's pre-merge state is recorded, so a merge of the wrong two
+  people can be investigated and the person reconstructed. There is no un-merge:
+  what the record does not carry is which rows moved, so putting a bad merge right
+  is hand work, not a button.  [Decision — *Principle: decisions are reversible*]
 
 ### Who may see what
 
@@ -172,22 +177,31 @@ Things the app takes as true because they are handled outside it.
 - An emergency contact needs a name and a phone number. One missing either does
   not count toward the household's obligation to have one.  [Decision]
 
+- An emergency contact's relationship to the household is optional free text,
+  with no picklist of types.  [Decision — deliberate limit]
+
 - A household names at least one emergency contact at intake, and its last valid
   contact cannot be removed.  [Decision]
 
 - A household change that invalidates a contact flags the row and keeps it.
   Nothing is blocked; the household resolves it.  [Decision]
 
-- A missing emergency contact is the household's to fix, not board work.  [Decision]
+- A missing emergency contact is the household's to fix and the board's to chase.
+  It raises a list of the households to contact, a count in the board's
+  navigation, and a notification the front desk sees too. Nothing is blocked —
+  chasing it is a conversation, not a refusal at the door.  [Decision — *Principle: people decide about people*]
 
 ### Trusted adults
 
 - Trusted-adult approval belongs to the household, not to an individual member.  [Decision — *Policy: Event, Location and Keyholder Policy, Art. IX*]
 
-- The board reads the family's context note; keyholders and program leaders read
-  the board's operational note. Neither side sees the other's.  [Decision — *Policy: Ethics Policy, Art. IV*]
+- The family's context note is written for the board and read by the board and
+  the family, never by keyholders or program leaders. The board's note on its own
+  decision is the board's alone. What reaches the front desk is the shared note
+  below, and nothing else.  [Decision — *Policy: Ethics Policy, Art. IV*]
 
-- Relationships are free text, with no picklist of types.  [Decision — deliberate limit]
+- How a trusted adult is connected to the family is prose inside the context note
+  the family has to write. There is no separate relationship field.  [Decision — deliberate limit]
 
 - Amending a trusted adult's details does not disturb the live approval, and
   rejecting the amendment is a separate action from revoking the person.  [Decision]
@@ -198,8 +212,11 @@ Things the app takes as true because they are handled outside it.
 - An approval lasts a year. The family is warned a month out and resubmits
   without re-entering what the board already holds.  [Decision]
 
-- A withdrawn trusted adult can be hidden from the household's own view. The
-  record stays and the board still sees it; the household cannot bring it back.  [Decision]
+- A withdrawn trusted adult can be hidden from the household's own view, and the
+  household cannot bring it back. The record is kept, but no board surface lists
+  it either — the review queue holds what is awaiting action or expiring, and the
+  pickup list holds what is approved. A withdrawn one survives in the audit trail
+  rather than in anyone's view.  [Decision]
 
 - One board member settles a disclosure; it does not need the whole board.  [Decision]
 

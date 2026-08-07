@@ -78,8 +78,10 @@ before, not an approximation of it.
 
   What is still open is where those lines sit, and whether capturing a whole
   record into the audit trail counts as capturing it or merely defers the same
-  dependency. Only people are kept today; enrollments and visits are removed with
-  the row written to the audit trail.
+  dependency. People and visits are kept today, each marked rather than removed,
+  and each with a filter every listing surface must pass through and a guard that
+  fails the build when a new one forgets. Enrollments are removed, with the row
+  written to the audit trail.
 
 The tell is a status that swallows its predecessor — a row that goes to ARCHIVED
 or MERGED with no record of what it was before. That is the moment to capture,
@@ -168,8 +170,10 @@ to do anything in it.
   inferred from what is left behind.
 
 - **A record that is no longer a person here holds nothing.** Merged away,
-  tombstoned, denied, revoked — such a record appears in no roster, no headcount,
-  no capacity calculation, and passes no gate.
+  denied, revoked, or kept only as a record of what was — such a record appears in
+  no roster, no headcount, no capacity calculation, and passes no gate. The rule governs live standing, not
+  the past: a record of what happened still names them, and what it never does is
+  admit them anywhere.
 
 The failure looks like a gate that tests the wrong thing: authorising on the
 presence of an id rather than on a right the caller currently holds. It survives

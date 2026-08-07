@@ -103,6 +103,10 @@ Things the app takes as true because they are handled outside it.
 - A program leader is 23 or older, the floor belonging to the role rather than to
   adulthood. A program volunteer has no age floor at all — youth volunteer too.  [Decision — *Policy: Sponsored Program Policy, Art. IV*]
 
+- Nothing checks either the age floor or the requirement that a leader be a
+  member who has passed a background check: the leader pickers admit anyone 18 or
+  over.  [Short of policy — *Policy: Sponsored Program Policy, Art. IV*]
+
 - Nobody under 18 enrolls themselves. A youth is enrolled by their household lead.  [Decision]
 
 ### Enrollment
@@ -188,14 +192,24 @@ Things the app takes as true because they are handled outside it.
 
 - The grace period is a board setting. Unset means the feature is off.  [Decision — *Principle: fail closed*]
 
-- A request whose seat hold failed cannot be approved as though it held one.  [Decision]
+- A request whose seat hold failed waits for a board member to take the seat off
+  sale by hand. It can still be approved or denied without one, deliberately: the
+  queue offers each as a named override behind a confirmation that states the
+  oversell risk. A failed store call is the organisation's fault, and stranding
+  the family is the worse outcome.  [Decision — deliberate limit]
 
 ### Access to program information
 
 - A program's catalogue entry is public; its roster is visible only to the people
   running it — its leader, its core volunteers, the board and sysadmins — and to
-  people enrolled in it. The catalogue route is never gated: an anonymous caller
-  reaches it and the response is filtered instead.  [Decision — *Policy: Records Policy, Art. IV*]
+  people enrolled in it. The catalogue filters rather than gates: an anonymous
+  caller reaches it and sees less, and is never told that a members-only program
+  exists.  [Decision — *Policy: Records Policy, Art. IV*]
+
+- A members-only program's own page keeps that silence. An anonymous caller is
+  told there is no such program; a signed-in caller who is not a member is told it
+  exists and that it is members only. Signing in is what earns the reason for
+  being turned away.  [Decision — *Principle: no existence oracle*]
 
 - A program leader is defined by the program they lead, not by a role they hold.
   They reach the programs they lead and no others; the board and sysadmins reach
@@ -220,24 +234,3 @@ Things the app takes as true because they are handled outside it.
 
 - Cross-selling one program from another will not be built.  [Decision — deliberate limit]
 
----
-
-## Policy requirements not yet enforced here
-
-- **A program can be created with no dates at all.** Both start and end are
-  optional and nothing rejects either being absent. A start date should be
-  required, and an absent end should default to the end of the fiscal year
-  (30 June) rather than staying null.
-
-  Three rules quietly change meaning when they are missing. Age eligibility
-  falls back to the registration date, which is the thing that rule exists to
-  avoid. The catalogue reads a null end as running indefinitely. Member-pricing
-  coverage falls back to status alone.
-
-- **The program-leader minimum age of 23 is not checked**, nor is the
-  requirement that a leader be a member who has passed a check.
-
-- **The second-adult-volunteer requirement is not modelled** as a precondition of
-  scheduling a session.
-
-- **School enrollment for youth is not captured.**

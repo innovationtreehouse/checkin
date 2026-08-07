@@ -91,13 +91,3 @@ Things the app takes as true because they are handled outside it.
 - Certifying authority is per tool; a certifier's reach across the app is not.
   Holding the level on any tool opens the certification surfaces for all of them.  [Decision — deliberate limit]
 
----
-
-## Policy requirements not yet enforced here
-
-- **No age minimum is checked against a level.** Nothing stops a 9-year-old
-  being recorded as certified, or someone under 21 as a certifier.
-
-- **Tool category is not modelled**, so the split between hand, heat,
-  powered-motion, and high-hazard tools — and the different age floors and
-  supervision rules that follow from it — has no representation.

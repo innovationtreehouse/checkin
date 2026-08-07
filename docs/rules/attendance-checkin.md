@@ -102,8 +102,13 @@ Things the app takes as true because they are handled outside it.
 ### The visit record
 
 - A member inserts their own past visit, backdated as far as they need — there is
-  no limit on how far, and the audit trail stands in for one. They cannot edit it
-  once it is in.  [Decision]
+  no limit on how far, and the audit trail stands in for one.  [Decision]
+
+- A member corrects or removes a visit of their own once it is in. The correction
+  always applies: the only bars are validity — the times parse, departure follows
+  arrival, the visit runs no longer than 24 hours, and a closed one is never
+  reopened — and whose record it is. Integrity is after the fact rather than a
+  gate: every change is audited, and a significant one is flagged to the board.  [Decision — *Principle: self-scope and repair*]
 
 - A household lead corrects a recorded visit for anyone in their household —
   inserting a past one, changing its times, or removing it — on the same terms as
@@ -133,29 +138,8 @@ program. This is a record of who was at one session of one program.
   having been in the building at the time proves nothing — a walk-in who is not
   enrolled needs enrolling first.  [Decision — *Principle: identity is not authorisation*]
 
-- Who attended is for the people running it — the program's leader, keyholders,
-  the board and sysadmins. Anyone else is refused outright rather than handed a
-  trimmed version, because the names are the part that matters and they survive
-  any trimming.  [Decision — *Principle: least privilege*]
+- Who attended is for the people running it — the program's leader, its core
+  volunteers, the board and sysadmins. Anyone else is refused outright rather than
+  handed a trimmed version, because the names are the part that matters and they
+  survive any trimming.  [Decision — *Principle: least privilege*]
 
----
-
-## Policy requirements not yet enforced here
-
-- **A member cannot correct their own visit.** Settled design rather than policy,
-  and not built. It was decided; the implementation is pending.
-
-- **The supervision check is weaker than the policy on three counts.** It counts
-  adults present. Policy requires two adults who are *volunteers*, who are *not
-  students*, and who are *unrelated and from different households*. Any of those
-  three can be false while the app reports the room compliant.
-
-- **Primary keyholder is not modelled.** There is no single designated primary,
-  no consent-based transfer, and no obligation on a departing primary to
-  transfer or close.
-
-- **The closing guard is keyed on keyholders, not on the last youth.** A last
-  keyholder is stopped and made to confirm, which covers the common case — but
-  policy's requirement is two adults on site with a last youth, and a
-  non-keyholder adult can leave a youth with a single remaining adult without
-  being interrupted.
