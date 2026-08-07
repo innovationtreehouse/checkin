@@ -245,10 +245,10 @@ defineRoute({
     envelope: null,
     // Bag: rows derived from AuditLog, with actor/subject names resolved
     // through Person (id and name are both public tier).
-    returns: ['AuditLog', 'Person'],
+    returns: ['AuditLog', 'Person', 'Visit'],
     orderedView: [
-        ['isSysadmin',    ['everyones:internal', 'public']],
-        ['isBoardMember', ['everyones:internal', 'public']],
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'public']],
     ],
 });
 ```
@@ -258,14 +258,14 @@ first line of defence; handlers still owe a tight select. That applies with
 force here, because the handler reshapes JSON into fields the stripper cannot
 map back to a model.
 
-### Response shape — UNRESOLVED, and it gates the registry entry
+### Response shape — decided here, because the registry entry cannot wait
 
 An earlier draft of this section specified a derived body — `{ buckets, rows,
 total, page, pageSize }` with fields like `kind`, `actorClass`, `flagged`,
-`before`, `after`. **That cannot pass the boundary**, and the registry entry
-cannot ship until the shape is settled, because the entry lands alone and inert
-*ahead* of the handler: getting it wrong means a merged boundary PR describing a
-response that cannot exist.
+`before`, `after`. **That cannot pass the boundary.** The shape is therefore
+settled in this section rather than deferred: the registry entry lands alone and
+inert *ahead* of the handler, so getting it wrong means a merged boundary PR
+describing a response that cannot exist.
 
 Two mechanisms make it impossible, both verified on `main` at `8a420411`:
 
@@ -285,32 +285,62 @@ on `withAuth`, because `check-route-coverage.ts`'s `new-route-old-authz` rule
 blocks an unregistered new route even in advisory mode.
 
 **None of the 19 registered routes returns an aggregate**, so there is no
-precedent to copy. This design is the first, which is why the question lands
-here rather than in the route PR.
+precedent to copy. This design is the first, which is why the question is
+answered here rather than in the route PR.
 
-**The three options, with their real costs:**
+**Why the grant above reads `everyones:personal`.** `Visit.arrivedAt` and
+`departedAt` are **`personal`** (`classifications.ts:281-282`); everything else
+the screen needs from `Visit` is `public`. A view granting only
+`everyones:internal` and `public` returns the ids and the `arrivedVia`/
+`departedVia` provenance and **strips both timestamps** — the before/after column
+renders empty. `POST /api/facility/visits/insert` already grants
+`everyones:personal` to the same two roles. `pii` is deliberately not granted:
+only `Person.name` is needed, which is `public`, so email cannot ship. `member`
+is not granted because no field on `AuditLog`, `Person` or `Visit` carries that
+tier.
+
+**The four options, with their real costs:**
 
 1. **Ship model rows, derive on the client.** Bag is `{ AuditLog, Person, Visit }`.
-   Passes the boundary today with no new machinery. The cost is exactly what
-   this section originally set out to avoid: `oldData`/`newData` are `internal`,
-   the view grants `everyones:internal`, so they ship **whole** and the client
-   extracts `before`/`after` — the `system-status/audit-log` shape. It also
-   breaks §3's pagination argument, because bucket counts computed from one page
-   describe only that page.
+   Passes the boundary today with no new machinery, and the cost is worse than
+   the tight-select concession it first looks like. `oldData` and `newData` are
+   `internal` JSON blobs that **contain `personal` Visit times**. Field tiers do
+   not reach inside JSON, so shipping the blobs whole under an
+   `everyones:internal` grant delivers `personal` data to a view that was never
+   granted `personal`. That is routing around the classification, not relaxing a
+   principle. It also breaks §3's pagination argument, because bucket counts
+   computed from one page describe only that page.
 2. **Two requests.** Paginated rows as in (1), plus a separate counts endpoint.
    Does not help: a count is still not a model field, so the second response
    faces the identical problem.
-3. **Extend the boundary** to declare derived or projected views. This is the
-   right answer and it is not this design's to make — PR #1518's per-caller-view
-   `select` proposes exactly this mechanism. If that lands, the original shape
-   becomes expressible as declared policy.
+3. **Extend the boundary** to declare derived or projected views. The right
+   long-term answer and not this design's to make — PR #1518's per-caller-view
+   `select` proposes exactly this mechanism. It is not available now.
+4. **Synthesize the bag.** `stripValue` copies any field *present on the object*
+   (`stripper.ts:64` — `if (!(field in obj)) continue`) and never checks where
+   the value came from. So the handler can build bag entries rather than passing
+   rows through: `{ AuditLog: rows with the blobs deleted, Person: [...],
+   Visit: [...] }`, where each `Visit` entry carries `arrivedAt`, `departedAt`,
+   `arrivedVia` and `departedVia` **extracted from the blobs**. Those are real
+   `Visit` field names, so they classify as `Visit` data and are governed by the
+   honest `everyones:personal` grant. The raw blobs never leave the handler.
 
-**Recommendation: (1) for v1, with the tight-select principle explicitly
-suspended and the reason recorded**, and the screen's default view scoped to a
-bounded range so a page is the whole range rather than a slice of it. Revisit
-under #1518. What must not happen is (1) shipped silently as though it were the
-intended design — §4's own argument against the forensic-log shape then applies
-to this screen, and nothing in the code would say why.
+**Recommendation: (4).** It needs nothing from #1518, and unlike (1) it does not
+route `personal` data through an `internal` grant — the times are delivered as
+what they are, under a grant that says so.
+
+**Its honest limits, so the route PR does not discover them.** `after` is a real
+`Visit` row fetchable by id; `before` exists only inside `oldData`, and one bag
+cannot hold two `Visit` arrays keyed to the same id — so `before` needs either a
+separate bag key or a documented convention, and that is the one piece the route
+PR still has to design. Derived scalars remain homeless: `kind` and `actorClass`
+fall out client-side from `action`, `actorId` and `secondaryAffectedEntity`,
+which do ship, but `flagged` and `score` live in `newData`.
+
+So (4) **halves the exposure rather than eliminating it**: ship `newData` — the
+small blob, one significance object — and keep `oldData`, the whole-row
+snapshot, server-side. That trade should be stated in the route PR rather than
+inherited silently.
 
 Whatever is chosen, `returns` must include **`Visit`**: `before`/`after` carry
 `arrivedAt`, `departedAt`, `arrivedVia` and `departedVia`, which are `Visit`
@@ -410,15 +440,19 @@ merged with the other two items fixed, and it is now its own change rather than
 four lines inside an existing one — the cost §2 predicts for deferring this class
 of fix.
 
-**Sequence:** resolve §4's response shape → #1523 lands → this design merges →
-the `defineRoute` entry ships alone (§4) → the route and the page. The §4 shape
-is independent of #1523 and is the one that blocks the registry entry, so it goes
-first even though #1523 gates the screen.
+**Sequence:** #1523 lands → this design merges → the `defineRoute` entry ships
+alone (§4) → the route and the page.
 
-Merging this document before #1523 would leave a design whose flagged view reads
-a column most writers do not fill, and would invite an implementation that quietly
-works around the gap at read time — which §2 argues is the one thing this screen
-must not do.
+§4's response shape is **not** a gate on this document — it is decided in §4,
+which is the only place it can be decided, because the registry entry ships
+before any handler exists to discover the problem. An earlier draft listed it as
+a precondition, which made the doc gate its own merge on a question it is the
+place to answer.
+
+#1523 is the only gate. Merging before it lands would leave a design whose
+flagged view reads a column most writers do not fill, and would invite an
+implementation that quietly works around the gap at read time — which §2 argues
+is the one thing this screen must not do.
 
 ### What must outlive this document
 
