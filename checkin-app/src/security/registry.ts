@@ -100,6 +100,46 @@ defineRoute({
     ],
 });
 
+// Board/sysadmin review of recent attendance-correction activity (AT12,
+// #1258). The handler does not query Visit directly — it reads AuditLog rows
+// where tableName === 'Visit' and SYNTHESIZES a Visit view per row from the
+// audit blob (arrivedAt/departedAt/arrivedVia/departedVia extracted from
+// newData). stripValue (stripper.ts) copies any field present on an object
+// without checking provenance, so a synthesized row strips exactly like a
+// real one — that is what makes this legal, not an exception to it.
+//
+// 'everyones:personal' is required: Visit.arrivedAt/departedAt are
+// personal-tier and this is a review-scope surface, not a self-scope one, so
+// no <scope>:<tier> row token applies. 'everyones:internal' is required for
+// AuditLog itself — every field on it (id, timestamp, actorId, action, …) is
+// internal-tier. 'pii' and 'member' are deliberately NOT granted: no field on
+// AuditLog, Person, or Visit needs either for this view.
+//
+// AuditLog.newData is REBUILT by the handler to { type, significance } before
+// it reaches this layer; raw oldData/newData (arbitrary blob shape) must never
+// leave the route. No pagination — nothing else here would give total/page/
+// pageSize a legal home under any envelope value (handler.ts strips before
+// the envelope wraps), so the handler caps rows and over-fetches by one to
+// signal "more" instead.
+//
+// Registered ahead of the route per the boundary isolation rule (AGENTS.md);
+// GET /api/facility/corrections does not exist yet. Blocked on #1523 (persist
+// significance on every Visit audit write) — the review is only meaningful
+// once every write scores.
+defineRoute({
+    endpoint: 'GET /api/facility/corrections',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { AuditLog, Person, Visit } — Visit synthesized from AuditLog blobs,
+    // not queried. Handler always emits all three keys, even empty: handler.ts
+    // unwraps a single-key bag to a bare value.
+    returns: ['AuditLog', 'Person', 'Visit'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
