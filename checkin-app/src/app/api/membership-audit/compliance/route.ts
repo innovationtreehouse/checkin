@@ -18,7 +18,8 @@ const utcDay = (d: Date) => d.toISOString().slice(0, 10);
  * from real data; there is no GRACE status modeled, so no grace bucket. Reasons:
  *   STALE_BG  — ACTIVE household whose background check aged past bgRecheckMonths
  *               (predicate owned by householdBgIsFresh; skipped when the board
- *               hasn't set the policy, i.e. bgRecheckMonths = 0).
+ *               hasn't set the policy — bgRecheckMonths = 0 or no membership-year
+ *               boundary).
  *   REVOKED / DENIED — OrgMembership status.
  *   STUCK_BG_CLEARANCE — a process parked at PENDING_BG_CLEARANCE (paid, never cleared).
  * A household with multiple problems gets all its reason tags.
@@ -26,7 +27,7 @@ const utcDay = (d: Date) => d.toISOString().slice(0, 10);
  * Also returns two PERSON-scoped lists (program people may not sit in a member
  * household, so they can't key on householdId):
  *   peopleNeedingBgCheck — program-attached people ≥18 (as of the boundary) with
- *                          no fresh check. Skipped when bgRecheckMonths = 0.
+ *                          no fresh check. Skipped when the policy is unset.
  *   peopleMissingDob     — program-attached people whose age is unknown (no DOB,
  *                          not declared 25+): data hygiene, NOT bg-needed.
  *
@@ -45,7 +46,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     const bgRecheckMonths = settings?.bgRecheckMonths ?? 0;
     const boundary = settings?.orgMembershipYearBoundary
         ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
-        : new Date();
+        : null;
 
     // householdId -> Set<reason>
     const reasons = new Map<number, Set<string>>();
@@ -55,10 +56,11 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         reasons.set(householdId, set);
     };
 
-    // 1. Stale background check — only when the board has configured a window.
-    //    Reuse householdBgIsFresh per household (stale = returns false); when
-    //    bgRecheckMonths = 0 it always returns false, so skip the whole bucket.
-    if (bgRecheckMonths > 0) {
+    // 1. Stale background check — only when the board has configured a window AND a
+    //    membership-year boundary. Reuse householdBgIsFresh per household (stale =
+    //    returns false); with either half of the policy unset it always returns false,
+    //    so skip the whole bucket rather than tag every household.
+    if (bgRecheckMonths > 0 && boundary) {
         const active = await prisma.orgMembership.findMany({
             where: { status: "ACTIVE" },
             select: { householdId: true },
@@ -88,8 +90,8 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     //    Subject = union of ProgramParticipant / ProgramVolunteer / Program.leadMentor.
     //    A program lead/volunteer may sit in a household that isn't a member household,
     //    so these are person-scoped, NOT folded into the householdId reason map above.
-    //    Skip the whole bucket when the board hasn't set a recheck window, exactly
-    //    like STALE_BG — bgRecheckMonths = 0 means "no policy", nothing is stale.
+    //    Skip the whole bucket when the board hasn't set a recheck window or a
+    //    membership-year boundary, exactly like STALE_BG — no policy, nothing is stale.
     type PersonRow = {
         personId: number;
         name: string;
@@ -100,7 +102,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     };
     const peopleNeedingBgCheck: PersonRow[] = [];
     const peopleMissingDob: PersonRow[] = [];
-    if (bgRecheckMonths > 0) {
+    if (bgRecheckMonths > 0 && boundary) {
         const threshold = bgFreshThreshold(boundary, bgRecheckMonths);
         const people = await prisma.person.findMany({
             where: {

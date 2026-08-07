@@ -7,6 +7,7 @@ import { processVisitCheckout } from "@/lib/attendanceTransitions";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
 import { runPersonAgreementSweep } from "@/lib/membership/personAgreementTriggers";
+import { systemActor } from "@/lib/auditActor";
 
 export const GET = withCron(async () => {
         const now = new Date();
@@ -58,7 +59,7 @@ export const GET = withCron(async () => {
                 // System Audit Log for the violation
                 await prisma.auditLog.create({
                     data: {
-                        actorId: 0, 
+                        ...systemActor("cron:nightly"),
                         action: 'CREATE',
                         tableName: 'SYSTEM_NOTIFY',
                         affectedEntityId: 0,

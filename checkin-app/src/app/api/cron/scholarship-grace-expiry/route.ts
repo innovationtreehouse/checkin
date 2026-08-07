@@ -4,8 +4,8 @@ import { withCron } from "@/lib/cronAuth";
 import prisma from "@/lib/prisma";
 import { withdrawAndReleaseHold } from "@/lib/program/capacity";
 import { STATES } from "@/lib/programs/enrollmentState";
+import { systemActor } from "@/lib/auditActor";
 
-const SYSTEM_ACTOR = 0;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -49,7 +49,7 @@ export const GET = withCron(async () => {
 
             await prisma.auditLog.create({
                 data: {
-                    actorId: SYSTEM_ACTOR,
+                    ...systemActor("cron:scholarship-grace-expiry"),
                     action: "DELETE",
                     tableName: "ProgramParticipant",
                     affectedEntityId: record.personId,

@@ -94,22 +94,38 @@ async function wipe() {
 
 const isVolunteerOf = async (id: number) => (await prisma.orgMembership.findUnique({ where: { id } }))?.isVolunteer;
 
+/**
+ * Turn the fresh-check shortcut on. It needs BOTH halves of the policy — a recheck
+ * window AND a membership-year boundary — since householdBgIsFresh treats either
+ * being unset as "no policy, nothing is fresh". The boundary sits ~30 days out, so
+ * the freshness threshold (boundary - 12 months) lands ~11 months back and a check
+ * stamped today counts as fresh.
+ */
+async function setBgPolicy() {
+    const data = { bgRecheckMonths: 12, orgMembershipYearBoundary: new Date(Date.now() + 30 * 86400_000) };
+    await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data });
+}
+
 describe('background check is non-blocking', () => {
     let revA: number, revB: number;
-    let prevBgRecheckMonths = 0;
+    let prevPolicy: { bgRecheckMonths: number; orgMembershipYearBoundary: Date | null } = { bgRecheckMonths: 0, orgMembershipYearBoundary: null };
 
     beforeAll(async () => {
         await wipe();
         // BoardSettings (id=1) is a global singleton; remember what we change so the
         // auto-clear scenario doesn't pollute other suites' BoardSettings reads.
-        prevBgRecheckMonths = (await prisma.boardSettings.findUnique({ where: { id: 1 } }))?.bgRecheckMonths ?? 0;
+        const prev = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+        prevPolicy = {
+            bgRecheckMonths: prev?.bgRecheckMonths ?? 0,
+            orgMembershipYearBoundary: prev?.orgMembershipYearBoundary ?? null,
+        };
         revA = await makeReviewer('RevA');
         revB = await makeReviewer('RevB');
         await makeBoardMember(); // recipient for the paid-reject refund alert
     });
     afterAll(async () => {
         await wipe();
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: prevBgRecheckMonths }, update: { bgRecheckMonths: prevBgRecheckMonths } });
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, ...prevPolicy }, update: prevPolicy });
         await prisma.$disconnect();
     });
 
@@ -193,7 +209,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('a still-valid prior check auto-clears at submit — no consent needed, pay activates directly', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { processId, orgMembershipId, householdId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         // Reset the process to INTAKE with the household fully filled so submitIntake passes validation.
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
@@ -229,7 +245,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('fresh-check intake shortcut still matches the designation allowlist (#874)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { processId, orgMembershipId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701' } });
@@ -245,7 +261,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('renewal with a still-valid background check matches a designation added since the last cycle (#874)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { orgMembershipId, processId, leadEmail } = await makeFreshRenewal();
         await prisma.volunteerDesignation.create({ data: { email: leadEmail } });
 
@@ -281,7 +297,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('fresh check + intake note → no auto-clear at submit; the note goes through review (#907)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { processId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         await prisma.household.update({
@@ -301,7 +317,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('fresh-check renewal with a household note re-reviews instead of opening payment (#907)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { orgMembershipId, processId } = await makeFreshRenewal();
         const m = await prisma.orgMembership.findUnique({ where: { id: orgMembershipId } });
         await prisma.household.update({ where: { id: m!.householdId }, data: { intakeNotes: 'note for the reviewer' } });
@@ -385,7 +401,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('renewal with a still-valid background check: bgClearedAt stamped, signature opens payment, paying activates (not stuck)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { orgMembershipId, processId } = await makeFreshRenewal();
         await beginRenewal(processId);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });

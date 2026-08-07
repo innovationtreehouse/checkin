@@ -10,9 +10,13 @@ import { inAgreementAgeBand, hasKnownAdultAge, agreementCycleFloor } from "@/lib
 const BOUNDARY = new Date("2000-09-01"); // anchor day-of-year; the year is irrelevant
 const yearsAgo = (n: number, from = new Date("2026-08-02")) =>
     new Date(Date.UTC(from.getUTCFullYear() - n, from.getUTCMonth(), from.getUTCDate()));
+// A real instant on 2 August, mid-morning in the org's zone — the age rules take an
+// instant and resolve it to the day it falls on there, so a bare UTC midnight would
+// stand for the evening of the 1st.
+const NOW = new Date("2026-08-02T15:00:00.000Z");
 
 describe("inAgreementAgeBand — the automatic population", () => {
-    const now = new Date("2026-08-02");
+    const now = NOW;
 
     it("takes 18 through 25 with a DOB on file", () => {
         expect(inAgreementAgeBand({ dateOfBirth: yearsAgo(18), isDeclaredAdult: false }, now)).toBe(true);
@@ -25,6 +29,14 @@ describe("inAgreementAgeBand — the automatic population", () => {
         // One day short of 18.
         const almost = new Date(Date.UTC(2008, 7, 3));
         expect(inAgreementAgeBand({ dateOfBirth: almost, isDeclaredAdult: false }, now)).toBe(false);
+    });
+
+    it("waits for local midnight, not UTC midnight, on the 18th birthday", () => {
+        // 9 PM on 1 August in the org's zone — UTC has already turned over to the 2nd,
+        // and the nightly sweep runs in exactly this window.
+        const eve = new Date("2026-08-02T02:00:00.000Z");
+        expect(inAgreementAgeBand({ dateOfBirth: yearsAgo(18), isDeclaredAdult: false }, eve)).toBe(false);
+        expect(hasKnownAdultAge({ dateOfBirth: yearsAgo(18), isDeclaredAdult: false }, eve)).toBe(false);
     });
 
     it("refuses over 25 — a non-lead adult that old is a spouse, not an adult child", () => {
@@ -41,7 +53,7 @@ describe("inAgreementAgeBand — the automatic population", () => {
 });
 
 describe("hasKnownAdultAge — the looser manual (board) rule", () => {
-    const now = new Date("2026-08-02");
+    const now = NOW;
 
     it("accepts the over-25s the automatic band refuses — the board judges those itself", () => {
         expect(hasKnownAdultAge({ dateOfBirth: null, isDeclaredAdult: true }, now)).toBe(true);

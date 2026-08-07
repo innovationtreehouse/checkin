@@ -3,6 +3,7 @@ import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgChec
 import { nextBoundary } from "@/lib/membership/renewal";
 import { personBgOpen } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
+import { systemActor } from "@/lib/auditActor";
 
 /**
  * Triggers that OPEN a per-person background-check obligation (PERSON_BG process,
@@ -14,7 +15,6 @@ import { LIVE_PERSON, PROGRAM_ATTACHED_WHERE } from "@/lib/person/filters";
  * annual run, not when they take a role.
  */
 
-const SYSTEM_ACTOR = 0;
 
 /**
  * Open one PERSON_BG obligation for `personId`, evaluated as of `asOf` (the annual
@@ -53,7 +53,7 @@ export async function openPersonBg(personId: number, asOf: Date, threshold: Date
         });
         await tx.auditLog.create({
             data: {
-                actorId: SYSTEM_ACTOR,
+                ...systemActor("system:person-bg-open"),
                 action: "CREATE",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: created.id,

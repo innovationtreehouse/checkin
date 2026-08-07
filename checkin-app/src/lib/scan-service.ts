@@ -5,6 +5,10 @@ import { apiError, apiJson } from "@/lib/api-response";
 import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
 
+/** How long a displayed force-close warning stays confirmable. The scan route's
+ *  3s debounce eats the front of it, so the kiosk copy says "3 to 60 seconds". */
+const FORCE_CLOSE_CONFIRM_MS = 60_000;
+
 /**
  * Process a check-in for a participant who has no active visit.
  *
@@ -91,22 +95,23 @@ export async function processCheckout(
             });
 
             if (remainingUsers.length > 0) {
-                let confirmForceClose = false;
-
-                const recentEvents = await db.rawBadgeLog.findMany({
-                    where: { personId: participant.id },
-                    orderBy: { timestamp: "desc" },
-                    take: 2
+                const ownVisit = await db.visit.findUnique({
+                    where: { id: activeVisitId },
+                    select: { forceCloseWarnedAt: true }
                 });
-
-                if (recentEvents.length === 2) {
-                    const timeDiff = recentEvents[0].timestamp.getTime() - recentEvents[1].timestamp.getTime();
-                    if (timeDiff <= 12000) {
-                        confirmForceClose = true;
-                    }
-                }
+                const warnedAt = ownVisit?.forceCloseWarnedAt;
+                const confirmForceClose =
+                    warnedAt != null && Date.now() - warnedAt.getTime() <= FORCE_CLOSE_CONFIRM_MS;
 
                 if (!confirmForceClose) {
+                    // Stamp the warning on this visit; only a scan that follows the
+                    // stamp may force-close, so the confirmation is bound to the
+                    // warning having been shown rather than to badge adjacency.
+                    await db.visit.update({
+                        where: { id: activeVisitId },
+                        data: { forceCloseWarnedAt: new Date() }
+                    });
+
                     // Never render the raw address (tier `pii`) on the kiosk screen (#329):
                     // fall back to the email local-part, same as getFullAttendance /
                     // kioskdisplay/certifications.
@@ -115,7 +120,7 @@ export async function processCheckout(
                         .filter(Boolean)
                         .join(", ");
                     return apiJson({
-                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
+                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again in 3 to 60 seconds to confirm you've checked them and close the facility.`,
                         type: "warning" as const
                     }, 400);
                 }

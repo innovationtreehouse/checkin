@@ -82,6 +82,8 @@ async function applyRoleFlag(
 export class RoleMatrixError extends Error {}
 /** Thrown by `setRoleFlag` when the change would remove the last remaining board member. */
 export class LastBoardMemberError extends Error {}
+/** Thrown by `setRoleFlag` when granting BOARD to a member of a DENIED household. */
+export class DeniedHouseholdBoardError extends Error {}
 
 /**
  * A logged-in actor's authority, for the matrix check below — or the literal
@@ -95,7 +97,7 @@ export type RoleActor = { id: number; isBoardMember: boolean; isSysadmin: boolea
 
 /**
  * THE write choke point for role changes. Grants/revokes one `flag` on
- * `target`, owning both invariants that used to live in the API route:
+ * `target`, owning every invariant a role write has to hold:
  *
  *  - the per-flag authority matrix (§4.3): a board actor may grant/revoke any
  *    of the five flags, including adding/removing isSysadmin and removing
@@ -105,10 +107,13 @@ export type RoleActor = { id: number; isBoardMember: boolean; isSysadmin: boolea
  *  - the last-board-member guard: board membership can never be revoked down
  *    to zero, regardless of actor (including "system" — this protects data
  *    integrity, not authority, so the bypass above does not extend to it).
+ *  - the denied-household guard: BOARD can't be granted to a member of a DENIED
+ *    household, the mirror of the deny-side refusal in
+ *    POST /api/membership-ops/households. Also actor-independent.
  *
  * Every writer that mutates a role — the PATCH /api/roles route, bootstrap
  * self-promotion, dev seeds — routes through here, so a new caller can't
- * accidentally skip either invariant.
+ * accidentally skip any of them.
  *
  * Locks the whole BOARD row set FOR UPDATE before checking or writing.
  * ponytail: FOR UPDATE over the whole set — tiny table (a handful of rows),
@@ -156,6 +161,19 @@ export async function setRoleFlag(
         if (flag === "isBoardMember" && on === false) {
             const boardCount = await tx.personRole.count({ where: { role: "BOARD" } });
             if (boardCount <= 1) throw new LastBoardMemberError();
+        }
+
+        // The other half of the deny guard in POST /api/membership-ops/households: a
+        // denied household holds no authority and every member of it is locked out of
+        // sign-in, so BOARD can't be granted into one from this side either. Like the
+        // last-board guard this protects the data, not authority — "system" doesn't
+        // bypass it.
+        if (flag === "isBoardMember" && on === true) {
+            const target = await tx.person.findUnique({
+                where: { id: personId },
+                select: { household: { select: { orgMembership: { select: { status: true } } } } },
+            });
+            if (target?.household.orgMembership?.status === "DENIED") throw new DeniedHouseholdBoardError();
         }
 
         await applyRoleFlag(tx, personId, flag, on, actor === "system" ? undefined : actor.id);

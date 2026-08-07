@@ -116,8 +116,8 @@ there is no existence oracle on other people's visit ids. Delete is a tombstone
 ### Staff insert-for-others at an arbitrary past time
 `POST /api/facility/visits/insert`
 ([route.ts](../../src/app/api/facility/visits/insert/route.ts)), same gate. The
-walk-in path neither the kiosk (live only) nor the event roster mark
-(program-scoped, event window) can record.
+walk-in path neither the kiosk (live only) nor an attendance correction
+(program-scoped, one session) can record.
 Unlike the self-service route, the target `personId` **is** taken from the body —
 that is the point of the endpoint — so the role gate is the whole boundary.
 Closed visits only: an open one would put someone on the live in-the-building
@@ -134,14 +134,9 @@ wrapped, `WEB` on both fields, event association via `findAssociatedEventAt`,
 audited with `secondaryAffectedEntity` = the subject.
 
 ### Lead add-for-others / attendance correction — program-scoped
-Two routes, both gated on program `leadMentorId` or sysadmin/board (the roster
-mark also admits keyholders):
-- `POST /api/events/[id]/attendance`
-  ([route.ts](../../src/app/api/events/[id]/attendance/route.ts)) — the roster
-  mark. Targets restricted to the program roster (enrolled + volunteering);
-  unknown ids rejected — no cross-program fabrication. Writes synthetic
-  `LEAD_MARKED` visits spanning the event window, or adopts an overlapping
-  walk-in into the event. Audited.
+One route, gated on program `leadMentorId`, core volunteer, or sysadmin/board.
+Targets are restricted to the program roster (enrolled + volunteering); anyone
+else is rejected — no cross-program fabrication.
 - `PATCH /api/events/[id]`, action `manualEditAttendance`
   ([route.ts](../../src/app/api/events/[id]/route.ts)) — per-participant
   Present/Absent correction, scoped to this event's visits. Present writes or
@@ -170,8 +165,8 @@ filterable by `tableName`/`action`/date. This is AT12's foundation (§4).
 
 Audit coverage across visit-write paths: **every human edit path logs** a `Visit`
 audit row — manual `CREATE`, the self/household-lead `EDIT`/`DELETE`,
-`facility/visits` `EDIT`/`DELETE`, the staff insert, the events roster mark,
-`manualEditAttendance`, and `my-programs/conflicts/resolve`. Each carries
+`facility/visits` `EDIT`/`DELETE`, the staff insert, `manualEditAttendance`, and
+`my-programs/conflicts/resolve`. Each carries
 `actorId` = who acted and `secondaryAffectedEntity` = whose visit it is, so
 acting-for-another reads off the inequality without a join (§6.6).
 `manualEditAttendance` was the one gap — it wrote nothing at all — closed by AT3.
@@ -492,7 +487,7 @@ this was a per-writer edit, not a rename:
 
 | writer | was | now |
 |---|---|---|
-| events-attendance roster mark ([route.ts](../../src/app/api/events/[id]/attendance/route.ts)) | `SYSTEM` (both fields) | `LEAD_MARKED` |
+| events-attendance roster mark (`POST /api/events/[id]/attendance`, since deleted) | `SYSTEM` (both fields) | `LEAD_MARKED` |
 | keyholder building-close `closeAllOpenVisits` ([scan-service.ts](../../src/lib/scan-service.ts)) | `departedVia: "SYSTEM"` | `FACILITY_CLOSE` |
 | nightly-cron sweep `processVisitCheckout` ([cron/nightly](../../src/app/api/cron/nightly/route.ts)) | `departedVia: "SYSTEM"` | `AUTO_CLOSE` |
 

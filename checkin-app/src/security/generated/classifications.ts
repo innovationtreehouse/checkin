@@ -286,11 +286,13 @@ export const classifications = {
         associatedEventId: 'public',
         deletedAt: 'internal',
         deletedById: 'internal',
+        forceCloseWarnedAt: 'internal',
     },
     AuditLog: {
         id: 'internal',
         timestamp: 'internal',
         actorId: 'internal',
+        actorSystem: 'internal',
         action: 'internal',
         tableName: 'internal',
         affectedEntityId: 'internal',

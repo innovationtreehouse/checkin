@@ -73,8 +73,9 @@ export default function AdminMembershipPage() {
 function ApplicationsBoard() {
   const { data: session } = useSession();
   const me = session?.user;
-  // Conflict of interest: no actor may certify/override their OWN household's
-  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked).
+  // Conflict of interest: no actor may advance/certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan, overrideBlocked and
+  // the EXTERNAL-phase route).
   // The disabled state is UX only — the server is the real enforcement.
   const ownHousehold = (r: ProcessRow) =>
     sharesHousehold(me?.householdId, r.orgMembership?.householdId);
@@ -387,7 +388,7 @@ function ApplicationsBoard() {
                     {r.contractSignedAt ? (
                       <Text c="green" fw={600}>✓ Signed</Text>
                     ) : (
-                      <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
+                      <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => act(r.id, "mark-contract")}>
                         Confirm contract signed
                       </Button>
                     )}
@@ -397,11 +398,14 @@ function ApplicationsBoard() {
                     {r.bgConsentAt ? (
                       <Text c="green" fw={600}>✓ Received</Text>
                     ) : (
-                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
+                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => act(r.id, "mark-bg-consent")}>
                         Confirm BG consent
                       </Button>
                     )}
                   </div>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed">You can&apos;t confirm your own household&apos;s contract or consent — someone outside your household must.</Text>
+                  )}
                 </Group>
               )}
 
