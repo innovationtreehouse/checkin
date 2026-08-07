@@ -285,6 +285,7 @@ export const classifications = {
         associatedEventId: 'public',
         deletedAt: 'internal',
         deletedById: 'internal',
+        forceCloseWarnedAt: 'internal',
     },
     AuditLog: {
         id: 'internal',
