@@ -32,18 +32,25 @@ function gitShow(rev, path) {
     }
 }
 
-function main(argv) {
+// Split argv into the three parts the certifier needs. `--boundary` slurps
+// positionally up to the `--` separator; everything after `--` is a violation.
+function parseArgs(argv) {
     const baseIdx = argv.indexOf('--base');
     const boundaryIdx = argv.indexOf('--boundary');
     const sepIdx = argv.indexOf('--');
-    if (baseIdx === -1 || !argv[baseIdx + 1]) {
-        console.error('usage: check-boundary-decommission.js --base <sha> --boundary [file...] -- [violation...]');
-        return 1;
-    }
-    const baseSha = argv[baseIdx + 1];
+    const baseSha = baseIdx === -1 ? null : argv[baseIdx + 1] || null;
     const boundaryEnd = sepIdx === -1 ? argv.length : sepIdx;
     const boundaryChanged = boundaryIdx === -1 ? [] : argv.slice(boundaryIdx + 1, boundaryEnd);
     const violations = sepIdx === -1 ? [] : argv.slice(sepIdx + 1);
+    return { baseSha, boundaryChanged, violations };
+}
+
+function main(argv) {
+    const { baseSha, boundaryChanged, violations } = parseArgs(argv);
+    if (!baseSha) {
+        console.error('usage: check-boundary-decommission.js --base <sha> --boundary [file...] -- [violation...]');
+        return 1;
+    }
 
     // Same three-dot semantics as the workflow's file list: compare against
     // the merge base, so a stale PR branch isn't blamed for main's changes.
@@ -77,4 +84,8 @@ function main(argv) {
     return 0;
 }
 
-process.exit(main(process.argv.slice(2)));
+if (require.main === module) {
+    process.exit(main(process.argv.slice(2)));
+}
+
+module.exports = { parseArgs, main };

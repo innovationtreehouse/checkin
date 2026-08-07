@@ -167,7 +167,7 @@ jobs:
             # whole-entry removals of subjects deleted in this same PR.
             # Pass the boundary set (is_boundary above is the single source of
             # truth) so the certifier never re-derives "what is a boundary file".
-            if [ -z "$RETIER" ] &&
+            if [ -z "$RETIER" ] && [ "${#BOUNDARY_FILES[@]}" -gt 0 ] &&
                node checkin-app/scripts/check-boundary-decommission.js \
                  --base "$BASE_SHA" \
                  --boundary "${BOUNDARY_FILES[@]}" \
