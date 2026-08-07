@@ -321,6 +321,7 @@ const EDGE_INCLUDE_ALLOWLIST: Record<string, string> = {
     'household/visits': "query-shaped — own household only (where householdId = caller's)",
     'kioskdisplay/certifications': 'admin-role-gated — sysadmin/board/keyholder (+ kiosk)',
     'membership-audit/compliance': 'admin-role-gated — withAuth roles [sysadmin, board]; reads ProgramParticipant/Volunteer to flag people needing a background check',
+    'membership-audit/turning-18': 'admin-role-gated — registry authorize anyRole [sysadmin, board]; reads ProgramParticipant to mark which 18-year-olds are enrolled in a program',
     'membership-ops/households': 'admin-role-gated — withAuth roles [sysadmin, board]; ?id= branch includes each member ProgramParticipant for the household detail view',
     'membership-ops/participants/merge/analyze': 'admin-role-gated — sysadmin/board',
     'nav/todo-counts': 'query-shaped — counts scoped to caller (own household + programs the caller leads)',
