@@ -3,9 +3,9 @@
  */
 /**
  * Unit tests for renewal.ts edge logic (prisma mocked, no DB):
- *   - householdBgIsFresh: the recheckMonths<=0 short-circuit, and the `gte`
- *     threshold boundary (a background check exactly at the threshold counts
- *     as fresh).
+ *   - householdBgIsFresh: the unset-policy short-circuits (recheckMonths<=0, null
+ *     boundary), and the `gte` threshold boundary (a background check exactly at
+ *     the threshold counts as fresh).
  *   - beginRenewal: a process not in PENDING_RENEWAL → RenewalError wrong_phase;
  *     every path lands at PENDING_EXTERNAL_ACTION (a fresh agreement is signed
  *     each cycle) and only a still-valid background check with no household
@@ -51,6 +51,17 @@ describe('householdBgIsFresh', () => {
         prisma.person.findFirst.mockResolvedValue({ id: 1 });
 
         const result = await householdBgIsFresh(42, boundary, 0);
+
+        expect(result).toBe(false);
+        expect(prisma.person.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('no boundary → not fresh, and never queries (membership year unset)', async () => {
+        // An unset boundary must not become "now": that would measure freshness against
+        // a boundary the board never configured and hand out the shortcut.
+        prisma.person.findFirst.mockResolvedValue({ id: 1 });
+
+        const result = await householdBgIsFresh(42, null, 12);
 
         expect(result).toBe(false);
         expect(prisma.person.findFirst).not.toHaveBeenCalled();
