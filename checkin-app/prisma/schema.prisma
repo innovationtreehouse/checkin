@@ -1278,6 +1278,31 @@ model IntegrationErrorLog {
   @@index([resolvedAt, timestamp])
 }
 
+/// One completed run of a cron sweep, written by `withCron` (src/lib/cronAuth.ts) for every
+/// route under /api/cron. The schedule and the caller live in a separate infra repo, so the
+/// app cannot know when a job is *due* — it can only observe that a run happened. This table
+/// is that observation: it feeds the System Status cron panel and the stale-job nav badge,
+/// which is the only in-app signal that a sweep silently stopped firing. Rolling log: rows
+/// auto-purge after 90 days.
+model CronRunLog {
+  /// @sensitivity:internal
+  id         Int      @id @default(autoincrement())
+  /// Route slug — the last path segment of /api/cron/<job>.
+  /// @sensitivity:internal
+  job        String
+  /// @sensitivity:internal
+  startedAt  DateTime
+  /// @sensitivity:internal
+  finishedAt DateTime @default(now())
+  /// @sensitivity:internal
+  success    Boolean
+  /// Message from the throw that failed the run; null on success.
+  /// @sensitivity:internal
+  error      String?
+
+  @@index([job, success, finishedAt])
+}
+
 /// Dev-instance activity ledger (docs/ops/dev-instance.md, "The ledger"). Lives only in checkin_dev; records
 /// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
 /// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;
