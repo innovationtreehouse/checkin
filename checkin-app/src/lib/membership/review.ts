@@ -123,8 +123,11 @@ async function loadReviewer(reviewerId: number) {
  * household INITIAL/RENEWAL it's the membership's household. Null when neither is
  * resolvable (e.g. a PERSON_BG whose subject has no household to exclude) — the
  * caller then applies no exclusion.
+ *
+ * Exported for the EXTERNAL-phase route guard, which holds the same process shape
+ * and needs the same subject household to feed hasHouseholdConflict.
  */
-async function applicantHousehold(db: DbClient, process: { orgMembershipId: number | null; subjectPersonId: number | null }): Promise<number | null> {
+export async function applicantHousehold(db: DbClient, process: { orgMembershipId: number | null; subjectPersonId: number | null }): Promise<number | null> {
     if (process.subjectPersonId) {
         const p = await db.person.findUnique({ where: { id: process.subjectPersonId }, select: { householdId: true } });
         return p?.householdId ?? null;
