@@ -385,8 +385,9 @@ export const POST = withAuth(
                 await tx.account.updateMany({ where: { userId: mergeId }, data: { userId: keepId } });
                 // DELIBERATE exception to the no-deletion principle above: sessions are
                 // auth artifacts, not person data, and there's no reason for the keeper
-                // to inherit the tombstone's login session. Deleting forces a re-login
-                // (smaller and safer than moving a session onto a different person mid-use).
+                // to inherit the tombstone's login session. Sessions are JWT-strategy, so
+                // this row is not what ends the tombstone's access — the LIVE_PERSON filter
+                // on the jwt() re-sync (auth-options.ts) collapses that token on next refresh.
                 await tx.session.deleteMany({ where: { userId: mergeId } });
                 await tx.orgMembershipProcess.updateMany({ where: { subjectPersonId: mergeId }, data: { subjectPersonId: keepId } });
                 // Both sides can have owed a check — the survivor keeps exactly one.
