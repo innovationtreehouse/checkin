@@ -277,6 +277,15 @@ describe('Admin Visits API Integration Tests', () => {
                 where: { actorId: testAdminId, action: 'EDIT', tableName: 'Visit' }
             });
             expect(currentAuditLogs).toBe(previousAuditLogs + 1);
+
+            // Only departedAt moved (from null, closing the visit) — no weighted
+            // shift on either field, so significance is the zero floor.
+            const auditLog = await prisma.auditLog.findFirst({
+                where: { actorId: testAdminId, action: 'EDIT', tableName: 'Visit', affectedEntityId: testVisitId },
+                orderBy: { id: 'desc' },
+            });
+            expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 0, flagged: false });
         });
     });
 
@@ -370,6 +379,11 @@ describe('Admin Visits API Integration Tests', () => {
             });
             expect(auditLog).not.toBeNull();
             expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
+
+            // A delete always flags (the floor) even though the visit never
+            // closed, so there's no duration to weigh — score is 0.
+            expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 0, flagged: true });
         });
     });
 

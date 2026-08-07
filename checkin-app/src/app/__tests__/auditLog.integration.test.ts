@@ -400,5 +400,8 @@ describe('AuditLog Integration Tests', () => {
         expect(logs).toHaveLength(1);
         expect(logs[0].actorId).toBe(testAdminId);
         expect((logs[0].newData as { id?: number }).id).toBe(visit.id);
+        // oldData comes from the in-lock re-read (`previous`), not the
+        // pre-lock `existing` snapshot — same row here, but pins the swap.
+        expect((logs[0].oldData as { id?: number }).id).toBe(visit.id);
     });
 });

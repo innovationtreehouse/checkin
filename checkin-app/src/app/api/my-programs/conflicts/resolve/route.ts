@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { intervalsOverlap } from "@/lib/attendanceConflicts";
 import { apiError } from "@/lib/api-response";
+import { deleteSignificance } from "@/lib/visit/significance";
 
 /**
  * Resolve an attendance conflict by deleting one of the duplicate Visit rows.
@@ -84,6 +85,9 @@ export const POST = withAuth({}, async (req, auth) => {
           associatedEventId: visit.associatedEventId,
           reason: "duplicate-attendance-conflict",
         },
+        // Scored off the same `visit` snapshot as oldData above — no separate
+        // in-lock re-read, so the two can't disagree.
+        newData: { significance: deleteSignificance(visit, { byProxy: user.id !== visit.personId }) },
       },
     });
   });

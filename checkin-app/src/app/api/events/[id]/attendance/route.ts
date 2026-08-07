@@ -116,7 +116,8 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                     // secondaryAffectedEntity — the one meaning that column carries
                     // on a Visit row, so `actorId === secondaryAffectedEntity` is a
                     // reliable self-vs-proxy test. The event is not lost: it is in
-                    // newData.associatedEventId.
+                    // newData.associatedEventId. No significance score: this write
+                    // only links an existing visit to an event, no times change.
                     await tx.auditLog.create({
                         data: {
                             actorId: currentUserId,

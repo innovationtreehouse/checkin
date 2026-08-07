@@ -8,6 +8,7 @@ import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
+import { editSignificance, deleteSignificance } from "@/lib/visit/significance";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -311,7 +312,10 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                                     arrivedVia: v.arrivedVia, departedVia: v.departedVia,
                                     associatedEventId: v.associatedEventId
                                 },
-                                newData: { type: "lead_attendance_correction", status: "Absent" }
+                                newData: {
+                                    type: "lead_attendance_correction", status: "Absent",
+                                    significance: deleteSignificance(v, { byProxy: userId !== targetId }),
+                                }
                             }))
                         });
                     }
@@ -370,7 +374,13 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                                 arrivedVia: existingVisit.arrivedVia, departedVia: existingVisit.departedVia,
                                 associatedEventId: existingVisit.associatedEventId
                             },
-                            newData: { ...times, type: "lead_attendance_correction", status: "Present" }
+                            newData: {
+                                ...times, type: "lead_attendance_correction", status: "Present",
+                                // Scores 0 when this reopens a closed visit (dep null): minutesBetween
+                                // returns 0 on a null side, so the most destructive edit here reads as
+                                // insignificant rather than unscored. Tracked separately.
+                                significance: editSignificance(existingVisit, { arrivedAt: arrival!, departedAt: dep }, { byProxy: userId !== targetId }),
+                            }
                         }
                     });
                 } else {

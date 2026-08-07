@@ -332,6 +332,9 @@ describe('Event Attendance API Integration Tests', () => {
             expect(auditRows[0].actorId).toBe(testAdminId);
             expect(auditRows[0].action).toBe('EDIT');
             expect(auditRows[0].affectedEntityId).toBe(visits[0].id);
+            // Only associatedEventId changes here — no times shift, so this
+            // write never scores (unlike the manual-correction EDIT paths).
+            expect((normalizeAuditData(auditRows[0].newData) as { significance?: unknown }).significance).toBeUndefined();
             expect(normalizeAuditData(auditRows[0].newData)).toEqual({
                 participantId: testParticipant2Id,
                 associatedEventId: testEventId,

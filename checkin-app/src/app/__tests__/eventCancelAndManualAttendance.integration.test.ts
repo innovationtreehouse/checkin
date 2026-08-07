@@ -157,6 +157,15 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(visits.length).toBe(1);               // not a second visit
             expect(visits[0].id).toBe(openVisit.id);     // same row, updated in place
             expect(visits[0].arrivedAt.getTime()).toBe(newArrival.getTime());
+
+            // 10-minute arrival shift on an untagged (weight 1) visit, doubled
+            // for proxy (admin != participant): 10 * 1 * 2 = 20, under the
+            // 90-point flag threshold.
+            const audit = await prisma.auditLog.findFirst({
+                where: { tableName: 'Visit', affectedEntityId: openVisit.id, action: 'EDIT' },
+            });
+            expect((audit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 20, flagged: false });
         });
     });
 
@@ -207,6 +216,11 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(audit).not.toBeNull();
             expect(audit!.actorId).toBe(adminId);
             expect(audit!.secondaryAffectedEntity).toBe(participantId);
+
+            // 30-minute visit, untagged sources (weight 1), doubled for proxy
+            // (admin != participant): 30 * 1 * 2 = 60. Always flagged (delete floor).
+            expect((audit!.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 60, flagged: true });
         });
 
         it('rejects and deletes nothing when an open visit coexists with a closed one', async () => {
