@@ -9,8 +9,13 @@ Ordered so every step is independently shippable and the test floor arrives
 before the construction ceiling:
 
 1. **Decide the design's open issues**; several change what gets built.
-2. **Graduate leak-critical business rules to scopes** (`org_members`
-   first). Registry-only PRs, boundary-isolation compliant.
+2. **Vocabulary PRs**, registry/schema-only, boundary-isolation
+   compliant: graduate leak-critical business rules to scopes
+   (`org_members` first), and split the **`deliberative` tier** out of
+   `internal` (see "The tier split" in the design). The tier split has a
+   hard deadline: it must merge before step 5 reaches the trusted-adult
+   routes, because the generated select is what replaces the hand-written
+   one that protects `decisionNote` today.
 3. **Persona row-contract walker** (#1134 Step 1) with ceiling semantics
    over registered GET routes; convert `EDGE_INCLUDE_ALLOWLIST` prose to
    `rows:` declarations as routes gain them. The **governance report
