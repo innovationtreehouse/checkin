@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
-import { Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import Link from "next/link";
+import { Alert, Anchor, Badge, Button, Card, Center, Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { formatPhone } from "@/lib/phone";
 import { formatDateOnly } from "@/lib/time";
@@ -58,8 +59,7 @@ function PersonSection({
             <div>
               <Text fw={600} fz="lg">{p.name}</Text>
               <Text size="sm" c="dimmed">
-                {p.programName ? `Program: ${p.programName}` : "No program on file"}
-                {" · "}Household #{p.householdId}
+                {p.programName && `Program: ${p.programName} · `}Household #{p.householdId}
               </Text>
             </div>
             <Group gap="sm">
@@ -81,6 +81,9 @@ export default function CompliancePage() {
   const [households, setHouseholds] = useState<Household[]>([]);
   const [peopleNeedingBgCheck, setPeopleNeedingBgCheck] = useState<PersonRow[]>([]);
   const [peopleMissingDob, setPeopleMissingDob] = useState<PersonRow[]>([]);
+  const [peopleAwaitingAgreement, setPeopleAwaitingAgreement] = useState<PersonRow[]>([]);
+  const [peopleNeedingAgreement, setPeopleNeedingAgreement] = useState<PersonRow[]>([]);
+  const [requestedIds, setRequestedIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -110,6 +113,31 @@ export default function CompliancePage() {
     }
   };
 
+  // Open an individual membership agreement for one adult child. For people the
+  // nightly rule skips because they're over its age ceiling — the board judges adult
+  // child vs. unmarked spouse, which no field records.
+  const requestAgreement = async (personId: number) => {
+    setBusyId(personId);
+    try {
+      const res = await fetch("/api/membership-audit/person-agreement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ personId }),
+      });
+      if (res.ok) {
+        setRequestedIds((s) => new Set(s).add(personId));
+        notifications.show({ message: "Individual agreement requested." });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        notifications.show({ color: "red", message: data.error || "Could not request an agreement." });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error." });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
@@ -119,6 +147,8 @@ export default function CompliancePage() {
           setHouseholds(data.households ?? []);
           setPeopleNeedingBgCheck(data.peopleNeedingBgCheck ?? []);
           setPeopleMissingDob(data.peopleMissingDob ?? []);
+          setPeopleAwaitingAgreement(data.peopleAwaitingAgreement ?? []);
+          setPeopleNeedingAgreement(data.peopleNeedingAgreement ?? []);
         } else {
           setError("Failed to load compliance data. Ensure you have the proper authorizations.");
         }
@@ -151,7 +181,8 @@ export default function CompliancePage() {
         </Text>
       </Card>
 
-      {households.length === 0 && peopleNeedingBgCheck.length === 0 && peopleMissingDob.length === 0 && (
+      {households.length === 0 && peopleNeedingBgCheck.length === 0 && peopleMissingDob.length === 0
+        && peopleAwaitingAgreement.length === 0 && peopleNeedingAgreement.length === 0 && (
         <Card withBorder radius="md" padding="xl" ta="center">
           <Text c="dimmed">Everyone is in compliance. 🎉</Text>
         </Card>
@@ -218,6 +249,43 @@ export default function CompliancePage() {
         description="Program-attached people with no recorded age. Confirm their date of birth before a background check can be assessed."
         color="grape"
         people={peopleMissingDob}
+      />
+
+      {(peopleAwaitingAgreement.length > 0 || peopleNeedingAgreement.length > 0) && (
+        <Alert color="blue" variant="light" title="Why this list differs from the 18+ roster">
+          <Text size="sm">
+            The agreement lists below judge age <b>as of today</b>, because an agreement is
+            opened the day someone turns 18 — a minor cannot be bound by their own signature.{" "}
+            <Anchor component={Link} href="/membership-audit/turning-18">The 18+ roster</Anchor>{" "}
+            judges age <b>as of the start of the member year</b>, because that is the cohort the
+            board plans the year around. Both are right for their own purpose, so the two lists
+            will not match: anyone with a birthday between today and the next member-year start
+            appears here but not there.
+          </Text>
+        </Alert>
+      )}
+
+      <PersonSection
+        title="Individual agreement outstanding"
+        description="Adults 18 or older who sign their own membership agreement rather than being covered by their household's, and haven't signed it yet. Warn-only — nothing is blocked. They sign it themselves from their membership page."
+        color="blue"
+        people={peopleAwaitingAgreement}
+      />
+
+      <PersonSection
+        title="Individual agreement — over 25, not requested"
+        description="Non-lead adults over 25 in member households. They are skipped automatically because an adult over 25 who isn't a household lead is usually a spouse who should be marked as a lead. Request an agreement only if this person is an adult child."
+        color="cyan"
+        people={peopleNeedingAgreement}
+        renderAction={(p) =>
+          requestedIds.has(p.personId) ? (
+            <Badge variant="light">Agreement requested</Badge>
+          ) : (
+            <Button size="xs" variant="light" loading={busyId === p.personId} disabled={busyId === p.personId} onClick={() => requestAgreement(p.personId)}>
+              Request individual agreement
+            </Button>
+          )
+        }
       />
     </Stack>
   );

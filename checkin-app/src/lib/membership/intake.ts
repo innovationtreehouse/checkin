@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus, advanceExternalIfComplete } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
+import { findOpenPersonAgreement } from "@/lib/membership/personAgreementTriggers";
 import { applyVolunteerStatus } from "@/lib/membership/review";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
@@ -113,12 +114,19 @@ export async function getIntakeState(userId: number) {
 
     const external = process ? await getExternalStatus(process) : null;
 
+    // The caller's own individual agreement, if they have one open. Person-scoped,
+    // so it never appears in membership.processes above (orgMembershipId is null) and is
+    // independent of the household's own application state — an adult child in a settled
+    // member household still has one to sign.
+    const ownAgreement = await findOpenPersonAgreement(userId);
+
     return {
         hasHousehold: !!household,
         isLead: leadIds.has(userId),
         membershipStatus: membership?.status ?? null,
         process: process ? { id: process.id, kind: process.kind, status: process.status, isPaymentPlanRequested: process.isPaymentPlanRequested } : null,
         external,
+        personAgreement: ownAgreement ? { id: ownAgreement.id, started: !!ownAgreement.zohoEnvelopeId } : null,
         prefill: {
             household: household
                 ? {

@@ -8,6 +8,7 @@ import { notifyBoardPaidReject } from "@/lib/membership/boardAlerts";
 import { config } from "@/lib/config";
 import { canonicalizeEmail } from "@/lib/emailNormalize";
 import { openPersonBgForNewMember } from "@/lib/membership/personBgTriggers";
+import { openPersonAgreementForNewMember } from "@/lib/membership/personAgreementTriggers";
 import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest";
 import { type DbClient, type TxClient } from "@/lib/db-client";
 import { awaitingBgReview } from "@/lib/membership/lifecycle";
@@ -253,6 +254,8 @@ export async function attest(
             // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
             // for any program-attached ≥18 person in the household (as-of activation).
             if (result.isInitial) await openPersonBgForNewMember(result.householdId!, new Date());
+            // Same activation, the agreement side — an adult child signs their own.
+            if (result.isInitial) await openPersonAgreementForNewMember(result.householdId!, new Date());
         } else if (result.householdId) {
             // Household process cleared into PENDING_PAYMENT (a PERSON_BG has no
             // household/payment) — tell the family payment is open (#907).
@@ -413,6 +416,8 @@ export async function overrideBlocked(processId: number, actorId: number, action
         // Trigger C: a board force-clear can be the first activation of a brand-new
         // (INITIAL) member — open PERSON_BG for the household's program-attached adults.
         if (isInitial) await openPersonBgForNewMember(householdId!, new Date());
+        // Same activation, the agreement side — an adult child signs their own.
+        if (isInitial) await openPersonAgreementForNewMember(householdId!, new Date());
     } else if (householdId) {
         // Household process cleared into PENDING_PAYMENT — payment just opened (#907).
         await notifyPaymentOpen(householdId);
