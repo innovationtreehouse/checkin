@@ -47,8 +47,13 @@ function parseArgs(argv) {
 
 function main(argv) {
     const { baseSha, boundaryChanged, violations } = parseArgs(argv);
-    if (!baseSha) {
+    // A flag-like token in the boundary slice means the args were misordered
+    // (a flag landed after --boundary and before --); reject with a clear
+    // message rather than passing it downstream as a mystery boundary file.
+    const strayFlag = boundaryChanged.find(f => f.startsWith('--'));
+    if (!baseSha || strayFlag) {
         console.error('usage: check-boundary-decommission.js --base <sha> --boundary [file...] -- [violation...]');
+        if (strayFlag) console.error(`  '${strayFlag}' looks like a flag inside --boundary — check argument order`);
         return 1;
     }
 
