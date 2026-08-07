@@ -146,7 +146,10 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             }
         }
 
-        const isFree = currentProgram.orgMemberPriceCents === null && currentProgram.nonOrgMemberPriceCents === null;
+        // Zero is free, same as unpriced: variants are minted only above zero
+        // (api/programs POST), so a zero-priced program has nothing to charge
+        // through and must not wait on a payment.
+        const isFree = (currentProgram.orgMemberPriceCents ?? 0) === 0 && (currentProgram.nonOrgMemberPriceCents ?? 0) === 0;
         
         // PENDING (awaits payment) unless the program is free or an external
         // admin is comping it. A board parent overriding a soft limit for their

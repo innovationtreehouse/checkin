@@ -21,6 +21,7 @@ describe('Enroll into a priced-but-unsellable program is rejected', () => {
     let adminId: number;
     let brokenProgramId: number;
     let sellableProgramId: number;
+    let zeroPricedProgramId: number;
 
     async function cleanup() {
         const progs = await prisma.program.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -53,6 +54,10 @@ describe('Enroll into a priced-but-unsellable program is rejected', () => {
             data: { name: `Sellable ${TAG}`, phase: 'RUNNING', enrollmentStatus: 'OPEN', nonOrgMemberPriceCents: 5000, shopifyVariantId: 'gid://shopify/ProductVariant/1' },
         });
         sellableProgramId = sellable.id;
+        const zeroPriced = await prisma.program.create({
+            data: { name: `Zero ${TAG}`, phase: 'RUNNING', enrollmentStatus: 'OPEN', orgMemberPriceCents: 0, nonOrgMemberPriceCents: 0, shopifyVariantId: null },
+        });
+        zeroPricedProgramId = zeroPriced.id;
     });
 
     afterAll(async () => {
@@ -84,6 +89,13 @@ describe('Enroll into a priced-but-unsellable program is rejected', () => {
         const res = await enroll(brokenProgramId, { id: adminId, isBoardMember: true }, userId, { override: true });
         expect(res.status).toBe(200);
         const row = await prisma.programParticipant.findFirst({ where: { programId: brokenProgramId, personId: userId } });
+        expect(row?.status).toBe('ACTIVE');
+    });
+
+    it('a zero-priced program is free: enrolls ACTIVE, never waits on a payment', async () => {
+        const res = await enroll(zeroPricedProgramId, { id: userId }, userId);
+        expect(res.status).toBe(200);
+        const row = await prisma.programParticipant.findFirst({ where: { programId: zeroPricedProgramId, personId: userId } });
         expect(row?.status).toBe('ACTIVE');
     });
 
