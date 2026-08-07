@@ -11,7 +11,7 @@ import {
     segmentByContainers,
     segmentTopLevelCalls,
 } from '../lib/boundary-decommission';
-import { parseArgs } from '../check-boundary-decommission';
+import { parseArgs, main } from '../check-boundary-decommission';
 
 const BINDINGS_BASE = `/**
  * SCOPE_BINDINGS — the declarative per-row scope table.
@@ -134,6 +134,26 @@ describe('parseArgs', () => {
 
     it('reports a missing --base as a null baseSha so main() rejects', () => {
         expect(parseArgs(['--boundary', 'a', '--', 'v']).baseSha).toBeNull();
+    });
+});
+
+describe('main argument validation', () => {
+    // These paths return before any git call, so they exercise main() in-process.
+    // main() prints usage to stderr on rejection; silence it for the assertion.
+    let err: jest.SpyInstance;
+    beforeEach(() => {
+        err = jest.spyOn(console, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => err.mockRestore());
+
+    it('rejects a missing --base', () => {
+        expect(main(['--boundary', 'a', '--', 'v'])).toBe(1);
+    });
+
+    it('rejects a flag-like token misordered into the --boundary slice', () => {
+        // `--boundary a --base sha -- v` slurps --base/sha into the boundary set.
+        expect(main(['--boundary', 'a', '--base', 'sha', '--', 'v'])).toBe(1);
+        expect(err).toHaveBeenCalledWith(expect.stringContaining('--base'));
     });
 });
 
