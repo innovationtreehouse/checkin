@@ -168,8 +168,7 @@ const ALLOWLIST: Record<string, string> = {
     'lib/attendanceTransitions.ts': 'getRelevantProgramIds pins `personId: participantId` — the enrollment/volunteer rows of one already-identified person, used to pick their associated event on scan. Not a roster, not a count.',
 
     // ── authz target checks (class 3, never rendered or counted) ──────────────
-    'app/api/events/[id]/attendance/route.ts': 'Builds the enrolled/volunteering id set purely to REJECT attendance writes for targets outside this event\'s program (IDOR guard). The set is never rendered and never counted; a tombstone\'s leftover enrollment row only ever widens what the roster UI — which does filter — will never offer.',
-    'app/api/events/[id]/route.ts': 'Same IDOR guard as events/[id]/attendance, in single-target form: two findFirsts pinned to `personId: targetId` asking "is this one target enrolled or volunteering". One-row shape, no list, no count.',
+    'app/api/events/[id]/route.ts': 'IDOR guard on an attendance correction\'s target: two findFirsts pinned to `personId: targetId` asking "is this one target enrolled or volunteering in this event\'s program". One-row shape, no list, no count, never rendered.',
 
     // ── historical / audit trail (showing a since-merged identity is correct) ──
     'app/api/system-status/audit-log/route.ts': 'Resolves actor names for audit-log rows by their recorded actorId — a historical record must still name an actor who has since been merged away.',
