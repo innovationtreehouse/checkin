@@ -169,5 +169,11 @@ Things the app takes as true because they are handled outside it.
 - A request for something starting after the next membership year is marked as
   such, never hidden or filtered away.  [Decision — deliberate limit]
 
+- Removal for non-payment is a human decision on an admin surface. The
+  non-payment sweep warns the household and escalates to the board; it never
+  removes anyone.  [Decision — *Principle: people decide about people*]
 
-- Removal for non-payment is a human decision on an admin surface.  [Decision — *Principle: people decide about people*]
+- The one removal that happens on its own follows a *denied* scholarship or
+  payment-plan request: when the grace period the board set runs out, the
+  enrollment goes and the held seat is released. Nothing is sent when it does, so
+  the board's own message has to have stated the deadline.  [Decision — *Principle: fail closed*]
