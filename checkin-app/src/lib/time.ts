@@ -126,23 +126,49 @@ export function parseDateOnly(value: string | null | undefined): Date | null {
     return value ? new Date(value) : null;
 }
 
+/** Numeric y/m/d parts of an instant in the organisation's zone. */
+const ORG_DAY_PARTS = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+/**
+ * The calendar day an instant falls on in the organisation's zone, as a UTC-midnight
+ * Date — the storage shape of every `@db.Date` column. The sanctioned way to take a
+ * day from a moment: the zone is named rather than inherited from the process.
+ * See docs/conventions.md, "A day is not a moment".
+ *
+ * Pinned to APP_TIMEZONE, not the configured display zone: `getDisplayTimezone()` is
+ * only installed by `<TimezoneProvider>`, which runs on the client, so a server age
+ * gate would read the fallback while the browser read the setting and the two would
+ * disagree about who is 18. ponytail: a settings-aware variant has to be async (the
+ * zone comes from the database), so it waits until the org actually moves zones.
+ */
+export function orgCalendarDay(instant: Date | string | number = new Date()): Date {
+    const p = Object.fromEntries(
+        ORG_DAY_PARTS.formatToParts(new Date(instant)).map(({ type, value }) => [type, value]),
+    );
+    return new Date(`${p.year}-${p.month}-${p.day}T00:00:00.000Z`);
+}
+
 /**
  * Returns the calendar age in whole years for the given DOB, decremented if
  * the birthday hasn't happened yet as of `asOf`. Canonical implementation — use
  * this everywhere instead of inline epoch-diff age math.
  *
- * `asOf` defaults to now (the common case). Program age gates pass the program's
- * start date so the bound is judged as-of when the program begins, not when the
- * person happens to register.
+ * `asOf` defaults to today's calendar day in the organisation's zone, so a birthday
+ * rolls over at local midnight rather than at UTC midnight — 7 PM the evening before,
+ * which would grant adult status early. Program age gates pass the program's start
+ * date so the bound is judged as-of when the program begins, not when the person
+ * happens to register.
  *
- * Both sides are read via getUTC* because a DOB is a calendar date stored at UTC
- * midnight — local fields off that instant read a day early west of UTC.
- * ponytail: that pins the birthday rollover to UTC midnight (7 PM Chicago) for
- * the default `asOf = now`, so an evening lookup can register a birthday a few
- * hours early. The upgrade is a caller passing the org-zone calendar day as
- * `asOf` — a day comes from a day — not a local-field read here.
+ * Both sides are read via getUTC* because both are calendar dates stored at UTC
+ * midnight — local fields off those instants read a day early west of UTC. A caller
+ * passing `asOf` must therefore pass a day, not a moment.
  */
-export function calculateAge(dob: Date | string, asOf: Date | string = new Date()): number {
+export function calculateAge(dob: Date | string, asOf: Date | string = orgCalendarDay()): number {
     const birthDate = new Date(dob);
     const today = new Date(asOf);
     let age = today.getUTCFullYear() - birthDate.getUTCFullYear();

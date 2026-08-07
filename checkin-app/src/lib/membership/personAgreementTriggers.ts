@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { calculateAge } from "@/lib/time";
+import { calculateAge, orgCalendarDay } from "@/lib/time";
 import { renewalWindow } from "@/lib/membership/renewal";
 import { LIVE_PERSON } from "@/lib/person/filters";
 
@@ -32,10 +32,13 @@ const SYSTEM_ACTOR = 0;
  * personBgVerdict does) evaluated by a nightly job would flag a 17-year-old whose 18th
  * birthday merely falls before the next boundary — asking a minor to sign a contract they
  * can't be bound by, the exact failure this feature exists to prevent.
+ *
+ * `now` is an instant, so the age is judged on the calendar day it falls on in the org's
+ * zone: the band opens at local midnight, not at 7 PM the evening before.
  */
 export function inAgreementAgeBand(person: { dateOfBirth: Date | null; isDeclaredAdult: boolean }, now: Date): boolean {
     if (!person.dateOfBirth) return false;
-    const age = calculateAge(person.dateOfBirth, now);
+    const age = calculateAge(person.dateOfBirth, orgCalendarDay(now));
     return age >= 18 && age <= 25;
 }
 
@@ -47,7 +50,7 @@ export function inAgreementAgeBand(person: { dateOfBirth: Date | null; isDeclare
  */
 export function hasKnownAdultAge(person: { dateOfBirth: Date | null; isDeclaredAdult: boolean }, now: Date): boolean {
     if (person.isDeclaredAdult) return true;
-    return !!person.dateOfBirth && calculateAge(person.dateOfBirth, now) >= 18;
+    return !!person.dateOfBirth && calculateAge(person.dateOfBirth, orgCalendarDay(now)) >= 18;
 }
 
 /**
