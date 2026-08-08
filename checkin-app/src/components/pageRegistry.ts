@@ -165,5 +165,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/dev/sent-mail',          // dev-only captured-email inbox (EMAIL_DEV_MOCK.md); 404s off dev
   '/dev/zoho-sign',          // dev-only Zoho Sign mock interstitial (404 in prod)
   '/dev/shopify',            // dev-only Shopify orders/paid mock (SHOPIFY_DEV_STORE_WEBHOOK.md); 404s off dev
-  '/dev/bg-consent',         // dev-only background-check consent mock (BG_CHECK_DEV_MOCK.md); 404s off dev
+  '/dev/bg-consent',         // dev-only background-check consent mock (docs/ops/background-check-mock.md); 404s off dev
 ];
