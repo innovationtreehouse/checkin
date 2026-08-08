@@ -5,7 +5,7 @@
 
 # ProgramParticipant enrollment — lifecycle artifacts
 
-Generated from the machine’s `TRANSITIONS` (docs/designs/LIFECYCLE.md). Do not hand-edit.
+Generated from the machine’s `TRANSITIONS`. Do not hand-edit.
 
 ## State diagram
 

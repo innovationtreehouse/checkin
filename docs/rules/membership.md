@@ -206,7 +206,9 @@ Procedure below is built on them.
   disqualifying offence.  [Decision — *Policy: Membership Policy, Art. IX*]
 
 - An abandoned application is archived, never destroyed, and restores to the
-  status it held before.  [Decision — *Principle: decisions are reversible*]
+  status it held before. An active membership is not archived: archiving disposes
+  of an application, and a membership that already activated is ended by other
+  means.  [Decision — *Principle: decisions are reversible*]
 
 - Pre-designating a household volunteer-only sets what it owes and nothing else
   — it does not skip review or open payment. The policy grants only the
