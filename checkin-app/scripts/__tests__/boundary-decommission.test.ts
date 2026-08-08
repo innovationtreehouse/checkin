@@ -116,17 +116,19 @@ const bindingsWithoutFeePayment = dropLines(
 describe('parseArgs', () => {
     // The shell → argv → lib wire is now the sole carrier of the boundary set;
     // pin its slicing so a workflow invocation-line edit can't silently drift.
-    it('splits --base / --boundary / -- into the certifier inputs', () => {
-        expect(parseArgs(['--base', 'X', '--boundary', 'a', 'b', '--', 'v'])).toEqual({
+    it('splits --base / --head / --boundary / -- into the certifier inputs', () => {
+        expect(parseArgs(['--base', 'X', '--head', 'Y', '--boundary', 'a', 'b', '--', 'v'])).toEqual({
             baseSha: 'X',
+            headSha: 'Y',
             boundaryChanged: ['a', 'b'],
             violations: ['v'],
         });
     });
 
     it('yields an empty boundary set when --boundary is omitted', () => {
-        expect(parseArgs(['--base', 'X', '--', 'v'])).toEqual({
+        expect(parseArgs(['--base', 'X', '--head', 'Y', '--', 'v'])).toEqual({
             baseSha: 'X',
+            headSha: 'Y',
             boundaryChanged: [],
             violations: ['v'],
         });
@@ -147,12 +149,19 @@ describe('main argument validation', () => {
     afterEach(() => err.mockRestore());
 
     it('rejects a missing --base', () => {
-        expect(main(['--boundary', 'a', '--', 'v'])).toBe(1);
+        expect(main(['--head', 'Y', '--boundary', 'a', '--', 'v'])).toBe(1);
+    });
+
+    // The PR head sha, never the checked-out HEAD: on a pull_request run that is
+    // refs/pull/N/merge, which folds in main's advance and audits a tree the PR
+    // does not propose. Requiring the flag makes the wrong ref unreachable.
+    it('rejects a missing --head', () => {
+        expect(main(['--base', 'X', '--boundary', 'a', '--', 'v'])).toBe(1);
     });
 
     it('rejects a flag-like token misordered into the --boundary slice', () => {
         // `--boundary a --base sha -- v` slurps --base/sha into the boundary set.
-        expect(main(['--boundary', 'a', '--base', 'sha', '--', 'v'])).toBe(1);
+        expect(main(['--boundary', 'a', '--base', 'sha', '--head', 'sha2', '--', 'v'])).toBe(1);
         expect(err).toHaveBeenCalledWith(expect.stringContaining('--base'));
     });
 });
@@ -330,6 +339,8 @@ describe('certifyDecommission', () => {
         const start = lineOf(REGISTRY_BASE, "// Payments history");
         const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
 
+        const ROUTE_BASE = 'export async function GET() {}';
+
         const attempt = (routeHead: string | null, status: 'M' | 'D') =>
             certifyDecommission({
                 changed: [
@@ -338,15 +349,38 @@ describe('certifyDecommission', () => {
                 ],
                 boundaryChanged: [REGISTRY],
                 violations: [ROUTE_FILE],
-                readBase: files({}),
+                readBase: files({ [ROUTE_FILE]: ROUTE_BASE }),
                 readHead: files({ [REGISTRY]: registryWithoutFees, [ROUTE_FILE]: routeHead }),
             });
 
-        expect(attempt('export async function GET() {}', 'M').ok).toBe(false);
+        expect(attempt(ROUTE_BASE, 'M').ok).toBe(false);
         const killed = attempt(null, 'D');
         expect(killed.reasons).toEqual([]);
         expect(killed.ok).toBe(true);
         expect(killed.removedEndpoints).toEqual(['GET /api/fees/payments']);
+    });
+
+    it('rejects a route kill whose derived path never served the verb at base', () => {
+        const REGISTRY = 'checkin-app/src/security/registry.ts';
+        const ROUTE_FILE = 'checkin-app/src/app/api/fees/payments/route.ts';
+        const start = lineOf(REGISTRY_BASE, "// Payments history");
+        const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
+
+        // A route group, catch-all or `route.tsx` puts the real handler somewhere
+        // the derived path does not name. Absent at head then proves nothing, so
+        // the certifier must refuse rather than bless a still-live endpoint.
+        const r = certifyDecommission({
+            changed: [{ status: 'M', path: REGISTRY }],
+            boundaryChanged: [REGISTRY],
+            violations: [],
+            readBase: files({ [ROUTE_FILE]: null }),
+            readHead: files({ [REGISTRY]: registryWithoutFees, [ROUTE_FILE]: null }),
+        });
+
+        expect(r.ok).toBe(false);
+        expect(r.reasons).toEqual([
+            'GET /api/fees/payments: checkin-app/src/app/api/fees/payments/route.ts does not export GET at base — endpoint-to-file mapping unverified',
+        ]);
     });
 
     it('rejects outbound-surface removals', () => {
@@ -382,7 +416,7 @@ describe('certifyDecommission', () => {
         expect(r.reasons.join()).toContain('middleware.ts');
     });
 
-    it('rejects modified app code riding along, while allowing deletions and migrations', () => {
+    it('rejects riding-along app code, modified or deleted — only the migration is free', () => {
         const r = certifyDecommission({
             changed: [
                 { status: 'M', path: BINDINGS },
@@ -397,7 +431,35 @@ describe('certifyDecommission', () => {
             readHead: files({ [BINDINGS]: bindingsWithoutFeePayment, [SCHEMA]: SCHEMA_DROPPED }),
         });
         expect(r.ok).toBe(false);
+        // fees.ts is a deletion, but this PR removed no route entry, so nothing
+        // implies it. A file nothing imports can still be a security control.
+        expect(r.reasons.map(x => x.split(':')[0])).toEqual([
+            'checkin-app/src/lib/fees.ts',
+            'checkin-app/src/lib/membership.ts',
+        ]);
+        expect(r.reasons[0]).toContain('not a route file of a removed registry entry');
+    });
+
+    it('admits the deleted route file of a removed entry, and only that one', () => {
+        const REGISTRY = 'checkin-app/src/security/registry.ts';
+        const ROUTE_FILE = 'checkin-app/src/app/api/fees/payments/route.ts';
+        const start = lineOf(REGISTRY_BASE, "// Payments history");
+        const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
+
+        const r = certifyDecommission({
+            changed: [
+                { status: 'M', path: REGISTRY },
+                { status: 'D', path: ROUTE_FILE },
+                { status: 'D', path: 'checkin-app/src/lib/fees.ts' },
+            ],
+            boundaryChanged: [REGISTRY],
+            violations: [ROUTE_FILE, 'checkin-app/src/lib/fees.ts'],
+            readBase: files({ [ROUTE_FILE]: 'export async function GET() {}' }),
+            readHead: files({ [REGISTRY]: registryWithoutFees, [ROUTE_FILE]: null }),
+        });
+
+        expect(r.ok).toBe(false);
         expect(r.reasons).toHaveLength(1);
-        expect(r.reasons[0]).toContain('membership.ts');
+        expect(r.reasons[0]).toContain('checkin-app/src/lib/fees.ts');
     });
 });
