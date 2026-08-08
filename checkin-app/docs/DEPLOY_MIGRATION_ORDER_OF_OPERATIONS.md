@@ -83,17 +83,39 @@ that packaging through its **whole-entity decommission exception**
    `schema.prisma`, the `DROP TABLE` migration, the regenerated
    `classifications.ts`, and the *entire* `SCOPE_BINDINGS` /
    `ROW_SCOPE_KEY` / `OPT_OUT_PENDING_ROUTE` entries for that model, plus
-   test-oracle updates. The certifier admits the migration and file
-   deletions alongside the boundary removal — nothing else.
+   test-oracle updates. Alongside the boundary removal the certifier admits
+   the migration and **the route files of the registry entries this PR
+   removes** — no other deletion. "It is a deletion" is not evidence a file
+   belongs to the drop: a file nothing imports can still be a security
+   control, and removing one breaks neither tsc nor the build.
 
-The exception is byte-strict and fails closed: a partial edit inside a
-surviving binding (which can *widen* a grant — deleting one element of an
-`all:` match weakens it), an addition, a re-tier, or any engine-file change
-disqualifies the PR, and the boundary change must ship alone as usual. The
-same shape covers route kills: an entire `defineRoute` removal qualifies when
-the PR also deletes the route file/verb export. Fallback if certification is
-unwanted: park the model in `OPT_OUT_PENDING_ROUTE` in a boundary-only PR,
-then drop schema+migration separately.
+The exception fails closed: a partial edit inside a surviving binding (which
+can *widen* a grant — deleting one element of an `all:` match weakens it), an
+addition, a re-tier, or any engine-file change disqualifies the PR, and the
+boundary change must ship alone as usual. Removing a `ROW_SCOPE_KEY` entry
+**widens**: `makeScopesHeld` returns the empty set for a row missing its scope
+key, but with the entry gone `scopeKey === undefined` and the same row gets
+`everyones`. For that container the schema-exit check is the only guard —
+unlike `SCOPE_BINDINGS`/`registry.ts`, which narrow on their own. Do not relax
+it on the belief that removals narrow.
+
+The comparison is byte-strict apart from the two edits a whole-entity drop
+forces — comments, and a `returns:` element naming a model dropped in the same
+PR (that array is typed off the generated classifications, so leaving the
+element in stops the entry compiling). Both are normalised on both sides;
+nothing else is.
+
+The same shape covers route kills: an entire `defineRoute` removal qualifies
+when the PR also deletes the route file/verb export. One fail-closed corner:
+the certifier requires the removed entry's route file to export the verb **at
+base**, so removing an ALREADY-INERT entry fails certification — split that
+into its own PR. Fallback if certification is unwanted: park the model in
+`OPT_OUT_PENDING_ROUTE` in a boundary-only PR, then drop schema+migration
+separately.
+
+`checkin-app/src/middleware.ts` is a boundary file too — it is the site-wide
+org-login/access gate, nothing imports it, so deleting or renaming it leaves
+tsc and the build green. Any PR touching it ships alone, decommission or not.
 
 ### 8. Misc rules with incident backing
 - **Postgres does not auto-index foreign key columns.** `Person.householdId` in PR #917 had no `@@index` anywhere in its migration history — collapsing the `HouseholdLead` join table into a flag on `Person` silently turned an indexed lookup into a full `Person` seq-scan on hot paths (check-in notification fan-out, nav badges). Add `@@index` for any relation scalar you actually query, in the same migration that adds the column.
