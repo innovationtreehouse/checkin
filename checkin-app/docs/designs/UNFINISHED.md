@@ -41,19 +41,28 @@ privileged-"staff" onto it. (4) audit every call site for over/under-grant.
 
 ---
 
-## 🟡 "Review" / "Reviewer" — followup (lower priority than Admin)
+## 🟢 "Review" / "Reviewer" — decided
 
-Four review flows share the word, and product owner isn't sure yet where each term
-is used or whether they should converge:
+Of the four flows listed here, three were one flow: the BG Reviewer role, the
+membership review queue, and `BackgroundCheckAttestation.reviewer` are the same
+people doing the same job. Trusted-adult review keeps **review** + **decider** —
+one board member deciding with recorded reasoning, unlike the two-of-N attestation.
+Terms recorded in [../VOCABULARY.md](../VOCABULARY.md) › Background check.
 
-- **BG Reviewer** role — `isBackgroundCheckReviewer` → "BG Reviewer".
-- **Attestation reviewer** — `BackgroundCheckAttestation.reviewer`.
-- **Membership review** — `/api/membership/reviews`, `membership-ops/review`.
-- **Trusted-adult review** — `TrustedAdultReview.decidedBy` (a "reviewer" called a
-  **"decider"** — is that the same concept?).
+**Reviewer** = the role and the job (reading the Averity report). **Attest** = the
+act. **Clearance** = what two attestations produce. Renames this implies:
 
-Decide: one canonical word, or keep distinct per subsystem; and reconcile
-"decider" vs "reviewer". Deserves its own pass. _(VOCAB #9)_
+- "check is clean" copy → the reviewer's judgement, not the report's content
+  (`membership-ops/review/page.tsx`, 5 strings — partly reverses PR #1575).
+- "Clear approvals" → "Discard approvals" (`membership-ops/applications/page.tsx`,
+  button + confirm label + comment).
+- `selfAttestBgConsent` → `recordBgConsent` (~17 refs across 5 files, internal
+  only — the `/api/membership/bg-consent` route path is unchanged).
+
+Deliberately **not** renamed: `AttestationResult.result` (reads as "the check's
+result", the thing never stored) and the `PENDING_BG_REVIEW` /
+`PENDING_BG_CLEARANCE` misnomer — both reach the schema, a migration, and
+`src/security/`, for a wording gain. _(VOCAB #9)_
 
 ---
 
