@@ -352,11 +352,10 @@ home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
 `BG_CHECK_DEV_MOCK.md`, `ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
 `SHOPIFY_LIVE_TESTS.md`.
 
-`LIFECYCLE.md` has already been through this. Its standing rules went to
-`docs/conventions.md` ("A state machine describes the database, it does not drive
-it") and to the membership, programs, and finance registers; its maintenance
-procedure is `docs/ops/lifecycle-machines.md`; the doc itself is gone, along with
-the baked artifact path described in §5.1.
+A doc that is mostly mechanism can still hold standing rules, and the ops bucket
+is not a way to avoid looking: `docs/ops/lifecycle-machines.md` carries the
+regeneration and drift-guard procedure, while the rules under it sit in
+`docs/conventions.md` and the domain registers.
 
 **→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
 (promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
@@ -429,8 +428,8 @@ emits therefore takes one commit carrying the renderer edit, a re-run of
 Edit the string without regenerating and CI goes red on a confusing docs-path
 diff; skip the edit and the drift-tested, "do not hand-edit" artifacts ship a
 path that no longer exists — the one document class the standard calls
-machine-verified would be provably wrong. The lifecycle header now names no doc
-at all, which is what removed the hazard rather than relocating it.
+machine-verified would be provably wrong. Where the header does not need the
+pointer, drop it rather than repoint it: a path that isn't emitted cannot rot.
 
 ---
 
