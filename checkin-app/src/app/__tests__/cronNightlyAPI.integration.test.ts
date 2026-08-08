@@ -333,10 +333,10 @@ describe('Cron Nightly API Integration Tests', () => {
             });
             expect(purgeRows.length).toBeGreaterThanOrEqual(1);
             for (const r of purgeRows) {
-                const { timestamp: _timestamp, ...rest } = r;
-                expect(JSON.stringify(rest)).not.toContain(String(dob.getTime()));
-                expect(JSON.stringify(rest)).not.toContain(dob.toISOString());
-                expect(JSON.stringify(rest)).not.toContain(dob.toISOString().slice(0, 10));
+                const serialized = JSON.stringify({ ...r, timestamp: undefined });
+                expect(serialized).not.toContain(String(dob.getTime()));
+                expect(serialized).not.toContain(dob.toISOString());
+                expect(serialized).not.toContain(dob.toISOString().slice(0, 10));
 
                 // Anything date-shaped, in any format, anywhere a value can be
                 // carried. Scoped to the free-form columns because the numeric
