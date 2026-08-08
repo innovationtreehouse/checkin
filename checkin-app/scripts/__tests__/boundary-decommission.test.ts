@@ -8,6 +8,7 @@ import {
     BINDINGS_CONTAINERS,
     certifyDecommission,
     diffSegmentations,
+    normalizeEntry,
     segmentByContainers,
     segmentTopLevelCalls,
 } from '../lib/boundary-decommission';
@@ -254,8 +255,47 @@ describe('diffSegmentations', () => {
         expect(diffBindings(head)).toHaveProperty('error');
     });
 
-    it('rejects a no-op diff', () => {
-        expect(diffBindings(BINDINGS_BASE)).toHaveProperty('error');
+    // A file whose only change the normaliser forgives yields no removals rather
+    // than an error — certifyDecommission is what refuses a PR that decommissions
+    // nothing anywhere. Pinned here so the two halves stay in step.
+    it('reports a no-op diff as zero removals, not an error', () => {
+        const r = diffBindings(BINDINGS_BASE);
+        expect(r).not.toHaveProperty('error');
+        expect(r.removed).toEqual([]);
+    });
+});
+
+// The exception forgives exactly two edits inside a surviving entry, both of
+// which a whole-entity drop forces and neither of which can widen exposure.
+// Everything else must still fail byte-strict.
+describe('normalizeEntry', () => {
+    const same = (a: string, b: string, dropped: string[] = ['Fee']) =>
+        normalizeEntry(a, dropped) === normalizeEntry(b, dropped);
+
+    it.each([
+        ['a role change', "authorize: { anyRole: ['isBoardMember'] },", "authorize: { anyRole: ['isSysadmin'] },"],
+        ['authenticated -> public', "authorize: 'authenticated',", "authorize: 'public',"],
+        ['a widened tier', "orderedView: [['a',['public']]],", "orderedView: [['a',['everyones:pii']]],"],
+        ['a returns ADDITION', "returns: ['Person'],", "returns: ['Person','Visit'],"],
+        ['dropping a model that SURVIVES', "returns: ['Person','Visit'],", "returns: ['Person'],"],
+        ['an endpoint change', "endpoint: 'GET /api/a',", "endpoint: 'GET /api/b',"],
+    ])('does not forgive %s', (_label, base, head) => {
+        expect(same(base, head)).toBe(false);
+    });
+
+    it.each([
+        ['a line-comment rewrite', "// old\nreturns: ['Person'],", "// new\nreturns: ['Person'],"],
+        ['a docblock rewrite', "/**\n * old\n */\nreturns: ['Person'],", "/**\n * new\n */\nreturns: ['Person'],"],
+        ['dropping the last returns element', "returns: ['Person', 'Fee'],", "returns: ['Person'],"],
+        ['dropping a middle returns element', "returns: ['Fee', 'Person'],", "returns: ['Person'],"],
+    ])('forgives %s', (_label, base, head) => {
+        expect(same(base, head)).toBe(true);
+    });
+
+    // The reason string contents survive: erasing them would make a role or tier
+    // edit compare equal to its neighbour, which is what this file exists to catch.
+    it('keeps string contents so two different literals never collapse', () => {
+        expect(normalizeEntry("authorize: 'public',", [])).toContain("'public'");
     });
 });
 
