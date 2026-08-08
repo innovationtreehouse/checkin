@@ -4,6 +4,7 @@ import type { Person } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { personBgOpen } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
@@ -243,6 +244,20 @@ export const POST = withAuth(
             // Double-merge / merge-a-tombstone guard — either side, before opening the tx.
             if (keepParticipant.mergedIntoId != null || mergeParticipant.mergedIntoId != null) {
                 return apiError("Cannot merge: one of these participants has already been merged.", 409);
+            }
+
+            // Conflict of interest: no actor may merge a record in their OWN household.
+            // The merge takes the newer of the two lastBackgroundCheck dates
+            // (resolveKeeperUpdate), so without this an actor can seat a background-check
+            // date on their own family with no second actor — the thing attest() and
+            // overrideBlocked refuse. Both subjects count: the tombstone's household is
+            // where the carried date comes from, the keeper's is where it lands, and the
+            // two need not be the same household. No role bypasses this.
+            if (auth.type === 'session' && (
+                await hasHouseholdConflict(prisma, auth.user.id, keepParticipant.householdId)
+                || await hasHouseholdConflict(prisma, auth.user.id, mergeParticipant.householdId)
+            )) {
+                return apiError("You cannot merge a record in your own household — someone outside your household must.", 403);
             }
 
             const isLead = mergeParticipant.isHouseholdLead;
