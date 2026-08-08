@@ -142,28 +142,9 @@ _(VOCAB #17)_
 
 ## 🟢 Drop the `BoardSettings` membership-fee `@map` shims (contract stage)
 
-The "dues" → "membership fee" rename shipped the Prisma/API/UI half only. Both
-fields still carry an `@map` to their original physical column, so the DB columns
-are still named `normalDuesCents` / `volunteerDuesCents`:
-
-```prisma
-standardMembershipFeeCents  Int @default(0) @map("normalDuesCents")
-volunteerMembershipFeeCents Int @default(0) @map("volunteerDuesCents")
-```
-
-The physical rename is a **contract-stage** change (`DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md`
-rule 3): ~25 call sites read `BoardSettings` with a bare `findUnique`, so the
-previous release's Prisma client selects the old column names by hand and 500s
-for the whole rolling-deploy drain window if the columns are renamed underneath it.
-Once the shimmed release is fully rolled out, drop both `@map`s and hand-write:
-
-```sql
-BEGIN;
-ALTER TABLE "BoardSettings" RENAME COLUMN "normalDuesCents" TO "standardMembershipFeeCents";
-ALTER TABLE "BoardSettings" RENAME COLUMN "volunteerDuesCents" TO "volunteerMembershipFeeCents";
-COMMIT;
-```
-
+"dues" → "membership fee" shipped the Prisma/API/UI half; both fields still `@map`
+to the old physical columns, which a rolling deploy can't rename in the same
+release. Rename them once that release is out — [#1583](https://github.com/innovationtreehouse/checkin/issues/1583).
 _(VOCAB #6)_
 
 ---

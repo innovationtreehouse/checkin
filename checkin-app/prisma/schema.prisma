@@ -571,11 +571,10 @@ model VolunteerDesignation {
 model BoardSettings {
   /// @sensitivity:public
   id                         Int       @id @default(1)
-  // The @maps keep the physical columns on their old names: a bare
-  // boardSettings.findUnique selects every column by name, so renaming them here
-  // would 500 the previous release for the whole rolling-deploy drain window.
-  // Contract stage (drop the @maps + ALTER ... RENAME COLUMN) is a later release
-  // — see docs/designs/UNFINISHED.md.
+  // The @maps hold the physical columns on their old names: a bare
+  // boardSettings.findUnique selects every column by name, so the previous release
+  // reads these through a rolling deploy's drain window. Rename them in a later
+  // release (contract stage).
   /// @sensitivity:public
   standardMembershipFeeCents Int       @default(0) @map("normalDuesCents")
   /// @sensitivity:public
