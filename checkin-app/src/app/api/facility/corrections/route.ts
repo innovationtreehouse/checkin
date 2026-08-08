@@ -3,6 +3,8 @@ import type { Prisma } from "@/generated/prisma/client";
 import { handler, badRequest } from "@/security/handler";
 import { getAppSettings } from "@/lib/appSettings";
 import { getPeriodStart, type PeriodType } from "@/lib/timePeriods";
+import { MAX_ROWS } from "@/lib/corrections";
+import { SYSTEM_ACTOR } from "@/lib/auditActor";
 
 /**
  * Board/sysadmin review of attendance corrections (AT12, #1258). Reads the
@@ -19,11 +21,6 @@ import { getPeriodStart, type PeriodType } from "@/lib/timePeriods";
  */
 
 const PERIODS: readonly PeriodType[] = ["week", "month", "quarter", "year"];
-
-// ponytail: a guess, not a measurement — tighten once someone counts real
-// AuditLog rows at tableName='Visit'. No pagination in v1: the +1 is the
-// "there's more" signal, and the client trims to MAX_ROWS itself.
-const MAX_ROWS = 500;
 
 // Visit fields the before/after picks are allowed to carry, explicitly listed
 // — never a spread. The raw blobs also carry participantId/synthetic/status/
@@ -92,6 +89,7 @@ export const GET = handler('GET /api/facility/corrections', async ({ req }) => {
             id: r.id,
             timestamp: r.timestamp,
             actorId: r.actorId,
+            actorSystem: r.actorSystem,
             action: r.action,
             tableName: r.tableName,
             affectedEntityId: r.affectedEntityId,
@@ -116,9 +114,11 @@ export const GET = handler('GET /api/facility/corrections', async ({ req }) => {
     // mergedIntoId rides along so the drill-down can follow a since-merged
     // subject to their surviving record: a merge deletes nobody and moves the
     // visits, so an older audit row can name a person since merged away.
+    // SYSTEM_ACTOR is a sentinel, not a person id — looking it up would find
+    // nobody and the row would render as one person editing another's record.
     const personIds = new Set<number>();
     for (const r of rows) {
-        personIds.add(r.actorId);
+        if (r.actorId !== SYSTEM_ACTOR) personIds.add(r.actorId);
         if (r.secondaryAffectedEntity != null) personIds.add(r.secondaryAffectedEntity);
     }
     // Deliberately NOT LIVE_PERSON-filtered: an audit row's actor or subject may

@@ -5,8 +5,10 @@ import { Alert, Badge, Group, SegmentedControl, Stack, Switch, Table, Text } fro
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { formatDateTime } from "@/lib/time";
+import { MAX_ROWS } from "@/lib/corrections";
+import { SYSTEM_ACTOR } from "@/lib/auditActor";
+import type { PeriodType } from "@/lib/timePeriods";
 
-type PeriodType = "week" | "month" | "quarter" | "year";
 type AuditAction = "CREATE" | "EDIT" | "DELETE" | "BECOME_ADMIN";
 
 type VisitPick = {
@@ -23,6 +25,7 @@ type AuditRow = {
   id: number;
   timestamp: string;
   actorId: number;
+  actorSystem: string | null;
   action: AuditAction;
   tableName: string;
   affectedEntityId: number;
@@ -33,11 +36,6 @@ type AuditRow = {
 type PersonRef = { id: number; name: string | null; mergedIntoId: number | null };
 
 type Payload = { AuditLog: AuditRow[]; Person: PersonRef[]; Visit: VisitPick[][] };
-
-// Must match MAX_ROWS in the route — used only to detect and trim the "+1
-// probe" row the server includes as the "there's more" signal; v1 has no
-// pagination.
-const MAX_ROWS = 500;
 
 const TYPE_LABEL: Record<string, string> = {
   manual_entry: "Manual entry",
@@ -63,10 +61,19 @@ function kindLabel(row: AuditRow): string {
 // The actor axis is a bare comparison: actorId vs the subject stored in
 // secondaryAffectedEntity, an invariant every visit audit write holds
 // (docs/rules/attendance-checkin.md). `null` is a row written before the
-// invariant held everywhere — shown as unknown, never guessed at.
-function actorClass(row: AuditRow): "self" | "proxy" | "unknown" {
+// invariant held everywhere — shown as unknown, never guessed at. A system
+// write is on neither side of the axis: nobody edited anybody.
+function actorClass(row: AuditRow): "self" | "proxy" | "system" | "unknown" {
+  if (row.actorId === SYSTEM_ACTOR) return "system";
   if (row.secondaryAffectedEntity == null) return "unknown";
   return row.actorId === row.secondaryAffectedEntity ? "self" : "proxy";
+}
+
+// SYSTEM_ACTOR is a sentinel, so it resolves to no Person and must never fall
+// through to "Person #0". actorSystem names which automated path wrote the row.
+function actorName(row: AuditRow, people: Map<number, PersonRef>): string {
+  if (row.actorId === SYSTEM_ACTOR) return row.actorSystem ?? "System";
+  return nameFor(row.actorId, people);
 }
 
 function nameFor(id: number | null, people: Map<number, PersonRef>): string {
@@ -105,9 +112,10 @@ function ScoreBadge({ sig }: { sig?: { score: number; flagged: boolean } }) {
     : <Badge color="gray" variant="light">{sig.score}</Badge>;
 }
 
-function ActorBadge({ cls }: { cls: "self" | "proxy" | "unknown" }) {
+function ActorBadge({ cls }: { cls: "self" | "proxy" | "system" | "unknown" }) {
   if (cls === "self") return <Badge color="gray" variant="light">Self</Badge>;
   if (cls === "proxy") return <Badge color="orange" variant="light">Proxy</Badge>;
+  if (cls === "system") return <Badge color="blue" variant="light">System</Badge>;
   return <Text c="dimmed" size="sm">—</Text>;
 }
 
@@ -236,7 +244,7 @@ export default function CorrectionsPage() {
                       <Table.Td>{kindLabel(r)}</Table.Td>
                       <Table.Td>
                         <Group gap={6} wrap="nowrap">
-                          <span>{nameFor(r.actorId, people)}</span>
+                          <span>{actorName(r, people)}</span>
                           <ActorBadge cls={cls} />
                         </Group>
                       </Table.Td>
