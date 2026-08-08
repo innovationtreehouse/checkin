@@ -170,6 +170,7 @@ jobs:
             if [ -z "$RETIER" ] && [ "${#BOUNDARY_FILES[@]}" -gt 0 ] &&
                node checkin-app/scripts/check-boundary-decommission.js \
                  --base "$BASE_SHA" \
+                 --head "$HEAD_SHA" \
                  --boundary "${BOUNDARY_FILES[@]}" \
                  -- "${VIOLATIONS[@]}"; then
               echo "Decommission exception: boundary diff is whole-entry removals of dropped"

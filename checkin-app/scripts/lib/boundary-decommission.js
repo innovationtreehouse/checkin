@@ -342,22 +342,39 @@ function certifyDecommission({ changed, boundaryChanged, violations, readBase, r
     }
 
     // Every removed route entry's verb must stop being served in this same PR.
+    // The base file must resolve AND export the verb first: absence at head only
+    // proves the endpoint died if the derived path pointed at a file that served
+    // it. A route group, catch-all, rewrite or `route.tsx` makes readHead return
+    // null for a path that was never right, which would certify a live endpoint.
     for (const endpoint of removedEndpoints) {
         const [verb] = endpoint.split(' ');
         const file = endpointToRouteFile(endpoint);
+        const base = readBase(file);
+        if (base == null || !exportsVerb(base, verb)) {
+            reasons.push(`${endpoint}: ${file} does not export ${verb} at base — endpoint-to-file mapping unverified`);
+            continue;
+        }
         const head = readHead(file);
         if (head != null && exportsVerb(head, verb)) {
             reasons.push(`${endpoint}: registry entry removed but ${file} still exports ${verb}`);
         }
     }
 
-    // The exception admits only the two file classes that welded the PR shut:
-    // the drop migration, and deletions of the decommissioned code itself.
+    // The exception admits the drop migration, and deletions the decommission
+    // itself implies — the route files of the endpoints whose entries left. Any
+    // other deletion ships separately: a file nothing imports can still be a
+    // security control, and removing one breaks no build and no test, so "it is
+    // a deletion" is not evidence that it belongs to the drop.
+    const impliedDeletions = new Set(removedEndpoints.map(endpointToRouteFile));
     const deleted = new Set(changed.filter(c => c.status === 'D').map(c => c.path));
     for (const v of violations) {
-        if (!v.startsWith(MIGRATIONS_DIR) && !deleted.has(v)) {
-            reasons.push(`${v}: neither a migration nor a deletion — modified/added app code must ship separately`);
-        }
+        if (v.startsWith(MIGRATIONS_DIR)) continue;
+        if (deleted.has(v) && impliedDeletions.has(v)) continue;
+        reasons.push(
+            deleted.has(v)
+                ? `${v}: deleted, but not a route file of a removed registry entry — unrelated deletions must ship separately`
+                : `${v}: neither a migration nor a deletion — modified/added app code must ship separately`,
+        );
     }
 
     return { ok: reasons.length === 0, reasons, removedModels, removedEndpoints };
