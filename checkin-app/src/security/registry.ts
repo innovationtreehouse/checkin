@@ -117,10 +117,21 @@ defineRoute({
 //
 // AuditLog.newData is REBUILT by the handler to { type, significance } before
 // it reaches this layer; raw oldData/newData (arbitrary blob shape) must never
-// leave the route. No pagination — nothing else here would give total/page/
-// pageSize a legal home under any envelope value (handler.ts strips before
-// the envelope wraps), so the handler caps rows and over-fetches by one to
-// signal "more" instead.
+// leave the route. Neither obligation is enforceable HERE: 'everyones:internal'
+// permits both fields wholesale and a tier does not reach inside a JSON blob,
+// so a handler that passed oldData straight through would ship a whole-row
+// snapshot with every suite green. The route PR carries the assertion instead
+// (correctionsAPI.integration.test.ts). No pagination — nothing else here would
+// give total/page/pageSize a legal home under any envelope value (handler.ts
+// strips before the envelope wraps), so the handler caps rows and over-fetches
+// by one to signal "more" instead.
+//
+// This entry also settles the open question #1497 left to the route PR: how a
+// before/after pair crosses the boundary. A separate bag key is not expressible
+// — stripBag drops any top-level key that is not a model name, so there can be
+// exactly one Visit key — and a before row and its after row share a Visit.id,
+// so no field distinguishes them. Array position is the only discriminator, and
+// it survives because stripValue maps arrays element-wise and preserves order.
 //
 // Registered ahead of the route per the boundary isolation rule (AGENTS.md);
 // GET /api/facility/corrections does not exist yet. Blocked on #1523 (persist
