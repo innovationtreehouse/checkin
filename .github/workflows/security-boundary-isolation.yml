@@ -36,7 +36,14 @@ name: Security boundary isolation
 # to its migration (#1446). When check-boundary-decommission.js certifies
 # that shape — byte-strict, fail-closed: partial edits, additions, re-tiers,
 # reorders, and engine-file changes never qualify — the PR may also carry
-# prisma/migrations/** and file deletions, nothing else.
+# prisma/migrations/** and the route files of the removed entries, nothing else.
+#
+# Known fail-closed corner: the certifier requires each removed route entry's
+# derived file to export the verb AT BASE (otherwise absence at head proves
+# nothing). Removing an ALREADY-INERT entry therefore fails certification. That
+# is only visible on a PR that also carries a violation — a bindings drop plus
+# its migration, say — since a boundary-only PR never reaches the certifier.
+# Split the inert-entry removal into its own PR.
 on:
   pull_request:
     # rel/** stays in the trigger even though enforcement is main-only:
@@ -86,7 +93,16 @@ jobs:
           # merge ref (= base.sha and head.sha) local, so no fetch is needed;
           # if either SHA is unreachable the diff below fails loud, never a
           # silent unaudited pass.
-          if ! CHANGED_RAW=$(git diff --name-only "$BASE_SHA"..."$HEAD_SHA"); then
+          # --no-renames: with rename detection on, `git diff --name-only`
+          # reports ONLY the destination, so renaming a boundary file never puts
+          # its name in CHANGED, is_boundary never fires, and the step exits
+          # green. Next.js runs only src/middleware.ts, so a rename disables the
+          # site-wide gate exactly as thoroughly as deleting it — and nothing
+          # imports it, so tsc and the build stay green too. D+A surfaces both
+          # names. (The certifier's own --name-status diff deliberately keeps the
+          # destination only; detection needs the source, the deletion rule does
+          # not.)
+          if ! CHANGED_RAW=$(git diff --no-renames --name-only "$BASE_SHA"..."$HEAD_SHA"); then
             echo "::error::Could not diff $BASE_SHA...$HEAD_SHA — a SHA is unreachable. Failing rather than passing this PR unaudited."
             exit 1
           fi
@@ -185,6 +201,12 @@ jobs:
             echo "to a separate PR (registry-first for new routes — an unused"
             echo "defineRoute is inert):"
             printf '  %s\n' "${VIOLATIONS[@]}"
+            # Guarded: a re-tier-only failure has no boundary files, and an
+            # empty array still prints one blank bullet.
+            if [ "${#BOUNDARY_FILES[@]}" -gt 0 ]; then
+              echo "Triggered by these boundary files:"
+              printf '  %s\n' "${BOUNDARY_FILES[@]}"
+            fi
             exit 1
           fi
           echo "Boundary change is properly isolated (companions: tests/docs/schema only)."
