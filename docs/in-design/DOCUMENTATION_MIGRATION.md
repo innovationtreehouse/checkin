@@ -346,9 +346,8 @@ tracked as backlog PL17.
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
 `BG_CHECK_DEV_MOCK.md`, `ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
-`SHOPIFY_LIVE_TESTS.md`, `S_READ_DIAGNOSTICS.md`. `LIFECYCLE.md` goes here too —
-it documents how the generated artifacts and drift guards work, which is
-mechanism, not policy.
+`SHOPIFY_LIVE_TESTS.md`. `LIFECYCLE.md` goes here too — it documents how the
+generated artifacts and drift guards work, which is mechanism, not policy.
 
 **→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
 (promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
