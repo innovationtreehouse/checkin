@@ -182,6 +182,26 @@ people it should.
 
 ---
 
+## Reachability is not permission
+
+Distinct from *identity is not authorisation*, which asks what a surviving
+record grants. This asks about arrival: how someone reached a surface says
+nothing about whether they may use it.
+
+- **A listing grants nothing.** A directory, index, search result or navigation
+  menu shows only what the viewer's existing gates already admit them to; it
+  never widens one, and it is not where the decision is made.
+
+- **A destination never trusts its entry point.** Every surface enforces its own
+  gate on arrival, whatever linked to it. A link that should not have been shown
+  is a cosmetic defect; a page that admits whoever followed it is not.
+
+The failure is a gate deleted as redundant, because the menu already hides the
+page so the page stops checking. It tests clean, since in testing the only way
+anyone reaches the page is through the menu that filters it.
+
+---
+
 ## People decide about people
 
 - **Automation classifies, warns, and escalates. It does not act on a person.**
