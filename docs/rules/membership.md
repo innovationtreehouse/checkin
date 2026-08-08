@@ -201,6 +201,15 @@ Procedure below is built on them.
 - A clearance is dated when the second reviewer clears it, and the validity
   window runs from that date.  [Decision]
 
+- A household review covers one adult. Whoever approves first names the person
+  whose report they read, and a later reviewer confirms that same person. A
+  reviewer who believes the named person is wrong rejects, rather than naming
+  someone else.  [Decision]
+
+- A board override names the adult it covers. It cannot infer one: a blocked
+  application never holds the second approval that would identify a subject, so
+  an override naming nobody would date a clearance against no one.  [Decision]
+
 - Every background-check decision and every payment certification records a
   written reason — wider than the policy, which requires documentation only for a
   disqualifying offence.  [Decision — *Policy: Membership Policy, Art. IX*]
