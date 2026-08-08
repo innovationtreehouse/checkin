@@ -198,22 +198,22 @@ export default function CorrectionsPage() {
         </Alert>
       )}
 
-      {loading && rows.length === 0 ? (
+      {/* Nothing but the alert on error. A count of zero and "No corrections in
+          this range" are both assertions about a period that was never read;
+          the empty state makes the same claim the count line would. */}
+      {!error && (loading && rows.length === 0 ? (
         <PageLoader />
       ) : (
         <>
         {/* The range runs from the start of the chosen period to now, so the
             count describes "this week/month/quarter/year". Counted over the
             whole result because v1 does not paginate; past MAX_ROWS the
-            server's +1 probe makes it a floor, shown as "500+". Suppressed on
-            error: a total is an assertion, and there is nothing to assert. */}
-        {!error && (
-          <Text size="sm" fw={500}>
-            {overflowed ? `${MAX_ROWS}+` : rows.length}{" "}
-            {flaggedOnly ? "flagged " : ""}
-            correction{!overflowed && rows.length === 1 ? "" : "s"} this {period}
-          </Text>
-        )}
+            server's +1 probe makes it a floor, shown as "500+". */}
+        <Text size="sm" fw={500}>
+          {overflowed ? `${MAX_ROWS}+` : rows.length}{" "}
+          {flaggedOnly ? "flagged " : ""}
+          correction{!overflowed && rows.length === 1 ? "" : "s"} this {period}
+        </Text>
         <Table.ScrollContainer minWidth={900}>
           <Table verticalSpacing="sm" highlightOnHover>
             <Table.Thead>
@@ -260,7 +260,7 @@ export default function CorrectionsPage() {
           </Table>
         </Table.ScrollContainer>
         </>
-      )}
+      ))}
     </Stack>
   );
 }
