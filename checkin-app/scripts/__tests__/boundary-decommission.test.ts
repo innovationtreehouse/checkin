@@ -269,6 +269,8 @@ describe('certifyDecommission', () => {
     };
 
     const BINDINGS = 'checkin-app/src/security/scopeBindings.ts';
+    const REGISTRY = 'checkin-app/src/security/registry.ts';
+    const ROUTE_FILE = 'checkin-app/src/app/api/fees/payments/route.ts';
     const SCHEMA = 'checkin-app/prisma/schema.prisma';
     const MIGRATION = 'checkin-app/prisma/migrations/20260803000000_drop_fee/migration.sql';
 
@@ -334,8 +336,6 @@ describe('certifyDecommission', () => {
     });
 
     it('certifies a route kill only once the verb stops being served', () => {
-        const REGISTRY = 'checkin-app/src/security/registry.ts';
-        const ROUTE_FILE = 'checkin-app/src/app/api/fees/payments/route.ts';
         const start = lineOf(REGISTRY_BASE, "// Payments history");
         const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
 
@@ -361,8 +361,6 @@ describe('certifyDecommission', () => {
     });
 
     it('rejects a route kill whose derived path never served the verb at base', () => {
-        const REGISTRY = 'checkin-app/src/security/registry.ts';
-        const ROUTE_FILE = 'checkin-app/src/app/api/fees/payments/route.ts';
         const start = lineOf(REGISTRY_BASE, "// Payments history");
         const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
 
@@ -384,7 +382,6 @@ describe('certifyDecommission', () => {
     });
 
     it('rejects outbound-surface removals', () => {
-        const REGISTRY = 'checkin-app/src/security/registry.ts';
         const start = lineOf(REGISTRY_BASE, 'defineOutbound({');
         const head = dropLines(REGISTRY_BASE, [start - 1, start + 3]);
         const r = certifyDecommission({
@@ -441,8 +438,6 @@ describe('certifyDecommission', () => {
     });
 
     it('admits the deleted route file of a removed entry, and only that one', () => {
-        const REGISTRY = 'checkin-app/src/security/registry.ts';
-        const ROUTE_FILE = 'checkin-app/src/app/api/fees/payments/route.ts';
         const start = lineOf(REGISTRY_BASE, "// Payments history");
         const registryWithoutFees = dropLines(REGISTRY_BASE, [start - 1, start + 9]);
 
