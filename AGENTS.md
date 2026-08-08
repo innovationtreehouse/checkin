@@ -93,7 +93,7 @@ routes, auth, and DB together.
 - `*.shopify-live.ts` (`checkin-app/shopify-live/`) hits the REAL Shopify
   dev store — excluded from every local/CI run; executed only by
   `.github/workflows/shopify-live.yml` (`npm run test:shopify-live`). Dev-store-only
-  by a triple guard; see `checkin-app/docs/designs/SHOPIFY_LIVE_TESTS.md`.
+  by a triple guard; see `docs/ops/shopify-live-tests.md`.
   Deliberately NOT named `*.test.ts`: that keeps them structurally invisible to
   every other jest invocation, including scripts that override ignore patterns
   on the CLI (the test:coverage class).

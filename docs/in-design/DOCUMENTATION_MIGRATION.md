@@ -343,8 +343,7 @@ tracked as backlog PL17.
 
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
-`ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
-`SHOPIFY_LIVE_TESTS.md`.
+`ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`.
 
 A doc that is mostly mechanism can still hold standing rules, and the ops bucket
 is not a way to avoid looking: `docs/ops/lifecycle-machines.md` carries the

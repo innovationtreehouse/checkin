@@ -132,6 +132,25 @@ cost arrives a month later attached to no particular change.
 
 ---
 
+## A tool that writes for real never points at production
+
+- **Automation that creates, changes or deletes objects in a real external
+  system — a contract test, a sweeper, a one-off script — runs against a
+  non-production instance and refuses the production one outright.** The refusal
+  lives in the code that does the writing, not in the configuration handed to it.
+  — *Principle: fail closed*
+
+- **Aiming one somewhere new takes two deliberate edits in two places, never a
+  single setting.** One variable is the whole distance between a scratch
+  environment and the live one, and it is a distance a typo covers.
+
+The failure is not a broken tool. It is a tool working exactly as written against
+whatever it was told to point at: nothing in the run looks wrong, because nothing
+was wrong except the target, and by the time anyone reads the output the objects
+are already gone.
+
+---
+
 ## A day is not a moment
 
 - **Every temporal field is one kind or the other, and the column type says
