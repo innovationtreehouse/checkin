@@ -79,6 +79,11 @@ Things the app takes as true because they are handled outside it.
 
 ### Supervision
 
+- The two-deep check counts adults present, and only where a youth is there
+  without an adult from their own household. It does not require the two to be
+  volunteers, to be non-students, or to be unrelated to one another, so a room
+  reads compliant while none of those holds.  [Short of policy — *Policy: Definitions Policy, Art. III, "Two Deep"*]
+
 - Someone whose age is unknown counts as a youth in the supervision check: not
   one of the supervising adults, and one of the people needing cover.  [Decision — *Principle: fail closed*]
 
