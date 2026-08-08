@@ -87,7 +87,7 @@ export const POST = withAuth({}, async (req, auth) => {
         },
         // Scored off the same `visit` snapshot as oldData above — no separate
         // in-lock re-read, so the two can't disagree.
-        newData: { significance: deleteSignificance(visit, { byProxy: user.id !== visit.personId }) },
+        newData: { type: "conflict_resolution", significance: deleteSignificance(visit, { byProxy: user.id !== visit.personId }) },
       },
     });
   });

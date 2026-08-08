@@ -116,6 +116,7 @@ export const PATCH = withAuth(
                         oldData: JSON.parse(JSON.stringify(previous)),
                         newData: JSON.parse(JSON.stringify({
                             ...updatedVisit,
+                            type: "staff_correction",
                             significance: editSignificance(previous, updatedVisit, { byProxy: auth.user.id !== previous.personId }),
                         })),
                     },
@@ -176,7 +177,7 @@ export const DELETE = withAuth(
                         affectedEntityId: visitId,
                         secondaryAffectedEntity: removed.personId,
                         oldData: JSON.parse(JSON.stringify(removed)),
-                        newData: { significance: deleteSignificance(removed, { byProxy: auth.user.id !== removed.personId }) },
+                        newData: { type: "staff_removal", significance: deleteSignificance(removed, { byProxy: auth.user.id !== removed.personId }) },
                     },
                 });
             }

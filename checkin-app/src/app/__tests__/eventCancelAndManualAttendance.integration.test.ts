@@ -324,6 +324,35 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             const forEvent = visits.find(v => v.associatedEventId === event.id)!;
             expect(forEvent.departedAt!.getTime()).toBe(departure.getTime());
         });
+
+        // "No reopening a closed visit" is a route-level validity rule
+        // (1256 §2) that facility/visits PATCH enforces. A Present mark with no
+        // departure against a closed visit would null it, destroying a recorded
+        // departure — the single most damaging edit this surface can make.
+        it('refuses to reopen a closed visit, leaving its departure and writing no audit row', async () => {
+            const event = await makeEvent('manual-present-no-reopen', -9 * HOUR);
+            const arrival = new Date(Date.now() - 8 * HOUR);
+            const departure = new Date(Date.now() - 1 * HOUR);
+            const closed = await prisma.visit.create({
+                data: { personId: participantId, arrivedAt: arrival, departedAt: departure, associatedEventId: event.id },
+            });
+
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: arrival.toISOString(),
+            });
+            expect(res.status).toBe(400);
+
+            const after = await prisma.visit.findUniqueOrThrow({ where: { id: closed.id } });
+            expect(after.departedAt!.getTime()).toBe(departure.getTime());
+
+            const audits = await prisma.auditLog.findMany({
+                where: { tableName: 'Visit', affectedEntityId: closed.id },
+            });
+            expect(audits).toHaveLength(0);
+        });
     });
 
     // ─── 3. PAST-EVENT GUARD ────────────────────────────────────────────────

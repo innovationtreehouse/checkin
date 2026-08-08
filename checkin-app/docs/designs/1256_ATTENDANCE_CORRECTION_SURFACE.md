@@ -402,12 +402,17 @@ deliberately do **not** raise it, for two reasons:
 - **On `facility/visits` the actor is the recipient.** That route is gated to
   sysadmin/board, so a flag would be the board notifying itself.
 
-This costs AT12 nothing. §"No new model" below is explicit that significance is
-**recomputed** from the audit row's old/new values rather than read off it — and
-every path above writes the source fields (`arrivedVia`/`departedVia`) into
-`oldData`, so the correction-review screen can score all of them. The
-`newData.significance` object that `attendance/manual/[id]` persists is a
-convenience for filtering, not the mechanism.
+This costs AT12 nothing, but not for the reason first given here. The original
+argument was that the screen **recomputes** significance from the audit row's
+old/new values, making the persisted object a filtering convenience. That is no
+longer how it works: every edit and delete path persists `newData.significance`,
+and the review screen **reads** it. A stored value is also the only form the
+database can filter on, which is what lets the default view page at all.
+
+Two row shapes cannot be recomputed — `facility/visits` edits written before the
+`oldData` fix stored no before-state — but recompute is not the fallback for
+them either. They are simply unscored, and the screen says so rather than
+showing a zero.
 
 If the board later wants leads' corrections in the live feed, the lever is the
 recipient set (§6.3) plus a per-path threshold — not the delete floor.

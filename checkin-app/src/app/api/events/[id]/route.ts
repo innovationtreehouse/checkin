@@ -357,6 +357,13 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                 // Every human visit-write logs (design "Audit substrate"), with
                 // secondaryAffectedEntity = the subject so a correction review
                 // reads actor ≠ subject without a join (§6.6).
+                // Never reopen a closed visit: a Present mark with no departure
+                // against a visit that has one would null it. facility/visits
+                // PATCH refuses the same edit.
+                if (existingVisit?.departedAt && !dep) {
+                    return "This visit is already closed. Provide a departure time, or remove the visit instead of reopening it.";
+                }
+
                 if (existingVisit) {
                     const updated = await tx.visit.update({
                         where: { id: existingVisit.id },
@@ -376,14 +383,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                             },
                             newData: {
                                 ...times, type: "lead_attendance_correction", status: "Present",
-                                // A reopen — a closed visit losing its departure — is unscorable:
-                                // the weights compare two durations and there is no second one.
-                                // Omitted rather than scored, because a row with no significance
-                                // reads as outside the lens, where a 0 would read as reviewed and
-                                // found insignificant. Erasing a recorded departure is not that.
-                                ...(existingVisit.departedAt && !dep ? {} : {
-                                    significance: editSignificance(existingVisit, { arrivedAt: arrival!, departedAt: dep }, { byProxy: userId !== targetId }),
-                                }),
+                                significance: editSignificance(existingVisit, { arrivedAt: arrival!, departedAt: dep }, { byProxy: userId !== targetId }),
                             }
                         }
                     });
