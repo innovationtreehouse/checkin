@@ -159,7 +159,7 @@ export default function MembershipReviewPage() {
           )}
         </Text>
       ),
-      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Clear the check" : "Approve", cancel: "Cancel" },
+      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Attest the check is clean" : "Approve", cancel: "Cancel" },
       confirmProps: { color: result === "REJECT" ? "red" : clearing ? "orange" : undefined },
       onConfirm: () => submit(item.id, result),
     });

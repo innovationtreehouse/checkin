@@ -83,7 +83,7 @@ describe("membership-ops/review page", () => {
     expect(await screen.findByText("Clear this background check?")).toBeInTheDocument();
     expect(screen.getByText(/emails the family/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1); // the queue GET only — nothing posted yet
-    fireEvent.click(screen.getByRole("button", { name: "Clear the check" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attest the check is clean" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
