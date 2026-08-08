@@ -285,6 +285,13 @@ function normalizeEntry(source, droppedModels) {
         .join('\n');
 }
 
+/**
+ * @param {Segmentation} baseResult
+ * @param {string} headSource
+ * @param {(source: string) => Segmentation} segmentHead
+ * @param {string[]} [droppedModels] models leaving schema.prisma in this PR
+ * @returns {EntityDiff}
+ */
 function diffSegmentations(baseResult, headSource, segmentHead, droppedModels = []) {
     if (baseResult.error) return { error: `base: ${baseResult.error}` };
     const headResult = segmentHead(headSource);
