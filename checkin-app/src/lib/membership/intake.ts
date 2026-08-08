@@ -112,6 +112,7 @@ export async function getIntakeState(userId: number) {
         allergies: p.allergies,
     });
 
+    const canSeeNotes = leadIds.has(userId) || user.isSysadmin;
     const external = process ? await getExternalStatus(process) : null;
 
     // The caller's own individual agreement, if they have one open. Person-scoped,
@@ -131,7 +132,11 @@ export async function getIntakeState(userId: number) {
             household: household
                 ? {
                       name: household.name,
-                      notes: household.intakeNotes,
+                      // intakeNotes is the lead's free-text note TO the board
+                      // (pii); household peers — including youth with their own
+                      // logins — must not read it. Same lead gate as
+                      // GET /api/household, and only a lead can write it back.
+                      notes: canSeeNotes ? household.intakeNotes : null,
                       ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
@@ -396,7 +401,7 @@ export async function submitIntake(userId: number) {
     // payment (#907), and the review track is the only surface that shows it —
     // the application instead holds at PENDING_BG_REVIEW (advanceExternalIfComplete).
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : null;
     const bgFresh = !household.intakeNotes?.trim() && (await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0));
 
     const advanced = await prisma.orgMembershipProcess.update({

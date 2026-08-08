@@ -44,6 +44,6 @@ A blank (`—`) cell is a **deliberate** absent edge — a decision to ratify, n
 - **Initial:** UNENROLLED
 - **Reachable (6):** ACTIVE, PENDING_HELD, PENDING_HELD_DENIED, PENDING_HOLD_FAILED, PENDING_UNPAID, UNENROLLED
 - **Terminal (no outbound edge):** ACTIVE
-- **Accepting terminals:** ACTIVE
+- **Accepting (designated resting states):** ACTIVE
 - **Dead-ends (reachable terminal, not accepting):** (none)
 - **Unreachable (declared but no legal path from ∅):** (none)

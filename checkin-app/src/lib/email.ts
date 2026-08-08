@@ -8,23 +8,37 @@ const resend = config.resendApiKey()
     ? new Resend(config.resendApiKey()!)
     : null;
 
+/** Stand-in shown on /dev/sent-mail when no sender is configured. */
+const UNCONFIGURED_FROM = '(no From configured)';
+
 /**
  * Send an email via Resend. Falls back to console.log if no API key is configured.
  *
  * The From (and optional Reply-To) come from getEmailSenderIdentity(): the board
- * can override the EMAIL_FROM env default and set a Reply-To in Settings → Email.
+ * can override the EMAIL_FROM env value and set a Reply-To in Settings → Email.
  */
 export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
     const { from, replyTo } = await getEmailSenderIdentity();
 
-    if (!resend) {
-        console.log(`[Email (no RESEND_API_KEY)] To: ${to} | Subject: ${subject}`);
+    // Nothing can be delivered without a key, and nothing may be sent without a
+    // sender — an unverified From is rejected by Resend for every recipient.
+    if (!resend || !from) {
+        console.log(`[Email (${resend ? 'no From address' : 'no RESEND_API_KEY'})] To: ${to} | Subject: ${subject}`);
         // Dev/local: capture the email so link/token flows are retrievable at /dev/sent-mail,
         // and report success so gating callers follow the prod happy-path. devToolsActive
         // fails safe to prod, so a prod box that somehow lost its key still falls through
         // to `return false` (fail loud, not fake success).
         if (config.devToolsActive()) {
-            return captureSentEmail(from, to, subject, html);
+            return captureSentEmail(from ?? UNCONFIGURED_FROM, to, subject, html);
+        }
+        if (!from) {
+            // A missing key is reported by the config-health check; a missing sender is
+            // not, so put it on System Status > Link Status instead of dropping silently.
+            await logIntegrationError(
+                'email',
+                'No From address configured — set EMAIL_FROM or the From address in Settings → Email.',
+                { to, subject },
+            );
         }
         return false;
     }

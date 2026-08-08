@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { Alert, Button, Card, Checkbox, Container, Group, Stack, Text, Textarea, Title } from "@mantine/core";
+import { Alert, Button, Card, Checkbox, Container, Group, Radio, Stack, Text, Textarea, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { type AlertTone } from "@/components/admin/AlertBanner";
@@ -21,6 +21,9 @@ interface QueueItem {
   id: number;
   subjectPerson: { id: number; name: string | null; householdId: number | null; household: { name: string | null } | null } | null;
   orgMembership: { household: { name: string | null; intakeNotes: string | null; householdMembers: Person[] } | null } | null;
+  // Subject ids only — enough to count approvals per lead, and it says nothing
+  // about WHO approved (see the route comment).
+  attestations: { subjectPersonId: number | null }[];
   _count: { attestations: number };
 }
 
@@ -34,6 +37,8 @@ export default function MembershipReviewPage() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [volunteer, setVolunteer] = useState<Record<number, boolean>>({});
   const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
+  // processId -> the lead this reviewer picked, before anyone has settled the subject.
+  const [subjects, setSubjects] = useState<Record<number, number>>({});
   // Tagged with the acting row's processId so the result renders in that card, not off-screen at page top.
   const [message, setMessage] = useState<{ processId: number; text: string; tone: AlertTone } | undefined>();
 
@@ -67,11 +72,12 @@ export default function MembershipReviewPage() {
       const res = await fetch("/api/membership/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId], note: reviewNotes[processId]?.trim() || undefined }),
+        body: JSON.stringify({ processId, result, isMarkedVolunteer: !!volunteer[processId], note: reviewNotes[processId]?.trim() || undefined, subjectPersonIds: subjectIdsFor(processId) }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         notifications.show({ message: result === "APPROVE" ? "Attestation recorded — thank you." : "Recorded. The board has been notified." });
+        setSubjects((s) => { const next = { ...s }; delete next[processId]; return next; });
         await load();
         notifyNavRefresh();
       } else if (data.code === "already_attested") {
@@ -93,12 +99,40 @@ export default function MembershipReviewPage() {
       ? item.subjectPerson.name || `Person #${item.subjectPerson.id}`
       : item.orgMembership?.household?.name || `Household (application #${item.id})`;
 
+  // Who this review is about, once someone has approved. A review covers ONE adult:
+  // the first approval fixes the subject, so a later reviewer confirms that person
+  // rather than choosing again.
+  const settledSubject = (item: QueueItem) =>
+    item.attestations.find((a) => a.subjectPersonId !== null)?.subjectPersonId ?? null;
+
+  // The subject this reviewer is about to attest — the settled one if there is one,
+  // else whichever lead they picked.
+  const chosenSubject = (item: QueueItem) => settledSubject(item) ?? subjects[item.id] ?? null;
+
+  const pickSubject = (processId: number, personId: number) =>
+    setSubjects((s) => ({ ...s, [processId]: personId }));
+
+  // The wire carries a list; a household review names exactly one adult, and a
+  // PERSON_BG or a rejection names nobody.
+  const subjectIdsFor = (processId: number) => {
+    const item = queue.find((q) => q.id === processId);
+    const chosen = item && !item.subjectPerson ? chosenSubject(item) : null;
+    return chosen === null ? [] : [chosen];
+  };
+
+  const leadName = (item: QueueItem, personId: number) => {
+    const p = (item.orgMembership?.household?.householdMembers ?? []).find((m) => m.id === personId);
+    return p?.name || p?.email || `Person #${personId}`;
+  };
+
   // Attesting is a one-click, two-of-two decision, and the SECOND approval clears the
-  // check outright — stamping the household, opening payment or activating, and
+  // check outright — stamping the named adult, opening payment or activating, and
   // emailing the family. Confirm both actions, and say what the click actually does
   // rather than "are you sure?", which trains people to click through.
   const confirmSubmit = (item: QueueItem, result: "APPROVE" | "REJECT") => {
     const who = applicantLabel(item);
+    // Either kind clears on its second approval; a household's subject is already fixed
+    // by then, so an existing attestation is enough to know this click is the last one.
     const clearing = result === "APPROVE" && item._count.attestations >= 1;
     modals.openConfirmModal({
       title: result === "REJECT" ? "Reject this background check?" : clearing ? "Clear this background check?" : "Record your approval?",
@@ -112,13 +146,15 @@ export default function MembershipReviewPage() {
           ) : clearing ? (
             <>
               You are the second reviewer for <strong>{who}</strong>. This clears the background
-              check, records it against the household, opens payment (or activates the membership
-              if dues are already paid), and emails the family. It cannot be undone.
+              check, records it against {item.subjectPerson ? "the subject" : leadName(item, chosenSubject(item)!)},
+              opens payment (or activates the membership if dues are already paid), and emails the
+              family. It cannot be undone.
             </>
           ) : (
             <>
-              This records your approval of <strong>{who}</strong>&apos;s background check. A second
-              reviewer must also approve before the check clears.
+              This records your approval of <strong>{who}</strong>&apos;s background check
+              {item.subjectPerson ? "" : ` for ${leadName(item, chosenSubject(item)!)}`}. A second
+              reviewer must also approve the same person before the check clears.
             </>
           )}
         </Text>
@@ -147,9 +183,11 @@ export default function MembershipReviewPage() {
   return (
     <Container size="md" pb="md">
       <Text c="dimmed">
-        Review each applicant&apos;s background check on Averity, then attest below. Two independent
-        reviewers are required. If anything is concerning, choose <strong>Reject</strong> — the
-        board is notified and the applicant is not told the reason.
+        Review each applicant&apos;s background check on Averity, then attest below. A review covers
+        one adult — name the person whose report you read, and the check is recorded against them and
+        nobody else. Two independent reviewers must approve the same person. If anything is
+        concerning, choose <strong>Reject</strong> — the board is notified and the applicant is not
+        told the reason.
       </Text>
 
       {queue.length === 0 ? (
@@ -183,6 +221,40 @@ export default function MembershipReviewPage() {
               )}
               <Text size="xs" c="dimmed" mt={4}>{item._count.attestations}/2 approvals so far.</Text>
 
+              {/* Whose report did you read? The Averity report names its subject, and
+                  that name is the only record of who a household's check covered — so
+                  approving without one is refused by the server. Once someone has
+                  approved, the subject is settled and a later reviewer confirms that
+                  person; disagreeing means rejecting, not naming someone else. */}
+              {!subject && (
+                <Stack gap={4} mt="md">
+                  {settledSubject(item) !== null ? (
+                    <>
+                      <Text size="sm" fw={600}>This review is for {leadName(item, settledSubject(item)!)}</Text>
+                      <Text size="sm" c="dimmed">
+                        Named by the first reviewer. Approve only if the report you read is theirs —
+                        if it names someone else, reject so the board can sort it out.
+                      </Text>
+                    </>
+                  ) : parents.length === 0 ? (
+                    <Text size="sm" c="dimmed">No household leads on file — this application cannot be attested.</Text>
+                  ) : (
+                    <Radio.Group
+                      label="Whose check did you review?"
+                      description="One adult. A second adult's own check is tracked separately."
+                      value={String(subjects[item.id] ?? "")}
+                      onChange={(v) => pickSubject(item.id, Number(v))}
+                    >
+                      <Stack gap={4} mt={4}>
+                        {parents.map((p) => (
+                          <Radio key={p.id} value={String(p.id)} label={p.name || p.email || `Person #${p.id}`} />
+                        ))}
+                      </Stack>
+                    </Radio.Group>
+                  )}
+                </Stack>
+              )}
+
               {/* Household-application concepts (intake note + volunteer-only mark)
                   don't apply to a per-person BG check. */}
               {!subject && notes && (
@@ -211,7 +283,11 @@ export default function MembershipReviewPage() {
               />
 
               <Group gap="sm" wrap="wrap" mt="md">
-                <Button disabled={busyId === item.id} loading={busyId === item.id} onClick={() => confirmSubmit(item, "APPROVE")}>
+                <Button
+                  disabled={busyId === item.id || (!subject && chosenSubject(item) === null)}
+                  loading={busyId === item.id}
+                  onClick={() => confirmSubmit(item, "APPROVE")}
+                >
                   Attest — check is clean
                 </Button>
                 <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => confirmSubmit(item, "REJECT")}>

@@ -201,6 +201,15 @@ describe('isLegalTransition covers §5', () => {
         expect(isLegalTransition('ACTIVE', 'ARCHIVED')).toBe(false);
     });
 
+    test('accepts unarchive back to every archivable status — ARCHIVED is not sealed', () => {
+        for (const to of ['INTAKE', 'PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW', 'PENDING_PAYMENT', 'PENDING_BG_CLEARANCE', 'PENDING_RENEWAL', 'BLOCKED'] as ProcessStatus[]) {
+            expect(isLegalTransition('ARCHIVED', to)).toBe(true);
+        }
+        // Nothing is ever archived from these two, so neither is a restore target.
+        expect(isLegalTransition('ARCHIVED', 'RENEWAL_PENDING_BG')).toBe(false);
+        expect(isLegalTransition('ARCHIVED', 'ARCHIVED')).toBe(false);
+    });
+
     test('rejects undeclared edges', () => {
         expect(isLegalTransition('INTAKE', 'ACTIVE')).toBe(false);
         expect(isLegalTransition('ACTIVE', 'PENDING_PAYMENT')).toBe(false);

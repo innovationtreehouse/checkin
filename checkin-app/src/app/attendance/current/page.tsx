@@ -77,12 +77,16 @@ function KioskDisplayInner() {
   const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
   const isFull = data?.access === "full";
+  // Absent attendance is UNKNOWN, never "empty and compliant": every count and
+  // safety flag below is only meaningful while `data` is non-null, so each one is
+  // rendered behind that check.
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
   // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
-  // fall back to the birth date the privileged payload still ships.
-  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth);
+  // fall back to the birth date the privileged payload still ships. This feeds the
+  // supervision columns, so an unknown birth date fails closed as youth.
+  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth, { unknownIs: "youth" });
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
@@ -143,6 +147,7 @@ function KioskDisplayInner() {
       }
     } catch (error) {
       console.error("Failed to fetch attendance:", error);
+      setError("Network error occurred.");
       notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setLoading(false);
@@ -378,7 +383,7 @@ function KioskDisplayInner() {
                 Sign out a user
               </Button>
             )}
-            <CountBadge intent="info" size="lg">People Present: {counts.total}</CountBadge>
+            <CountBadge intent="info" size="lg">People Present: {data ? counts.total : "—"}</CountBadge>
           </Group>
         </Group>
 
@@ -425,14 +430,20 @@ function KioskDisplayInner() {
           </Box>
         )}
 
-        {/* Safety warnings */}
-        {safety.isTwoDeepViolation && (
+        {/* Safety warnings — a missing roster reads as unknown, not as all-clear */}
+        {!loading && !data && (
+          <Alert color="orange" icon="⚠️" title="Supervision status unknown" mb="lg">
+            Attendance could not be loaded, so Two-Deep Compliance and keyholder coverage
+            cannot be checked. Verify supervision in the building.
+          </Alert>
+        )}
+        {data && safety.isTwoDeepViolation && (
           <Alert color="red" icon="🚨" title="Critical Warning" mb="lg">
             Two-Deep Compliance is failing! An unaccompanied youth is present without sufficient
             adult supervision.
           </Alert>
         )}
-        {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
+        {data && !safety.isTwoDeepViolation && safety.isLastKeyholder && (
           <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
             Only one isKeyholder is currently in the building.
           </Alert>
@@ -443,6 +454,8 @@ function KioskDisplayInner() {
           <Center py="xl"><Loader /></Center>
         ) : error ? (
           <Alert color="red">{error === "Unauthorized" ? "Access Denied: Please sign in to view attendance." : error}</Alert>
+        ) : !data ? (
+          <Alert color="red">Attendance is unavailable — the roster could not be loaded.</Alert>
         ) : counts.total === 0 ? (
           <Center py="xl"><Text c="dimmed">The facility is currently empty.</Text></Center>
         ) : (

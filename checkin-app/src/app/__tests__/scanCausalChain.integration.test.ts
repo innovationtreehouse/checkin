@@ -94,12 +94,12 @@ describe('Scan causal chain — last isKeyholder closes facility', () => {
         expect(open).toBe(0);
     });
 
-    it('force-closes (departing everyone) when a recent double-badge confirms, then sends post-event emails', async () => {
-        const kVisit = await prisma.visit.create({ data: { personId: isKeyholder.id, arrivedAt: new Date() } });
+    it('force-closes (departing everyone) when the scan follows a fresh warning, then sends post-event emails', async () => {
+        const kVisit = await prisma.visit.create({
+            // The warning was shown 5s ago (within the 60s window) → confirmed.
+            data: { personId: isKeyholder.id, arrivedAt: new Date(), forceCloseWarnedAt: new Date(Date.now() - 5000) },
+        });
         await prisma.visit.create({ data: { personId: normal.id, arrivedAt: new Date() } });
-        // Two isKeyholder badge events 5s apart (<=12s) → confirmed force-close.
-        await prisma.rawBadgeLog.create({ data: { personId: isKeyholder.id, timestamp: new Date(Date.now() - 5000) } });
-        await prisma.rawBadgeLog.create({ data: { personId: isKeyholder.id, timestamp: new Date() } });
 
         const res = await processCheckout(isKeyholder, kVisit.id, 'kiosk');
         const json = await res.json();
@@ -115,9 +115,12 @@ describe('Scan causal chain — last isKeyholder closes facility', () => {
         expect(openAnyone).toBe(0);
     });
 
-    it('warns instead of closing when others are present and there is no recent double-badge', async () => {
+    it('warns instead of closing when others are present and no warning has been shown', async () => {
         const kVisit = await prisma.visit.create({ data: { personId: isKeyholder.id, arrivedAt: new Date() } });
         await prisma.visit.create({ data: { personId: normal.id, arrivedAt: new Date() } });
+        // An ordinary double-tap: two badge events 5s apart, no warning behind them.
+        await prisma.rawBadgeLog.create({ data: { personId: isKeyholder.id, timestamp: new Date(Date.now() - 5000) } });
+        await prisma.rawBadgeLog.create({ data: { personId: isKeyholder.id, timestamp: new Date() } });
 
         const res = await processCheckout(isKeyholder, kVisit.id, 'kiosk');
         expect(res.status).toBe(400);
@@ -130,5 +133,9 @@ describe('Scan causal chain — last isKeyholder closes facility', () => {
         });
         expect(open).toBe(2);
         expect(processPostEventEmails).not.toHaveBeenCalled();
+
+        // The warning is now stamped, so the next scan may confirm.
+        const stamped = await prisma.visit.findUnique({ where: { id: kVisit.id } });
+        expect(stamped?.forceCloseWarnedAt).toBeInstanceOf(Date);
     });
 });

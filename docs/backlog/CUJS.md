@@ -90,7 +90,7 @@ _Extraction adds (2026-07-22):_
 2. 🟡 Youth enrollment rules (`P16`) — age gate **enforced** ✅ (`checkProgramAge`, min/max as-of start, declared-adult/no-DOB handled); youth-specific slot-reserve/parent-notify/limit ❌ (open DECISION, not built)
 3. ✅ Check-in / out
 4. ✅ Insert own past visit — `attendance/manual` forces `personId=self` (never from body), backdate allowed by design, audit-logged CREATE
-5. 🟡 Edit an inserted visit (`AT3` — **now fully mapped**): **user self-edit ⛔ none** (manual route INSERT-only) · **staff edit ✅** board/sysadmin PATCH/DELETE `facility/visits` (⚠️ UI page gates sysadmin-only but API allows board too — role discrepancy) · **lead/ops add-for-others ✅ scoped** (event-roster synthetic visit via `events/[id]/attendance`, or live `scan`) — but **no arbitrary-past-time insert for others** exists
+5. 🟡 Edit an inserted visit (`AT3` — **now fully mapped**): **user self-edit ⛔ none** (manual route INSERT-only) · **staff edit ✅** board/sysadmin PATCH/DELETE `facility/visits` (⚠️ UI page gates sysadmin-only but API allows board too — role discrepancy) · **lead/ops add-for-others ✅ scoped** (per-session correction via `PATCH events/[id]` `manualEditAttendance`, or live `scan`) — but **no arbitrary-past-time insert for others** exists
 6. ❌ Waiver-gated enrollment where the program requires one — camps (`P28`)
 7. ❌ Age-out → alumni pipeline (`M21`; SA1 BG trigger already covers the mentor return)
 

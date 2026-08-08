@@ -94,22 +94,38 @@ async function wipe() {
 
 const isVolunteerOf = async (id: number) => (await prisma.orgMembership.findUnique({ where: { id } }))?.isVolunteer;
 
+/**
+ * Turn the fresh-check shortcut on. It needs BOTH halves of the policy — a recheck
+ * window AND a membership-year boundary — since householdBgIsFresh treats either
+ * being unset as "no policy, nothing is fresh". The boundary sits ~30 days out, so
+ * the freshness threshold (boundary - 12 months) lands ~11 months back and a check
+ * stamped today counts as fresh.
+ */
+async function setBgPolicy() {
+    const data = { bgRecheckMonths: 12, orgMembershipYearBoundary: new Date(Date.now() + 30 * 86400_000) };
+    await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, ...data }, update: data });
+}
+
 describe('background check is non-blocking', () => {
     let revA: number, revB: number;
-    let prevBgRecheckMonths = 0;
+    let prevPolicy: { bgRecheckMonths: number; orgMembershipYearBoundary: Date | null } = { bgRecheckMonths: 0, orgMembershipYearBoundary: null };
 
     beforeAll(async () => {
         await wipe();
         // BoardSettings (id=1) is a global singleton; remember what we change so the
         // auto-clear scenario doesn't pollute other suites' BoardSettings reads.
-        prevBgRecheckMonths = (await prisma.boardSettings.findUnique({ where: { id: 1 } }))?.bgRecheckMonths ?? 0;
+        const prev = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+        prevPolicy = {
+            bgRecheckMonths: prev?.bgRecheckMonths ?? 0,
+            orgMembershipYearBoundary: prev?.orgMembershipYearBoundary ?? null,
+        };
         revA = await makeReviewer('RevA');
         revB = await makeReviewer('RevB');
         await makeBoardMember(); // recipient for the paid-reject refund alert
     });
     afterAll(async () => {
         await wipe();
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: prevBgRecheckMonths }, update: { bgRecheckMonths: prevBgRecheckMonths } });
+        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, ...prevPolicy }, update: prevPolicy });
         await prisma.$disconnect();
     });
 
@@ -131,9 +147,9 @@ describe('background check is non-blocking', () => {
         expect(await membershipStatusOf(orgMembershipId)).toBe('NONE'); // NOT active without a valid check
 
         // Review clears in parallel; the 2nd approval converges to ACTIVE.
-        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_BG_CLEARANCE');
-        await attest(revB, processId, { result: 'APPROVE' });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('ACTIVE');
         expect(await membershipStatusOf(orgMembershipId)).toBe('ACTIVE');
         // Guardians' lastBackgroundCheck stamped.
@@ -143,11 +159,11 @@ describe('background check is non-blocking', () => {
     });
 
     it('check clears before payment → stays PENDING_PAYMENT, then paying activates', async () => {
-        const { processId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        await attest(revA, processId, { result: 'APPROVE' });
-        await attest(revB, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // cleared, but unpaid → not active
         expect(await membershipStatusOf(orgMembershipId)).toBe('NONE');
         await certifyPaymentPlan(processId, revA);
@@ -166,10 +182,10 @@ describe('background check is non-blocking', () => {
     });
 
     it('reject BEFORE the payment webhook → payment still recorded + board notified (no dropped money)', async () => {
-        const { processId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);            // → PENDING_PAYMENT
-        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         await attest(revB, processId, { result: 'REJECT' }); // → BLOCKED, not yet paid
         expect(await statusOf(processId)).toBe('BLOCKED');
 
@@ -193,7 +209,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('a still-valid prior check auto-clears at submit — no consent needed, pay activates directly', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { processId, orgMembershipId, householdId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         // Reset the process to INTAKE with the household fully filled so submitIntake passes validation.
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
@@ -229,7 +245,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('fresh-check intake shortcut still matches the designation allowlist (#874)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { processId, orgMembershipId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         await prisma.household.update({ where: { id: householdId }, data: { line1: '123 Test St', city: 'Austin', state: 'TX', postalCode: '78701' } });
@@ -245,7 +261,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('renewal with a still-valid background check matches a designation added since the last cycle (#874)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { orgMembershipId, processId, leadEmail } = await makeFreshRenewal();
         await prisma.volunteerDesignation.create({ data: { email: leadEmail } });
 
@@ -260,7 +276,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('an intake note holds payment at PENDING_BG_REVIEW until the review clears (#907)', async () => {
-        const { processId, householdId, orgMembershipId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, householdId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: 'please treat us as a volunteer household' } });
 
         await markContractSigned(processId);
@@ -272,8 +288,8 @@ describe('background check is non-blocking', () => {
 
         // The reviewers (who are shown the note) clear the check → payment opens
         // with dues already settled by their volunteer mark.
-        await attest(revA, processId, { result: 'APPROVE', isMarkedVolunteer: true });
-        await attest(revB, processId, { result: 'APPROVE', isMarkedVolunteer: true });
+        await attest(revA, processId, { result: 'APPROVE', isMarkedVolunteer: true, subjectPersonIds: [leadId] });
+        await attest(revB, processId, { result: 'APPROVE', isMarkedVolunteer: true, subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
         expect(await isVolunteerOf(orgMembershipId)).toBe(true);
         await certifyPaymentPlan(processId, revA);
@@ -281,7 +297,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('fresh check + intake note → no auto-clear at submit; the note goes through review (#907)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { processId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
         await prisma.household.update({
@@ -301,7 +317,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('fresh-check renewal with a household note re-reviews instead of opening payment (#907)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { orgMembershipId, processId } = await makeFreshRenewal();
         const m = await prisma.orgMembership.findUnique({ where: { id: orgMembershipId } });
         await prisma.household.update({ where: { id: m!.householdId }, data: { intakeNotes: 'note for the reviewer' } });
@@ -358,10 +374,10 @@ describe('background check is non-blocking', () => {
     });
 
     it('reset returns a still-open review to neutral (the misclicked approval), but not a cleared one', async () => {
-        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        await attest(revA, processId, { result: 'APPROVE' }); // 1 of 2 — review still open
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] }); // 1 of 2 — review still open
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
 
         // The review never left its phase, so the reset only drops the attestations.
@@ -373,9 +389,9 @@ describe('background check is non-blocking', () => {
 
         // The withdrawn approval is genuinely gone: the same reviewer may attest again,
         // and it takes two more approvals to clear.
-        await attest(revA, processId, { result: 'APPROVE' });
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT'); // 1 of 2 again, not cleared
-        await attest(revB, processId, { result: 'APPROVE' });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
         const cleared = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(cleared?.bgClearedAt).not.toBeNull();
 
@@ -385,7 +401,7 @@ describe('background check is non-blocking', () => {
     });
 
     it('renewal with a still-valid background check: bgClearedAt stamped, signature opens payment, paying activates (not stuck)', async () => {
-        await prisma.boardSettings.upsert({ where: { id: 1 }, create: { id: 1, bgRecheckMonths: 12 }, update: { bgRecheckMonths: 12 } });
+        await setBgPolicy();
         const { orgMembershipId, processId } = await makeFreshRenewal();
         await beginRenewal(processId);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -399,11 +415,11 @@ describe('background check is non-blocking', () => {
     });
 
     it('paying twice is idempotent (one activation)', async () => {
-        const { processId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+        const { processId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        await attest(revA, processId, { result: 'APPROVE' });
-        await attest(revB, processId, { result: 'APPROVE' }); // cleared, PENDING_PAYMENT
+        await attest(revA, processId, { result: 'APPROVE', subjectPersonIds: [leadId] });
+        await attest(revB, processId, { result: 'APPROVE', subjectPersonIds: [leadId] }); // cleared, PENDING_PAYMENT
         // The idempotent payment path is the Shopify webhook (activate), which a
         // retry hits twice; the deliberate board certify rejects a non-payment phase.
         await activate(processId, { via: 'payment', shopifyOrderId: 'pay-1' }); // ACTIVE

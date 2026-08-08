@@ -39,6 +39,8 @@ export const GET = handler("GET /api/membership-ops/applications", async ({ req 
                     household: {
                         select: {
                             name: true,
+                            // Live only: the leads here are the selectable subjects of a
+                            // board force-approve, and the service rejects a tombstone.
                             householdMembers: { where: LIVE_PERSON, select: { id: true, name: true, email: true, isHouseholdLead: true } },
                         },
                     },

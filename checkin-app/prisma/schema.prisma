@@ -177,6 +177,7 @@ model Person {
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  bgAttestationsAsSubject BackgroundCheckAttestation[] @relation("BgAttestationSubject")
   personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
@@ -467,6 +468,11 @@ model OrgMembershipProcess {
   kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
   status                OrgMembershipProcessStatus
+  /// The status ARCHIVED collapsed — captured by the archive write itself, since
+  /// afterwards there is nothing left to read. Unarchive restores from this and
+  /// clears it; null on every process that is not (or never was) archived.
+  /// @sensitivity:internal
+  archivedFromStatus    OrgMembershipProcessStatus?
   /// @sensitivity:internal
   stageEnteredAt        DateTime?               @default(now())
   /// @sensitivity:public
@@ -521,6 +527,14 @@ model BackgroundCheckAttestation {
   /// @sensitivity:public
   reviewerId      Int
   reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
+  /// The adult whose Averity check this attestation covers, read off the PDF by the
+  /// reviewer. Null on PERSON_BG (the process already names its subject), on any
+  /// REJECT (a rejection is whole-process), and on legacy household rows attested
+  /// before per-adult subjects existed. Clearance stamps only named subjects, so a
+  /// null one stamps nobody.
+  /// @sensitivity:public
+  subjectPersonId Int?
+  subjectPerson   Person?      @relation("BgAttestationSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:internal
   result          AttestationResult
   /// @sensitivity:internal
@@ -530,7 +544,13 @@ model BackgroundCheckAttestation {
   /// @sensitivity:public
   createdAt       DateTime          @default(now())
 
-  @@unique([processId, reviewerId])
+  /// Applied as raw SQL with `NULLS NOT DISTINCT` (see the migration): Postgres
+  /// otherwise treats every (process, reviewer, NULL) row as distinct, which would
+  /// let a PERSON_BG reviewer attest twice. Prisma cannot express that attribute, so
+  /// a regenerated migration would silently weaken it.
+  /// Named explicitly: the generated name would be 67 chars, past Postgres's 63-char
+  /// identifier limit.
+  @@unique([processId, reviewerId, subjectPersonId], map: "BgAttestation_processId_reviewerId_subjectPersonId_key")
 }
 
 model VolunteerDesignation {
@@ -585,9 +605,10 @@ model BoardSettings {
   /// prod and local never consult it.
   /// @sensitivity:internal
   devSigningTarget           String?
-  /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
+  /// Overrides the EMAIL_FROM env value as the Resend sender on every outbound
   /// email when set. Must be on a Resend-verified domain or all mail bounces —
-  /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.
+  /// hence the confirm-to-edit guard in the settings UI. Null = fall back to
+  /// EMAIL_FROM; with that unset too, sendEmail refuses to send.
   /// @sensitivity:public
   emailFromAddress           String?
   /// Reply-To header set on every outbound email when set (the From address is a
@@ -738,7 +759,10 @@ model TrustedAdult {
   updatedAt                 DateTime           @updatedAt
   /// When the household chose to permanently hide a withdrawn trusted adult from
   /// their own view. The row is KEPT (board history / audit); the member-facing
-  /// /mine list filters it out. Board & sysadmin views still see it.
+  /// /mine list filters it out. No board view lists it either — the review queue
+  /// selects links carrying a pending or expired review and the operational list
+  /// selects approved ones, so a withdrawn link is outside both whatever this
+  /// column says.
   /// @sensitivity:internal
   hiddenAt                  DateTime?
 
@@ -1105,6 +1129,12 @@ model Visit {
   /// @sensitivity:internal
   deletedById       Int?
 
+  /// When the kiosk last showed this keyholder the "others are still here"
+  /// force-close warning. A force close only proceeds if the scan follows a
+  /// fresh stamp, so an ordinary double-tap cannot close the building.
+  /// @sensitivity:internal
+  forceCloseWarnedAt DateTime?
+
   person Person @relation(fields: [personId], references: [id])
   event  Event?      @relation(fields: [associatedEventId], references: [id])
 
@@ -1123,6 +1153,10 @@ model AuditLog {
   timestamp               DateTime    @default(now())
   /// @sensitivity:internal
   actorId                 Int
+  /// Which automated path wrote this row (`cron:nightly`, `webhook:shopify`, …)
+  /// when actorId is the system sentinel; null for a person's own action.
+  /// @sensitivity:internal
+  actorSystem             String?
   /// @sensitivity:internal
   action                  AuditAction
   /// @sensitivity:internal
@@ -1135,6 +1169,9 @@ model AuditLog {
   oldData                 Json?
   /// @sensitivity:internal
   newData                 Json?
+
+  @@index([actorId])
+  @@index([actorSystem])
 }
 
 model Account {

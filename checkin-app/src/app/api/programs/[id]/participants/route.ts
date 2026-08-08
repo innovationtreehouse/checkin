@@ -7,6 +7,7 @@ import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHo
 import { checkProgramAge, isKnownAdult } from "@/lib/programAge";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { isDuesSettled } from "@/lib/orgMembership";
+import { isProgramCheckoutBroken } from "@/lib/programCheckout";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { apiError } from "@/lib/api-response";
 
@@ -145,12 +146,26 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             }
         }
 
-        const isFree = currentProgram.orgMemberPriceCents === null && currentProgram.nonOrgMemberPriceCents === null;
+        // Zero is free, same as unpriced: variants are minted only above zero
+        // (api/programs POST), so a zero-priced program has nothing to charge
+        // through and must not wait on a payment.
+        const isFree = (currentProgram.orgMemberPriceCents ?? 0) === 0 && (currentProgram.nonOrgMemberPriceCents ?? 0) === 0;
         
         // PENDING (awaits payment) unless the program is free or an external
         // admin is comping it. A board parent overriding a soft limit for their
         // own household still pays — the override bypasses limits, not the fee.
         const initialStatus = ((isExternalAdmin && override) || isFree) ? 'ACTIVE' : 'PENDING';
+
+        // Fail closed on a priced-but-unsellable program: PENDING means "awaits a
+        // Shopify payment", and a priced program with no variant has nothing to
+        // pay through — the seat would sit PENDING forever. Keyed off the status,
+        // not the actor, so an admin comp (ACTIVE, skips payment entirely) still
+        // goes through while every payment-bound enrollment — including a
+        // conflicted admin's override, which still owes the fee — is refused.
+        // No requiresOverride: an override cannot make the program sellable.
+        if (initialStatus === 'PENDING' && isProgramCheckoutBroken(currentProgram)) {
+            return apiError("This program has a price but no payment link set up, so enrollment can't be paid for. An admin must fix the Shopify link in program-ops before anyone can enroll.", 400);
+        }
 
         const enrollment = await prisma.$transaction(async (tx) => {
             // Re-check capacity under a row lock right before insert, so

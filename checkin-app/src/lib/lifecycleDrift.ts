@@ -18,6 +18,7 @@ import {
     validate as validateEnrollment,
 } from "@/lib/programs/enrollmentState";
 import { validate as validateMembership } from "@/lib/membership/lifecycle";
+import { systemActor } from "@/lib/auditActor";
 import { adjustProgramInventory, reportShopifyFailure } from "@/lib/shopify";
 
 export type LifecycleModel = "ProgramParticipant" | "OrgMembershipProcess";
@@ -151,7 +152,7 @@ async function healEnrollmentI1(): Promise<number> {
 
             await prisma.auditLog.create({
                 data: {
-                    actorId: 0, // system — no session behind a cron sweep
+                    ...systemActor("cron:lifecycle-reconcile"),
                     action: "EDIT",
                     tableName: "ProgramParticipant",
                     affectedEntityId: row.personId,

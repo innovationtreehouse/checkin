@@ -1,4 +1,5 @@
 import { checkProgramAge, isKnownAdult, validateProgramAgeBounds, MAX_PROGRAM_AGE } from "@/lib/programAge";
+import { orgCalendarDay } from "@/lib/time";
 
 // as-of date pins calculateAge so the DOB cases don't drift with wall-clock time.
 const asOf = "2026-01-01";
@@ -45,9 +46,12 @@ describe("checkProgramAge", () => {
 });
 
 describe("isKnownAdult", () => {
+  // n years ago today, as a calendar date at UTC midnight — how a DOB is stored.
+  // Built from a moment instead, the 18 case is a birthday landing at whatever
+  // time the suite happens to run, and the boundary it is testing moves.
   const yearsAgo = (n: number) => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - n);
+    const d = orgCalendarDay();
+    d.setUTCFullYear(d.getUTCFullYear() - n);
     return d;
   };
 

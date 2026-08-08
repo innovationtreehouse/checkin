@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { personActor, systemActor, type AuditActor } from "@/lib/auditActor";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { emailBoardMembers, emailHouseholdLeads } from "@/lib/emailRecipients";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
@@ -39,7 +40,6 @@ function lockTrustedAdult(tx: TxClient, taId: number) {
  *   any non-terminal ──(household withdraws / board override)──► REVOKED
  */
 
-const SYSTEM_ACTOR = 0;
 const APPROVAL_VALID_DAYS = 365;
 const WARN_LEAD_DAYS = 30;
 
@@ -106,14 +106,14 @@ export async function createTrustedAdult(input: CreateInput) {
                 trustedAdultEmail: contact.email,
                 familyContext: input.familyContext.trim(),
                 origin: input.origin ?? "SELF_DISCLOSED",
-                disclosedById: input.disclosedById || SYSTEM_ACTOR,
+                disclosedById: input.disclosedById,
                 reviews: {
                     create: { householdId: input.householdId, kind: "INITIAL", status: "PENDING_BOARD_REVIEW" },
                 },
             },
             include: { reviews: true },
         });
-        await audit(tx, input.disclosedById, created.id, {}, { created: true, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        await audit(tx, personActor(input.disclosedById), created.id, {}, { created: true, status: "PENDING_BOARD_REVIEW" }, "CREATE");
         return created;
     });
 
@@ -142,7 +142,7 @@ export async function renewTrustedAdult(id: number, actorId: number) {
         const created = await tx.trustedAdultReview.create({
             data: { trustedAdultId: ta.id, householdId: ta.householdId, kind: "RENEWAL", status: "PENDING_BOARD_REVIEW" },
         });
-        await audit(tx, actorId, ta.id, {}, { renewal: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        await audit(tx, personActor(actorId), ta.id, {}, { renewal: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
         return created;
     });
     await notifyBoard();
@@ -200,7 +200,7 @@ export async function resubmitWithChanges(id: number, actorId: number, input: Re
                 proposedContext: input.familyContext.trim(),
             },
         });
-        await audit(tx, actorId, ta.id, {}, { modified: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
+        await audit(tx, personActor(actorId), ta.id, {}, { modified: created.id, status: "PENDING_BOARD_REVIEW" }, "CREATE");
         return created;
     });
     await notifyBoard();
@@ -247,7 +247,7 @@ export async function hideTrustedAdult(id: number, actorId: number) {
             throw new TrustedAdultError("wrong_phase", "Only a withdrawn trusted adult can be hidden.");
         }
         const updated = await tx.trustedAdult.update({ where: { id: ta.id }, data: { hiddenAt: new Date() } });
-        await audit(tx, actorId, ta.id, { hiddenAt: null }, { hiddenAt: updated.hiddenAt });
+        await audit(tx, personActor(actorId), ta.id, { hiddenAt: null }, { hiddenAt: updated.hiddenAt });
         return updated;
     });
 }
@@ -276,7 +276,7 @@ export async function withdrawTrustedAdult(id: number, actorId: number, opts?: {
                 throw new TrustedAdultError("wrong_phase", "No pending change to cancel.");
             }
             await tx.trustedAdultReview.update({ where: { id: latest.id }, data: { status: "REVOKED" } });
-            await audit(tx, actorId, ta.id, { status: latest.status }, { status: "REVOKED" });
+            await audit(tx, personActor(actorId), ta.id, { status: latest.status }, { status: "REVOKED" });
             return { ...latest, status: "REVOKED" as const };
         });
     }
@@ -294,7 +294,7 @@ export async function withdrawTrustedAdult(id: number, actorId: number, opts?: {
             data: { status: "REVOKED" },
         });
         for (const r of live) {
-            await audit(tx, actorId, ta.id, { status: r.status }, { status: "REVOKED" });
+            await audit(tx, personActor(actorId), ta.id, { status: r.status }, { status: "REVOKED" });
         }
         return { ...live[0], status: "REVOKED" as const };
     });
@@ -395,7 +395,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         const updated = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
         // Approving a MODIFIED review is the moment its proposed edits become fact.
         if (input.decision === "APPROVE") await promoteProposal(tx, review);
-        await audit(tx, boardMemberId, review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
+        await audit(tx, personActor(boardMemberId), review.trustedAdultId, { status: review.status }, { status, decision: input.decision });
         // "Deny & Revoke": reject the adult outright. Revoke EVERY live approval, not
         // just one — /operational shows a TA while ANY review is APPROVED, so leaving
         // one live would keep the adult on the pickup list after a full rejection.
@@ -410,7 +410,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
                     data: { status: "REVOKED" },
                 });
                 for (const r of live) {
-                    await audit(tx, boardMemberId, review.trustedAdultId, { status: r.status }, { status: "REVOKED", revokedWithDenial: reviewId });
+                    await audit(tx, personActor(boardMemberId), review.trustedAdultId, { status: r.status }, { status: "REVOKED", revokedWithDenial: reviewId });
                 }
             }
         }
@@ -509,7 +509,7 @@ export async function overrideReview(
     const updated = await prisma.$transaction(async (tx) => {
         const u = await tx.trustedAdultReview.update({ where: { id: reviewId }, data });
         if (action === "approve") await promoteProposal(tx, review);
-        await audit(tx, actorId, review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
+        await audit(tx, personActor(actorId), review.trustedAdultId, { status: review.status }, { status: data.status, override: action });
         return u;
     });
     // A forced denial/revocation notifies the family, like the ordinary deny path.
@@ -556,7 +556,7 @@ export async function runExpirySweep(now: Date) {
     for (const r of lapsed) {
         await prisma.$transaction(async (tx) => {
             await tx.trustedAdultReview.update({ where: { id: r.id }, data: { status: "EXPIRED" } });
-            await audit(tx, SYSTEM_ACTOR, r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
+            await audit(tx, systemActor("cron:trusted-adult-expiry"), r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
         });
         expired++;
     }
@@ -592,7 +592,7 @@ async function notifyHouseholdFamily(householdId: number, subject: string, body?
 
 function audit(
     db: TxClient | typeof prisma,
-    actorId: number,
+    actor: AuditActor,
     taId: number,
     oldData: object,
     newData: object,
@@ -600,7 +600,7 @@ function audit(
 ) {
     return db.auditLog.create({
         data: {
-            actorId: actorId || SYSTEM_ACTOR,
+            ...actor,
             action,
             tableName: "TrustedAdult",
             affectedEntityId: taId,
