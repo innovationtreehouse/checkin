@@ -9,9 +9,14 @@ name: Security boundary isolation
 # never be buried inside a feature diff.
 #
 # What this enforces, mechanically:
-#   - If the PR touches any boundary file (src/security/** excluding
-#     generated/, or scripts/security-generator.js), every other changed file
-#     must be a test, doc, schema annotation, or this workflow itself.
+#   - If the PR touches any boundary file, every other changed file must be a
+#     test, doc, schema annotation, or this workflow itself. The boundary set is
+#     src/security/** (excluding generated/ and __tests__/), src/middleware.ts
+#     — the site-wide org-login/access gate, which nothing imports, so deleting
+#     or renaming it leaves tsc and the build green — scripts/security-
+#     generator.js, and the two certifier scripts below. is_boundary is the
+#     single source of that set; the certifier is handed the match, never
+#     re-deriving it.
 #   - If the PR re-tiers an existing field (the generated classifications
 #     diff shows the same field moving between tiers), the same isolation
 #     applies. Purely ADDITIVE classification changes (new models/fields from
@@ -34,9 +39,13 @@ name: Security boundary isolation
 # scopeBindings model dropped from schema.prisma; a defineRoute whose verb is
 # no longer served) cannot add exposure, and the drift check WELDS such a PR
 # to its migration (#1446). When check-boundary-decommission.js certifies
-# that shape — byte-strict, fail-closed: partial edits, additions, re-tiers,
-# reorders, and engine-file changes never qualify — the PR may also carry
-# prisma/migrations/** and the route files of the removed entries, nothing else.
+# that shape — fail-closed: partial edits, additions, re-tiers, reorders, and
+# engine-file changes never qualify — the PR may also carry prisma/migrations/**
+# and the route files of the removed entries, nothing else. The comparison is
+# byte-strict apart from the two edits a whole-entity drop FORCES: comments, and
+# a `returns:` element naming a model dropped in the same PR (that array is
+# typed off the generated classifications, so the entry stops compiling
+# otherwise). Neither can widen exposure; see boundary-decommission.js.
 #
 # Known fail-closed corner: the certifier requires each removed route entry's
 # derived file to export the verb AT BASE (otherwise absence at head proves
@@ -112,6 +121,12 @@ jobs:
           is_boundary() { # policy/runtime files — the security boundary itself
             case "$1" in
               checkin-app/src/security/generated/*) return 1 ;;
+              # Tests ASSERT the policy, they don't set it. Classifying them as
+              # boundary files made a decommission block itself: a per-model
+              # scope oracle (visit-household-lead-scope.test.ts for Visit) has
+              # to change or leave with its model, and the certifier rejects any
+              # boundary file that isn't declarative. They stay companions.
+              checkin-app/src/security/__tests__/*) return 1 ;;
               checkin-app/src/security/*) return 0 ;;
               checkin-app/src/middleware.ts) return 0 ;;             # site-wide org-login/access gate
               checkin-app/scripts/security-generator.js) return 0 ;;
