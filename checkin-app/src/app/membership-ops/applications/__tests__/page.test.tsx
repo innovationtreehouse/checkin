@@ -172,10 +172,10 @@ describe("AdminMembershipPage", () => {
         await screen.findByText("Payment Family");
 
         // Only the in-review row with an approval on it offers the reset.
-        const reset = screen.getByRole("button", { name: "Clear approvals — start the review over" });
+        const reset = screen.getByRole("button", { name: "Discard approvals — start the review over" });
         fireEvent.click(reset);
         expect(await screen.findByText("Start this background-check review over?")).toBeInTheDocument();
-        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Clear approvals" }));
+        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Discard approvals" }));
 
         await waitFor(() =>
             expect(fetchMock).toHaveBeenCalledWith(

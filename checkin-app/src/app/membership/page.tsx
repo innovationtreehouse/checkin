@@ -159,11 +159,11 @@ export default function MembershipPage() {
   // request as received rather than resurrecting the button.
   const [planRequested, setPlanRequested] = useState(false);
   const [confirmPlanOpened, { open: openConfirmPlan, close: closeConfirmPlan }] = useDisclosure(false);
-  // Self-attest gate for the background-check task (#875): the confirm checkbox
+  // Self-report gate for the background-check task (#875): the confirm checkbox
   // unlocks only after the applicant has opened the Averity consent link this
-  // visit, so they can't attest to a form they never saw.
+  // visit, so they can't confirm a form they never saw.
   const [bgLinkOpened, setBgLinkOpened] = useState(false);
-  const [bgAttesting, setBgAttesting] = useState(false);
+  const [bgConsenting, setBgConsenting] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
 
@@ -597,8 +597,8 @@ export default function MembershipPage() {
   // Applicant confirms they submitted consent on Averity. On success the reload
   // flips the task to done (and may advance the whole card to payment); on
   // failure the checkbox reverts so they can retry.
-  const attestBgConsent = async () => {
-    setBgAttesting(true);
+  const recordBgConsent = async () => {
+    setBgConsenting(true);
     try {
       const res = await fetch("/api/membership/bg-consent", { method: "POST" });
       const data = await res.json().catch(() => ({}));
@@ -606,11 +606,11 @@ export default function MembershipPage() {
         await load();
         notifyNavRefresh();
       } else {
-        setBgAttesting(false);
+        setBgConsenting(false);
         flash(apiError(data, "Could not record your consent. Please try again."), true);
       }
     } catch {
-      setBgAttesting(false);
+      setBgConsenting(false);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     }
   };
@@ -915,9 +915,9 @@ export default function MembershipPage() {
                             <Checkbox
                               label="I submitted my consent on Averity"
                               description={bgLinkOpened ? undefined : "Open the Averity form above first, then confirm here."}
-                              checked={bgAttesting}
-                              disabled={!bgLinkOpened || bgAttesting}
-                              onChange={(e) => { if (e.currentTarget.checked) attestBgConsent(); }}
+                              checked={bgConsenting}
+                              disabled={!bgLinkOpened || bgConsenting}
+                              onChange={(e) => { if (e.currentTarget.checked) recordBgConsent(); }}
                             />
                           </>
                         ) : (

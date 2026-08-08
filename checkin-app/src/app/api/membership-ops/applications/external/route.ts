@@ -43,7 +43,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     //
     // The guard belongs on the route, not in the service: markContractSigned is also
     // the Zoho webhook's entry point (system actor), and markBgConsent is what
-    // selfAttestBgConsent calls, where the actor IS the applicant by design.
+    // selfRecordBgConsent calls, where the actor IS the applicant by design.
     const process = await prisma.orgMembershipProcess.findUnique({
         where: { id: processId },
         select: { orgMembershipId: true, subjectPersonId: true },
