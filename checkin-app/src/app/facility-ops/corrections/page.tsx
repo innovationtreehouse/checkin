@@ -35,8 +35,8 @@ type PersonRef = { id: number; name: string | null; mergedIntoId: number | null 
 type Payload = { AuditLog: AuditRow[]; Person: PersonRef[]; Visit: VisitPick[][] };
 
 // Must match MAX_ROWS in the route — used only to detect and trim the "+1
-// probe" row the server includes as the "there's more" signal (design §3;
-// v1 has no pagination).
+// probe" row the server includes as the "there's more" signal; v1 has no
+// pagination.
 const MAX_ROWS = 500;
 
 const TYPE_LABEL: Record<string, string> = {
@@ -46,9 +46,10 @@ const TYPE_LABEL: Record<string, string> = {
   lead_attendance_correction: "Attendance correction",
 };
 
-// `newData.type` names the ROUTE, not the actor relationship (design §2) — a
-// household lead correcting a member still writes "self_correction". It's a
-// label here, never the self/proxy axis; see actorClass below for that.
+// `newData.type` names the ROUTE, not the actor relationship — a household lead
+// correcting a member still writes "self_correction". It's a label here, never
+// the self/proxy axis; see actorClass below for that.
+// Governing design: docs/designs/1256_ATTENDANCE_CORRECTION_SURFACE.md §4.
 function kindLabel(row: AuditRow): string {
   if (row.newData.type && TYPE_LABEL[row.newData.type]) return TYPE_LABEL[row.newData.type];
   switch (row.action) {
@@ -59,9 +60,10 @@ function kindLabel(row: AuditRow): string {
   }
 }
 
-// The actor axis is a bare comparison (design §2): actorId vs the subject
-// stored in secondaryAffectedEntity. `null` only for rows written before the
-// invariant held everywhere (#1478) — shown as unknown, never guessed at.
+// The actor axis is a bare comparison: actorId vs the subject stored in
+// secondaryAffectedEntity, an invariant every visit audit write holds
+// (docs/rules/attendance-checkin.md). `null` is a row written before the
+// invariant held everywhere — shown as unknown, never guessed at.
 function actorClass(row: AuditRow): "self" | "proxy" | "unknown" {
   if (row.secondaryAffectedEntity == null) return "unknown";
   return row.actorId === row.secondaryAffectedEntity ? "self" : "proxy";
@@ -75,8 +77,8 @@ function nameFor(id: number | null, people: Map<number, PersonRef>): string {
 }
 
 // A key ABSENT from the pick (vs. present-but-null) means the writer never
-// touched that field — render "—", never infer a value (design §4/§6.6 R-4:
-// arrivedVia/departedVia are never stamped onto a self-correction's newData).
+// touched that field — render "—", never infer a value: arrivedVia and
+// departedVia are not stamped onto a self-correction's newData.
 function VisitTimes({ v }: { v: VisitPick }) {
   if (!v || (!("arrivedAt" in v) && !("departedAt" in v))) {
     return <Text c="dimmed" size="sm">—</Text>;
@@ -93,9 +95,9 @@ function VisitTimes({ v }: { v: VisitPick }) {
   );
 }
 
-// A row with no significance was never scored (design §3) — a create, or the
-// events-attendance roster edit, which moves no clock. That is NOT the same
-// as "reviewed and found insignificant", so it gets its own muted label.
+// A row with no significance was never scored — a create, or the events-
+// attendance roster edit, which moves no clock. That is NOT the same as
+// "reviewed and found insignificant", so it gets its own muted label.
 function ScoreBadge({ sig }: { sig?: { score: number; flagged: boolean } }) {
   if (!sig) return <Text c="dimmed" size="sm">Not scored</Text>;
   return sig.flagged
@@ -117,12 +119,16 @@ export default function CorrectionsPage() {
   // is one switch away.
   const [flaggedOnly, setFlaggedOnly] = useState(true);
   const [data, setData] = useState<Payload | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadedQuery, setLoadedQuery] = useState<string | null>(null);
   const [error, setError] = useState("");
+
+  // Loading is derived, not stored: the data on hand either belongs to the
+  // current query or a fetch for it is still in flight.
+  const query = `${period}|${flaggedOnly}`;
+  const loading = loadedQuery !== query;
 
   useEffect(() => {
     if (!ready) return;
-    setLoading(true);
     const params = new URLSearchParams({ period, flagged: String(flaggedOnly) });
     fetch(`/api/facility/corrections?${params}`)
       .then((res) => {
@@ -131,8 +137,8 @@ export default function CorrectionsPage() {
       })
       .then((body: Payload) => { setData(body); setError(""); })
       .catch(() => setError("Failed to load corrections."))
-      .finally(() => setLoading(false));
-  }, [ready, period, flaggedOnly]);
+      .finally(() => setLoadedQuery(query));
+  }, [ready, period, flaggedOnly, query]);
 
   const people = useMemo(() => new Map((data?.Person ?? []).map((p) => [p.id, p])), [data]);
 
@@ -182,6 +188,16 @@ export default function CorrectionsPage() {
       {loading && rows.length === 0 ? (
         <PageLoader />
       ) : (
+        <>
+        {/* The range runs from the start of the chosen period to now, so the
+            count describes "this week/month/quarter/year". Counted over the
+            whole result because v1 does not paginate; past MAX_ROWS the
+            server's +1 probe makes it a floor, shown as "500+". */}
+        <Text size="sm" fw={500}>
+          {overflowed ? `${MAX_ROWS}+` : rows.length}{" "}
+          {flaggedOnly ? "flagged " : ""}
+          correction{!overflowed && rows.length === 1 ? "" : "s"} this {period}
+        </Text>
         <Table.ScrollContainer minWidth={900}>
           <Table verticalSpacing="sm" highlightOnHover>
             <Table.Thead>
@@ -227,6 +243,7 @@ export default function CorrectionsPage() {
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
+        </>
       )}
     </Stack>
   );
