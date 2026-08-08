@@ -513,7 +513,7 @@ merge does. Per the section above, no other process is a candidate.
 | `PENDING_PAYMENT` (parallel, `bgConsentAt` set) | review runs alongside payment | **ran, found none — any note here is unread** | **stamp only** — status already correct. Note clause **UNRESOLVED** | a later `activate()` now lands `ACTIVE` instead of `PENDING_BG_CLEARANCE` |
 | `PENDING_BG_CLEARANCE` | paid, waiting on the check | **ran, found none — any note here is unread** | **stamp + `ACTIVE`** + flip `OrgMembership.status`. Note clause **UNRESOLVED** | existing `clearBackgroundCheck` edge |
 | `BLOCKED` | a reviewer **rejected** | n/a | **nothing, ever** | only `overrideBlocked`, board-only |
-| `RENEWAL_PENDING_BG` | dead-but-guarded legacy (unreachable per `LIFECYCLE.md`) | n/a | **nothing** | n/a |
+| `RENEWAL_PENDING_BG` | dead-but-guarded legacy (the reachability test asserts it unreachable) | n/a | **nothing** | n/a |
 | `ACTIVE` / `ARCHIVED` | terminal | n/a | **nothing** | n/a |
 
 The carryover acts on **three** states. The note clause is settled at one
@@ -736,7 +736,7 @@ families is the kind of thing that should not be discovered in production.
   is idempotent by construction. It **must** be called: the fresh-check shortcut exists precisely
   because `clearBackgroundCheck` never runs that cycle, and without it a pre-designated volunteer
   household gets non-volunteer dues (#874). Same hole applies here.
-- **One atomic write** per `LIFECYCLE.md` rule 4 — status + `bgClearedAt` + `stageEnteredAt` in a
+- **One atomic write** (`docs/conventions.md`) — status + `bgClearedAt` + `stageEnteredAt` in a
   single `updateMany`, never a stamp-then-flip pair.
 
 ## Lifecycle machine impact
@@ -754,10 +754,10 @@ change `bgClearedAt`, not `status`, so they declare no edge at all.
 This is smaller than it first looked — the lifecycle-machine surface is **not** what makes this
 doc-scale. The predicate analysis above is.
 
-Per [`LIFECYCLE.md`](../../checkin-app/docs/designs/LIFECYCLE.md):
-- Rule 3 — the CAS guard's from-state clause comes from `fromWhere(edge)`, not a hand-written
-  `status:`. The guard↔`TRANSITIONS` parity test enforces it.
-- Rule 5 — regenerate `docs/generated/lifecycle/membership.md`; the artifacts-drift test fails
+Per [`docs/ops/lifecycle-machines.md`](../ops/lifecycle-machines.md):
+- The CAS guard's from-state clause comes from `fromWhere(edge)`, not a hand-written `status:`.
+  The guard↔`TRANSITIONS` parity test enforces it.
+- Regenerate `docs/generated/lifecycle/membership.md`; the artifacts-drift test fails
   otherwise.
 - No new status, so `classify`'s exhaustive switch and `INVARIANTS` are untouched. The
   `active-is-bg-cleared` invariant is satisfied by construction (the stamp is in the same write).

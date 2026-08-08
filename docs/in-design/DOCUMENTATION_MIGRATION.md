@@ -350,8 +350,12 @@ tracked as backlog PL17.
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
 `BG_CHECK_DEV_MOCK.md`, `ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
-`SHOPIFY_LIVE_TESTS.md`. `LIFECYCLE.md` goes here too — it documents how the
-generated artifacts and drift guards work, which is mechanism, not policy.
+`SHOPIFY_LIVE_TESTS.md`.
+
+A doc that is mostly mechanism can still hold standing rules, and the ops bucket
+is not a way to avoid looking: `docs/ops/lifecycle-machines.md` carries the
+regeneration and drift-guard procedure, while the rules under it sit in
+`docs/conventions.md` and the domain registers.
 
 **→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
 (promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
@@ -415,20 +419,17 @@ grep -rn "docs/designs/" checkin-app/src .github README.md AGENTS.md docs
 Every hit is updated to the new path, or removed if its target is being deleted.
 The sweep is part of the same change as the move — never a follow-up.
 
-**One reference is not a plain text edit.**
-`checkin-app/src/lib/lifecycle/artifacts.ts:115` bakes the literal string
-`Generated from the machine's TRANSITIONS (docs/designs/LIFECYCLE.md)` into the
-generated artifacts, and `artifactsDrift.test.ts` asserts byte-equality against
-them. So moving `LIFECYCLE.md` requires, in one commit:
-
-1. update the literal in `artifacts.ts`,
-2. re-run `npm run generate:lifecycle-artifacts`,
-3. commit the regenerated files with it.
+**A reference can be baked into a generated artifact.** `artifacts.ts` renders the
+header of every file under `docs/generated/lifecycle/`, and `artifactsDrift.test.ts`
+asserts byte-equality against the checked-in copies. Changing a path a renderer
+emits therefore takes one commit carrying the renderer edit, a re-run of
+`npm run generate:lifecycle-artifacts`, and the regenerated files.
 
 Edit the string without regenerating and CI goes red on a confusing docs-path
 diff; skip the edit and the drift-tested, "do not hand-edit" artifacts ship a
 path that no longer exists — the one document class the standard calls
-machine-verified would be provably wrong.
+machine-verified would be provably wrong. Where the header does not need the
+pointer, drop it rather than repoint it: a path that isn't emitted cannot rot.
 
 ---
 
@@ -436,7 +437,8 @@ machine-verified would be provably wrong.
 
 `docs/` at the repo root and `checkin-app/docs/` both hold app design docs, and
 the line is violated in both directions (`MEMBERSHIP_SYNC.md` is app design at
-the root; `LIFECYCLE.md` is app mechanics under `checkin-app/`).
+the root; `PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` is app mechanics under
+`checkin-app/`).
 
 Proposed rule: repo root holds product, policy, and cross-cutting process;
 `checkin-app/docs/` holds app-implementation reference. Mechanical once agreed —

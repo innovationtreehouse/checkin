@@ -1,6 +1,6 @@
 /**
  * Pure renderers that turn a machine's declared `TRANSITIONS` (+ its state
- * metadata) into the review artifacts of docs/designs/LIFECYCLE.md: a mermaid
+ * metadata) into the machine's review artifacts: a mermaid
  * `stateDiagram`, a coverage matrix, and a reachability report.
  *
  * Dependency-free and deterministic — every list is sorted and every edge
@@ -113,7 +113,7 @@ export function renderMachineArtifact(spec: MachineSpec): string {
             '',
             `# ${spec.title} — lifecycle artifacts`,
             '',
-            'Generated from the machine’s `TRANSITIONS` (docs/designs/LIFECYCLE.md). Do not hand-edit.',
+            'Generated from the machine’s `TRANSITIONS`. Do not hand-edit.',
             '',
             '## State diagram',
             '',

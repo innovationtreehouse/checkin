@@ -209,8 +209,13 @@ Things the app takes as true because they are handled outside it.
 
 - A held seat is returned exactly once — by withdrawal, payment, or grace expiry
   — or consumed permanently by approval, and an approved seat is never credited
-  back. This holds against a failed store call, not a crash between the two
-  writes; that drift is repaired by hand.  [Decision]
+  back. This holds against a failed store call, not a crash mid-transition.  [Decision]
+
+- A place granted while its seat is still held is the one drift repaired without
+  a person: a sweep releases the seat and leaves the place. Every other
+  off-diagram enrollment is reported and left alone, because repairing it would
+  mean guessing which of two states the family is actually in.  [Decision — deliberate limit;
+  *Principle: people decide about people*]
 
 - Denying a request does not release the seat; the family may still pay for it.  [Decision]
 

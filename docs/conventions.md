@@ -56,6 +56,34 @@ someone notices the number is wrong, which is not a mechanism.
 
 ---
 
+## A state machine describes the database, it does not drive it
+
+- **Where an entity's states are written down, that definition is a source of
+  truth and a validator, never an engine.** What enforces a transition is the
+  database — a compare-and-set update, a row lock, a partial unique index. Move
+  the enforcing into the definition and there are two authorities to keep in
+  step, which is the drift writing it down was meant to end.
+
+- **Every transition is a single atomic write.** Split across two commits, a
+  transition has an interval in which the row holds a combination no legal state
+  describes — and a crash inside that interval persists it. The row is then wrong
+  and stays wrong.
+
+- **An invariant is encoded once.** Restating one as a database constraint
+  alongside the code that already checks it doubles the maintenance and
+  reintroduces exactly the divergence a single definition prevents.
+
+- **Redelivery is not repair where the downstream call adjusts by a delta.** A
+  retry queue in front of a relative, non-idempotent API re-applies the change it
+  was sent to fix. Recover by comparing against observed state instead, and
+  repair from that.
+
+The failure is invisible in review, because every write in the sequence is
+correct on its own. It appears as a row nobody can explain — a place granted and
+a seat still held against it — long after the process that produced it exited.
+
+---
+
 ## We name the role, not the vendor
 
 - **A rule that governs agents says "agent", never a product name.** More than
