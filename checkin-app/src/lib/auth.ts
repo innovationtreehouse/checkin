@@ -4,8 +4,7 @@ import { authOptions } from '@/lib/auth-options';
 import { getKioskPublicKeys, verifyKioskSignature } from './verify-kiosk';
 import { config, isStagingAccessAllowed } from './config';
 import { apiError } from './api-response';
-import type { SessionUser } from '@/types/participant';
-import type { BusinessRole, AuthResult } from '@/types/auth';
+import type { AuthenticatedUser, BusinessRole, AuthResult } from '@/types/auth';
 
 /**
  * Authenticate a request — tries kiosk signature first, then session. Resolves the
@@ -49,10 +48,10 @@ async function resolveAuthResult(
         // so every route — including authenticated-only ones — fails closed, regardless of
         // each route's role list. The jwt callback already strips role flags; this is the
         // belt-and-suspenders that also denies plain member endpoints.
-        if ((session.user as SessionUser).denied) {
+        if ((session.user as AuthenticatedUser).denied) {
             return { type: 'unauthenticated' };
         }
-        return { type: 'session', user: session.user as SessionUser };
+        return { type: 'session', user: session.user as AuthenticatedUser };
     }
 
     return { type: 'unauthenticated' };
@@ -106,7 +105,7 @@ export async function authenticateRequest(
  * ban getServerSession in app/api/** outright. The session read lives here in
  * the auth boundary, alongside authenticateRequest.
  */
-export async function getOptionalSessionUser(req: Request): Promise<SessionUser | undefined> {
+export async function getOptionalSessionUser(req: Request): Promise<AuthenticatedUser | undefined> {
     const auth = await authenticateRequest(req as NextRequest);
     return auth.type === 'session' ? auth.user : undefined;
 }

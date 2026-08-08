@@ -47,8 +47,6 @@ type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safet
 type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
 
-type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null; householdLead?: boolean };
-
 function KioskDisplayInner() {
   const searchParams = useSearchParams();
   const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
@@ -68,10 +66,10 @@ function KioskDisplayInner() {
   const [searchResults, setSearchResults] = useState<Person[]>([]);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
-  const currentUserIsSysadmin = (session?.user as SessionUser)?.isSysadmin || false;
-  const currentUserIsKeyholder = (session?.user as SessionUser)?.isKeyholder || false;
-  const currentUserIsBoardMember = (session?.user as SessionUser)?.isBoardMember || false;
-  const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
+  const currentUserIsSysadmin = session?.user?.isSysadmin || false;
+  const currentUserIsKeyholder = session?.user?.isKeyholder || false;
+  const currentUserIsBoardMember = session?.user?.isBoardMember || false;
+  const currentUserHouseholdId = session?.user?.householdId || null;
   const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
   const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
   const canCheckInHousehold = Boolean(currentUserHouseholdId);
@@ -100,7 +98,7 @@ function KioskDisplayInner() {
   const householdYouth = limitedHousehold.filter(v => visitIsYouth(v));
 
   const isCheckedIn = isFull
-    ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
+    ? fullAttendance.some(v => v.participant.id === session?.user?.id)
     : limitedSelf !== null;
 
   useEffect(() => {
@@ -320,7 +318,7 @@ function KioskDisplayInner() {
             )}
           </Box>
           {showCheckout && (
-            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id, visit.participant.id === (session?.user as SessionUser)?.id)} disabled={checkingOut === visit.id}>
+            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id, visit.participant.id === session?.user?.id)} disabled={checkingOut === visit.id}>
               {checkingOut === visit.id ? "..." : "Out"}
             </Button>
           )}
@@ -330,8 +328,8 @@ function KioskDisplayInner() {
   };
 
   const canCheckoutVisit = (visit: Visit): boolean => Boolean(
-    visit.participant.id === (session?.user as SessionUser)?.id ||
-    ((session?.user as SessionUser)?.householdLead &&
+    visit.participant.id === session?.user?.id ||
+    (session?.user?.householdLead &&
       visit.participant.householdId === currentUserHouseholdId)
   );
 
@@ -350,7 +348,7 @@ function KioskDisplayInner() {
     </div>
   );
 
-  const userId = (session?.user as SessionUser)?.id;
+  const userId = session?.user?.id;
 
   const pageBody = (
     <>
@@ -388,7 +386,7 @@ function KioskDisplayInner() {
         </Group>
 
         {/* Household check-in buttons — hidden in kiosk mode */}
-        {!isKioskMode && canCheckInHousehold && household && (session?.user as SessionUser)?.householdLead && (
+        {!isKioskMode && canCheckInHousehold && household && session?.user?.householdLead && (
           <Box mb="lg">
             <Title order={4} c="blue" mb="sm">Check In Household Members</Title>
             <Group gap="xs" wrap="wrap">

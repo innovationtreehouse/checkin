@@ -38,8 +38,7 @@ import {
 } from '@/security/access-resolvers';
 import { stripValue } from '@/security/stripper';
 import { SCOPE_BINDINGS } from '@/security/scopeBindings';
-import type { AuthResult } from '@/types/auth';
-import type { SessionUser } from '@/types/participant';
+import type { AuthResult, AuthenticatedUser } from '@/types/auth';
 // Side-effect import: registers every route via defineRoute() so allRoutes()
 // yields the real policy surface.
 import '@/security/registry';
@@ -63,7 +62,7 @@ function ctx(opts: Partial<CallerContext> = {}): CallerContext {
     };
 }
 
-function sessionUser(over: Partial<SessionUser> & { id: number }): SessionUser {
+function sessionUser(over: Partial<AuthenticatedUser> & { id: number }): AuthenticatedUser {
     return {
         email: `p${over.id}@example.com`,
         isSysadmin: false,
