@@ -192,8 +192,7 @@ Read these before changing the relevant area — start here, then follow links.
 
 **Design & product** (`docs/designs/`)
 - `DESIGN.md` — system design overview.
-- `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
-- `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
+- `docs/ops/dev-instance.md` — the `CHECKIN_ENV` prod/dev/local model, persona-mint/impersonation, and the dev dashboard's seed macros / reset / ledger (read before touching auth/env, or before adding anything that must not exist in prod).
 - `PRODUCTION_PLAN.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
