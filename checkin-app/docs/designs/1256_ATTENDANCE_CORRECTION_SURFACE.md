@@ -548,8 +548,8 @@ aren't corrections).
 
 **Source:** `AuditLog` where `tableName = 'Visit'`. Everything already lands there
 — manual `CREATE` (`type:"manual_entry"`), `facility/visits` `EDIT`/`DELETE`,
-events-attendance, and the new self / household-lead `EDIT`/`DELETE`
-(`type:"self_correction"`). No new model.
+and the new self / household-lead `EDIT`/`DELETE` (`type:"self_correction"`).
+No new model.
 
 **Self vs proxy, cheaply:** don't join `AuditLog → Visit` (the visit may be
 tombstoned; `personId` isn't on the audit row). Compare `actorId` against
@@ -562,9 +562,9 @@ axis.
 
 **Significant-edit flags (§2) are the headline view.** The flag is **read** from
 the persisted `newData.significance`, not recomputed at read time. Two row shapes
-carry nothing to recompute from: the events-attendance roster mark stores no
-times at all, and `facility/visits` edits written before the `oldData` fix stored
-no before-state. A persisted flag is also the only form the database can filter
+carry nothing to recompute from: `facility/visits` edits written before the
+`oldData` fix stored no before-state, and a `DELETE` has no after-state by
+construction. A persisted flag is also the only form the database can filter
 on, which is what lets the default view paginate. The cost is that a stored score
 freezes the thresholds in force when the row was written. This makes persisting
 significance on **every** edit and delete path a requirement on the writers

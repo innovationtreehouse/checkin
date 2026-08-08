@@ -95,9 +95,9 @@ function VisitTimes({ v }: { v: VisitPick }) {
   );
 }
 
-// A row with no significance was never scored — a create, or the events-
-// attendance roster edit, which moves no clock. That is NOT the same as
-// "reviewed and found insignificant", so it gets its own muted label.
+// A row with no significance was never scored — a create, or a writer that
+// predates scoring. That is NOT the same as "reviewed and found insignificant",
+// so it gets its own muted label.
 function ScoreBadge({ sig }: { sig?: { score: number; flagged: boolean } }) {
   if (!sig) return <Text c="dimmed" size="sm">Not scored</Text>;
   return sig.flagged
@@ -129,15 +129,20 @@ export default function CorrectionsPage() {
 
   useEffect(() => {
     if (!ready) return;
+    // `live` drops a response the user has already filtered past. Without it a
+    // slow earlier request settles last and leaves loadedQuery on the old query,
+    // so the derived flag latches loading with no fetch pending.
+    let live = true;
     const params = new URLSearchParams({ period, flagged: String(flaggedOnly) });
     fetch(`/api/facility/corrections?${params}`)
       .then((res) => {
         if (!res.ok) throw new Error("request failed");
         return res.json();
       })
-      .then((body: Payload) => { setData(body); setError(""); })
-      .catch(() => setError("Failed to load corrections."))
-      .finally(() => setLoadedQuery(query));
+      .then((body: Payload) => { if (live) { setData(body); setError(""); } })
+      .catch(() => { if (live) { setData(null); setError("Failed to load corrections."); } })
+      .finally(() => { if (live) setLoadedQuery(query); });
+    return () => { live = false; };
   }, [ready, period, flaggedOnly, query]);
 
   const people = useMemo(() => new Map((data?.Person ?? []).map((p) => [p.id, p])), [data]);
@@ -192,12 +197,15 @@ export default function CorrectionsPage() {
         {/* The range runs from the start of the chosen period to now, so the
             count describes "this week/month/quarter/year". Counted over the
             whole result because v1 does not paginate; past MAX_ROWS the
-            server's +1 probe makes it a floor, shown as "500+". */}
-        <Text size="sm" fw={500}>
-          {overflowed ? `${MAX_ROWS}+` : rows.length}{" "}
-          {flaggedOnly ? "flagged " : ""}
-          correction{!overflowed && rows.length === 1 ? "" : "s"} this {period}
-        </Text>
+            server's +1 probe makes it a floor, shown as "500+". Suppressed on
+            error: a total is an assertion, and there is nothing to assert. */}
+        {!error && (
+          <Text size="sm" fw={500}>
+            {overflowed ? `${MAX_ROWS}+` : rows.length}{" "}
+            {flaggedOnly ? "flagged " : ""}
+            correction{!overflowed && rows.length === 1 ? "" : "s"} this {period}
+          </Text>
+        )}
         <Table.ScrollContainer minWidth={900}>
           <Table verticalSpacing="sm" highlightOnHover>
             <Table.Thead>
