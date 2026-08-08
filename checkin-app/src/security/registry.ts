@@ -163,17 +163,35 @@ defineRoute({
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        // their_program_households:personal delivers the household band leads
-        // operationally need — emergency contacts (personal). It deliberately
-        // does NOT reach the family's home address or intake notes: address is
-        // 'internal' and intakeNotes is 'pii', both outside a household-scoped
-        // personal grant. EC yes, address no.
+        // their_program_households delivers the household band leads operationally
+        // need: the family's emergency contacts (personal) and the parents' own
+        // contact details (pii). Person binds this scope ONLY on isHouseholdLead
+        // rows, so the pii grant reaches the two adults a lead would call and no
+        // one else — siblings and other household members hold nothing.
+        //
+        // FINDING for the CODEOWNERS reviewer: this widens live traffic. The route
+        // already returns full-row Person selects outside the participant bag —
+        // `volunteers.include.person` and `leadMentor` — so a lead/core-vol now
+        // receives, for any program volunteer or lead mentor who is also a household
+        // lead of an in-scope household (a parent volunteer, the common case):
+        // email/phone from this pii grant, plus dateOfBirth/allergies/
+        // notificationSettings/emailSuppressed from the pre-existing :personal token,
+        // which now resolves on those rows too. Those rows held `everyones` only
+        // before. Narrowing the two selects to what the roster renders is a route
+        // change, not a boundary one.
+        //
+        // Still out of reach: the family's home address (Household.line1..postalCode
+        // are 'internal', above every token here) and Household.intakeNotes ('pii',
+        // but Household binds no scope beyond their_households, so a
+        // their_program_households token resolves to nothing on a Household row).
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['programCoreVolunteer', ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['authenticated',        ['their_own:pii', 'their_own:personal', 'member', 'public']],
