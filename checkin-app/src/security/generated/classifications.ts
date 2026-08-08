@@ -117,8 +117,8 @@ export const classifications = {
     },
     BoardSettings: {
         id: 'public',
-        normalDuesCents: 'public',
-        volunteerDuesCents: 'public',
+        standardMembershipFeeCents: 'public',
+        volunteerMembershipFeeCents: 'public',
         orgMembershipYearBoundary: 'public',
         orgMembershipVariantId: 'internal',
         orgMembershipProductUrl: 'internal',

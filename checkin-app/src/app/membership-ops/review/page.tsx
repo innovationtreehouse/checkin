@@ -147,7 +147,7 @@ export default function MembershipReviewPage() {
             <>
               You are the second reviewer for <strong>{who}</strong>. Attesting the check is clean
               records that against {item.subjectPerson ? "the subject" : leadName(item, chosenSubject(item)!)},
-              opens payment (or activates the membership if dues are already paid), and emails the
+              opens payment (or activates the membership if the fee is already paid), and emails the
               family. It cannot be undone.
             </>
           ) : (

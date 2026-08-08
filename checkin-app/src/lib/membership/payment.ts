@@ -66,7 +66,7 @@ export async function ensurePaymentLink(processId: number): Promise<{ amountCent
     if (!membership) throw new PaymentError("not_found", "Membership not found.");
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const amountCents = membership.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
+    const amountCents = membership.isVolunteer ? settings?.volunteerMembershipFeeCents ?? 0 : settings?.standardMembershipFeeCents ?? 0;
 
     const variantId = settings?.orgMembershipVariantId;
     const storeDomain = config.shopifyStoreDomain();
