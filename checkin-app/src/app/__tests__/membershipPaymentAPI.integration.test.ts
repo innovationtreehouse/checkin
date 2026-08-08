@@ -215,10 +215,10 @@ describe('Membership payment API', () => {
         expect(res.status).toBe(200);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: certProc } });
         expect(proc?.status).toBe('ACTIVE');
-        expect(proc?.certifiedById).toBe(leadId);
+        expect(proc?.manualPaymentById).toBe(leadId);
         expect(proc?.certificationNote).toBe('Paid by check, deposited manually');
 
-        // The audit row records WHO certified — the acting board member, not SYSTEM_ACTOR.
+        // The audit row records WHO recorded the payment — the acting board member, not SYSTEM_ACTOR.
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: certProc }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(leadId);
         expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'ACTIVE', certificationNote: 'Paid by check, deposited manually' });

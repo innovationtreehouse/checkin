@@ -17,7 +17,7 @@ import { systemActor, personOrSystemActor } from "@/lib/auditActor";
  * at checkout — our dues figures are only what applicants *see*. The membership
  * process id rides along as a cart attribute so the orders/paid webhook can
  * match the payment back to this application. Payment (orders/paid webhook) OR a
- * board "payment-plan certified" override both converge on activate(): one place
+ * board manual-payment override both converge on activate(): one place
  * that flips the membership ACTIVE, records how, and sends one congrats email.
  */
 
@@ -119,7 +119,7 @@ export async function ensurePaymentLinkForUser(userId: number) {
  */
 export async function activate(
     processId: number,
-    opts: { via: "payment" | "certified"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean; reason?: string },
+    opts: { via: "payment" | "manual"; actorId?: number; shopifyOrderId?: string; hasMembershipItem?: boolean; reason?: string },
 ) {
     const result = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
@@ -137,10 +137,10 @@ export async function activate(
         const now = new Date();
         // Recorded atomically with paidAt — the lib stays permissive (a certify with
         // no reason still goes through); the API boundary is where it's required.
-        const certificationNote = opts.via === "certified" && opts.reason && opts.reason.trim() !== "" ? opts.reason : undefined;
+        const certificationNote = opts.via === "manual" && opts.reason && opts.reason.trim() !== "" ? opts.reason : undefined;
         const payMeta = {
             ...(opts.shopifyOrderId ? { shopifyOrderId: opts.shopifyOrderId } : {}),
-            ...(opts.via === "certified" && opts.actorId ? { certifiedById: opts.actorId } : {}),
+            ...(opts.via === "manual" && opts.actorId ? { manualPaymentById: opts.actorId } : {}),
             ...(certificationNote ? { certificationNote } : {}),
         };
 
@@ -178,7 +178,7 @@ export async function activate(
         // Shopify's real price and doesn't stop someone paying for unrelated items
         // that happen to add up to the right amount (see #625 for the systemic
         // price/settings-alignment fix, including volunteer-discount eligibility).
-        // A board "certified" payment-plan override has no Shopify order at all, so
+        // A board manual-payment override has no Shopify order at all, so
         // it's exempt (opts.via !== "payment"). Only runs when hasMembershipItem is
         // actually supplied: activateByProcessId (the only production caller of the
         // "payment" path) always passes it, so this only skips for callers that
@@ -262,7 +262,7 @@ export async function certifyPaymentPlan(processId: number, actorId: number, opt
     if (await hasHouseholdConflict(prisma, actorId, process.orgMembership?.householdId)) {
         throw new PaymentError("forbidden", "You cannot certify your own household's membership — someone outside your household must.");
     }
-    return activate(processId, { via: "certified", actorId, reason: opts?.reason });
+    return activate(processId, { via: "manual", actorId, reason: opts?.reason });
 }
 
 /** Webhook path: activate the process tied to a paid Shopify draft order. */

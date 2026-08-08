@@ -185,7 +185,7 @@ describe('Membership payment-plan routes', () => {
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
             expect(proc?.status).toBe('ACTIVE'); // bgClearedAt was set, so certify -> ACTIVE
             expect(proc?.isPaymentPlanRequested).toBe(false);
-            expect(proc?.certifiedById).toBe(boardId);
+            expect(proc?.manualPaymentById).toBe(boardId);
             expect(proc?.certificationNote).toBe('Board approved scholarship');
 
             const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
@@ -197,7 +197,7 @@ describe('Membership payment-plan routes', () => {
             });
             expect(audits.length).toBeGreaterThan(0);
             // Written inside activate() (via certifyPaymentPlan) — carries the reason.
-            const certifyAudit = audits.find(a => (a.newData as { via?: string })?.via === 'certified');
+            const certifyAudit = audits.find(a => (a.newData as { via?: string })?.via === 'manual');
             expect(certifyAudit).toBeTruthy();
             expect((certifyAudit!.newData as { certificationNote?: string }).certificationNote).toBe('Board approved scholarship');
             // Supplementary marker written by the route itself.
@@ -236,7 +236,7 @@ describe('Membership payment-plan routes', () => {
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
             expect(proc?.isPaymentPlanRequested).toBe(false);
             expect(proc?.status).toBe('PENDING_PAYMENT'); // stays awaiting payment — no seat, no grace, pay-to-activate
-            expect(proc?.certifiedById).toBeNull(); // denial never certifies/activates
+            expect(proc?.manualPaymentById).toBeNull(); // denial never records a payment/activates
 
             const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
             expect(membership?.status).toBe('NONE'); // untouched by denial

@@ -103,7 +103,7 @@ Rules:
 **The canonical money word is `fee`.** Kinds: **membership fee** *(rename pending from "dues": `normalDuesCents`→`standardMembershipFeeCents`, `volunteerDuesCents`→`volunteerMembershipFeeCents`)*, **program fee** (`Fee`), plus **shop fee** and **facility fee** (shop and facility are billed separately). `price` = the cents **amount** on a fee, not a rival concept.
 
 **Payment vs relief** (keep separate):
-- **Manual payment** — payment landed **outside Shopify** (recorded in QuickBooks), so a membership activates without a Shopify order. `via: "manual"` / `manualPaymentById` *(rename pending from `"certified"` / `certifiedById` — which collided with tool certification)*. **Not** a comp.
+- **Manual payment** — payment landed **outside Shopify** (recorded in QuickBooks), so a membership activates without a Shopify order. `via: "manual"` / `manualPaymentById`. **Not** a comp.
 - **Payment Plan** — installments (`isPaymentPlanRequested`).
 - **Scholarship** — a board comp (fee waived). Unnamed in code today.
 - **Scholarship Review Team** — the board-designated recipients of scholarship / payment-plan
