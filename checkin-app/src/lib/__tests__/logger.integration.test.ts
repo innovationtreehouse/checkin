@@ -62,8 +62,13 @@ describe('logger DB persistence + TTL purge', () => {
             data: { message: 'recent', route: `${TAG}-recent`, timestamp: new Date(now - 5 * DAY) },
         });
 
+        // Mock console.error to prevent jest-fail-on-console from failing the test
+        // since logBackendError now calls console.error explicitly.
+        const mockConsoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+
         // logBackendError writes the new row, then runs the 30-day purge.
         await logBackendError(new Error('trigger'), `${TAG}-trigger`);
+        mockConsoleError.mockRestore();
 
         expect(await prisma.errorLog.findUnique({ where: { id: old.id } })).toBeNull();
         expect(await prisma.errorLog.findUnique({ where: { id: recent.id } })).not.toBeNull();
