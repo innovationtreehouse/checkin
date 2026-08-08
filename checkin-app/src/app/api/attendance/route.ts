@@ -10,6 +10,7 @@ import { config } from "@/lib/config";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
+import { systemActor } from "@/lib/auditActor";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -138,8 +139,11 @@ export const DELETE = withAuth({}, async (req, auth) => {
         const isHouseholdCheckOut = Boolean(user.householdId && visit.person.householdId === user.householdId && user.householdLead);
         const isAdmin = user.isSysadmin || user.isKeyholder || user.isBoardMember;
 
+        // Out of scope reads exactly as missing (same status, same message): a
+        // caller not entitled to the visit learns nothing about whether the id
+        // exists. docs/rules/principles.md — no existence oracle.
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
-            return apiError("Forbidden: You are not authorized to check out this user.", 403);
+            return apiError("Visit not found", 404);
         }
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
@@ -172,20 +176,25 @@ export const POST = withAuth({}, async (req, auth) => {
                 return apiError("participantId is required", 400);
             }
 
-            // Verify participant exists
-            const participant = await prisma.person.findUnique({
-                where: { id: participantId }
+            // Verify participant exists. LIVE_PERSON: a merge tombstone must not be
+            // checked into the building — it would create a Visit nobody can act on.
+            const participant = await prisma.person.findFirst({
+                where: { id: participantId, ...LIVE_PERSON }
             });
 
             if (!participant) {
                 return apiError("Participant not found", 404);
             }
 
-            // Check Permissions
+            // Check Permissions. Out of scope reads exactly as missing (same
+            // status, same message), so an id the caller may not check in is
+            // indistinguishable from one that does not exist — otherwise any
+            // signed-in member could walk the person id space.
+            // docs/rules/principles.md — no existence oracle.
             const isSelf = participant.id === Number(user.id);
             const isHouseholdCheckIn = Boolean(user.householdId && participant.householdId === user.householdId && user.householdLead);
             if (!isSelf && !isHouseholdCheckIn && !isAdmin) {
-                return apiError("Forbidden: You are not authorized to check in this user.", 403);
+                return apiError("Participant not found", 404);
             }
 
             const arrivalTime = new Date();
@@ -280,7 +289,7 @@ export const POST = withAuth({}, async (req, auth) => {
             // Log that we sent the notification to prevent spam from multiple kiosks
             await prisma.auditLog.create({
                 data: {
-                    actorId: 0, // System actor
+                    ...systemActor("kiosk:two-deep"),
                     action: 'CREATE',
                     tableName: 'SYSTEM_NOTIFY',
                     affectedEntityId: 0,

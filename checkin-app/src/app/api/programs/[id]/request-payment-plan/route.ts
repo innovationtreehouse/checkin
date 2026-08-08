@@ -71,7 +71,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         // A scholarship request IS a payment situation, so it is not a youth's to
         // make about themselves — a household lead does it. Same known-adult rule
-        // as the enroll route (docs/designs/167-youth-enrollment-rules.md).
+        // as the enroll route (docs/rules/programs.md).
         if (isSelf && !isKnownAdult({
             dateOfBirth: participant.person?.dateOfBirth ?? null,
             isDeclaredAdult: participant.person?.isDeclaredAdult,

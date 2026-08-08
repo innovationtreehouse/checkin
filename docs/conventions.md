@@ -56,6 +56,34 @@ someone notices the number is wrong, which is not a mechanism.
 
 ---
 
+## A state machine describes the database, it does not drive it
+
+- **Where an entity's states are written down, that definition is a source of
+  truth and a validator, never an engine.** What enforces a transition is the
+  database — a compare-and-set update, a row lock, a partial unique index. Move
+  the enforcing into the definition and there are two authorities to keep in
+  step, which is the drift writing it down was meant to end.
+
+- **Every transition is a single atomic write.** Split across two commits, a
+  transition has an interval in which the row holds a combination no legal state
+  describes — and a crash inside that interval persists it. The row is then wrong
+  and stays wrong.
+
+- **An invariant is encoded once.** Restating one as a database constraint
+  alongside the code that already checks it doubles the maintenance and
+  reintroduces exactly the divergence a single definition prevents.
+
+- **Redelivery is not repair where the downstream call adjusts by a delta.** A
+  retry queue in front of a relative, non-idempotent API re-applies the change it
+  was sent to fix. Recover by comparing against observed state instead, and
+  repair from that.
+
+The failure is invisible in review, because every write in the sequence is
+correct on its own. It appears as a row nobody can explain — a place granted and
+a seat still held against it — long after the process that produced it exited.
+
+---
+
 ## We name the role, not the vendor
 
 - **A rule that governs agents says "agent", never a product name.** More than
@@ -85,6 +113,44 @@ than a practice.
 
 ---
 
+## A check that costs money is not a health check
+
+- **A dependency billed per wake is read when a person asks for it, never on a
+  schedule and never on a render.** The store mirror sleeps when idle and is
+  charged for waking; that is why its catch-up runs on a cadence rather than
+  continuously, and why its diagnostics and audit reports sit behind a button.
+
+- **An always-on indicator reports whether something is configured, never
+  whether it answers.** Turning a presence check into a live one puts a paid
+  call behind every page load, and the badge that polls it makes that per
+  visitor per minute.
+
+The change that breaks this reads as an improvement. "The dashboard only says
+the integration is configured — let's make it actually check" is better by every
+measure a reviewer can see in the diff. Nothing fails, no test bills, and the
+cost arrives a month later attached to no particular change.
+
+---
+
+## A tool that writes for real never points at production
+
+- **Automation that creates, changes or deletes objects in a real external
+  system — a contract test, a sweeper, a one-off script — runs against a
+  non-production instance and refuses the production one outright.** The refusal
+  lives in the code that does the writing, not in the configuration handed to it.
+  — *Principle: fail closed*
+
+- **Aiming one somewhere new takes two deliberate edits in two places, never a
+  single setting.** One variable is the whole distance between a scratch
+  environment and the live one, and it is a distance a typo covers.
+
+The failure is not a broken tool. It is a tool working exactly as written against
+whatever it was told to point at: nothing in the run looks wrong, because nothing
+was wrong except the target, and by the time anyone reads the output the objects
+are already gone.
+
+---
+
 ## A day is not a moment
 
 - **Every temporal field is one kind or the other, and the column type says
@@ -105,6 +171,9 @@ than a practice.
 
 - **A day is never taken from a moment.** Keeping the date part of "now" answers
   in whatever zone the process happens to be running in; a day comes from a day.
+  When "today" genuinely is the question — an age as of now — name the zone that
+  decides it: `orgCalendarDay()` in `lib/time.ts` is the one seam that turns an
+  instant into a day, and every caller downstream of it works in days.
 
 Nothing in the type system separates the two: both are a date object in the code,
 and in a UTC test environment both are right. The failure appears later as a

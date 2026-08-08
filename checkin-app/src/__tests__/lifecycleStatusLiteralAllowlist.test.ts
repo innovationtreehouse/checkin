@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
- * Status-literal allowlist drift guard (docs/designs/LIFECYCLE.md) — the lifecycle
+ * Status-literal allowlist drift guard — the lifecycle
  * analogue of EDGE_INCLUDE_ALLOWLIST / authzRegistry.test.ts.
  *
  * A hand-encoded state-SET in a `where` on the ProgramParticipant or
@@ -264,7 +264,7 @@ describe('lifecycle status-literal allowlist drift guard', () => {
     it('no raw status where-literal outside the definition modules + allowlist', () => {
         const unexpected = flagged.filter((f) => !known.has(f)).sort();
         // A new one of these must consume a StateSet.where or be added to ALLOWLIST
-        // with a justification (see docs/designs/LIFECYCLE.md).
+        // with a justification.
         expect(unexpected).toEqual([]);
     });
 

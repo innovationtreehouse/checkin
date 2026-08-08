@@ -118,6 +118,11 @@ Things the app takes as true because they are handled outside it.
 - Charged is owed minus discount, so a charge below the amount owed is expected,
   never a mismatch.  [Decision]
 
+- Nothing waits on a payment notification arriving. Reconciliation reads what the
+  store says was paid and finishes anything the notification missed, so a dropped
+  one delays an activation rather than losing it. The delay is bounded by the
+  mirror's catch-up cadence, never by someone noticing.  [Decision — deliberate limit]
+
 - A reversal seen at the store — a refund, chargeback or cancellation — must
   reach membership and enrollment state. The app raises it for the board to work;
   it does not undo anything by itself.  [Decision — *Principle: people decide about people*]
@@ -169,5 +174,11 @@ Things the app takes as true because they are handled outside it.
 - A request for something starting after the next membership year is marked as
   such, never hidden or filtered away.  [Decision — deliberate limit]
 
+- Removal for non-payment is a human decision on an admin surface. The
+  non-payment sweep warns the household and escalates to the board; it never
+  removes anyone.  [Decision — *Principle: people decide about people*]
 
-- Removal for non-payment is a human decision on an admin surface.  [Decision — *Principle: people decide about people*]
+- The one removal that happens on its own follows a *denied* scholarship or
+  payment-plan request: when the grace period the board set runs out, the
+  enrollment goes and the held seat is released. Nothing is sent when it does, so
+  the board's own message has to have stated the deadline.  [Decision — *Principle: fail closed*]

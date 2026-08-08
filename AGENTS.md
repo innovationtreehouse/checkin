@@ -93,7 +93,7 @@ routes, auth, and DB together.
 - `*.shopify-live.ts` (`checkin-app/shopify-live/`) hits the REAL Shopify
   dev store — excluded from every local/CI run; executed only by
   `.github/workflows/shopify-live.yml` (`npm run test:shopify-live`). Dev-store-only
-  by a triple guard; see `checkin-app/docs/designs/SHOPIFY_LIVE_TESTS.md`.
+  by a triple guard; see `docs/ops/shopify-live-tests.md`.
   Deliberately NOT named `*.test.ts`: that keeps them structurally invisible to
   every other jest invocation, including scripts that override ignore patterns
   on the CLI (the test:coverage class).
@@ -112,7 +112,7 @@ To add a journey: drop a `flow-tests/<name>.flow.test.ts` using `loginAs`/`api`,
 keep it to real HTTP calls + response assertions. Prefer routes that don't need
 external integrations (Zoho/Shopify/Averity); use the board/admin manual-action
 routes to advance flows those would otherwise gate. Real journeys are catalogued
-in `docs/designs/CUJS.md` — start there when choosing what to cover.
+in `docs/backlog/CUJS.md` — start there when choosing what to cover.
 
 ## Issue workflow (org project 1)
 
@@ -177,8 +177,14 @@ means say nothing, or approve.
 
 Read these before changing the relevant area — start here, then follow links.
 
+**Domain rules — read first** (`docs/rules/`)
+- The register of board and operations decisions, and the invariants a change must not violate: `membership.md`, `programs.md`, `people-households.md`, `finance-payments.md`, `attendance-checkin.md`, `tools-certification.md`, plus `principles.md` for the cross-cutting ones. **Before changing behaviour in a domain, read its file.** If a change contradicts a rule there, raise it — do not quietly proceed. A **Policy**-tier rule is not negotiable in a PR at all: stop and escalate.
+- `docs/DOCUMENTATION_STANDARD.md` — how documentation is organised, written, and retired: the document classes, what belongs in the register and what does not, the citation and format rules, and the working-doc lifecycle (write it in `docs/in-design/`, extract standing rules and delete it at merge). Read before writing or moving any doc.
+- `docs/conventions.md` — how we build, independent of any domain.
+
 **Project-wide**
 - `README.md` — what the app is + Quick Start; OS setup: `docs/setup/SETUP_LINUX.md`, `docs/setup/SETUP_MACOS.md`.
+- `docs/backlog/CUJS.md` — **critical user journeys**, per step with state tags (the basis for flow tests); `docs/backlog/INDEX.md` is the gap inventory behind it.
 - `CONSTITUTION.md` — project principles//ground rules.
 - `docs/WRITING_STANDARD.md` — how agents write: docs prose, PR/issue bodies, review comments, session replies. Voice only; the Comments section above still governs code comments.
 - `GEMINI.md`, `.jules/sentinel.md` — instructions for other agents (Gemini, Jules); keep cross-consistent with this file.
@@ -186,10 +192,8 @@ Read these before changing the relevant area — start here, then follow links.
 
 **Design & product** (`docs/designs/`)
 - `DESIGN.md` — system design overview.
-- `CUJS.md` — **critical user journeys** (the basis for flow tests).
-- `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
-- `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
-- `PRODUCTION_PLAN.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
+- `docs/ops/dev-instance.md` — the `CHECKIN_ENV` prod/dev/local model, persona-mint/impersonation, and the dev dashboard's seed macros / reset / ledger (read before touching auth/env, or before adding anything that must not exist in prod).
+- `PRODUCTION_PLAN.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
 - `SECURITY-POLICY.md` — the response-stripper / `@sensitivity` registry rules (read before adding API responses or schema fields).

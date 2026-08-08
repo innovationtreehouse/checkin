@@ -1,7 +1,7 @@
 /**
  * OrgMembershipProcess lifecycle — ONE declarative definition (Phase 2b).
  *
- * See docs/designs/LIFECYCLE.md. This module instances the
+ * This module instances the
  * dependency-free primitives in `@/lib/lifecycle` for the membership machine:
  * the states, the transition-set predicates (as StateSets that emit BOTH a
  * client-safe `has` and a server Prisma `where` from one source), the
@@ -48,8 +48,8 @@ export type ProcessStatus =
 export type ProcessKind = "INITIAL" | "RENEWAL" | "PERSON_BG" | "PERSON_AGREEMENT";
 
 // Compile-time parity: these fail to compile if the schema enum drifts from the
-// local union (docs/designs/LIFECYCLE.md). `import type` keeps the enum out of
-// the client bundle; the TEST does the value-based `assertEnumParity` counterpart.
+// local union. `import type` keeps the enum out of the client bundle; the
+// TEST does the value-based `assertEnumParity` counterpart.
 // Type-only assertions — intentionally unreferenced; their value IS the compile check.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 type _StatusParity = Expect<Equal<ProcessStatus, OrgMembershipProcessStatus>>;
@@ -66,7 +66,7 @@ export type ProcessFlags = {
 
 type Where = Prisma.OrgMembershipProcessWhereInput;
 
-// ── Legacy tag (docs/designs/LIFECYCLE.md) ──────────────────────────────────────────────────────
+// ── Legacy tag ──────────────────────────────────────────────────────────────────────────────────
 // RENEWAL_PENDING_BG is dead-but-guarded: nothing writes it since the 20260715
 // migration, but surviving rows are still read/guarded and it stays in the renewal
 // in-flight index. Kept explicit here instead of quietly appearing in six lists.
@@ -180,8 +180,8 @@ export const duesSettledAwaitingBg = defineStateSet<Where>()({
 // ── renewal grantability (fix #3) & settled-this-cycle (fix #4) ────────────────
 
 /**
- * The "this renewal is payable now" set the coming-year grant derives from
- * (docs/designs/LIFECYCLE.md): a RENEWAL at PENDING_PAYMENT — full stop. NOT gated on bgClearedAt: the
+ * The "this renewal is payable now" set the coming-year grant derives from:
+ * a RENEWAL at PENDING_PAYMENT — full stop. NOT gated on bgClearedAt: the
  * grant comps PAYMENT ONLY and the background-check gate stays independent, so a
  * parallel-track renewal (paid ahead of BG, bgClearedAt null) is grantable and
  * settles to PENDING_BG_CLEARANCE, while a cleared one settles to ACTIVE — activate()
@@ -195,7 +195,7 @@ export const grantableRenewalWhere: Where = {
 };
 
 /**
- * "Handled this renewal cycle" (docs/designs/LIFECYCLE.md): a RENEWAL that reached a terminal state
+ * "Handled this renewal cycle": a RENEWAL that reached a terminal state
  * (ACTIVE finished, or ARCHIVED by the board) stamped inside the current renewal
  * window. Consumed by BOTH the households route probe and runRenewalSweep's
  * skip-test so they can't disagree. The `kind=RENEWAL` and `ARCHIVED` clauses are
@@ -209,7 +209,7 @@ export const settledThisCycleWhere = (windowStart: Date): Where => ({
     stageEnteredAt: { gte: windowStart },
 });
 
-// ── fromWhere (docs/designs/LIFECYCLE.md — CAS from-state, #1080) ───────────────
+// ── fromWhere — the CAS from-state clause ──────────────────────────────────────
 
 /**
  * Emit the `status` clause a CAS transition guard names for its from-state. For this
@@ -228,7 +228,7 @@ export function fromWhere(from: ProcessStatus): Where {
     return fromStatusWhere<Where>([from]);
 }
 
-// ── classify / validate (docs/designs/LIFECYCLE.md) ──────────────────────────
+// ── classify / validate ──────────────────────────────────────────────────────
 
 /** Row shape classify/validate read — all four flags as booleans, no Prisma. */
 export type ClassifyRow = { status: ProcessStatus } & ProcessFlags;
@@ -278,14 +278,30 @@ export const INVARIANTS: readonly Invariant<ClassifyRow>[] = [
 
 export const validate = defineValidator(INVARIANTS);
 
-// ── transition table (docs/designs/LIFECYCLE.md) — documentation + test oracle, never executed ────
+// ── transition table — documentation + test oracle, never executed ────────────────────────────────
 
 /** The origin pseudo-state for entry transitions (∅). */
 export type OriginState = "∅";
 type TState = ProcessStatus | OriginState;
 
 /**
- * The 14 machine edges (docs/designs/LIFECYCLE.md), each carrying the (unchanged) enforcement site
+ * Every pre-terminal status the board can archive from — and, reversed, the only
+ * statuses unarchive can restore to (§5 #13). ACTIVE is never archivable; the
+ * legacy RENEWAL_PENDING_BG is unreachable, so nothing is ever archived from it
+ * and it is not a restore target either.
+ */
+export const ARCHIVABLE_STATUSES = [
+    "INTAKE",
+    "PENDING_EXTERNAL_ACTION",
+    "PENDING_BG_REVIEW",
+    "PENDING_PAYMENT",
+    "PENDING_BG_CLEARANCE",
+    "PENDING_RENEWAL",
+    "BLOCKED",
+] as const satisfies readonly ProcessStatus[];
+
+/**
+ * The machine edges, each carrying the (unchanged) enforcement site
  * it feeds. Not a runtime executor — powers isLegalTransition + reachability in
  * tests/doc-artifacts. Flag-only stamps (contractSignedAt/bgConsentAt) are not
  * status edges and are omitted; they gate the advance, not a state change.
@@ -323,13 +339,24 @@ export const TRANSITIONS: readonly Transition<TState, string, ProcessKind>[] = [
     { from: "BLOCKED", to: "PENDING_EXTERNAL_ACTION", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (RENEWAL, no consent)", kind: "RENEWAL", legacy: true },
     { from: "BLOCKED", to: "ACTIVE", event: "overrideBlocked approve", actor: "board/sysadmin", guardSite: "review.ts:411 FOR UPDATE (paid)" },
     // Archive (§5 #13) — every pre-terminal status
-    ...(["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_BG_REVIEW", "PENDING_PAYMENT", "PENDING_BG_CLEARANCE", "PENDING_RENEWAL", "BLOCKED"] as const).map(
+    ...ARCHIVABLE_STATUSES.map(
         (from): Transition<TState, string, ProcessKind> => ({
             from,
             to: "ARCHIVED",
             event: "archiveApplication",
             actor: "board",
             guardSite: "archive.ts:13 (status≠ACTIVE, idempotent)",
+        }),
+    ),
+    // Unarchive (§5 #13 reversed) — back to the status the archive write captured.
+    // ARCHIVED is where processes come to rest, but it is not sealed.
+    ...ARCHIVABLE_STATUSES.map(
+        (to): Transition<TState, string, ProcessKind> => ({
+            from: "ARCHIVED",
+            to,
+            event: "unarchiveApplication",
+            actor: "board",
+            guardSite: "archive.ts:88 updateMany CAS + P2002",
         }),
     ),
 ];

@@ -10,6 +10,7 @@ import { loadAgreementPdf, stampWatermark, AGREEMENT_FILENAME, AgreementUnavaila
 import { latestPendingExternal } from "@/lib/membership/phases";
 import { findOpenPersonAgreement } from "@/lib/membership/personAgreementTriggers";
 import { fromWhere } from "@/lib/membership/lifecycle";
+import { systemActor, personOrSystemActor } from "@/lib/auditActor";
 
 /**
  * EXTERNAL-phase service — the actions an applicant completes after intake:
@@ -25,9 +26,9 @@ import { fromWhere } from "@/lib/membership/lifecycle";
  * mark-bg-consent action as the backstop. The system never sees contract content
  * or check results.
  *
- * actorId 0 denotes a system actor (e.g. the Zoho webhook) in the audit log.
+ * A contract signature with no session behind it (the Zoho webhook) is attributed
+ * to the `webhook:zoho-contract` system actor in the audit log.
  */
-const SYSTEM_ACTOR = 0;
 
 export type ExternalErrorCode =
     | "not_found"
@@ -131,7 +132,7 @@ export async function advanceExternalIfComplete(processId: number) {
         if (membership) await applyVolunteerStatus(tx, process.orgMembershipId!, membership.householdId, false);
         await tx.auditLog.create({
             data: {
-                actorId: SYSTEM_ACTOR,
+                ...systemActor("system:membership-external-advance"),
                 action: "EDIT",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
@@ -157,7 +158,7 @@ export async function advanceExternalIfComplete(processId: number) {
  * conditional write and skips advanceExternalIfComplete entirely (which would deref a
  * null orgMembershipId).
  */
-export async function markContractSigned(processId: number, actorId: number = SYSTEM_ACTOR) {
+export async function markContractSigned(processId: number, actorId?: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ExternalError("not_found", "Application not found.");
     const isPersonAgreement = process.kind === "PERSON_AGREEMENT";
@@ -175,7 +176,7 @@ export async function markContractSigned(processId: number, actorId: number = SY
         if (count !== 1) return;
         await tx.auditLog.create({
             data: {
-                actorId,
+                ...personOrSystemActor(actorId, "webhook:zoho-contract"),
                 action: "EDIT",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
@@ -435,7 +436,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
 
         // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
         // skip the S3 load that also 503s in dev — an empty placeholder keeps the
-        // create/submit calls type-identical. See ZOHO_SIGN_DEV_MOCK.md §5.
+        // create/submit calls type-identical. See docs/ops/contract-signing-mock.md.
         let agreement;
         if (signingMock) {
             agreement = { pdf: Buffer.alloc(0), lastPageNo: 0, pageWidth: 0, pageHeight: 0 };

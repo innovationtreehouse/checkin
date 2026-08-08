@@ -163,7 +163,9 @@ describe('Program Participants API Integration Tests', () => {
 
         // Create mock programs
         const standardProgram = await prisma.program.create({
-            data: { name: 'Standard Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, orgMemberPriceCents: 1000, nonOrgMemberPriceCents: 1500 }
+            // Priced programs carry a variant — a priced one without it is
+            // checkout-broken and the route now refuses payment-bound enrollment.
+            data: { name: 'Standard Partic API Test', phase: 'RUNNING', enrollmentStatus: 'OPEN', leadMentorId: leadId, orgMemberPriceCents: 1000, nonOrgMemberPriceCents: 1500, shopifyVariantId: 'dev-mock-variant-standard-partic' }
         });
         standardProgramId = standardProgram.id;
 

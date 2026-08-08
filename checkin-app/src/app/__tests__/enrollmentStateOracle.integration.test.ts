@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 /**
- * Validator-oracle integration tests (docs/designs/LIFECYCLE.md).
+ * Validator-oracle integration tests.
  *
  * Drives each real transition (T3, T3f, T3m, T4, T5, T6, T7/T8/T9) against a real
  * DB through its OWNING code — the route handler / shared mutator that carries the

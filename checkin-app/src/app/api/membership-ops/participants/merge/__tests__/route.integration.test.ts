@@ -168,14 +168,22 @@ describe("Merge Participants API", () => {
 
         // Full pre-image of the merged-away Person: every field the merge
         // rewrites (tombstone) or moves (backfill), captured before either update.
+        const PRE_IMAGE_KEYS = [
+            "dateOfBirth", "email", "emailSuppressed", "emailVerified", "googleId",
+            "householdId", "id", "image", "isHouseholdLead", "lastBackgroundCheck",
+            "lastWaiverSign", "name", "phone",
+        ].sort();
         const oldData = log?.oldData as Record<string, unknown>;
-        expect(Object.keys(oldData).sort()).toEqual([
-            "dateOfBirth", "email", "googleId", "householdId", "id", "image",
-            "isHouseholdLead", "lastBackgroundCheck", "lastWaiverSign", "name", "phone",
-        ].sort());
+        expect(Object.keys(oldData).sort()).toEqual([...PRE_IMAGE_KEYS, "keeper"].sort());
         expect(oldData.id).toBe(pMergeId);
         expect(oldData.email).toBe("merge@example.com");
         expect(oldData.phone).toBe("123-456-7890");
+
+        // …and the keeper's own pre-image, since a field choice can overwrite it.
+        const keeper = oldData.keeper as Record<string, unknown>;
+        expect(Object.keys(keeper).sort()).toEqual(PRE_IMAGE_KEYS);
+        expect(keeper.id).toBe(pKeepId);
+        expect(keeper.name).toBe("Keep User");
     });
 
     it("should succeed when the MERGED side holds googleId+email and the keeper holds neither (prod P2002 repro)", async () => {

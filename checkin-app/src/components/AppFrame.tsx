@@ -156,7 +156,8 @@ const NAV_ITEMS: NavItem[] = [
   },
   { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
   // Dev tools (dev instances only) — a single entry into the /dev tab section:
-  // captured email inbox (EMAIL_DEV_MOCK.md) + Zoho Sign mock (ZOHO_SIGN_DEV_MOCK.md).
+  // captured email inbox (EMAIL_DEV_MOCK.md) + Zoho Sign mock
+  // (docs/ops/contract-signing-mock.md).
   { href: '/dev', label: 'Debug', icon: <IconBug size={18} />, visible: (_u, signedIn) => signedIn, devOnly: true },
 ];
 

@@ -89,12 +89,6 @@ already known, before any mining. Sources:
 - `docs/backlog/CUJS.md` journey A1, which already states several membership
   rules inline
 
-`checkin-app/docs/designs/HOUSEHOLD_LEAD_MODEL.md` is **not** a source here.
-Its content is guardianship and household leadership, which belongs in
-`people-households.md`, not in either seeded file — forcing it into
-`membership.md` would violate "named for the domain, not for any feature."
-It is handled once, in step 4, and `people-households.md` is created there.
-
 Draft both files with the **Policy / Procedure** split from standard §3.2, even
 if the Policy section starts empty — the shape is part of what this step
 validates, and an empty Policy heading is an honest signal that nothing has been
@@ -312,16 +306,20 @@ of person the app does not have.
 
 ---
 
-## 4. Step 3 — update AGENTS.md
+## 4. Step 3 — update AGENTS.md — **done**
 
-- Point the docs map at `docs/rules/` first, as the place to read before
-  changing behaviour in a domain.
-- Reference `DOCUMENTATION_STANDARD.md` for the working-doc lifecycle and the
-  format rules.
-- Resolve the CUJS ambiguity: two files share the name `CUJS.md`
-  (`docs/designs/CUJS.md`, 98 lines, role-based; `docs/backlog/CUJS.md`,
-  276 lines, per-step with status). The docs map currently points at the thinner
-  one. Merge or delete one.
+- ~~Point the docs map at `docs/rules/` first~~ — a "Domain rules — read first"
+  block now opens the map, carrying the escalation rule for Policy-tier lines.
+- ~~Reference `DOCUMENTATION_STANDARD.md`~~ — cited in the same block, alongside
+  `docs/conventions.md`. README's start-here list points at both.
+- ~~Resolve the CUJS ambiguity~~ — **deleted `docs/designs/CUJS.md`**, nothing
+  merged. It was a route table snapshot whose routes no longer exist (`/admin/*`
+  predates the `*-ops` split), and every journey in it is covered per-step and
+  state-tagged in `docs/backlog/CUJS.md`. AGENTS.md and README now point there.
+
+One entry of the map is deliberately **not** yet rewritten: the
+"Design & product (`docs/designs/`)" block. Step 4 empties that directory, so
+the block is rewritten once, there — not twice.
 
 ---
 
@@ -345,15 +343,16 @@ tracked as backlog PL17.
 
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
-`BG_CHECK_DEV_MOCK.md`, `ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
-`SHOPIFY_LIVE_TESTS.md`, `S_READ_DIAGNOSTICS.md`. `LIFECYCLE.md` goes here too —
-it documents how the generated artifacts and drift guards work, which is
-mechanism, not policy.
+`ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`.
 
-**→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
-(promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
-`MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for
-standing rules first; most will yield none.
+A doc that is mostly mechanism can still hold standing rules, and the ops bucket
+is not a way to avoid looking: `docs/ops/lifecycle-machines.md` carries the
+regeneration and drift-guard procedure, while the rules under it sit in
+`docs/conventions.md` and the domain registers.
+
+**→ extract, then delete** — shipped feature docs: `INDEX_PAGE_SCOPING.md`,
+`ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for standing rules first; most
+will yield none.
 
 **`PRODUCTION_PLAN.md` moves to `docs/ops/` — do not delete it.** Despite the
 name it is the live "Production Launch Runbook" for ops.innovationtreehouse.org:
@@ -362,9 +361,9 @@ release-gate roster, ECR/ECS task-definition names). Extraction yields no rules,
 so the extract-and-delete bucket would destroy the only deploy/rollback runbook.
 The ops-bucket definition already covers it.
 
-**Unresolved, decide during the sweep:** `CUJS.md` (both copies — see step 3),
-`UNFINISHED.md` (a deferred-decision ledger; arguably belongs in `in-design/`,
-arguably its own thing).
+**Unresolved, decide during the sweep:** `UNFINISHED.md` (a deferred-decision
+ledger; arguably belongs in `in-design/`, arguably its own thing). `CUJS.md` is
+settled — resolved in step 3, one copy left.
 
 **Leave alone entirely:** `docs/security/`, `checkin-app/docs/generated/`,
 `docs/backlog/`, and the deploy/migration docs under `checkin-app/docs/`.
@@ -412,20 +411,17 @@ grep -rn "docs/designs/" checkin-app/src .github README.md AGENTS.md docs
 Every hit is updated to the new path, or removed if its target is being deleted.
 The sweep is part of the same change as the move — never a follow-up.
 
-**One reference is not a plain text edit.**
-`checkin-app/src/lib/lifecycle/artifacts.ts:115` bakes the literal string
-`Generated from the machine's TRANSITIONS (docs/designs/LIFECYCLE.md)` into the
-generated artifacts, and `artifactsDrift.test.ts` asserts byte-equality against
-them. So moving `LIFECYCLE.md` requires, in one commit:
-
-1. update the literal in `artifacts.ts`,
-2. re-run `npm run generate:lifecycle-artifacts`,
-3. commit the regenerated files with it.
+**A reference can be baked into a generated artifact.** `artifacts.ts` renders the
+header of every file under `docs/generated/lifecycle/`, and `artifactsDrift.test.ts`
+asserts byte-equality against the checked-in copies. Changing a path a renderer
+emits therefore takes one commit carrying the renderer edit, a re-run of
+`npm run generate:lifecycle-artifacts`, and the regenerated files.
 
 Edit the string without regenerating and CI goes red on a confusing docs-path
 diff; skip the edit and the drift-tested, "do not hand-edit" artifacts ship a
 path that no longer exists — the one document class the standard calls
-machine-verified would be provably wrong.
+machine-verified would be provably wrong. Where the header does not need the
+pointer, drop it rather than repoint it: a path that isn't emitted cannot rot.
 
 ---
 
@@ -433,7 +429,8 @@ machine-verified would be provably wrong.
 
 `docs/` at the repo root and `checkin-app/docs/` both hold app design docs, and
 the line is violated in both directions (`MEMBERSHIP_SYNC.md` is app design at
-the root; `LIFECYCLE.md` is app mechanics under `checkin-app/`).
+the root; `PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` is app mechanics under
+`checkin-app/`).
 
 Proposed rule: repo root holds product, policy, and cross-cutting process;
 `checkin-app/docs/` holds app-implementation reference. Mechanical once agreed —

@@ -8,7 +8,7 @@ import { POST as createProgram } from '@/app/api/programs/route';
 import { normalizeAuditData } from '@/lib/auditPayload';
 import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
-import { POST as markAttendance } from '@/app/api/events/[id]/attendance/route';
+import { PATCH as editAttendance } from '@/app/api/events/[id]/route';
 import { PUT as editParticipant } from '@/app/api/membership-ops/participants/[id]/route';
 import { POST as reassignHousehold } from '@/app/api/membership-ops/participants/[id]/household/route';
 import { PATCH as updateRoles } from '@/app/api/roles/route';
@@ -213,28 +213,35 @@ describe('AuditLog Integration Tests', () => {
         expect(log).toBeDefined();
     });
 
-    it('should generate an AuditLog when attendance is validated', async () => {
-        // First create an event and visit manually to test validation
+    it('should generate an AuditLog when a lead corrects attendance', async () => {
+        const arrivedAt = new Date(Date.now() - 100000);
+        const departedAt = new Date(Date.now() - 50000);
+
         const event = await prisma.event.create({
-            data: { programId: testProgramId, name: 'Audit Test Event', startAt: new Date(), endAt: new Date() }
+            data: { programId: testProgramId, name: 'Audit Test Event', startAt: arrivedAt, endAt: departedAt }
         });
         testEventId = event.id;
 
         const visit = await prisma.visit.create({
-            data: { personId: testParticipantId, arrivedAt: new Date(Date.now() - 100000), departedAt: new Date(Date.now() + 100000) }
+            data: { personId: testParticipantId, arrivedAt, departedAt, associatedEventId: event.id }
         });
         testVisitId = visit.id;
 
-        const req = new Request(`http://localhost:4000/api/events/${testEventId}/attendance`, {
-            method: 'POST',
-            body: JSON.stringify({ participantIds: [testParticipantId] })
+        const req = new Request(`http://localhost:4000/api/events/${testEventId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+                action: 'manualEditAttendance',
+                participantId: testParticipantId,
+                status: 'Present',
+                arrivedAt: arrivedAt.toISOString(),
+                departedAt: departedAt.toISOString()
+            })
         });
 
-        const res = await markAttendance(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testEventId.toString() }) });
+        const res = await editAttendance(req as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: testEventId.toString() }) });
         expect(res.status).toBe(200);
 
-        // Verify Audit Log: one row per validated Visit, keyed by the Visit PK
-        // with the event as secondary (see attendance route, commit #467).
+        // One row per corrected Visit, keyed by the Visit PK.
         const log = await prisma.auditLog.findFirst({
             where: {
                 actorId: testAdminId,
@@ -251,8 +258,8 @@ describe('AuditLog Integration Tests', () => {
         expect(log).toBeDefined();
         // newData is now a raw JSON object (legacy rows may still be strings).
         const newData = normalizeAuditData(log?.newData) as Record<string, unknown>;
-        expect(newData.participantId).toBe(testParticipantId);
-        expect(newData.associatedEventId).toBe(testEventId);
+        expect(newData.type).toBe('lead_attendance_correction');
+        expect(newData.arrivedVia).toBe('WEB');
     });
 
     it('should generate an AuditLog when an Admin edits participant PII', async () => {
