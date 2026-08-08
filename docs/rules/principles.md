@@ -100,9 +100,17 @@ not the moment someone asks to undo.
   than one capacity, the narrower one governs; seniority is not an argument for
   reaching further.
 
+- **A surface grants nothing its gate does not already grant.** Giving a role its
+  own section, list or notification makes work findable that it could already do
+  and shows information it could already read. It adds no capability and widens no
+  data. The test is per link and per field: a link to a screen the role's existing
+  gate would refuse, or a field that gate would strip, has widened the grant —
+  regardless of what the surface's own gate says.
+
 Adding a role to a gate is the change this principle catches, and it is almost
 never noticed in review, because it makes something work that did not work
-before. Removing one is visible; widening is not.
+before. Removing one is visible; widening is not. A new surface is the quiet
+version of the same change: nothing in its diff looks like a permission edit.
 
 ---
 
