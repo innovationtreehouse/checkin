@@ -143,3 +143,8 @@ program. This is a record of who was at one session of one program.
   handed a trimmed version, because the names are the part that matters and they
   survive any trimming.  [Decision — *Principle: least privilege*]
 
+- A finished session whose roster is unmarked chases someone by email: the
+  program's leader, or a core volunteer where the program has no leader. An in-app
+  list of the same sessions is additive and never a replacement — it reaches the
+  leader only, so a program with no leader has the email and nothing else.  [Decision]
+

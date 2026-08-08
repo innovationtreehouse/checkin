@@ -352,8 +352,8 @@ mechanism, not policy.
 
 **→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
 (promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
-`MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for
-standing rules first; most will yield none.
+`ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for standing rules first; most
+will yield none.
 
 **`PRODUCTION_PLAN.md` moves to `docs/ops/` — do not delete it.** Despite the
 name it is the live "Production Launch Runbook" for ops.innovationtreehouse.org:
