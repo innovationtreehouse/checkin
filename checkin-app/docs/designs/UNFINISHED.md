@@ -41,28 +41,24 @@ privileged-"staff" onto it. (4) audit every call site for over/under-grant.
 
 ---
 
-## 🟢 "Review" / "Reviewer" — decided
+## 🟢 Background-check verbs (decided)
 
-Of the four flows listed here, three were one flow: the BG Reviewer role, the
-membership review queue, and `BackgroundCheckAttestation.reviewer` are the same
-people doing the same job. Trusted-adult review keeps **review** + **decider** —
-one board member deciding with recorded reasoning, unlike the two-of-N attestation.
-Terms recorded in [../VOCABULARY.md](../VOCABULARY.md) › Background check.
-
-**Reviewer** = the role and the job (reading the Averity report). **Attest** = the
-act. **Clearance** = what two attestations produce. Renames this implies:
-
-- "check is clean" copy → the reviewer's judgement, not the report's content
-  (`membership-ops/review/page.tsx`, 5 strings — partly reverses PR #1575).
+**✅ A reviewer *reviews*, *attests*, and two attestations *clear* the check**
+([../VOCABULARY.md](../VOCABULARY.md) › Background check). Three copy/identifier
+renames, all ops-facing or internal — no schema, no `src/security/`:
+- The reviewer queue names the act two wrong ways: the confirm modal calls it
+  "Clear…" (that's the outcome) and the row button asserts "check is clean" (that's
+  the report's content). Both become *attest*
+  (`membership-ops/review/page.tsx`, 3 strings + 8 test assertions). PR #1575, open
+  at the time of writing, does half — modal "Clear…" → "Attest…", but adds "clean"
 - "Clear approvals" → "Discard approvals" (`membership-ops/applications/page.tsx`,
-  button + confirm label + comment).
-- `selfAttestBgConsent` → `recordBgConsent` (~17 refs across 5 files, internal
-  only — the `/api/membership/bg-consent` route path is unchanged).
+  button + confirm label + comment)
+- `selfAttestBgConsent` → `recordBgConsent` (~17 refs / 5 files; the
+  `/api/membership/bg-consent` route path is unchanged)
 
-Deliberately **not** renamed: `AttestationResult.result` (reads as "the check's
-result", the thing never stored) and the `PENDING_BG_REVIEW` /
-`PENDING_BG_CLEARANCE` misnomer — both reach the schema, a migration, and
-`src/security/`, for a wording gain. _(VOCAB #9)_
+**Do not "fix"** `AttestationResult.result` or the `PENDING_BG_REVIEW` /
+`PENDING_BG_CLEARANCE` misnomer. Both are wrong and both stay: renaming either
+reaches the schema, a migration, and `src/security/`. _(VOCAB #9)_
 
 ---
 
