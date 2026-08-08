@@ -89,12 +89,6 @@ already known, before any mining. Sources:
 - `docs/backlog/CUJS.md` journey A1, which already states several membership
   rules inline
 
-`checkin-app/docs/designs/HOUSEHOLD_LEAD_MODEL.md` is **not** a source here.
-Its content is guardianship and household leadership, which belongs in
-`people-households.md`, not in either seeded file — forcing it into
-`membership.md` would violate "named for the domain, not for any feature."
-It is handled once, in step 4, and `people-households.md` is created there.
-
 Draft both files with the **Policy / Procedure** split from standard §3.2, even
 if the Policy section starts empty — the shape is part of what this step
 validates, and an empty Policy heading is an honest signal that nothing has been
@@ -353,8 +347,7 @@ home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
 `SHOPIFY_LIVE_TESTS.md`. `LIFECYCLE.md` goes here too — it documents how the
 generated artifacts and drift guards work, which is mechanism, not policy.
 
-**→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
-(promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
+**→ extract, then delete** — shipped feature docs: `INDEX_PAGE_SCOPING.md`,
 `ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for standing rules first; most
 will yield none.
 
