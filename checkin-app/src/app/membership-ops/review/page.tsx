@@ -135,7 +135,7 @@ export default function MembershipReviewPage() {
     // by then, so an existing attestation is enough to know this click is the last one.
     const clearing = result === "APPROVE" && item._count.attestations >= 1;
     modals.openConfirmModal({
-      title: result === "REJECT" ? "Reject this background check?" : clearing ? "Clear this background check?" : "Record your approval?",
+      title: result === "REJECT" ? "Reject this background check?" : clearing ? "Attest this background check is clean?" : "Record your approval?",
       children: (
         <Text size="sm">
           {result === "REJECT" ? (
@@ -145,8 +145,8 @@ export default function MembershipReviewPage() {
             </>
           ) : clearing ? (
             <>
-              You are the second reviewer for <strong>{who}</strong>. This clears the background
-              check, records it against {item.subjectPerson ? "the subject" : leadName(item, chosenSubject(item)!)},
+              You are the second reviewer for <strong>{who}</strong>. Attesting the check is clean
+              records that against {item.subjectPerson ? "the subject" : leadName(item, chosenSubject(item)!)},
               opens payment (or activates the membership if dues are already paid), and emails the
               family. It cannot be undone.
             </>
@@ -154,7 +154,7 @@ export default function MembershipReviewPage() {
             <>
               This records your approval of <strong>{who}</strong>&apos;s background check
               {item.subjectPerson ? "" : ` for ${leadName(item, chosenSubject(item)!)}`}. A second
-              reviewer must also approve the same person before the check clears.
+              reviewer must also approve the same person before the check is attested clean.
             </>
           )}
         </Text>
