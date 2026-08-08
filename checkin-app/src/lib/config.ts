@@ -10,7 +10,7 @@ function requireEnv(name: string): string {
 }
 
 /**
- * The single environment-personality switch (see docs/designs/DEV_INSTANCE_DESIGN.md).
+ * The single environment-personality switch (see docs/ops/dev-instance.md).
  *   prod  — production (default when unset). Real data, public landing, no impersonation.
  *   dev   — cloud dev instance. Entire site behind org login.
  *   local — a developer laptop. Permits offline credential login + keyless kiosk.

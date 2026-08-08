@@ -148,6 +148,45 @@ principle being decided, usually without anyone noticing they decided it.
 
 ---
 
+## A non-production capability is absent in production
+
+Distinct from *fail closed*, which decides what a check does when it lacks an
+answer. This decides whether the capability is there to be reached at all.
+It governs anything that only exists off production: a mock standing in for an
+external system, a tool that seeds or destroys data, a path that weakens or
+forges authentication.
+
+- **One server-side switch decides which environment this is, and anything
+  unset or unrecognised means production.** Not a build-time signal, not a
+  variable the browser can read, not the presence or absence of credentials. A
+  switch that fails safe in the other direction turns the whole class on
+  wherever it is misconfigured.
+
+- **A capability that must not exist in production derives from that switch
+  alone.** Pairing it with a second signal does not harden it. Every deployment
+  runs the same build, so a build-time signal cannot tell one from another — it
+  only kills the tool on the very non-production instance it exists for, while
+  defending against nothing the switch does not already cover.
+
+- **The check runs in the body of each entry point, never once at the edge and
+  never on the caller's word.** Being registered, mounted, wrapped, or rendered
+  only under a condition is not the check. Anything that can forge a session or
+  destroy data re-establishes on every call both that the environment permits it
+  and that the caller is entitled to it.
+
+- **Where such a capability could reach production data, the environment does
+  not hold the credential for it.** A non-production deployment carries no
+  connection to production data, so a forged session or a runaway script has
+  nothing to reach. The gates are the second line; not holding the key is the
+  first.
+
+The tell is a gate reading more than one signal, or reading its signal once.
+Both look like extra care and are the two ways this fails — the second signal
+turns the tool off where it is needed, and the single read moves the decision
+away from the moment it is acted on.
+
+---
+
 ## No existence oracle
 
 - **A response never reveals whether a person, account, or record exists to
@@ -182,6 +221,14 @@ to do anything in it.
   no roster, no headcount, no capacity calculation, and passes no gate. The rule governs live standing, not
   the past: a record of what happened still names them, and what it never does is
   admit them anywhere.
+
+- **A record of who someone really is grants nothing and withholds nothing.**
+  Where a session carries provenance — that one person is acting as another —
+  no authorisation path reads it. Rights come from the identity being acted as
+  and from nothing else; a provenance claim consulted anywhere in that
+  computation lets the person behind the session reach past what they are acting
+  as. The claim exists to answer "who was this really", which is a question for
+  the audit trail, not for a gate.
 
 The failure looks like a gate that tests the wrong thing: authorising on the
 presence of an id rather than on a right the caller currently holds. It survives

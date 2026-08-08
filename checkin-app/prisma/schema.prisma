@@ -1274,7 +1274,7 @@ model IntegrationErrorLog {
   @@index([resolvedAt, timestamp])
 }
 
-/// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records
+/// Dev-instance activity ledger (docs/ops/dev-instance.md, "The ledger"). Lives only in checkin_dev; records
 /// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
 /// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;
 /// excluded from the reset truncation so the coordination history survives a reset.
