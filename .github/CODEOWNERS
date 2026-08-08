@@ -19,6 +19,10 @@
 # Authentication & session machinery.
 /checkin-app/src/lib/auth.ts                      @dkaygithub @jee7s @thpr
 /checkin-app/src/lib/auth-options.ts              @dkaygithub @jee7s @thpr
+# The site-wide org-login/access gate. security-boundary-isolation.yml's
+# is_boundary() already treats this as a boundary file; without the entry here
+# the isolation check and the review requirement disagree about what it is.
+/checkin-app/src/middleware.ts                    @dkaygithub @jee7s @thpr
 
 # Contract tests that enforce the policy in CI.
 /checkin-app/tests/security/                      @dkaygithub @jee7s @thpr
