@@ -13,7 +13,7 @@ sandbox** — only a hosted consent page (a static deep link) and email to a hum
 So on a laptop or cloud-dev instance there is no way to *start* a check, meaning
 an application can never reach the board's review queue and the two-reviewer
 sign-off can't be exercised end-to-end. The mock fills exactly that gap, mirroring
-the Zoho Sign (`ZOHO_SIGN_DEV_MOCK.md`) and Shopify (`SHOPIFY_DEV_STORE_WEBHOOK.md`)
+the Zoho Sign (`docs/ops/contract-signing-mock.md`) and Shopify (`SHOPIFY_DEV_STORE_WEBHOOK.md`)
 mocks: a provider seam returns a dev interstitial deep link instead of the real
 Averity URL; its "Consent (DEV)" button drives the **real** `markBgConsent` →
 advance → parallel-review path. Everything below `markBgConsent` — including the

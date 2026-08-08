@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * activate(), it synthesizes the order payload Shopify would send, signs it with
  * the mock webhook secret, and fires the REAL inbound webhook — so it exercises
  * the same HMAC-verify → match-by-cart-attribute → activate path prod runs
- * (mirrors the Zoho mock, ZOHO_SIGN_DEV_MOCK.md §4a).
+ * (mirrors the Zoho mock, docs/ops/contract-signing-mock.md).
  *
  * Two payload shapes, discriminated by body:
  *   { processId }                     → membership activation
