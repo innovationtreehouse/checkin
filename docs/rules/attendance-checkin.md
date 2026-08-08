@@ -110,6 +110,13 @@ Things the app takes as true because they are handled outside it.
   reopened — and whose record it is. Integrity is after the fact rather than a
   gate: every change is audited, and a significant one is flagged to the board.  [Decision — *Principle: self-scope and repair*]
 
+- Every write that audits a visit stores the subject person — the one whose
+  attendance changed — in the audit row's secondaryAffectedEntity field, never the
+  event, and never the actor when the two differ. Telling a correction of one's
+  own record from one person editing another's is a bare comparison of that field
+  against the actor, so a writer that puts anything else there makes every review
+  of who changed whose record answer wrongly and silently.  [Decision]
+
 - A household lead corrects a recorded visit for anyone in their household —
   inserting a past one, changing its times, or removing it — on the same terms as
   correcting their own. Only the lead, not every household member: the lead is the

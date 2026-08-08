@@ -7,8 +7,9 @@ import { getPeriodStart, type PeriodType } from "@/lib/timePeriods";
 /**
  * Board/sysadmin review of attendance corrections (AT12, #1258). Reads the
  * existing AuditLog trail for tableName='Visit' — nothing new is stored.
+ * Governing design: docs/designs/1256_ATTENDANCE_CORRECTION_SURFACE.md §4.
  *
- * The bag is SYNTHESIZED, not passed through (design doc §4 option 4):
+ * The bag is SYNTHESIZED, not passed through (§4):
  * `oldData`/`newData` are internal-tier JSON blobs that carry personal-tier
  * Visit times inside them, and the stripper cannot see through JSON. So this
  * handler reads the blobs and rebuilds each bag entry from named fields —
@@ -20,8 +21,8 @@ import { getPeriodStart, type PeriodType } from "@/lib/timePeriods";
 const PERIODS: readonly PeriodType[] = ["week", "month", "quarter", "year"];
 
 // ponytail: a guess, not a measurement — tighten once someone counts real
-// AuditLog rows at tableName='Visit'. No pagination in v1 (design §3): the
-// +1 is the "there's more" signal, and the client trims to MAX_ROWS itself.
+// AuditLog rows at tableName='Visit'. No pagination in v1: the +1 is the
+// "there's more" signal, and the client trims to MAX_ROWS itself.
 const MAX_ROWS = 500;
 
 // Visit fields the before/after picks are allowed to carry, explicitly listed
@@ -113,7 +114,8 @@ export const GET = handler('GET /api/facility/corrections', async ({ req }) => {
 
     // Actor + subject names, batched — AuditLog has no @relation to Person.
     // mergedIntoId rides along so the drill-down can follow a since-merged
-    // subject to their surviving record (design §1).
+    // subject to their surviving record: a merge deletes nobody and moves the
+    // visits, so an older audit row can name a person since merged away.
     const personIds = new Set<number>();
     for (const r of rows) {
         personIds.add(r.actorId);
