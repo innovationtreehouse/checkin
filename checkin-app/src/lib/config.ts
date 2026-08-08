@@ -104,7 +104,7 @@ function zohoConfiguredEnv(): boolean {
 
 /**
  * The dev/local Zoho Sign MOCK is active when the real integration is unconfigured
- * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md).
+ * AND we're on a non-prod instance (see docs/ops/contract-signing-mock.md).
  * CHECKIN_ENV is the single, server-only fuse (see the note above
  * shopifyMockActiveEnv for why NODE_ENV was eliminated as a second fuse) — it
  * fails safe to prod, so no mock path is reachable in prod by construction.
@@ -116,8 +116,8 @@ function zohoMockActiveEnv(): boolean {
 }
 
 /**
- * Fixed shared secret the dev mock signs its self-fired webhook with (§4a of the
- * design). It guards nothing real — the payload is generated locally — it exists
+ * Fixed shared secret the dev mock signs its self-fired webhook with. It guards
+ * nothing real — the payload is generated locally — it exists
  * only so verifyZohoToken's real timing-safe compare has a value in dev.
  * Exported for the same reason as DEV_MOCK_SHOPIFY_WEBHOOK_SECRET below.
  */

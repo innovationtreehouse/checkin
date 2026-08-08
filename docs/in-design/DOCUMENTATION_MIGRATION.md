@@ -312,16 +312,20 @@ of person the app does not have.
 
 ---
 
-## 4. Step 3 — update AGENTS.md
+## 4. Step 3 — update AGENTS.md — **done**
 
-- Point the docs map at `docs/rules/` first, as the place to read before
-  changing behaviour in a domain.
-- Reference `DOCUMENTATION_STANDARD.md` for the working-doc lifecycle and the
-  format rules.
-- Resolve the CUJS ambiguity: two files share the name `CUJS.md`
-  (`docs/designs/CUJS.md`, 98 lines, role-based; `docs/backlog/CUJS.md`,
-  276 lines, per-step with status). The docs map currently points at the thinner
-  one. Merge or delete one.
+- ~~Point the docs map at `docs/rules/` first~~ — a "Domain rules — read first"
+  block now opens the map, carrying the escalation rule for Policy-tier lines.
+- ~~Reference `DOCUMENTATION_STANDARD.md`~~ — cited in the same block, alongside
+  `docs/conventions.md`. README's start-here list points at both.
+- ~~Resolve the CUJS ambiguity~~ — **deleted `docs/designs/CUJS.md`**, nothing
+  merged. It was a route table snapshot whose routes no longer exist (`/admin/*`
+  predates the `*-ops` split), and every journey in it is covered per-step and
+  state-tagged in `docs/backlog/CUJS.md`. AGENTS.md and README now point there.
+
+One entry of the map is deliberately **not** yet rewritten: the
+"Design & product (`docs/designs/`)" block. Step 4 empties that directory, so
+the block is rewritten once, there — not twice.
 
 ---
 
@@ -346,14 +350,13 @@ tracked as backlog PL17.
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
 `BG_CHECK_DEV_MOCK.md`, `ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
-`SHOPIFY_LIVE_TESTS.md`, `S_READ_DIAGNOSTICS.md`. `LIFECYCLE.md` goes here too —
-it documents how the generated artifacts and drift guards work, which is
-mechanism, not policy.
+`SHOPIFY_LIVE_TESTS.md`. `LIFECYCLE.md` goes here too — it documents how the
+generated artifacts and drift guards work, which is mechanism, not policy.
 
 **→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
 (promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
-`MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for
-standing rules first; most will yield none.
+`ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for standing rules first; most
+will yield none.
 
 **`PRODUCTION_PLAN.md` moves to `docs/ops/` — do not delete it.** Despite the
 name it is the live "Production Launch Runbook" for ops.innovationtreehouse.org:
@@ -362,9 +365,9 @@ release-gate roster, ECR/ECS task-definition names). Extraction yields no rules,
 so the extract-and-delete bucket would destroy the only deploy/rollback runbook.
 The ops-bucket definition already covers it.
 
-**Unresolved, decide during the sweep:** `CUJS.md` (both copies — see step 3),
-`UNFINISHED.md` (a deferred-decision ledger; arguably belongs in `in-design/`,
-arguably its own thing).
+**Unresolved, decide during the sweep:** `UNFINISHED.md` (a deferred-decision
+ledger; arguably belongs in `in-design/`, arguably its own thing). `CUJS.md` is
+settled — resolved in step 3, one copy left.
 
 **Leave alone entirely:** `docs/security/`, `checkin-app/docs/generated/`,
 `docs/backlog/`, and the deploy/migration docs under `checkin-app/docs/`.

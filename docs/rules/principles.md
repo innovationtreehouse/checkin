@@ -100,9 +100,17 @@ not the moment someone asks to undo.
   than one capacity, the narrower one governs; seniority is not an argument for
   reaching further.
 
+- **A surface grants nothing its gate does not already grant.** Giving a role its
+  own section, list or notification makes work findable that it could already do
+  and shows information it could already read. It adds no capability and widens no
+  data. The test is per link and per field: a link to a screen the role's existing
+  gate would refuse, or a field that gate would strip, has widened the grant —
+  regardless of what the surface's own gate says.
+
 Adding a role to a gate is the change this principle catches, and it is almost
 never noticed in review, because it makes something work that did not work
-before. Removing one is visible; widening is not.
+before. Removing one is visible; widening is not. A new surface is the quiet
+version of the same change: nothing in its diff looks like a permission edit.
 
 ---
 
@@ -179,6 +187,26 @@ The failure looks like a gate that tests the wrong thing: authorising on the
 presence of an id rather than on a right the caller currently holds. It survives
 review easily, because the check is right there and does return true for the
 people it should.
+
+---
+
+## Reachability is not permission
+
+Distinct from *identity is not authorisation*, which asks what a surviving
+record grants. This asks about arrival: how someone reached a surface says
+nothing about whether they may use it.
+
+- **A listing grants nothing.** A directory, index, search result or navigation
+  menu shows only what the viewer's existing gates already admit them to; it
+  never widens one, and it is not where the decision is made.
+
+- **A destination never trusts its entry point.** Every surface enforces its own
+  gate on arrival, whatever linked to it. A link that should not have been shown
+  is a cosmetic defect; a page that admits whoever followed it is not.
+
+The failure is a gate deleted as redundant, because the menu already hides the
+page so the page stops checking. It tests clean, since in testing the only way
+anyone reaches the page is through the menu that filters it.
 
 ---
 

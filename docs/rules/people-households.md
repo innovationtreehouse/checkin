@@ -123,8 +123,9 @@ Things the app takes as true because they are handled outside it.
 
 ### Identity and age
 
-- Every household member has a date of birth or an over-25 declaration. Neither
-  present is a surfaced gap.  [Decision]
+- Every household member has a date of birth or an over-25 declaration, never
+  both. The declaration stands in for a date nobody has, so a date on file
+  displaces it. Neither present is a surfaced gap.  [Decision]
 
 - Date of birth is not retained past 25; the declaration replaces it
   automatically as members age out. Twenty-five holds three things at once: we

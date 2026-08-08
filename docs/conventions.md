@@ -85,6 +85,25 @@ than a practice.
 
 ---
 
+## A check that costs money is not a health check
+
+- **A dependency billed per wake is read when a person asks for it, never on a
+  schedule and never on a render.** The store mirror sleeps when idle and is
+  charged for waking; that is why its catch-up runs on a cadence rather than
+  continuously, and why its diagnostics and audit reports sit behind a button.
+
+- **An always-on indicator reports whether something is configured, never
+  whether it answers.** Turning a presence check into a live one puts a paid
+  call behind every page load, and the badge that polls it makes that per
+  visitor per minute.
+
+The change that breaks this reads as an improvement. "The dashboard only says
+the integration is configured — let's make it actually check" is better by every
+measure a reviewer can see in the diff. Nothing fails, no test bills, and the
+cost arrives a month later attached to no particular change.
+
+---
+
 ## A day is not a moment
 
 - **Every temporal field is one kind or the other, and the column type says

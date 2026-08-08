@@ -1,8 +1,8 @@
 # Documentation standard
 
-**Status: PROPOSED — for review. Becomes the standard on merge.**
 How documentation in this repo is organised, written, and retired. Read this
-before writing or moving any doc.
+before writing or moving any doc. This is the standard in force; the one-time
+move of the existing corpus into it runs in `docs/in-design/DOCUMENTATION_MIGRATION.md`.
 
 ---
 
@@ -149,7 +149,7 @@ text and survives everything except an actual amendment — at which point the
 citation *should* break, because the rule may have changed.
 
 **Never cite a filesystem path.** The policy corpus lives outside this repo (see
-§3.8), so a path dangles for everyone but its owner and rots the way line numbers
+§3.10), so a path dangles for everyone but its owner and rots the way line numbers
 do. The policy's name plus its section is what survives a reorganisation.
 
 If a policy has no internal numbering to cite, say so explicitly ("*Volunteer

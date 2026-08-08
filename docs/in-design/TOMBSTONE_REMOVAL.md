@@ -154,7 +154,7 @@ Refusal fixes the **flow**, not the **stock**: every tombstone already carrying 
 past merge still needs one-time resolution. The widened drift guard's allowlist is the scoping input
 — each entry is a code path that depends on tombstones existing today.
 
-Per the sibling proposal [BG_PER_ADULT_SUBJECT](BG_PER_ADULT_SUBJECT.md) (in-design, not settled — do not build on it), prefer an in-app worklist over a
+Per the per-adult background-check work (#1470, shipped), prefer an in-app worklist over a
 script if the volume warrants a human decision per row; a pure count of collisions should be gathered
 first to decide which.
 

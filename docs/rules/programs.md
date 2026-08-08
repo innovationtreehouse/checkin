@@ -107,7 +107,14 @@ Things the app takes as true because they are handled outside it.
   member who has passed a background check: the leader pickers admit anyone 18 or
   over.  [Short of policy — *Policy: Sponsored Program Policy, Art. IV*]
 
-- Nobody under 18 enrolls themselves. A youth is enrolled by their household lead.  [Decision]
+- Nobody under 18 enrolls themselves, and nobody whose age is unknown does
+  either; only a known adult may. The bar is the guardian-consent line and is
+  separate from the ages a program targets. A youth is enrolled, and withdrawn,
+  by their household lead.  [Decision — *Principle: fail closed*]
+
+- Being refused for an unknown age is not a dead end. Someone with no age on file
+  is asked to record one and may then enroll themselves; a brand-new adult is
+  their own household lead and has nobody else to ask.  [Decision]
 
 ### Enrollment
 
@@ -138,6 +145,26 @@ Things the app takes as true because they are handled outside it.
   the freed seat goes back, and does it at the store.  [Decision — deliberate limit; *Principle: people decide about people*]
 
 - A request for a payment plan is never swept away for sitting too long.  [Decision]
+
+### What a youth sees of money
+
+- A youth is never shown a payment obligation, a payment action, or a payment
+  status, whether their own or their household's. It is not disabled and not
+  explained; it is absent. Their own enrollment awaiting payment reads as
+  awaiting confirmation, which names no money, stays true if the household never
+  pays, and puts the next action with somebody else.  [Decision]
+
+- A youth may not settle a payment their household lead started, on their own
+  enrollment or any other. There is no finish-the-checkout allowance for an
+  enrollment that already exists.  [Decision]
+
+- What a program costs stays public. A price is program information, not a
+  payment situation; it carries no obligation, no state and no action, so a youth
+  sees it like anyone else.  [Decision — deliberate limit]
+
+- Someone whose age is unknown is treated the opposite way from a youth here.
+  They may well be an adult, so nothing is hidden from them and they are asked
+  for their age instead. Known youth, hide; unknown, ask.  [Decision]
 
 ### Pricing
 

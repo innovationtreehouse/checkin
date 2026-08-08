@@ -436,7 +436,7 @@ export async function getOrCreateContractSigningUrl(userId: number): Promise<str
 
         // Mock mode never uploads the PDF (its createRequest ignores the bytes), so
         // skip the S3 load that also 503s in dev — an empty placeholder keeps the
-        // create/submit calls type-identical. See ZOHO_SIGN_DEV_MOCK.md §5.
+        // create/submit calls type-identical. See docs/ops/contract-signing-mock.md.
         let agreement;
         if (signingMock) {
             agreement = { pdf: Buffer.alloc(0), lastPageNo: 0, pageWidth: 0, pageHeight: 0 };

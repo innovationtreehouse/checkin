@@ -1145,9 +1145,9 @@ None are introduced by this design; none are dependencies. Each is tracked separ
 ### Related work
 
 - [#1260](https://github.com/innovationtreehouse/checkin/issues/1260) per-adult background-check
-  subjects — design merged as [`BG_PER_ADULT_SUBJECT.md`](BG_PER_ADULT_SUBJECT.md), implemented in
-  [#1470](https://github.com/innovationtreehouse/checkin/pull/1470) (**open**). **Sequence that
-  slice first.** Both rewrite the same household clearance branch
+  subjects — **shipped** in [#1470](https://github.com/innovationtreehouse/checkin/pull/1470); the
+  rules it established are in `docs/rules/membership.md` § background checks. **That slice has
+  landed, so rebase onto it.** Both rewrite the same household clearance branch
   ([review.ts:296-317](../../checkin-app/src/lib/membership/review.ts:296)), so a textual conflict is
   certain; rebase this onto it. They compose semantically — that design makes clearance stamp
   named subjects, while this carryover deliberately stamps nobody, reusing an existing date rather
