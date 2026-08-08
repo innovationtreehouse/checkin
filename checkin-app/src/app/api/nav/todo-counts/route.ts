@@ -87,7 +87,7 @@ export type TodoCounts = {
     // = ones they approved that still need a second reviewer (gray).
     review?: { canActOn: number; approvedAwaitingSecond: number };
     // Lead surface: programs the caller runs (program.leadMentorId). Present only
-    // when they lead ≥1 program — drives the staff "My Programs" nav item's
+    // when they lead ≥1 program — drives the "My Programs (as Volunteer)" nav item's
     // visibility and its green badge (sum of pending attendance to confirm).
     // `pending` mirrors the post-event email's targets (ended events not yet
     // confirmed), deep-linked to the existing confirm screen. No new capability.
