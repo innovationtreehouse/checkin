@@ -148,7 +148,7 @@ const DIAG_LABELS: Record<string, string> = {
 };
 
 /**
- * On-demand deep probe of the s-read chain (docs/designs/S_READ_DIAGNOSTICS.md).
+ * On-demand deep probe of the s-read chain (docs/ops/shopify-mirror.md).
  * Deliberately NOT run on page load and never polled: every probe wakes the
  * scale-to-zero Aurora cluster, so it fires only on an explicit click. This is
  * the deep counterpart to ConfigHealthBox above, which stays presence-only.

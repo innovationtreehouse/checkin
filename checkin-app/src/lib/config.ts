@@ -10,7 +10,7 @@ function requireEnv(name: string): string {
 }
 
 /**
- * The single environment-personality switch (see docs/designs/DEV_INSTANCE_DESIGN.md).
+ * The single environment-personality switch (see docs/ops/dev-instance.md).
  *   prod  — production (default when unset). Real data, public landing, no impersonation.
  *   dev   — cloud dev instance. Entire site behind org login.
  *   local — a developer laptop. Permits offline credential login + keyless kiosk.
@@ -104,7 +104,7 @@ function zohoConfiguredEnv(): boolean {
 
 /**
  * The dev/local Zoho Sign MOCK is active when the real integration is unconfigured
- * AND we're on a non-prod instance (see docs/designs/ZOHO_SIGN_DEV_MOCK.md).
+ * AND we're on a non-prod instance (see docs/ops/contract-signing-mock.md).
  * CHECKIN_ENV is the single, server-only fuse (see the note above
  * shopifyMockActiveEnv for why NODE_ENV was eliminated as a second fuse) — it
  * fails safe to prod, so no mock path is reachable in prod by construction.
@@ -116,8 +116,8 @@ function zohoMockActiveEnv(): boolean {
 }
 
 /**
- * Fixed shared secret the dev mock signs its self-fired webhook with (§4a of the
- * design). It guards nothing real — the payload is generated locally — it exists
+ * Fixed shared secret the dev mock signs its self-fired webhook with. It guards
+ * nothing real — the payload is generated locally — it exists
  * only so verifyZohoToken's real timing-safe compare has a value in dev.
  * Exported for the same reason as DEV_MOCK_SHOPIFY_WEBHOOK_SECRET below.
  */
@@ -209,7 +209,12 @@ export const config = {
 
     // Email
     resendApiKey: (): string | null => process.env.RESEND_API_KEY || null,
-    emailFrom: () => process.env.EMAIL_FROM || 'CheckMeIn <onboarding@resend.dev>',
+    // The env-level From. Null when unset so an unconfigured instance is
+    // distinguishable from a configured one: getEmailSenderIdentity prefers
+    // BoardSettings.emailFromAddress and falls back here, and sendEmail refuses to
+    // send when neither supplies an address. A hardcoded default would be a sender
+    // no domain has verified, so every send would be attempted and rejected.
+    emailFrom: (): string | null => process.env.EMAIL_FROM || null,
     // Resend's inbound bounce/complaint webhook signs with Svix under this shared
     // secret (Resend dashboard → Webhooks → signing secret, "whsec_..."). Null when
     // unset — the webhook route's verify fn fails closed with a 500 config error,

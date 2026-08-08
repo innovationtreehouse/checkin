@@ -1,17 +1,17 @@
 import { Prisma, type OrgMembershipProcessStatus } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { ReviewError } from "@/lib/membership/review";
-import { normalizeAuditData } from "@/lib/auditPayload";
-import { fromWhere } from "@/lib/membership/lifecycle";
+import { ARCHIVABLE_STATUSES, fromWhere } from "@/lib/membership/lifecycle";
+import { personActor } from "@/lib/auditActor";
 
 /**
  * Board disposal of an abandoned application. Transitions the process to the
- * terminal ARCHIVED status so it drops off every "live application" read (board
+ * ARCHIVED resting status so it drops off every "live application" read (board
  * list + applicant intake) with a single declarative status check — no parallel
  * flag. Only non-ACTIVE (pending) applications are disposable; an ACTIVE
  * membership is never archivable (wrong_phase → 409). Idempotent: archiving an
- * already-ARCHIVED process is a no-op. Who/when/from-phase are captured in the
- * AuditLog row.
+ * already-ARCHIVED process is a no-op. The collapsed phase is captured on the row
+ * itself (`archivedFromStatus`) as part of the same write; who/when go to AuditLog.
  */
 export async function archiveApplication(processId: number, actorId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -20,10 +20,13 @@ export async function archiveApplication(processId: number, actorId: number) {
     if (process.status === "ARCHIVED") return { status: "ARCHIVED" as const }; // idempotent no-op
 
     await prisma.$transaction([
-        prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: "ARCHIVED", stageEnteredAt: new Date() } }),
+        prisma.orgMembershipProcess.update({
+            where: { id: processId },
+            data: { status: "ARCHIVED", archivedFromStatus: process.status, stageEnteredAt: new Date() },
+        }),
         prisma.auditLog.create({
             data: {
-                actorId: actorId || 0,
+                ...personActor(actorId),
                 action: "EDIT",
                 tableName: "OrgMembershipProcess",
                 affectedEntityId: processId,
@@ -35,45 +38,26 @@ export async function archiveApplication(processId: number, actorId: number) {
     return { status: "ARCHIVED" as const };
 }
 
-/**
- * Restorable in-flight statuses an archived application can return to — every
- * INITIAL/RENEWAL in-flight status plus BLOCKED (pre-existing semantics: a
- * blocked process is the board's to resolve, not archive away). ACTIVE and
- * ARCHIVED itself are never restore targets.
- */
-const RESTORABLE_STATUSES = new Set<OrgMembershipProcessStatus>([
-    "INTAKE",
-    "PENDING_EXTERNAL_ACTION",
-    "PENDING_BG_REVIEW",
-    "PENDING_PAYMENT",
-    "PENDING_BG_CLEARANCE",
-    "PENDING_RENEWAL",
-    "RENEWAL_PENDING_BG",
-    "BLOCKED",
-]);
+/** Restore targets are exactly the statuses archive can come from — one list, so the
+ *  two directions can never disagree (the ARCHIVED↔ edges in TRANSITIONS). */
+const RESTORABLE_STATUSES = new Set<OrgMembershipProcessStatus>(ARCHIVABLE_STATUSES);
 
 /**
- * Board recovery of a wrongly-archived application. ARCHIVED collapses whatever
- * phase the process was in, so the AuditLog is the only record of it: this walks
- * the process's audit rows newest-first and takes the most recent one that
- * recorded the ARCHIVED transition — its oldData.status is the restore target.
- * Refuses (wrong_phase) if no such row exists, or its target isn't a status this
- * can still restore to. The partial unique indexes (membership_one_inflight_*)
- * are the backstop if a fresh in-flight process now occupies that slot for the
- * same membership — caught as P2002 and surfaced as wrong_phase, same shape as
- * every other conflict here.
+ * Board recovery of a wrongly-archived application. The restore target is the
+ * pre-image the archive write captured on the row (`archivedFromStatus`) — not a
+ * reconstruction from the audit trail (principles.md §"Decisions are reversible").
+ * Refuses (wrong_phase) if the column is unset, or holds a status this can no
+ * longer restore to. The partial unique indexes (membership_one_inflight_*) are
+ * the backstop if a fresh in-flight process now occupies that slot for the same
+ * membership — caught as P2002 and surfaced as wrong_phase, same shape as every
+ * other conflict here.
  */
 export async function unarchiveApplication(processId: number, actorId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (process.status !== "ARCHIVED") throw new ReviewError("wrong_phase", "Only an archived application can be unarchived.");
 
-    const auditRows = await prisma.auditLog.findMany({
-        where: { tableName: "OrgMembershipProcess", affectedEntityId: processId },
-        orderBy: { id: "desc" },
-    });
-    const archivedRow = auditRows.find((row) => (normalizeAuditData(row.newData) as { status?: string } | null)?.status === "ARCHIVED");
-    const target = (normalizeAuditData(archivedRow?.oldData) as { status?: string } | null)?.status as OrgMembershipProcessStatus | undefined;
+    const target = process.archivedFromStatus ?? undefined;
     if (!target || !RESTORABLE_STATUSES.has(target)) {
         throw new ReviewError("wrong_phase", "Cannot determine the state this application was archived from.");
     }
@@ -86,12 +70,12 @@ export async function unarchiveApplication(processId: number, actorId: number) {
             const { count } = await tx.orgMembershipProcess.updateMany({
                 // #13 unarchive CAS from-state (ARCHIVED) from the definition (#1080).
                 where: { id: processId, ...fromWhere("ARCHIVED") },
-                data: { status: target, stageEnteredAt: new Date() },
+                data: { status: target, archivedFromStatus: null, stageEnteredAt: new Date() },
             });
             if (count !== 1) return;
             await tx.auditLog.create({
                 data: {
-                    actorId: actorId || 0,
+                    ...personActor(actorId),
                     action: "EDIT",
                     tableName: "OrgMembershipProcess",
                     affectedEntityId: processId,

@@ -403,9 +403,9 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
   // A youth is shown no payment obligation, action, or status — their own or
-  // their household's (docs/designs/167-youth-enrollment-rules.md). An
-  // unverifiable age is NOT a youth: they keep every affordance so they can
-  // reach the intake panel and establish an age.
+  // their household's (docs/rules/programs.md). An unverifiable age is NOT a
+  // youth: they keep every affordance so they can reach the intake panel and
+  // establish an age.
   const viewerIsYouth = user?.ageBand === 'youth';
 
   const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`

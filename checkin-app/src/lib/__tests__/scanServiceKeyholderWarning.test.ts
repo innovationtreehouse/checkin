@@ -2,26 +2,40 @@
  * The last-keyholder warning is rendered on the kiosk screen. `Person.email` is
  * tier `pii`, so a person with no `name` must degrade to the email local-part —
  * never the full address (#329).
+ *
+ * The force close itself is bound to that warning: it proceeds only for a scan
+ * that follows a fresh `Visit.forceCloseWarnedAt` stamp, never for two badge
+ * events that merely happen to be close together (B2 of #1529).
  */
 import type { Person } from "@/generated/prisma/client";
 import type { DbClient } from "@/lib/db-client";
 import { processCheckout } from "@/lib/scan-service";
 
 jest.mock("@/lib/prisma", () => ({ __esModule: true, default: {} }));
-jest.mock("@/lib/notifications", () => ({ sendCheckinNotifications: jest.fn() }));
+jest.mock("@/lib/notifications", () => ({
+    sendCheckinNotifications: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock("@/lib/attendanceTransitions", () => ({
+    findAssociatedEventAt: jest.fn().mockResolvedValue(null),
+    processVisitCheckout: jest.fn().mockResolvedValue([]),
+}));
 
 const keyholder = { id: 1, isKeyholder: true } as Person;
 
 /** Tx-shaped fake (no `$transaction`, so isRootClient() is false). */
-function fakeDb(remaining: Array<{ name: string | null; email: string | null }>): DbClient {
+function fakeDb(
+    remaining: Array<{ name: string | null; email: string | null }>,
+    warnedAt: Date | null = null
+): DbClient {
     return {
         visit: {
             count: jest.fn().mockResolvedValue(0), // no other keyholders present
             findMany: jest.fn().mockResolvedValue(
                 remaining.map((person, i) => ({ id: 100 + i, person }))
             ),
+            findUnique: jest.fn().mockResolvedValue({ forceCloseWarnedAt: warnedAt }),
+            update: jest.fn().mockResolvedValue({}),
         },
-        rawBadgeLog: { findMany: jest.fn().mockResolvedValue([]) }, // no double-badge confirm
     } as unknown as DbClient;
 }
 
@@ -58,4 +72,36 @@ it("omits a person with neither name nor email rather than rendering an empty sl
 
     expect(body.error).toContain("solo");
     expect(body.error).not.toMatch(/, ,|:\n, /);
+});
+
+describe("force close is bound to the warning", () => {
+    const present = [{ name: "Someone Inside", email: "inside@example.com" }];
+
+    it("warns and stamps the visit when no warning has been shown yet", async () => {
+        const db = fakeDb(present);
+        const res = await processCheckout(keyholder, 42, "kiosk", db);
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).facilityClosed).toBeUndefined();
+        expect(db.visit.update).toHaveBeenCalledWith({
+            where: { id: 42 },
+            data: { forceCloseWarnedAt: expect.any(Date) },
+        });
+    });
+
+    it("closes the facility when the scan follows a fresh warning stamp", async () => {
+        const db = fakeDb(present, new Date(Date.now() - 8000));
+        const res = await processCheckout(keyholder, 42, "kiosk", db);
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).facilityClosed).toBe(true);
+    });
+
+    it("warns again when the stamp has expired", async () => {
+        const db = fakeDb(present, new Date(Date.now() - 5 * 60_000));
+        const res = await processCheckout(keyholder, 42, "kiosk", db);
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).type).toBe("warning");
+    });
 });

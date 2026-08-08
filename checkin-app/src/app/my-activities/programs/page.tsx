@@ -30,7 +30,7 @@ type UserProgram = {
 function paymentPill(status: string, planRequested: boolean, viewerIsYouth: boolean) {
   if (status === 'ACTIVE') return null;
   // A youth is shown no payment state at all — "Awaiting confirmation" is true
-  // whoever owes it (docs/designs/167-youth-enrollment-rules.md).
+  // whoever owes it (docs/rules/programs.md, "What a youth sees of money").
   if (viewerIsYouth) return <Badge color="gray" variant="filled">Awaiting confirmation</Badge>;
   return planRequested
     ? <Badge color="gray" variant="filled">Awaiting finance approval</Badge>
@@ -41,7 +41,7 @@ export default function MyProgramsDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  // See docs/designs/167-youth-enrollment-rules.md — a youth sees no payment state.
+  // See docs/rules/programs.md — a youth sees no payment state.
   const viewerIsYouth = (session?.user as { ageBand?: string } | undefined)?.ageBand === 'youth';
 
   const [enrollments, setEnrollments] = useState<UserProgram[]>([]);
