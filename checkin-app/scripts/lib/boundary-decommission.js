@@ -226,7 +226,66 @@ function checkRoundTrip(segments, source) {
  * @param {(source: string) => Segmentation} segmentHead
  * @returns {EntityDiff}
  */
-function diffSegmentations(baseResult, headSource, segmentHead) {
+// Two edits inside a SURVIVING entry cannot widen exposure, and a whole-entity
+// drop forces both — refusing them makes the exception unusable for the case it
+// exists to serve. Both sides are normalised through the same function, so a
+// difference that survives is a real one.
+//
+//   - Comments. A comment cannot change what leaves the server. A drop makes
+//     the comments naming the dropped subject false, so they have to move.
+//   - A `returns:` element naming a model dropped from schema.prisma in THIS
+//     PR. `returns` is typed `readonly Models[]` and Models is keyed off the
+//     generated classifications, so dropping the model makes the entry stop
+//     compiling: the edit is forced by the type system, not chosen. Removing an
+//     element only narrows what the route may return.
+//
+// Nothing else is normalised. A tier, token, role or endpoint edit inside a
+// surviving entry still fails, which is the whole point of the byte-strict rule.
+// Comments only — string CONTENTS are preserved. A normalisation that erased
+// string literals would make `authorize: 'public'` compare equal to
+// `authorize: 'authenticated'`, which is the exact opposite of this file's job.
+function stripComments(source) {
+    let out = '';
+    let inBlock = false, inStr = false, quote = '';
+    for (let i = 0; i < source.length; i++) {
+        const c = source[i], n = source[i + 1];
+        if (inBlock) {
+            if (c === '*' && n === '/') { inBlock = false; i++; }
+            else if (c === '\n') out += '\n';
+            continue;
+        }
+        if (inStr) {
+            out += c;
+            if (c === '\\') out += source[++i] ?? '';
+            else if (c === quote) inStr = false;
+            continue;
+        }
+        if (c === "'" || c === '"' || c === '`') { inStr = true; quote = c; out += c; continue; }
+        if (c === '/' && n === '/') { while (i < source.length && source[i] !== '\n') i++; out += '\n'; continue; }
+        if (c === '/' && n === '*') { inBlock = true; i++; continue; }
+        out += c;
+    }
+    return out;
+}
+
+function normalizeEntry(source, droppedModels) {
+    const dropped = new Set(droppedModels);
+    return stripComments(source)
+        .split('\n')
+        // A multi-line `returns:` array is not narrowed — only the first line
+        // matches — so it stays a mismatch and the PR is refused. Fail closed.
+        .map(line => (/\breturns\s*:/.test(line)
+            // Dropping the last element leaves the previous element's comma
+            // dangling before the bracket; the head has no such comma.
+            ? line.replace(/'([A-Za-z0-9_]+)'\s*,?\s*/g, (m, model) => (dropped.has(model) ? '' : m))
+                  .replace(/\s*,?\s*\]/g, ']')
+            : line))
+        .map(line => line.replace(/\s+/g, ' ').trim())
+        .filter(line => line !== '')
+        .join('\n');
+}
+
+function diffSegmentations(baseResult, headSource, segmentHead, droppedModels = []) {
     if (baseResult.error) return { error: `base: ${baseResult.error}` };
     const headResult = segmentHead(headSource);
     if (headResult.error) return { error: `head: ${headResult.error}` };
@@ -246,16 +305,31 @@ function diffSegmentations(baseResult, headSource, segmentHead) {
         if (s.type === 'entity' && !headNames.has(key(s))) removed.push({ container: s.container, name: s.name });
         else kept.push(s.text);
     }
-    if (kept.join('\n') !== headSource) {
+    if (normalizeEntry(kept.join('\n'), droppedModels) !== normalizeEntry(headSource, droppedModels)) {
         return { error: 'diff is not a pure whole-entry removal (an entry or surrounding content was edited)' };
     }
-    if (!removed.length) return { error: 'boundary file changed but no entries were removed' };
+    // No removals is not an error by itself. Reaching here means the file's only
+    // changes were ones the normaliser forgives — comments, or a `returns:`
+    // element naming a model this PR drops — and neither can widen exposure. The
+    // PR still has to decommission something: certifyDecommission refuses when
+    // no file anywhere contributed a removal.
     return { removed };
 }
 
 // ── subject-existence checks ───────────────────────────────────────────────
 
 const hasModel = (schema, model) => new RegExp(`^model\\s+${model}\\s*\\{`, 'm').test(schema);
+
+// Models present in the base schema and gone at head. Read from schema.prisma
+// itself rather than inferred from the boundary diff: a dropped model need not
+// have a scope binding (an all-public one has none), so the bindings diff is not
+// a complete list of what the PR drops.
+function modelsDroppedFromSchema(readBase, readHead) {
+    const names = src => new Set([...(src ?? '').matchAll(/^model\s+([A-Za-z0-9_]+)\s*\{/gm)].map(m => m[1]));
+    const base = names(readBase(SCHEMA_FILE));
+    const head = names(readHead(SCHEMA_FILE));
+    return [...base].filter(m => !head.has(m));
+}
 
 function endpointToRouteFile(endpoint) {
     const path = endpoint.split(' ')[1];
@@ -281,6 +355,8 @@ function certifyDecommission({ changed, boundaryChanged, violations, readBase, r
     /** @type {string[]} */ const removedModels = [];
     /** @type {string[]} */ const removedEndpoints = [];
 
+    const droppedModels = modelsDroppedFromSchema(readBase, readHead);
+
     const declarative = Object.values(DECLARATIVE_FILES);
     for (const p of boundaryChanged) {
         if (!declarative.includes(p)) {
@@ -299,6 +375,7 @@ function certifyDecommission({ changed, boundaryChanged, violations, readBase, r
                 segmentByContainers(base, BINDINGS_CONTAINERS),
                 head,
                 s => segmentByContainers(s, BINDINGS_CONTAINERS),
+                droppedModels,
             );
             if (d.error) reasons.push(`${DECLARATIVE_FILES.bindings}: ${d.error}`);
             else removedModels.push(...d.removed.map(r => r.name));
@@ -311,7 +388,7 @@ function certifyDecommission({ changed, boundaryChanged, violations, readBase, r
         if (base == null || head == null) {
             reasons.push(`${DECLARATIVE_FILES.registry}: added or deleted outright — not a decommission`);
         } else {
-            const d = diffSegmentations(segmentTopLevelCalls(base), head, segmentTopLevelCalls);
+            const d = diffSegmentations(segmentTopLevelCalls(base), head, segmentTopLevelCalls, droppedModels);
             if (d.error) reasons.push(`${DECLARATIVE_FILES.registry}: ${d.error}`);
             else {
                 for (const r of d.removed) {
@@ -381,6 +458,7 @@ function certifyDecommission({ changed, boundaryChanged, violations, readBase, r
 }
 
 module.exports = {
+    normalizeEntry,
     BINDINGS_CONTAINERS,
     DECLARATIVE_FILES,
     certifyDecommission,
