@@ -376,10 +376,14 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                             },
                             newData: {
                                 ...times, type: "lead_attendance_correction", status: "Present",
-                                // Scores 0 when this reopens a closed visit (dep null): minutesBetween
-                                // returns 0 on a null side, so the most destructive edit here reads as
-                                // insignificant rather than unscored. Tracked separately.
-                                significance: editSignificance(existingVisit, { arrivedAt: arrival!, departedAt: dep }, { byProxy: userId !== targetId }),
+                                // A reopen — a closed visit losing its departure — is unscorable:
+                                // the weights compare two durations and there is no second one.
+                                // Omitted rather than scored, because a row with no significance
+                                // reads as outside the lens, where a 0 would read as reviewed and
+                                // found insignificant. Erasing a recorded departure is not that.
+                                ...(existingVisit.departedAt && !dep ? {} : {
+                                    significance: editSignificance(existingVisit, { arrivedAt: arrival!, departedAt: dep }, { byProxy: userId !== targetId }),
+                                }),
                             }
                         }
                     });
