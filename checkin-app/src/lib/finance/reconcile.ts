@@ -512,6 +512,10 @@ export interface ReconcileResult {
     configured: boolean;
     ordersScanned: number;
     reversalsRaised: number;
+    /** Orders whose forward pass threw. The cron route surfaces it as the run's
+     *  health signal (lib/cronAuth.ts) — isolating a bad order keeps the sweep
+     *  going, it does not make the run a success. */
+    failed: number;
 }
 
 /**
@@ -520,7 +524,7 @@ export interface ReconcileResult {
  * so the next run only re-scans changed orders.
  */
 export async function runReconcile(): Promise<ReconcileResult> {
-    if (!mirror.isConfigured()) return { configured: false, ordersScanned: 0, reversalsRaised: 0 };
+    if (!mirror.isConfigured()) return { configured: false, ordersScanned: 0, reversalsRaised: 0, failed: 0 };
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 }, select: { shopifyReconcileCursorAt: true } });
     const cursor = settings?.shopifyReconcileCursorAt ?? null;
@@ -532,12 +536,14 @@ export async function runReconcile(): Promise<ReconcileResult> {
     // orders in this batch still get processed (idempotent, so re-scanning them
     // tomorrow is harmless); only the watermark holds back until the bad order heals.
     let cursorFrozen = false;
+    let failed = 0;
     for (const order of orders) {
         try {
             const claimed = await reconcileForwardMembership(order);
             if (!claimed) await reconcileForwardProgram(order);
         } catch (e) {
             logger.error(`[reconcile] forward pass failed for order ${order.legacyId ?? order.orderGid}:`, e);
+            failed++;
             cursorFrozen = true;
             // The watermark may ALREADY sit at this order's updatedAt — an earlier
             // order in the batch with the same timestamp succeeded and advanced it.
@@ -558,5 +564,5 @@ export async function runReconcile(): Promise<ReconcileResult> {
         await prisma.boardSettings.update({ where: { id: 1 }, data: { shopifyReconcileCursorAt: newCursor } });
     }
 
-    return { configured: true, ordersScanned: orders.length, reversalsRaised };
+    return { configured: true, ordersScanned: orders.length, reversalsRaised, failed };
 }

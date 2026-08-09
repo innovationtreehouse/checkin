@@ -35,6 +35,22 @@ export function requireCronSecret(req: Request): NextResponse | null {
 }
 
 /**
+ * Rows the handler could not process, read from its own response body.
+ *
+ * A sweep that isolates per-row failures still answers 200 with counts, so the
+ * status alone cannot see them; a top-level `failed` is how such a route reports
+ * partial or total inner failure. Absent or non-numeric means "nothing to report".
+ */
+async function reportedFailures(res: NextResponse): Promise<number> {
+    try {
+        const body = await res.clone().json() as { failed?: unknown };
+        return typeof body?.failed === "number" && body.failed > 0 ? body.failed : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/**
  * Higher-order wrapper for the cron routes — mirrors {@link withAuth} but for the
  * session-less cron family. Gates on {@link requireCronSecret} (so the handler
  * never runs unauthorized), then runs the handler inside a top-level catch that
@@ -53,9 +69,10 @@ export function requireCronSecret(req: Request): NextResponse | null {
  * swallows its own failures. Only AUTHORIZED runs are recorded; a 401 never
  * happened as far as the ledger is concerned.
  *
- * Success is the response STATUS, not merely "the handler didn't throw" — a route
- * that returns its own error envelope has not had a healthy run, and the ledger
- * must not claim otherwise just because nothing was thrown.
+ * Success is the response STATUS **and** the handler's own `failed` count, not
+ * merely "the handler didn't throw" — a route that returns an error envelope, or
+ * that isolates per-row failures behind a 200, has not had a healthy run, and the
+ * ledger must not claim otherwise.
  */
 export function withCron(
     handler: (req: Request) => Promise<NextResponse>,
@@ -69,7 +86,9 @@ export function withCron(
 
         try {
             const res = await handler(req);
-            await recordCronRun(job, startedAt, res.status < 400, res.status < 400 ? undefined : `HTTP ${res.status}`);
+            const failed = res.status < 400 ? await reportedFailures(res) : 0;
+            const healthy = res.status < 400 && failed === 0;
+            await recordCronRun(job, startedAt, healthy, healthy ? undefined : failed > 0 ? `${failed} item(s) failed` : `HTTP ${res.status}`);
             return res;
         } catch (error) {
             logger.error("Cron handler error:", error);

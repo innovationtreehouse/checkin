@@ -187,6 +187,40 @@ describe('Cron Nightly API Integration Tests', () => {
         const systemNotifyCount = () =>
             prisma.auditLog.count({ where: { tableName: 'SYSTEM_NOTIFY' } });
 
+        // The System Status pill is the only in-app signal that the sweeps still
+        // work, and it reads the CronRunLog. A night that checked NOBODY out must
+        // not land there as a fresh success.
+        it('records the run as a failure when every checkout fails', async () => {
+            await closeAllOpenVisits();
+            await prisma.auditLog.deleteMany();
+
+            const arrivedAt = new Date(Date.now() - 2 * 60 * 60 * 1000);
+            const one = await prisma.visit.create({ data: { personId: normalUserId, arrivedAt } });
+            const two = await prisma.visit.create({ data: { personId: keyholderId, arrivedAt } });
+
+            mockBadVisitIds.clear();
+            mockBadVisitIds.add(one.id);
+            mockBadVisitIds.add(two.id);
+
+            try {
+                const res = await GET(cronReq());
+                expect(res.status).toBe(200);
+
+                const data = await res.json();
+                expect(data.facilityClose.checkedOutCount).toBe(0);
+                expect(data.failed).toBe(2);
+
+                // Both visits are still open — nothing was swept.
+                expect(await prisma.visit.count({ where: { id: { in: [one.id, two.id] }, departedAt: null } })).toBe(2);
+
+                const ledger = await prisma.cronRunLog.findFirst({ where: { job: 'nightly' }, orderBy: { id: 'desc' } });
+                expect(ledger?.success).toBe(false);
+                expect(ledger?.error).toBe('2 item(s) failed');
+            } finally {
+                mockBadVisitIds.clear();
+            }
+        });
+
         it('keeps checking out good visits when ONE visit fails, still notifies the board, and returns 200', async () => {
             await closeAllOpenVisits();
             await prisma.auditLog.deleteMany();
@@ -220,8 +254,10 @@ describe('Cron Nightly API Integration Tests', () => {
                 const data = await res.json();
                 expect(data.success).toBe(true);
 
-                // 2 good visits checked out; the bad one is NOT counted as success.
+                // 2 good visits checked out; the bad one is NOT counted as success,
+                // and the run reports it so the ledger can mark the sweep unhealthy.
                 expect(data.facilityClose.checkedOutCount).toBe(2);
+                expect(data.failed).toBe(1);
 
                 // Board still notified even though the isKeyholder's checkout failed
                 // (notification derives from the abandoned-visit list, not results).
