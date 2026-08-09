@@ -23,10 +23,7 @@ import { applyVolunteerStatus, clearBackgroundCheck, notifyClearanceOutcome } fr
 /** A process this carryover may act on. */
 type Candidate = { id: number; orgMembershipId: number | null };
 
-/**
- * The from-states the carryover acts on. One list, so the note-held audit covers
- * exactly the rows the stamps below would otherwise have touched.
- */
+/** The from-states the carryover reads: every in-flight row a fresh check bears on. */
 const CARRYOVER_STATES = ["PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_BG_REVIEW"] as const;
 
 /** `householdBgIsFresh` against live board settings. Callers need the answer, not the settings row. */
@@ -181,8 +178,8 @@ async function clearHeldReview(householdId: number, actorId: number): Promise<vo
 
 /**
  * The household is now covered but a live intake note keeps the carryover off it.
- * Leave the state alone and audit the fact on every row a stamp would have reached,
- * so the board can see why a fresh household is still parked.
+ * Leave the state alone and audit the fact on every in-flight row, so the board can
+ * see why a fresh household is still parked.
  */
 async function noteHeldDisclosure(householdId: number, actorId: number, source: Provenance): Promise<void> {
     for (const process of await uncleared(householdId, { status: { in: [...CARRYOVER_STATES] } })) {
