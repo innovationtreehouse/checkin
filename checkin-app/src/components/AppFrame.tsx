@@ -50,14 +50,7 @@ import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
 import { CountBadge, badgeIntentFor } from '@/components/ui/CountBadge';
-
-type SessionUser = {
-  isSysadmin?: boolean;
-  isBoardMember?: boolean;
-  isKeyholder?: boolean;
-  isBackgroundCheckReviewer?: boolean;
-  toolStatuses?: Array<{ level: string }>;
-};
+import type { SessionUser } from '@/types/auth';
 
 type NavItem = {
   href: string;
@@ -208,7 +201,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   }
 
   const signedIn = !!session;
-  const user = session?.user as SessionUser | undefined;
+  const user = session?.user;
   // Faithful to the old NavBar: no navigation on the homepage when signed out.
   const showNav = !(!signedIn && pathname === '/');
 
