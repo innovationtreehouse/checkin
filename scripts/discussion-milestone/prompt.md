@@ -1,14 +1,16 @@
 Read the release-planning discussion in the `<discussion_thread>` block below and
 return the issue numbers the maintainers agreed belong on the milestone.
 
-Your entire output is one JSON object with a single field, `issues`, holding an
-array of integers. Nothing else — no prose, no extra fields, no explanation.
+Your entire output is one JSON array of integers. Nothing else — no prose, no
+code fence, no explanation. The first character you write is `[`.
 
 ```
-{"issues": [1409, 1487, 1519]}
+[1409, 1487, 1519]
 ```
 
-Return `{"issues": []}` if you cannot tell. An empty answer is a fine answer.
+Return `[]` if you cannot tell. An empty answer is a fine answer: it ends the
+run without changing anything, which is the right outcome when the thread has
+not settled.
 
 ## Which numbers
 

@@ -1,16 +1,8 @@
 name: Discussion milestone
 
-# Apply a release-planning discussion's agreed issue set to a milestone, when a
-# maintainer says so. The command IS the decision: convergence is declared by a
-# human running this workflow, never inferred from the thread.
-#
-# Shape, and why:
-#   - Claude reads the discussion and returns a list of issue numbers. It never
-#     calls the GitHub API and holds no token.
-#   - A script validates that list against facts it fetched itself, then applies
-#     it. Every post-plan decision is a comparison against an API value, so a
-#     model there would add nondeterminism to a write path and buy nothing.
-#   - The script posts back exactly what it changed, with a reversal manifest.
+# Apply a release-planning discussion's agreed issue set to a milestone when a
+# maintainer comments `@claude prepare the milestone`. The command IS the
+# decision: convergence is declared by a human, never inferred from the thread.
 #
 # The discussion body and every comment are attacker-controllable text on a
 # PUBLIC repo. They are data, never instructions. Three things keep that true:
@@ -18,37 +10,30 @@ name: Discussion milestone
 # injected "close this" could land in; the validator rejects any number not in
 # the discussion body; and the posted comment is rendered from a fixed template
 # in apply.sh, never from model output.
-
-# workflow_dispatch ONLY, and not by preference: anthropics/claude-code-action@v1
-# cannot run on a discussion event at all. Its parseGitHubContext() switches on
-# the event name and the default branch throws "Unsupported event type", and
-# `discussion_comment` is in neither ENTITY_EVENT_NAMES nor
-# AUTOMATION_EVENT_NAMES (src/github/context.ts). The word "discussion" does not
-# appear anywhere in the action's source. A `@claude prepare the milestone`
-# comment trigger would fail in the planner step every time.
-#
-# Routing a comment back here via `gh workflow run` does not rescue it either:
-# workflow_dispatch sent with GITHUB_TOKEN does not start a new run, so that
-# shape needs a PAT — a strictly worse trade than losing the comment trigger.
-#
-# The consolation is real: dispatch is gated on repo write access, so the
-# thread's text is no longer the thing that STARTS a privileged job. A stranger's
-# comment can still be read by the model, but only a maintainer can fire it.
 on:
-  workflow_dispatch:
-    inputs:
-      discussion: { description: Discussion number, required: true, type: string }
+  discussion_comment:
+    types: [created]
 
 # Per discussion, and never cancel: this job writes. A cancelled run leaves
 # issues half-assigned with no comment saying why. Let the second run queue.
 concurrency:
-  group: discussion-milestone-${{ inputs.discussion }}
+  group: discussion-milestone-${{ github.event.discussion.number }}
   cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   apply:
+    # Anyone with an account can comment here, so the allowlist gates the JOB —
+    # a stranger's comment never starts a run that holds a write token, and
+    # never prints a hint that this workflow exists. It lives in this file
+    # because /.github/ is CODEOWNERS-gated with required review.
+    #
+    # Both operands are compared by the expression evaluator, never by a shell,
+    # so the comment body cannot inject anything here.
+    if: >-
+      contains(github.event.comment.body, '@claude prepare the milestone')
+      && contains(fromJSON('["jee7s","thpr","dkaygithub","ryannazaretian","dmkorten"]'), github.event.comment.user.login)
     runs-on: ubuntu-latest
     permissions:
       contents: read      # checkout the validator
@@ -57,76 +42,25 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Write access is what dispatch already requires; this narrows it further
-      # to named people. It lives in this file because /.github/ is
-      # CODEOWNERS-gated with required review.
-      - name: Check the caller may do this
-        env:
-          ACTOR: ${{ github.actor }}
-        run: |
-          set -euo pipefail
-          case "$ACTOR" in
-            jee7s|thpr|dkaygithub|ryannazaretian|dmkorten) ;;
-            *) echo "::error::$ACTOR is not on the maintainer allowlist."; exit 1 ;;
-          esac
-
-      # The action has no prompt_file or input_file input, so the thread has to
-      # travel inside `prompt`. Assemble it here.
-      #
-      # The heredoc delimiter is random ON PURPOSE. Everything after
-      # <discussion_thread> is text a stranger can write, and a fixed delimiter
-      # would let a comment containing that word close the block early and set
-      # arbitrary step outputs of its own.
-      - name: Assemble the planner prompt
-        id: prompt
+      - name: Fetch the thread
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NUM: ${{ inputs.discussion }}
-        run: |
-          set -euo pipefail
-          scripts/discussion-milestone/fetch.sh "$NUM" > thread.json
-          D="PROMPT_EOF_$(openssl rand -hex 16)"
-          {
-            echo "text<<$D"
-            cat scripts/discussion-milestone/prompt.md
-            echo
-            echo "<discussion_thread>"
-            cat thread.json
-            echo
-            echo "</discussion_thread>"
-            echo "$D"
-          } >> "$GITHUB_OUTPUT"
+          NUM: ${{ github.event.discussion.number }}
+        run: scripts/discussion-milestone/fetch.sh "$NUM" > thread.json
 
-      # Claude gets text and returns JSON. It is granted no tools and no token,
-      # so a fully-compromised prompt can only produce a bad list of numbers,
-      # which the next step is built to reject.
-      #
-      # --setting-sources user pins the sandbox shut. The SDK otherwise defaults
-      # to user,project,local, which would load the checked-out repo's
-      # .claude/settings.json — making this job's blast radius depend on a file
-      # people edit for unrelated local-dev reasons.
+      # The key goes through env, never `${{ }}` in the script body — an
+      # interpolated secret is expanded into the shell command before it runs.
+      # The thread never travels through a step output either: it goes from
+      # thread.json into a jq-built request body and nowhere else.
       - name: Ask Claude for a plan
-        id: plan
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: ${{ steps.prompt.outputs.text }}
-          claude_args: |
-            --model claude-opus-5
-            --setting-sources user
-            --json-schema '{"type":"object","properties":{"issues":{"type":"array","items":{"type":"integer"}}},"required":["issues"],"additionalProperties":false}'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: scripts/discussion-milestone/plan.sh thread.json plan.json
 
-      # structured_output goes through env, never into the script text: it is
-      # model-authored, and `${{ }}` interpolated into a run block is executed.
       - name: Validate and apply
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          NUM: ${{ inputs.discussion }}
-          ACTOR: ${{ github.actor }}
-          STRUCTURED: ${{ steps.plan.outputs.structured_output }}
-        run: |
-          set -euo pipefail
-          [ -n "$STRUCTURED" ] || { echo "::error::the planner produced no structured output"; exit 1; }
-          jq -e '.issues' <<<"$STRUCTURED" > plan.json
-          scripts/discussion-milestone/apply.sh plan.json thread.json
+          NUM: ${{ github.event.discussion.number }}
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: scripts/discussion-milestone/apply.sh plan.json thread.json

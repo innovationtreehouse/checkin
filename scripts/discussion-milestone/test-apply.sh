@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Runnable check for apply.sh — fixtures only, no network, no CI.
+# Runnable check for plan.sh and apply.sh — fixtures only, no network, no CI.
 #
 #   scripts/discussion-milestone/test-apply.sh
 #
 # The refusal set is the entire security argument of this workflow, so its
-# failing paths get executed rather than reasoned about. `gh` is replaced with a
-# fixture-backed stub on PATH: every refusal below is decided before the stub is
-# ever consulted, except the ones that are *about* live issue state.
+# failing paths get executed rather than reasoned about. `gh` and `curl` are
+# replaced with fixture-backed stubs on PATH: every refusal below is decided
+# before the stub is consulted, except the ones that are *about* live issue
+# state or *about* what the API returned.
 set -uo pipefail
 cd "$(dirname "$0")"
 APPLY="$PWD/apply.sh"
+PLAN="$PWD/plan.sh"
 
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/fix" "$T/run"
@@ -126,5 +128,89 @@ for v in REPO NUM ACTOR; do
   grep -q "$v must be set" <<<"$out" || { echo "$out"; fail "$v unset gave a bare unbound-variable error"; }
 done
 echo "   ✓ REPO / NUM / ACTOR each fail with a sentence, not 'unbound variable'"
+
+# ── the planner: everything the API can hand back that is not an answer ──────
+# `curl` answers from a fixture and echoes $HTTP_CODE, matching plan.sh's
+# `-o file -w %{http_code}` shape. Nothing here reaches the network.
+cat > "$T/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+set -uo pipefail
+out=""; prev=""
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+cat "$FIX/response.json" > "$out"
+printf '%s' "${HTTP_CODE:-200}"
+STUB
+chmod +x "$T/bin/curl"
+
+# A thinking block rides along in every fixture: claude-opus-5 thinks by
+# default, so the extractor has to skip it rather than choke on it.
+msg() { jq -nc --arg s "$1" --arg t "$2" \
+  '{type:"message", stop_reason:$s,
+    content:[{type:"thinking",thinking:""},{type:"text",text:$t}]}'; }
+
+plan() { # plan <http-code> <response-body>
+  printf '%s' "$2" > "$T/fix/response.json"
+  ( cd "$T/run" && HTTP_CODE="$1" ANTHROPIC_API_KEY=test-key \
+      bash "$PLAN" thread.json plan.json 2>&1 )
+}
+plan_refuses() { # plan_refuses <label> <http-code> <response> <expected-substring>
+  local out; out=$(plan "$2" "$3"); local rc=$?
+  [ $rc -ne 0 ] || { echo "$out"; fail "$1: should have been refused"; }
+  grep -qF "$4" <<<"$out" || { echo "$out"; fail "$1: wrong reason (wanted '$4')"; }
+  echo "   ✓ $1"
+}
+
+echo "7. the planner hands apply.sh a bare array, and nothing else"
+out=$(plan 200 "$(msg end_turn '[1484, 1500]')"); rc=$?
+[ $rc -eq 0 ] || { echo "$out"; fail "the planner happy path must pass"; }
+[ "$(cat "$T/run/plan.json")" = "[1484, 1500]" ] \
+  || { cat "$T/run/plan.json"; fail "plan.json should be the model's bare array"; }
+# The two scripts meet here: apply.sh consumes what plan.sh just wrote.
+out=$( cd "$T/run" && REPO=innovationtreehouse/checkin NUM=1598 ACTOR=jee7s \
+         bash "$APPLY" plan.json thread.json 2>&1 ); rc=$?
+[ $rc -eq 0 ] || { echo "$out"; fail "apply.sh must accept plan.sh's output"; }
+echo "   ✓ thinking block skipped, and apply.sh accepts the file it wrote"
+
+echo "8. the planner refusal set — every one aborts before apply.sh runs"
+plan_refuses "a non-200 response" 500 \
+  '{"type":"error","error":{"message":"overloaded"}}' "returned HTTP 500"
+plan_refuses "a non-200 with an unparseable body" 502 \
+  '<html>bad gateway</html>' "returned HTTP 502"
+plan_refuses "a 200 that is not a message" 200 \
+  '{"detail":"nope"}' "not a message"
+plan_refuses "a 200 that is not JSON at all" 200 \
+  'not json' "not a message"
+plan_refuses "a truncated answer (stop_reason)" 200 \
+  "$(msg max_tokens '[1484, 15')" "stopped with 'max_tokens'"
+plan_refuses "a truncated answer that still claims to be complete" 200 \
+  "$(msg end_turn '[1484, 15')" "did not return a JSON array"
+plan_refuses "a refusal" 200 \
+  "$(msg refusal 'I cannot help with that.')" "stopped with 'refusal'"
+plan_refuses "prose instead of an array" 200 \
+  "$(msg end_turn 'The maintainers agreed on #1484.')" "did not return a JSON array"
+plan_refuses "an object instead of an array" 200 \
+  "$(msg end_turn '{"issues":[1484]}')" "did not return a JSON array"
+plan_refuses "a fenced array" 200 \
+  "$(msg end_turn '```json
+[1484]
+```')" "did not return a JSON array"
+plan_refuses "no text block to read" 200 \
+  '{"type":"message","stop_reason":"end_turn","content":[{"type":"thinking","thinking":""}]}' \
+  "no text to parse"
+
+echo "9. an empty plan still dies in apply.sh, not silently"
+out=$(plan 200 "$(msg end_turn '[]')"); rc=$?
+[ $rc -eq 0 ] || { echo "$out"; fail "[] is a valid planner answer"; }
+out=$( cd "$T/run" && REPO=x NUM=1 ACTOR=y bash "$APPLY" plan.json thread.json 2>&1 ); rc=$?
+[ $rc -ne 0 ] || { echo "$out"; fail "an empty plan must fail the run"; }
+grep -qF "no issues" <<<"$out" || { echo "$out"; fail "wrong reason"; }
+echo "   ✓ 'I cannot tell' ends the run without touching a milestone"
+
+echo "10. a missing API key names itself"
+out=$( cd "$T/run" && env -u ANTHROPIC_API_KEY bash "$PLAN" thread.json plan.json 2>&1 ); rc=$?
+[ $rc -ne 0 ] || fail "an unset ANTHROPIC_API_KEY should fail"
+grep -qF "ANTHROPIC_API_KEY must be set" <<<"$out" \
+  || { echo "$out"; fail "unset key gave a bare unbound-variable error"; }
+echo "   ✓ fails closed with a sentence — which is what CI does today"
 
 echo "ALL CHECKS PASSED"
