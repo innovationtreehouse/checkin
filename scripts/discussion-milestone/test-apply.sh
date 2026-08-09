@@ -8,7 +8,16 @@
 # replaced with fixture-backed stubs on PATH: every refusal below is decided
 # before the stub is consulted, except the ones that are *about* live issue
 # state or *about* what the API returned.
+#
+# Nothing runs this file automatically — same as the other test-*.sh under
+# scripts/ — so the version guard below is the whole defense against it rotting
+# unnoticed on a machine where it cannot work.
 set -uo pipefail
+
+# apply.sh uses mapfile and declare -A, both bash 4. macOS ships bash 3.2 as
+# /bin/bash, where the suite dies mid-check and blames the plan logic for it.
+((BASH_VERSINFO[0] >= 4)) || { echo "needs bash 4+ (mapfile, declare -A); macOS ships 3.2" >&2; exit 1; }
+
 cd "$(dirname "$0")"
 APPLY="$PWD/apply.sh"
 PLAN="$PWD/plan.sh"
@@ -45,8 +54,11 @@ cat > "$T/fix/issues.json" <<'JSON'
   "1519": {"state":"open","pr":true,"milestone":""},
   "1600": {"state":"open","pr":false,"milestone":"v2.0"} }
 JSON
-# two concatenated arrays == what `gh api --paginate` actually emits
-printf '[{"title":"v1.0","number":1},{"title":"v1.1","number":2}]\n[{"title":"v1.2","number":3}]\n' \
+# two concatenated arrays == what `gh api --paginate` actually emits.
+# v1.0 has shipped and been closed; v1.2 is open and lives on PAGE TWO.
+printf '%s\n%s\n' \
+  '[{"title":"v1.0","number":1,"state":"closed"},{"title":"v1.1","number":2,"state":"open"}]' \
+  '[{"title":"v1.2","number":3,"state":"open"}]' \
   > "$T/fix/milestones.json"
 
 body='Candidates for v1.2:
@@ -58,9 +70,11 @@ body='Candidates for v1.2:
 - [ ] #1600
 - [ ] #148415'
 thread() { jq -n --arg b "$body" --argjson l "${1:-false}" \
-  '{id:"D_abc", number:1598, title:"Release v1.2 planning", body:$b, locked:$l}'; }
-thread       > "$T/run/thread.json"
-thread true  > "$T/run/locked.json"
+  --arg t "${2:-Release v1.2 planning}" \
+  '{id:"D_abc", number:1598, title:$t, body:$b, locked:$l}'; }
+thread                               > "$T/run/thread.json"
+thread true                          > "$T/run/locked.json"
+thread false "Release v1.0 planning" > "$T/run/shipped.json"
 
 run() { # run <plan-json> [thread-file]
   printf '%s' "$1" > "$T/run/plan.json"
@@ -112,12 +126,21 @@ grep -qE "(^|[^0-9])#1484.5([^0-9]|$)" <<<"$body" \
   || fail "fixture no longer demonstrates the metacharacter hole"
 echo "   ✓ and #1484.5 really does match #148415 by regex, so the guard is load-bearing"
 
-echo "5. a locked discussion is refused before any write"
+echo "5. stale inputs are refused before any write"
 out=$(run '[1484]' locked.json); rc=$?
 [ $rc -ne 0 ] || { echo "$out"; fail "a locked discussion must be refused"; }
 grep -q "is locked" <<<"$out" || { echo "$out"; fail "wrong reason"; }
 grep -q "\[OK\]" <<<"$out" && fail "refused, but only AFTER writing"
-echo "   ✓ refused, with nothing assigned"
+echo "   ✓ a locked discussion, with nothing assigned"
+
+# v1.0 shipped and was closed. Adopting it would quietly add today's issues to a
+# released milestone, and creating it is impossible — the title still 422s.
+out=$(run '[1484]' shipped.json); rc=$?
+[ $rc -ne 0 ] || { echo "$out"; fail "a closed milestone must be refused"; }
+grep -q "milestone v1.0 is closed" <<<"$out" || { echo "$out"; fail "wrong reason"; }
+grep -q "Adopting" <<<"$out" && fail "adopted a closed milestone"
+grep -q "\[OK\]" <<<"$out" && fail "refused, but only AFTER writing"
+echo "   ✓ a shipped milestone, named as staleness rather than adopted"
 
 echo "6. a missing environment variable names itself"
 for v in REPO NUM ACTOR; do

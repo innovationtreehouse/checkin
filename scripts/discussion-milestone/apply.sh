@@ -74,10 +74,22 @@ done
 # ── resolve or create the milestone ────────────────────────────────────────
 # `gh api --jq` takes one expression and has no --arg, so pipe to jq instead.
 # --paginate emits one array per page; -s/add folds them into one list.
-NUMBER=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --paginate \
-  | jq -r --slurp --arg t "$MILESTONE" 'add // [] | map(select(.title == $t)) | .[0].number // empty')
+#
+# state=all, not state=open: GitHub rejects a new milestone whose title matches
+# an existing one even when that one is closed, so filtering to open milestones
+# here would turn a re-run into a 422 rather than an adoption.
+MS=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --paginate \
+  | jq -r --slurp --arg t "$MILESTONE" \
+      'add // [] | map(select(.title == $t)) | .[0] // {} | [.number // "", .state // ""] | @tsv')
+IFS=$'\t' read -r NUMBER STATE <<<"$MS"
+
 CREATED=false
 if [ -n "$NUMBER" ]; then
+  # A closed milestone has shipped. Assigning today's open issues onto it is the
+  # same staleness a closed issue means, so it gets the same refusal — and the
+  # create branch is not an escape, because the duplicate title would 422.
+  [ "$STATE" = "open" ] \
+    || fail "milestone $MILESTONE is $STATE — the discussion is stale; edit it rather than applying it"
   # Adopt, never PATCH: a description on an existing milestone is a human's edit.
   echo "Adopting milestone $MILESTONE (#$NUMBER)"
 else

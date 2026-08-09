@@ -3,9 +3,11 @@
 # written by whoever can comment on a public repo, so it leaves as DATA on
 # stdout — never interpolated into a shell command or a workflow expression.
 #
-# Author permission rides along per comment: `author_association` says "in the
-# org", not "can write here", so the planner is told to trust neither and to
-# treat only the maintainer allowlist as authority.
+# `authorAssociation` rides along because "a comment says so" is one of the
+# inclusion signals in prompt.md, and who said it colours how that reads. It is
+# context, never a permission check: `author_association` says "in the org", not
+# "can write here", and who may run this at all is settled by the workflow's
+# maintainer allowlist long before this script is reached.
 set -euo pipefail
 
 NUM="${1:?usage: fetch.sh <discussion-number>}"
