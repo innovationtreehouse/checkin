@@ -189,8 +189,9 @@ describe('Cron Nightly API Integration Tests', () => {
 
         // The System Status pill is the only in-app signal that the sweeps still
         // work, and it reads the CronRunLog. A night that checked NOBODY out must
-        // not land there as a fresh success.
-        it('records the run as a failure when every checkout fails', async () => {
+        // not land there as a clean success — nor as "job stopped running", which is
+        // a different failure the board would chase into the scheduler.
+        it('records the run as unclean, not as stopped, when every checkout fails', async () => {
             await closeAllOpenVisits();
             await prisma.auditLog.deleteMany();
 
