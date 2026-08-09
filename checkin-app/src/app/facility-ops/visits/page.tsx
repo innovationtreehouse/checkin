@@ -7,7 +7,8 @@ import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconLock, IconRobot, 
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
-import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { MAX_VISIT_MS } from '@/lib/visitTimes';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -66,6 +67,7 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 };
 
 export default function AdminVisitsPage() {
+  const { formatDateTime } = useOrgTime();
   const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
   const [loading, setLoading] = useState(true);

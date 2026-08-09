@@ -5,7 +5,8 @@ import { Alert, Badge, Box, Button, Card, Checkbox, Group, Modal, SimpleGrid, St
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { EntityPicker } from '@/components/admin/EntityPicker';
-import { calculateAge, formatDateTime } from '@/lib/time';
+import { calculateAge } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { formatPhone } from '@/lib/phone';
 import type { ProgramDetail, ParticipantOption } from './page';
 
@@ -25,6 +26,7 @@ type ProgramRosterTabProps = {
 };
 
 export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchProgram }: ProgramRosterTabProps) {
+  const { formatDateTime } = useOrgTime();
   const [saving, setSaving] = useState(false);
   const [enrollError, setEnrollError] = useState("");
   const [newVolId, setNewVolId] = useState("");

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core';
 import { notifications } from "@mantine/notifications";
-import { formatDateTime, formatTime } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import type { RSVPStatus } from '@/types/rsvp';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -45,6 +45,7 @@ const RSVP_OPTIONS: { status: RsvpStatus; label: string; color: string }[] = [
 ];
 
 export default function ParticipantEventsDashboard() {
+  const { formatDateTime, formatTime } = useOrgTime();
   const { data: session, status } = useSession();
   const router = useRouter();
   const [events, setEvents] = useState<EventData[]>([]);
