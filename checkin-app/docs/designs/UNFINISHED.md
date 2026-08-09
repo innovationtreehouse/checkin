@@ -41,19 +41,30 @@ privileged-"staff" onto it. (4) audit every call site for over/under-grant.
 
 ---
 
-## 🟡 "Review" / "Reviewer" — followup (lower priority than Admin)
+## 🟢 Background-check verbs (decided)
 
-Four review flows share the word, and product owner isn't sure yet where each term
-is used or whether they should converge:
+**✅ A reviewer *reviews*, *attests*, and two attestations *clear* the check**
+([../VOCABULARY.md](../VOCABULARY.md) › Background check). Four copy/identifier
+renames, all ops-facing or internal — no schema, no `src/security/`:
+- The reviewer queue asserts the report's content rather than the reviewer's
+  judgement: "check is clean" on the row button, in the modal title, confirm label
+  and both body branches (`membership-ops/review/page.tsx`, 5 strings + 8 test
+  assertions). All become *attest*, and the outcome is named as the **noun** —
+  `clear` as a verb on a button next to "Reject" reads as *reset*
+- "Clear approvals" → "Discard approvals" (`membership-ops/applications/page.tsx`,
+  button + confirm label + comment; 2 test assertions)
+- The whole erase path for a person's background-check date is built on `clear` —
+  handler, button, modal title, confirm label, toast
+  (`membership-audit/compliance/page.tsx`, 8 sites + 4 test assertions). Becomes
+  *remove*, the verb its own body text already uses
+- `selfAttestBgConsent` → `selfRecordBgConsent` (~17 refs / 5 files; the
+  `/api/membership/bg-consent` route path is unchanged). Keeps the `self` prefix:
+  `markBgConsent` is exported and called from seven places, so a bare
+  `recordBgConsent` wrapping it would be a coin flip at every call site
 
-- **BG Reviewer** role — `isBackgroundCheckReviewer` → "BG Reviewer".
-- **Attestation reviewer** — `BackgroundCheckAttestation.reviewer`.
-- **Membership review** — `/api/membership/reviews`, `membership-ops/review`.
-- **Trusted-adult review** — `TrustedAdultReview.decidedBy` (a "reviewer" called a
-  **"decider"** — is that the same concept?).
-
-Decide: one canonical word, or keep distinct per subsystem; and reconcile
-"decider" vs "reviewer". Deserves its own pass. _(VOCAB #9)_
+**Do not "fix"** `AttestationResult.result` or the `PENDING_BG_REVIEW` /
+`PENDING_BG_CLEARANCE` misnomer. Both are wrong and both stay: renaming either
+reaches the schema, a migration, and `src/security/`. _(VOCAB #9)_
 
 ---
 

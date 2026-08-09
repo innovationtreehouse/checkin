@@ -18,6 +18,7 @@ import { config, isStagingAccessAllowed } from '@/lib/config';
 import type { AuthResult } from '@/types/auth';
 import type { Authorize, CtxNeeds, Role } from './core';
 import { LIVE_PERSON } from '@/lib/person/filters';
+import { LIVE_VISIT } from '@/lib/visit/filters';
 
 export interface CallerContext {
     selfId?: number;
@@ -91,9 +92,11 @@ export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Pro
                   },
               })
             : [],
+        // A tombstoned visit keeps departedAt null forever, so LIVE_VISIT is what
+        // stops a deleted open visit from reading as "still in the building".
         needs.activeVisitors && ctx.isKeyholder
             ? prisma.visit.findMany({
-                  where: { departedAt: null },
+                  where: { departedAt: null, ...LIVE_VISIT, person: LIVE_PERSON },
                   select: { personId: true },
               })
             : [],
