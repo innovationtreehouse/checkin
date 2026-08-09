@@ -1,5 +1,4 @@
-import { withAuth } from "@/lib/auth";
-import { NextResponse } from "next/server";
+import { handler, ApiResponseError, badRequest, notFound, unauthorized } from "@/security/handler";
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
@@ -9,7 +8,6 @@ import { visitSubject } from "@/lib/visit/scope";
 import { emailBoardMembers } from "@/lib/emailRecipients";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { logBackendError } from "@/lib/logger";
-import { apiError } from "@/lib/api-response";
 import { formatDateTime } from "@/lib/time";
 import { resolveDisplayTimezone } from "@/lib/appSettings";
 
@@ -47,20 +45,20 @@ function flagBoard(kind: "edit" | "delete", visitId: number, actorName: string, 
     );
 }
 
-export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return apiError("Unauthorized", 401);
+export const PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]', async ({ req, auth, params }) => {
+    if (auth.type !== 'session') throw unauthorized();
     try {
         const userId = auth.user.id;
-        const visitId = Number((await ctx.params).id);
-        if (!Number.isInteger(visitId)) return apiError("Invalid visit id", 400);
+        const visitId = Number(params.id);
+        if (!Number.isInteger(visitId)) throw badRequest("Invalid visit id");
 
         const body = await req.json().catch(() => null);
-        if (!body || typeof body !== "object") return apiError("Invalid JSON", 400);
+        if (!body || typeof body !== "object") throw badRequest("Invalid JSON");
         const { arrivedAt, departedAt } = body;
-        if (!arrivedAt && !departedAt) return apiError("Nothing to change.", 400);
+        if (!arrivedAt && !departedAt) throw badRequest("Nothing to change.");
 
         const visit = await loadEditableVisit(visitId, userId);
-        if (!visit) return apiError("Visit not found.", 404);
+        if (!visit) throw notFound("Visit not found.");
         const byProxy = visit.personId !== userId;
 
         const now = new Date();
@@ -69,25 +67,25 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         if (arrivedAt) {
             const r = parseVisitTime(arrivedAt, "arrival", now);
-            if (!r.ok) return apiError(r.error, 400);
+            if (!r.ok) throw badRequest(r.error);
             nextArrived = r.value;
         }
         if (departedAt) {
             const r = parseVisitTime(departedAt, "departure", now);
-            if (!r.ok) return apiError(r.error, 400);
+            if (!r.ok) throw badRequest(r.error);
             nextDeparted = r.value;
         }
 
         // A closed visit stays closed (same rule as the staff route): editing
         // must never turn a historical record back into "in the building".
         if (visit.departedAt && !nextDeparted) {
-            return apiError("Departure time is required to close this visit.", 400);
+            throw badRequest("Departure time is required to close this visit.");
         }
         if (nextDeparted && !departureAfterArrival(nextArrived, nextDeparted)) {
-            return apiError("Departure time must be after arrival time", 400);
+            throw badRequest("Departure time must be after arrival time");
         }
         if (nextDeparted && !withinMaxDuration(nextArrived, nextDeparted)) {
-            return apiError("A visit cannot be longer than 24 hours.", 400);
+            throw badRequest("A visit cannot be longer than 24 hours.");
         }
 
         const significance = editSignificance(visit, { arrivedAt: nextArrived, departedAt: nextDeparted }, { byProxy });
@@ -121,7 +119,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 },
             });
         });
-        if (!updated) return apiError("Visit not found.", 404);
+        if (!updated) throw notFound("Visit not found.");
 
         // The checkout chunks a program-enrolled stay into per-event rows,
         // replacing the original: the audit row and the response must name a row
@@ -129,7 +127,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         let surviving = updated;
         if (closingOpenVisit) {
             const chunks = await processVisitCheckout(visitId, nextDeparted!, undefined, "WEB");
-            if (chunks.length === 0) return apiError("Visit not found.", 404);
+            if (chunks.length === 0) throw notFound("Visit not found.");
             surviving = chunks[chunks.length - 1];
         }
 
@@ -152,22 +150,27 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
                 `${formatDateTime(visit.arrivedAt, { timeZone })} → ${formatDateTime(nextArrived, { timeZone })}`);
         }
 
-        return NextResponse.json({ visit: surviving, flagged: significance.flagged });
+        // The bag, not a hand-built body: stripBag keeps arrivedAt/departedAt for
+        // the two subjects the registry grants (their_own / led_households) and
+        // drops the 'internal' tombstone columns the raw row carries.
+        return { Visit: surviving };
     } catch (error: unknown) {
-        await logBackendError(error, "PATCH /api/attendance/manual/[id]");
-        return apiError("Internal Server Error", 500);
+        // handler() maps ApiResponseError to its declared status; anything else
+        // is a real fault, and keeps the DB error log withAuth used to give it.
+        if (!(error instanceof ApiResponseError)) await logBackendError(error, "PATCH /api/attendance/manual/[id]");
+        throw error;
     }
 });
 
-export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id: string }> }) => {
-    if (auth.type !== 'session') return apiError("Unauthorized", 401);
+export const DELETE = handler<{ id: string }>('DELETE /api/attendance/manual/[id]', async ({ auth, params }) => {
+    if (auth.type !== 'session') throw unauthorized();
     try {
         const userId = auth.user.id;
-        const visitId = Number((await ctx.params).id);
-        if (!Number.isInteger(visitId)) return apiError("Invalid visit id", 400);
+        const visitId = Number(params.id);
+        if (!Number.isInteger(visitId)) throw badRequest("Invalid visit id");
 
         const visit = await loadEditableVisit(visitId, userId);
-        if (!visit) return apiError("Visit not found.", 404);
+        if (!visit) throw notFound("Visit not found.");
         const byProxy = visit.personId !== userId;
 
         const significance = deleteSignificance(visit, { byProxy });
@@ -183,7 +186,7 @@ export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id
                 data: { deletedAt: new Date(), deletedById: userId },
             });
         });
-        if (tombstoned.count === 0) return apiError("Visit not found.", 404);
+        if (tombstoned.count === 0) throw notFound("Visit not found.");
 
         await prisma.auditLog.create({
             data: {
@@ -202,9 +205,12 @@ export const DELETE = withAuth({}, async (req, auth, ctx: { params: Promise<{ id
         flagBoard("delete", visitId, auth.user.name ?? `person #${userId}`, byProxy, significance.score,
             `Visit ${formatDateTime(visit.arrivedAt, { timeZone })} – ${visit.departedAt ? formatDateTime(visit.departedAt, { timeZone }) : "(open)"} tombstoned.`);
 
-        return NextResponse.json({ success: true, flagged: true });
+        // Empty bag — a tombstone ships no model data, so the registry declares
+        // `envelope: null` and the 200 body is `{}` (stripBag drops any
+        // non-model key, so the old { success, flagged } has no legal home).
+        return {};
     } catch (error: unknown) {
-        await logBackendError(error, "DELETE /api/attendance/manual/[id]");
-        return apiError("Internal Server Error", 500);
+        if (!(error instanceof ApiResponseError)) await logBackendError(error, "DELETE /api/attendance/manual/[id]");
+        throw error;
     }
 });
