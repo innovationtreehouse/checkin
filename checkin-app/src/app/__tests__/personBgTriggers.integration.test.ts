@@ -170,7 +170,7 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
             data: { orgMembershipId: membership.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() },
         });
 
-        await activate(proc.id, { via: 'certified', actorId: lead.id });
+        await activate(proc.id, { via: 'manual', actorId: lead.id });
 
         expect((await prisma.orgMembership.findUnique({ where: { id: membership.id } }))?.status).toBe('ACTIVE');
         expect(await personBgCountFor(joiner.id)).toBe(1); // Trigger C fired for the program adult

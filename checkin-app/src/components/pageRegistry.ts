@@ -57,10 +57,10 @@ export const PAGES: PageEntry[] = [
   { href: '/my-activities/events', label: 'My Events', section: 'Personal', visible: SIGNED_IN },
   { href: '/my-activities/programs', label: 'My Programs (as Participant)', section: 'Personal', visible: SIGNED_IN },
   { href: '/profile', label: 'My Profile', section: 'Personal', visible: SIGNED_IN },
-  // Staff home for program lead mentors. Lead status rides in on the todo-counts
+  // Home for program lead mentors. Lead status rides in on the todo-counts
   // payload (leadsAnyProgram), matching the nav gate. Distinct from the attendee
   // "My Programs" tab above.
-  { href: '/my-programs/attendance', label: 'My Programs (as Volunteer)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
+  { href: '/my-programs/attendance', label: 'My Programs (as Volunteer)', section: 'Personal', keywords: 'lead mentor program volunteer attendance', visible: LEADS_PROGRAM },
   { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: LEADS_PROGRAM },
   // Stays visible to all members: also the Join/renewal entry for new applicants
   // who aren't a household lead yet (gating it on lead would break joining).
@@ -99,6 +99,7 @@ export const PAGES: PageEntry[] = [
   { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD },
+  { href: '/facility-ops/corrections', label: 'Corrections', section: 'Facility Ops', keywords: 'audit attendance edit delete flagged significance review', visible: BOARD },
 
   // Membership Ops — board
   { href: '/membership-ops', label: 'Membership Ops', section: 'Membership Ops', visible: BOARD },

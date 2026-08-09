@@ -195,6 +195,7 @@ const KNOWN_INTENTIONAL = [
   /^Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured\./,
   /^Zoho status sync failed for process/,
   /^Shopify webhook signature mismatch\./,
+  /^Family trusted-adult ping failed:/,    // trusted-adult sweep: send fails, expiry still stands
   /^Failed to check out visit/,            // cron nightly per-visit failure injection
   /^Error in pass \d+ for row/,            // finance reconcile bad-row negative path
 ];

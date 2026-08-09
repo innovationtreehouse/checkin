@@ -527,7 +527,8 @@ export async function overrideReview(
 /**
  * Nightly sweep: (1) warn the household 30 days before an approval lapses, once;
  * (2) expire approvals whose reviewBy has passed so they re-enter the board queue
- * via a renewal.
+ * via a renewal, and tell the family — expiring drops the adult off the front
+ * desk's pickup list, so silence would surface as a refused pickup.
  */
 export async function runExpirySweep(now: Date) {
     const warnThreshold = daysFromNow(now, WARN_LEAD_DAYS);
@@ -550,7 +551,7 @@ export async function runExpirySweep(now: Date) {
 
     const lapsed = await prisma.trustedAdultReview.findMany({
         where: { status: "APPROVED", reviewBy: { not: null, lte: now } },
-        select: { id: true, trustedAdultId: true, status: true },
+        select: { id: true, trustedAdultId: true, status: true, householdId: true, trustedAdult: { select: { trustedAdultName: true } } },
     });
     let expired = 0;
     for (const r of lapsed) {
@@ -559,6 +560,15 @@ export async function runExpirySweep(now: Date) {
             await audit(tx, systemActor("cron:trusted-adult-expiry"), r.trustedAdultId, { status: r.status }, { status: "EXPIRED" });
         });
         expired++;
+        // Notify only after the flip commits: the status change is the authoritative act,
+        // the email a courtesy on top, so a slow or failing provider can't hold the tx.
+        // The flip is its own dedup — an EXPIRED row is no longer selected by this query.
+        const name = r.trustedAdult.trustedAdultName?.trim() || "your trusted adult";
+        await notifyHouseholdFamily(
+            r.householdId,
+            `Trusted adult approval expired: ${name}`,
+            `The board's approval of ${name} has expired. They are no longer authorized at the front desk. You can resubmit them for board review in one click — no need to re-enter anything.`,
+        );
     }
 
     return { warned, expired };

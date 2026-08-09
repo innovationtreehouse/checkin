@@ -181,7 +181,7 @@ export default function MembershipPaymentPlansPage() {
     <Stack>
       <Text c="dimmed">
         Review households that have requested a scholarship or payment plan for their membership
-        dues. Approving a request activates the membership without a Shopify payment (it still holds
+        fee. Approving a request activates the membership without a Shopify payment (it still holds
         for background clearance if that isn&apos;t done yet).
       </Text>
 
@@ -227,7 +227,7 @@ export default function MembershipPaymentPlansPage() {
         centered
       >
         <Text mb="lg">
-          Deny this request? The household stays awaiting payment and can still pay their dues
+          Deny this request? The household stays awaiting payment and can still pay their membership fee
           normally to activate, or re-request later. No automatic email is sent — contact the
           household to let them know.
         </Text>

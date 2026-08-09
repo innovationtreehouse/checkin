@@ -94,7 +94,7 @@ export const classifications = {
         shopifyInvoiceUrl: 'personal',
         shopifyOrderId: 'internal',
         paidAt: 'internal',
-        certifiedById: 'internal',
+        manualPaymentById: 'internal',
         certificationNote: 'internal',
         renewalReminderSentAt: 'internal',
         isPaymentPlanRequested: 'internal',
@@ -117,8 +117,8 @@ export const classifications = {
     },
     BoardSettings: {
         id: 'public',
-        normalDuesCents: 'public',
-        volunteerDuesCents: 'public',
+        standardMembershipFeeCents: 'public',
+        volunteerMembershipFeeCents: 'public',
         orgMembershipYearBoundary: 'public',
         orgMembershipVariantId: 'internal',
         orgMembershipProductUrl: 'internal',
@@ -348,6 +348,14 @@ export const classifications = {
         timestamp: 'internal',
         resolvedAt: 'internal',
     },
+    CronRunLog: {
+        id: 'internal',
+        job: 'internal',
+        startedAt: 'internal',
+        finishedAt: 'internal',
+        success: 'internal',
+        error: 'internal',
+    },
     DevLedger: {
         id: 'internal',
         action: 'internal',
@@ -541,6 +549,8 @@ export const relations = {
     SystemMetricLog: {
     },
     IntegrationErrorLog: {
+    },
+    CronRunLog: {
     },
     DevLedger: {
     },

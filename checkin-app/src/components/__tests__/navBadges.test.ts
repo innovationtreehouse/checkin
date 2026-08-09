@@ -299,20 +299,31 @@ describe('finance-ops nav ↔ tab agreement', () => {
 
 // The /membership-audit section badge is a roll-up of its tabs; keep them in lockstep.
 // Red section total == broken tab; gray section total == emergency + unclaimed tabs.
-describe('system-status config-health badge', () => {
+describe('system-status infra-health badge', () => {
   it('no badge when the payload has no configHealth (non-admin) or zero issues', () => {
     expect(navBadgeFor('/system-status', base)).toEqual([]);
-    expect(navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 0 } })).toEqual([]);
+    expect(navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 0, staleCronJobs: 0 } })).toEqual([]);
   });
 
   it('red alert badge counting open config issues', () => {
-    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 2 } });
+    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 2, staleCronJobs: 0 } });
     expect(badges).toEqual([{ count: 2, color: 'red', label: '2 config issues' }]);
   });
 
   it('singularizes the label at one issue', () => {
-    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 1 } });
+    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 1, staleCronJobs: 0 } });
     expect(badges[0].label).toBe('1 config issue');
+  });
+
+  it('a stale cron job alone raises the red pill', () => {
+    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 0, staleCronJobs: 1 } });
+    expect(badges).toEqual([{ count: 1, color: 'red', label: '1 cron job not running' }]);
+  });
+
+  // One pill, not two: both halves are "infra broken" on the same page.
+  it('folds stale cron jobs into the same count as config issues', () => {
+    const badges = navBadgeFor('/system-status', { ...base, configHealth: { openIssues: 2, staleCronJobs: 3 } });
+    expect(badges).toEqual([{ count: 5, color: 'red', label: '2 config issues, 3 cron jobs not running' }]);
   });
 });
 

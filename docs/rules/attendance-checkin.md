@@ -115,6 +115,13 @@ Things the app takes as true because they are handled outside it.
   reopened — and whose record it is. Integrity is after the fact rather than a
   gate: every change is audited, and a significant one is flagged to the board.  [Decision — *Principle: self-scope and repair*]
 
+- An audited change to a visit records two people: who made the change, and whose
+  attendance it was. The second is always the person, never the event they
+  attended. Telling a correction of one's own record from one person editing
+  another's is the comparison of those two, so an audit that records anything
+  else as its subject makes every review of who changed whose record answer
+  wrongly, and silently.  [Decision]
+
 - A household lead corrects a recorded visit for anyone in their household —
   inserting a past one, changing its times, or removing it — on the same terms as
   correcting their own. Only the lead, not every household member: the lead is the

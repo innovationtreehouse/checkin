@@ -200,7 +200,7 @@ export default function EmailSettingsPage() {
               disabled={locked}
             />
             <Textarea
-              label="Scholarship ACK body — membership dues request"
+              label="Scholarship ACK body — membership fee request"
               description="Plain text (blank lines separate paragraphs) — not HTML. Blank = default shown below."
               placeholder={DEFAULT_ACK_MEMBERSHIP_BODY}
               minRows={3}
