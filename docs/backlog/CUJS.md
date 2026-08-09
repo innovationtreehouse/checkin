@@ -57,7 +57,7 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 ### A4. Program leader  [bucket P/GC-ROLES]  — validated V2
 1. ✅ Assigned to program — `Program.leadMentorId` FK + `ProgramVolunteer{isCore}` join
 2. 🟡 Create program ✅ (`api/programs` POST + `program-ops/new`) — but **ProgramInstance tier ❌** (`P1`/#953 not in base schema; nothing reads an instance)
-3. ✅ Set capacity/fee/dates (create form + PATCH; `Fee` model)
+3. ✅ Set capacity/fee/dates (create form + PATCH; `Program.orgMemberPriceCents`/`nonOrgMemberPriceCents`)
 4. ⛔ Assign keyholder per event (manual by design)
 5. ✅ Assign 2nd volunteer (`ProgramVolunteer` join) — recruitment/comms itself is AT domain
 6. 🟡 Enrollment mgmt — lead can **remove** ✅, **cannot add** (`"Program leads cannot manually add participants"`, by design; only self/household-lead/board/sysadmin)
@@ -124,7 +124,7 @@ _Extraction adds (2026-07-22):_
 
 ### Finance / ops — 7 distinct journeys (A10–A16)  [bucket FR/FE/FD/CI + GC-QB]  — mostly PORT from Inventory monorepo; depth per `sources/inventory_capabilities.md`; checkin side validated V5
 _Finance is **not one persona journey** — it's 7 Inventory apps, each its own state machine with its own exception/queue screen (those queues are the "missed oversight surfaces"). **The PORT gap is specifically receipts (A10) / catalog (A11) / inventory (A12) / expense→QB (A13) / donations (A14) / hours-alloc (A16)** — 18 of 23 steps ❌ (empty-grep confirmed V5). Every "exception:" line is a distinct screen; each app is separately ownable + shippable._
-_**But payment-reconciliation is NOT a gap** — V5 found checkin already ships an undocumented, mature **`finance-ops/`** domain around Shopify payment truth (see A15 + B1): an 11-kind `PaymentException` state machine, daily cursor reconciler, bidirectional match-audit, reversal webhooks, board-alert, and resolution screens. **Zero QuickBooks integration** anywhere (only a free-text `FeePayment.quickBooksInvoice` column) — so A13/A16's QB post is entirely unbuilt. `@inventory/money` (`formatCents`/`dollarsToCents`) is already a **live shared dependency** between checkin and the Inventory monorepo — the port isn't purely future. Reframe (owner): receipt toil = **inventory cataloging** (thousands of receipts) NOT reimbursement (~10/yr) — high-volume driver is card-receipt intake, so A10-5 upload/line cap is a real throughput+DoS concern._
+_**But payment-reconciliation is NOT a gap** — V5 found checkin already ships an undocumented, mature **`finance-ops/`** domain around Shopify payment truth (see A15 + B1): an 11-kind `PaymentException` state machine, daily cursor reconciler, bidirectional match-audit, reversal webhooks, board-alert, and resolution screens. **Zero QuickBooks integration** anywhere (no QB model, field, client, or credential in the schema or `src/`) — so A13/A16's QB post is entirely unbuilt. `@inventory/money` (`formatCents`/`dollarsToCents`) is already a **live shared dependency** between checkin and the Inventory monorepo — the port isn't purely future. Reframe (owner): receipt toil = **inventory cataloging** (thousands of receipts) NOT reimbursement (~10/yr) — high-volume driver is card-receipt intake, so A10-5 upload/line cap is a real throughput+DoS concern._
 
 ### A10. Receipt intake  (receipt-app)
 1. ❌ Upload receipt jpg/gif/pdf/text + blob store

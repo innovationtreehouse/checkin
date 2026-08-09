@@ -15,7 +15,7 @@ future change must not break, and the live frontier. It retired and replaced the
 >   allowlisted); `shop/tools` is on `withAuth` and names `getServerSession` only in a comment.
 >   `getOptionalSessionUser` (`auth.ts:109`) serves the sanctioned optional-session reads.
 > - **Scope bindings landed.** `SCOPE_BINDINGS` + `ROW_SCOPE_KEY` + `OPT_OUT_PENDING_ROUTE` live in
->   `scopeBindings.ts`; the engine + validators in `scopes.ts`. Fee is unbound, `RSVP` is re-bound on
+>   `scopeBindings.ts`; the engine + validators in `scopes.ts`. `RSVP` is re-bound on
 >   `eventId → eventIdsInScopePrograms` (`access-resolvers.ts:38,130`), `AuditLog` is bound
 >   `their_own:actorId`, bare `id` is gone from `SCOPABLE_FIELDS` (`scopes.ts:158`), and every route
 >   registered in `registry.ts` declares `returns:`.

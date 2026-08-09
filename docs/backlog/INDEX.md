@@ -128,7 +128,7 @@ Legend of drops: see [§ Dropped — confirmed built](#dropped--confirmed-built-
 | FR4 | Tax explanation / tax-exception handling | PORT | NEEDS-DESIGN | M | ? | A,B | #1269 (open) |
 | FR5 | In-kind donation identification (shares receipt system) | PORT | NEEDS-DESIGN | M | ? | A,B | #1270 (open) |
 | FR6 | Backorder/preorder deferral + receive queue | PORT | NEEDS-DESIGN | M | ? | A,B | #1271 (open) |
-| FR7 | `Fee`/`FeePayment` dead schema — **KILL** (no writer; payment truth is in the Shopify pipeline — `ProgramParticipant.status`+`shopifyOrderId`, `shopify_read`, `PaymentException`). Not replaced. Plan: `docs/designs/PROGRAM_PAYMENT_VISIBILITY.md` (2-release drop: code refs first, `DROP TABLE` later). **Release 1 LANDED (#1404: dropped all app/test reads of Fee/FeePayment)** — `DROP TABLE` migration is the remaining release. Consumer feature split to P29 | DECISION | RESOLVED-KILL | S | keep inert | F,merged | #354 |
+| FR7 | `Fee`/`FeePayment` dead schema — **KILL** (no writer; payment truth is in the Shopify pipeline — `ProgramParticipant.status`+`shopifyOrderId`, `shopify_read`, `PaymentException`). Not replaced. 2-release drop: code refs first, `DROP TABLE` later. **DONE — Release 1 #1404 dropped all app/test reads; Release 2 dropped the tables.** Consumer feature split to P29 | DECISION | RESOLVED-KILL | S | keep inert | F,merged | #354 |
 
 ## 6. Finance — Expense & QuickBooks  (prefix FE)   ·  PORT epic (expense-app)
 
