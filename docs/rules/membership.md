@@ -166,6 +166,12 @@ Procedure below is built on them.
   consent link and its result comes back by hand. That is the arrangement, not a
   stopgap waiting to be automated.
 
+- A check that comes back with a restriction on how someone may volunteer is
+  carried by the board, not the app. Reviewers record only approval or rejection,
+  so a restricted volunteer is approved here and the restriction lives in the
+  board's own arrangement with them. The assumption holds as long as the reviewers
+  who read the report are the people who set that arrangement.
+
 - Declining a scholarship or payment-plan request is a conversation between two
   people. Telling the family is the board's own act and happens outside the app.
 
