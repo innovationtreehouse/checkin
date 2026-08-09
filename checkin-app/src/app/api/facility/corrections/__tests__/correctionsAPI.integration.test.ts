@@ -19,6 +19,7 @@
 import { GET } from '@/app/api/facility/corrections/route';
 import prisma from '@/lib/prisma';
 import type { Prisma } from '@/generated/prisma/client';
+import { SYSTEM_ACTOR } from '@/lib/auditActor';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/auth-options', () => ({ authOptions: {} }));
@@ -115,6 +116,35 @@ describe('GET /api/facility/corrections', () => {
         expect(ids).toContain(visitRow.id);
         expect(ids.every((id: number) => id !== undefined)).toBe(true);
         expect(body.AuditLog.every((r: { tableName: string }) => r.tableName === 'Visit')).toBe(true);
+    });
+
+    // SYSTEM_ACTOR is a sentinel id, not a person. If it ever re-enters the person
+    // batch the row renders as Actor "Person #0" with a Proxy badge — an automated
+    // sweep displayed as one person editing another's record, which is the single
+    // question this screen exists to answer.
+    it('carries a system write without resolving the sentinel to a person', async () => {
+        const now = new Date();
+        const systemRow = await seed({
+            actorId: SYSTEM_ACTOR, actorSystem: 'cron:nightly',
+            action: 'EDIT', tableName: 'Visit', affectedEntityId: 7,
+            secondaryAffectedEntity: selfId, timestamp: now,
+            oldData: { id: 7, personId: selfId, arrivedAt: '2026-06-01T09:00:00.000Z', departedAt: null },
+            newData: { id: 7, personId: selfId, arrivedAt: '2026-06-01T09:00:00.000Z', departedAt: '2026-06-01T23:59:00.000Z', type: 'facility_close' },
+        });
+
+        const res = await GET(nextReq({ from: '2000-01-01', to: '2035-01-01', flagged: 'false' }));
+        expect(res.status).toBe(200);
+        const body = await res.json();
+
+        const entry = body.AuditLog.find((r: { id: number }) => r.id === systemRow.id);
+        expect(entry).toBeDefined();
+        expect(entry.actorId).toBe(SYSTEM_ACTOR);
+        // actorSystem is internal-tier and inside the granted band, so it ships and
+        // the page can name the path instead of inventing a person.
+        expect(entry.actorSystem).toBe('cron:nightly');
+        expect(body.Person.some((p: { id: number }) => p.id === SYSTEM_ACTOR)).toBe(false);
+        // The subject still resolves — only the actor is a sentinel.
+        expect(body.Person.some((p: { id: number }) => p.id === selfId)).toBe(true);
     });
 
     it('never ships oldData, and rebuilds newData down to {type, significance}', async () => {

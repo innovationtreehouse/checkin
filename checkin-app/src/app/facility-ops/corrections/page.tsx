@@ -198,12 +198,14 @@ export default function CorrectionsPage() {
         </Alert>
       )}
 
-      {/* Nothing but the alert on error. A count of zero and "No corrections in
-          this range" are both assertions about a period that was never read;
-          the empty state makes the same claim the count line would. */}
-      {!error && (loading && rows.length === 0 ? (
+      {/* The loader comes first so a retry after a failure still shows progress —
+          `error` survives until the next success, and gating it away with the
+          rest left a stale alert and nothing moving. On error the result is
+          suppressed entirely: a count of zero and "No corrections in this range"
+          are both assertions about a period that was never read. */}
+      {loading && rows.length === 0 ? (
         <PageLoader />
-      ) : (
+      ) : !error ? (
         <>
         {/* The range runs from the start of the chosen period to now, so the
             count describes "this week/month/quarter/year". Counted over the
@@ -260,7 +262,7 @@ export default function CorrectionsPage() {
           </Table>
         </Table.ScrollContainer>
         </>
-      ))}
+      ) : null}
     </Stack>
   );
 }

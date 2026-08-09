@@ -1176,6 +1176,10 @@ model AuditLog {
 
   @@index([actorId])
   @@index([actorSystem])
+  // The corrections review reads one table over a time window, newest first.
+  // Neither actor index serves that; without this it is a full scan of every
+  // audit row the org has ever written.
+  @@index([tableName, timestamp])
 }
 
 model Account {

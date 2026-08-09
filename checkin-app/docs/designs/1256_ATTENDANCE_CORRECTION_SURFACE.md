@@ -561,10 +561,10 @@ that wrote the row, so a household lead correcting a member's visit still writes
 axis.
 
 **Significant-edit flags (§2) are the headline view.** The flag is **read** from
-the persisted `newData.significance`, not recomputed at read time. Two row shapes
-carry nothing to recompute from: `facility/visits` edits written before the
-`oldData` fix stored no before-state. A persisted flag is also the only form the database can filter
-on, which is what lets the default view paginate. The cost is that a stored score
+the persisted `newData.significance`, not recomputed at read time. One row shape
+carries nothing to recompute from: `facility/visits` edits written before the
+`oldData` fix stored no before-state. A persisted flag is also the only form the
+database can filter on, which is what lets the default view paginate. The cost is that a stored score
 freezes the thresholds in force when the row was written. This makes persisting
 significance on **every** edit and delete path a requirement on the writers
 (#1523) — a lens with an undeclared hole is worse than no lens, since "no flagged
