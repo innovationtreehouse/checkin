@@ -3,7 +3,7 @@ import { logBackendError } from "@/lib/logger";
 import { fromWhere } from "@/lib/membership/lifecycle";
 import { advanceExternalIfComplete } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
-import { applyVolunteerStatus, clearBackgroundCheck, notifyClearanceOutcome } from "@/lib/membership/review";
+import { applyVolunteerStatus, clearBackgroundCheck, notifyClearanceOutcome, notifyPaymentOpenOnExistingCheck } from "@/lib/membership/review";
 
 /**
  * A participant merge moves the newer of the two `lastBackgroundCheck` dates onto
@@ -58,7 +58,7 @@ export async function advanceHouseholdBgAfterMerge(
 
         await stampPendingExternal(householdId, actorId, source);
         await stampParallelPayment(householdId, actorId, source);
-        await clearHeldReview(householdId, actorId);
+        await clearHeldReview(householdId, actorId, mergedPersonId);
     } catch (error) {
         await logBackendError(error, "membership merge background-check advance", { householdId, mergedPersonId });
     }
@@ -144,7 +144,7 @@ async function stampParallelPayment(householdId: number, actorId: number, source
  * moves its status, leaving no exit but archival. So run the real clearance, which
  * stamps and converges in one write. Zero attestations, re-read under the lock.
  */
-async function clearHeldReview(householdId: number, actorId: number): Promise<void> {
+async function clearHeldReview(householdId: number, actorId: number, mergedPersonId: number): Promise<void> {
     const from = fromWhere("PENDING_BG_REVIEW");
     for (const process of await uncleared(householdId, from)) {
         const outcome = await prisma.$transaction(async (tx) => {
@@ -155,8 +155,12 @@ async function clearHeldReview(householdId: number, actorId: number): Promise<vo
                 select: { status: true, bgClearedAt: true, _count: { select: { attestations: true } } },
             });
             if (!fresh || fresh.status !== "PENDING_BG_REVIEW" || fresh.bgClearedAt || fresh._count.attestations > 0) return null;
-            return clearBackgroundCheck(tx, process.id, actorId);
+            return clearBackgroundCheck(tx, process.id, actorId, undefined, {
+                via: "merge",
+                sourcePersonId: mergedPersonId,
+                reason: "still-valid background check carried in by participant merge; no reviewer attested",
+            });
         });
-        if (outcome) await notifyClearanceOutcome(outcome);
+        if (outcome) await notifyClearanceOutcome(outcome, { paymentOpenNotice: notifyPaymentOpenOnExistingCheck });
     }
 }
