@@ -12,6 +12,7 @@ import { processCheckout } from '@/lib/scan-service';
 import prisma from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { processPostEventEmails } from '@/lib/postEventEmails';
+import { MAX_VISIT_MS } from '@/lib/visitTimes';
 import type { Person } from '@/generated/prisma/client';
 
 jest.mock('@/lib/auth', () => ({ authenticateRequest: jest.fn() }));
@@ -113,6 +114,36 @@ describe('Scan causal chain — last isKeyholder closes facility', () => {
             where: { personId: { in: [isKeyholder.id, normal.id] }, departedAt: null },
         });
         expect(openAnyone).toBe(0);
+    });
+
+    it('caps a >24h visit at arrival + MAX_VISIT_MS, stamps the rest at the close moment, and leaves a tombstone open', async () => {
+        const stale = new Date(Date.now() - 30 * 60 * 60 * 1000);
+        const beforeClose = Date.now();
+
+        const kVisit = await prisma.visit.create({
+            data: { personId: isKeyholder.id, arrivedAt: new Date(), forceCloseWarnedAt: new Date(Date.now() - 5000) },
+        });
+        const staleVisit = await prisma.visit.create({ data: { personId: normal.id, arrivedAt: stale } });
+        // Open AND tombstoned — the one-open-visit index only covers live rows.
+        const tombstoned = await prisma.visit.create({
+            data: { personId: normal.id, arrivedAt: stale, deletedAt: new Date() },
+        });
+
+        const res = await processCheckout(isKeyholder, kVisit.id, 'kiosk');
+        expect((await res.json()).facilityClosed).toBe(true);
+
+        const capped = await prisma.visit.findUnique({ where: { id: staleVisit.id } });
+        expect(capped?.departedAt).toEqual(new Date(stale.getTime() + MAX_VISIT_MS));
+        expect(capped?.departedVia).toBe('FACILITY_CLOSE');
+
+        // An in-range visit still takes the close moment itself.
+        const sameDay = await prisma.visit.findUnique({ where: { id: kVisit.id } });
+        expect(sameDay!.departedAt!.getTime()).toBeGreaterThanOrEqual(beforeClose);
+        expect(sameDay!.departedAt!.getTime()).toBeLessThanOrEqual(Date.now());
+        expect(sameDay?.departedVia).toBe('FACILITY_CLOSE');
+
+        const untouched = await prisma.visit.findUnique({ where: { id: tombstoned.id } });
+        expect(untouched?.departedAt).toBeNull();
     });
 
     it('warns instead of closing when others are present and no warning has been shown', async () => {

@@ -265,8 +265,8 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         where: { id: 1 },
         select: {
             orgMembershipVariantId: true,
-            normalDuesCents: true,
-            volunteerDuesCents: true,
+            standardMembershipFeeCents: true,
+            volunteerMembershipFeeCents: true,
             volunteerDiscountCode: true,
         },
     });
@@ -292,7 +292,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         // impossible — fall back to the old dues amount gate, made discount-aware by
         // adding the coupon back so a couponed pre-backfill order compares its GROSS
         // figure to gross dues and no longer false-raises AMOUNT_MISMATCH.
-        const expected = membership?.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
+        const expected = membership?.isVolunteer ? settings?.volunteerMembershipFeeCents ?? 0 : settings?.standardMembershipFeeCents ?? 0;
         if (expected > 0 && order.totalCents + order.discountCents + AMOUNT_TOLERANCE_CENTS < expected) {
             await raisePaymentException("AMOUNT_MISMATCH", { shopifyOrderId: order.legacyId, processId: proc.id });
             return true;
@@ -459,7 +459,7 @@ async function reconcileReversals(): Promise<number> {
     // Expected dues per membership (for the "order edited down below dues" case).
     const settings = await prisma.boardSettings.findUnique({
         where: { id: 1 },
-        select: { normalDuesCents: true, volunteerDuesCents: true, volunteerDiscountCode: true },
+        select: { standardMembershipFeeCents: true, volunteerMembershipFeeCents: true, volunteerDiscountCode: true },
     });
     const memberIds = procs.map((p) => p.orgMembershipId).filter((v): v is number => v != null);
     const members = memberIds.length
@@ -477,7 +477,7 @@ async function reconcileReversals(): Promise<number> {
             // Discount-aware: add the coupon back so an ordinary couponed order (volunteer
             // rate, promo) isn't mistaken for a post-activation edit-down — only a real
             // shortfall below GROSS dues counts. Keeps the "edited down" purpose intact.
-            const expected = isVolunteerById.get(proc.orgMembershipId ?? -1) ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
+            const expected = isVolunteerById.get(proc.orgMembershipId ?? -1) ? settings?.volunteerMembershipFeeCents ?? 0 : settings?.standardMembershipFeeCents ?? 0;
             if (expected > 0 && o.totalCents + o.discountCents + AMOUNT_TOLERANCE_CENTS < expected) kind = "AMOUNT_MISMATCH";
         }
         if (!kind && usesVolunteerCodeUnentitled(o, settings?.volunteerDiscountCode, isVolunteerById.get(proc.orgMembershipId ?? -1) ?? false)) {

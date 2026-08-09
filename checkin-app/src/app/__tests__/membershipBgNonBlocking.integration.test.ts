@@ -275,28 +275,19 @@ describe('background check is non-blocking', () => {
         expect(await isVolunteerOf(orgMembershipId)).toBe(true);
     });
 
-    it('an intake note holds payment at PENDING_BG_REVIEW until the review clears (#907)', async () => {
-        const { processId, householdId, orgMembershipId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
+    it('an intake note does not gate payment — the advance opens payment, review runs in parallel', async () => {
+        const { processId, householdId } = await makeApplicant('PENDING_EXTERNAL_ACTION');
         await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: 'please treat us as a volunteer household' } });
 
         await markContractSigned(processId);
         await markBgConsent(processId, revA);
-        expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held — not PENDING_PAYMENT
-
-        // Payment is genuinely gated while held.
-        await expect(certifyPaymentPlan(processId, revA)).rejects.toMatchObject({ code: 'wrong_phase' });
-
-        // The reviewers (who are shown the note) clear the check → payment opens
-        // with dues already settled by their volunteer mark.
-        await attest(revA, processId, { result: 'APPROVE', isMarkedVolunteer: true, subjectPersonIds: [leadId] });
-        await attest(revB, processId, { result: 'APPROVE', isMarkedVolunteer: true, subjectPersonIds: [leadId] });
         expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
-        expect(await isVolunteerOf(orgMembershipId)).toBe(true);
+
         await certifyPaymentPlan(processId, revA);
-        expect(await statusOf(processId)).toBe('ACTIVE');
+        expect(await statusOf(processId)).toBe('PENDING_BG_CLEARANCE'); // paid first, check still open
     });
 
-    it('fresh check + intake note → no auto-clear at submit; the note goes through review (#907)', async () => {
+    it('fresh check + intake note → the note does not disqualify the auto-clear at submit', async () => {
         await setBgPolicy();
         const { processId, householdId, leadId } = await makeApplicant('PENDING_EXTERNAL_ACTION', { lastBackgroundCheck: new Date() });
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'INTAKE' } });
@@ -309,14 +300,13 @@ describe('background check is non-blocking', () => {
         await submitIntake(leadId);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
-        expect(proc?.bgClearedAt).toBeNull(); // shortcut disqualified by the note
+        expect(proc?.bgClearedAt).not.toBeNull(); // still-valid check clears; the note is irrelevant
 
         await markContractSigned(processId);
-        await markBgConsent(processId, revA);
-        expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held for the note
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
     });
 
-    it('fresh-check renewal with a household note re-reviews instead of opening payment (#907)', async () => {
+    it('fresh-check renewal with a household note opens payment on signature alone', async () => {
         await setBgPolicy();
         const { orgMembershipId, processId } = await makeFreshRenewal();
         const m = await prisma.orgMembership.findUnique({ where: { id: orgMembershipId } });
@@ -325,16 +315,11 @@ describe('background check is non-blocking', () => {
         await beginRenewal(processId);
 
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
-        // Every renewal re-signs at the external step; the note disqualifies the
-        // bgClearedAt shortcut for the still-valid background check (mirrors
-        // submitIntake), so after sign + consent the advance holds at
-        // PENDING_BG_REVIEW instead of opening payment.
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
-        expect(proc?.bgClearedAt).toBeNull(); // shortcut disqualified by the note
+        expect(proc?.bgClearedAt).not.toBeNull(); // still-valid check clears; the note is irrelevant
 
         await markContractSigned(processId);
-        await markBgConsent(processId, revA);
-        expect(await statusOf(processId)).toBe('PENDING_BG_REVIEW'); // held for the note
+        expect(await statusOf(processId)).toBe('PENDING_PAYMENT');
     });
 
     it('conflict of interest: a certifier in the applicant household is blocked, sysadmin flag or not', async () => {

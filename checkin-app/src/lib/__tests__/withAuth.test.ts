@@ -12,7 +12,7 @@ import { withAuth } from '@/lib/auth';
 import { getServerSession } from 'next-auth/next';
 import { getKioskPublicKeys, verifyKioskSignature } from '@/lib/verify-kiosk';
 import { ORG_DOMAIN } from '@/lib/config';
-import type { SessionUser } from '@/types/participant';
+import type { AuthenticatedUser } from '@/types/auth';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/auth-options', () => ({ authOptions: {} }));
@@ -35,8 +35,8 @@ const kioskReq = () =>
         headers: { 'x-kiosk-signature': 'sig' },
     }) as never;
 
-function user(overrides: Partial<SessionUser> = {}): SessionUser {
-    return { id: 1, householdId: 10, ...overrides } as SessionUser;
+function user(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUser {
+    return { id: 1, householdId: 10, ...overrides } as AuthenticatedUser;
 }
 
 beforeEach(() => {

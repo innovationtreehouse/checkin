@@ -284,7 +284,7 @@ export default function MembershipPage() {
     })();
   }, [sessionStatus, load]);
 
-  // When awaiting payment, fetch the dues amount and Shopify checkout link. Leads
+  // When awaiting payment, fetch the membership-fee amount and Shopify checkout link. Leads
   // only — the route refuses anyone else, and the card hides the money from them.
   useEffect(() => {
     if (state?.process?.status !== "PENDING_PAYMENT" || !state.isLead) return;
@@ -354,7 +354,7 @@ export default function MembershipPage() {
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
-  // settling dues end-to-end with zero setup. Only rendered on a local instance.
+  // settling the membership fee end-to-end with zero setup. Only rendered on a local instance.
   const settleMockPayment = async () => {
     if (!state?.process) return;
     setSaving(true);
@@ -541,7 +541,7 @@ export default function MembershipPage() {
     // On success we navigate away, so we intentionally leave `saving` true.
   };
 
-  // Ask the board's Scholarship Review Team for a payment plan on membership dues.
+  // Ask the board's Scholarship Review Team for a payment plan on the membership fee.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
   // Mirrors the server flag both ways (not just true->true) so a denial that
@@ -831,14 +831,7 @@ export default function MembershipPage() {
                   <section>
                     <Textarea
                       label="Anything else we should know?"
-                      description={
-                        <>
-                          Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled.{" "}
-                          <Text component="span" fw={700} c="red">
-                            Your application will pause for human review before you can pay
-                          </Text>
-                        </>
-                      }
+                      description="Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled."
                       autosize
                       minRows={3}
                       value={notes}
@@ -1006,15 +999,6 @@ export default function MembershipPage() {
                 ) : (
                   <Text c="dimmed">Preparing your invoice…</Text>
                 )}
-              </Card>
-            ) : inStatus === "PENDING_BG_REVIEW" ? (
-              <Card withBorder radius="md" padding="lg">
-                <Title order={2} mb="sm">Hang tight — your application is being reviewed</Title>
-                <Text c="dimmed">
-                  A person on our team is reviewing your application (this happens whenever you
-                  leave a note for us). You&apos;ll be able to pay your dues once the review is
-                  complete — we&apos;ll email you then. Nothing else to do right now.
-                </Text>
               </Card>
             ) : inStatus === "PENDING_BG_CLEARANCE" ? (
               <Card withBorder radius="md" padding="lg">

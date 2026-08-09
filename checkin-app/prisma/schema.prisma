@@ -184,7 +184,6 @@ model Person {
   programVolunteers   ProgramVolunteer[]
   programParticipants ProgramParticipant[]
   programsLed         Program[]                    @relation("ProgramLeadMentor")
-  feePayments         FeePayment[]
   rsvps               RSVP[]
   rawBadgeLogs        RawBadgeLog[]
   visits              Visit[]
@@ -504,7 +503,7 @@ model OrgMembershipProcess {
   /// @sensitivity:internal
   paidAt                DateTime?
   /// @sensitivity:internal
-  certifiedById         Int?
+  manualPaymentById     Int?
   /// @sensitivity:internal
   certificationNote     String?
   /// Write-never as of the outreach engine (PR-2): the renewal sweep and the go-live
@@ -571,10 +570,14 @@ model VolunteerDesignation {
 model BoardSettings {
   /// @sensitivity:public
   id                         Int       @id @default(1)
+  // The @maps hold the physical columns on their old names: a bare
+  // boardSettings.findUnique selects every column by name, so the previous release
+  // reads these through a rolling deploy's drain window. Rename them in a later
+  // release (contract stage).
   /// @sensitivity:public
-  normalDuesCents            Int       @default(0)
+  standardMembershipFeeCents Int       @default(0) @map("normalDuesCents")
   /// @sensitivity:public
-  volunteerDuesCents         Int       @default(0)
+  volunteerMembershipFeeCents Int      @default(0) @map("volunteerDuesCents")
   /// @sensitivity:public
   orgMembershipYearBoundary  DateTime? @db.Date
   /// Shopify variant ID of the membership product everyone checks out through.
@@ -945,7 +948,6 @@ model Program {
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
-  fees         Fee[]
   events       Event[]
 }
 
@@ -1006,44 +1008,6 @@ model ProgramParticipant {
   person  Person @relation(fields: [personId], references: [id])
 
   @@id([programId, personId])
-}
-
-model Fee {
-  /// @sensitivity:public
-  id             Int    @id @default(autoincrement())
-  /// @sensitivity:public
-  programId      Int
-  /// @sensitivity:public
-  name           String
-  /// @sensitivity:public
-  /// Integer cents (e.g. 2599 = $25.99).
-  nonOrgMemberPriceCents Int
-  /// @sensitivity:public
-  /// Integer cents (e.g. 2599 = $25.99).
-  orgMemberPriceCents    Int
-
-  program  Program      @relation(fields: [programId], references: [id])
-  payments FeePayment[]
-}
-
-model FeePayment {
-  /// @sensitivity:public
-  feeId             Int
-  /// @sensitivity:public
-  personId          Int
-  /// @sensitivity:personal
-  paidAt            DateTime? @default(now())
-  /// @sensitivity:personal
-  shopifyLink       String?
-  /// @sensitivity:personal
-  quickBooksInvoice String?
-  /// @sensitivity:personal
-  customNote        String?
-
-  fee         Fee         @relation(fields: [feeId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
-
-  @@id([feeId, personId])
 }
 
 model Event {
@@ -1176,6 +1140,10 @@ model AuditLog {
 
   @@index([actorId])
   @@index([actorSystem])
+  // The corrections review reads one table over a time window, newest first.
+  // Neither actor index serves that; without this it is a full scan of every
+  // audit row the org has ever written.
+  @@index([tableName, timestamp])
 }
 
 model Account {
@@ -1276,6 +1244,31 @@ model IntegrationErrorLog {
   resolvedAt DateTime?
 
   @@index([resolvedAt, timestamp])
+}
+
+/// One completed run of a cron sweep, written by `withCron` (src/lib/cronAuth.ts) for every
+/// route under /api/cron. The schedule and the caller live in a separate infra repo, so the
+/// app cannot know when a job is *due* — it can only observe that a run happened. This table
+/// is that observation: it feeds the System Status cron panel and the stale-job nav badge,
+/// which is the only in-app signal that a sweep silently stopped firing. Rolling log: rows
+/// auto-purge after 90 days.
+model CronRunLog {
+  /// @sensitivity:internal
+  id         Int      @id @default(autoincrement())
+  /// Route slug — the last path segment of /api/cron/<job>.
+  /// @sensitivity:internal
+  job        String
+  /// @sensitivity:internal
+  startedAt  DateTime
+  /// @sensitivity:internal
+  finishedAt DateTime @default(now())
+  /// @sensitivity:internal
+  success    Boolean
+  /// Message from the throw that failed the run; null on success.
+  /// @sensitivity:internal
+  error      String?
+
+  @@index([job, success, finishedAt])
 }
 
 /// Dev-instance activity ledger (docs/ops/dev-instance.md, "The ledger"). Lives only in checkin_dev; records

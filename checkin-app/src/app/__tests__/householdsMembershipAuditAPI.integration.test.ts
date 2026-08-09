@@ -76,7 +76,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         prevBoundary = existingSettings?.orgMembershipYearBoundary ?? null;
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: BOUNDARY, bgRecheckMonths: BG_RECHECK_MONTHS },
+            create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: BOUNDARY, bgRecheckMonths: BG_RECHECK_MONTHS },
             update: { orgMembershipYearBoundary: BOUNDARY, bgRecheckMonths: BG_RECHECK_MONTHS },
         });
 
@@ -303,7 +303,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         const process = await prisma.orgMembershipProcess.findUnique({ where: { id: grantableProcessId } });
         expect(process?.status).toBe('ACTIVE');
         expect(process?.paidAt).not.toBeNull();
-        expect(process?.certifiedById).toBe(boardId);
+        expect(process?.manualPaymentById).toBe(boardId);
         expect(process?.certificationNote).toBe('Family confirmed dues in person at the board meeting.');
         const processCount = await prisma.orgMembershipProcess.count({ where: { orgMembershipId: grantableMembershipId } });
         expect(processCount).toBe(1);
@@ -317,7 +317,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         });
         const activateAudit = audits.find(a => (a.newData as { status?: string })?.status === 'ACTIVE');
         expect(activateAudit).toBeTruthy();
-        expect((activateAudit!.newData as { via: string }).via).toBe('certified');
+        expect((activateAudit!.newData as { via: string }).via).toBe('manual');
         expect((activateAudit!.newData as { certificationNote?: string }).certificationNote).toBe('Family confirmed dues in person at the board meeting.');
         const grantAudit = audits.find(a => (a.newData as { comingYearGrant?: boolean })?.comingYearGrant === true);
         expect(grantAudit).toBeTruthy();

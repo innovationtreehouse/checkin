@@ -128,7 +128,7 @@ Legend of drops: see [§ Dropped — confirmed built](#dropped--confirmed-built-
 | FR4 | Tax explanation / tax-exception handling | PORT | NEEDS-DESIGN | M | ? | A,B | #1269 (open) |
 | FR5 | In-kind donation identification (shares receipt system) | PORT | NEEDS-DESIGN | M | ? | A,B | #1270 (open) |
 | FR6 | Backorder/preorder deferral + receive queue | PORT | NEEDS-DESIGN | M | ? | A,B | #1271 (open) |
-| FR7 | `Fee`/`FeePayment` dead schema — **KILL** (no writer; payment truth is in the Shopify pipeline — `ProgramParticipant.status`+`shopifyOrderId`, `shopify_read`, `PaymentException`). Not replaced. Plan: `docs/designs/PROGRAM_PAYMENT_VISIBILITY.md` (2-release drop: code refs first, `DROP TABLE` later). **Release 1 LANDED (#1404: dropped all app/test reads of Fee/FeePayment)** — `DROP TABLE` migration is the remaining release. Consumer feature split to P29 | DECISION | RESOLVED-KILL | S | keep inert | F,merged | #354 |
+| FR7 | `Fee`/`FeePayment` dead schema — **KILL** (no writer; payment truth is in the Shopify pipeline — `ProgramParticipant.status`+`shopifyOrderId`, `shopify_read`, `PaymentException`). Not replaced. 2-release drop: code refs first, `DROP TABLE` later. **DONE — Release 1 #1404 dropped all app/test reads; Release 2 dropped the tables.** Consumer feature split to P29 | DECISION | RESOLVED-KILL | S | keep inert | F,merged | #354 |
 
 ## 6. Finance — Expense & QuickBooks  (prefix FE)   ·  PORT epic (expense-app)
 
@@ -325,7 +325,7 @@ clearance now stamps only the adult the reviewers named, and the board gets a wo
 stamps the old blanket write left behind. Rules live in `docs/rules/membership.md` § background
 checks.
 
-**Verified built during triage (2026-07-21), removed from buckets:** M10 volunteer-household pre-designation (`/membership-ops/volunteer-memberships`) · M11 intake-notes → surfaced to reviewer + gates BG review (`membership-ops/review`, `Household.intakeNotes`) · SA5 BG posture (29mo, enforced at renewal) · SA8 dual-relationship = Trusted Adults · RB10 dual-email = 2-account model (#286 closed) · FD5 banker = board (no role).
+**Verified built during triage (2026-07-21), removed from buckets:** M10 volunteer-household pre-designation (`/membership-ops/volunteer-memberships`) · M11 intake-notes → surfaced to reviewer (`membership-ops/review`, `Household.intakeNotes`) · SA5 BG posture (29mo, enforced at renewal) · SA8 dual-relationship = Trusted Adults · RB10 dual-email = 2-account model (#286 closed) · FD5 banker = board (no role).
 
 **Merged to main (verified via rebase 2026-07-25), removed from buckets:** **AT10** unknown-DOB fails-open in two-deep → FIXED, now fails closed (#1353/#300) · **AT13** visit-edit UI/API mismatch → FIXED, board reaches the visit-edit UI (#1350/#1259) · **M18** person-merge orphaned/non-controlled email → FIXED via 3 merge-fixes: emailSuppressed carry (#1332), login-identity unit (#1329), tombstone `.invalid` domain (#1331); #1225 closed · **SA6** delete-DoB for adults → BUILT (#1326 "delete DoB for all adults (26+)"; #1356 declared-adults-still-supervise follow-up); #1165 closed · **P17** staff-household enrollment ban server-side → BUILT (#1009 "disable Add Participant & Grant Membership for staff households").
 

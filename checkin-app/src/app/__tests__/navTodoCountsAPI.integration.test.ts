@@ -15,6 +15,7 @@
 import { GET } from '@/app/api/nav/todo-counts/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { CRON_STALE_AFTER_MS } from '@/lib/cronRuns';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -291,5 +292,71 @@ describe('Nav todo-counts API', () => {
 
         await prisma.orgMembershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
         await prisma.orgMembership.delete({ where: { id: reviewerMembership.id } });
+    });
+
+    // Nothing in this repo schedules the crons, so a sweep that stops firing is
+    // invisible until the ledger goes cold. That staleness has to reach the board's
+    // red System Status pill — and only the board's.
+    describe('stale cron jobs', () => {
+        const JOB = `nav-badge-${TAG}`;
+
+        const staleCount = async (user: object) => {
+            const res = await callAs(user);
+            const data = await res.json();
+            return data.configHealth?.staleCronJobs as number | undefined;
+        };
+
+        // Functions, not constants: the ids are assigned in beforeAll, which runs
+        // after this describe body is evaluated.
+        const board = () => ({ id: boardId, householdId: householdBId, isBoardMember: true });
+        const nonAdmin = () => ({ id: leadId, householdId: householdAId });
+
+        afterEach(async () => {
+            await prisma.cronRunLog.deleteMany({ where: { job: JOB } });
+        });
+
+        it('a recent success does not count', async () => {
+            const before = (await staleCount(board()))!;
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: new Date(), finishedAt: new Date(), success: true },
+            });
+
+            expect(await staleCount(board())).toBe(before);
+        });
+
+        it('a job whose last success is older than the threshold raises the count', async () => {
+            const before = (await staleCount(board()))!;
+            const long = new Date(Date.now() - (CRON_STALE_AFTER_MS + 60 * 60 * 1000));
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: long, finishedAt: long, success: true },
+            });
+
+            expect(await staleCount(board())).toBe(before + 1);
+        });
+
+        it('failed runs do not refresh a stale job — only a success clears it', async () => {
+            const before = (await staleCount(board()))!;
+            const long = new Date(Date.now() - (CRON_STALE_AFTER_MS + 60 * 60 * 1000));
+            await prisma.cronRunLog.createMany({
+                data: [
+                    { job: JOB, startedAt: long, finishedAt: long, success: true },
+                    { job: JOB, startedAt: new Date(), finishedAt: new Date(), success: false, error: 'boom' },
+                ],
+            });
+
+            expect(await staleCount(board())).toBe(before + 1);
+        });
+
+        it('a non-board, non-admin caller gets no count at all', async () => {
+            const long = new Date(Date.now() - (CRON_STALE_AFTER_MS + 60 * 60 * 1000));
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: long, finishedAt: long, success: true },
+            });
+
+            const res = await callAs(nonAdmin());
+            const data = await res.json();
+            expect(data.configHealth).toBeUndefined();
+            expect(await staleCount(board())).toBeGreaterThanOrEqual(1);
+        });
     });
 });

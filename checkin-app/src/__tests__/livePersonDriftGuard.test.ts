@@ -43,7 +43,7 @@ import { join, relative, sep } from 'node:path';
  *      scope (see the boundary note below).
  *
  *   3. A list/count call on a JOIN delegate that has a `person` relation:
- *        prisma.programParticipant|programVolunteer|rSVP|toolStatus|feePayment
+ *        prisma.programParticipant|programVolunteer|rSVP|toolStatus
  *          .findMany(...) / .findFirst(...) / .count(...) / .aggregate(...) / .groupBy(...)
  *      excluding `findUnique` / `findUniqueOrThrow`, same as class 1.
  *      WHY THIS EXISTS: pattern 2's "a where-relation filter is not a data pull"
@@ -290,7 +290,7 @@ const PERSON_RELATION_RE = new RegExp(String.raw`\b(?:${PERSON_RELATION_NAMES.jo
 // is checked with the same FILTERED_RE — see the class-3 note in the header for
 // why a count with no `person:` key at all still needs the filter.
 const JOIN_CALL_RE =
-    /\b(?:prisma|tx|db)\.(programParticipant|programVolunteer|rSVP|toolStatus|feePayment)\.(findMany|findFirst|count|aggregate|groupBy)\s*\(/g;
+    /\b(?:prisma|tx|db)\.(programParticipant|programVolunteer|rSVP|toolStatus)\.(findMany|findFirst|count|aggregate|groupBy)\s*\(/g;
 
 const FILTERED_RE = /LIVE_PERSON|mergedIntoId/;
 

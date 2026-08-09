@@ -59,7 +59,7 @@ describe('Membership renewal', () => {
     async function setBoundary(date: Date | null) {
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
+            create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
             update: { orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
         });
     }

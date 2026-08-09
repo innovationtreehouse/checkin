@@ -171,9 +171,9 @@ export async function runRenewalSweep(now: Date) {
 /**
  * Member begins renewal: PENDING_RENEWAL -> PENDING_EXTERNAL_ACTION, always — a
  * fresh membership agreement is signed every cycle. A still-valid background
- * check (no household note) is pre-cleared so only the signature is left;
- * otherwise the member also requests a new background check, same flow as
- * INITIAL. Idempotent-ish: only acts from PENDING_RENEWAL.
+ * check is pre-cleared so only the signature is left; otherwise the member also
+ * requests a new background check, same flow as INITIAL. Idempotent-ish: only
+ * acts from PENDING_RENEWAL.
  */
 export async function beginRenewal(processId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
@@ -183,24 +183,19 @@ export async function beginRenewal(processId: number) {
     // A RENEWAL always has a membership (orgMembershipId is only null for PERSON_BG).
     const membership = await prisma.orgMembership.findUnique({
         where: { id: process.orgMembershipId! },
-        select: { householdId: true, household: { select: { intakeNotes: true } } },
+        select: { householdId: true },
     });
     if (!membership) throw new RenewalError("not_found", "Membership not found.");
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : null;
-    const bgFresh = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
-    const hasNote = !!membership.household.intakeNotes?.trim();
 
-    // A still-valid background check with no household note ⇒ stamp bgClearedAt
-    // now: the external card shows "no new background check needed" and the
-    // signature alone opens payment. A note (#900) disqualifies the shortcut
-    // exactly like submitIntake —
-    // the member consents anyway and advanceExternalIfComplete holds the process
-    // at PENDING_BG_REVIEW so the note reaches a reviewer before payment (#907).
-    // Reviewers are NOT pinged here — nothing is reviewable until consent is
-    // recorded; the advance pings them, same as INITIAL. Volunteer allowlist
-    // matching (#874) also happens at the advance's PENDING_PAYMENT transition.
-    const clearNow = bgFresh && !hasNote;
+    // A still-valid background check ⇒ stamp bgClearedAt now: the external card
+    // shows "no new background check needed" and the signature alone opens
+    // payment. Reviewers are NOT pinged here — nothing is reviewable until
+    // consent is recorded; the advance pings them, same as INITIAL. Volunteer
+    // allowlist matching (#874) also happens at the advance's PENDING_PAYMENT
+    // transition.
+    const clearNow = await householdBgIsFresh(membership.householdId, boundary, settings?.bgRecheckMonths ?? 0);
     // Conditional on status PENDING_RENEWAL: a double-submit has both callers reach
     // here, but only the winner's updateMany flips it (count === 1) — so the audit
     // row is written exactly once. Mirrors external.ts markContractSigned.

@@ -94,7 +94,7 @@ export const classifications = {
         shopifyInvoiceUrl: 'personal',
         shopifyOrderId: 'internal',
         paidAt: 'internal',
-        certifiedById: 'internal',
+        manualPaymentById: 'internal',
         certificationNote: 'internal',
         renewalReminderSentAt: 'internal',
         isPaymentPlanRequested: 'internal',
@@ -117,8 +117,8 @@ export const classifications = {
     },
     BoardSettings: {
         id: 'public',
-        normalDuesCents: 'public',
-        volunteerDuesCents: 'public',
+        standardMembershipFeeCents: 'public',
+        volunteerMembershipFeeCents: 'public',
         orgMembershipYearBoundary: 'public',
         orgMembershipVariantId: 'internal',
         orgMembershipProductUrl: 'internal',
@@ -238,21 +238,6 @@ export const classifications = {
         paymentPlanDeniedAt: 'personal',
         shopifyOrderId: 'internal',
     },
-    Fee: {
-        id: 'public',
-        programId: 'public',
-        name: 'public',
-        nonOrgMemberPriceCents: 'public',
-        orgMemberPriceCents: 'public',
-    },
-    FeePayment: {
-        feeId: 'public',
-        personId: 'public',
-        paidAt: 'personal',
-        shopifyLink: 'personal',
-        quickBooksInvoice: 'personal',
-        customNote: 'personal',
-    },
     Event: {
         id: 'public',
         programId: 'public',
@@ -348,6 +333,14 @@ export const classifications = {
         timestamp: 'internal',
         resolvedAt: 'internal',
     },
+    CronRunLog: {
+        id: 'internal',
+        job: 'internal',
+        startedAt: 'internal',
+        finishedAt: 'internal',
+        success: 'internal',
+        error: 'internal',
+    },
     DevLedger: {
         id: 'internal',
         action: 'internal',
@@ -413,7 +406,6 @@ export const relations = {
         programVolunteers: { model: 'ProgramVolunteer', isList: true },
         programParticipants: { model: 'ProgramParticipant', isList: true },
         programsLed: { model: 'Program', isList: true },
-        feePayments: { model: 'FeePayment', isList: true },
         rsvps: { model: 'RSVP', isList: true },
         rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
         visits: { model: 'Visit', isList: true },
@@ -490,7 +482,6 @@ export const relations = {
         leadMentor: { model: 'Person', isList: false },
         volunteers: { model: 'ProgramVolunteer', isList: true },
         participants: { model: 'ProgramParticipant', isList: true },
-        fees: { model: 'Fee', isList: true },
         events: { model: 'Event', isList: true },
     },
     ProgramVolunteer: {
@@ -499,14 +490,6 @@ export const relations = {
     },
     ProgramParticipant: {
         program: { model: 'Program', isList: false },
-        person: { model: 'Person', isList: false },
-    },
-    Fee: {
-        program: { model: 'Program', isList: false },
-        payments: { model: 'FeePayment', isList: true },
-    },
-    FeePayment: {
-        fee: { model: 'Fee', isList: false },
         person: { model: 'Person', isList: false },
     },
     Event: {
@@ -541,6 +524,8 @@ export const relations = {
     SystemMetricLog: {
     },
     IntegrationErrorLog: {
+    },
+    CronRunLog: {
     },
     DevLedger: {
     },
