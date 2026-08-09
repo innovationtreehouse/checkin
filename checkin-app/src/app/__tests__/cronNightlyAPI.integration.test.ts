@@ -4,6 +4,7 @@
 import { GET } from '@/app/api/cron/nightly/route';
 import prisma from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
+import { MAX_VISIT_MS } from '@/lib/visitTimes';
 
 jest.mock('@/lib/email', () => ({
     runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
@@ -21,11 +22,11 @@ jest.mock('@/lib/attendanceTransitions', () => {
     return {
         __esModule: true,
         ...actual,
-        processVisitCheckout: jest.fn((visitId: number, checkoutTime: Date, db?: unknown) => {
+        processVisitCheckout: jest.fn((visitId: number, checkoutTime: Date, db?: unknown, source?: unknown) => {
             if (mockBadVisitIds.has(visitId)) {
                 return Promise.reject(new Error(`Simulated checkout failure for visit ${visitId}`));
             }
-            return actual.processVisitCheckout(visitId, checkoutTime, db);
+            return actual.processVisitCheckout(visitId, checkoutTime, db, source);
         }),
     };
 });
@@ -273,6 +274,22 @@ describe('Cron Nightly API Integration Tests', () => {
 
             expect(await systemNotifyCount()).toBe(1); // no NEW force-checkout audit row
             expect(sendEmail).not.toHaveBeenCalled(); // no duplicate board/post-event email
+        });
+
+        it('caps a visit the sweep missed at arrival + MAX_VISIT_MS instead of stamping run time', async () => {
+            await closeAllOpenVisits();
+            await prisma.auditLog.deleteMany();
+            mockBadVisitIds.clear();
+
+            const arrivedAt = new Date(Date.now() - 30 * 60 * 60 * 1000);
+            const missed = await prisma.visit.create({ data: { personId: normalUserId, arrivedAt } });
+
+            const res = await GET(cronReq());
+            expect(res.status).toBe(200);
+
+            const closed = await prisma.visit.findUnique({ where: { id: missed.id } });
+            expect(closed?.departedAt).toEqual(new Date(arrivedAt.getTime() + MAX_VISIT_MS));
+            expect(closed?.departedVia).toBe('AUTO_CLOSE');
         });
     });
 });

@@ -4,6 +4,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { apiError, apiJson } from "@/lib/api-response";
 import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
+import { MAX_VISIT_MS } from "@/lib/visitTimes";
 
 /** How long a displayed force-close warning stays confirmable. The scan route's
  *  3s debounce eats the front of it, so the kiosk copy says "3 to 60 seconds". */
@@ -162,17 +163,32 @@ export async function processCheckout(
 }
 
 /** Mark every still-open visit as departed. Facility-wide, not participant-scoped:
- *  a single atomic statement, so it needs no wrapping transaction. */
+ *  a single atomic statement, so it needs no wrapping transaction.
+ *
+ *  Raw rather than `updateMany` because the stamp is per-row: the close moment
+ *  is capped at the visit's own `arrivedAt + MAX_VISIT_MS`, and `updateMany`
+ *  can only set one constant for every row it touches.
+ *
+ *  FACILITY_CLOSE, not AUTO_CLOSE: the stamp is normally the moment the building
+ *  actually closed, so it is bounded by building hours — plausible, unlike the
+ *  cron's midnight sweep. Where the cap bites the stamp is 24h after arrival
+ *  instead; both are placeholders the member is meant to correct, and a
+ *  placeholder inside the 24h rule beats an accurate record that breaks it.
+ *
+ *  `now()` is timestamptz and the columns are timestamp-without-zone holding
+ *  UTC, so the clock must be pulled AT TIME ZONE 'UTC' or the comparison is off
+ *  by the server's offset. */
 async function closeAllOpenVisits(db: DbClient) {
-    await db.visit.updateMany({
-        // Tombstoned visits are excluded: closing one would rewrite a record the
-        // member chose to erase, and resurrect a machine departure if it is undone.
-        where: { departedAt: null, deletedAt: null },
-        // FACILITY_CLOSE, not AUTO_CLOSE: this stamp is the moment the building
-        // actually closed, so it is bounded by building hours — plausible, unlike
-        // the cron's midnight sweep.
-        data: { departedAt: new Date(), departedVia: "FACILITY_CLOSE" },
-    });
+    // Tombstoned visits are excluded: closing one would rewrite a record the
+    // member chose to erase, and resurrect a machine departure if it is undone.
+    await db.$executeRaw`
+        UPDATE "Visit"
+        SET "departedAt" = LEAST(
+                (now() AT TIME ZONE 'UTC'),
+                "arrivedAt" + ${MAX_VISIT_MS}::double precision * interval '1 millisecond'
+            ),
+            "departedVia" = 'FACILITY_CLOSE'::"VisitSource"
+        WHERE "departedAt" IS NULL AND "deletedAt" IS NULL`;
 }
 
 /** Fire-and-forget post-event email run on facility close. The dynamic import
