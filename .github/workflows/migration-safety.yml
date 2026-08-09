@@ -151,7 +151,10 @@ jobs:
       # program + its personas) — this is what makes a destructive or
       # non-applying migration on those tables fail here instead of on dev.
       # ON_ERROR_STOP is set so a fixture referencing a table that no longer
-      # exists fails the job instead of printing an error and passing.
+      # exists fails the job instead of printing an error and passing. This runs
+      # against the BASE schema, before the PR's own migrations apply: every
+      # table named below must already exist at the base commit, so a PR adding
+      # a table cannot seed it here.
       - name: Top up seed-empty tables the incident hit (Event/RSVP)
         if: steps.base.outputs.skip == 'false' && steps.base.outputs.coalesce == 'false'
         env:
