@@ -190,7 +190,7 @@ describe('advanceExternalIfComplete', () => {
 
     beforeEach(() => {
         prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => Promise<unknown>) => fn(prisma));
-        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: null } });
+        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7 });
     });
 
     it('winner: applies the volunteer allowlist at the PENDING_PAYMENT transition (#874) and pings reviewers', async () => {
@@ -219,43 +219,6 @@ describe('advanceExternalIfComplete', () => {
         await advanceExternalIfComplete(20);
 
         expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
-        expect(notifyReviewers).not.toHaveBeenCalled();
-    });
-
-    it('household intake note → holds at PENDING_BG_REVIEW instead of PENDING_PAYMENT (#907)', async () => {
-        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'treat us as a volunteer household' } });
-        const held = { ...readyProcess, status: 'PENDING_BG_REVIEW' };
-        prisma.orgMembershipProcess.findUnique
-            .mockResolvedValueOnce(readyProcess)
-            .mockResolvedValueOnce(held);
-        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
-
-        const result = await advanceExternalIfComplete(20);
-
-        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_BG_REVIEW' }) }),
-        );
-        // Allowlist still applied (sticky/idempotent); reviewers pinged to read the note.
-        expect(applyVolunteerStatus).toHaveBeenCalledWith(prisma, 42, 7, false);
-        expect(notifyReviewers).toHaveBeenCalledTimes(1);
-        expect(result).toEqual(held);
-    });
-
-    it('note + already-cleared check (legacy in-flight row) keeps the direct PENDING_PAYMENT path', async () => {
-        // PENDING_BG_REVIEW would be invisible to the review queue once bgClearedAt is
-        // set, so such rows must not be held — they advance as before.
-        prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'a note' } });
-        const cleared = { ...readyProcess, bgConsentAt: null, bgClearedAt: new Date() };
-        prisma.orgMembershipProcess.findUnique
-            .mockResolvedValueOnce(cleared)
-            .mockResolvedValueOnce({ ...cleared, status: 'PENDING_PAYMENT' });
-        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
-
-        await advanceExternalIfComplete(20);
-
-        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
-            expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING_PAYMENT' }) }),
-        );
         expect(notifyReviewers).not.toHaveBeenCalled();
     });
 

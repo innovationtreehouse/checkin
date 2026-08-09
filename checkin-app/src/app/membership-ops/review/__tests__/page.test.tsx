@@ -66,9 +66,9 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
-    expect(screen.getByRole("button", { name: "Attest — check is clean" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Attest — the check passed" })).toBeDisabled();
     nameSubject("Sam Smith");
-    expect(screen.getByRole("button", { name: "Attest — check is clean" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Attest — the check passed" })).toBeEnabled();
   });
 
   it("approves an attestation", async () => {
@@ -77,13 +77,13 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
-    fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attest — the check passed" }));
     // Pat already holds one approval, so naming Pat is the SECOND — the confirm names
     // the consequence of a clearing approve rather than a generic "are you sure?".
-    expect(await screen.findByText("Attest this background check is clean?")).toBeInTheDocument();
+    expect(await screen.findByText("Attest that this background check passed?")).toBeInTheDocument();
     expect(screen.getByText(/emails the family/)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1); // the queue GET only — nothing posted yet
-    fireEvent.click(screen.getByRole("button", { name: "Attest the check is clean" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm — the check passed" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -103,10 +103,10 @@ describe("membership-ops/review page", () => {
     renderPage();
     await screen.findByText("The Smiths");
 
-    fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attest — the check passed" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
 
-    await waitFor(() => expect(screen.queryByText("Attest this background check is clean?")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText("Attest that this background check passed?")).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledTimes(1); // the queue GET only
   });
 
@@ -117,7 +117,7 @@ describe("membership-ops/review page", () => {
     await screen.findByText("The Smiths");
 
     nameSubject("Pat Smith");
-    fireEvent.click(screen.getByRole("button", { name: "Attest — check is clean" }));
+    fireEvent.click(screen.getByRole("button", { name: "Attest — the check passed" }));
     expect(await screen.findByText("Record your approval?")).toBeInTheDocument();
     expect(screen.getByText(/A second\s+reviewer must also\s+approve/)).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Approve" }));
