@@ -6,6 +6,7 @@ import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { personBgOpen } from "@/lib/membership/lifecycle";
+import { advanceHouseholdBgAfterMerge } from "@/lib/membership/mergeBgAdvance";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
 import { householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
@@ -500,6 +501,18 @@ export const POST = withAuth(
                     });
                 }
             });
+
+            // The keeper may have just inherited a still-valid background check, which
+            // can leave the household's parked application covered. Post-commit: the
+            // survivor's live leads are only final once the tombstone's lead flag and
+            // the keeper's date have landed. Never throws.
+            //
+            // Session actors only: this advances membership state, and the conflict-of-
+            // interest guard above — the thing that stops an actor clearing their own
+            // household — can only be applied to a session.
+            if (auth.type === 'session') {
+                await advanceHouseholdBgAfterMerge(keepParticipant.householdId, auth.user.id, mergeId);
+            }
 
             return NextResponse.json({ success: true });
         } catch (error: unknown) {
