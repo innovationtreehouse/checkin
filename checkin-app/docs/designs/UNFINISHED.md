@@ -122,21 +122,17 @@ Code uses both; policy canonical = **Tool Certifier**. Retire "Shop Certifier"
 
 ---
 
-## 🟢 Rename payment "certified" → "manual" (collides with tool certification)
+## 🟢 Name the relief types: Payment Plan / Scholarship
 
-`via: "certified"` / `MembershipProcess.certifiedById`
-([payment.ts:117](../../src/lib/membership/payment.ts#L117),
-[:236](../../src/lib/membership/payment.ts#L236),
-[schema.prisma:352](../../prisma/schema.prisma#L352)) = payment **landed outside
-Shopify** (recorded in QuickBooks), so the membership activates without a Shopify
-order. NOT a comp — they paid, through another channel. **✅ Decision:**
-- `via: "certified"` → **`via: "manual"`**
-- `certifiedById` → **`manualPaymentById`**
-
-Kills the tool-certification collision. Separately name the relief types (distinct
-from manual payment): **Payment Plan** (installments, `isPaymentPlanRequested`) and
-**Scholarship** (board comp, 0 code refs today) — one process handles either/both.
-_(VOCAB #17)_
+Distinct from a **manual payment** (already renamed — `via: "manual"` /
+`manualPaymentById`): **Payment Plan** (installments,
+`isPaymentPlanRequested`) and **Scholarship** (board comp, 0 code refs today)
+— one process handles either/both. The relief surfaces still say "certify":
+`certifyPaymentPlan()`
+([payment.ts:249](../../src/lib/membership/payment.ts#L249)), the route path
+`/api/membership-ops/applications/certify-payment`, and the
+`certificationNote` column, which now holds the note for BOTH a manual payment
+and a payment-plan approval. _(VOCAB #17)_
 
 ---
 

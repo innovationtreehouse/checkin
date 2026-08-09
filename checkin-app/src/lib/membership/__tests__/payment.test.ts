@@ -7,7 +7,7 @@
  * product (its Shopify variant) before a PENDING_PAYMENT process activates.
  *   - no membership variant in the order -> NOT activated, no paidAt, board alerted (notifyBoardPaidReject).
  *   - membership variant present         -> activates as before (status ACTIVE, membership ACTIVE).
- *   - a "certified" (board) activation never had an order to check, so it's exempt regardless.
+ *   - a "manual" (board) activation never had an order to check, so it's exempt regardless.
  *
  * Also covers the activation email's INITIAL/RENEWAL split: a renewing household
  * is thanked for renewing, not welcomed as if it were new.
@@ -108,14 +108,14 @@ it('thanks a RENEWAL household for renewing instead of welcoming it', async () =
     expect(body).toContain('Thank you for renewing');
 });
 
-it('a certified (board) activation is exempt from the membership-item check', async () => {
+it('a manual (board) activation is exempt from the membership-item check', async () => {
     // certifyPaymentPlan never has a Shopify order to check (via !== "payment"),
     // so it activates even though no hasMembershipItem is passed at all.
     prisma.orgMembershipProcess.findUnique.mockResolvedValue({
         id: PROCESS_ID, status: 'PENDING_PAYMENT', paidAt: null, bgClearedAt: new Date(), orgMembershipId: MEMBERSHIP_ID,
     });
 
-    await activate(PROCESS_ID, { via: 'certified', actorId: 1 });
+    await activate(PROCESS_ID, { via: 'manual', actorId: 1 });
 
     expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ status: 'ACTIVE' }) }),

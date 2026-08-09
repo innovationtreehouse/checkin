@@ -504,7 +504,7 @@ model OrgMembershipProcess {
   /// @sensitivity:internal
   paidAt                DateTime?
   /// @sensitivity:internal
-  certifiedById         Int?
+  manualPaymentById     Int?
   /// @sensitivity:internal
   certificationNote     String?
   /// Write-never as of the outreach engine (PR-2): the renewal sweep and the go-live
