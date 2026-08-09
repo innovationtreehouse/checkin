@@ -26,8 +26,7 @@ jest.unmock('@/lib/prisma');
 import * as fs from 'fs';
 import * as path from 'path';
 import { allRoutes, type Authorize } from '@/security/core';
-import type { BusinessRole } from '@/types/auth';
-import type { SessionUser } from '@/types/participant';
+import type { BusinessRole, AuthenticatedUser } from '@/types/auth';
 import prisma from '@/lib/prisma';
 import '@/security/registry';
 
@@ -85,7 +84,7 @@ function routeFileExists(routePath: string): boolean {
 }
 
 describe('Registry route admission gates', () => {
-    let plainUser: SessionUser;
+    let plainUser: AuthenticatedUser;
     let programId: number;
     let eventId: number;
     const householdIds: number[] = [];
