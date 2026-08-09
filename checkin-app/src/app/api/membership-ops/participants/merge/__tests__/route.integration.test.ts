@@ -1173,6 +1173,23 @@ describe("Merge Participants API", () => {
             expect(await prisma.auditLog.count({ where: { tableName: "OrgMembershipProcess", affectedEntityId: process.id } })).toBe(0);
         });
 
+        it("activates a paid PENDING_BG_CLEARANCE household, without dating anyone's own check", async () => {
+            // The one state where the carried check is the SOLE block: dues are settled and
+            // the membership sits INACTIVE. A stamp that doesn't converge leaves it there.
+            const process = await makeApplication("PENDING_BG_CLEARANCE", { contractSignedAt: new Date(), bgConsentAt: new Date(), paidAt: new Date() });
+            const child = await prisma.person.create({ data: { name: "Adult Child", householdId, isHouseholdLead: false } });
+            extraPersonIds.push(child.id);
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect({ status: after.status, cleared: after.bgClearedAt !== null }).toEqual({ status: "ACTIVE", cleared: true });
+            expect((await prisma.orgMembership.findUniqueOrThrow({ where: { id: membershipId } })).status).toBe("ACTIVE");
+            // The clearance carries zero attestations, so it names no subject and stamps
+            // no person. A household-wide stamp would date this child off a parent's check.
+            expect((await prisma.person.findUniqueOrThrow({ where: { id: child.id } })).lastBackgroundCheck).toBeNull();
+        });
+
         it("never touches a PERSON_BG re-pointed onto the survivor", async () => {
             // householdBgIsFresh asks about household LEADS. Answering it for an adult
             // child's own check would clear them because a parent's check is fresh.
@@ -1186,6 +1203,24 @@ describe("Merge Participants API", () => {
             const after = await reload(personBg.id);
             expect({ status: after.status, cleared: after.bgClearedAt, subject: after.subjectPersonId })
                 .toEqual({ status: "PENDING_BG_REVIEW", cleared: null, subject: pKeepId });
+        });
+
+        it("never touches a PERSON_AGREEMENT re-pointed onto the survivor", async () => {
+            // The other orgMembership-less kind, and the one that shares a status with an
+            // acting state. Every candidate query goes through orgMembership, which both
+            // PERSON kinds sit outside; widening that scope would sign an adult child's
+            // own agreement off a parent's background check.
+            const agreement = await prisma.orgMembershipProcess.create({
+                data: { kind: "PERSON_AGREEMENT", subjectPersonId: pMergeId, status: "PENDING_EXTERNAL_ACTION" },
+            });
+            createdProcessIds.push(agreement.id);
+            await makeApplication("PENDING_BG_CLEARANCE", { contractSignedAt: new Date(), bgConsentAt: new Date(), paidAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(agreement.id);
+            expect({ status: after.status, cleared: after.bgClearedAt, signed: after.contractSignedAt })
+                .toEqual({ status: "PENDING_EXTERNAL_ACTION", cleared: null, signed: null });
         });
 
         it("attributes the carryover to the merging board member, naming the record it came from", async () => {
