@@ -70,6 +70,7 @@ export const GET = withCron(async () => {
     }
 
     // `failed` is the run-health signal withCron reads: isolating a bad row keeps
-    // the sweep going, it does not make the run a success.
+    // the sweep going and the run still counts as having RUN, but it is not clean,
+    // so withCron records it with an error rather than silently green.
     return NextResponse.json({ success: true, enabled: true, processed: expired.length, released, failed });
 });

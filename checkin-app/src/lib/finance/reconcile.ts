@@ -514,7 +514,8 @@ export interface ReconcileResult {
     reversalsRaised: number;
     /** Orders whose forward pass threw. The cron route surfaces it as the run's
      *  health signal (lib/cronAuth.ts) — isolating a bad order keeps the sweep
-     *  going, it does not make the run a success. */
+     *  going and the run still counts as having RUN, but it is not clean. Do not
+     *  reuse this key for anything else: withCron reads `failed` by name. */
     failed: number;
 }
 

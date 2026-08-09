@@ -120,7 +120,8 @@ export const GET = withCron(async () => {
         return NextResponse.json({
             success: true,
             // Checkouts this run swallowed. withCron reads it and records the run
-            // unhealthy when non-zero — a swept-nothing sweep is not a green sweep.
+            // as completed-but-unclean when non-zero — a swept-nothing sweep is not
+            // a green sweep, and is also not a sweep that failed to run.
             failed,
             facilityClose: {
                 checkedOutCount,
