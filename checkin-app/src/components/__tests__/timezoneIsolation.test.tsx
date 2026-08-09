@@ -9,15 +9,13 @@ import { pinTimezone } from '@/test-helpers/tz';
 const INSTANT = '2026-09-01T02:30:00.000Z';
 
 // Request A's leaf suspends on a slow read and formats only once it resolves, so its
-// render lands after another request has already rendered.
+// render lands after another request has already rendered. Rebuilt per test: `open`
+// latches and never resets, so a shared gate would leave a second test's LateStamp
+// never suspending — the interleave would not happen and the test would pass green
+// while asserting nothing.
 let release!: () => void;
-const gate = new Promise<void>((r) => {
-    release = r;
-});
+let gate!: Promise<void>;
 let open = false;
-void gate.then(() => {
-    open = true;
-});
 
 function LateStamp() {
     const { formatDateTime } = useOrgTime();
@@ -34,6 +32,16 @@ function Stamp() {
 // request, so a zone held in module state belongs to whichever request wrote it last.
 describe('concurrent renders do not share a display timezone', () => {
     pinTimezone('America/Chicago');
+
+    beforeEach(() => {
+        open = false;
+        gate = new Promise<void>((r) => {
+            release = r;
+        });
+        void gate.then(() => {
+            open = true;
+        });
+    });
 
     it('keeps request A in its own zone while request B renders in another', async () => {
         // Request A: the org's configured zone, New York. Its leaf suspends.

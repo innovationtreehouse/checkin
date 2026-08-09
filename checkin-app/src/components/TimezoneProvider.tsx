@@ -33,16 +33,21 @@ export function useDisplayTimezone(): string {
  * The instant formatters bound to this tree's configured zone — the client-side seam
  * for `lib/time`, whose raw formatters take the zone explicitly. Safe to call from
  * render bodies, memos and callbacks, since it returns plain functions.
+ *
+ * `timeZone` is omitted from the options: the tree's zone always wins, so accepting
+ * one and discarding it would be the same silent-wrong-zone footgun this seam closes.
  */
+type ZoneFreeOptions = Omit<Intl.DateTimeFormatOptions, 'timeZone'>;
+
 export function useOrgTime() {
     const timeZone = useDisplayTimezone();
     return useMemo(
         () => ({
-            formatDate: (date: DateInput, options?: Intl.DateTimeFormatOptions) =>
+            formatDate: (date: DateInput, options?: ZoneFreeOptions) =>
                 formatDate(date, { ...options, timeZone }),
-            formatTime: (date: DateInput, options?: Intl.DateTimeFormatOptions) =>
+            formatTime: (date: DateInput, options?: ZoneFreeOptions) =>
                 formatTime(date, { ...options, timeZone }),
-            formatDateTime: (date: DateInput, options?: Intl.DateTimeFormatOptions) =>
+            formatDateTime: (date: DateInput, options?: ZoneFreeOptions) =>
                 formatDateTime(date, { ...options, timeZone }),
             formatVisitRange: (arrived: DateInput, departed?: DateInput) =>
                 formatVisitRange(arrived, departed, timeZone),

@@ -28,6 +28,17 @@ describe('TimezoneProvider', () => {
         expect(text).not.toContain('8/31/2026');
     });
 
+    // Type-level guard: the tree's zone always wins, so the options must not
+    // advertise a `timeZone` the formatter would accept and then discard.
+    it('rejects a caller-supplied timeZone at compile time', () => {
+        function Rejected() {
+            const { formatDate } = useOrgTime();
+            // @ts-expect-error timeZone is omitted from the accepted options
+            return <>{formatDate(INSTANT, { timeZone: 'Asia/Tokyo' })}</>;
+        }
+        expect(Rejected).toBeDefined();
+    });
+
     it('falls back to APP_TIMEZONE when the configured zone is missing', () => {
         render(
             <TimezoneProvider value={''}>
