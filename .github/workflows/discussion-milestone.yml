@@ -1,0 +1,93 @@
+name: Discussion milestone
+
+# Apply a release-planning discussion's agreed issue set to a milestone, when a
+# maintainer says so. The command IS the decision: convergence is declared by a
+# human typing it, never inferred from the thread. Nothing fires without it.
+#
+# Shape, and why:
+#   - Claude reads the discussion and emits a PLAN as strict JSON. It never
+#     calls the GitHub API and holds no token.
+#   - A script validates that plan against facts it fetched itself, then applies
+#     it. Every post-plan decision is a comparison against an API value, so a
+#     model there would add nondeterminism to a write path and buy nothing.
+#   - The script posts back exactly what it changed, with a reversal manifest.
+#
+# The discussion body and every comment are attacker-controllable text on a
+# PUBLIC repo. They are data, never instructions. Three things keep that true:
+# the plan schema has no field expressing "close", "delete" or "assign"; the
+# validator rejects any issue number not present in the discussion body; and the
+# posted comment is rendered from the validated plan, never from model prose.
+
+on:
+  discussion_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      discussion: { description: Discussion number, required: true, type: string }
+
+# Per discussion, and never cancel: this job writes. A cancelled run leaves
+# issues half-assigned with no comment saying why. Let the second run queue.
+concurrency:
+  group: discussion-milestone-${{ github.event.discussion.number || inputs.discussion }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  apply:
+    # `edited` is deliberately not a trigger: it would let the text change after
+    # a maintainer read it. Re-run via workflow_dispatch instead.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.sender.type == 'User' &&
+        contains(github.event.comment.body, '@claude prepare the milestone') &&
+        (github.event.comment.author_association == 'MEMBER' ||
+         github.event.comment.author_association == 'OWNER')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read      # checkout the validator
+      discussions: write  # read the thread, post the result
+      issues: write       # milestones ride on the issues scope
+    steps:
+      - uses: actions/checkout@v5
+
+      # author_association MEMBER means "in the org", NOT "can write here" — a
+      # read-only member passes it. The allowlist is the real gate, and it lives
+      # in this file because /.github/ is CODEOWNERS-gated with required review.
+      - name: Check the caller may do this
+        env:
+          ACTOR: ${{ github.event.comment.user.login || github.actor }}
+        run: |
+          set -euo pipefail
+          case "$ACTOR" in
+            jee7s|thpr|dkaygithub|ryannazaretian|dmkorten) ;;
+            *) echo "::error::$ACTOR is not on the maintainer allowlist."; exit 1 ;;
+          esac
+
+      - name: Fetch the discussion
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NUM: ${{ github.event.discussion.number || inputs.discussion }}
+        run: scripts/discussion-milestone/fetch.sh "$NUM" > thread.json
+
+      # Claude gets the thread as a FILE and no token. A fully-compromised
+      # prompt cannot reach the API from here; it can only write a bad plan,
+      # which the next step is built to reject.
+      - name: Ask Claude for a plan
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-opus-4-5
+          thinking: low
+          prompt_file: scripts/discussion-milestone/prompt.md
+          input_file: thread.json
+          output_file: plan.json
+
+      - name: Validate and apply
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ github.event.discussion.number || inputs.discussion }}
+          ACTOR: ${{ github.event.comment.user.login || github.actor }}
+        run: scripts/discussion-milestone/apply.sh plan.json thread.json
