@@ -125,12 +125,15 @@ and a payment-plan approval. _(VOCAB #17)_
 
 ---
 
-## 🟢 Drop the `BoardSettings` membership-fee `@map` shims (contract stage)
+## 🟢 Drop the vocabulary-rename `@map` shims (contract stage)
 
-"dues" → "membership fee" shipped the Prisma/API/UI half; both fields still `@map`
-to the old physical columns, which a rolling deploy can't rename in the same
-release. Rename them once that release is out — [#1583](https://github.com/innovationtreehouse/checkin/issues/1583).
-_(VOCAB #6)_
+"dues" → "membership fee" (`BoardSettings.standardMembershipFeeCents`,
+`.volunteerMembershipFeeCents`) and "certified" → "manual"
+(`OrgMembershipProcess.manualPaymentById`) shipped the Prisma/API/UI half; all
+three fields still `@map` to the old physical columns, which a rolling deploy
+can't rename in the same release. Rename them once that release is out —
+[#1583](https://github.com/innovationtreehouse/checkin/issues/1583).
+_(VOCAB #6, #17)_
 
 ---
 

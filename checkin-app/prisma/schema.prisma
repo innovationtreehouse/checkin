@@ -502,8 +502,11 @@ model OrgMembershipProcess {
   shopifyOrderId        String?
   /// @sensitivity:internal
   paidAt                DateTime?
+  // The @map holds the physical column on its old name: most reads of this model
+  // carry no select, so the previous release reads it through a rolling deploy's
+  // drain window. Rename it in a later release (contract stage).
   /// @sensitivity:internal
-  manualPaymentById     Int?
+  manualPaymentById     Int?                    @map("certifiedById")
   /// @sensitivity:internal
   certificationNote     String?
   /// Write-never as of the outreach engine (PR-2): the renewal sweep and the go-live
