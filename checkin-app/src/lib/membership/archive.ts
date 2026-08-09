@@ -1,7 +1,7 @@
-import { Prisma, type OrgMembershipProcessStatus } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { ReviewError } from "@/lib/membership/review";
-import { ARCHIVABLE_STATUSES, fromWhere } from "@/lib/membership/lifecycle";
+import { RESTORABLE_STATUSES, fromWhere } from "@/lib/membership/lifecycle";
 import { personActor } from "@/lib/auditActor";
 
 /**
@@ -37,10 +37,6 @@ export async function archiveApplication(processId: number, actorId: number) {
     ]);
     return { status: "ARCHIVED" as const };
 }
-
-/** Restore targets are exactly the statuses archive can come from — one list, so the
- *  two directions can never disagree (the ARCHIVED↔ edges in TRANSITIONS). */
-const RESTORABLE_STATUSES = new Set<OrgMembershipProcessStatus>(ARCHIVABLE_STATUSES);
 
 /**
  * Board recovery of a wrongly-archived application. The restore target is the

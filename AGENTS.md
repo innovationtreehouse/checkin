@@ -36,6 +36,20 @@ Design rationale, regressions-to-learn-from, and past approaches live in
 `docs/` and PR history — not in code comments. (This file's own flow-test
 section is an example: the failure stories sit in docs, not in the source.)
 
+## Lint and type errors
+
+A suppressed error is an error the next reader cannot see. Fix what the tool is
+pointing at, not the fact that it is pointing.
+
+- **Never fix a lint error by disabling the linter.** No
+  `// eslint-disable-next-line`, no `/* eslint-disable */`, no
+  `@ts-expect-error`, no `@ts-ignore`.
+- **Never fix a type error with an `any` coercion.** Type the variables,
+  parameters and return signatures properly. Where the type isn't immediately
+  obvious, use `unknown` and narrow it, or define the interface.
+- **Address the root cause** — the logic, the missing type, the interface that
+  wasn't imported — rather than the message.
+
 ## Test classes
 
 There are **three** classes of tests. Run all commands from `checkin-app/`.
@@ -149,6 +163,32 @@ standing as a soft reservation, and never trust it as the only signal.
 
 Project-field writes need the `project` token scope; if GraphQL returns
 INSUFFICIENT_SCOPES, have the user run `gh auth refresh -s project`.
+
+## Your own open PRs
+
+Before opening a PR, search open **and recently closed** PRs for the same fix —
+by the file you are about to touch and by the finding, not just by title. If one
+exists, that PR *is* the work: push to its branch. A second PR for a fix that
+already has one is never the right move, whoever opened the first.
+
+An open PR you authored carrying **CHANGES_REQUESTED**, or unresolved review
+comments, is your next task — ahead of any new finding. Address it or argue it
+on the thread. Do not leave it and start something else.
+
+- **Never re-file instead of revising.** Abandoning a reviewed PR and opening a
+  fresh one with the same fix launders unaddressed feedback into a clean slate:
+  the same review gets written twice and the defect the first review named ships
+  anyway. This is the failure to avoid, and it has happened: #1479 was told on
+  2026-08-03 that its `sandbox` value broke the dev mail viewer's link
+  click-through; #1617 arrived six days later with the identical flags, the
+  identical claim that links stayed clickable, and no reference to #1479.
+- **Disagreeing is fine; ignoring is not.** If you think a review is wrong —
+  including on security grounds, and including when the reviewer is not the
+  repo owner — say so on the PR and let the owner settle it. Unwillingness to
+  take a reviewer's advice is not a licence to re-file: silence plus a duplicate
+  reads as feedback evasion, and it costs the reviewer the same work twice.
+- Same rule for a finding already **rejected**. Re-raising it needs new evidence
+  named in the body, not a new PR number.
 
 ## Reviewing a PR
 

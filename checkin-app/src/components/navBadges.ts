@@ -181,7 +181,7 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
     case '/system-status': {
       // Red alert: things broken about the deployment itself — failing system-config
       // checks (env-var/deploy gaps, e.g. Zoho e-sign unconfigured) plus cron sweeps
-      // with no successful run inside the staleness window. Distinct from the
+      // that stopped running OR stopped working. Distinct from the
       // green/gray queue badges — this is "infra broken," not "you have a task."
       // Admins + board only (the counts are absent from the payload for everyone else).
       //
@@ -191,12 +191,14 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       // label keeps them itemized so the pill is still specific. See lib/configHealth.ts
       // and lib/cronRuns.ts.
       const config = counts.configHealth?.openIssues ?? 0;
-      const stale = counts.configHealth?.staleCronJobs ?? 0;
-      const n = config + stale;
+      // "unhealthy", not "not running": the count also covers a sweep that runs every
+      // night and cannot finish its work. Which one it is, is a panel-level detail.
+      const cron = counts.configHealth?.unhealthyCronJobs ?? 0;
+      const n = config + cron;
       if (n === 0) return [];
       const parts = [
         ...(config > 0 ? [`${config} config ${config === 1 ? 'issue' : 'issues'}`] : []),
-        ...(stale > 0 ? [`${stale} cron job${plural(stale, '', 's')} not running`] : []),
+        ...(cron > 0 ? [`${cron} cron job${plural(cron, '', 's')} unhealthy`] : []),
       ];
       return [{ count: n, color: 'red', label: parts.join(', ') }];
     }

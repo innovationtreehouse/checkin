@@ -1,49 +1,42 @@
 /**
  * Seed default and offline fallback only — NOT the display zone. The organisation's
  * display zone is the editable `AppSettings.timezone` (lib/appSettings.ts), which the
- * server resolves per request and installs here via `setDisplayTimezone`.
+ * server resolves per request and passes to the formatters below.
  */
 export const APP_TIMEZONE = 'America/Chicago';
 
-let displayTimezone: string = APP_TIMEZONE;
+/** An instant, in any of the shapes the formatters accept. */
+export type DateInput = Date | string | number | null | undefined;
 
 /**
- * Install the organisation's configured display zone for the instant formatters below.
- * Client components get it from `<TimezoneProvider>` (fed by the root layout); server
- * callers, which run in a separate module instance, pass `{ timeZone }` per call instead.
- * An empty value falls back to APP_TIMEZONE.
+ * Options for the instant formatters. `timeZone` is required so the organisation's
+ * configured zone is always passed in rather than read from ambient state: client
+ * components get it from `useOrgTime()`, server callers from `resolveDisplayTimezone()`.
  */
-export function setDisplayTimezone(timezone: string | null | undefined): void {
-    displayTimezone = timezone || APP_TIMEZONE;
-}
-
-/** The zone the instant formatters are currently rendering in. */
-export function getDisplayTimezone(): string {
-    return displayTimezone;
-}
+export type ZonedOptions = Intl.DateTimeFormatOptions & { timeZone: string };
 
 /**
- * Returns a localized date string for an instant, in the organisation's display timezone
+ * Returns a localized date string for an instant, in the given timezone
  */
-export function formatDate(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+export function formatDate(date: DateInput, options: ZonedOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleDateString(undefined, { timeZone: displayTimezone, ...options });
+    return new Date(date).toLocaleDateString(undefined, options);
 }
 
 /**
- * Returns a localized time string in the organisation's display timezone
+ * Returns a localized time string in the given timezone
  */
-export function formatTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+export function formatTime(date: DateInput, options: ZonedOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleTimeString(undefined, { timeZone: displayTimezone, ...options });
+    return new Date(date).toLocaleTimeString(undefined, options);
 }
 
 /**
- * Returns a combined localized date and time string in the organisation's display timezone
+ * Returns a combined localized date and time string in the given timezone
  */
-export function formatDateTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+export function formatDateTime(date: DateInput, options: ZonedOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleString(undefined, { timeZone: displayTimezone, ...options });
+    return new Date(date).toLocaleString(undefined, options);
 }
 
 /**
@@ -68,11 +61,12 @@ export function relTime(when: string | Date, now: Date | number = Date.now()): s
  * Times are shown without seconds.
  */
 export function formatVisitRange(
-    arrived: Date | string | number | null | undefined,
-    departed?: Date | string | number | null | undefined,
+    arrived: DateInput,
+    departed: DateInput,
+    timeZone: string,
 ): string {
     if (!arrived) return '';
-    const hm: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+    const hm: ZonedOptions = { timeZone, hour: 'numeric', minute: '2-digit' };
     const start = formatTime(arrived, hm);
     if (!departed) return `${start}-`;
     const mins = Math.round((new Date(departed).getTime() - new Date(arrived).getTime()) / 60000);
@@ -140,11 +134,9 @@ const ORG_DAY_PARTS = new Intl.DateTimeFormat('en-US', {
  * day from a moment: the zone is named rather than inherited from the process.
  * See docs/conventions.md, "A day is not a moment".
  *
- * Pinned to APP_TIMEZONE, not the configured display zone: `getDisplayTimezone()` is
- * only installed by `<TimezoneProvider>`, which runs on the client, so a server age
- * gate would read the fallback while the browser read the setting and the two would
- * disagree about who is 18. ponytail: a settings-aware variant has to be async (the
- * zone comes from the database), so it waits until the org actually moves zones.
+ * Pinned to APP_TIMEZONE, not the configured display zone, so a server age gate and
+ * the browser cannot disagree about who is 18. ponytail: a settings-aware variant has
+ * to be async (the zone comes from the database), so it waits until the org moves zones.
  */
 export function orgCalendarDay(instant: Date | string | number = new Date()): Date {
     const p = Object.fromEntries(

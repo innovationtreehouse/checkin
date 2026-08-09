@@ -149,6 +149,25 @@ describe("forward recovery", () => {
         expect(await prisma.paymentException.count({ where: { processId } })).toBe(0);
     });
 
+    // An order whose pass throws is isolated (the sweep goes on) but counted: the
+    // cron ledger reads `failed`, so a pass that recovered nothing is not a green run.
+    it("counts an order whose forward pass throws", async () => {
+        const email = `boom-${TAG}@ex.com`;
+        await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: true });
+        ordersChangedSince.mockResolvedValue([order({ legacyId: `${TAG}-boom`, customerEmail: email })]);
+        orderLineVariantIds.mockRejectedValue(new Error("mirror read failed"));
+
+        const logged = jest.spyOn(console, "error").mockImplementation(() => {});
+        try {
+            const r = await runReconcile();
+            expect(r.ordersScanned).toBe(1);
+            expect(r.failed).toBe(1);
+            expect(logged).toHaveBeenCalled();
+        } finally {
+            logged.mockRestore();
+        }
+    });
+
     it("holds at PENDING_BG_CLEARANCE when bg not cleared", async () => {
         const email = `hold-${TAG}@ex.com`;
         const { processId } = await makeApplicant({ email, status: "PENDING_PAYMENT", bgCleared: false });

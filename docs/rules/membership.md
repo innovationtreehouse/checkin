@@ -166,6 +166,12 @@ Procedure below is built on them.
   consent link and its result comes back by hand. That is the arrangement, not a
   stopgap waiting to be automated.
 
+- A check that comes back with a restriction on how someone may volunteer is
+  carried by the board, not the app. Reviewers record only approval or rejection,
+  so a restricted volunteer is approved here and the restriction lives in the
+  board's own arrangement with them. The assumption holds as long as the reviewers
+  who read the report are the people who set that arrangement.
+
 - Declining a scholarship or payment-plan request is a conversation between two
   people. Telling the family is the board's own act and happens outside the app.
 
@@ -201,6 +207,12 @@ Procedure below is built on them.
   whose report they read, and a later reviewer confirms that same person. A
   reviewer who believes the named person is wrong rejects, rather than naming
   someone else.  [Decision]
+
+- An approval that named nobody counts toward nobody, including toward the adult a
+  later reviewer names. Nothing records whose report it read, so counting it would
+  date a clearance on one reviewer's reading and leave a row no worklist can tell
+  from a real one. A review carrying one is reset by the board and re-reviewed by
+  two.  [Decision — *Principle: fail closed*]
 
 - A board override names the adult it covers. It cannot infer one: a blocked
   application never holds the second approval that would identify a subject, so
@@ -307,11 +319,22 @@ Procedure below is built on them.
 - Nobody is removed for falling out of compliance. The view reports and sends
   nothing, so a violation waits until a person looks.  [Decision — deliberate limit; *Principle: people decide about people*]
 
-### Background checks for program-attached adults
+### Background checks for individual adults
 
 - Activating a membership opens a background-check obligation for that
-  household's program-attached adults. It is surfaced for follow-up and gates
-  nothing — chasing it is a conversation, not a refusal at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+  household's program-attached adults and for its signing adults. It is surfaced
+  for follow-up and gates nothing — chasing it is a conversation, not a refusal
+  at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+
+- A signing adult whom the household's own review did not name is covered here
+  rather than by that review, because a clearance covers only the adult who took
+  the check. Otherwise the second parent on the application — often the one
+  holding a key — belongs to no track at all.  [Decision — *Policy: Membership Policy, Art. VI §VI.1*]
+
+- The obligation follows an active membership. Leads of households that only ever
+  started an application, were denied or revoked, or were created by an import owe
+  nothing: they never became members, and the annual sweep must not open a check on
+  someone who did not apply.  [Decision — deliberate limit]
 
 - The annual sweep judges age as of the membership-year boundary, which counts as
   inside it: turning 18 afterwards waits for the next sweep rather than firing on

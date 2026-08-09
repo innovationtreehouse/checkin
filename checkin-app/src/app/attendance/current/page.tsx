@@ -10,7 +10,8 @@ import {
   Alert, Anchor, Badge, Box, Button, Card, Center, Group, Loader, Modal, Paper,
   SimpleGrid, Stack, Text, TextInput, Title,
 } from "@mantine/core";
-import { formatTime, isYouth } from "@/lib/time";
+import { isYouth } from "@/lib/time";
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { PageContainer } from "@/components/ui/PageContainer";
 import { formatPhone } from "@/lib/phone";
 import { getKioskDisplayNames } from "@/lib/kiosk-names";
@@ -48,6 +49,7 @@ type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags;
 type AttendanceResponse = FullResponse | LimitedResponse;
 
 function KioskDisplayInner() {
+  const { formatTime } = useOrgTime();
   const searchParams = useSearchParams();
   const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
   const { data: session } = useSession();

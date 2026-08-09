@@ -236,7 +236,7 @@ export async function activate(
     if (result.kind === "active") {
         await sendCongrats(result.householdId, result.isInitial);
         // Trigger C: a brand-new (INITIAL) member just activated (bg cleared before
-        // payment landed) — open PERSON_BG for the household's program-attached adults.
+        // payment landed) — open PERSON_BG for the household's check-obligated adults.
         if (result.isInitial) await openPersonBgForNewMember(result.householdId, new Date());
         // Same activation, the agreement side — an adult child signs their own.
         if (result.isInitial) await openPersonAgreementForNewMember(result.householdId, new Date());

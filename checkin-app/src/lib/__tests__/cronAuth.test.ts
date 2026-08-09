@@ -116,6 +116,40 @@ describe('withCron run ledger', () => {
         expect(create.mock.calls[0][0].data).toMatchObject({ job: 'reconcile-shopify', success: false, error: 'HTTP 503' });
     });
 
+    // A sweep that isolates per-row failures answers 200 with counts, so the status
+    // cannot see them. Without reading the count, a night that checked nobody out
+    // lands in the ledger as a clean success and the System Status pill stays green.
+    //
+    // Recorded as BOTH: the run completed (success), and it was not clean (error).
+    // Writing success: false instead would freeze lastSuccessAt on the first
+    // permanently-failing row and the badge would call the job "not running".
+    it('records a partial sweep as a run that completed AND names what failed', async () => {
+        const body = { success: true, failed: 4, facilityClose: { checkedOutCount: 0 } };
+        const handler = jest.fn().mockResolvedValue(NextResponse.json(body));
+        const res = await withCron(handler)(authed('http://localhost/api/cron/nightly'));
+
+        // The route's own envelope still reaches the caller untouched.
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual(body);
+        expect(create.mock.calls[0][0].data).toMatchObject({ job: 'nightly', success: true, error: '4 item(s) failed' });
+    });
+
+    // The other half of the split: a run that never completed records no success, so
+    // staleness still fires on a job that genuinely stopped.
+    it('records a handler error envelope as a run that did NOT complete', async () => {
+        const handler = jest.fn().mockResolvedValue(NextResponse.json({ error: 'nope' }, { status: 503 }));
+        await withCron(handler)(authed('http://localhost/api/cron/nightly'));
+
+        expect(create.mock.calls[0][0].data).toMatchObject({ success: false, error: 'HTTP 503' });
+    });
+
+    it('records a clean success when the body reports zero failed rows', async () => {
+        const handler = jest.fn().mockResolvedValue(NextResponse.json({ success: true, failed: 0, released: 2 }));
+        await withCron(handler)(authed('http://localhost/api/cron/scholarship-grace-expiry'));
+
+        expect(create.mock.calls[0][0].data).toMatchObject({ success: true, error: null });
+    });
+
     it('records a failure and still returns the 500 when the handler throws', async () => {
         // Suppressed locally, NOT via jest.setup.js's global allowlist: a global entry
         // for the wrapper's own logs would silence them in every other cron test too.

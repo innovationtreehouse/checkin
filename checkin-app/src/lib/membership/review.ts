@@ -174,17 +174,24 @@ export function establishedSubject(attestations: { result: string; subjectPerson
 }
 
 /**
+ * Approvals standing behind `subject` — NAMED ones only. An approval that named
+ * nobody counts toward nobody: nothing records whose report it read, so counting it
+ * would date a clearance on a single reviewer's reading. A review carrying one takes
+ * a board reset and two fresh attestations, which is what the two-reviewer rule asks.
+ */
+function approvalsForSubject(attestations: { result: string; subjectPersonId: number | null }[], subject: number): number {
+    return attestations.filter((a) => a.result === "APPROVE" && a.subjectPersonId === subject).length;
+}
+
+/**
  * The adult a household process has cleared: the established subject, once two
  * reviewers have approved it. Returned as a list because it drives an `in` write
  * and is empty until the second approval lands.
  */
 export function subjectsWithTwoApprovals(attestations: { result: string; subjectPersonId: number | null }[]): number[] {
-    const approvals = new Map<number, number>();
-    for (const a of attestations) {
-        if (a.result !== "APPROVE" || a.subjectPersonId === null) continue;
-        approvals.set(a.subjectPersonId, (approvals.get(a.subjectPersonId) ?? 0) + 1);
-    }
-    return [...approvals].filter(([, n]) => n >= REQUIRED_APPROVALS).map(([id]) => id);
+    const subject = establishedSubject(attestations);
+    if (subject === null) return [];
+    return approvalsForSubject(attestations, subject) >= REQUIRED_APPROVALS ? [subject] : [];
 }
 
 /**
@@ -321,10 +328,14 @@ export async function attest(
         }
 
         const withThis = [...process.attestations, { result: "APPROVE", subjectPersonId }];
-        const approvals = withThis.filter((a) => a.result === "APPROVE").length;
-        // A household clears when its named adult reaches two approvals (one checked
-        // adult satisfies membership); a PERSON_BG counts the process as it always has.
-        const clears = isHousehold ? subjectsWithTwoApprovals(withThis).length > 0 : approvals >= REQUIRED_APPROVALS;
+        // A household clears when the adult it named reaches two NAMED approvals (one
+        // checked adult satisfies membership); a PERSON_BG counts the process as a whole.
+        // Both report the very count that decided it, so a reported 2 always means
+        // cleared — a reviewer is never told the review is done while it stays open.
+        const approvals = isHousehold && subjectPersonId !== null
+            ? approvalsForSubject(withThis, subjectPersonId)
+            : withThis.filter((a) => a.result === "APPROVE").length;
+        const clears = approvals >= REQUIRED_APPROVALS;
         if (clears) {
             const { activated, householdId, isInitial } = await clearBackgroundCheck(tx, processId, reviewerId);
             // A cleared PERSON_BG resolves to ACTIVE too; only a household process
@@ -356,7 +367,7 @@ export async function attest(
  * than counting attestations — a BLOCKED process carries at most one APPROVE per
  * subject, so counting there always yields nobody.
  */
-export async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: number, subjectOverride?: number[]): Promise<ClearanceOutcome> {
+export async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: number, subjectOverride?: number[], provenance?: ClearanceProvenance): Promise<ClearanceOutcome> {
     const process = await tx.orgMembershipProcess.findUnique({
         where: { id: processId },
         include: { attestations: true },
@@ -401,19 +412,24 @@ export async function clearBackgroundCheck(tx: TxClient, processId: number, acto
         await tx.orgMembership.update({ where: { id: process.orgMembershipId! }, data: { status: "ACTIVE" } });
     }
 
-    await audit(tx, personActor(actorId), processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true, clearedPersonIds: cleared });
+    // provenance is set when something other than a two-reviewer attestation
+    // produced this clearance; without it the row is indistinguishable from one.
+    await audit(tx, personActor(actorId), processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true, clearedPersonIds: cleared, ...(provenance ?? {}) });
     return { activated: paid, householdId, isInitial: process.kind === "INITIAL" };
 }
 
 /** What a clearance settled to, for the sends that run after the transaction commits. */
 export type ClearanceOutcome = { activated: boolean; householdId: number | null; isInitial: boolean };
 
+/** Why a clearance happened, when it was not two reviewers attesting. */
+export type ClearanceProvenance = { via: string; sourcePersonId: number; reason: string };
+
 /**
  * The sends every clearance owes, outside the transaction so a slow/failed send
  * can't roll it back: congrats + the new-member triggers on activation, else the
  * payment-open notice.
  */
-export async function notifyClearanceOutcome(outcome: ClearanceOutcome) {
+export async function notifyClearanceOutcome(outcome: ClearanceOutcome, opts?: { paymentOpenNotice?: (householdId: number) => Promise<void> }) {
     if (outcome.activated) {
         await sendCongrats(outcome.householdId!, outcome.isInitial);
         // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
@@ -426,7 +442,7 @@ export async function notifyClearanceOutcome(outcome: ClearanceOutcome) {
     } else if (outcome.householdId) {
         // Household process cleared into PENDING_PAYMENT (a PERSON_BG has no
         // household/payment) — tell the family payment is open (#907).
-        await notifyPaymentOpen(outcome.householdId);
+        await (opts?.paymentOpenNotice ?? notifyPaymentOpen)(outcome.householdId);
     }
 }
 
@@ -569,6 +585,21 @@ function blockedResetStatus(process: BlockedResetRow): OrgMembershipProcessStatu
  * PENDING_PAYMENT. The status cards/banner promise an email at clearance.
  * Best-effort (send failures log).
  */
+/**
+ * Payment opened because a check the household already held was recognised, not
+ * because anyone reviewed one. The notice above would tell a family a review
+ * completed when no reviewer read anything.
+ */
+export async function notifyPaymentOpenOnExistingCheck(householdId: number) {
+    const base = config.baseUrl();
+    await emailHouseholdLeads(
+        householdId,
+        "Your background check is on file — you can now pay your membership dues",
+        `<p>Good news — your household already holds a current background check, so no new one is needed. The last step is paying your membership dues: <a href="${base}/membership">${base}/membership</a></p>`,
+        "Payment-open notice failed:",
+    );
+}
+
 async function notifyPaymentOpen(householdId: number) {
     const base = config.baseUrl();
     await emailHouseholdLeads(

@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import RootLayout from "../layout";
-import { APP_TIMEZONE, formatDateTime, setDisplayTimezone } from "@/lib/time";
+import { useOrgTime } from "@/components/TimezoneProvider";
 
 // The layout's own DB read: stubbed so this stays a composition test, but its value
 // still has to reach the formatters — that wiring is the point of the second case.
@@ -80,12 +80,11 @@ const INSTANT = "2026-09-01T02:30:00.000Z";
 
 // Formats during its own render — i.e. inside the provider the layout wraps it in.
 function Stamp() {
+  const { formatDateTime } = useOrgTime();
   return <div>{formatDateTime(INSTANT)}</div>;
 }
 
 describe("RootLayout", () => {
-  afterEach(() => setDisplayTimezone(APP_TIMEZONE));
-
   it("renders its children inside the provider chrome", async () => {
     render(
       await RootLayout({

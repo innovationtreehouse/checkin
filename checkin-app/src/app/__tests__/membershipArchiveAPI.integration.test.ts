@@ -225,6 +225,25 @@ describe('Membership application archive API', () => {
         expect(audit?.newData).toMatchObject({ status: 'PENDING_PAYMENT', unarchived: true });
     });
 
+    it('round-trips a renewal archived from the legacy RENEWAL_PENDING_BG', async () => {
+        // archiveApplication gates on ACTIVE alone, so this status is archivable today —
+        // and migration 20260806160000 backfills it for rows archived before the column
+        // existed. A restore list narrower than the archive gate strands them in ARCHIVED.
+        const hh = await prisma.household.create({ data: { name: `LegacyRenewal ${TAG}` } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+        const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'RENEWAL_PENDING_BG' } });
+        asBoard(boardId);
+
+        expect((await ARCHIVE(req({ processId: p.id }) as never)).status).toBe(200);
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: p.id } }))?.archivedFromStatus).toBe('RENEWAL_PENDING_BG');
+
+        const res = await UNARCHIVE(unarchiveReq({ processId: p.id }) as never);
+        expect(res.status).toBe(200);
+
+        const after = await prisma.orgMembershipProcess.findUnique({ where: { id: p.id } });
+        expect({ status: after?.status, from: after?.archivedFromStatus }).toEqual({ status: 'RENEWAL_PENDING_BG', from: null });
+    });
+
     it('refuses to unarchive a non-archived process (409 wrong_phase)', async () => {
         const { processId } = await makeProcess('NotArchived', 'PENDING_PAYMENT');
         asBoard(boardId);

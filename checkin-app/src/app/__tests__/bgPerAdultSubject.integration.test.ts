@@ -12,10 +12,11 @@
 import { POST as ATTEST } from '@/app/api/membership/reviews/route';
 import { POST as OVERRIDE } from '@/app/api/membership-ops/applications/review-override/route';
 import { GET as COMPLIANCE } from '@/app/api/membership-audit/compliance/route';
-import { eligibleReviewProcessIds } from '@/lib/membership/review';
+import { eligibleReviewProcessIds, overrideBlocked } from '@/lib/membership/review';
 import { bgFreshThreshold, personBgVerdict } from '@/lib/membership/personBgCheck';
 import { householdBgIsFresh } from '@/lib/membership/renewal';
 import prisma from '@/lib/prisma';
+import { sendEmail } from '@/lib/email';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
@@ -216,22 +217,59 @@ describe('Per-adult background-check subjects', () => {
         expect((await dup.json()).code).toBe('already_attested');
     });
 
-    // ── Legacy rows name nobody ──────────────────────────────────────────────
-    it('an attestation carrying no subject counts toward nobody', async () => {
+    // ── An approval that names nobody ────────────────────────────────────────
+    it('an approval naming nobody counts toward nobody, and reports the count it counted', async () => {
         const hh = await twoLeadHousehold('Legacy');
-        // A pre-deploy approval: recorded before checks named their subject.
+        // An approval whose subject column is null: what a review in flight across the
+        // subject migration (20260802120000, nullable, no backfill) carries.
         await prisma.backgroundCheckAttestation.create({ data: { processId: hh.processId, reviewerId: rev1, result: 'APPROVE', subjectPersonId: null } });
 
         as(rev2, { isBackgroundCheckReviewer: true });
         const res = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
         expect(res.status).toBe(200);
 
-        // Alex holds one approval, not two — the subject-less row vouches for no one, so
-        // nothing clears and nobody is stamped. Conservative on purpose.
+        // GUARD. Alex holds one approval, not two — the subject-less row vouches for no
+        // one, so nothing clears and nobody is stamped. Nothing records whose report rev1
+        // read; counting it would date Alex's clearance on rev2's reading alone.
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: hh.processId } });
         expect(proc?.bgClearedAt).toBeNull();
         expect(await bgDate(hh.alex)).toBeNull();
         expect(await bgDate(hh.sam)).toBeNull();
+
+        // The reported defect: attest() answered `approvals: 2` here while nothing
+        // cleared, telling the reviewer the review was done. The count it reports is now
+        // the count that decided `clears`, so the two can never disagree.
+        expect((await res.json()).outcome.approvals).toBe(1);
+    });
+
+    it('a review holding an approval that named nobody exits by board reset, then clears on two real readings', async () => {
+        const hh = await twoLeadHousehold('LegacyReset');
+        await prisma.backgroundCheckAttestation.create({ data: { processId: hh.processId, reviewerId: rev1, result: 'APPROVE', subjectPersonId: null } });
+        as(rev2, { isBackgroundCheckReviewer: true });
+        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
+        (sendEmail as jest.Mock).mockClear();
+
+        // Both reviewers have spent their one attestation, so neither queue offers it —
+        // but the board sees it on /api/membership-ops/applications and `reset` reaches a
+        // review still in progress, not only a BLOCKED one. GUARD on that escape hatch:
+        // it is why the unnamed approval can be refused rather than counted.
+        expect(await eligibleReviewProcessIds(rev1)).not.toContain(hh.processId);
+        expect(await eligibleReviewProcessIds(rev2)).not.toContain(hh.processId);
+        await overrideBlocked(hh.processId, board, 'reset');
+        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: hh.processId } })).toBe(0);
+
+        as(rev1, { isBackgroundCheckReviewer: true });
+        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
+        as(rev2, { isBackgroundCheckReviewer: true });
+        await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
+
+        // Two people read Alex's report, and only Alex is stamped.
+        const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: hh.processId } });
+        expect(proc?.bgClearedAt).not.toBeNull();
+        expect(proc?.status).toBe('PENDING_PAYMENT');
+        expect(await bgDate(hh.alex)).not.toBeNull();
+        expect(await bgDate(hh.sam)).toBeNull();
+        expect((sendEmail as jest.Mock).mock.calls.some((c: unknown[]) => String(c[1]).includes('you can now pay your membership dues'))).toBe(true);
     });
 
     // ── Board force-approve ──────────────────────────────────────────────────

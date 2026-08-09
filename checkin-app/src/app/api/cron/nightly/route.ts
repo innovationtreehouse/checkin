@@ -26,6 +26,7 @@ export const GET = withCron(async () => {
         });
 
         let checkedOutCount = 0;
+        let failed = 0;
         let boardNotified = false;
 
         if (abandonedVisits.length > 0) {
@@ -40,6 +41,7 @@ export const GET = withCron(async () => {
                 if (result.status === "fulfilled") {
                     checkedOutCount += 1;
                 } else {
+                    failed += 1;
                     const visit = abandonedVisits[i];
                     logger.error(`Failed to check out visit ${visit.id} (person ${visit.person.email}):`, result.reason);
                 }
@@ -117,6 +119,10 @@ export const GET = withCron(async () => {
 
         return NextResponse.json({
             success: true,
+            // Checkouts this run swallowed. withCron reads it and records the run
+            // as completed-but-unclean when non-zero — a swept-nothing sweep is not
+            // a green sweep, and is also not a sweep that failed to run.
+            failed,
             facilityClose: {
                 checkedOutCount,
                 boardNotified

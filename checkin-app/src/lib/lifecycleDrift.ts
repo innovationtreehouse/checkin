@@ -66,10 +66,13 @@ export async function scanLifecycleViolations(): Promise<{
         }
     }
 
+    // Every kind is scanned; `kind` goes to `validate` because the machine's invariants
+    // are kind-specific, and deciding which rows to skip HERE would re-derive them.
     const processes = await prisma.orgMembershipProcess.findMany({
         select: {
             id: true,
             status: true,
+            kind: true,
             contractSignedAt: true,
             bgConsentAt: true,
             bgClearedAt: true,
@@ -79,6 +82,7 @@ export async function scanLifecycleViolations(): Promise<{
     for (const p of processes) {
         const bad = validateMembership({
             status: p.status,
+            kind: p.kind,
             contractSignedAt: p.contractSignedAt !== null,
             bgConsentAt: p.bgConsentAt !== null,
             bgClearedAt: p.bgClearedAt !== null,

@@ -151,8 +151,9 @@ function timeAgo(iso: string): string {
  * Last successful run of each cron sweep, from GET /api/system-status/config-health
  * (admins + board only). Nothing in this repo schedules the crons — the schedule and
  * the caller live in a separate infra repo — so this panel is the app's only view of
- * whether its own nightly sweeps are still firing. A job past the staleness window is
- * red here and adds to the red System Status nav pill. See lib/cronRuns.ts.
+ * whether its own nightly sweeps are still firing. Two separate failures show here and
+ * both add to the red System Status nav pill: a job past the staleness window (stopped
+ * running) and a job whose latest run could not finish its work. See lib/cronRuns.ts.
  */
 export function CronRunsBox() {
   const [jobs, setJobs] = useState<CronJob[] | null>(null);
@@ -165,17 +166,20 @@ export function CronRunsBox() {
       .catch(() => setFailed(true));
   }, []);
 
-  const staleCount = jobs?.filter((j) => j.stale).length ?? 0;
+  // Mirrors countUnhealthyCronJobs so the panel badge and the nav pill agree: a job
+  // that ran last night but failed rows is not stale, and still needs attention.
+  const alertCount = jobs?.filter((j) => j.stale || j.lastError).length ?? 0;
 
   return (
     <Card withBorder radius="md" padding="lg">
       <Group gap="sm" mb="xs">
         <Title order={4}>Scheduled Jobs</Title>
-        {staleCount > 0 && <Badge color="red" circle title={`${staleCount} job(s) not running`} />}
+        {alertCount > 0 && <Badge color="red" circle title={`${alertCount} job(s) need attention`} />}
       </Group>
       <Text size="sm" c="dimmed" mb="md">
-        Last successful run of each nightly sweep. A job listed in red has not succeeded in
-        over 48 hours — treat it as stopped and check the scheduler.
+        Last completed run of each nightly sweep. A red timestamp means the job has not run
+        in over 48 hours — treat it as stopped and check the scheduler. A red line beneath a
+        green timestamp means the job ran, but could not finish its work.
       </Text>
 
       {failed ? (
@@ -195,7 +199,7 @@ export function CronRunsBox() {
                 </Text>
               </Group>
               {j.lastError && (
-                <Text size="xs" c="red">Failing since: {j.lastError}</Text>
+                <Text size="xs" c="red">Last run: {j.lastError}</Text>
               )}
             </List.Item>
           ))}

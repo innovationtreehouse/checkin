@@ -101,8 +101,15 @@ export const SCOPE_BINDINGS = {
     Visit: {
         their_own: { field: 'personId', eqCtx: 'selfId' },
         led_households: { field: 'personId', inCtx: 'ledHouseholdMemberIds' },
+        // deletedAt is a conjunct, not a nicety: a tombstoned visit keeps
+        // departedAt null forever, so without it a deleted open visit reads as
+        // an active one for the rest of time.
         all_current_visitors: {
-            all: [{ flag: 'isKeyholder' }, { field: 'departedAt', isNull: true }],
+            all: [
+                { flag: 'isKeyholder' },
+                { field: 'departedAt', isNull: true },
+                { field: 'deletedAt', isNull: true },
+            ],
         },
     },
     RawBadgeLog: { their_own: { field: 'personId', eqCtx: 'selfId' } },

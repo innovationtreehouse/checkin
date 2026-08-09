@@ -9,6 +9,11 @@
  * emails the board, a delete never removes the row, closing an open visit
  * routes through processVisitCheckout, and every lock/where keys on the visit's
  * PERSON (not the actor) so a lead's write serializes against the member's kiosk.
+ *
+ * Both verbs go through @/security/handler, so the registered policy is what
+ * shapes the response: PATCH returns the `visit` envelope stripped to the
+ * registry's their_own/led_households:personal grant, DELETE ships no model
+ * data at all.
  */
 
 import type { NextRequest } from "next/server";
@@ -40,6 +45,9 @@ jest.mock("@/lib/prisma", () => ({
     default: {
         visit: { findUnique: jest.fn(), update: jest.fn() },
         auditLog: { create: jest.fn() },
+        // buildCallerContext reads the led-household roster (the route's only
+        // ctxNeeds prefetch) to resolve led_households.
+        person: { findMany: jest.fn() },
         $transaction: jest.fn(async (cb: (t: unknown) => unknown) => cb(tx)),
     },
 }));
@@ -47,13 +55,17 @@ jest.mock("@/lib/prisma", () => ({
 const mockSession = getServerSession as jest.Mock;
 const visitFindUnique = prisma.visit.findUnique as jest.Mock;
 const auditCreate = prisma.auditLog.create as jest.Mock;
+const personFindMany = prisma.person.findMany as jest.Mock;
 
 const OWN_ID = 7;
 const MEMBER_ID = 8; // a household member the actor leads
+const HOUSEHOLD_ID = 2;
+// Every column a real `visit.update` returns, tombstone fields included — the
+// stripper only drops fields the row actually carries.
 const baseVisit = {
     id: 42, personId: OWN_ID, deletedAt: null, deletedById: null, associatedEventId: null,
     arrivedAt: new Date("2026-07-20T14:00:00Z"), departedAt: new Date("2026-07-20T16:00:00Z"),
-    arrivedVia: "WEB", departedVia: "WEB",
+    arrivedVia: "WEB", departedVia: "WEB", forceCloseWarnedAt: null,
 };
 
 function req(method: string, body?: unknown): NextRequest {
@@ -75,6 +87,7 @@ beforeEach(() => {
     tx.visit.updateMany.mockResolvedValue({ count: 1 });
     (processVisitCheckout as jest.Mock).mockResolvedValue([{ ...baseVisit }]);
     auditCreate.mockResolvedValue({});
+    personFindMany.mockResolvedValue([]); // not a household lead unless a test says so
 });
 
 describe("PATCH /api/attendance/manual/[id]", () => {
@@ -120,7 +133,6 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toMatchObject({ flagged: false });
         expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
             data: { arrivedAt: new Date("2026-07-20T14:05:00Z"), arrivedVia: "WEB" },
         }));
@@ -139,7 +151,6 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T12:00:00Z" }), ctx as never);
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toMatchObject({ flagged: true });
         expect(emailBoardMembers).toHaveBeenCalledTimes(1);
     });
 
@@ -209,7 +220,8 @@ describe("DELETE /api/attendance/manual/[id]", () => {
         const res = await DELETE(req("DELETE"), ctx as never);
 
         expect(res.status).toBe(200);
-        expect(await res.json()).toEqual({ success: true, flagged: true });
+        // No bag: a tombstone ships no model data (registry `envelope: null`).
+        expect(await res.json()).toEqual({});
         // Ownership + liveness are re-asserted inside the lock, not just before it.
         expect(tx.visit.updateMany).toHaveBeenCalledWith({
             where: { id: 42, personId: OWN_ID, deletedAt: null },
@@ -253,6 +265,11 @@ describe("household-lead correction of a member's visit", () => {
         (visitSubject as jest.Mock).mockImplementation(leadScope);
         visitFindUnique.mockResolvedValue(memberVisit);
         tx.visit.findFirst.mockResolvedValue({ id: 42 });
+        // The row written back is the MEMBER's. Leaving the default (personId =
+        // OWN_ID) let their_own resolve on it, which masks what led_households
+        // does or doesn't grant — the whole point of this block.
+        tx.visit.update.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ ...memberVisit, ...args.data }));
+        (processVisitCheckout as jest.Mock).mockResolvedValue([{ ...memberVisit }]);
     });
 
     it("edits a member's visit, locking and matching on the MEMBER, auditing the actor", async () => {
@@ -273,7 +290,7 @@ describe("household-lead correction of a member's visit", () => {
         // 50 min on a WEB (weight 1) arrival: 50 alone is under the 90 threshold,
         // 100 by proxy is over it.
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:50:00Z" }), ctx as never);
-        expect(await res.json()).toMatchObject({ flagged: true });
+        expect(res.status).toBe(200);
         expect((emailBoardMembers as jest.Mock).mock.calls[0][0]).toContain("household-edit");
     });
 
@@ -288,6 +305,43 @@ describe("household-lead correction of a member's visit", () => {
         expect(auditCreate.mock.calls[0][0].data).toMatchObject({
             actorId: OWN_ID, secondaryAffectedEntity: MEMBER_ID,
         });
+    });
+
+    // THE regression pin for the registry↔route seam. Both edges matter: the
+    // times must SURVIVE (led_households:personal is granted and resolving) and
+    // the 'internal' tombstone columns must be GONE. On legacy withAuth the raw
+    // `visit.update` row shipped whole and deletedAt/deletedById/
+    // forceCloseWarnedAt reached the browser.
+    it("strips the internal tombstone columns while keeping the times the lead may see", async () => {
+        mockSession.mockResolvedValue({ user: { id: OWN_ID, householdLead: true, householdId: HOUSEHOLD_ID } });
+        personFindMany.mockResolvedValue([{ id: OWN_ID }, { id: MEMBER_ID }]);
+
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+        expect(res.status).toBe(200);
+        const { visit } = await res.json();
+
+        expect(visit.arrivedAt).toBe("2026-07-20T14:05:00.000Z");
+        expect(visit.departedAt).toBe(baseVisit.departedAt.toISOString());
+        for (const internal of ["deletedAt", "deletedById", "forceCloseWarnedAt"]) {
+            expect(visit).not.toHaveProperty(internal);
+        }
+    });
+
+    // The other edge: led_households is gated on the roster, not on "is a lead".
+    // visitSubject (DB leadship) and ledHouseholdMemberIds (session householdLead
+    // + householdId) are different sources and can disagree on a stale session —
+    // when they do, the grant must not resolve and the times must not ship.
+    it("strips the times when the roster does not contain the visit's person", async () => {
+        mockSession.mockResolvedValue({ user: { id: OWN_ID, householdLead: true, householdId: HOUSEHOLD_ID } });
+        personFindMany.mockResolvedValue([{ id: OWN_ID }]); // MEMBER_ID absent
+
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+        expect(res.status).toBe(200);
+        const { visit } = await res.json();
+
+        expect(visit).not.toHaveProperty("arrivedAt");
+        expect(visit).not.toHaveProperty("departedAt");
+        expect(visit.personId).toBe(MEMBER_ID); // public tier still rides through
     });
 
     it("404s a visit belonging to someone outside the lead's household", async () => {
