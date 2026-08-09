@@ -1073,17 +1073,16 @@ describe("Merge Participants API", () => {
             expect(after.status).toBe("PENDING_PAYMENT");
         });
 
-        it("leaves an UNSIGNED PENDING_EXTERNAL_ACTION row unstamped", async () => {
-            // Stamping here would set advanceExternalIfComplete's holdForNote to false for
-            // good: a note added before the contract is signed would then skip
-            // PENDING_BG_REVIEW and notifyReviewers() and reach no reviewer at all.
-            // markContractSigned re-runs the advance, so nothing strands.
+        it("stamps an unsigned PENDING_EXTERNAL_ACTION row without moving its status", async () => {
+            // The stamp is what lets the row advance on signature: a covered household
+            // never records bgConsentAt, and advanceExternalIfComplete needs one or other.
             const process = await makeApplication("PENDING_EXTERNAL_ACTION");
 
             expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
 
             const after = await reload(process.id);
-            expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status: "PENDING_EXTERNAL_ACTION", cleared: null });
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_EXTERNAL_ACTION");
         });
 
         it("stamps a parallel-track PENDING_PAYMENT row, dropping it out of the reviewer queue", async () => {
@@ -1120,27 +1119,17 @@ describe("Merge Participants API", () => {
             expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status: "PENDING_BG_REVIEW", cleared: null });
         });
 
-        // One case per from-state the carryover reads. Separate tests, not one with three
-        // rows: membership_one_inflight_initial caps a household at ONE in-flight INITIAL,
-        // and the tombstone CAS lets each fixture be merged only once.
-        const NOTE_HELD_CASES: Array<[OrgMembershipProcessStatus, Record<string, unknown>]> = [
-            ["PENDING_EXTERNAL_ACTION", { contractSignedAt: new Date() }],
-            ["PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() }],
-            ["PENDING_BG_REVIEW", { contractSignedAt: new Date() }],
-        ];
-
-        it.each(NOTE_HELD_CASES)("leaves a %s row alone while a live intake note holds the household, and audits why", async (status, extra) => {
+        it("carries the check over a household that has a live intake note (#1499)", async () => {
+            // A note is shown to the reviewers and gates nothing, so it does not gate this
+            // either — the same rule submitIntake's fresh-check shortcut follows.
             await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: "please call us first" } });
-            const held = await makeApplication(status, extra);
+            const process = await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() });
 
             expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
 
-            const after = await reload(held.id);
-            expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status, cleared: null });
-            // The operator changed the facts under a held application; the trail says so.
-            const log = await prisma.auditLog.findFirst({ where: { tableName: "OrgMembershipProcess", affectedEntityId: held.id } });
-            expect(log?.actorId).toBe(actorId);
-            expect(log?.newData).toMatchObject({ bgClearedAt: false, via: "merge", sourcePersonId: pMergeId });
+            const after = await reload(process.id);
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_PAYMENT");
         });
 
         it("stamps nothing when the carried check is outside the recheck window", async () => {

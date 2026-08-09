@@ -23,9 +23,6 @@ import { applyVolunteerStatus, clearBackgroundCheck, notifyClearanceOutcome } fr
 /** A process this carryover may act on. */
 type Candidate = { id: number; orgMembershipId: number | null };
 
-/** The from-states the carryover reads: every in-flight row a fresh check bears on. */
-const CARRYOVER_STATES = ["PENDING_EXTERNAL_ACTION", "PENDING_PAYMENT", "PENDING_BG_REVIEW"] as const;
-
 /** `householdBgIsFresh` against live board settings. Callers need the answer, not the settings row. */
 export async function householdBgFresh(householdId: number | null): Promise<boolean> {
     if (!householdId) return false;
@@ -57,19 +54,7 @@ export async function advanceHouseholdBgAfterMerge(
     if (!householdId || wasFreshBeforeMerge) return;
     const source = { via: "merge" as const, sourcePersonId: mergedPersonId };
     try {
-        const household = await prisma.household.findUnique({ where: { id: householdId }, select: { intakeNotes: true } });
-        if (!household) return;
         if (!(await householdBgFresh(householdId))) return;
-
-        // An intake note is an unread disclosure a human owes the household (#900/#907).
-        // Nothing automatic clears past one; record that the merge made the household
-        // fresh so the trail explains why a covered application is still parked.
-        // #1499 (approved, unmerged) reverses this rule in docs/rules/membership.md;
-        // this gate comes out after that lands, not before.
-        if (household.intakeNotes?.trim()) {
-            await noteHeldDisclosure(householdId, actorId, source);
-            return;
-        }
 
         await stampPendingExternal(householdId, actorId, source);
         await stampParallelPayment(householdId, actorId, source);
@@ -126,15 +111,15 @@ async function stampBgCleared(process: Candidate, householdId: number, actorId: 
 }
 
 /**
- * PENDING_EXTERNAL_ACTION whose agreement is ALREADY signed: that row has no event
- * left to fire the advance, so without this it strands with its gate met (the reason
- * `submitIntake` re-runs the advance after its own shortcut). An unsigned row still
- * has `markContractSigned` coming, and stamping ahead of it would disarm the note
- * hold for good — `advanceExternalIfComplete` reads `holdForNote` off `!bgClearedAt`.
+ * PENDING_EXTERNAL_ACTION: the applicant's card now reads "no new background check
+ * needed". `advanceExternalIfComplete` owns the status edge and no-ops until the
+ * agreement is signed — but a row whose contract is ALREADY signed has no other
+ * event left to fire it, so without this call it strands with its gate met (the
+ * reason `submitIntake` re-runs the advance after its own shortcut).
  */
 async function stampPendingExternal(householdId: number, actorId: number, source: Provenance): Promise<void> {
     const from = fromWhere("PENDING_EXTERNAL_ACTION");
-    for (const process of await uncleared(householdId, from, { contractSignedAt: { not: null } })) {
+    for (const process of await uncleared(householdId, from)) {
         if (!(await stampBgCleared(process, householdId, actorId, from, source))) continue;
         await advanceExternalIfComplete(process.id);
     }
@@ -153,11 +138,11 @@ async function stampParallelPayment(householdId: number, actorId: number, source
 }
 
 /**
- * PENDING_BG_REVIEW with the note that held it now deleted: nothing re-advances
- * such a row on its own. Stamping `bgClearedAt` alone would strand it — that drops
- * it out of the reviewer queue while nothing but `clearBackgroundCheck` moves its
- * status, leaving no exit but archival — so run the real clearance, which stamps
- * and converges in one write. Zero attestations only, re-read under the same lock.
+ * Legacy household rows parked at PENDING_BG_REVIEW — no edge puts one there any
+ * more, and nothing re-advances them. Stamping `bgClearedAt` alone would strand a
+ * row: it drops out of the reviewer queue while nothing but `clearBackgroundCheck`
+ * moves its status, leaving no exit but archival. So run the real clearance, which
+ * stamps and converges in one write. Zero attestations, re-read under the lock.
  */
 async function clearHeldReview(householdId: number, actorId: number): Promise<void> {
     const from = fromWhere("PENDING_BG_REVIEW");
@@ -173,25 +158,5 @@ async function clearHeldReview(householdId: number, actorId: number): Promise<vo
             return clearBackgroundCheck(tx, process.id, actorId);
         });
         if (outcome) await notifyClearanceOutcome(outcome);
-    }
-}
-
-/**
- * The household is now covered but a live intake note keeps the carryover off it.
- * Leave the state alone and audit the fact on every in-flight row, so the board can
- * see why a fresh household is still parked.
- */
-async function noteHeldDisclosure(householdId: number, actorId: number, source: Provenance): Promise<void> {
-    for (const process of await uncleared(householdId, { status: { in: [...CARRYOVER_STATES] } })) {
-        await prisma.auditLog.create({
-            data: {
-                actorId,
-                action: "EDIT",
-                tableName: "OrgMembershipProcess",
-                affectedEntityId: process.id,
-                secondaryAffectedEntity: householdId,
-                newData: { bgClearedAt: false, ...source, reason: "merge made this household background-check fresh; a live intake note held the carryover" },
-            },
-        });
     }
 }
