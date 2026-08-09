@@ -1,7 +1,7 @@
-import { Prisma, type OrgMembershipProcessStatus } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { ReviewError } from "@/lib/membership/review";
-import { ALL_STATUSES, fromWhere } from "@/lib/membership/lifecycle";
+import { RESTORABLE_STATUSES, fromWhere } from "@/lib/membership/lifecycle";
 import { personActor } from "@/lib/auditActor";
 
 /**
@@ -37,17 +37,6 @@ export async function archiveApplication(processId: number, actorId: number) {
     ]);
     return { status: "ARCHIVED" as const };
 }
-
-/**
- * Restore targets are the statuses `archiveApplication` can actually capture, derived
- * from its own gate above rather than from a second list. That gate is `status !== ACTIVE`
- * (ARCHIVED returns early), so the set is every other status — one wider than
- * ARCHIVABLE_STATUSES, which omits the legacy RENEWAL_PENDING_BG on the premise that
- * nothing is ever archived from it. Migration 20260806160000 backfills that very value.
- */
-const RESTORABLE_STATUSES = new Set<OrgMembershipProcessStatus>(
-    ALL_STATUSES.filter((s) => s !== "ACTIVE" && s !== "ARCHIVED"),
-);
 
 /**
  * Board recovery of a wrongly-archived application. The restore target is the
