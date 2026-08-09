@@ -133,10 +133,9 @@ defineRoute({
 // so no field distinguishes them. Array position is the only discriminator, and
 // it survives because stripValue maps arrays element-wise and preserves order.
 //
-// Registered ahead of the route per the boundary isolation rule (AGENTS.md);
-// GET /api/facility/corrections does not exist yet. Blocked on #1523 (persist
-// significance on every Visit audit write) — the review is only meaningful
-// once every write scores.
+// Served by src/app/api/facility/corrections/route.ts. Its flagged-only default
+// view is complete only once every Visit audit write persists
+// newData.significance (#1523, PR #1558) — an unscored write never surfaces.
 defineRoute({
     endpoint: 'GET /api/facility/corrections',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
