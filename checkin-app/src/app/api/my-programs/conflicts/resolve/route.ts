@@ -37,7 +37,7 @@ export const POST = withAuth({}, async (req, auth) => {
     where: { id: visitId },
     include: { event: { include: { program: { select: { leadMentorId: true } } } } },
   });
-  if (!visit) {
+  if (!visit || visit.deletedAt) {
     return apiError("Visit not found", 404);
   }
 
@@ -50,7 +50,7 @@ export const POST = withAuth({}, async (req, auth) => {
   // Guard: only delete a visit that genuinely overlaps another of the same
   // participant's visits. Refuse to delete an isolated, legitimate visit.
   const siblings = await prisma.visit.findMany({
-    where: { personId: visit.personId, id: { not: visit.id } },
+    where: { personId: visit.personId, id: { not: visit.id }, deletedAt: null },
     select: { arrivedAt: true, departedAt: true },
   });
   const isConflicting = siblings.some((s) => intervalsOverlap(visit, s));
@@ -59,14 +59,22 @@ export const POST = withAuth({}, async (req, auth) => {
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.visit.delete({ where: { id: visit.id } });
+    // Tombstone, never a row removal — the same reversible delete every other
+    // visit-write path takes (design §3). Resolving a conflict is a judgement
+    // about which of two overlapping records is real; it must be possible to
+    // back that judgement out.
+    await tx.visit.update({
+      where: { id: visit.id },
+      data: { deletedAt: new Date(), deletedById: user.id },
+    });
     await tx.auditLog.create({
       data: {
         actorId: user.id,
         action: "DELETE",
         tableName: "Visit",
         affectedEntityId: visit.id,
-        secondaryAffectedEntity: visit.associatedEventId,
+        // The subject, not the event — the event is in oldData below.
+        secondaryAffectedEntity: visit.personId,
         oldData: {
           personId: visit.personId,
           arrivedAt: visit.arrivedAt,

@@ -24,6 +24,9 @@ const TAG = 'announce-recip-test';
 
 describe('notifyNewProgramAnnounced recipient set (#1153 covered-member audience)', () => {
     let tombstoneHouseholdId: number, tombstoneTargetId: number;
+    // Integration suites share one DB, so BoardSettings row 1 may already carry a
+    // boundary from another suite. The unbounded cases below require none.
+    let prevBoardSettingsOuter: { orgMembershipYearBoundary: Date | null; bgRecheckMonths: number } | null = null;
 
     async function wipe() {
         const hhs = await prisma.household.findMany({
@@ -42,6 +45,16 @@ describe('notifyNewProgramAnnounced recipient set (#1153 covered-member audience
 
     beforeAll(async () => {
         await wipe();
+
+        const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+        prevBoardSettingsOuter = existing
+            ? { orgMembershipYearBoundary: existing.orgMembershipYearBoundary, bgRecheckMonths: existing.bgRecheckMonths }
+            : null;
+        await prisma.boardSettings.upsert({
+            where: { id: 1 },
+            create: { id: 1, orgMembershipYearBoundary: null },
+            update: { orgMembershipYearBoundary: null },
+        });
 
         // Covered: ACTIVE-membership household, default prefs -> included.
         await prisma.person.create({
@@ -83,6 +96,11 @@ describe('notifyNewProgramAnnounced recipient set (#1153 covered-member audience
 
     afterAll(async () => {
         await wipe();
+        if (prevBoardSettingsOuter) {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: prevBoardSettingsOuter });
+        } else {
+            await prisma.boardSettings.delete({ where: { id: 1 } }).catch(() => {});
+        }
     });
 
     beforeEach(() => {
@@ -102,7 +120,7 @@ describe('notifyNewProgramAnnounced recipient set (#1153 covered-member audience
 
     // #1061 "full duration" gate: a covered household with NO settled renewal is only
     // valid through the current membership-year boundary. One boundary config (Aug 1,
-    // via BoardSettings row 1, absent by default in the integration DB) exercises both
+    // via BoardSettings row 1, which the outer beforeAll leaves unset) exercises both
     // sides: a program ending after the boundary excludes the household, a program
     // ending before it includes the SAME household.
     describe('expired-at-midyear boundary', () => {

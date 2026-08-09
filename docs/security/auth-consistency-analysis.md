@@ -223,7 +223,6 @@ inline even after full migration — verified still inline this pass:
 | endpoint | `[id]` → owner hop | current gate | backstop |
 |---|---|---|---|
 | `events/[id]` PATCH | event → program lead | inline `leadMentorId === user.id` | — |
-| `events/[id]/attendance` POST | event → program lead | inline | `eventAttendanceAPI` IDOR tests |
 | `events/[id]/rsvp` PATCH | event → program participant | inline 403 | `eventRSVPAPI` IDOR tests |
 | `household/emergency-contacts/[contactId]` PATCH/DELETE | contact → household lead | inline + query scoped to `householdId` | `authzOwnershipBoundary` tests |
 | `trusted-adults/[id]/renew` POST | trustedAdult → household/subject | service-layer check | `fd192fc` IDOR test |

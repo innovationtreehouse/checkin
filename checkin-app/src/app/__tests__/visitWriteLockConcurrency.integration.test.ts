@@ -1,0 +1,141 @@
+/**
+ * @jest-environment node
+ */
+/**
+ * Concurrency regression tests for the two visit-write paths that had no
+ * per-person advisory lock: PATCH /api/events/[id] (manualEditAttendance) and
+ * DELETE /api/facility/visits.
+ *
+ * Both did a read-then-write on Visit with nothing serializing them, so a
+ * concurrent writer could invalidate the pre-check before the write landed:
+ * two Present marks on different events both saw "no open visit" and both
+ * created one (P2002 on Visit_one_open_per_participant → 500), and two deletes
+ * both saw the row live and both tombstoned it, the second overwriting who
+ * deleted it. Each now runs inside a $transaction that takes
+ * `pg_advisory_xact_lock(<the visit's personId>)` and re-checks under the lock,
+ * matching /api/scan and /api/attendance/manual.
+ *
+ * (jest.setup.js gives this suite a pool of 2 via TEST_DB_POOL_MAX so the two
+ * transactions run on separate connections — the advisory lock is then the only
+ * thing serializing them, as in production. Deleting a pg_advisory_xact_lock
+ * line from either route makes this suite fail.)
+ */
+import { PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
+import { DELETE as VISIT_DELETE } from '@/app/api/facility/visits/route';
+import prisma from '@/lib/prisma';
+import { getServerSession } from 'next-auth/next';
+
+jest.mock('next-auth/next', () => ({
+    getServerSession: jest.fn(),
+}));
+
+const TAG = 'visit-write-lock-concurrency-test';
+const HOUR = 60 * 60 * 1000;
+
+function eventPatch(eventId: number, body: Record<string, unknown>) {
+    const req = new Request('http://localhost:4000/api/events/x', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+    });
+    return EVENT_PATCH(req as unknown as import('next/server').NextRequest, {
+        params: Promise.resolve({ id: String(eventId) }),
+    }) as Promise<Response>;
+}
+
+function visitDelete(visitId: number) {
+    const req = new Request('http://localhost:4000/api/facility/visits', {
+        method: 'DELETE',
+        body: JSON.stringify({ visitId }),
+    });
+    return VISIT_DELETE(req as unknown as import('next/server').NextRequest) as Promise<Response>;
+}
+
+describe('visit-write advisory locks', () => {
+    let adminId: number;
+    let subjectId: number;
+    let householdIds: number[];
+
+    beforeAll(async () => {
+        const leaked = await prisma.person.findMany({
+            where: { email: { contains: TAG } },
+            select: { id: true, householdId: true },
+        });
+        const leakedIds = leaked.map(p => p.id);
+        await prisma.visit.deleteMany({ where: { personId: { in: leakedIds } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: leakedIds } } });
+        await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { id: { in: leakedIds } } });
+        await prisma.household.deleteMany({ where: { id: { in: leaked.map(p => p.householdId) } } });
+
+        const admin = await prisma.person.create({
+            data: { name: 'Lock Admin', email: `admin-${TAG}@example.com`, isSysadmin: true, household: { create: { name: 'Test HH' } } },
+        });
+        adminId = admin.id;
+        const subject = await prisma.person.create({
+            data: { name: 'Lock Subject', email: `subject-${TAG}@example.com`, household: { create: { name: 'Test HH' } } },
+        });
+        subjectId = subject.id;
+        householdIds = [admin.householdId, subject.householdId];
+    });
+
+    beforeEach(() => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+    });
+
+    afterAll(async () => {
+        await prisma.visit.deleteMany({ where: { personId: { in: [adminId, subjectId] } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: [adminId, subjectId] } } });
+        await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { id: { in: [adminId, subjectId] } } });
+        await prisma.household.deleteMany({ where: { id: { in: householdIds } } });
+    });
+
+    function makeEvent(label: string) {
+        const start = new Date(Date.now() - 2 * HOUR);
+        return prisma.event.create({
+            data: { name: `${TAG} ${label}`, startAt: start, endAt: new Date(start.getTime() + HOUR), description: 'x' },
+        });
+    }
+
+    it('two concurrent Present marks on different events → one open visit, no 500', async () => {
+        await prisma.visit.deleteMany({ where: { personId: subjectId } });
+        const [eventA, eventB] = await Promise.all([makeEvent('race-a'), makeEvent('race-b')]);
+
+        const markPresent = (eventId: number) => eventPatch(eventId, {
+            action: 'manualEditAttendance',
+            participantId: subjectId,
+            status: 'Present',
+            arrivedAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+            departedAt: null,
+        });
+
+        const [resA, resB] = await Promise.all([markPresent(eventA.id), markPresent(eventB.id)]);
+
+        // Winner records the open visit (200); the loser sees it under the lock and
+        // returns the "checked in for another session" 400. Neither 500s.
+        expect([resA.status, resB.status].sort()).toEqual([200, 400]);
+        expect(await prisma.visit.count({ where: { personId: subjectId, departedAt: null, deletedAt: null } })).toBe(1);
+    });
+
+    it('two concurrent facility deletes of one visit → 200 + 404, tombstoned once', async () => {
+        await prisma.visit.deleteMany({ where: { personId: subjectId } });
+        const visit = await prisma.visit.create({
+            data: {
+                personId: subjectId,
+                arrivedAt: new Date(Date.now() - 2 * HOUR),
+                departedAt: new Date(Date.now() - HOUR),
+            },
+        });
+
+        const [resA, resB] = await Promise.all([visitDelete(visit.id), visitDelete(visit.id)]);
+
+        expect([resA.status, resB.status].sort()).toEqual([200, 404]);
+
+        // Delete is a tombstone: the row survives, deleted exactly once, and the
+        // loser never overwrote deletedById.
+        const after = await prisma.visit.findUniqueOrThrow({ where: { id: visit.id } });
+        expect(after.deletedAt).not.toBeNull();
+        expect(after.deletedById).toBe(adminId);
+        expect(await prisma.visit.count({ where: { personId: subjectId, deletedAt: null } })).toBe(0);
+    });
+});

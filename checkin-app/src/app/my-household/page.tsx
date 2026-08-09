@@ -376,7 +376,8 @@ export default function HouseholdPage() {
             ) : household.orgMembership?.status === 'ACTIVE' ? (
               <Alert mb="lg">
                 <Group gap="xs" wrap="wrap">
-                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getFullYear()}` : ''}</Text>
+                  {/* memberSince is a calendar date at UTC midnight — getUTCFullYear, or a Jan 1 start reads as the prior year. */}
+                  <Text fw={600}>✓ Member{household.orgMembership.memberSince ? ` since ${new Date(household.orgMembership.memberSince).getUTCFullYear()}` : ''}</Text>
                   {household.orgMembership.isVolunteer && <Badge variant="light">Volunteer-only family</Badge>}
                 </Group>
               </Alert>

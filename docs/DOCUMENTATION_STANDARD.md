@@ -1,8 +1,8 @@
 # Documentation standard
 
-**Status: PROPOSED — for review. Becomes the standard on merge.**
 How documentation in this repo is organised, written, and retired. Read this
-before writing or moving any doc.
+before writing or moving any doc. This is the standard in force; the one-time
+move of the existing corpus into it runs in `docs/in-design/DOCUMENTATION_MIGRATION.md`.
 
 ---
 
@@ -24,7 +24,8 @@ domain rules — and gives everything else a shorter life.
 | Where | What | Lifetime |
 |---|---|---|
 | `docs/rules/` | Board and operations decisions; invariants new work must not violate | **Permanent, edited by later changes** |
-| `docs/ops/` | How to run, deploy, test, and mock things | Long-lived, edited as tooling changes |
+| `docs/conventions.md` | How we build, independent of any domain | Long-lived |
+| `docs/ops/` | How to run, deploy, test, and mock things; and states left by a data load, each with an exit condition | Long-lived; cleanup entries deleted as they close |
 | `docs/security/` | Security policy and boundary rules | Long-lived |
 | `checkin-app/docs/generated/` | Machine-derived artifacts, drift-tested | Regenerated, never hand-edited |
 | `docs/backlog/` | Journey inventory and gap tracking | Long-lived |
@@ -58,6 +59,9 @@ One file per domain, named for the domain and not for any feature:
 | `attendance-checkin.md` | check-in, kiosk, visits, hours |
 | `tools-certification.md` | tool levels, certification, shop access |
 
+Alongside them, `principles.md` — rules that hold across every domain. It is not
+a seventh domain; see §3.3.
+
 Add a file when a domain genuinely accumulates standing rules. Do not create
 empty ones in advance.
 
@@ -70,10 +74,12 @@ invariants that later work must not violate.
 drift-tested under `checkin-app/docs/generated/`), rollout sequencing, or
 anything a reader could derive by reading the code.
 
-### 3.2 Two tiers — policy first, then procedure
+### 3.2 Three sections, in this order
 
 Not every rule has the same authority, and a reviewer needs to know which kind
-they are looking at. Each domain file is split in two, **policy first**:
+they are looking at. Each domain file runs **Policy, then Assumptions, then
+Procedure** — highest authority first, so the constraints that cannot be
+renegotiated in a PR are read before the ones that can.
 
 **Policy** — the rule exists because the board or the organisation adopted a
 policy. The code implements it; it does not define it. **Cite the governing
@@ -81,18 +87,60 @@ policy.** A change that violates one of these is not a design disagreement to be
 settled in review: the policy has to change first, which is a board action. A
 reviewer's correct response is to stop and escalate, not to weigh trade-offs.
 
+**Assumptions** — things the app takes as true because they are handled outside
+it. The board appoints keyholders in writing; the flag in the database
+represents that act.
+
+These are not deficiencies, and they are not written as though the software
+ought to be doing the job. An assumption states what is assumed and the
+condition that keeps it true — nothing more. What makes it worth recording is
+that a change can invalidate one: make a role easier to acquire, and the act it
+stood for is no longer behind it.
+
 **Procedure** — everything else. Working agreements about how this system
-behaves: conventions, operational choices, invariants the team settled on
-because something had to be decided. Real rules that later work must not
-casually violate, but they can be renegotiated by the people doing the work,
-in a PR, without going to the board.
+behaves: operational choices, invariants the team settled on because something
+had to be decided. Real rules that later work must not casually violate, but
+they can be renegotiated by the people doing the work, in a PR, without going to
+the board.
 
-Order matters. Policy goes above procedure in every file so the
-highest-authority constraints are read first and cannot be lost in a list.
+### 3.3 Cross-cutting rules — `principles.md`
 
-**Citing a policy.** Name the policy and its **structural location** — article,
-section, subsection, clause, whichever that policy actually uses. `Background
-Check Policy §2`, `Bylaws Art. IV §3(b)`, `Financial Controls Policy §5.2`.
+Some rules hold in every domain — least privilege, for one. Writing them into
+six files means writing them six times, so they live in
+`docs/rules/principles.md` and the domain files cite them.
+
+They sit **between** the two authority levels. No policy names them, so they
+cannot be Policy; but they are not a PR-level trade either. A change that
+violates one escalates to the owner — not to the board, and not to whoever is
+reviewing that morning.
+
+A principle earns its place by being **cross-cutting** and by passing the same
+test as any rule: a change could violate it, and you can picture the change that
+does. If it only ever bites in one domain, state it in that domain. Before
+accepting that no policy names it, check the corpus — a principle that turns out
+to be policy-backed is a Policy line, which carries more weight.
+
+### 3.4 What does not belong in the register at all
+
+Two classes look like rules and are not:
+
+**How we build** goes in `docs/conventions.md`. The server recomputing anything
+that affects price or access, the interface gating on the same rule the server
+enforces — true, load-bearing, and containing no domain content. A reviewer
+checking a membership change should not read past them.
+
+**States left by a data load** go in `docs/ops/legacy-cleanup.md`: imported rows
+missing fields the app now requires, a superseded model still carried by old
+records. These are expected to reach zero, so **every entry names how it is
+surfaced and what "done" is**, and the entry is deleted when it closes. Without
+an exit condition "temporary" becomes permanent and the file becomes a second
+register nobody prunes.
+
+### 3.5 Citing
+
+**Policy.** Name the policy and its **structural location** — article, section,
+subsection, clause, whichever that policy actually uses. `Background Check
+Policy §2`, `Bylaws Art. IV §3(b)`, `Financial Controls Policy §5.2`.
 
 **Never cite a page number.** A page is an artifact of rendering: it moves when
 the document is reformatted, differs between PDF and print, and does not exist
@@ -101,7 +149,7 @@ text and survives everything except an actual amendment — at which point the
 citation *should* break, because the rule may have changed.
 
 **Never cite a filesystem path.** The policy corpus lives outside this repo (see
-§3.5), so a path dangles for everyone but its owner and rots the way line numbers
+§3.10), so a path dangles for everyone but its owner and rots the way line numbers
 do. The policy's name plus its section is what survives a reorganisation.
 
 If a policy has no internal numbering to cite, say so explicitly ("*Volunteer
@@ -112,7 +160,89 @@ page. That gap is worth surfacing: it usually means the policy needs structure.
 name the policy it comes from, it is procedure. A rule that merely *feels*
 official is the same defect as an unratified policy written as settled.
 
-### 3.3 Format
+**A principle** is cited the same shape: `— *Principle: fail closed*`.
+
+**Never cite a doc that is scheduled to be deleted.** A pointer into a folder
+the migration empties rots on a date already agreed. A bare source-file path is
+the most a "where this bites" hint should carry, and most rules need none.
+
+### 3.6 Tagging a procedure line
+
+A Procedure line carries a tag naming what kind of statement it is. The tag
+answers "what do I do about this?", so two kinds that lead to the same answer
+share one tag.
+
+| Tag | Means |
+|---|---|
+| `[Decision]` | A choice we made. Renegotiable in review. |
+| `[Decision — *Policy: …*]` | The app's specific expression of a policy stated generally above — a threshold picked, a proxy chosen, need-to-know made concrete for one field. Sometimes **stricter** than the policy requires, in which case say so: the risk is someone relaxing it while believing they are aligning to policy. |
+| `[Decision — *Principle: …*]` | The domain's application of a cross-cutting rule. States only what the domain adds. |
+| `[Decision — deliberate limit]` | The **absence** is chosen. The one most likely to be "fixed" by someone helpful. |
+| `[Short of policy — *Policy: …*]` | The app models this and models it **weaker** than the cited policy. Not renegotiable in review and not a target to build toward casually: what closes it is the policy. Tracked as work as well as stated (§3.7). |
+| `[Unsettled — …]` | Genuinely not agreed. **Do not cite as precedent.** |
+
+`[Decision — deliberate limit]` and `[Short of policy — …]` are the pair most
+easily confused, and they demand opposite actions. A deliberate limit says *do
+not fix this* — the absence was chosen, and closing it would undo something. A
+shortfall says *do fix this, but not casually* — the board has already decided
+and the app has not caught up. Reading one as the other is how a deliberate limit
+gets "closed" by a helpful change, or a real shortfall gets defended as
+intentional.
+
+### 3.7 Recording a divergence
+
+A divergence is a board rule the app implements more loosely than the policy
+states. Four things are **not** divergences, and calling one a divergence is the
+failure mode this section exists to prevent:
+
+- **A policy value held in configuration.** The app is built to be configurable;
+  keeping a setting aligned to policy is operational work.
+- **A rule the data model already guarantees.** One price column rather than a
+  per-person amount means "the same for everyone" needs no assertion. The
+  absence of a check is not the absence of the constraint.
+- **Anything handled outside the app.** That is an assumption (§3.2), and the
+  distinction is the whole test: an assumption says the job is being done
+  somewhere else, a divergence says the job is not being done. Writing a
+  deficiency as an assumption — "we assume leads check this" — is the easiest way
+  to make a gap read as settled, and it is more tempting now that there is no
+  section to collect gaps in. If nothing outside the app actually does the job,
+  it is not an assumption.
+- **A deliberate balance.** Choosing not to block someone at the door for an
+  obligation better chased in conversation is a decision, and belongs in
+  Procedure as a deliberate limit.
+
+What survives is where the app **does** model something and models it weaker
+than the policy — a supervision check counting bare adults where policy requires
+two unrelated non-student volunteers. Before recording one, read the enforcement
+path, not just the write path that creates the value.
+
+**Where it goes: at the rule it qualifies, never in a list of its own.** State it
+on the Procedure line a reader would otherwise take as enforced — one sentence
+saying what the app actually does and how that falls short — tagged
+`[Short of policy — *Policy: …*]` per §3.6. A reader who finds
+their answer stops reading, so a rule stated in one place and qualified in
+another is read as unqualified.
+
+Domain files used to end with a section collecting these. That section is gone,
+and it is not to be reintroduced: it sat a hundred lines from the rules it
+contradicted, and every entry in it was eventually found to be one of four things
+— shipped and stale, never a divergence at all, a gap the tracker should own, or
+a question nobody had answered. None of those needed a list.
+
+**Recording it is not the end of it.** A divergence is tracked as work as well as
+stated. It is not a feature request: what closes it is the policy, not a
+judgement about what is worth building, and the app meanwhile reports as
+acceptable something the board has said is not. Two consequences worth stating,
+because both have already bitten:
+
+- **The work that closes a divergence updates the rule in the same change.** An
+  implementation PR that fixes the behaviour and leaves the register describing
+  the old one has moved the error rather than fixed it.
+- **A gap the app does not model at all is not a divergence** — there is no rule
+  to qualify. It belongs to the tracker alone, with enough detail on the issue to
+  say which register file gains rules when it is built.
+
+### 3.8 Format
 
 Grouped under short headings, one rule per bullet, written in business language
 so a reviewer can judge a diff against it without opening code:
@@ -164,7 +294,7 @@ choice made to unblock a PR and never confirmed. Writing it here converts an ope
 question into a stated invariant nobody agreed to. Take it to the owner or the
 board first; record it only once it is answered.
 
-### 3.4 How much belongs
+### 3.9 How much belongs
 
 Enough but not too much. A domain has however many rules it has — some will be
 genuinely denser than others, and an arbitrary page count would either be
@@ -182,14 +312,14 @@ register has stopped working — and the cause is nearly always mechanism that
 crept in, not a domain that genuinely has too many rules. Look for that first.
 Splitting the file hides the symptom without fixing it.
 
-### 3.5 Where the policies live
+### 3.10 Where the policies live
 
 **The governing policies live on Google Drive.** That is the canonical source —
 what the board adopts and amends, and what a citation ultimately refers to.
 Anyone with Drive access can verify a policy-tier rule against the policy it
 names, which is what makes this tier meaningful rather than decorative.
 
-This is why §3.2 cites by policy name and article rather than by any locator. The
+This is why §3.5 cites by policy name and article rather than by any locator. The
 name and section are the one identifier stable across Drive and whatever format
 a policy is rendered in. A Drive URL is no better than a filesystem path: it rots
 on reorganisation and is permission-gated. Name the policy and its article; a
@@ -227,7 +357,7 @@ delete    the working doc
 ```
 
 How many is however many there are — often none, sometimes one, occasionally
-several. Ask of each candidate the §3.4 question: *could a later change violate
+several. Ask of each candidate the §3.9 question: *could a later change violate
 this?* If yes it is a rule and it goes in, however many that turns out to be. If
 no, leave it out, even if that empties the list.
 
@@ -267,6 +397,37 @@ neither explains it to a reader, and above the problem they displace it. A doc
 that opens with a decomposition table has not stated its problem — a reader
 hits rejected options before learning what is being solved.
 
+### 4.2 Keep the permanent text apart from the migration to it
+
+A working doc that changes a standing rule carries two things with different
+lifetimes: **the rule, which outlives the change**, and **the one-time cutover**
+— current counts, by-hand steps, where in-flight work lands, what has to be
+decided first. The second expires the day the change runs.
+
+Written as one document they interleave, and two things follow. The permanent
+text gets stated twice — once as the design, again as the block to paste into
+its real home — so a later edit lands in one copy and not the other. And the
+extract step below stops being a file move and becomes a judgement call over
+every paragraph, made by whoever merges, months after the reasoning.
+
+**Split them while writing, not at merge.** Two files:
+
+- `<name>.md` — the permanent text and nothing else. Not where it is going, not
+  how it gets there, not what it replaces: those expire, and a file that has to
+  be edited before it lands is a file that will land wrong. Landing it should be
+  a copy.
+- `<name>-migration.md` — everything that stops being true once the change runs,
+  including the destination itself. Its last step is "apply the other file,
+  delete both".
+
+Naming the destination inside the permanent file is the easy version of this
+mistake to make, and the one that survives review: it reads like a helpful
+header rather than what it is.
+
+Most changes have no cutover and need no second file. The test is not whether
+the doc is long enough to split, but whether any of it **expires on a date you
+can name**.
+
 ---
 
 ## 5. Enforcement
@@ -281,7 +442,7 @@ rule says so explicitly rather than leaving the reviewer to notice.
 **Known limitation.** Nothing catches an *omitted* rule. A change that
 establishes a new invariant without writing it down leaves no trace a test or
 lint could find. The mitigation is that `docs/rules/` stays worth reading during
-review — see §3.4. This standard does not claim to close that gap mechanically,
+review — see §3.9. This standard does not claim to close that gap mechanically,
 and no test should be built to pretend otherwise.
 
 ---
@@ -295,21 +456,34 @@ and no test should be built to pretend otherwise.
 2. **Never promote a rule to the Policy tier without naming the policy**, and
    never cite one by page number or filesystem path — name plus article,
    section, or subsection only.
-3. **A working doc is fine while building — put it in `docs/in-design/`.** No
-   `Status:` header ceremony; the folder carries that meaning.
-4. **Never cite a doc in `docs/in-design/` as ground truth.** It describes
-   something that is not yet true. Check whether it landed before building on it.
-5. **At merge, extract and delete.** Move the standing rules into the domain
+3. **Before writing a rule, read the enforcement path, not just the write path.**
+   The code that sets a value is not the code that corrects it.
+4. **State the narrower version.** A rule claiming more than the code does marks
+   correct behaviour as a violation, and the likely response is someone
+   "fixing" working code to comply.
+5. **Handled outside the app is an assumption, not a gap.** Record what is
+   assumed and what keeps it true. Do not editorialise about the software not
+   verifying it — that is what the word means.
+6. **A choice not to do something is a deliberate limit, not a gap.** Say so, so
+   nobody closes it as an oversight.
+7. **A working doc is fine while building — put it in `docs/in-design/`.** No
+   `Status:` header ceremony; the folder carries that meaning. If it also
+   carries a one-time cutover, that goes in a second file (§4.2) — never mixed
+   into the text destined to become permanent.
+8. **Never cite a doc in `docs/in-design/` as ground truth**, or one scheduled
+   to be deleted. It describes something that is not yet true, or will not exist.
+9. **At merge, extract and delete.** Move the standing rules into the domain
    doc; delete the working doc. Extracting nothing is normal.
-6. **Never put PR numbers, issue numbers, or dates in `docs/rules/`.**
-7. **Never put line-number citations in `docs/rules/`.**
-8. **Write rules as constraints.** A reviewer must be able to recognise a
-   violation from the sentence alone.
-9. **Do not add mechanism to a rules file.** Structure belongs in the generated
-   artifacts; how the code achieves something belongs in the code.
-10. **Do not create empty domain files** in anticipation of future rules.
-11. **Prefer cutting to adding.** Every line should be a rule a change could
-    violate; anything else dilutes the ones that matter.
-12. **Open a working doc with the problem in plain English** — then objective,
+10. **Never put PR numbers, issue numbers, or dates in `docs/rules/`.**
+11. **Never put line-number citations in `docs/rules/`.**
+12. **Write rules as constraints.** A reviewer must be able to recognise a
+    violation from the sentence alone.
+13. **Do not add mechanism to a rules file.** Structure belongs in the generated
+    artifacts; how the code achieves something belongs in the code.
+14. **Do not create empty domain files** in anticipation of future rules.
+15. **Prefer cutting to adding.** Every line should be a rule a change could
+    violate; anything else dilutes the ones that matter. Say it once — a rule
+    restated in a second file is one that will be updated in only one of them.
+16. **Open a working doc with the problem in plain English** — then objective,
     then outcome. Provenance and alternatives go below the design, never above
     the problem (§4.1).

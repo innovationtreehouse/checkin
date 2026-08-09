@@ -100,8 +100,8 @@ const VOLUNTEER_CODE = "VOLFAM";
 beforeAll(async () => {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
-        create: { id: 1, normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT, volunteerDiscountCode: VOLUNTEER_CODE },
-        update: { normalDuesCents: 5000, volunteerDuesCents: 2000, shopifyNormalVariantId: MEMBERSHIP_VARIANT, volunteerDiscountCode: VOLUNTEER_CODE, shopifyReconcileCursorAt: null },
+        create: { id: 1, standardMembershipFeeCents: 5000, volunteerMembershipFeeCents: 2000, orgMembershipVariantId: MEMBERSHIP_VARIANT, volunteerDiscountCode: VOLUNTEER_CODE },
+        update: { standardMembershipFeeCents: 5000, volunteerMembershipFeeCents: 2000, orgMembershipVariantId: MEMBERSHIP_VARIANT, volunteerDiscountCode: VOLUNTEER_CODE, shopifyReconcileCursorAt: null },
     });
 });
 

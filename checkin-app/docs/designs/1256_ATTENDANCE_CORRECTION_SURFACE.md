@@ -5,7 +5,15 @@ hours) + AT12 (admin correction-review screen), designed as **one** surface.
 AT13 (visit-edit UI/API gate mismatch) falls out of the permission matrix and is
 answered here.
 
-**Status:** design. No production code accompanies this doc.
+**Status:** implemented, except where marked. AT5 ships in
+[#1357](https://github.com/innovationtreehouse/checkin/pull/1357); AT3 (#1254) stacks on it —
+household-lead correction, staff insert-for-others, the program-lead tombstone
++ audit, and the `VisitSource` split. AT13 landed separately in
+[#1350](https://github.com/innovationtreehouse/checkin/pull/1350). **Still open:** AT12 (§4,
+unbuilt), the `isOperations` gate decision (§6.1), dropping the legacy `SYSTEM`
+enum value (§3, contract stage). The advisory-lock work tracked as §7 has
+landed. Sections below are written in the present tense and describe the code
+as it stands; anything not built says so in its heading or carries a 🟡.
 
 ## Why one design, not three
 
@@ -26,8 +34,8 @@ Designed apart, the matrix and the audit contract fragment. One doc.
 ## Terminology: the visit-source model
 
 Every `Visit` records *how* its arrival and departure were captured, in
-`arrivedVia` / `departedVia` (`VisitSource`). This design uses **five** sources
-with non-overlapping meaning:
+`arrivedVia` / `departedVia` (`VisitSource`). **Five** sources with
+non-overlapping meaning, plus the retired `SYSTEM` they replaced (§3):
 
 | source | on | meaning | departure accuracy |
 |---|---|---|---|
@@ -45,89 +53,109 @@ the writer fabricates a **closed** visit stamping *both* fields (a null departur
 would mark it "open" and trip the nightly auto-checkout + the one-open-visit
 index). Both fields are staff assertions, so both read `LEAD_MARKED`.
 
-**This splits today's overloaded `SYSTEM`.** Current code collapses *three*
-unrelated events into one value `SYSTEM`:
-- the post-hoc roster mark (both fields) → `LEAD_MARKED`;
-- the keyholder building-close sweep (`closeAllOpenVisits`,
-  [scan-service.ts:159](../../src/lib/scan-service.ts)) → `FACILITY_CLOSE`;
-- the nightly-cron abandoned-visit sweep
-  (`processVisitCheckout(…, "SYSTEM")`, [cron/nightly:28](../../src/app/api/cron/nightly/route.ts))
-  → `AUTO_CLOSE`.
-
-Splitting `FACILITY_CLOSE` from `AUTO_CLOSE` is **not cosmetic** — no checkout
-path writes a `Visit` audit row, so `departedVia` is the *only* record of how a
-visit closed, and the two machine closers have opposite accuracy (see §2). A
-two-name rename would fuse them permanently; the third value is what lets the
-board tell "the building closed while you were badged in" from "you were still
-badged in at midnight", and lets the significance flag treat their corrections
-differently. `LEAD` is the accepted umbrella — the roster-mark gate is lead-mentor
-OR sysadmin/board/keyholder, and there is no "staff" concept in this codebase's
-vocabulary. The split is a migration + reference sweep, folded into AT3 (§3); the
-rest of this doc is written in the target vocabulary.
+**These three replaced one overloaded `SYSTEM`**, which collapsed the post-hoc
+roster mark, the keyholder building-close sweep, and the nightly-cron sweep into
+a single value. Splitting `FACILITY_CLOSE` from `AUTO_CLOSE` is **not cosmetic** —
+no checkout path writes a `Visit` audit row, so `departedVia` is the *only*
+record of how a visit closed, and the two machine closers have opposite accuracy
+(see §2). A two-name rename would have fused them permanently; the third value is
+what lets the board tell "the building closed while you were badged in" from "you
+were still badged in at midnight", and lets the significance flag treat their
+corrections differently. `LEAD` is the accepted umbrella — the roster-mark gate is
+lead-mentor OR sysadmin/board/keyholder, and there is no "staff" concept in this
+codebase's vocabulary. §3 has the migration, the legacy mapping, and why `SYSTEM`
+is still in the enum.
 
 ---
 
-## Validated current state
+## The write surface
 
-Confirmed against live code (`origin/main` @ `4e17af5a`). Where this says
-`SYSTEM`, that is the current on-disk enum value the Terminology section renames.
+Every route that can create, change, or erase a `Visit`.
 
-### Self-insert own past visit — **EXISTS**
+### Self-insert own past visit
 `POST /api/attendance/manual`
 ([route.ts](../../src/app/api/attendance/manual/route.ts))
-- `personId` forced to `auth.user.id` (line 107); never from the body — not an
-  IDOR by construction.
+- The subject is resolved server-side by `visitSubject`
+  ([lib/visit/scope.ts](../../src/lib/visit/scope.ts)): yourself always, and — as
+  a household lead — any member of your own household. A `personId` in the body
+  is only ever a target checked against the actor's household, never the scope
+  itself; a non-lead naming a household peer is a 403.
 - Backdate allowed arbitrarily far; future arrivals rejected past a 5-min skew
-  clamp (lines 42–47). Open (no-departure) backfill restricted to today / last 6h
-  (lines 65–71).
-- Per-person advisory xact lock + one-open-visit re-check (lines 81–103) — same
-  race guard as `/api/scan`.
-- Audit `CREATE` on `Visit`, `newData.type = "manual_entry"` (lines 142–150).
+  clamp. Open (no-departure) backfill restricted to today / last 6h.
+- Per-person advisory xact lock + one-open-visit re-check — same race guard as
+  `/api/scan`, keyed on the **subject**.
+- Audit `CREATE` on `Visit`, `newData.type = "manual_entry"`,
+  `secondaryAffectedEntity` = the subject (§6.6).
 - `arrivedVia = "WEB"` marks it self-reported, not measured.
 
 The route's header comment states the posture explicitly: arbitrary backdate is
 accepted on purpose, self-reported hours are **not a security boundary**, the
 board reconciles against the audit trail. That posture anchors the AT5 model.
 
-### Self-EDIT own visit — **NONE**
-The manual route is `POST` only. No self-scoped `PATCH`/`DELETE` exists. This is
-the gap AT5 fills.
+### Self- and household-lead EDIT / DELETE
+`PATCH`/`DELETE /api/attendance/manual/[id]`
+([route.ts](../../src/app/api/attendance/manual/[id]/route.ts)) — the AT5 gap,
+widened by AT3 to the household-lead scope. Same `visitSubject` check, reached
+through the visit's `personId`; out-of-scope and tombstoned both read as 404, so
+there is no existence oracle on other people's visit ids. Delete is a tombstone
+(below). See §2 for the model and §3 for the proxy weighting.
 
-### Staff edit — **EXISTS, with a UI/API gate mismatch (AT13)**
+### Staff edit — facility-wide
 `GET/PATCH/DELETE /api/facility/visits`
 ([route.ts](../../src/app/api/facility/visits/route.ts)) gate
 `roles: ['isSysadmin', 'isBoardMember']`.
 - `PATCH` edits `arrivedAt`/`departedAt`, re-validates order + 24h max, forbids
-  reopening a closed visit, audit `EDIT` (lines 30–98).
-- `DELETE` **hard-deletes** the row, keeping it only in audit `oldData`
-  (lines 100–137). This design replaces that with a tombstone — see §3.
+  reopening a closed visit, audit `EDIT`.
+- `DELETE` tombstones (it hard-deleted before AT5), audit `DELETE` with the
+  pre-delete row in `oldData`.
+- The UI page gate matches the API gate — `useRequireRole(['isSysadmin',
+  'isBoardMember'])`. The two sets drifting apart was AT13, fixed in
+  [#1350](https://github.com/innovationtreehouse/checkin/pull/1350); §1 defines the target
+  they must stay aligned to.
 
-The UI page
-([facility-ops/visits/page.tsx:66](../../src/app/facility-ops/visits/page.tsx))
-gates `useRequireRole(['isSysadmin'])` — **board can hit the API but has no
-page**. That is AT13, being fixed in
-[PR #1350](https://github.com/innovationtreehouse/checkin/pull/1350); this design defines
-the target gate that fix should align to (§1).
+### Staff insert-for-others at an arbitrary past time
+`POST /api/facility/visits/insert`
+([route.ts](../../src/app/api/facility/visits/insert/route.ts)), same gate. The
+walk-in path neither the kiosk (live only) nor an attendance correction
+(program-scoped, one session) can record.
+Unlike the self-service route, the target `personId` **is** taken from the body —
+that is the point of the endpoint — so the role gate is the whole boundary.
+Closed visits only: an open one would put someone on the live in-the-building
+roster on staff say-so and leave a visit nobody will badge out of.
 
-### Lead / ops add-for-others — **EXISTS, scoped**
-`POST /api/events/[id]/attendance`
-([route.ts](../../src/app/api/events/[id]/attendance/route.ts))
-- Gate: program `leadMentorId` **or** sysadmin/board/keyholder (lines 27–32).
-- Targets restricted to the program roster (enrolled + volunteering); unknown ids
-  rejected (lines 41–61) — no cross-program fabrication.
-- Writes synthetic `LEAD_MARKED` (today `SYSTEM`) visits spanning the event window
-  (lines 134–143), or adopts an overlapping walk-in into the event. Audited.
-- **No arbitrary-past-time insert for others** exists. `/api/scan`
-  ([route.ts](../../src/app/api/scan/route.ts)) is `withKiosk`, live-only,
-  `personId` from the badge — not a staff-for-other path.
+Its own path rather than a `POST` on the sibling collection: adding a verb to an
+existing legacy route file cannot satisfy the security lints in any PR ordering
+(registry-first trips `orphan-registry`, route-first trips
+`new-route-old-authz`, both together trip boundary isolation). A new path is the
+register-first state `orphan-registry` already warns for. Tracked as
+[#1491](https://github.com/innovationtreehouse/checkin/issues/1491); if that is fixed the
+endpoint can fold back onto `/api/facility/visits`. Advisory-lock
+wrapped, `WEB` on both fields, event association via `findAssociatedEventAt`,
+audited with `secondaryAffectedEntity` = the subject.
+
+### Lead add-for-others / attendance correction — program-scoped
+One route, gated on program `leadMentorId`, core volunteer, or sysadmin/board.
+Targets are restricted to the program roster (enrolled + volunteering); anyone
+else is rejected — no cross-program fabrication.
+- `PATCH /api/events/[id]`, action `manualEditAttendance`
+  ([route.ts](../../src/app/api/events/[id]/route.ts)) — per-participant
+  Present/Absent correction, scoped to this event's visits. Present writes or
+  updates a visit; Absent **tombstones** (it hard-deleted before AT3) and refuses
+  outright when the participant has an open visit, since that row is the live
+  proof they are on-site. Both branches now write an audit row —
+  `newData.type = "lead_attendance_correction"` — which they did not before.
+
+`/api/scan` ([route.ts](../../src/app/api/scan/route.ts)) is `withKiosk`,
+live-only, `personId` from the badge — not a staff-for-other path.
 
 ### Hours — derived read, roster-marks excluded
 `GET /api/facility/trends`
 ([route.ts](../../src/app/api/facility/trends/route.ts)), gate sysadmin/board.
 Hours = `Σ (departedAt − arrivedAt)` over visits, bucketed. Excludes
-`arrivedVia = LEAD_MARKED` (today `SYSTEM`, line 94) — a roster mark is a
-placeholder window, not measured time. No stored-hours column exists; the only
-thing to correct is the underlying visits. Keep the exclusion.
+`arrivedVia ∈ {LEAD_MARKED, SYSTEM}` — a roster mark is a placeholder window, not
+measured time, and the legacy spelling stays in the list for the drain-window
+reason in §3. No stored-hours column exists; the only thing to correct is the
+underlying visits. Keep the exclusion.
 
 ### Audit substrate — already present
 `AuditLog` (schema line 1083): `actorId`, `action` (CREATE/EDIT/DELETE),
@@ -135,18 +163,27 @@ thing to correct is the underlying visits. Keep the exclusion.
 A generic viewer exists at `/system-status/audit-log` (gate **isSysadmin-only**),
 filterable by `tableName`/`action`/date. This is AT12's foundation (§4).
 
-Audit coverage across visit-write paths (verified): the human correction routes
-all log a `Visit` audit row — manual `CREATE`, `facility/visits` `EDIT`/`DELETE`,
-events-attendance, `my-programs/conflicts/resolve`, `membership-ops/.../merge`.
-The automated / baseline paths do **not** — kiosk `scan`, the `attendance`
+Audit coverage across visit-write paths: **every human edit path logs** a `Visit`
+audit row — manual `CREATE`, the self/household-lead `EDIT`/`DELETE`,
+`facility/visits` `EDIT`/`DELETE`, the staff insert, `manualEditAttendance`, and
+`my-programs/conflicts/resolve`. Each carries
+`actorId` = who acted and `secondaryAffectedEntity` = whose visit it is, so
+acting-for-another reads off the inequality without a join (§6.6).
+`manualEditAttendance` was the one gap — it wrote nothing at all — closed by AT3.
+
+The participant **merge** (`membership-ops/.../merge`) is deliberately not on
+that list. It re-parents visits with `updateMany` and audits `Person` and
+`OrgMembershipProcess`, never `Visit`: a merge changes who owns an attendance
+fact, not the fact itself, so it is an identity operation rather than a
+correction and AT12 should not surface it as one.
+
+The automated / baseline paths do **not** log — kiosk `scan`, the `attendance`
 check-in (writes only a `SYSTEM_NOTIFY` row), and **both** machine closes
 (`FACILITY_CLOSE` via `closeAllOpenVisits`, `AUTO_CLOSE` via
 `processVisitCheckout`). That the closes are unaudited is exactly why
 `departedVia` must carry the close provenance itself — it is the only record of
 how a visit closed. Those paths aren't corrections, and AT12 aggregates
-corrections, so leaving them unaudited is fine. The design commitment is that
-**every human edit path
-logs** — including the new self and household-lead paths.
+corrections, so leaving them unaudited is fine.
 
 ### Roles available
 `BusinessRole = isSysadmin | isBoardMember | isKeyholder |
@@ -166,43 +203,52 @@ editing an underlying visit — there is no separate hours write.
 
 | actor | insert own-past | insert for-others | edit a visit | delete a visit |
 |---|---|---|---|---|
-| **self** | ✅ `personId` forced self | ⛔ `personId` never from body | ✅ own visits — any field; significant changes flag (§2) | ✅ own visits (tombstone; delete flags) |
+| **self** | ✅ `personId` forced self | ⛔ never another person | ✅ own visits — any field; significant changes flag (§2) | ✅ own visits (tombstone; delete flags) |
 | **household-lead** | ✅ (as self) | ✅ own household members | ✅ household members' visits, same as self | ✅ household members' visits (tombstone) |
-| **program-lead** | ✅ (as self) | ✅ program roster (synthetic mark at event window) | 🟡 visits associated to their program's events — *target, not built* | 🟡 same program-event scope — *target* |
-| **ops** (`isOperations`) | ✅ (as self) | 🟡 facility-wide — *gate widen, §6* | 🟡 facility-wide — *gate widen, §6* | 🟡 facility-wide — *gate widen, §6* |
-| **board** | ✅ (as self) | ✅ facility-wide | ✅ facility-wide (API exists; **UI missing = AT13**) | ✅ facility-wide (tombstone) |
+| **program-lead** | ✅ (as self) | ✅ program roster (synthetic mark at event window) | ✅ visits associated to their program's events (`manualEditAttendance`) | ✅ same program-event scope (tombstone) |
+| **ops** (`isOperations`) | ✅ (as self) | 🟡 facility-wide — *gate widen, [#1476](https://github.com/innovationtreehouse/checkin/issues/1476)* | 🟡 facility-wide — *[#1476](https://github.com/innovationtreehouse/checkin/issues/1476)* | 🟡 facility-wide — *[#1476](https://github.com/innovationtreehouse/checkin/issues/1476)* |
+| **board** | ✅ (as self) | ✅ facility-wide | ✅ facility-wide | ✅ facility-wide (tombstone) |
 | **sysadmin** | ✅ | ✅ facility-wide | ✅ facility-wide | ✅ facility-wide (tombstone) |
 
-✅ = allowed (exists today unless noted) · 🟡 = target/open · ⛔ = deny by design
+✅ = allowed, built · 🟡 = open decision · ⛔ = deny by design
 
 **Enforcing boundaries:**
-- `self` insert-for-others deny is structural (`personId` forced, never from the
-  body). Keep it.
-- `self` / household-lead edits are **not gated** by the value's source — the
+- The self / household-lead scope is one server-side resolution,
+  `visitSubject(actorId, subjectId)`
+  ([lib/visit/scope.ts](../../src/lib/visit/scope.ts)): self always, plus your
+  own household's members if you are its lead. The household comes from the
+  actor's own row, so a `personId` off the body is only ever a target checked
+  against it. A non-lead naming a household peer is denied, and so is a lead
+  reaching into another household — leadership, not membership, is the grant.
+- Self / household-lead edits are **not gated** by the value's source — the
   source only weights significance for post-hoc flagging (§2). The only edit-time
   checks are validity (no future times, departure after arrival, ≤ 24h).
-- household-lead target scope = household membership, resolved server-side (never
-  a `personId` from the body).
-- program-lead scope = roster membership (reuse the enrolled + volunteering set
-  the events route already computes) **and** the visit's `associatedEventId`
+- The open-visit facility guard follows the **subject**, not the actor. An open
+  backfill asserts the subject is in the building now, so it obeys the same
+  keyholder-first rule as `/api/scan`: a keyholder parent cannot open the
+  building by backfilling an open visit for their non-keyholder child. Self keeps
+  reading the session claim (unchanged behaviour, and the claim derives from the
+  Person row anyway); the proxy case reads the subject's row. Closed backfills
+  are historical and never gate.
+- program-lead scope = roster membership (the enrolled + volunteering set the
+  events route already computes) **and** the visit's `associatedEventId`
   belonging to that program.
 - ops / board / sysadmin facility-wide = the `withAuth` role gate on the route.
 
-### AT13 — answer (fix in flight: PR #1350)
-The matrix puts board at **allow** for edit + delete, and the API already grants
-it. So **board should have the edit UI.** The fix is to align the page gate to
-the API gate; the two role sets must stay equal. AT13 is precisely "they drifted
-apart", and the matrix is the single source that re-couples them. PR #1350
-carries the fix — it must land on whatever set the matrix blesses (below), not a
-narrower one:
+### AT13 — answered (fixed in PR #1350)
+The matrix puts board at **allow** for edit + delete, and the API already granted
+it, so board needed the edit UI. The fix aligned the page gate to the API gate:
 
 ```
-useRequireRole(['isSysadmin'])              // today — wrong, drops board
+useRequireRole(['isSysadmin'])                      // was — wrong, dropped board
 → useRequireRole(['isSysadmin', 'isBoardMember'])   // matches the API
 ```
 
-If ops is added to the visit-edit gate (§6), the same set widens on both the
-route (`withAuth roles`) and the page (`useRequireRole`) together.
+The rule that outlives the fix: **the two role sets must stay equal.** AT13 was
+precisely "they drifted apart", and this matrix is the single source that
+re-couples them. If ops is added
+([#1476](https://github.com/innovationtreehouse/checkin/issues/1476)), the same set widens on
+both the route (`withAuth roles`) and the page (`useRequireRole`) together.
 
 ---
 
@@ -284,26 +330,87 @@ case correct.) Fixing a machine close is the happy path, never a board alert.
 | delete a `LEAD_MARKED` or `SCANNER` visit | high | **yes** — strong |
 | delete an own submitted `WEB` visit | low | **yes** — delete floor: we should see it |
 
-Thresholds are **tunable config** (BoardSettings-style), not hardcoded — the
-right cutoffs are a judgment the board will calibrate against real volume; leave
-the knob (§6). The machine-close suppression is a source rule, not a threshold.
+### Acting for someone else weighs double
+
+A household lead editing a member's visit is itself a flag input — an adult
+changing another person's record — so the score is multiplied by 2 when the actor
+is not the visit's person. The `WEB` flag threshold therefore halves in practice:
+a 50-minute nudge on your own self-reported arrival is noise, the same nudge on
+your child's record reaches the board.
+
+A **multiplier**, not a floor, and not a second weight table. A floor would flag
+every proxy edit including a two-minute typo fix — the "required justification
+reads as distrust" failure this section rejects. A second table doubles the
+tuning surface to encode one bit. The multiplier composes with the existing axes
+and stays one constant to calibrate.
+
+The interaction that decides it: **multiplicative means source suppression
+survives.** A machine-close weight of 0 stays 0 when doubled, so a lead fixing
+their child's `AUTO_CLOSE` departure — cron stamped midnight, the child left at
+4pm, an eight-hour correction — still never flags. An additive proxy weight would
+make that happy-path fix the loudest alert in the system, the exact inversion
+this section warns against.
+
+### Calibration
+
+Weights and threshold are v1 defaults awaiting board calibration — the right
+cutoffs are a judgment against real volume. They live as constants in
+[lib/visit/significance.ts](../../src/lib/visit/significance.ts); promote them to
+BoardSettings when AT12 gives the board a place to calibrate from (§6). The
+machine-close suppression is a source rule, not a threshold, and is not a knob.
 
 ### Mechanics (reuses what exists)
-- Add `PATCH`/`DELETE` to `/api/attendance/manual` (or a sibling
-  `/api/attendance/self`). `personId` forced to self (or a household member's id
-  for a household-lead). Reuse the existing validation helpers (`parseVisitTime`,
+`PATCH`/`DELETE /api/attendance/manual/[id]`, scoped by `visitSubject` (§1).
+- Reuses the existing validation helpers (`parseVisitTime`,
   `departureAfterArrival`, `withinMaxDuration`) and the advisory-lock +
-  one-open-visit guard from the existing `POST`.
+  one-open-visit guard from the sibling `POST`. The lock and every `where` key on
+  the **visit's person**, not the actor — that is the key the one-open-visit
+  invariant is per, so a lead's edit serializes against the member's own kiosk
+  scan. Scope and liveness are re-asserted *inside* the lock, so a delete that
+  lands mid-flight cannot have its tombstone overwritten.
 - The edit **always applies** (subject only to those validity checks — no
-  future times, departure after arrival, ≤ 24h). No source gate, no approval.
+  future times, departure after arrival, ≤ 24h, no reopening a closed visit).
+  No source gate, no approval.
+- An edit that CLOSES an open visit routes through `processVisitCheckout` rather
+  than a bare update, so back-to-back event chunking still happens; the audit row
+  and the response name a chunk that survives.
 - Delete is a **tombstone**, not a row removal (§3) — so a flagged delete is
-  reviewable *and* reversible.
-- Compute `significance(old, new, source)`; if over threshold, fire an internal
-  notification to the flag recipients (below) — fire-and-forget, never blocking
-  the member's response.
-- Audit `EDIT`/`DELETE`, `actorId` = the acting user, `newData.type =
-  "self_correction"`, plus a significance marker so AT12 can filter to the
-  flagged ones without re-deriving (§4).
+  reviewable *and* reversible. `deletedById` records the actor, which for a
+  household-lead delete is the lead, not the member.
+- Computes `significance(old, new, { byProxy })`; if over threshold, fires a
+  fire-and-forget board email — never blocking the member's response. The actor's
+  name is HTML-escaped into it: a self-editable profile name is untrusted markup
+  in the board's inbox.
+- Audits `EDIT`/`DELETE`, `actorId` = the acting user,
+  `secondaryAffectedEntity` = the subject, `newData.type = "self_correction"`,
+  plus the significance object so AT12 can filter to the flagged ones without
+  re-deriving (§4).
+
+### Which paths raise the live flag
+
+The real-time board email fires on the **self and household-lead** corrections
+only (`attendance/manual/[id]`). The staff and lead paths — `facility/visits`
+`PATCH`/`DELETE`, `manualEditAttendance`, `my-programs/conflicts/resolve` —
+deliberately do **not** raise it, for two reasons:
+
+- **The delete floor would make it noise.** `deleteSignificance` always flags, by
+  design: a member erasing their own visit should always be seen. But marking a
+  roster Absent, or resolving a duplicate-visit conflict, is a lead's routine
+  weekly workflow, not an anomaly. Wiring the floor into those paths emails the
+  board on every ordinary correction, which trains everyone to ignore the alert
+  and costs the signal its whole value.
+- **On `facility/visits` the actor is the recipient.** That route is gated to
+  sysadmin/board, so a flag would be the board notifying itself.
+
+This costs AT12 nothing. §"No new model" below is explicit that significance is
+**recomputed** from the audit row's old/new values rather than read off it — and
+every path above writes the source fields (`arrivedVia`/`departedVia`) into
+`oldData`, so the correction-review screen can score all of them. The
+`newData.significance` object that `attendance/manual/[id]` persists is a
+convenience for filtering, not the mechanism.
+
+If the board later wants leads' corrections in the live feed, the lever is the
+recipient set (§6.3) plus a per-path threshold — not the delete floor.
 
 ### Who gets flagged (scope — decision owed)
 Default recipient: **board**. For a `LEAD_MARKED` change, the lead who made the
@@ -343,97 +450,158 @@ audit trail plus the significance flag, not a time fence:
 
 AT3 is the non-`self` rows of the matrix.
 
-- **Board / sysadmin facility-wide edit/delete** — exists (`facility/visits`);
-  only the UI gate is wrong (AT13).
+- **Board / sysadmin facility-wide edit/delete** — `facility/visits`. The UI gate
+  mismatch was AT13, fixed in #1350.
 - **Household-lead act-for-members** — a household lead may insert / edit / delete
   visits for **anyone in their household**, self-serve and ungated exactly as
   `self`, with the same significance flagging (§2). The lead is the responsible
-  adult, so this is self-equivalent for household members (notably minors who
-  cannot self-serve). Scope = household membership, enforced server-side; audited
-  with `actorId` = the lead. A lead editing a member's visit is itself a natural
-  flag input — an adult changing another person's record — factored into
-  significance.
-- **Program-lead edit within their program** — new. The events-attendance route
-  already computes the roster and owns the event scope; a program-scoped
-  edit/delete reuses that authz (target `visit.associatedEventId`'s program
-  `leadMentorId === actor`). Kept off the facility-wide route so the broad gate
-  stays broad and the scoped gate stays scoped.
-- **Insert-for-others at an arbitrary past time** — does not exist today except
-  via the event-window synthetic path. For a genuine unenrolled walk-in, add a
-  `POST` for-others to `facility/visits` under the staff gate (target `personId`
-  from the body **is** allowed here, unlike the `self` route). Closes the gap.
+  adult, so this is self-equivalent for household members — notably minors, who
+  cannot self-serve at all, and for whom this is the *only* correction path.
+  Scope enforced server-side by `visitSubject`; audited with `actorId` = the lead
+  and `secondaryAffectedEntity` = the member. The proxy weighting is §2.
+- **Program-lead edit within their program** — `manualEditAttendance` on
+  `PATCH /api/events/[id]`, which already owned the event scope and the
+  lead/core-vol authz. Kept off the facility-wide route so the broad gate stays
+  broad and the scoped gate stays scoped. AT3 brought it in line with the rest of
+  the surface: its Absent branch tombstones instead of hard-deleting, and both
+  branches write an audit row — previously it wrote none at all, the one human
+  visit-write path that did not.
+- **Insert-for-others at an arbitrary past time** — `POST /api/facility/visits/insert`
+  under the staff gate. The target `personId` **is** taken from the body here,
+  unlike the self-service route. Closed visits only (see "The write surface").
 
 ### Delete = tombstone (reversible), not hard-delete
-A deleted visit must stay knowable and reversible (a correction can be backed
-out). Add a soft-delete marker to `Visit` (e.g. `deletedAt` + `deletedById`).
-`DELETE /api/facility/visits` (currently `prisma.visit.delete`) and the new
-self/household-lead delete become a soft-delete update. Every read that feeds a
-user surface — `trends`, the visit lists, the one-open-visit partial index
-(a tombstoned row must not count as "open") — filters `deletedAt: null`. Un-delete
-restores the row. Schema addition + migration, folded into this AT3 work.
+A deleted visit stays knowable and reversible — a correction can be backed out.
+`Visit` carries `deletedAt` + `deletedById`; every delete path is a soft-delete
+update, and every read that feeds a user surface filters `deletedAt: null`
+through `LIVE_VISIT` ([lib/visit/filters.ts](../../src/lib/visit/filters.ts)).
+The one-open-visit partial index was recreated with `deletedAt IS NULL` in its
+predicate — a tombstoned open visit must not block that person's next check-in
+forever. A drift guard
+([liveVisitDriftGuard.test.ts](../../src/__tests__/liveVisitDriftGuard.test.ts))
+scans every `Visit`-query site and fails CI on a new unfiltered one.
 
 ### The `VisitSource` split
-The `SYSTEM → LEAD_MARKED` / `FACILITY_CLOSE` / `AUTO_CLOSE` split (Terminology)
-lands as part of AT3. It is a **3-way** split — the three current `SYSTEM` writers
-map to three different values, so the migration is a per-writer edit, not a blind
-rename:
+A **3-way** split — the three `SYSTEM` writers meant three different things, so
+this was a per-writer edit, not a rename:
 
-| writer | today | becomes |
+| writer | was | now |
 |---|---|---|
-| events-attendance roster mark ([route.ts:143](../../src/app/api/events/[id]/attendance/route.ts)) | `SYSTEM` (both fields) | `LEAD_MARKED` |
-| keyholder building-close `closeAllOpenVisits` ([scan-service.ts:159](../../src/lib/scan-service.ts)) | `departedVia: "SYSTEM"` | `FACILITY_CLOSE` |
-| nightly-cron sweep `processVisitCheckout(…, "SYSTEM")` ([cron/nightly:28](../../src/app/api/cron/nightly/route.ts)) | `departedVia: "SYSTEM"` | `AUTO_CLOSE` |
+| events-attendance roster mark (`POST /api/events/[id]/attendance`, since deleted) | `SYSTEM` (both fields) | `LEAD_MARKED` |
+| keyholder building-close `closeAllOpenVisits` ([scan-service.ts](../../src/lib/scan-service.ts)) | `departedVia: "SYSTEM"` | `FACILITY_CLOSE` |
+| nightly-cron sweep `processVisitCheckout` ([cron/nightly](../../src/app/api/cron/nightly/route.ts)) | `departedVia: "SYSTEM"` | `AUTO_CLOSE` |
 
-`processVisitCheckout`'s `source` union widens to carry the new value from the
-cron call site (the SCANNER/WEB self-checkout callers are unchanged). The rest is
-mechanical: schema `VisitSource`, the raw-SQL enum migration, `security/generated/
-classifications.ts`, the `SOURCE_META` UI map, and the `trends` filter (which keys
-on `arrivedVia`, so it is unaffected by the departure-side split). Keep it in the
-AT3 PR rather than a standalone churn.
+`processVisitCheckout`'s `source` union carries the new value from the cron call
+site; the SCANNER/WEB self-checkout callers are unchanged. Also updated: the
+`SOURCE_META` UI map, the check-in email phrasing, and the `trends` filter (which
+keys on `arrivedVia`, so the departure-side split does not reach it).
 
-Note the existing data: today's `departedVia = "SYSTEM"` rows are the *fused*
-history — they cannot be back-split into `FACILITY_CLOSE` vs `AUTO_CLOSE` after
-the fact (the discriminator was never stored). The migration maps legacy `SYSTEM`
-departures to one bucket (recommend `AUTO_CLOSE`, the conservative "don't trust
-this time" reading); only rows written after the split carry the true
-distinction.
+**Expand only.** `SYSTEM` stays in the enum. During a rolling deploy the previous
+release serves traffic against the fully-migrated schema and still writes it from
+all three paths above, so removing the value would fail every one of them for the
+whole drain window. Dropping it is a follow-up release, once no deployed code can
+write it — the one piece of this section not yet done.
+
+Two migrations, and the shapes are deliberate:
+- `20260803000000_visit_source_split_add` — three `ALTER TYPE … ADD VALUE`,
+  **not** wrapped in a transaction, because Postgres forbids *using* a value in
+  the transaction that added it. The statements are additive and idempotent, so a
+  partial apply is harmless.
+- `20260803000100_visit_source_split_backfill` — the row mapping, wrapped,
+  because its two updates must land together.
+
+**Legacy data.** `departedVia = "SYSTEM"` rows are *fused* history — the
+discriminator between the two machine closers was never stored and cannot be
+recovered. One case can: the roster mark is the only writer that puts `SYSTEM` on
+*arrivedVia*, and it writes both fields together, so a `SYSTEM`/`SYSTEM` pair is
+unambiguously a lead mark. Everything else falls back to `AUTO_CLOSE` — the
+conservative "don't trust this departure" reading, which also leaves those rows
+source-suppressed in §2 rather than flagging their corrections to the board.
+
+| before | after |
+|---|---|
+| `SYSTEM` / `SYSTEM` | `LEAD_MARKED` / `LEAD_MARKED` |
+| `SCANNER` / `SYSTEM` | `SCANNER` / `AUTO_CLOSE` |
+| anything else | unchanged |
+
+**What it bought.** Significance no longer has to *infer* a machine close for new
+rows — the source says so outright. The inference branch survives for legacy
+`SYSTEM` only, and dies with the value in the contract release.
+
+**Not a security-boundary change**, despite touching a field whose values are
+`public`: `classifications.ts` tiers *fields*, not enum values, so
+`arrivedVia`/`departedVia` stay `public` whatever the value set is and the
+generated file comes out byte-identical. `security-boundary-isolation.yml` fires
+only on `src/security/**` (excluding `generated/`), the generator script, or a
+genuine re-tier of an existing field. So this ships inside the AT3 PR rather than
+its own.
 
 ---
 
-## 4. AT12 — correction-review screen
+## 4. AT12 — correction-review screen — *not built ([#1258](https://github.com/innovationtreehouse/checkin/issues/1258))*
 
-**Aggregates** attendance corrections by **kind** (insert / edit / delete),
-**actor class** (self vs staff), and **frequency over time**, with drill-down to
-the underlying audit rows. It sees corrections only — the automated / baseline
-paths don't write `Visit` audit rows (that's fine; they aren't corrections).
+**Surfaces** attendance corrections by **kind** (insert / edit / delete),
+**actor class** (self vs proxy) and **time**, as a filterable feed carrying the
+before-and-after of each change on the row. It sees corrections only — the
+automated / baseline paths don't write `Visit` audit rows (that's fine; they
+aren't corrections).
 
 **Source:** `AuditLog` where `tableName = 'Visit'`. Everything already lands there
 — manual `CREATE` (`type:"manual_entry"`), `facility/visits` `EDIT`/`DELETE`,
-events-attendance, and the new self / household-lead `EDIT`/`DELETE`
-(`type:"self_correction"`). No new model.
+and the new self / household-lead `EDIT`/`DELETE` (`type:"self_correction"`).
+No new model.
 
-**Self vs staff, cheaply:** don't join `AuditLog → Visit` (the visit may be
-tombstoned; `personId` isn't on the audit row). Lean on the `newData.type`
-markers the write paths set — `"manual_entry"` / `"self_correction"` are self,
-their absence with a staff `actorId` is staff.
+**Self vs proxy, cheaply:** don't join `AuditLog → Visit` (the visit may be
+tombstoned; `personId` isn't on the audit row). Compare `actorId` against
+`secondaryAffectedEntity`, which every visit audit write fills with the subject
+person: equal is a correction of one's own record, different is one person
+editing another's. `newData.type` does **not** answer this — it names the route
+that wrote the row, so a household lead correcting a member's visit still writes
+`type:"self_correction"`. It stays useful as a label on the row, never as the
+axis.
 
-**Significant-edit flags (§2) are the headline view.** The same significance
-function runs at read time over the `Visit` audit rows, so AT12's default lens is
-"flagged changes" — big or high-trust-overwriting edits, and deletes — with the
-full correction feed behind a filter. A member whose edits flag often is a
-standing signal. This *is* the "raise it to the board" surface; the write-time
+**Significant-edit flags (§2) are the headline view.** The flag is **read** from
+the persisted `newData.significance`, not recomputed at read time. One row shape
+carries nothing to recompute from: `facility/visits` edits written before the
+`oldData` fix stored no before-state. A persisted flag is also the only form the
+database can filter on, which is what lets the default view paginate. The cost is that a stored score
+freezes the thresholds in force when the row was written. This makes persisting
+significance on **every** edit and delete path a requirement on the writers
+(#1523) — a lens with an undeclared hole is worse than no lens, since "no flagged
+corrections this month" would otherwise mean "the paths capable of the largest
+corrections never score themselves". Rows that never scored are *outside* the
+lens, not "reviewed and found insignificant". AT12's default lens is "flagged
+changes" — big or high-trust-overwriting edits, and deletes — with the full
+correction feed behind a filter. A member whose edits flag often is a standing
+signal. This *is* the "raise it to the board" surface; the write-time
 notification (§2) is the push, AT12 is the pull.
 
-**Audience:** ops + board (they reconcile). The existing `/system-status/audit-log`
-viewer is sysadmin-gated and buries visit corrections among all tables — that is
-the "missed screen" AT12 exists to replace.
+**Audience:** board + sysadmin, and ops once #1476 widens the section gate. The
+existing `/system-status/audit-log` viewer is sysadmin-gated and buries visit
+corrections among all tables — that is the "missed screen" AT12 exists to replace.
 
-**Build:** a read-only aggregation route `GET /api/facility/corrections` (gate
-sysadmin + board + ops) grouping the `tableName='Visit'` audit rows by
-kind × actor-class × period, plus a `facility-ops` page rendering counts and a
-filterable list. Reuse the existing audit-log route's shape (it already filters
-`tableName`/`action`/date and resolves `actorId → name`): pin `tableName='Visit'`,
-add the group-by. Do not build a second generic audit browser.
+**Build:** a read-only route `GET /api/facility/corrections` over the
+`tableName='Visit'` audit rows, plus a `facility-ops` page rendering a filterable
+list. Reuse the existing audit-log route's shape (it already filters
+`tableName`/`action`/date and resolves `actorId → name`) and pin
+`tableName='Visit'` in the handler. Do not build a second generic audit browser.
+
+**The gate is sysadmin + board, not ops.** `facility-ops/layout.tsx` gates the
+whole section on those two roles, and every tab sits under it. Granting ops the
+route while the layout keeps them out of the section produces a role that can
+call the API and cannot reach a page — the AT13 defect this design family exists
+to close. Widening the section gate is an open decision (#1476); when it lands,
+the layout, this route and its page widen together.
+
+**It cannot return a group-by aggregate.** The boundary stripper drops any bag
+key that is not a model name, and copies only fields declared on that model, so
+`buckets`, `total`, `page` and derived scalars like `kind` and `actorClass`
+cannot cross it — a separate counts endpoint fails identically, because a count
+is still not a model field. The route therefore returns model-shaped `AuditLog` /
+`Person` / `Visit` entries, with the before/after times lifted out of the audit
+blobs so they travel as the `personal`-tier `Visit` fields they actually are and
+the raw blobs stay server-side. Kind, actor class and the range count are derived
+client-side from what ships.
 
 ---
 
@@ -459,32 +627,65 @@ add the group-by. Do not build a second generic audit browser.
   edit can't race the sweep. Both converge on one rule — **every visit write
   (self, staff, automated) goes through the advisory-lock + one-open-visit
   guard** — while keeping the single-edit and bulk-close code paths distinct.
+  Every visit-write path satisfies that rule as of #1475 (§7).
 
 ---
 
 ## 6. Open questions
 
-1. **Widen the `facility/visits` gate to `isOperations`?** Ops is a
-   facility-operations role and visit management is facility operations —
-   recommend **yes**. If adopted, ops moves from 🟡 to ✅ in the matrix and the
-   AT13 gate set becomes the 3-role set on both route and page.
-2. **Significance thresholds — the actual cutoffs.** The model is
-   magnitude × source-weight over a threshold (§2); the numbers are a board
-   judgment. What delta on a `SCANNER` value flags? What's the `WEB` cutoff (or is
-   own-`WEB` never flagged short of a delete)? What's the delete floor per source?
-   Ship tunable config with sane defaults; calibrate against real volume.
-3. **Flag recipient scope.** Default board. Per change-type: does a `LEAD_MARKED`
-   overwrite also notify the observing lead? Does ops get facility-wide flag
-   visibility? Decide the recipient set; the mechanism is unaffected.
+1. **Widen the `facility/visits` gate to `isOperations`?** Split out to
+   [#1476](https://github.com/innovationtreehouse/checkin/issues/1476) so this doc describes
+   only what is built. AT3 shipped deliberately without it; the gate stays
+   `['isSysadmin', 'isBoardMember']` on both route and page.
+2. **Significance thresholds — the actual cutoffs.** Shipped as v1 constants in
+   [lib/visit/significance.ts](../../src/lib/visit/significance.ts) — source
+   weights 3 / 2 / 1 / 0, threshold 90 weighted minutes, proxy ×2. The numbers
+   remain a board judgment: what delta on a `SCANNER` value should flag? Is
+   own-`WEB` ever flagged short of a delete? Promote to BoardSettings and
+   calibrate once AT12 shows real volume.
+3. **Flag recipient scope.** Currently board only, for every flagged change. Per
+   change-type: does a `LEAD_MARKED` overwrite also notify the observing lead?
+   Does ops get facility-wide flag visibility? Still open; the mechanism is
+   unaffected by the answer.
 4. **Flag = feed or worklist?** v1 is a notification + an AT12 lens (no state). If
    the board wants to *track* "reviewed / acknowledged" per flag, add a light ack
    state (not a full approval model). Defer until asked.
 5. **AT12 home.** A new scoped `facility/corrections` route/page (recommended) vs
    extending the sysadmin-gated `/system-status/audit-log` with a visit rollup.
-6. **Exact self=actor proof in AT12.** Marker-only (`newData.type`) is the
-   default. For an exact guarantee, add `secondaryAffectedEntity = subjectPersonId`
-   to every visit-audit write (one line per path) so self = `actorId ===
-   secondaryAffectedEntity` without a join. Recommend adding it.
+6. **Exact self=actor proof in AT12.** ~~Marker-only~~ — **adopted.** Every visit
+   audit write now sets `secondaryAffectedEntity` = the subject person, so
+   self = `actorId === secondaryAffectedEntity` without a join, and a proxy
+   correction is visible as the inequality.
+
+---
+
+## 7. Parallel work — landed
+
+Both items here were **pre-existing** — neither introduced by AT3/AT5 — and both
+have since landed on `main` in
+[#1475](https://github.com/innovationtreehouse/checkin/pull/1475), independently of this
+surface's PRs.
+
+**The advisory-lock gap is closed.** `PATCH`/`DELETE /api/facility/visits` and
+the whole `manualEditAttendance` branch now take the per-person advisory lock and
+re-read visit state inside it, so §5's rule — *every* visit write, self, staff or
+automated, goes through the lock plus the one-open-visit guard — holds across the
+surface.
+
+That also closed an audit-fidelity window AT3 would otherwise have left in the
+Absent branch: it read the doomed visits, then tombstoned them and wrote their
+audit rows from that snapshot. A visit someone else deleted in the gap was
+correctly skipped by the `LIVE_VISIT`-filtered update but still got an audit row,
+crediting this lead with a deletion they did not perform. Under the lock the rows
+audited are exactly the rows tombstoned.
+
+**The one-open-visit collision was real.** `manualEditAttendance`'s Present branch
+looked up an existing visit scoped to `associatedEventId` while the
+`Visit_one_open_per_participant` index is scoped to `personId` alone, so a
+participant with an open *unassociated* walk-in, marked Present with a blank
+departure, hit a unique violation surfacing as a bare 500. The fix adopts an
+adoptable open visit into the event instead of writing a second one, and returns
+a 400 naming the problem when the open visit belongs to another session.
 
 ---
 
@@ -494,9 +695,14 @@ add the group-by. Do not build a second generic audit browser.
 `@sensitivity:internal`. The `facility/corrections` read exposes audit rows
 (internal) — it must be a registered route with a tight select, and per the
 boundary-isolation rule any registry/scope change ships in its own PR ahead of
-the feature route. The `VisitSource` re-tier (a source enum value is `public`)
-touches `security/generated/classifications.ts` and likewise lands in its own
-boundary PR. The self-scoped `PATCH`/`DELETE` writes only the actor's own (or a
+the feature route. The `VisitSource` split is **not** a boundary change and
+needs no isolated PR: `classifications.ts` tiers *fields*, not enum values —
+`arrivedVia`/`departedVia` stay `public` whatever the value set is, so adding
+values leaves the generated file byte-identical (verified), and
+`security-boundary-isolation.yml` fires only on `src/security/**` (excluding
+`generated/`), the generator script, or a genuine re-tier of an existing field.
+It therefore ships inside the AT3 PR, as §3 says. The self-scoped
+`PATCH`/`DELETE` writes only the actor's own (or a
 household member's) `Visit` — no new sensitivity surface. The scope check
 (`personId` = self or a household member, never from the body) is the security
 invariant and belongs in the route, not the UI; the significance/flagging logic

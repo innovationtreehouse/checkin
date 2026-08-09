@@ -7,6 +7,7 @@
  */
 
 import { GET, PATCH, DELETE } from '@/app/api/facility/visits/route';
+import { POST } from '@/app/api/facility/visits/insert/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -338,7 +339,7 @@ describe('Admin Visits API Integration Tests', () => {
             expect(data.error).toBe('Visit not found.');
         });
 
-        it('should delete the visit and log to audit with oldData when an admin requests it', async () => {
+        it('should tombstone the visit and log to audit with oldData when an admin requests it', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true }
             });
@@ -358,14 +359,90 @@ describe('Admin Visits API Integration Tests', () => {
             const data = await res.json();
             expect(data.success).toBe(true);
 
-            const gone = await prisma.visit.findUnique({ where: { id: doomed.id } });
-            expect(gone).toBeNull();
+            // Staff deletes tombstone like member self-deletes: the row survives,
+            // stamped with who erased it.
+            const tombstoned = await prisma.visit.findUnique({ where: { id: doomed.id } });
+            expect(tombstoned?.deletedAt).toBeInstanceOf(Date);
+            expect(tombstoned?.deletedById).toBe(testAdminId);
 
             const auditLog = await prisma.auditLog.findFirst({
                 where: { actorId: testAdminId, action: 'DELETE', tableName: 'Visit', affectedEntityId: doomed.id }
             });
             expect(auditLog).not.toBeNull();
             expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
+        });
+    });
+
+    // AT3 §3: the walk-in path. Neither the kiosk (live only) nor the event
+    // roster mark (program-scoped, event window) can record a past visit for
+    // someone who was simply never badged in.
+    describe('POST /api/facility/visits — staff insert for others', () => {
+        const post = (body: unknown) => POST(new Request('http://localhost:4000/api/facility/visits/insert', {
+            method: 'POST', body: JSON.stringify(body),
+        }) as unknown as import("next/server").NextRequest);
+
+        const arrived = new Date(Date.now() - 3 * 3600000);
+        const departed = new Date(Date.now() - 2 * 3600000);
+
+        it('403s a non-admin — the role gate is the whole boundary here', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+            const res = await post({ personId: testUserId, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
+            expect(res.status).toBe(403);
+        });
+
+        it('creates a closed WEB visit for another person and audits actor + subject', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
+            const res = await post({ personId: testUserId, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
+
+            expect(res.status).toBe(201);
+            const { visit } = await res.json();
+            const stored = await prisma.visit.findUnique({ where: { id: visit.id } });
+            expect(stored).toMatchObject({ personId: testUserId, arrivedVia: 'WEB', departedVia: 'WEB' });
+            expect(stored?.departedAt).toBeInstanceOf(Date);
+
+            const audit = await prisma.auditLog.findFirst({
+                where: { actorId: testAdminId, action: 'CREATE', tableName: 'Visit', affectedEntityId: visit.id },
+            });
+            expect(audit).not.toBeNull();
+            // actor ≠ subject is what marks this as acting-for-another (design §6.6).
+            expect(audit?.secondaryAffectedEntity).toBe(testUserId);
+        });
+
+        it('refuses an open visit — live presence belongs to the kiosk', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
+            const res = await post({ personId: testUserId, arrivedAt: arrived.toISOString() });
+            expect(res.status).toBe(400);
+        });
+
+        it('rejects a future time, an inverted range, and a >24h span', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
+            const future = new Date(Date.now() + 3600000).toISOString();
+            expect((await post({ personId: testUserId, arrivedAt: future, departedAt: future })).status).toBe(400);
+            expect((await post({ personId: testUserId, arrivedAt: departed.toISOString(), departedAt: arrived.toISOString() })).status).toBe(400);
+            expect((await post({
+                personId: testUserId,
+                arrivedAt: new Date(Date.now() - 30 * 3600000).toISOString(),
+                departedAt: departed.toISOString(),
+            })).status).toBe(400);
+        });
+
+        it('400s a missing or malformed body rather than 500ing', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
+            const bodyless = POST(new Request('http://localhost:4000/api/facility/visits/insert', {
+                method: 'POST',
+            }) as unknown as import("next/server").NextRequest);
+            expect((await bodyless).status).toBe(400);
+
+            const malformed = POST(new Request('http://localhost:4000/api/facility/visits/insert', {
+                method: 'POST', headers: { 'content-type': 'application/json' }, body: '{oops',
+            }) as unknown as import("next/server").NextRequest);
+            expect((await malformed).status).toBe(400);
+        });
+
+        it('404s an unknown person instead of creating an orphan visit', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
+            const res = await post({ personId: 999999999, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
+            expect(res.status).toBe(404);
         });
     });
 });

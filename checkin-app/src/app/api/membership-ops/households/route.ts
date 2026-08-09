@@ -46,6 +46,7 @@ export const GET = withAuth(
                     where: { id: parseInt(id) },
                     include: {
                         householdMembers: {
+                            where: LIVE_PERSON,
                             select: {
                                 id: true, name: true, email: true, isHouseholdLead: true, lastBackgroundCheck: true,
                                 // dateOfBirth: the Edit Info modal excludes youth from the
@@ -132,6 +133,7 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     householdMembers: {
+                        where: LIVE_PERSON,
                         // isHouseholdLead + lastBackgroundCheck drive the household-level "BG valid
                         // until" below. Board-only endpoint; lastBackgroundCheck rides along in the
                         // JSON at the same trust level as the rest of the row.

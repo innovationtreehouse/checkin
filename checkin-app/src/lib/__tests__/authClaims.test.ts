@@ -15,6 +15,8 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
         roles: ALL_ROLES,
         householdId: 99,
         isHouseholdLead: false,
+        dateOfBirth: new Date('1990-01-01'),
+        isDeclaredAdult: false,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
         household: { orgMembership: { status: 'ACTIVE' } },
         canAccessStaging: false,

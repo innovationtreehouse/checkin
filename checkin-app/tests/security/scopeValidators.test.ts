@@ -45,7 +45,7 @@ describe('validateBindings — coverage (forgotten-model catcher)', () => {
         // createdById FK; with an empty queue it must error. (MembershipProcess
         // was the old exemplar but is now un-scopable by the direct-FK heuristic
         // once bare `id` left SCOPABLE_FIELDS — it has only membershipId/
-        // certifiedById, neither a recognised actor FK.)
+        // manualPaymentById, neither a recognised actor FK.)
         const errs = validateBindings(SCOPE_BINDINGS, CLS, new Set());
         expect(errs.some(e => e.startsWith('VolunteerDesignation is sensitive and scopable'))).toBe(true);
     });
@@ -90,6 +90,25 @@ describe('validateRouteGrants — seam check', () => {
             { endpoint: '/api/y', orderedView: [['authenticated', ['their_own:pii', 'everyones:internal', 'public']]], returns: ['Person'] },
         ];
         expect(validateRouteGrants(routes, bindings)).toEqual([]);
+    });
+
+    // The CI gate below passes only if the seam is actually EVALUATED for the
+    // self-correction grant — a route whose `returns` is missing is skipped, so
+    // "green" alone does not prove the grant was checked. Strip led_households
+    // from the Visit binding and the real spec must go red.
+    it('bites on the real self-correction spec when Visit loses its led_households binding', () => {
+        const patch = [...allRoutes()].find(
+            ([ep]) => ep === 'PATCH /api/attendance/manual/[id]',
+        )?.[1];
+        expect(patch?.returns).toEqual(['Visit']);
+        const errs = validateRouteGrants([patch as RouteGrantSpec], {
+            ...SCOPE_BINDINGS,
+            Visit: {
+                their_own: SCOPE_BINDINGS.Visit.their_own,
+                all_current_visitors: SCOPE_BINDINGS.Visit.all_current_visitors,
+            },
+        });
+        expect(errs.some(e => e.includes("grants 'led_households:*'"))).toBe(true);
     });
 
     it('skips a route that has not declared `returns` (incremental coverage)', () => {

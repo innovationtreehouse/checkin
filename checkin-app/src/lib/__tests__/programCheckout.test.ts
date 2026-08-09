@@ -3,70 +3,38 @@ import { isProgramCheckoutBroken, PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/pr
 describe("isProgramCheckoutBroken", () => {
   it("free program (no prices) is never broken", () => {
     expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: null, nonOrgMemberPriceCents: null,
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
-    })).toBe(false);
-  });
-
-  it("both tiers priced with both variants is not broken", () => {
-    expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000,
-      shopifyOrgMemberVariantId: "gid-1", shopifyNonOrgMemberVariantId: "gid-2",
-    })).toBe(false);
-  });
-
-  it("priced org tier with a null org variant is broken", () => {
-    expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: null,
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
-    })).toBe(true);
-  });
-
-  it("priced non-org tier with a null non-org variant is broken", () => {
-    expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: null, nonOrgMemberPriceCents: 8000,
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
-    })).toBe(true);
-  });
-
-  it("partial: org configured, non-org priced but missing its variant is broken", () => {
-    expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000,
-      shopifyOrgMemberVariantId: "gid-1", shopifyNonOrgMemberVariantId: null,
-    })).toBe(true);
-  });
-
-  it("a missing variant on a FREE tier does not flag (gate on price > 0)", () => {
-    // Org tier free (null price) with no org variant, non-org fully configured.
-    expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: null, nonOrgMemberPriceCents: 8000,
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: "gid-2",
+      orgMemberPriceCents: null, nonOrgMemberPriceCents: null, shopifyVariantId: null,
     })).toBe(false);
   });
 
   it("zero price is treated as free, not broken", () => {
     expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: 0, nonOrgMemberPriceCents: 0,
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+      orgMemberPriceCents: 0, nonOrgMemberPriceCents: 0, shopifyVariantId: null,
     })).toBe(false);
   });
 
-  // Single-pool model (product decision 2026-07-06): shopifyVariantId alone
-  // covers both tiers — never flag broken when it's set, regardless of the
-  // legacy pair's state.
-  it("shopifyVariantId set covers both priced tiers — not broken", () => {
+  // One variant covers both tiers — member pricing is a checkout-time discount code.
+  it("both tiers priced with the variant set is not broken", () => {
     expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000,
-      shopifyVariantId: "single-pool-gid",
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000, shopifyVariantId: "gid-1",
     })).toBe(false);
   });
 
-  it("a priced program with neither shopifyVariantId nor a legacy variant is broken", () => {
+  it("a priced program with no variant is broken", () => {
     expect(isProgramCheckoutBroken({
-      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000,
-      shopifyVariantId: null,
-      shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null,
+      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: 8000, shopifyVariantId: null,
+    })).toBe(true);
+  });
+
+  it("a priced org tier alone with no variant is broken", () => {
+    expect(isProgramCheckoutBroken({
+      orgMemberPriceCents: 5000, nonOrgMemberPriceCents: null, shopifyVariantId: null,
+    })).toBe(true);
+  });
+
+  it("a priced non-org tier alone with no variant is broken", () => {
+    expect(isProgramCheckoutBroken({
+      orgMemberPriceCents: null, nonOrgMemberPriceCents: 8000, shopifyVariantId: null,
     })).toBe(true);
   });
 });
@@ -81,8 +49,6 @@ type Row = {
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
   shopifyVariantId: string | null;
-  shopifyOrgMemberVariantId: string | null;
-  shopifyNonOrgMemberVariantId: string | null;
 };
 
 /**
@@ -117,19 +83,12 @@ describe("PROGRAM_CHECKOUT_BROKEN_WHERE agrees with isProgramCheckoutBroken", ()
     for (const orgMemberPriceCents of PRICES) {
       for (const nonOrgMemberPriceCents of PRICES) {
         for (const shopifyVariantId of VARIANTS) {
-          for (const shopifyOrgMemberVariantId of VARIANTS) {
-            for (const shopifyNonOrgMemberVariantId of VARIANTS) {
-              const row: Row = {
-                orgMemberPriceCents, nonOrgMemberPriceCents, shopifyVariantId,
-                shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId,
-              };
-              const query = whereMatches(
-                PROGRAM_CHECKOUT_BROKEN_WHERE as Record<string, unknown>,
-                row,
-              );
-              expect({ row, broken: query }).toEqual({ row, broken: isProgramCheckoutBroken(row) });
-            }
-          }
+          const row: Row = { orgMemberPriceCents, nonOrgMemberPriceCents, shopifyVariantId };
+          const query = whereMatches(
+            PROGRAM_CHECKOUT_BROKEN_WHERE as Record<string, unknown>,
+            row,
+          );
+          expect({ row, broken: query }).toEqual({ row, broken: isProgramCheckoutBroken(row) });
         }
       }
     }

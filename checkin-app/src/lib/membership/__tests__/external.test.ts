@@ -70,8 +70,19 @@ const { loadAgreementPdf, stampWatermark, AgreementUnavailableError } = require(
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { notifyReviewers, applyVolunteerStatus } = require('@/lib/membership/review');
 
+// resetAllMocks, NOT clearAllMocks: clear wipes recorded calls but KEEPS
+// implementations, so a `mockResolvedValue` set in one test silently answers every
+// later test in the file. Harmless only for as long as no later test exercises a
+// path that reaches the same prisma method. Reset drops implementations too, so
+// each test states the prisma responses it depends on and nothing else.
+//
+// The three factory-level defaults below are re-established here, since reset
+// clears those as well.
 beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
+    prisma.boardSettings.findUnique.mockResolvedValue(null); // signingMockActive: no dev override
+    notifyReviewers.mockResolvedValue(undefined);
+    applyVolunteerStatus.mockResolvedValue(undefined);
     config.zohoAvailable.mockReturnValue(true);
     config.zohoMockActive.mockReturnValue(true);
     config.isProd.mockReturnValue(false);
@@ -313,12 +324,61 @@ describe('getOrCreateContractSigningUrl', () => {
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
         prisma.person.findUnique.mockResolvedValue({ ...leadUser, isHouseholdLead: false });
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue(null); // no PERSON_AGREEMENT of their own
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 
     it('wrong_phase when there is no process awaiting external action', async () => {
         prisma.person.findUnique.mockResolvedValue({ ...leadUser, household: { orgMembership: { processes: [] } } });
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue(null);
         await expect(getOrCreateContractSigningUrl(1)).rejects.toMatchObject({ code: 'wrong_phase' });
+    });
+
+    // The one gate that opens. A non-lead still can't sign the HOUSEHOLD agreement
+    // (the test above), but signs their own individual one — no lead role, and no household
+    // application in flight, which is the normal state for an adult child in a settled
+    // member household.
+    it('a non-lead signs their OWN PERSON_AGREEMENT, bypassing the household lead gate', async () => {
+        prisma.person.findUnique.mockResolvedValue({
+            ...leadUser,
+            isHouseholdLead: false,
+            household: { orgMembership: { processes: [] } },
+        });
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue({
+            id: 55, kind: 'PERSON_AGREEMENT', status: 'PENDING_EXTERNAL_ACTION',
+            subjectPersonId: 1, zohoEnvelopeId: null, zohoActionId: null, contractSignedAt: null,
+        });
+        zohoSign.getAccessToken.mockResolvedValue('token-1');
+        zohoSign.createRequest.mockResolvedValue({ requestId: 'req-own', actionId: 'act-own', documentId: 'doc-own' });
+        zohoSign.submitRequest.mockResolvedValue(undefined);
+        zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-own');
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        const url = await getOrCreateContractSigningUrl(1);
+
+        expect(url).toBe('https://sign.example/embed-own');
+        // Claimed against the person's OWN process, not a household one.
+        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ id: 55 }) }),
+        );
+    });
+
+    // A lead is checked FIRST, so a stray PERSON_AGREEMENT can never shadow the household
+    // process and stall activation/renewal with no UI explanation.
+    it('a household lead signs the HOUSEHOLD process even with an open PERSON_AGREEMENT', async () => {
+        prisma.person.findUnique.mockResolvedValue(leadUser);
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue({ id: 55, kind: 'PERSON_AGREEMENT', status: 'PENDING_EXTERNAL_ACTION' });
+        zohoSign.getAccessToken.mockResolvedValue('token-1');
+        zohoSign.createRequest.mockResolvedValue({ requestId: 'req-hh', actionId: 'act-hh', documentId: 'doc-hh' });
+        zohoSign.submitRequest.mockResolvedValue(undefined);
+        zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-hh');
+        prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
+
+        await getOrCreateContractSigningUrl(1);
+
+        expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ id: 20 }) }),
+        );
     });
 
     it('mock mode: skips loadAgreementPdf/stampWatermark and creates + submits + embeds', async () => {
@@ -423,6 +483,7 @@ describe('getOrCreateContractSigningUrl', () => {
             zohoSign.createRequest.mockResolvedValue({ requestId: 'req-stg', actionId: 'act-stg', documentId: 'doc-stg' });
             zohoSign.submitRequest.mockResolvedValue(undefined);
             zohoSign.getEmbeddedSignUrl.mockResolvedValue('https://sign.example/embed-stg');
+            prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 }); // wins the id claim
 
             await getOrCreateContractSigningUrl(1);
 

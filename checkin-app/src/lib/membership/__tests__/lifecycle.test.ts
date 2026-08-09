@@ -9,7 +9,7 @@
  *   - grantableRenewalWhere / settledThisCycleWhere emit the exact fragments the
  *     route + guard + sweep consume (fix #3/#4);
  *   - isLegalTransition covers the machine’s edges; reachability flags the legacy
- *     RENEWAL_PENDING_BG as unreachable (docs/designs/LIFECYCLE.md);
+ *     RENEWAL_PENDING_BG as unreachable;
  *   - the local ProcessStatus/ProcessKind unions stay in lockstep with the Prisma
  *     enums (value-based assertEnumParity here; type-only Expect<Equal> in-module).
  */
@@ -171,7 +171,7 @@ describe('validate', () => {
     });
 });
 
-// ── transitions (docs/designs/LIFECYCLE.md) ───────────────────────────────────────────────────────
+// ── transitions ───────────────────────────────────────────────────────────────────────────────────
 
 describe('isLegalTransition covers §5', () => {
     test('accepts declared spine edges', () => {
@@ -201,6 +201,15 @@ describe('isLegalTransition covers §5', () => {
         expect(isLegalTransition('ACTIVE', 'ARCHIVED')).toBe(false);
     });
 
+    test('accepts unarchive back to every archivable status — ARCHIVED is not sealed', () => {
+        for (const to of ['INTAKE', 'PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW', 'PENDING_PAYMENT', 'PENDING_BG_CLEARANCE', 'PENDING_RENEWAL', 'BLOCKED'] as ProcessStatus[]) {
+            expect(isLegalTransition('ARCHIVED', to)).toBe(true);
+        }
+        // Nothing is ever archived from these two, so neither is a restore target.
+        expect(isLegalTransition('ARCHIVED', 'RENEWAL_PENDING_BG')).toBe(false);
+        expect(isLegalTransition('ARCHIVED', 'ARCHIVED')).toBe(false);
+    });
+
     test('rejects undeclared edges', () => {
         expect(isLegalTransition('INTAKE', 'ACTIVE')).toBe(false);
         expect(isLegalTransition('ACTIVE', 'PENDING_PAYMENT')).toBe(false);
@@ -215,7 +224,7 @@ describe('isLegalTransition covers §5', () => {
     });
 });
 
-describe('reachability (docs/designs/LIFECYCLE.md)', () => {
+describe('reachability', () => {
     test('flags the legacy RENEWAL_PENDING_BG as unreachable', () => {
         const r = reachability(TRANSITIONS, ALL_STATUSES, INITIAL_STATES, ['ACTIVE', 'ARCHIVED']);
         expect(r.unreachable).toContain('RENEWAL_PENDING_BG');
@@ -227,13 +236,13 @@ describe('reachability (docs/designs/LIFECYCLE.md)', () => {
     });
 });
 
-// ── enum parity (docs/designs/LIFECYCLE.md) ──────────────────────────────────
+// ── enum parity ──────────────────────────────────────────────────────────────
 
 describe('enum parity with Prisma', () => {
     test('ProcessStatus union matches OrgMembershipProcessStatus keys', () => {
         expect(() => assertEnumParity(ALL_STATUSES, OrgMembershipProcessStatus, 'OrgMembershipProcessStatus')).not.toThrow();
     });
     test('ProcessKind union matches OrgMembershipProcessKind keys', () => {
-        expect(() => assertEnumParity(['INITIAL', 'RENEWAL', 'PERSON_BG'], OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
+        expect(() => assertEnumParity(['INITIAL', 'RENEWAL', 'PERSON_BG', 'PERSON_AGREEMENT'], OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
     });
 });

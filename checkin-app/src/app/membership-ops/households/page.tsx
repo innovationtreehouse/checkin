@@ -9,6 +9,7 @@ import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { AdminEditHouseholdModal } from '@/components/admin/AdminEditHouseholdModal';
 import { sharesHousehold } from '@/lib/conflictOfInterest';
+import { formatDateOnly } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type Household = {
@@ -24,8 +25,10 @@ type Household = {
   bgValidUntil?: string | null;
 };
 
+// Every date this renders (memberSince, validUntil, bgValidUntil) is a calendar
+// date at UTC midnight, so it must be read UTC-pinned or it shows the day before.
 const fmtDate = (s?: string | null) =>
-  s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
+  s ? formatDateOnly(s, { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 export default function AdminHouseholdsPage() {
   const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);

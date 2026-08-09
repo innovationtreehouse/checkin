@@ -8,13 +8,16 @@
  * authzRoleRejection.integration.test.ts — this file focuses on the success
  * path: bucketing visits by period, the volunteer/participant split (by program
  * enrollment — ProgramParticipant, NOT age), structured (event-associated) vs
- * unstructured hours, the `arrivedVia=SYSTEM` exclusion (synthetic "marked
- * present" visits), the `programId` filter, and the invalid-period 400.
+ * unstructured hours, the `arrivedVia=LEAD_MARKED` exclusion (synthetic "marked
+ * present" visits, plus its pre-split `SYSTEM` spelling), the `programId`
+ * filter, and the invalid-period 400.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { getAppSettings } from '@/lib/appSettings';
+import { fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -37,16 +40,28 @@ describe('Facility trends API', () => {
     // into the month, so the whole seed lands in a single calendar-month bucket no matter
     // when the suite runs. The route buckets on arrivedAt only, so departures that spill
     // past midnight into the next month are fine.
-    const NOW = new Date();
-    const monthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
-    const ANCHOR = new Date(Math.max(NOW.getTime(), monthStart(NOW).getTime() + 60 * 60 * 1000));
-    // The bucket the assertions inspect, keyed the way the route keys it (local month start).
-    const BUCKET_START = monthStart(ANCHOR);
+    //
+    // The month the anchor sits in is the ORG timezone's, since that is what the route
+    // buckets against — resolved in beforeAll because the zone comes from AppSettings.
+    let ANCHOR: Date;
+    // The bucket the assertions inspect, keyed the way the route keys it (org-zone month start).
+    let BUCKET_START: Date;
     const arrival = (minutesBefore: number) => new Date(ANCHOR.getTime() - minutesBefore * 60 * 1000);
     const departure = (minutesBefore: number, hours: number) =>
         new Date(arrival(minutesBefore).getTime() + hours * 60 * 60 * 1000);
 
     beforeAll(async () => {
+        const { timezone } = await getAppSettings();
+        const monthStart = (d: Date) => {
+            const z = toZonedTime(d, timezone);
+            z.setDate(1);
+            z.setHours(0, 0, 0, 0);
+            return fromZonedTime(z, timezone);
+        };
+        const NOW = new Date();
+        ANCHOR = new Date(Math.max(NOW.getTime(), monthStart(NOW).getTime() + 60 * 60 * 1000));
+        BUCKET_START = monthStart(ANCHOR);
+
         const admin = await prisma.person.create({
             data: { email: `admin-${TAG}@example.com`, name: 'Admin', isSysadmin: true, household: { create: { name: "Test HH" } } },
         });
@@ -92,15 +107,22 @@ describe('Facility trends API', () => {
         const unstructured = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(1), departedAt: departure(1, 1), arrivedVia: 'WEB' },
         });
-        // Synthetic "marked present" visit (arrivedVia SYSTEM) — must be excluded entirely.
+        // Synthetic "marked present" visit (arrivedVia LEAD_MARKED) — the event
+        // window is a placeholder, not measured time, so it is excluded entirely.
         const synthetic = await prisma.visit.create({
-            data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
+            data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'LEAD_MARKED', associatedEventId: eventId },
+        });
+        // The same thing in its pre-split spelling. A rolling deploy's drain
+        // window lets the previous release keep writing SYSTEM, so the exclusion
+        // must still catch it — 3h that must not reach structuredHours.
+        const legacySynthetic = await prisma.visit.create({
+            data: { personId: volunteerId, arrivedAt: arrival(3), departedAt: departure(3, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
         // Still-open visit (no departedAt) — excluded (departedAt: { not: null } in the where).
         const open = await prisma.visit.create({
             data: { personId: youthId, arrivedAt: arrival(0), arrivedVia: 'WEB' },
         });
-        visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, open.id);
+        visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, legacySynthetic.id, open.id);
     });
 
     afterAll(async () => {

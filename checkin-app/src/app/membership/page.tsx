@@ -52,6 +52,8 @@ interface IntakeState {
   membershipStatus: OrgMembershipStatus | null;
   process: { id: number; kind: string; status: OrgMembershipProcessStatus; isPaymentPlanRequested?: boolean } | null;
   external: ExternalStatus | null;
+  /** The caller's own unsigned individual agreement, independent of the household's. */
+  personAgreement: { id: number; started: boolean } | null;
   prefill: {
     household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
     primaryParent: PersonPrefill | null;
@@ -282,7 +284,7 @@ export default function MembershipPage() {
     })();
   }, [sessionStatus, load]);
 
-  // When awaiting payment, fetch the dues amount and Shopify checkout link. Leads
+  // When awaiting payment, fetch the membership-fee amount and Shopify checkout link. Leads
   // only — the route refuses anyone else, and the card hides the money from them.
   useEffect(() => {
     if (state?.process?.status !== "PENDING_PAYMENT" || !state.isLead) return;
@@ -352,7 +354,7 @@ export default function MembershipPage() {
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
-  // settling dues end-to-end with zero setup. Only rendered on a local instance.
+  // settling the membership fee end-to-end with zero setup. Only rendered on a local instance.
   const settleMockPayment = async () => {
     if (!state?.process) return;
     setSaving(true);
@@ -539,7 +541,7 @@ export default function MembershipPage() {
     // On success we navigate away, so we intentionally leave `saving` true.
   };
 
-  // Ask the board's Scholarship Review Team for a payment plan on membership dues.
+  // Ask the board's Scholarship Review Team for a payment plan on the membership fee.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
   // Mirrors the server flag both ways (not just true->true) so a denial that
@@ -673,6 +675,24 @@ export default function MembershipPage() {
             {warnings.map((w, i) => <Text key={i} size="sm">{w}</Text>)}
           </Stack>
         </Alert>
+      )}
+
+      {/* Your own agreement, not your household's — an adult can't be bound by a
+          parent's signature. Rendered above the household flow and independent of it:
+          the subject is usually a non-lead in a settled member household, where every
+          branch below shows "you're a member" and nothing else. */}
+      {state?.personAgreement && (
+        <Card withBorder radius="md" padding="lg" mb="lg" maw={640}>
+          <Title order={2}>Sign your individual membership agreement</Title>
+          <Text c="dimmed" my="md">
+            You&apos;re 18 or older, so you sign your own membership agreement rather than
+            being covered by your household&apos;s. Have your insurance details handy — the
+            agreement asks for your provider and policy number.
+          </Text>
+          <Button disabled={saving} loading={saving} onClick={startSigning}>
+            {state.personAgreement.started ? "Resume signing →" : "Sign your agreement →"}
+          </Button>
+        </Card>
       )}
 
       {!state?.process ? (

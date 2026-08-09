@@ -134,6 +134,77 @@ export function ConfigHealthBox() {
   );
 }
 
+// Mirrors CronJobStatus in lib/cronRuns.ts (lastSuccessAt arrives JSON-serialized).
+type CronJob = { job: string; lastSuccessAt: string; stale: boolean; lastError?: string };
+
+/** "3 hours ago" / "2 days ago" — coarse on purpose; the exact stamp is the title text. */
+function timeAgo(iso: string): string {
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} hour${hours === 1 ? '' : 's'} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} days ago`;
+}
+
+/**
+ * Last successful run of each cron sweep, from GET /api/system-status/config-health
+ * (admins + board only). Nothing in this repo schedules the crons — the schedule and
+ * the caller live in a separate infra repo — so this panel is the app's only view of
+ * whether its own nightly sweeps are still firing. A job past the staleness window is
+ * red here and adds to the red System Status nav pill. See lib/cronRuns.ts.
+ */
+export function CronRunsBox() {
+  const [jobs, setJobs] = useState<CronJob[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/system-status/config-health')
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data) => setJobs(data.cronJobs as CronJob[]))
+      .catch(() => setFailed(true));
+  }, []);
+
+  const staleCount = jobs?.filter((j) => j.stale).length ?? 0;
+
+  return (
+    <Card withBorder radius="md" padding="lg">
+      <Group gap="sm" mb="xs">
+        <Title order={4}>Scheduled Jobs</Title>
+        {staleCount > 0 && <Badge color="red" circle title={`${staleCount} job(s) not running`} />}
+      </Group>
+      <Text size="sm" c="dimmed" mb="md">
+        Last successful run of each nightly sweep. A job listed in red has not succeeded in
+        over 48 hours — treat it as stopped and check the scheduler.
+      </Text>
+
+      {failed ? (
+        <Text c="yellow">Unable to load scheduled-job status.</Text>
+      ) : !jobs ? (
+        <Text c="dimmed">Checking scheduled jobs…</Text>
+      ) : jobs.length === 0 ? (
+        <Text c="dimmed">No cron run has been recorded yet.</Text>
+      ) : (
+        <List spacing="sm" listStyleType="none">
+          {jobs.map((j) => (
+            <List.Item key={j.job}>
+              <Group justify="space-between" wrap="nowrap" align="flex-start">
+                <Code>{j.job}</Code>
+                <Text c={j.stale ? 'red' : 'green'} fw={j.stale ? 700 : undefined} ta="right" title={j.lastSuccessAt}>
+                  ● {timeAgo(j.lastSuccessAt)}
+                </Text>
+              </Group>
+              {j.lastError && (
+                <Text size="xs" c="red">Failing since: {j.lastError}</Text>
+              )}
+            </List.Item>
+          ))}
+        </List>
+      )}
+    </Card>
+  );
+}
+
 // Mirrors DiagStep in api/finance-ops/s-read/diagnose/route.ts.
 type DiagStep = { id: string; ok: boolean | null; detail: string; code?: string };
 
@@ -148,7 +219,7 @@ const DIAG_LABELS: Record<string, string> = {
 };
 
 /**
- * On-demand deep probe of the s-read chain (docs/designs/S_READ_DIAGNOSTICS.md).
+ * On-demand deep probe of the s-read chain (docs/ops/shopify-mirror.md).
  * Deliberately NOT run on page load and never polled: every probe wakes the
  * scale-to-zero Aurora cluster, so it fires only on an explicit click. This is
  * the deep counterpart to ConfigHealthBox above, which stays presence-only.

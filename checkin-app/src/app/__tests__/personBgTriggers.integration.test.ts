@@ -114,7 +114,10 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
 
     afterAll(async () => {
         await cleanup();
+        // Unconditional: a row this suite created must go, or its boundary leaks into
+        // suites that share this DB and expect none.
         if (savedSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: savedSettings });
+        else await prisma.boardSettings.delete({ where: { id: 1 } }).catch(() => {});
         await prisma.$disconnect();
     });
 
@@ -167,7 +170,7 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
             data: { orgMembershipId: membership.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() },
         });
 
-        await activate(proc.id, { via: 'certified', actorId: lead.id });
+        await activate(proc.id, { via: 'manual', actorId: lead.id });
 
         expect((await prisma.orgMembership.findUnique({ where: { id: membership.id } }))?.status).toBe('ACTIVE');
         expect(await personBgCountFor(joiner.id)).toBe(1); // Trigger C fired for the program adult
