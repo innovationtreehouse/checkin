@@ -3,6 +3,7 @@ import { personActor, systemActor, type AuditActor } from "@/lib/auditActor";
 import { escapeHtml } from "@/lib/email-templates/base";
 import { emailBoardMembers, emailHouseholdLeads } from "@/lib/emailRecipients";
 import { isTrustedAdultConflict } from "@/lib/trusted-adult/conflict";
+import { AUTHORIZED_REVIEW } from "@/lib/trusted-adult/filters";
 import { config } from "@/lib/config";
 import { validateContact } from "@/lib/trusted-adult/contact";
 import type { TxClient } from "@/lib/db-client";
@@ -401,7 +402,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         // one live would keep the adult on the pickup list after a full rejection.
         if (input.decision === "DENY" && input.revokePriorApprovals) {
             const live = await tx.trustedAdultReview.findMany({
-                where: { trustedAdultId: review.trustedAdultId, status: "APPROVED" },
+                where: { trustedAdultId: review.trustedAdultId, ...AUTHORIZED_REVIEW },
                 orderBy: { id: "desc" },
             });
             if (live.length) {
@@ -434,7 +435,7 @@ export async function decideReview(reviewId: number, boardMemberId: number, inpu
         } else {
             // Mirror /operational's rule: a surviving APPROVED review = still authorized.
             const live = await prisma.trustedAdultReview.findFirst({
-                where: { trustedAdultId: head.trustedAdultId, status: "APPROVED" },
+                where: { trustedAdultId: head.trustedAdultId, ...AUTHORIZED_REVIEW },
                 orderBy: { reviewBy: "desc" },
             });
             if (live) {
@@ -562,7 +563,16 @@ export async function runExpirySweep(now: Date) {
         expired++;
         // Notify only after the flip commits: the status change is the authoritative act,
         // the email a courtesy on top, so a slow or failing provider can't hold the tx.
-        // The flip is its own dedup — an EXPIRED row is no longer selected by this query.
+        // The flip is its own dedup — an EXPIRED row is no longer selected by this query —
+        // and it also excludes this row from the authorization check below.
+        const stillAuthorized = await prisma.trustedAdultReview.findFirst({
+            where: { trustedAdultId: r.trustedAdultId, ...AUTHORIZED_REVIEW },
+            select: { id: true },
+        });
+        // One lapsed review is not a lapsed adult: a renewal approved before this row's
+        // date still authorizes them, and /operational still lists them. Only the review
+        // that leaves the adult with no approval at all earns the de-authorization notice.
+        if (stillAuthorized) continue;
         const name = r.trustedAdult.trustedAdultName?.trim() || "your trusted adult";
         await notifyHouseholdFamily(
             r.householdId,

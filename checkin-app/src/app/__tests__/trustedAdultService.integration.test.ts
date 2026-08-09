@@ -675,4 +675,50 @@ describe('runExpirySweep edge cases', () => {
             expect(after!.expiryWarningSentAt).toBeNull(); // expired, never warned
         }
     });
+
+    // Regression: renewing early leaves the adult with TWO APPROVED reviews (renew never
+    // retires the prior one). When the OLD row lapses the sweep must still expire it, but
+    // the family is NOT de-authorized — /operational lists a TA while ANY review is
+    // APPROVED. Asserts both directions so the fix can't be "stop emailing".
+    it('a renewed adult whose old review lapses gets no de-authorization email; a genuinely lapsed one still does', async () => {
+        const now = new Date();
+        const past = new Date(now.getTime() - 1 * DAY);
+        const future = new Date(now.getTime() + 300 * DAY);
+
+        // Adult A: original approval lapsing now, plus a board-approved renewal still live.
+        const renewedTa = await prisma.trustedAdult.create({
+            data: { householdId, trustedAdultName: `Renewed Grandma ${SWEEP_TAG}`, trustedAdultEmail: 'gran@example.com', familyContext: 'ctx', disclosedById: leadId },
+        });
+        const staleRow = await prisma.trustedAdultReview.create({
+            data: { householdId, trustedAdultId: renewedTa.id, kind: 'INITIAL', status: 'APPROVED', reviewBy: past },
+        });
+        const renewalRow = await prisma.trustedAdultReview.create({
+            data: { householdId, trustedAdultId: renewedTa.id, kind: 'RENEWAL', status: 'APPROVED', reviewBy: future },
+        });
+
+        // Adult B: one approval, lapsed, nothing behind it — genuinely de-authorized.
+        const lapsedRow = await seedReview('APPROVED', past);
+
+        const run = await runExpirySweep(now);
+
+        // Both stale rows flip: expiry is per-review bookkeeping and is unchanged.
+        expect(run.expired).toBe(2);
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: staleRow.id } }))!.status).toBe('EXPIRED');
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: lapsedRow.id } }))!.status).toBe('EXPIRED');
+        // The renewal is untouched, so /operational's `some: APPROVED` rule still lists adult A.
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: renewalRow.id } }))!.status).toBe('APPROVED');
+        expect(await prisma.trustedAdult.count({ where: { id: renewedTa.id, reviews: { some: { status: 'APPROVED' } } } })).toBe(1);
+        // ...and adult B really is off the list.
+        expect(await prisma.trustedAdult.count({ where: { id: lapsedRow.trustedAdultId, reviews: { some: { status: 'APPROVED' } } } })).toBe(0);
+
+        // Direction 1: the genuinely lapsed adult's family is still told.
+        expect(sendEmail).toHaveBeenCalledWith(
+            `sweeplead-${SWEEP_TAG}@ex.com`,
+            `Trusted adult approval expired: Sweep ${SWEEP_TAG}`,
+            expect.stringContaining('no longer authorized at the front desk'),
+        );
+        // Direction 2: the renewed adult's family is NOT told they lost someone they still have.
+        expect(sendEmail).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('Renewed Grandma'), expect.anything());
+        expect(sendEmail).toHaveBeenCalledTimes(1);
+    });
 });
