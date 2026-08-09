@@ -35,7 +35,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
         }
 
         // ponytail: no eligibility gate (age/membership) on volunteers — they're
-        // staff/mentors, not enrollees. ProgramVolunteer has only isCore; any
+        // volunteers/program leaders, not enrollees. ProgramVolunteer has only isCore; any
         // participant is assignable. Add a gate here only if product asks for one.
         const assignment = await prisma.programVolunteer.create({
             data: {

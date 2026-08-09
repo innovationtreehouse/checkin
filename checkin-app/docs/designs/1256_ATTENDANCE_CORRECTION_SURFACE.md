@@ -116,8 +116,8 @@ there is no existence oracle on other people's visit ids. Delete is a tombstone
 ### Staff insert-for-others at an arbitrary past time
 `POST /api/facility/visits/insert`
 ([route.ts](../../src/app/api/facility/visits/insert/route.ts)), same gate. The
-walk-in path neither the kiosk (live only) nor the event roster mark
-(program-scoped, event window) can record.
+walk-in path neither the kiosk (live only) nor an attendance correction
+(program-scoped, one session) can record.
 Unlike the self-service route, the target `personId` **is** taken from the body —
 that is the point of the endpoint — so the role gate is the whole boundary.
 Closed visits only: an open one would put someone on the live in-the-building
@@ -134,14 +134,9 @@ wrapped, `WEB` on both fields, event association via `findAssociatedEventAt`,
 audited with `secondaryAffectedEntity` = the subject.
 
 ### Lead add-for-others / attendance correction — program-scoped
-Two routes, both gated on program `leadMentorId` or sysadmin/board (the roster
-mark also admits keyholders):
-- `POST /api/events/[id]/attendance`
-  ([route.ts](../../src/app/api/events/[id]/attendance/route.ts)) — the roster
-  mark. Targets restricted to the program roster (enrolled + volunteering);
-  unknown ids rejected — no cross-program fabrication. Writes synthetic
-  `LEAD_MARKED` visits spanning the event window, or adopts an overlapping
-  walk-in into the event. Audited.
+One route, gated on program `leadMentorId`, core volunteer, or sysadmin/board.
+Targets are restricted to the program roster (enrolled + volunteering); anyone
+else is rejected — no cross-program fabrication.
 - `PATCH /api/events/[id]`, action `manualEditAttendance`
   ([route.ts](../../src/app/api/events/[id]/route.ts)) — per-participant
   Present/Absent correction, scoped to this event's visits. Present writes or
@@ -170,8 +165,8 @@ filterable by `tableName`/`action`/date. This is AT12's foundation (§4).
 
 Audit coverage across visit-write paths: **every human edit path logs** a `Visit`
 audit row — manual `CREATE`, the self/household-lead `EDIT`/`DELETE`,
-`facility/visits` `EDIT`/`DELETE`, the staff insert, the events roster mark,
-`manualEditAttendance`, and `my-programs/conflicts/resolve`. Each carries
+`facility/visits` `EDIT`/`DELETE`, the staff insert, `manualEditAttendance`, and
+`my-programs/conflicts/resolve`. Each carries
 `actorId` = who acted and `secondaryAffectedEntity` = whose visit it is, so
 acting-for-another reads off the inequality without a join (§6.6).
 `manualEditAttendance` was the one gap — it wrote nothing at all — closed by AT3.
@@ -492,7 +487,7 @@ this was a per-writer edit, not a rename:
 
 | writer | was | now |
 |---|---|---|
-| events-attendance roster mark ([route.ts](../../src/app/api/events/[id]/attendance/route.ts)) | `SYSTEM` (both fields) | `LEAD_MARKED` |
+| events-attendance roster mark (`POST /api/events/[id]/attendance`, since deleted) | `SYSTEM` (both fields) | `LEAD_MARKED` |
 | keyholder building-close `closeAllOpenVisits` ([scan-service.ts](../../src/lib/scan-service.ts)) | `departedVia: "SYSTEM"` | `FACILITY_CLOSE` |
 | nightly-cron sweep `processVisitCheckout` ([cron/nightly](../../src/app/api/cron/nightly/route.ts)) | `departedVia: "SYSTEM"` | `AUTO_CLOSE` |
 
@@ -545,38 +540,68 @@ its own.
 
 ## 4. AT12 — correction-review screen — *not built ([#1258](https://github.com/innovationtreehouse/checkin/issues/1258))*
 
-**Aggregates** attendance corrections by **kind** (insert / edit / delete),
-**actor class** (self vs staff), and **frequency over time**, with drill-down to
-the underlying audit rows. It sees corrections only — the automated / baseline
-paths don't write `Visit` audit rows (that's fine; they aren't corrections).
+**Surfaces** attendance corrections by **kind** (insert / edit / delete),
+**actor class** (self vs proxy) and **time**, as a filterable feed carrying the
+before-and-after of each change on the row. It sees corrections only — the
+automated / baseline paths don't write `Visit` audit rows (that's fine; they
+aren't corrections).
 
 **Source:** `AuditLog` where `tableName = 'Visit'`. Everything already lands there
 — manual `CREATE` (`type:"manual_entry"`), `facility/visits` `EDIT`/`DELETE`,
-events-attendance, and the new self / household-lead `EDIT`/`DELETE`
-(`type:"self_correction"`). No new model.
+and the new self / household-lead `EDIT`/`DELETE` (`type:"self_correction"`).
+No new model.
 
-**Self vs staff, cheaply:** don't join `AuditLog → Visit` (the visit may be
-tombstoned; `personId` isn't on the audit row). Lean on the `newData.type`
-markers the write paths set — `"manual_entry"` / `"self_correction"` are self,
-their absence with a staff `actorId` is staff.
+**Self vs proxy, cheaply:** don't join `AuditLog → Visit` (the visit may be
+tombstoned; `personId` isn't on the audit row). Compare `actorId` against
+`secondaryAffectedEntity`, which every visit audit write fills with the subject
+person: equal is a correction of one's own record, different is one person
+editing another's. `newData.type` does **not** answer this — it names the route
+that wrote the row, so a household lead correcting a member's visit still writes
+`type:"self_correction"`. It stays useful as a label on the row, never as the
+axis.
 
-**Significant-edit flags (§2) are the headline view.** The same significance
-function runs at read time over the `Visit` audit rows, so AT12's default lens is
-"flagged changes" — big or high-trust-overwriting edits, and deletes — with the
-full correction feed behind a filter. A member whose edits flag often is a
-standing signal. This *is* the "raise it to the board" surface; the write-time
+**Significant-edit flags (§2) are the headline view.** The flag is **read** from
+the persisted `newData.significance`, not recomputed at read time. One row shape
+carries nothing to recompute from: `facility/visits` edits written before the
+`oldData` fix stored no before-state. A persisted flag is also the only form the
+database can filter on, which is what lets the default view paginate. The cost is that a stored score
+freezes the thresholds in force when the row was written. This makes persisting
+significance on **every** edit and delete path a requirement on the writers
+(#1523) — a lens with an undeclared hole is worse than no lens, since "no flagged
+corrections this month" would otherwise mean "the paths capable of the largest
+corrections never score themselves". Rows that never scored are *outside* the
+lens, not "reviewed and found insignificant". AT12's default lens is "flagged
+changes" — big or high-trust-overwriting edits, and deletes — with the full
+correction feed behind a filter. A member whose edits flag often is a standing
+signal. This *is* the "raise it to the board" surface; the write-time
 notification (§2) is the push, AT12 is the pull.
 
-**Audience:** ops + board (they reconcile). The existing `/system-status/audit-log`
-viewer is sysadmin-gated and buries visit corrections among all tables — that is
-the "missed screen" AT12 exists to replace.
+**Audience:** board + sysadmin, and ops once #1476 widens the section gate. The
+existing `/system-status/audit-log` viewer is sysadmin-gated and buries visit
+corrections among all tables — that is the "missed screen" AT12 exists to replace.
 
-**Build:** a read-only aggregation route `GET /api/facility/corrections` (gate
-sysadmin + board + ops) grouping the `tableName='Visit'` audit rows by
-kind × actor-class × period, plus a `facility-ops` page rendering counts and a
-filterable list. Reuse the existing audit-log route's shape (it already filters
-`tableName`/`action`/date and resolves `actorId → name`): pin `tableName='Visit'`,
-add the group-by. Do not build a second generic audit browser.
+**Build:** a read-only route `GET /api/facility/corrections` over the
+`tableName='Visit'` audit rows, plus a `facility-ops` page rendering a filterable
+list. Reuse the existing audit-log route's shape (it already filters
+`tableName`/`action`/date and resolves `actorId → name`) and pin
+`tableName='Visit'` in the handler. Do not build a second generic audit browser.
+
+**The gate is sysadmin + board, not ops.** `facility-ops/layout.tsx` gates the
+whole section on those two roles, and every tab sits under it. Granting ops the
+route while the layout keeps them out of the section produces a role that can
+call the API and cannot reach a page — the AT13 defect this design family exists
+to close. Widening the section gate is an open decision (#1476); when it lands,
+the layout, this route and its page widen together.
+
+**It cannot return a group-by aggregate.** The boundary stripper drops any bag
+key that is not a model name, and copies only fields declared on that model, so
+`buckets`, `total`, `page` and derived scalars like `kind` and `actorClass`
+cannot cross it — a separate counts endpoint fails identically, because a count
+is still not a model field. The route therefore returns model-shaped `AuditLog` /
+`Person` / `Visit` entries, with the before/after times lifted out of the audit
+blobs so they travel as the `personal`-tier `Visit` fields they actually are and
+the raw blobs stay server-side. Kind, actor class and the range count are derived
+client-side from what ships.
 
 ---
 

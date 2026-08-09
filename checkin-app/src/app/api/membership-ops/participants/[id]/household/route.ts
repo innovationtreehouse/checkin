@@ -44,8 +44,8 @@ export const POST = withAuth<{ params: Promise<{ id: string }> }>(
             }
         }
 
-        // a1 leadership (HOUSEHOLD_LEAD_MODEL.md): a person leads their OWN
-        // household, so a change of household always clears the flag, and
+        // A person leads their OWN household, so a change of household
+        // always clears the leadership flag, and
         // createNew then re-promotes them in the household created here. The
         // promotion goes through addHouseholdLead — the only writer of
         // isHouseholdLead: true — which owns the youth exclusion and the lead cap

@@ -9,9 +9,10 @@
  * string when no bookType is provided, so handle that before falling back to
  * the native Date parser.
  *
- * A DoB is a calendar date, so every branch returns UTC midnight — the storage
- * convention shared with the interactive writers (normalizeAdultDob).
- * See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+ * A DoB is a calendar date, so every branch returns UTC midnight — the same
+ * convention the interactive writers use (normalizeAdultDob), and the column is
+ * a `date`, which truncates any time that slips through.
+ * See docs/conventions.md, "A day is not a moment".
  */
 export function parseImportDob(dobString: string | undefined): Date | undefined {
     if (!dobString) return undefined;

@@ -4,6 +4,7 @@ import type { Person } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { personBgOpen } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
@@ -38,6 +39,29 @@ function valuesConflict(a: unknown, b: unknown): boolean {
     if (isEmpty(a) || isEmpty(b)) return false;
     if (a instanceof Date && b instanceof Date) return a.getTime() !== b.getTime();
     return a !== b;
+}
+
+/**
+ * Pre-image of every field a merge can rewrite on EITHER side — the tombstone's
+ * mangled identity and the keeper's overwritten name/email/DOB alike. Captured
+ * before the transaction, because afterwards neither is readable.
+ */
+function personPreImage(p: Person) {
+    return {
+        id: p.id,
+        googleId: p.googleId,
+        email: p.email,
+        emailVerified: p.emailVerified,
+        emailSuppressed: p.emailSuppressed,
+        phone: p.phone,
+        name: p.name,
+        dateOfBirth: p.dateOfBirth,
+        image: p.image,
+        lastWaiverSign: p.lastWaiverSign,
+        lastBackgroundCheck: p.lastBackgroundCheck,
+        isHouseholdLead: p.isHouseholdLead,
+        householdId: p.householdId,
+    };
 }
 
 /** A login identity is present iff email OR googleId is non-empty. */
@@ -145,7 +169,7 @@ async function archiveDuplicatePersonBg(tx: TxClient, personId: number, actorId:
         // row wins, and we leave it alone.
         const { count } = await tx.orgMembershipProcess.updateMany({
             where: { id: loser.id, ...personBgOpen.where },
-            data: { status: "ARCHIVED", stageEnteredAt: new Date() },
+            data: { status: "ARCHIVED", archivedFromStatus: loser.status, stageEnteredAt: new Date() },
         });
         if (count !== 1) continue;
         await tx.auditLog.create({
@@ -220,6 +244,20 @@ export const POST = withAuth(
             // Double-merge / merge-a-tombstone guard — either side, before opening the tx.
             if (keepParticipant.mergedIntoId != null || mergeParticipant.mergedIntoId != null) {
                 return apiError("Cannot merge: one of these participants has already been merged.", 409);
+            }
+
+            // Conflict of interest: no actor may merge a record in their OWN household.
+            // The merge takes the newer of the two lastBackgroundCheck dates
+            // (resolveKeeperUpdate), so without this an actor can seat a background-check
+            // date on their own family with no second actor — the thing attest() and
+            // overrideBlocked refuse. Both subjects count: the tombstone's household is
+            // where the carried date comes from, the keeper's is where it lands, and the
+            // two need not be the same household. No role bypasses this.
+            if (auth.type === 'session' && (
+                await hasHouseholdConflict(prisma, auth.user.id, keepParticipant.householdId)
+                || await hasHouseholdConflict(prisma, auth.user.id, mergeParticipant.householdId)
+            )) {
+                return apiError("You cannot merge a record in your own household — someone outside your household must.", 403);
             }
 
             const isLead = mergeParticipant.isHouseholdLead;
@@ -385,8 +423,9 @@ export const POST = withAuth(
                 await tx.account.updateMany({ where: { userId: mergeId }, data: { userId: keepId } });
                 // DELIBERATE exception to the no-deletion principle above: sessions are
                 // auth artifacts, not person data, and there's no reason for the keeper
-                // to inherit the tombstone's login session. Deleting forces a re-login
-                // (smaller and safer than moving a session onto a different person mid-use).
+                // to inherit the tombstone's login session. Sessions are JWT-strategy, so
+                // this row is not what ends the tombstone's access — the LIVE_PERSON filter
+                // on the jwt() re-sync (auth-options.ts) collapses that token on next refresh.
                 await tx.session.deleteMany({ where: { userId: mergeId } });
                 await tx.orgMembershipProcess.updateMany({ where: { subjectPersonId: mergeId }, data: { subjectPersonId: keepId } });
                 // Both sides can have owed a check — the survivor keeps exactly one.
@@ -449,21 +488,12 @@ export const POST = withAuth(
                             tableName: "Person",
                             affectedEntityId: keepId,
                             secondaryAffectedEntity: mergeId,
-                            // Full pre-image of every field the merge rewrites (tombstone)
-                            // or moves (backfill) on the merged-away Person, captured
-                            // before either update ran.
+                            // Both pre-images, captured before either update ran: the
+                            // merged-away Person at the top level, the keeper — whose
+                            // name/email/DOB a field choice can overwrite — under `keeper`.
                             oldData: {
-                                id: mergeParticipant.id,
-                                googleId: mergeParticipant.googleId,
-                                email: mergeParticipant.email,
-                                phone: mergeParticipant.phone,
-                                name: mergeParticipant.name,
-                                dateOfBirth: mergeParticipant.dateOfBirth,
-                                image: mergeParticipant.image,
-                                lastWaiverSign: mergeParticipant.lastWaiverSign,
-                                lastBackgroundCheck: mergeParticipant.lastBackgroundCheck,
-                                isHouseholdLead: mergeParticipant.isHouseholdLead,
-                                householdId: mergeParticipant.householdId,
+                                ...personPreImage(mergeParticipant),
+                                keeper: personPreImage(keepParticipant),
                             },
                             newData: { keepId, fieldChoices: choices, moved },
                         }

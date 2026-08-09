@@ -47,8 +47,6 @@ type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safet
 type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
 
-type SessionUser = { id: number; isSysadmin?: boolean; isKeyholder?: boolean; isBoardMember?: boolean; householdId?: number | null; householdLead?: boolean };
-
 function KioskDisplayInner() {
   const searchParams = useSearchParams();
   const [isKioskMode, setIsKioskMode] = useState(searchParams.get("mode") === "kiosk");
@@ -68,21 +66,25 @@ function KioskDisplayInner() {
   const [searchResults, setSearchResults] = useState<Person[]>([]);
   const [checkingInId, setCheckingInId] = useState<number | null>(null);
 
-  const currentUserIsSysadmin = (session?.user as SessionUser)?.isSysadmin || false;
-  const currentUserIsKeyholder = (session?.user as SessionUser)?.isKeyholder || false;
-  const currentUserIsBoardMember = (session?.user as SessionUser)?.isBoardMember || false;
-  const currentUserHouseholdId = (session?.user as SessionUser)?.householdId || null;
+  const currentUserIsSysadmin = session?.user?.isSysadmin || false;
+  const currentUserIsKeyholder = session?.user?.isKeyholder || false;
+  const currentUserIsBoardMember = session?.user?.isBoardMember || false;
+  const currentUserHouseholdId = session?.user?.householdId || null;
   const canManuallyCheckInGlobal = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
   const canAdminCheckout = currentUserIsSysadmin || currentUserIsKeyholder || currentUserIsBoardMember;
   const canCheckInHousehold = Boolean(currentUserHouseholdId);
 
   const isFull = data?.access === "full";
+  // Absent attendance is UNKNOWN, never "empty and compliant": every count and
+  // safety flag below is only meaningful while `data` is non-null, so each one is
+  // rendered behind that check.
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
   const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
 
   // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
-  // fall back to the birth date the privileged payload still ships.
-  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth);
+  // fall back to the birth date the privileged payload still ships. This feeds the
+  // supervision columns, so an unknown birth date fails closed as youth.
+  const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth, { unknownIs: "youth" });
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
@@ -96,7 +98,7 @@ function KioskDisplayInner() {
   const householdYouth = limitedHousehold.filter(v => visitIsYouth(v));
 
   const isCheckedIn = isFull
-    ? fullAttendance.some(v => v.participant.id === (session?.user as SessionUser)?.id)
+    ? fullAttendance.some(v => v.participant.id === session?.user?.id)
     : limitedSelf !== null;
 
   useEffect(() => {
@@ -143,6 +145,7 @@ function KioskDisplayInner() {
       }
     } catch (error) {
       console.error("Failed to fetch attendance:", error);
+      setError("Network error occurred.");
       notifications.show({ color: "red", message: "Network error", autoClose: false });
     } finally {
       setLoading(false);
@@ -315,7 +318,7 @@ function KioskDisplayInner() {
             )}
           </Box>
           {showCheckout && (
-            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id, visit.participant.id === (session?.user as SessionUser)?.id)} disabled={checkingOut === visit.id}>
+            <Button size="compact-xs" color="red" variant="light" onClick={() => handleForceCheckout(visit.id, visit.participant.id === session?.user?.id)} disabled={checkingOut === visit.id}>
               {checkingOut === visit.id ? "..." : "Out"}
             </Button>
           )}
@@ -325,8 +328,8 @@ function KioskDisplayInner() {
   };
 
   const canCheckoutVisit = (visit: Visit): boolean => Boolean(
-    visit.participant.id === (session?.user as SessionUser)?.id ||
-    ((session?.user as SessionUser)?.householdLead &&
+    visit.participant.id === session?.user?.id ||
+    (session?.user?.householdLead &&
       visit.participant.householdId === currentUserHouseholdId)
   );
 
@@ -345,7 +348,7 @@ function KioskDisplayInner() {
     </div>
   );
 
-  const userId = (session?.user as SessionUser)?.id;
+  const userId = session?.user?.id;
 
   const pageBody = (
     <>
@@ -378,12 +381,12 @@ function KioskDisplayInner() {
                 Sign out a user
               </Button>
             )}
-            <CountBadge intent="info" size="lg">People Present: {counts.total}</CountBadge>
+            <CountBadge intent="info" size="lg">People Present: {data ? counts.total : "—"}</CountBadge>
           </Group>
         </Group>
 
         {/* Household check-in buttons — hidden in kiosk mode */}
-        {!isKioskMode && canCheckInHousehold && household && (session?.user as SessionUser)?.householdLead && (
+        {!isKioskMode && canCheckInHousehold && household && session?.user?.householdLead && (
           <Box mb="lg">
             <Title order={4} c="blue" mb="sm">Check In Household Members</Title>
             <Group gap="xs" wrap="wrap">
@@ -425,14 +428,20 @@ function KioskDisplayInner() {
           </Box>
         )}
 
-        {/* Safety warnings */}
-        {safety.isTwoDeepViolation && (
+        {/* Safety warnings — a missing roster reads as unknown, not as all-clear */}
+        {!loading && !data && (
+          <Alert color="orange" icon="⚠️" title="Supervision status unknown" mb="lg">
+            Attendance could not be loaded, so Two-Deep Compliance and keyholder coverage
+            cannot be checked. Verify supervision in the building.
+          </Alert>
+        )}
+        {data && safety.isTwoDeepViolation && (
           <Alert color="red" icon="🚨" title="Critical Warning" mb="lg">
             Two-Deep Compliance is failing! An unaccompanied youth is present without sufficient
             adult supervision.
           </Alert>
         )}
-        {!safety.isTwoDeepViolation && safety.isLastKeyholder && (
+        {data && !safety.isTwoDeepViolation && safety.isLastKeyholder && (
           <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
             Only one isKeyholder is currently in the building.
           </Alert>
@@ -443,6 +452,8 @@ function KioskDisplayInner() {
           <Center py="xl"><Loader /></Center>
         ) : error ? (
           <Alert color="red">{error === "Unauthorized" ? "Access Denied: Please sign in to view attendance." : error}</Alert>
+        ) : !data ? (
+          <Alert color="red">Attendance is unavailable — the roster could not be loaded.</Alert>
         ) : counts.total === 0 ? (
           <Center py="xl"><Text c="dimmed">The facility is currently empty.</Text></Center>
         ) : (

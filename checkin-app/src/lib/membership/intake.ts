@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus, advanceExternalIfComplete } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
+import { findOpenPersonAgreement } from "@/lib/membership/personAgreementTriggers";
 import { applyVolunteerStatus } from "@/lib/membership/review";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
@@ -111,7 +112,14 @@ export async function getIntakeState(userId: number) {
         allergies: p.allergies,
     });
 
+    const canSeeNotes = leadIds.has(userId) || user.isSysadmin;
     const external = process ? await getExternalStatus(process) : null;
+
+    // The caller's own individual agreement, if they have one open. Person-scoped,
+    // so it never appears in membership.processes above (orgMembershipId is null) and is
+    // independent of the household's own application state — an adult child in a settled
+    // member household still has one to sign.
+    const ownAgreement = await findOpenPersonAgreement(userId);
 
     return {
         hasHousehold: !!household,
@@ -119,11 +127,16 @@ export async function getIntakeState(userId: number) {
         membershipStatus: membership?.status ?? null,
         process: process ? { id: process.id, kind: process.kind, status: process.status, isPaymentPlanRequested: process.isPaymentPlanRequested } : null,
         external,
+        personAgreement: ownAgreement ? { id: ownAgreement.id, started: !!ownAgreement.zohoEnvelopeId } : null,
         prefill: {
             household: household
                 ? {
                       name: household.name,
-                      notes: household.intakeNotes,
+                      // intakeNotes is the lead's free-text note TO the board
+                      // (pii); household peers — including youth with their own
+                      // logins — must not read it. Same lead gate as
+                      // GET /api/household, and only a lead can write it back.
+                      notes: canSeeNotes ? household.intakeNotes : null,
                       ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
@@ -383,13 +396,10 @@ export async function submitIntake(userId: number) {
 
     // If a household guardian already holds a still-valid background check (same
     // rule as renewals), auto-clear the BG requirement now — the applicant won't
-    // need to consent to or wait on a new check, just sign + pay. An intake note
-    // (#900) disqualifies the shortcut: it must reach a human reviewer before
-    // payment (#907), and the review track is the only surface that shows it —
-    // the application instead holds at PENDING_BG_REVIEW (advanceExternalIfComplete).
+    // need to consent to or wait on a new check, just sign + pay.
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
-    const bgFresh = !household.intakeNotes?.trim() && (await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0));
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : null;
+    const bgFresh = await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0);
 
     const advanced = await prisma.orgMembershipProcess.update({
         where: { id: process.id },

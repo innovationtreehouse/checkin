@@ -326,12 +326,56 @@ describe('Trusted Adults service', () => {
         expect(again!.expiryWarningSentAt).not.toBeNull();
 
         await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { reviewBy: new Date(Date.now() - 86400000) } });
+        sendEmail.mockClear();
         const expireRun = await runExpirySweep(new Date());
         expect(expireRun.expired).toBeGreaterThanOrEqual(1);
         const expired = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });
         expect(expired!.status).toBe('EXPIRED');
 
+        // Expiring drops the adult off the pickup list, so the family hears about it that
+        // day — not only from the warning a month earlier.
+        expect(sendEmail).toHaveBeenCalledWith(
+            `lead-${TAG}@ex.com`,
+            'Trusted adult approval expired: Jane External',
+            expect.stringContaining('no longer authorized at the front desk'),
+        );
+
         // The system, not a person, drives the nightly expiry transition.
+        const audit = await latestAudit(ta.id);
+        expect(audit?.actorId).toBe(0); // SYSTEM_ACTOR
+        expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'EXPIRED' });
+
+        // The flip is its own dedup: an EXPIRED review is no longer selectable, so the
+        // next night's run neither re-expires nor re-notifies.
+        sendEmail.mockClear();
+        const rerun = await runExpirySweep(new Date());
+        expect(rerun.expired).toBe(0);
+        expect(sendEmail).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('expired'), expect.anything());
+    });
+
+    it('a failed expiry email still leaves the review EXPIRED and audited', async () => {
+        const ta = await discloseOne();
+        const r = await decideReview(ta.reviews[0].id, boardId, { decision: 'APPROVE', sharedNote: SHARED });
+        await prisma.trustedAdultReview.update({ where: { id: r.id }, data: { reviewBy: new Date(Date.now() - 86400000) } });
+
+        sendEmail.mockRejectedValueOnce(new Error('smtp down'));
+        try {
+            const run = await runExpirySweep(new Date());
+            expect(run.expired).toBeGreaterThanOrEqual(1);
+            // The rejected send is the expiry notice itself, not some other email.
+            expect(sendEmail).toHaveBeenCalledWith(
+                `lead-${TAG}@ex.com`,
+                'Trusted adult approval expired: Jane External',
+                expect.any(String),
+            );
+        } finally {
+            // mockReset, not mockResolvedValue: an unconsumed ...Once rejection would
+            // otherwise leak into the next test.
+            sendEmail.mockReset();
+            sendEmail.mockResolvedValue(true);
+        }
+
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: r.id } }))!.status).toBe('EXPIRED');
         const audit = await latestAudit(ta.id);
         expect(audit?.actorId).toBe(0); // SYSTEM_ACTOR
         expect(normalizeAuditData(audit?.newData)).toMatchObject({ status: 'EXPIRED' });
@@ -621,7 +665,9 @@ describe('runExpirySweep edge cases', () => {
         const run = await runExpirySweep(now);
         expect(run.warned).toBe(0); // boundary row expires, it does not get a fresh warning
         expect(run.expired).toBe(2);
-        expect(sendEmail).not.toHaveBeenCalled();
+        // Each expiry emails the family; neither row gets the 30-days-out warning.
+        expect(sendEmail).toHaveBeenCalledTimes(2);
+        expect(sendEmail).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('expiring'), expect.anything());
 
         for (const r of [atNow, past]) {
             const after = await prisma.trustedAdultReview.findUnique({ where: { id: r.id } });

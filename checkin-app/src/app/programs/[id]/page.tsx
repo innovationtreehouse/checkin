@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Alert, Button, Card, Center, Checkbox, Container, Divider, Group, Loader, Stack, Text, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { formatDateOnly } from '@/lib/time';
-import { checkProgramAge, type AgeBand } from '@/lib/programAge';
+import { checkProgramAge } from '@/lib/programAge';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { formatCents } from '@inventory/money';
 import { aggregateEnrollOutcomes, buildShopifyCheckoutUrl, type EnrollOutcome } from './enroll';
@@ -14,6 +14,7 @@ import FirstTimeIntakePanel from './FirstTimeIntakePanel';
 import { useIsLocalInstance, useShopifyStoreDomain } from '@/components/EnvProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
+
 type ProgramDetail = {
   id: number;
   name: string;
@@ -46,8 +47,6 @@ type ProgramDetail = {
   viewerIsMember?: boolean;
   viewerMemberPricingEligible?: boolean;
 };
-
-type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null; ageBand?: AgeBand };
 
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -100,7 +99,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'pending' | 'awaiting' | 'age' | 'dob' | 'lead' | null; label: string } => {
     // Only a known adult may commit THEMSELVES to a program and its charge — the
     // enroll route refuses the rest, so the viewer's own row must never offer it.
-    const viewer = session?.user as SessionUser | undefined;
+    const viewer = session?.user;
     const selfBlocked = member.id === viewer?.id && viewer?.ageBand !== 'adult';
     const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
     // ACTIVE = paid/free/override (truly done) — locked. PENDING = payment still
@@ -138,7 +137,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // still need first-time setup (no enrollable participant, or no valid emergency
   // contact). Shared by the initial "Enroll" click and the post-intake re-fetch.
   const populateHousehold = async () => {
-    const currentUserId = (session!.user as SessionUser).id;
+    const currentUserId = session!.user.id;
     setLoadingHousehold(true);
     try {
       const res = await fetch(`/api/household`);
@@ -388,7 +387,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     </Container>
   );
 
-  const user = session?.user as SessionUser | undefined;
+  const user = session?.user;
   const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
 
   // My household's already-enrolled members — shown so a returning parent doesn't
@@ -403,9 +402,9 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
   // A youth is shown no payment obligation, action, or status — their own or
-  // their household's (docs/designs/167-youth-enrollment-rules.md). An
-  // unverifiable age is NOT a youth: they keep every affordance so they can
-  // reach the intake panel and establish an age.
+  // their household's (docs/rules/programs.md). An unverifiable age is NOT a
+  // youth: they keep every affordance so they can reach the intake panel and
+  // establish an age.
   const viewerIsYouth = user?.ageBand === 'youth';
 
   const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`

@@ -4,6 +4,11 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { apiError, apiJson } from "@/lib/api-response";
 import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
+import { MAX_VISIT_MS } from "@/lib/visitTimes";
+
+/** How long a displayed force-close warning stays confirmable. The scan route's
+ *  3s debounce eats the front of it, so the kiosk copy says "3 to 60 seconds". */
+const FORCE_CLOSE_CONFIRM_MS = 60_000;
 
 /**
  * Process a check-in for a participant who has no active visit.
@@ -91,22 +96,23 @@ export async function processCheckout(
             });
 
             if (remainingUsers.length > 0) {
-                let confirmForceClose = false;
-
-                const recentEvents = await db.rawBadgeLog.findMany({
-                    where: { personId: participant.id },
-                    orderBy: { timestamp: "desc" },
-                    take: 2
+                const ownVisit = await db.visit.findUnique({
+                    where: { id: activeVisitId },
+                    select: { forceCloseWarnedAt: true }
                 });
-
-                if (recentEvents.length === 2) {
-                    const timeDiff = recentEvents[0].timestamp.getTime() - recentEvents[1].timestamp.getTime();
-                    if (timeDiff <= 12000) {
-                        confirmForceClose = true;
-                    }
-                }
+                const warnedAt = ownVisit?.forceCloseWarnedAt;
+                const confirmForceClose =
+                    warnedAt != null && Date.now() - warnedAt.getTime() <= FORCE_CLOSE_CONFIRM_MS;
 
                 if (!confirmForceClose) {
+                    // Stamp the warning on this visit; only a scan that follows the
+                    // stamp may force-close, so the confirmation is bound to the
+                    // warning having been shown rather than to badge adjacency.
+                    await db.visit.update({
+                        where: { id: activeVisitId },
+                        data: { forceCloseWarnedAt: new Date() }
+                    });
+
                     // Never render the raw address (tier `pii`) on the kiosk screen (#329):
                     // fall back to the email local-part, same as getFullAttendance /
                     // kioskdisplay/certifications.
@@ -115,7 +121,7 @@ export async function processCheckout(
                         .filter(Boolean)
                         .join(", ");
                     return apiJson({
-                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within 10 seconds to confirm you've checked them and close the facility.`,
+                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again in 3 to 60 seconds to confirm you've checked them and close the facility.`,
                         type: "warning" as const
                     }, 400);
                 }
@@ -157,17 +163,32 @@ export async function processCheckout(
 }
 
 /** Mark every still-open visit as departed. Facility-wide, not participant-scoped:
- *  a single atomic statement, so it needs no wrapping transaction. */
+ *  a single atomic statement, so it needs no wrapping transaction.
+ *
+ *  Raw rather than `updateMany` because the stamp is per-row: the close moment
+ *  is capped at the visit's own `arrivedAt + MAX_VISIT_MS`, and `updateMany`
+ *  can only set one constant for every row it touches.
+ *
+ *  FACILITY_CLOSE, not AUTO_CLOSE: the stamp is normally the moment the building
+ *  actually closed, so it is bounded by building hours — plausible, unlike the
+ *  cron's midnight sweep. Where the cap bites the stamp is 24h after arrival
+ *  instead; both are placeholders the member is meant to correct, and a
+ *  placeholder inside the 24h rule beats an accurate record that breaks it.
+ *
+ *  `now()` is timestamptz and the columns are timestamp-without-zone holding
+ *  UTC, so the clock must be pulled AT TIME ZONE 'UTC' or the comparison is off
+ *  by the server's offset. */
 async function closeAllOpenVisits(db: DbClient) {
-    await db.visit.updateMany({
-        // Tombstoned visits are excluded: closing one would rewrite a record the
-        // member chose to erase, and resurrect a machine departure if it is undone.
-        where: { departedAt: null, deletedAt: null },
-        // FACILITY_CLOSE, not AUTO_CLOSE: this stamp is the moment the building
-        // actually closed, so it is bounded by building hours — plausible, unlike
-        // the cron's midnight sweep.
-        data: { departedAt: new Date(), departedVia: "FACILITY_CLOSE" },
-    });
+    // Tombstoned visits are excluded: closing one would rewrite a record the
+    // member chose to erase, and resurrect a machine departure if it is undone.
+    await db.$executeRaw`
+        UPDATE "Visit"
+        SET "departedAt" = LEAST(
+                (now() AT TIME ZONE 'UTC'),
+                "arrivedAt" + ${MAX_VISIT_MS}::double precision * interval '1 millisecond'
+            ),
+            "departedVia" = 'FACILITY_CLOSE'::"VisitSource"
+        WHERE "departedAt" IS NULL AND "deletedAt" IS NULL`;
 }
 
 /** Fire-and-forget post-event email run on facility close. The dynamic import

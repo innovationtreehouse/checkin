@@ -9,7 +9,7 @@ import {
 
 /**
  * Integration coverage for the dev seed/macro helpers + the reset truncate-and-reseed flow
- * (DEV_DASHBOARD_DESIGN.md §4–§5). Opt-in (*.integration.test.ts) — needs a live Postgres and is
+ * (docs/ops/dev-instance.md, "Macros" + "Reset"). Opt-in (*.integration.test.ts) — needs a live Postgres and is
  * DESTRUCTIVE (it truncates the public schema), so it is excluded from the default CI run. Run with
  * `npm run test:integration` against a throwaway dev database.
  */

@@ -3,9 +3,9 @@
  */
 /**
  * Unit tests for renewal.ts edge logic (prisma mocked, no DB):
- *   - householdBgIsFresh: the recheckMonths<=0 short-circuit, and the `gte`
- *     threshold boundary (a background check exactly at the threshold counts
- *     as fresh).
+ *   - householdBgIsFresh: the unset-policy short-circuits (recheckMonths<=0, null
+ *     boundary), and the `gte` threshold boundary (a background check exactly at
+ *     the threshold counts as fresh).
  *   - beginRenewal: a process not in PENDING_RENEWAL → RenewalError wrong_phase;
  *     every path lands at PENDING_EXTERNAL_ACTION (a fresh agreement is signed
  *     each cycle) and only a still-valid background check with no household
@@ -51,6 +51,17 @@ describe('householdBgIsFresh', () => {
         prisma.person.findFirst.mockResolvedValue({ id: 1 });
 
         const result = await householdBgIsFresh(42, boundary, 0);
+
+        expect(result).toBe(false);
+        expect(prisma.person.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('no boundary → not fresh, and never queries (membership year unset)', async () => {
+        // An unset boundary must not become "now": that would measure freshness against
+        // a boundary the board never configured and hand out the shortcut.
+        prisma.person.findFirst.mockResolvedValue({ id: 1 });
+
+        const result = await householdBgIsFresh(42, null, 12);
 
         expect(result).toBe(false);
         expect(prisma.person.findFirst).not.toHaveBeenCalled();
@@ -156,7 +167,7 @@ describe('beginRenewal', () => {
 
         beforeEach(() => {
             prisma.orgMembershipProcess.findUnique.mockResolvedValue(pending);
-            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: null } });
+            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7 });
             prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: new Date(Date.UTC(2026, 8, 1)), bgRecheckMonths: 12 });
             prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 1 });
             prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_PAYMENT' });
@@ -195,29 +206,6 @@ describe('beginRenewal', () => {
             // Nothing to review until the member consents on Averity — the
             // advance (advanceExternalIfComplete) pings, same as INITIAL.
             expect(notifyReviewers).not.toHaveBeenCalled();
-        });
-
-        it('valid background check + household intake note → no bgClearedAt shortcut: the note must reach a reviewer (#907)', async () => {
-            prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid background check
-            prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 7, household: { intakeNotes: 'treat us as a volunteer household' } });
-            prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_EXTERNAL_ACTION' });
-
-            await beginRenewal(5);
-
-            expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
-                where: { id: 5, status: 'PENDING_RENEWAL' },
-                // No bgClearedAt despite the valid background check (mirrors submitIntake): the
-                // member consents anyway, and the advance holds at PENDING_BG_REVIEW
-                // so the note reaches a reviewer before payment. Clearing here would
-                // skip the hold — the review queue only lists uncleared rows.
-                data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
-            });
-            expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
-                where: { id: 5, status: 'PENDING_RENEWAL' },
-                data: expect.objectContaining({ status: 'PENDING_EXTERNAL_ACTION' }),
-            });
-            expect(applyVolunteerStatus).not.toHaveBeenCalled(); // the advance / clearBackgroundCheck applies it
-            expect(notifyReviewers).not.toHaveBeenCalled(); // pinged at consent, not before
         });
 
         it('double-submit loser (count 0) → no audit, no allowlist match, no ping', async () => {

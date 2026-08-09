@@ -15,16 +15,9 @@
  *   - Visit:  field is `departedAt` (doc wrote `departed`).            [doc fixed]
  *   - ToolStatus: field is `personId` (renamed userId→participantId #564, then participantId→personId).
  *   - RawBadgeLog: model is `RawBadgeLog` (doc table wrote `RawBadgeEvent`).
- *   - Fee / RSVP: the live switch grouped ProgramParticipant, ProgramVolunteer,
- *     Fee and RSVP under one `case` body that read BOTH `row.programId` and
- *     `row.participantId`. `Fee` has no `participantId` column and `RSVP` has no
- *     `programId` column, so on a REAL row those reads were always `undefined`
- *     and granted nothing. #574 (Step 3 Blocker 1) dropped both dead reads:
- *     `Fee` is unbound (wholly @sensitivity:public, so it needs no binding) and
- *     `RSVP` was narrowed to `their_own`. THIS chip then RE-ADDS the RSVP
- *     program-lead grant correctly via eventId → Event.programId
- *     (ctx.eventIdsInScopePrograms) — a deliberate behavior change, diverging
- *     from the dead switch read. See the RSVP binding below + §7.5/§9 Step 3.
+ *   - RSVP: has no `programId` column of its own, so the program-lead grant
+ *     resolves via eventId → Event.programId (ctx.eventIdsInScopePrograms), not
+ *     a direct `row.programId` read. See the RSVP binding below + §7.5/§9 Step 3.
  *
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
@@ -35,6 +28,22 @@ export const SCOPE_BINDINGS = {
         their_own: { field: 'id', eqCtx: 'selfId' },
         their_households: { field: 'householdId', eqCtx: 'householdId' },
         their_program_participants: { field: 'id', inCtx: 'participantIdsInScopePrograms' },
+        // The PARENTS of the children a program lead/core-vol oversees: household
+        // leads (isHouseholdLead) of ctx.householdIdsInScopePrograms. The
+        // isHouseholdLead conjunct IS the policy — a sibling or any other member of
+        // an in-scope household holds nothing here, so only the two adults a lead
+        // would actually call are reachable. Requires the row to carry BOTH
+        // householdId and isHouseholdLead; either one unselected fails closed
+        // (isTrue is strict === true, and inCtx rejects a non-number).
+        // ctx.householdIdsInScopePrograms is the union across ALL programs the caller
+        // leads/core-vols, so on program A's page a lead of both A and B also resolves
+        // this on a row whose household's child is enrolled in B, not A.
+        their_program_households: {
+            all: [
+                { field: 'householdId', inCtx: 'householdIdsInScopePrograms' },
+                { field: 'isHouseholdLead', isTrue: true },
+            ],
+        },
         // Global front-desk grant, unconditional per row (mirrors TrustedAdult).
         // Only GET /api/safety/board-contacts grants keyholders:* on Person, and
         // that route returns board members only. Any future Person view granting
@@ -71,14 +80,9 @@ export const SCOPE_BINDINGS = {
         },
         their_own: { field: 'personId', eqCtx: 'selfId' },
     },
-    // Fee + RSVP shared the grouped switch case with ProgramParticipant/
-    // ProgramVolunteer, reading BOTH programId and participantId. `Fee` has no
-    // participantId column and `RSVP` has no programId column, so those reads
-    // were dead. #574 dropped both — Fee is unbound (wholly @sensitivity:public,
-    // needs no binding); RSVP was narrowed to `their_own`. THIS chip RE-ADDS the
-    // RSVP program-lead grant correctly via eventId → Event.programId
-    // (ctx.eventIdsInScopePrograms) — a deliberate behavior CHANGE, not the dead
-    // switch read. See docs/security/auth-consistency-analysis.md §7.5 + §9 Step 3.
+    // RSVP has no programId column of its own; the program-lead grant resolves
+    // via eventId → Event.programId (ctx.eventIdsInScopePrograms), not a direct
+    // row.programId read. See docs/security/auth-consistency-analysis.md §7.5.
     RSVP: {
         their_own: { field: 'personId', eqCtx: 'selfId' },
         their_program_participants: { field: 'eventId', inCtx: 'eventIdsInScopePrograms' },
@@ -88,10 +92,6 @@ export const SCOPE_BINDINGS = {
             field: 'programId',
             inCtx: ['programsLed', 'programsCoreVolIn'],
         },
-    },
-    FeePayment: {
-        their_own: { field: 'personId', eqCtx: 'selfId' },
-        their_program_participants: { field: 'personId', inCtx: 'participantIdsInScopePrograms' },
     },
     // No householdId column: a Visit reaches a household only through its
     // person, so `led_households` matches personId against the caller's led

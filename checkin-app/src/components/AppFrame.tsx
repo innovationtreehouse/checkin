@@ -50,14 +50,7 @@ import { useConfirmNav } from '@/components/UnsavedChangesProvider';
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
 import { CountBadge, badgeIntentFor } from '@/components/ui/CountBadge';
-
-type SessionUser = {
-  isSysadmin?: boolean;
-  isBoardMember?: boolean;
-  isKeyholder?: boolean;
-  isBackgroundCheckReviewer?: boolean;
-  toolStatuses?: Array<{ level: string }>;
-};
+import type { SessionUser } from '@/types/auth';
 
 type NavItem = {
   href: string;
@@ -156,7 +149,8 @@ const NAV_ITEMS: NavItem[] = [
   },
   { href: '/index', label: 'Index', icon: <IconList size={18} />, visible: (_u, signedIn) => signedIn },
   // Dev tools (dev instances only) — a single entry into the /dev tab section:
-  // captured email inbox (EMAIL_DEV_MOCK.md) + Zoho Sign mock (ZOHO_SIGN_DEV_MOCK.md).
+  // captured email inbox (EMAIL_DEV_MOCK.md) + Zoho Sign mock
+  // (docs/ops/contract-signing-mock.md).
   { href: '/dev', label: 'Debug', icon: <IconBug size={18} />, visible: (_u, signedIn) => signedIn, devOnly: true },
 ];
 
@@ -207,7 +201,7 @@ function AppFrameInner({ children }: { children: React.ReactNode }) {
   }
 
   const signedIn = !!session;
-  const user = session?.user as SessionUser | undefined;
+  const user = session?.user;
   // Faithful to the old NavBar: no navigation on the homepage when signed out.
   const showNav = !(!signedIn && pathname === '/');
 

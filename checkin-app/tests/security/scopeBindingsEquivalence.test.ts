@@ -24,7 +24,7 @@
  * change to scopeBindings.ts that diverges from the intended behavior fails here.
  *
  * DIVERGENCE FROM THE ORIGINAL SWITCH (one, deliberate): RSVP.
- * The original switch grouped RSVP with ProgramParticipant/ProgramVolunteer/Fee
+ * The original switch grouped RSVP with ProgramParticipant/ProgramVolunteer
  * and read `row.programId` — but RSVP has no programId column, so that grant was
  * DEAD. The resolver now grants `their_program_participants` on RSVP via
  * eventId → ctx.eventIdsInScopePrograms (§7.5 / §9 Step 3 Blocker 1). The RSVP
@@ -38,9 +38,9 @@ import type { Scope } from '@/security/core';
 // ─── FROZEN reference oracle: snapshot of the deleted switch ───────────────────
 // Do NOT "simplify" or sync this to scopeBindings.ts — its whole value is being
 // an independent snapshot of the pre-refactor behavior. ONE deliberate edit:
-// the Fee/RSVP dead reads (Fee.participantId, RSVP.programId — columns those
-// models lack) were dropped to match the schema-correct bindings. That is
-// behavior-identical on every reachable row; see the case body below.
+// the RSVP dead read (RSVP.programId — a column that model lacks) was dropped to
+// match the schema-correct binding. That is behavior-identical on every
+// reachable row; see the case body below.
 const ROW_SCOPE_KEY: Record<string, string> = { EmergencyContact: 'householdId' };
 
 function referenceScopesHeld(
@@ -102,12 +102,9 @@ function referenceScopesHeld(
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
         }
-        // Fee + RSVP were grouped with the two above in the original switch,
-        // reading BOTH programId and participantId. Fee has no participantId and
-        // RSVP has no programId, so those reads were dead. #574 dropped both (Fee
-        // unbound/public-only; RSVP narrowed to their_own). THIS chip diverges
-        // further for RSVP: the program-lead grant is re-added via
-        // eventId → eventIdsInScopePrograms (a deliberate behavior change).
+        // RSVP has no programId column; the program-lead grant resolves via
+        // eventId → eventIdsInScopePrograms, a deliberate divergence from the
+        // frozen switch's dead row.programId read (see header).
         case 'RSVP': {
             const eventId = num(row.eventId);
             const participantId = num(row.participantId);
@@ -115,16 +112,9 @@ function referenceScopesHeld(
             if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
             break;
         }
-        // 'Fee': no case — public-only, resolves to {everyones} like any unbound model.
         case 'Event': {
             const programId = num(row.programId);
             if (programId !== undefined && (ctx.programsLed.has(programId) || ctx.programsCoreVolIn.has(programId))) scopes.add('their_program_participants');
-            break;
-        }
-        case 'FeePayment': {
-            const participantId = num(row.participantId);
-            if (participantId !== undefined && participantId === ctx.selfId) scopes.add('their_own');
-            if (participantId !== undefined && ctx.participantIdsInScopePrograms.has(participantId)) scopes.add('their_program_participants');
             break;
         }
         case 'Visit': {
@@ -232,16 +222,20 @@ const ROWS: Array<{ label: string; row: unknown }> = [
         row: { id: 5, householdId: 2, participantId: 5, personId: 5, programId: 100, eventId: 200, userId: 5, actorId: 5, departedAt: null },
     },
     {
-        label: 'household co-member (hh 2)',
-        row: { id: 6, householdId: 2, participantId: 6, personId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
+        // isHouseholdLead exercises Person.their_program_households (hh 2 is in
+        // the lead's/core-vol's scope). Row id 9 below is the same household
+        // WITHOUT the flag, and row id 7 carries the flag in an out-of-scope
+        // household — together the positive and both negatives.
+        label: 'household co-member + household lead (hh 2)',
+        row: { id: 6, householdId: 2, isHouseholdLead: true, participantId: 6, personId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
     },
     {
         label: 'program participant / coreVol prog / active visitor',
         row: { id: 9, householdId: 2, participantId: 9, personId: 9, programId: 101, eventId: 201, userId: 9, actorId: 9, departedAt: null },
     },
     {
-        label: "another's / out-of-program / departed",
-        row: { id: 7, householdId: 99, participantId: 7, personId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
+        label: "another's / out-of-program / departed / household lead",
+        row: { id: 7, householdId: 99, isHouseholdLead: true, participantId: 7, personId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
     },
     {
         label: "lead's own program (Program row id 100)",
@@ -253,9 +247,6 @@ const MODELS = [
     ...Object.keys(SCOPE_BINDINGS), // includes AuditLog (now bound — Blocker 2)
     // unbound-but-sensitive, structurally-unscopable, and unknown — all must
     // resolve identically (everyones-only, or {} via fail-closed) under both.
-    // 'Fee' kept here after its binding was dropped (public-only) so S1 still
-    // exercises it as an unbound model rather than silently losing coverage.
-    'Fee',
     'Tool',
     'BoardSettings',
     'OrgMembershipProcess',
@@ -296,6 +287,15 @@ function eq(a: Set<string>, b: Set<string>): boolean {
  * for leads). On a Visit row whose personId is in that roster, a lead therefore
  * holds 'led_households' where the snapshot did not. That is the third
  * expected diff.
+ *
+ * Person.their_program_households: the switch's Person case had no household-
+ * scoped program grant, so a lead held nothing on a parent's row. Person was
+ * later bound `their_program_households` on (householdId ∈
+ * householdIdsInScopePrograms AND isHouseholdLead), so GET /api/programs/[id]
+ * can hand a program lead the parents' phone/email on the roster. On a
+ * household-lead row in an in-scope household the resolver therefore adds
+ * their_program_households where the snapshot did not. That is the fourth
+ * expected diff.
  */
 function expectedFromSnapshot(
     model: string,
@@ -324,6 +324,16 @@ function expectedFromSnapshot(
     ) {
         expected.add('led_households');
     }
+    if (
+        model === 'Person' &&
+        row &&
+        typeof row === 'object' &&
+        row.isHouseholdLead === true &&
+        typeof row.householdId === 'number' &&
+        callerCtx.householdIdsInScopePrograms.has(row.householdId)
+    ) {
+        expected.add('their_program_households');
+    }
     return expected;
 }
 
@@ -350,6 +360,6 @@ describe('S1 — scopesHeld ≡ frozen switch + intentional deltas (personas × 
     it('covers every bound model', () => {
         // Guard against the row set silently not exercising a model.
         expect(MODELS).toEqual(expect.arrayContaining(Object.keys(SCOPE_BINDINGS)));
-        expect(Object.keys(SCOPE_BINDINGS).length).toBe(18); // -Fee (Blocker 1) +AuditLog (Blocker 2) -HouseholdLead (a1 contract)
+        expect(Object.keys(SCOPE_BINDINGS).length).toBe(17); // +AuditLog (Blocker 2) -HouseholdLead (a1 contract) -FeePayment (FR7 drop)
     });
 });

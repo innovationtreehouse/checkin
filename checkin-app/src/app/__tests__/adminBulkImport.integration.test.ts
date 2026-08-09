@@ -72,6 +72,7 @@ describe('Admin Bulk Import API Integration Tests', () => {
     afterEach(async () => {
         try {
             // Clean up participants created during tests
+            await prisma.auditLog.deleteMany({ where: { actorId: testAdminId } });
             await prisma.orgMembership.deleteMany({});
             await prisma.person.deleteMany({
                 where: { email: { contains: 'batch-import-test' } }
@@ -193,6 +194,16 @@ describe('Admin Bulk Import API Integration Tests', () => {
             const charlie = await prisma.person.findUnique({ where: { email: 'charlie-batch-import-test@example.com' } });
             expect(charlie).toBeDefined();
             expect(charlie?.householdId).toBe(alice?.householdId);
+
+            // Charlie's own pass-1 household was deleted by the merge — the pre-image
+            // of the destroyed household is on record.
+            const audit = await prisma.auditLog.findFirst({
+                where: { tableName: 'Household', action: 'DELETE', secondaryAffectedEntity: alice!.householdId },
+                orderBy: { id: 'desc' },
+            });
+            expect(audit?.actorId).toBe(testAdminId);
+            expect(audit?.oldData).toMatchObject({ household: { name: "Charlie Batch Import Test's Household" } });
+            expect(audit?.newData).toMatchObject({ mergedIntoHouseholdId: alice!.householdId, movedByImportOfPersonId: charlie!.id });
         });
 
         it('should automatically create households for participants with no household links, and correctly assign lead status based on age', async () => {

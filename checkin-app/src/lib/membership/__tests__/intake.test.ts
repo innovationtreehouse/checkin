@@ -204,6 +204,31 @@ describe('getIntakeState', () => {
         expect(state.prefill.household?.notes).toBe('volunteer only, no students');
     });
 
+    it('a non-lead household member (e.g. a youth) gets no intake note in the prefill', async () => {
+        prisma.person.findUnique.mockResolvedValue({
+            id: 3,
+            householdId: 7,
+            household: {
+                name: 'Test Household',
+                intakeNotes: 'we are volunteer only; dad lost his job',
+                line1: '1 Main St', line2: null, city: 'Austin', state: 'TX', postalCode: '78701',
+                householdMembers: [
+                    { id: 1, name: 'Primary', email: 'p@x.com', dateOfBirth: null, allergies: null, isHouseholdLead: true },
+                    { id: 3, name: 'Kid', email: null, dateOfBirth: null, allergies: null, isHouseholdLead: false },
+                ],
+                orgMembership: { status: 'ACTIVE', processes: [] },
+                emergencyContacts: [],
+            },
+        });
+
+        const state = await getIntakeState(3);
+
+        expect(state.isLead).toBe(false);
+        expect(state.prefill.household?.notes).toBeNull();
+        // The rest of the household prefill is family-authored shared data.
+        expect(state.prefill.household?.name).toBe('Test Household');
+    });
+
     it('every process ACTIVE → process is null, no external lookup', async () => {
         prisma.person.findUnique.mockResolvedValue({
             id: 1,
@@ -478,7 +503,7 @@ describe('submitIntake', () => {
         expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
 
-    it('complete + fresh check + intake note → shortcut disqualified: no bgClearedAt, review holds payment (#907)', async () => {
+    it('complete + fresh check + intake note → the note does not disqualify the shortcut', async () => {
         prisma.person.findUnique.mockResolvedValue({
             ...inFlightUser,
             household: { ...inFlightUser.household, intakeNotes: 'please treat us as a volunteer household' },
@@ -489,8 +514,7 @@ describe('submitIntake', () => {
 
         expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({
             where: { id: 11 },
-            data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
+            data: expect.objectContaining({ bgClearedAt: expect.any(Date) }),
         });
-        expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
 });

@@ -100,29 +100,96 @@ defineRoute({
     ],
 });
 
+// Board/sysadmin review of recent attendance-correction activity (AT12,
+// #1258). The handler does not query Visit directly — it reads AuditLog rows
+// where tableName === 'Visit' and SYNTHESIZES a Visit view per row from the
+// audit blob (arrivedAt/departedAt/arrivedVia/departedVia extracted from
+// newData). stripValue (stripper.ts) copies any field present on an object
+// without checking provenance, so a synthesized row strips exactly like a
+// real one — that is what makes this legal, not an exception to it.
+//
+// 'everyones:personal' is required: Visit.arrivedAt/departedAt are
+// personal-tier and this is a review-scope surface, not a self-scope one, so
+// no <scope>:<tier> row token applies. 'everyones:internal' is required for
+// AuditLog itself — every field on it (id, timestamp, actorId, action, …) is
+// internal-tier. 'pii' and 'member' are deliberately NOT granted: no field on
+// AuditLog, Person, or Visit needs either for this view.
+//
+// AuditLog.newData is REBUILT by the handler to { type, significance } before
+// it reaches this layer; raw oldData/newData (arbitrary blob shape) must never
+// leave the route. Neither obligation is enforceable HERE: 'everyones:internal'
+// permits both fields wholesale and a tier does not reach inside a JSON blob,
+// so a handler that passed oldData straight through would ship a whole-row
+// snapshot with every suite green. The route PR carries the assertion instead
+// (correctionsAPI.integration.test.ts). No pagination — nothing else here would
+// give total/page/pageSize a legal home under any envelope value (handler.ts
+// strips before the envelope wraps), so the handler caps rows and over-fetches
+// by one to signal "more" instead.
+//
+// This entry also settles the open question #1497 left to the route PR: how a
+// before/after pair crosses the boundary. A separate bag key is not expressible
+// — stripBag drops any top-level key that is not a model name, so there can be
+// exactly one Visit key — and a before row and its after row share a Visit.id,
+// so no field distinguishes them. Array position is the only discriminator, and
+// it survives because stripValue maps arrays element-wise and preserves order.
+//
+// Served by src/app/api/facility/corrections/route.ts. Its flagged-only default
+// view is complete only once every Visit audit write persists
+// newData.significance (#1523, PR #1558) — an unscored write never surfaces.
+defineRoute({
+    endpoint: 'GET /api/facility/corrections',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { AuditLog, Person, Visit } — Visit synthesized from AuditLog blobs,
+    // not queried. Handler always emits all three keys, even empty: handler.ts
+    // unwraps a single-key bag to a bare value.
+    returns: ['AuditLog', 'Person', 'Visit'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
     envelope: null,
     // Bag: { Program } with volunteers (ProgramVolunteer → participant Person),
     // participants (ProgramParticipant → participant Person → household Household
-    // → emergencyContacts EmergencyContact), events (Event), fees (Fee), leadMentor
-    // (Person).
-    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Person', 'Household', 'EmergencyContact', 'Event', 'Fee'],
+    // → emergencyContacts EmergencyContact), events (Event), leadMentor (Person).
+    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Person', 'Household', 'EmergencyContact', 'Event'],
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        // their_program_households:personal delivers the household band leads
-        // operationally need — emergency contacts (personal). It deliberately
-        // does NOT reach the family's home address or intake notes: address is
-        // 'internal' and intakeNotes is 'pii', both outside a household-scoped
-        // personal grant. EC yes, address no.
+        // their_program_households delivers the household band leads operationally
+        // need: the family's emergency contacts (personal) and the parents' own
+        // contact details (pii). Person binds this scope ONLY on isHouseholdLead
+        // rows, so the pii grant reaches the two adults a lead would call and no
+        // one else — siblings and other household members hold nothing.
+        //
+        // FINDING for the CODEOWNERS reviewer: this widens live traffic. The route
+        // already returns full-row Person selects outside the participant bag —
+        // `volunteers.include.person` and `leadMentor` — so a lead/core-vol now
+        // receives, for any program volunteer or lead mentor who is also a household
+        // lead of an in-scope household (a parent volunteer, the common case):
+        // email/phone from this pii grant, plus dateOfBirth/allergies/
+        // notificationSettings/emailSuppressed from the pre-existing :personal token,
+        // which now resolves on those rows too. Those rows held `everyones` only
+        // before. Narrowing the two selects to what the roster renders is a route
+        // change, not a boundary one.
+        //
+        // Still out of reach: the family's home address (Household.line1..postalCode
+        // are 'internal', above every token here) and Household.intakeNotes ('pii',
+        // but Household binds no scope beyond their_households, so a
+        // their_program_households token resolves to nothing on a Household row).
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['programCoreVolunteer', ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['authenticated',        ['their_own:pii', 'their_own:personal', 'member', 'public']],
