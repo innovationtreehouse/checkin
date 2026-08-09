@@ -213,8 +213,10 @@ describe('Cron Nightly API Integration Tests', () => {
                 // Both visits are still open — nothing was swept.
                 expect(await prisma.visit.count({ where: { id: { in: [one.id, two.id] }, departedAt: null } })).toBe(2);
 
+                // The run COMPLETED (so the job never reads as "stopped") but was not
+                // clean — both facts recorded, on the two separate ledger columns.
                 const ledger = await prisma.cronRunLog.findFirst({ where: { job: 'nightly' }, orderBy: { id: 'desc' } });
-                expect(ledger?.success).toBe(false);
+                expect(ledger?.success).toBe(true);
                 expect(ledger?.error).toBe('2 item(s) failed');
             } finally {
                 mockBadVisitIds.clear();

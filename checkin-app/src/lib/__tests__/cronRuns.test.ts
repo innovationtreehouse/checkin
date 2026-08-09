@@ -2,27 +2,33 @@
  * @jest-environment node
  */
 /**
- * Staleness derivation for the cron run ledger. The DB half is a single groupBy,
- * stubbed here; what's worth testing is the rule applied to its rows — one coarse
- * window for every job, and a job that has NEVER run is not reported as stale
- * (the app can't know whether infra schedules it at all).
+ * Health derivation for the cron run ledger. The DB half is two stubbed reads; what
+ * is worth testing is the rule applied to their rows — one coarse staleness window
+ * for every job, a job that has NEVER run is not reported as stale (the app can't
+ * know whether infra schedules it at all), and above all that "did it run" and "did
+ * it work" stay independent of each other.
  */
 import prisma from '@/lib/prisma';
-import { CRON_STALE_AFTER_MS, cronJobName, countStaleCronJobs, getCronJobStatuses } from '@/lib/cronRuns';
+import { CRON_STALE_AFTER_MS, cronJobName, countUnhealthyCronJobs, getCronJobStatuses } from '@/lib/cronRuns';
 
 const NOW = new Date('2026-08-06T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms);
 const HOUR = 60 * 60 * 1000;
 
-/** Stub the two reads: the success aggregate, and the latest-failure-per-job scan. */
+/**
+ * Stub the two reads: the last-completed-run aggregate, and the latest-run-per-job
+ * scan the error is taken from. `latest` defaults to a clean run for every job.
+ */
 function stubGroupBy(
     rows: { job: string; finishedAt: Date | null }[],
-    failures: { job: string; finishedAt: Date; error: string | null }[] = [],
+    latest?: { job: string; success: boolean; error: string | null }[],
 ) {
     prisma.cronRunLog.groupBy = jest.fn().mockResolvedValue(
         rows.map((r) => ({ job: r.job, _max: { finishedAt: r.finishedAt } })),
     );
-    prisma.cronRunLog.findMany = jest.fn().mockResolvedValue(failures);
+    prisma.cronRunLog.findMany = jest.fn().mockResolvedValue(
+        latest ?? rows.map((r) => ({ job: r.job, success: true, error: null })),
+    );
 }
 
 describe('cronJobName', () => {
@@ -60,7 +66,7 @@ describe('getCronJobStatuses', () => {
         stubGroupBy([]);
 
         expect(await getCronJobStatuses(NOW)).toEqual([]);
-        expect(await countStaleCronJobs(NOW)).toBe(0);
+        expect(await countUnhealthyCronJobs(NOW)).toBe(0);
     });
 
     it('puts the stalest job first and counts only the stale ones', async () => {
@@ -74,13 +80,13 @@ describe('getCronJobStatuses', () => {
 
         expect(statuses.map((s) => s.job)).toEqual(['reconcile-shopify', 'nightly', 'post-event']);
         expect(statuses.filter((s) => s.stale).map((s) => s.job)).toEqual(['reconcile-shopify', 'nightly']);
-        expect(await countStaleCronJobs(NOW)).toBe(2);
+        expect(await countUnhealthyCronJobs(NOW)).toBe(2);
     });
 
-    it('reports the error of a job that has failed since its last success', async () => {
+    it('reports the error of a job whose latest run failed outright', async () => {
         stubGroupBy(
             [{ job: 'nightly', finishedAt: ago(3 * 24 * HOUR) }],
-            [{ job: 'nightly', finishedAt: ago(2 * HOUR), error: 'connection refused' }],
+            [{ job: 'nightly', success: false, error: 'connection refused' }],
         );
 
         expect(await getCronJobStatuses(NOW)).toEqual([
@@ -89,13 +95,67 @@ describe('getCronJobStatuses', () => {
     });
 
     it('drops a failure the job has since recovered from', async () => {
-        stubGroupBy(
-            [{ job: 'nightly', finishedAt: ago(2 * HOUR) }],
-            [{ job: 'nightly', finishedAt: ago(3 * 24 * HOUR), error: 'connection refused' }],
-        );
+        // Latest run is clean, so the older failure is history rather than status.
+        stubGroupBy([{ job: 'nightly', finishedAt: ago(2 * HOUR) }]);
 
         const [status] = await getCronJobStatuses(NOW);
         expect(status.lastError).toBeUndefined();
         expect(status.stale).toBe(false);
+    });
+
+    it('names a failure even when the ledger row recorded no message', async () => {
+        // Guard: `error` is nullable, and a row that failed with nothing written must
+        // still render a red line rather than silently reading as clean.
+        stubGroupBy(
+            [{ job: 'nightly', finishedAt: ago(3 * 24 * HOUR) }],
+            [{ job: 'nightly', success: false, error: null }],
+        );
+
+        expect((await getCronJobStatuses(NOW))[0].lastError).toBe('unknown error');
+    });
+});
+
+/**
+ * The two signals are independent. A sweep that runs every night but cannot process
+ * one poison row is NOT the same as a sweep that stopped running, and the ledger has
+ * to say so: judging both off `success` alone freezes `lastSuccessAt` on the first
+ * permanently-failing row, and the badge then calls a job that ran last night "not
+ * running" for as long as the row stays broken.
+ */
+describe('a run that completed but could not do all of its work', () => {
+    const partial = () =>
+        stubGroupBy(
+            [{ job: 'nightly', finishedAt: ago(2 * HOUR) }],
+            [{ job: 'nightly', success: true, error: '1 item(s) failed' }],
+        );
+
+    it('is not stale — it ran, so lastSuccessAt keeps moving', async () => {
+        partial();
+
+        const [status] = await getCronJobStatuses(NOW);
+        expect(status.stale).toBe(false);
+        expect(status.lastSuccessAt).toEqual(ago(2 * HOUR));
+    });
+
+    it('still surfaces the error, so the panel does not read as healthy', async () => {
+        partial();
+
+        expect((await getCronJobStatuses(NOW))[0].lastError).toBe('1 item(s) failed');
+    });
+
+    it('counts toward the nav badge even though nothing is stale', async () => {
+        // Without this the pill goes green on a nightly sweep that fails every row.
+        partial();
+
+        expect(await countUnhealthyCronJobs(NOW)).toBe(1);
+    });
+
+    it('is counted once when the job is BOTH stale and failing', async () => {
+        stubGroupBy(
+            [{ job: 'nightly', finishedAt: ago(CRON_STALE_AFTER_MS + HOUR) }],
+            [{ job: 'nightly', success: false, error: 'connection refused' }],
+        );
+
+        expect(await countUnhealthyCronJobs(NOW)).toBe(1);
     });
 });

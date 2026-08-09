@@ -159,10 +159,12 @@ describe('Cron Scholarship-Grace-Expiry API Integration Tests', () => {
                 expect(data.processed).toBe(2);
                 expect(data.released).toBe(1);
                 // Isolating the row keeps the sweep going; it does not make the run
-                // healthy, so the count is reported and the ledger records a failure.
+                // healthy. The run completed, so `success` stays true — the ledger
+                // records the failure on `error` instead, which is what the panel reads.
                 expect(data.failed).toBe(1);
                 const ledger = await prisma.cronRunLog.findFirst({ where: { job: 'scholarship-grace-expiry' }, orderBy: { id: 'desc' } });
-                expect(ledger?.success).toBe(false);
+                expect(ledger?.success).toBe(true);
+                expect(ledger?.error).toBe('1 item(s) failed');
 
                 // Inside the window: untouched.
                 const inside = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId: ids.inside } } });
