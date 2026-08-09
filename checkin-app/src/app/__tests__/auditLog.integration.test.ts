@@ -1,4 +1,11 @@
 /**
+ * @jest-environment node
+ *
+ * Node, not the default jsdom: this suite imports API route modules whose graph
+ * reaches @aws-sdk/client-s3 (the merge route -> external.ts -> agreementDocument).
+ * jsdom resolves the SDK's `browser` export condition to an untransformable ESM
+ * build; node resolves the CJS one. Every other SDK-touching suite does the same.
+ *
  * Integration Test for Audit Logs
  * Ensures that various actions across the system correctly generate an AuditLog.
  * Using Next.js testing practices with local Prisma DB.

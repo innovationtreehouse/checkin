@@ -6,7 +6,7 @@ import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { personBgOpen } from "@/lib/membership/lifecycle";
-import { advanceHouseholdBgAfterMerge } from "@/lib/membership/mergeBgAdvance";
+import { advanceHouseholdBgAfterMerge, householdBgFresh } from "@/lib/membership/mergeBgAdvance";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
 import { householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
@@ -314,6 +314,11 @@ export const POST = withAuth(
                 return apiError("Merge would strand the login identity: choose a field value that keeps an email or Google account.", 400);
             }
 
+            // The post-commit carryover below acts only on a household THIS merge made
+            // background-check fresh, so it needs the pre-merge answer: afterwards the
+            // keeper already carries the merged date and the two are indistinguishable.
+            const bgFreshBeforeMerge = await householdBgFresh(keepParticipant.householdId);
+
             await prisma.$transaction(async (tx) => {
                 // 1. Clear tombstone identity first (CAS) — frees the tombstone's unique
                 // email/googleId so the keeper can adopt them below without a P2002.
@@ -511,7 +516,7 @@ export const POST = withAuth(
             // interest guard above — the thing that stops an actor clearing their own
             // household — can only be applied to a session.
             if (auth.type === 'session') {
-                await advanceHouseholdBgAfterMerge(keepParticipant.householdId, auth.user.id, mergeId);
+                await advanceHouseholdBgAfterMerge(keepParticipant.householdId, auth.user.id, mergeId, bgFreshBeforeMerge);
             }
 
             return NextResponse.json({ success: true });
