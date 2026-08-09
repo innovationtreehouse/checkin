@@ -1262,9 +1262,14 @@ model CronRunLog {
   startedAt  DateTime
   /// @sensitivity:internal
   finishedAt DateTime @default(now())
+  /// Whether the run COMPLETED — not whether it was clean. A sweep that isolates
+  /// per-row failures still completed, so it lands here as true with `error` set.
+  /// Drives "is this job still running" (lib/cronRuns.ts lastSuccessByJob).
   /// @sensitivity:internal
   success    Boolean
-  /// Message from the throw that failed the run; null on success.
+  /// Why the run was not clean — the throw's message, the HTTP status, or the count
+  /// of rows the sweep could not process. Null means the run did all of its work.
+  /// Drives "is this job still working", independently of `success`.
   /// @sensitivity:internal
   error      String?
 
