@@ -68,17 +68,6 @@ Watch tsc-blind escapes (Prisma relation strings, mocks). _(VOCAB #7)_
 
 ---
 
-## 🟢 Retire "staff" (program sense) → Treehouse Volunteers
-
-100% volunteer, no staff. Scrub "program staff" strings:
-[my-programs/layout.tsx:15](../../src/app/my-programs/layout.tsx#L15),
-[nav/todo-counts/route.ts:65](../../src/app/api/nav/todo-counts/route.ts#L65),
-[programs/[id]/route.ts:72](../../src/app/api/programs/[id]/route.ts#L72),
-[programs/[id]/volunteers/route.ts:38](../../src/app/api/programs/[id]/volunteers/route.ts#L38).
-Umbrella = **Treehouse Volunteers**. _(VOCAB #7)_
-
----
-
 ## 🟢 "staff account" → "Treehouse Account"
 
 Org-domain (`@innovationtreehouse.org`) account sense: rename `isStaffAccount` →
