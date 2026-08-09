@@ -100,7 +100,7 @@ Remove tombstones and the question does not get answered; it stops existing.
 ## Why the tombstone exists — and why it needn't
 
 The merge already **repoints** to the survivor: visits, plus `programParticipant`,
-`programVolunteer`, `rSVP`, `feePayment`, `toolStatus`, `backgroundCheckAttestation`,
+`programVolunteer`, `rSVP`, `toolStatus`, `backgroundCheckAttestation`,
 `corporationLead`, `corporationMember`, and a further set via straight `updateMany` (`account`,
 `orgMembershipProcess`, `program.leadMentorId`, `trustedAdult` ×2).
 
@@ -130,7 +130,6 @@ distinguishing payload.**
 | open `Visit` on both | **refuse** | "Close one of these visits first" — strictly better than the three bad alternatives below. |
 | `ToolStatus` | **refuse** | Highest-wins is tempting, but silently raising a machinery certification during a data-hygiene operation is the wrong place for that to happen. |
 | `RSVP` | **refuse — future events only** | Two answers to one upcoming event needs a human. A past event's RSVP is inert. |
-| `FeePayment` | **refuse** | Money. Likely moot — [#1444](https://github.com/innovationtreehouse/checkin/pull/1444) drops `Fee`/`FeePayment`. |
 | `ProgramVolunteer`, `CorporationLead`, `CorporationMember` | **auto-dedupe** | Bare join, no payload, same human, same entity. Nothing to decide. |
 
 This inverts the model: today the merge absorbs everything and `LIVE_PERSON` cleans up after it

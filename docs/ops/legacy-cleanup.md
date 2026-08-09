@@ -42,15 +42,3 @@ them.
 - **Code must tolerate it:** yes. An activation with no order is legitimate and
   must not be reported as a missing payment.
 
-## The dead fee tables
-
-`Fee` and `FeePayment` were designed as the payment store and never received a
-production write. Payment truth is the store plus enrollment status.
-
-- **Surfaced:** nowhere — it is schema, not data.
-- **Exit:** references removed from the merge route, the security scope
-  bindings, and the generated classifications, then the tables dropped a
-  release later.
-- **Code must tolerate it:** the models still exist and are still referenced.
-  The removal design has merged; the deletion has not. Do not read this as
-  progress — the tables are live in the schema today.
