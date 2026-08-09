@@ -36,6 +36,20 @@ Design rationale, regressions-to-learn-from, and past approaches live in
 `docs/` and PR history — not in code comments. (This file's own flow-test
 section is an example: the failure stories sit in docs, not in the source.)
 
+## Lint and type errors
+
+A suppressed error is an error the next reader cannot see. Fix what the tool is
+pointing at, not the fact that it is pointing.
+
+- **Never fix a lint error by disabling the linter.** No
+  `// eslint-disable-next-line`, no `/* eslint-disable */`, no
+  `@ts-expect-error`, no `@ts-ignore`.
+- **Never fix a type error with an `any` coercion.** Type the variables,
+  parameters and return signatures properly. Where the type isn't immediately
+  obvious, use `unknown` and narrow it, or define the interface.
+- **Address the root cause** — the logic, the missing type, the interface that
+  wasn't imported — rather than the message.
+
 ## Test classes
 
 There are **three** classes of tests. Run all commands from `checkin-app/`.
