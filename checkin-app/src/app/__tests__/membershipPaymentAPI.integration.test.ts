@@ -53,7 +53,7 @@ describe('Membership payment API', () => {
     let gateProc: number, gateLeadId: number, gateNonLeadId: number;
     const prevWebhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
     const prevStoreDomain = process.env.SHOPIFY_STORE_DOMAIN;
-    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number; orgMembershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
+    let prevSettings: { standardMembershipFeeCents: number; volunteerMembershipFeeCents: number; orgMembershipVariantId: string | null; volunteerDiscountCode: string | null } | null = null;
 
     async function makeProc(label: string, isVolunteer: boolean, withLead = false) {
         const hh = await prisma.household.create({ data: { name: `${label} ${TAG}` } });
@@ -86,10 +86,10 @@ describe('Membership payment API', () => {
         process.env.SHOPIFY_WEBHOOK_SECRET = WEBHOOK_SECRET;
         process.env.SHOPIFY_STORE_DOMAIN = STORE_DOMAIN;
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents, orgMembershipVariantId: existing.orgMembershipVariantId, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
+        prevSettings = existing ? { standardMembershipFeeCents: existing.standardMembershipFeeCents, volunteerMembershipFeeCents: existing.volunteerMembershipFeeCents, orgMembershipVariantId: existing.orgMembershipVariantId, volunteerDiscountCode: existing.volunteerDiscountCode } : null;
         const settingsData = {
-            normalDuesCents: 10000,
-            volunteerDuesCents: 2500,
+            standardMembershipFeeCents: 10000,
+            volunteerMembershipFeeCents: 2500,
             orgMembershipVariantId: VARIANT_ID,
             volunteerDiscountCode: DISCOUNT_CODE,
         };

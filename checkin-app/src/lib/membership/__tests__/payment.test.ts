@@ -44,7 +44,7 @@ const MEMBERSHIP_ID = 9;
 
 beforeEach(() => {
     jest.clearAllMocks();
-    prisma.boardSettings.findUnique.mockResolvedValue({ normalDuesCents: 10000, volunteerDuesCents: 2500 });
+    prisma.boardSettings.findUnique.mockResolvedValue({ standardMembershipFeeCents: 10000, volunteerMembershipFeeCents: 2500 });
     prisma.orgMembership.findUnique.mockResolvedValue({ householdId: 3, isVolunteer: false });
 });
 
