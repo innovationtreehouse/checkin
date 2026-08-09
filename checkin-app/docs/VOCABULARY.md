@@ -138,10 +138,11 @@ Rules:
    "I approve this person" states the judgement, which is what is stored.
    *(rename pending: the reviewer queue's confirm modal and row button)*
 3. **`clear` never means erase.** Undoing attestations is **discard**. `clear` is
-   reserved for the outcome above. *(rename pending: the "Clear approvals" button)*
+   reserved for the outcome above. Erasing a person's clearance date is **remove**.
+   *(rename pending: the "Clear approvals" button; the compliance page's erase path)*
 4. **"Attest" is the reviewer's word alone.** An applicant **consents**; a Tool
    Certifier **certifies** (see Shop & Certification).
-   *(rename pending: `selfAttestBgConsent` → `recordBgConsent`)*
+   *(rename pending: `selfAttestBgConsent` → `selfRecordBgConsent`)*
 5. **`PENDING_BG_REVIEW` and `PENDING_BG_CLEARANCE` do not mark review vs
    clearance** — they differ by whether dues are paid. A known misnomer; the enum
    stays, because renaming a status reaches the schema, a migration, and the

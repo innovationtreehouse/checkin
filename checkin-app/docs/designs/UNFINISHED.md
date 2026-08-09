@@ -44,17 +44,23 @@ privileged-"staff" onto it. (4) audit every call site for over/under-grant.
 ## 🟢 Background-check verbs (decided)
 
 **✅ A reviewer *reviews*, *attests*, and two attestations *clear* the check**
-([../VOCABULARY.md](../VOCABULARY.md) › Background check). Three copy/identifier
+([../VOCABULARY.md](../VOCABULARY.md) › Background check). Four copy/identifier
 renames, all ops-facing or internal — no schema, no `src/security/`:
-- The reviewer queue names the act two wrong ways: the confirm modal calls it
-  "Clear…" (that's the outcome) and the row button asserts "check is clean" (that's
-  the report's content). Both become *attest*
-  (`membership-ops/review/page.tsx`, 3 strings + 8 test assertions). PR #1575, open
-  at the time of writing, does half — modal "Clear…" → "Attest…", but adds "clean"
+- The reviewer queue asserts the report's content rather than the reviewer's
+  judgement: "check is clean" on the row button, in the modal title, confirm label
+  and both body branches (`membership-ops/review/page.tsx`, 5 strings + 8 test
+  assertions). All become *attest*, and the outcome is named as the **noun** —
+  `clear` as a verb on a button next to "Reject" reads as *reset*
 - "Clear approvals" → "Discard approvals" (`membership-ops/applications/page.tsx`,
-  button + confirm label + comment)
-- `selfAttestBgConsent` → `recordBgConsent` (~17 refs / 5 files; the
-  `/api/membership/bg-consent` route path is unchanged)
+  button + confirm label + comment; 2 test assertions)
+- The whole erase path for a person's background-check date is built on `clear` —
+  handler, button, modal title, confirm label, toast
+  (`membership-audit/compliance/page.tsx`, 8 sites + 4 test assertions). Becomes
+  *remove*, the verb its own body text already uses
+- `selfAttestBgConsent` → `selfRecordBgConsent` (~17 refs / 5 files; the
+  `/api/membership/bg-consent` route path is unchanged). Keeps the `self` prefix:
+  `markBgConsent` is exported and called from seven places, so a bare
+  `recordBgConsent` wrapping it would be a coin flip at every call site
 
 **Do not "fix"** `AttestationResult.result` or the `PENDING_BG_REVIEW` /
 `PENDING_BG_CLEARANCE` misnomer. Both are wrong and both stay: renaming either
