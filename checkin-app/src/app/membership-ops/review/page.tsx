@@ -135,7 +135,7 @@ export default function MembershipReviewPage() {
     // by then, so an existing attestation is enough to know this click is the last one.
     const clearing = result === "APPROVE" && item._count.attestations >= 1;
     modals.openConfirmModal({
-      title: result === "REJECT" ? "Reject this background check?" : clearing ? "Attest this background check is clean?" : "Record your approval?",
+      title: result === "REJECT" ? "Reject this background check?" : clearing ? "Attest that this background check passed?" : "Record your approval?",
       children: (
         <Text size="sm">
           {result === "REJECT" ? (
@@ -145,7 +145,7 @@ export default function MembershipReviewPage() {
             </>
           ) : clearing ? (
             <>
-              You are the second reviewer for <strong>{who}</strong>. Attesting the check is clean
+              You are the second reviewer for <strong>{who}</strong>. Attesting that the check passed
               records that against {item.subjectPerson ? "the subject" : leadName(item, chosenSubject(item)!)},
               opens payment (or activates the membership if dues are already paid), and emails the
               family. It cannot be undone.
@@ -154,12 +154,12 @@ export default function MembershipReviewPage() {
             <>
               This records your approval of <strong>{who}</strong>&apos;s background check
               {item.subjectPerson ? "" : ` for ${leadName(item, chosenSubject(item)!)}`}. A second
-              reviewer must also approve the same person before the check is attested clean.
+              reviewer must also approve the same person before the check passes.
             </>
           )}
         </Text>
       ),
-      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Attest the check is clean" : "Approve", cancel: "Cancel" },
+      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Attest — the check passed" : "Approve", cancel: "Cancel" },
       confirmProps: { color: result === "REJECT" ? "red" : clearing ? "orange" : undefined },
       onConfirm: () => submit(item.id, result),
     });
