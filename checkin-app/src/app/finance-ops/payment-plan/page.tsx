@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { formatDateTime } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { sharesHousehold } from '@/lib/conflictOfInterest';
 import { formatCents } from '@inventory/money';
@@ -37,6 +37,7 @@ type PaymentPlanRequest = {
 };
 
 export default function PendingParticipantsPage() {
+  const { formatDateTime } = useOrgTime();
   const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
   // Conflict of interest: no actor may approve their OWN household member's plan
   // (mirrors the server guard). UX only — server enforces.
