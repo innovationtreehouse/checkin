@@ -230,8 +230,17 @@ export function fromWhere(from: ProcessStatus): Where {
 
 // ── classify / validate ──────────────────────────────────────────────────────
 
-/** Row shape classify/validate read — all four flags as booleans, no Prisma. */
-export type ClassifyRow = { status: ProcessStatus } & ProcessFlags;
+/**
+ * Row shape classify/validate read — all four flags as booleans, no Prisma. `kind`
+ * is part of the row because the machine's own edges are kind-specific: a
+ * PERSON_AGREEMENT reaches ACTIVE on the signature alone, so "what is legal here"
+ * has no kind-free answer.
+ */
+export type ClassifyRow = { status: ProcessStatus; kind: ProcessKind } & ProcessFlags;
+
+/** The one kind that reaches ACTIVE on a signature, owing no clearance stamp. An
+ *  exemption list, not an allowlist: a kind added later owes the stamp by default. */
+const SETTLES_ON_SIGNATURE: readonly ProcessKind[] = ["PERSON_AGREEMENT"];
 
 /**
  * Name a row's lifecycle state, or null when it's off-diagram. Total over the
@@ -246,7 +255,8 @@ export function classify(row: ClassifyRow): ProcessStatus | null {
             return row.paidAt ? null : "INTAKE";
         case "ACTIVE":
             // Convergence stamps bgClearedAt before flipping ACTIVE (payment.ts / review.ts).
-            return row.bgClearedAt ? "ACTIVE" : null;
+            // A PERSON_AGREEMENT has no convergence to stamp — see SETTLES_ON_SIGNATURE.
+            return row.bgClearedAt || SETTLES_ON_SIGNATURE.includes(row.kind) ? "ACTIVE" : null;
         case "PENDING_EXTERNAL_ACTION":
             return "PENDING_EXTERNAL_ACTION";
         case "PENDING_BG_REVIEW":
@@ -272,8 +282,10 @@ export function classify(row: ClassifyRow): ProcessStatus | null {
 export const INVARIANTS: readonly Invariant<ClassifyRow>[] = [
     // Payment is stamped no earlier than PENDING_PAYMENT; INTAKE is pre-external.
     { name: "intake-is-unpaid", holds: (r) => r.status !== "INTAKE" || !r.paidAt },
-    // ACTIVE is only reached through the two-track convergence, which stamps bgClearedAt.
-    { name: "active-is-bg-cleared", holds: (r) => r.status !== "ACTIVE" || r.bgClearedAt },
+    // ACTIVE is only reached through the two-track convergence, which stamps bgClearedAt —
+    // for the kinds that HAVE one. markContractSigned settles a PERSON_AGREEMENT outright
+    // (the kind-tagged PENDING_EXTERNAL_ACTION→ACTIVE edge below), owing no clearance.
+    { name: "active-is-bg-cleared", holds: (r) => r.status !== "ACTIVE" || SETTLES_ON_SIGNATURE.includes(r.kind) || r.bgClearedAt },
 ];
 
 export const validate = defineValidator(INVARIANTS);
@@ -285,10 +297,12 @@ export type OriginState = "∅";
 type TState = ProcessStatus | OriginState;
 
 /**
- * Every pre-terminal status the board can archive from — and, reversed, the only
- * statuses unarchive can restore to (§5 #13). ACTIVE is never archivable; the
- * legacy RENEWAL_PENDING_BG is unreachable, so nothing is ever archived from it
- * and it is not a restore target either.
+ * The archive edges this machine DECLARES (§5 #13). ACTIVE is never archivable.
+ * RENEWAL_PENDING_BG is out because it is unreachable, so the diagram would gain a
+ * dead pair of arrows and lose the unreachable report that surfaces it — but it is
+ * NOT the archive gate: `archiveApplication` refuses ACTIVE and nothing else, so a
+ * surviving legacy row IS archivable — that gate's set is RESTORABLE_STATUSES below,
+ * and the test pins the one status by which the two differ.
  */
 export const ARCHIVABLE_STATUSES = [
     "INTAKE",
@@ -368,6 +382,9 @@ export function isLegalTransition(from: ProcessStatus, to: ProcessStatus, kind?:
 /** Entry states for reachability analysis (the ∅-edges' targets). */
 export const INITIAL_STATES: readonly ProcessStatus[] = ["INTAKE", "PENDING_RENEWAL", "PENDING_BG_REVIEW"];
 
+/** Every declared kind — the second axis of the exhaustive state-space test. */
+export const ALL_KINDS: readonly ProcessKind[] = ["INITIAL", "RENEWAL", "PERSON_BG", "PERSON_AGREEMENT"];
+
 /** Every declared status (for reachability's `unreachable` computation). */
 export const ALL_STATUSES: readonly ProcessStatus[] = [
     "INTAKE",
@@ -381,3 +398,14 @@ export const ALL_STATUSES: readonly ProcessStatus[] = [
     "RENEWAL_PENDING_BG",
     "ARCHIVED",
 ];
+
+/**
+ * What `archiveApplication` can actually capture — its gate is `status !== ACTIVE`
+ * (ARCHIVED returns early) — and so the only targets `unarchiveApplication` restores
+ * to. Wider than ARCHIVABLE_STATUSES by the legacy RENEWAL_PENDING_BG, which
+ * TRANSITIONS omits on purpose; lifecycle.test.ts pins that gap so neither list moves
+ * unnoticed and the restore set is no longer a second, unlinked list.
+ */
+export const RESTORABLE_STATUSES: ReadonlySet<ProcessStatus> = new Set(
+    ALL_STATUSES.filter((s) => s !== "ACTIVE" && s !== "ARCHIVED"),
+);

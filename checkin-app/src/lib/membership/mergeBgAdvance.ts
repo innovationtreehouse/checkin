@@ -58,7 +58,7 @@ export async function advanceHouseholdBgAfterMerge(
 
         await stampPendingExternal(householdId, actorId, source);
         await stampParallelPayment(householdId, actorId, source);
-        await clearHeldReview(householdId, actorId, mergedPersonId);
+        for (const held of HELD_STATES) await clearHeldRow(householdId, actorId, mergedPersonId, held);
     } catch (error) {
         await logBackendError(error, "membership merge background-check advance", { householdId, mergedPersonId });
     }
@@ -138,14 +138,29 @@ async function stampParallelPayment(householdId: number, actorId: number, source
 }
 
 /**
- * Legacy household rows parked at PENDING_BG_REVIEW — no edge puts one there any
- * more, and nothing re-advances them. Stamping `bgClearedAt` alone would strand a
- * row: it drops out of the reviewer queue while nothing but `clearBackgroundCheck`
- * moves its status, leaving no exit but archival. So run the real clearance, which
- * stamps and converges in one write. Zero attestations, re-read under the lock.
+ * The states a stamp alone would strand, because nothing but `clearBackgroundCheck`
+ * moves them: legacy rows parked at PENDING_BG_REVIEW, and PENDING_BG_CLEARANCE — paid,
+ * membership INACTIVE, the carried check the only thing left. Each pairs its status with
+ * its own CAS clause so the guard↔TRANSITIONS parity test can see both from-states.
  */
-async function clearHeldReview(householdId: number, actorId: number, mergedPersonId: number): Promise<void> {
-    const from = fromWhere("PENDING_BG_REVIEW");
+const HELD_STATES = [
+    { status: "PENDING_BG_REVIEW", from: fromWhere("PENDING_BG_REVIEW") },
+    { status: "PENDING_BG_CLEARANCE", from: fromWhere("PENDING_BG_CLEARANCE") },
+] as const;
+
+/**
+ * Stamping `bgClearedAt` on a held row drops it out of the reviewer queue with no exit
+ * but archival. So run the real clearance, which stamps and converges in one write —
+ * to PENDING_PAYMENT if the dues are still owed, to ACTIVE if they are already paid.
+ * Zero attestations, re-read under the lock.
+ */
+async function clearHeldRow(
+    householdId: number,
+    actorId: number,
+    mergedPersonId: number,
+    held: (typeof HELD_STATES)[number],
+): Promise<void> {
+    const { status, from } = held;
     for (const process of await uncleared(householdId, from)) {
         const outcome = await prisma.$transaction(async (tx) => {
             // clearBackgroundCheck's contract; also serializes against a concurrent attest.
@@ -154,7 +169,7 @@ async function clearHeldReview(householdId: number, actorId: number, mergedPerso
                 where: { id: process.id },
                 select: { status: true, bgClearedAt: true, _count: { select: { attestations: true } } },
             });
-            if (!fresh || fresh.status !== "PENDING_BG_REVIEW" || fresh.bgClearedAt || fresh._count.attestations > 0) return null;
+            if (!fresh || fresh.status !== status || fresh.bgClearedAt || fresh._count.attestations > 0) return null;
             return clearBackgroundCheck(tx, process.id, actorId, undefined, {
                 via: "merge",
                 sourcePersonId: mergedPersonId,
