@@ -348,6 +348,14 @@ export const classifications = {
         timestamp: 'internal',
         resolvedAt: 'internal',
     },
+    CronRunLog: {
+        id: 'internal',
+        job: 'internal',
+        startedAt: 'internal',
+        finishedAt: 'internal',
+        success: 'internal',
+        error: 'internal',
+    },
     DevLedger: {
         id: 'internal',
         action: 'internal',
@@ -541,6 +549,8 @@ export const relations = {
     SystemMetricLog: {
     },
     IntegrationErrorLog: {
+    },
+    CronRunLog: {
     },
     DevLedger: {
     },
