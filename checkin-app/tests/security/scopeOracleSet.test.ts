@@ -15,6 +15,10 @@
  *
  * So the set is pinned here. Adding an oracle costs one line and makes a
  * reviewer see the new file; removing one has to be written down on purpose.
+ *
+ * This file cannot pin itself — a deleted test cannot fail — so its own
+ * existence is asserted by security-boundary-isolation.yml, which runs on every
+ * PR into main whether or not the Jest suite does.
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
