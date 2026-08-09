@@ -16,7 +16,7 @@ gh api graphql -f owner="$OWNER" -f name="$NAME" -F number="$NUM" -f query='
 query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){
     discussion(number:$number){
-      number title body locked
+      id number title body locked
       category{name}
       author{login}
       labels(first:20){nodes{name}}
