@@ -831,14 +831,7 @@ export default function MembershipPage() {
                   <section>
                     <Textarea
                       label="Anything else we should know?"
-                      description={
-                        <>
-                          Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled.{" "}
-                          <Text component="span" fw={700} c="red">
-                            Your application will pause for human review before you can pay
-                          </Text>
-                        </>
-                      }
+                      description="Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled."
                       autosize
                       minRows={3}
                       value={notes}
@@ -1006,15 +999,6 @@ export default function MembershipPage() {
                 ) : (
                   <Text c="dimmed">Preparing your invoice…</Text>
                 )}
-              </Card>
-            ) : inStatus === "PENDING_BG_REVIEW" ? (
-              <Card withBorder radius="md" padding="lg">
-                <Title order={2} mb="sm">Hang tight — your application is being reviewed</Title>
-                <Text c="dimmed">
-                  A person on our team is reviewing your application (this happens whenever you
-                  leave a note for us). You&apos;ll be able to pay your dues once the review is
-                  complete — we&apos;ll email you then. Nothing else to do right now.
-                </Text>
               </Card>
             ) : inStatus === "PENDING_BG_CLEARANCE" ? (
               <Card withBorder radius="md" padding="lg">

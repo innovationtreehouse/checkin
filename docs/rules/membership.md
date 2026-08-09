@@ -181,13 +181,9 @@ Procedure below is built on them.
 
 ### Application and review
 
-- An intake note holds the application at review so reviewers read it before
-  dues are settled. A household already holding a still-valid clearance goes
-  straight to payment regardless.
+- An intake note does not hold the application. It is shown to the reviewers,
+  who read it while the family pays.
   (`checkin-app/src/lib/membership/external.ts`)  [Decision]
-
-- Applicants are told about the hold where they write the note, not after
-  submitting.  [Decision]
 
 - An application in background-check review is the reviewers' work, not the
   board's. Board queues count blocked applications only.  [Decision]

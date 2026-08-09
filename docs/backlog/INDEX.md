@@ -325,7 +325,7 @@ clearance now stamps only the adult the reviewers named, and the board gets a wo
 stamps the old blanket write left behind. Rules live in `docs/rules/membership.md` § background
 checks.
 
-**Verified built during triage (2026-07-21), removed from buckets:** M10 volunteer-household pre-designation (`/membership-ops/volunteer-memberships`) · M11 intake-notes → surfaced to reviewer + gates BG review (`membership-ops/review`, `Household.intakeNotes`) · SA5 BG posture (29mo, enforced at renewal) · SA8 dual-relationship = Trusted Adults · RB10 dual-email = 2-account model (#286 closed) · FD5 banker = board (no role).
+**Verified built during triage (2026-07-21), removed from buckets:** M10 volunteer-household pre-designation (`/membership-ops/volunteer-memberships`) · M11 intake-notes → surfaced to reviewer (`membership-ops/review`, `Household.intakeNotes`) · SA5 BG posture (29mo, enforced at renewal) · SA8 dual-relationship = Trusted Adults · RB10 dual-email = 2-account model (#286 closed) · FD5 banker = board (no role).
 
 **Merged to main (verified via rebase 2026-07-25), removed from buckets:** **AT10** unknown-DOB fails-open in two-deep → FIXED, now fails closed (#1353/#300) · **AT13** visit-edit UI/API mismatch → FIXED, board reaches the visit-edit UI (#1350/#1259) · **M18** person-merge orphaned/non-controlled email → FIXED via 3 merge-fixes: emailSuppressed carry (#1332), login-identity unit (#1329), tombstone `.invalid` domain (#1331); #1225 closed · **SA6** delete-DoB for adults → BUILT (#1326 "delete DoB for all adults (26+)"; #1356 declared-adults-still-supervise follow-up); #1165 closed · **P17** staff-household enrollment ban server-side → BUILT (#1009 "disable Add Participant & Grant Membership for staff households").
 

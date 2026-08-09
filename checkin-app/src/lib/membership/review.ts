@@ -19,10 +19,7 @@ import { LIVE_PERSON } from "@/lib/person/filters";
  * Background-check review — now a PARALLEL track, not a blocking phase.
  *
  * After intake the application advances to PENDING_PAYMENT regardless of the
- * check; the review happens while the applicant pays. Exception: a household
- * intake note (#900) holds the application at PENDING_BG_REVIEW until the review
- * completes, so a note like "treat us as a volunteer household" can settle dues
- * before payment opens (#907). Two DISTINCT eligible
+ * check; the review happens while the applicant pays. Two DISTINCT eligible
  * reviewers (role isBackgroundCheckReviewer) must each attest independently. A
  * reviewer may not share a household with the applicant or the other reviewer,
  * and may not attest twice.
@@ -483,10 +480,7 @@ export async function applyVolunteerStatus(db: DbClient, orgMembershipId: number
  * bgClearedAt with no adult behind it.
  */
 export async function overrideBlocked(processId: number, actorId: number, action: "reset" | "approve", subjectPersonIds?: number[]) {
-    const process = await prisma.orgMembershipProcess.findUnique({
-        where: { id: processId },
-        include: { orgMembership: { select: { household: { select: { intakeNotes: true } } } } },
-    });
+    const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new ReviewError("not_found", "Application not found.");
     if (action === "approve" && process.status !== "BLOCKED") throw new ReviewError("wrong_phase", "This application is not blocked.");
 
@@ -550,16 +544,14 @@ type BlockedResetRow = {
     kind: string;
     bgConsentAt: Date | null;
     paidAt: Date | null;
-    orgMembership: { household: { intakeNotes: string | null } } | null;
 };
 
 /**
  * The review status a BLOCKED application resumes at when the board resets it.
  * The check runs in parallel, so a household process returns to
- * PENDING_BG_CLEARANCE if it had already paid, else PENDING_PAYMENT. An unpaid one
- * with a household intake note re-holds at PENDING_BG_REVIEW — the reset restarts
- * review, and a note keeps payment gated on it (#907). Renewals follow the same
- * household path, except one blocked BEFORE consent was recorded (only legacy
+ * PENDING_BG_CLEARANCE if it had already paid, else PENDING_PAYMENT. Renewals
+ * follow the same household path, except one blocked BEFORE consent was
+ * recorded (only legacy
  * RENEWAL_PENDING_BG rows — every current renewal path records consent before
  * review can block) restarts at the external step itself: the parallel queue only
  * lists PENDING_PAYMENT/PENDING_BG_CLEARANCE rows WITH consent, so parking an
@@ -569,15 +561,13 @@ function blockedResetStatus(process: BlockedResetRow): OrgMembershipProcessStatu
     return process.kind === "PERSON_BG" ? "PENDING_BG_REVIEW"
         : process.kind === "RENEWAL" && !process.bgConsentAt ? "PENDING_EXTERNAL_ACTION"
         : process.paidAt ? "PENDING_BG_CLEARANCE"
-        : process.orgMembership?.household.intakeNotes?.trim() ? "PENDING_BG_REVIEW"
         : "PENDING_PAYMENT";
 }
 
 /**
  * The check cleared but dues aren't paid — the process just (re)entered
- * PENDING_PAYMENT. For an application that was held for review (intake note,
- * renewal re-check) this is the moment payment first opens, and the status
- * cards/banner promise an email at clearance. Best-effort (send failures log).
+ * PENDING_PAYMENT. The status cards/banner promise an email at clearance.
+ * Best-effort (send failures log).
  */
 async function notifyPaymentOpen(householdId: number) {
     const base = config.baseUrl();
