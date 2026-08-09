@@ -246,6 +246,41 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         expect(ids).toContain(household.id); // household review is unaffected
     });
 
+    /** A household lead — a signing adult, whether or not they join a program. */
+    async function makeLead(slug: string, householdId: number, data: Parameters<typeof makePerson>[2] = {}) {
+        const p = await makePerson(slug, householdId, data);
+        await prisma.person.update({ where: { id: p.id }, data: { isHouseholdLead: true } });
+        return p;
+    }
+
+    it('Trigger C covers the signing adult the household clearance did not name', async () => {
+        const hh = await makeHousehold('secondLeadHh');
+        // Clearance names one adult and stamps only them; the other signing adult holds
+        // no check and is attached to no program, so program attachment cannot find them.
+        const named = await makeLead('secondlead-named', hh.id, { dateOfBirth: ADULT_DOB, lastBackgroundCheck: new Date() });
+        const unnamed = await makeLead('secondlead-unnamed', hh.id, { dateOfBirth: ADULT_DOB });
+        const membership = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'NONE' } });
+        const proc = await prisma.orgMembershipProcess.create({
+            data: { orgMembershipId: membership.id, kind: 'INITIAL', status: 'PENDING_PAYMENT', bgClearedAt: new Date() },
+        });
+
+        await activate(proc.id, { via: 'manual', actorId: named.id });
+
+        expect(await personBgCountFor(unnamed.id)).toBe(1);
+        expect(await personBgCountFor(named.id)).toBe(0); // already fresh
+    });
+
+    it('Trigger A covers a household lead with no program attachment', async () => {
+        const hh = await makeHousehold('sweepLeadHh');
+        const lead = await makeLead('sweep-lead', hh.id, { dateOfBirth: ADULT_DOB });
+        // Not a lead and in no program: an adult child the household never put forward.
+        const bystander = await makePerson('sweep-bystander', hh.id, { dateOfBirth: ADULT_DOB });
+
+        await runPersonBgAnnualSweep(new Date());
+        expect(await personBgCountFor(lead.id)).toBe(1);
+        expect(await personBgCountFor(bystander.id)).toBe(0);
+    });
+
     it('gate: a REJECT moves the PERSON_BG to BLOCKED', async () => {
         const hh = await makeHousehold('rejectHh');
         const subject = await makePerson('reject-subject', hh.id, { dateOfBirth: ADULT_DOB });

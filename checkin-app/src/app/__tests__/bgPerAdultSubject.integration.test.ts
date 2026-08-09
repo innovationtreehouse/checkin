@@ -16,6 +16,7 @@ import { eligibleReviewProcessIds } from '@/lib/membership/review';
 import { bgFreshThreshold, personBgVerdict } from '@/lib/membership/personBgCheck';
 import { householdBgIsFresh } from '@/lib/membership/renewal';
 import prisma from '@/lib/prisma';
+import { sendEmail } from '@/lib/email';
 import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
@@ -216,22 +217,43 @@ describe('Per-adult background-check subjects', () => {
         expect((await dup.json()).code).toBe('already_attested');
     });
 
-    // ── Legacy rows name nobody ──────────────────────────────────────────────
-    it('an attestation carrying no subject counts toward nobody', async () => {
+    // ── An approval that names nobody ────────────────────────────────────────
+    it('an approval naming nobody counts toward the adult the second reviewer names', async () => {
         const hh = await twoLeadHousehold('Legacy');
-        // A pre-deploy approval: recorded before checks named their subject.
+        // An approval whose subject column is null: what every review in flight across
+        // the subject migration carries, since the column was added without a backfill.
         await prisma.backgroundCheckAttestation.create({ data: { processId: hh.processId, reviewerId: rev1, result: 'APPROVE', subjectPersonId: null } });
+        (sendEmail as jest.Mock).mockClear();
 
         as(rev2, { isBackgroundCheckReviewer: true });
         const res = await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never);
         expect(res.status).toBe(200);
 
-        // Alex holds one approval, not two — the subject-less row vouches for no one, so
-        // nothing clears and nobody is stamped. Conservative on purpose.
+        // Two distinct reviewers approved and exactly one adult was named, so the review
+        // is complete and stamps that adult only.
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: hh.processId } });
-        expect(proc?.bgClearedAt).toBeNull();
-        expect(await bgDate(hh.alex)).toBeNull();
+        expect(proc?.bgClearedAt).not.toBeNull();
+        expect(proc?.status).toBe('PENDING_PAYMENT');
+        expect(await bgDate(hh.alex)).not.toBeNull();
         expect(await bgDate(hh.sam)).toBeNull();
+        // The clearance owes the family the payment-open notice.
+        expect((sendEmail as jest.Mock).mock.calls.some((c: unknown[]) => String(c[1]).includes('you can now pay your membership dues'))).toBe(true);
+    });
+
+    it('leaves no review that reports two approvals with nobody left able to finish it', async () => {
+        const hh = await twoLeadHousehold('NoDeadEnd');
+        await prisma.backgroundCheckAttestation.create({ data: { processId: hh.processId, reviewerId: rev1, result: 'APPROVE', subjectPersonId: null } });
+
+        as(rev2, { isBackgroundCheckReviewer: true });
+        const outcome = (await (await ATTEST(req({ processId: hh.processId, result: 'APPROVE', subjectPersonIds: [hh.alex] }) as never)).json()).outcome;
+
+        // Both reviewers have now spent their one attestation, so the process is gone from
+        // both queues. A reported approval count of 2 has to mean cleared, or the review
+        // is stranded with no one able to act on it.
+        expect(await eligibleReviewProcessIds(rev1)).not.toContain(hh.processId);
+        expect(await eligibleReviewProcessIds(rev2)).not.toContain(hh.processId);
+        expect(outcome.approvals ?? 0).toBeLessThan(2);
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: hh.processId } }))?.bgClearedAt).not.toBeNull();
     });
 
     // ── Board force-approve ──────────────────────────────────────────────────

@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 import { agreementCycleFloor, autoPopulationWhere } from "@/lib/membership/personAgreementTriggers";
-import { LIVE_PERSON } from "@/lib/person/filters";
+import { BG_OBLIGATED_WHERE, LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -104,15 +104,10 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     const peopleMissingDob: PersonRow[] = [];
     if (bgRecheckMonths > 0 && boundary) {
         const threshold = bgFreshThreshold(boundary, bgRecheckMonths);
+        // Same population the PERSON_BG triggers open for, so every obligation they
+        // create has a row here with a submit action behind it.
         const people = await prisma.person.findMany({
-            where: {
-                OR: [
-                    { programParticipants: { some: {} } },
-                    { programVolunteers: { some: {} } },
-                    { programsLed: { some: {} } },
-                ],
-                ...LIVE_PERSON,
-            },
+            where: { ...BG_OBLIGATED_WHERE, ...LIVE_PERSON },
             select: {
                 id: true,
                 name: true,

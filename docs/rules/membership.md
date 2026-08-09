@@ -313,11 +313,17 @@ Procedure below is built on them.
 - Nobody is removed for falling out of compliance. The view reports and sends
   nothing, so a violation waits until a person looks.  [Decision — deliberate limit; *Principle: people decide about people*]
 
-### Background checks for program-attached adults
+### Background checks for individual adults
 
 - Activating a membership opens a background-check obligation for that
-  household's program-attached adults. It is surfaced for follow-up and gates
-  nothing — chasing it is a conversation, not a refusal at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+  household's program-attached adults and for its signing adults. It is surfaced
+  for follow-up and gates nothing — chasing it is a conversation, not a refusal
+  at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+
+- A signing adult whom the household's own review did not name is covered here
+  rather than by that review, because a clearance covers only the adult who took
+  the check. Otherwise the second parent on the application — often the one
+  holding a key — belongs to no track at all.  [Decision — *Policy: Membership Policy, Art. VI §VI.1*]
 
 - The annual sweep judges age as of the membership-year boundary, which counts as
   inside it: turning 18 afterwards waits for the next sweep rather than firing on

@@ -27,3 +27,16 @@ export const PROGRAM_ATTACHED_WHERE: Prisma.PersonWhereInput = {
         { programsLed: { some: {} } },
     ],
 };
+
+/**
+ * Person who owes a background check of their own: program-attached, or a household
+ * lead. Clearing a household review stamps only the one adult its reviewers named, so
+ * without the lead arm the other signing adult — the parent who signs and drops off,
+ * attached to no program — is covered by no track at all.
+ *
+ * The PERSON_BG openers and the board's compliance worklist share it, so what the
+ * triggers open is what the board can act on.
+ */
+export const BG_OBLIGATED_WHERE: Prisma.PersonWhereInput = {
+    OR: [PROGRAM_ATTACHED_WHERE, { isHouseholdLead: true }],
+};
