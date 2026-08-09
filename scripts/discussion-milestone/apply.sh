@@ -21,6 +21,9 @@ set -euo pipefail
 
 PLAN="${1:?usage: apply.sh <plan.json> <thread.json>}"
 THREAD="${2:?}"
+: "${REPO:?REPO must be set (owner/name)}"
+: "${NUM:?NUM must be set (the discussion number)}"
+: "${ACTOR:?ACTOR must be set (who asked for this)}"
 MAX_ISSUES=25
 
 fail() { echo "::error::$*"; exit 1; }
@@ -32,6 +35,12 @@ mapfile -t WANT < <(jq -r '.[]' "$PLAN")
 [ "${#WANT[@]}" -gt 0 ]            || fail "planner returned no issues — nothing to apply"
 [ "${#WANT[@]}" -le "$MAX_ISSUES" ] || fail "${#WANT[@]} issues exceeds the cap of $MAX_ISSUES"
 [ "$(printf '%s\n' "${WANT[@]}" | sort -u | wc -l)" -eq "${#WANT[@]}" ] || fail "duplicate issue number"
+
+# A locked discussion cannot be commented on, so the result — and the reversal
+# manifest inside it — would have nowhere to land. Refuse before writing rather
+# than assign the issues and lose the record of it.
+[ "$(jq -r '.locked' "$THREAD")" = "false" ] \
+  || fail "discussion #$NUM is locked — the result comment cannot be posted, so nothing is applied"
 
 # ── the milestone comes from the discussion title, not the model ───────────
 TITLE=$(jq -r '.title' "$THREAD")
@@ -46,6 +55,10 @@ MILESTONE=$(grep -oE 'v[0-9]+\.[0-9]+' <<<"$TITLE" | head -1) \
 BODY=$(jq -r '.body' "$THREAD")
 declare -A CURRENT
 for n in "${WANT[@]}"; do
+  # JSON "number" still admits -5, 1484.5 and 1E+400, and $n goes straight into
+  # a grep -E pattern and a URL path. `1484.5` matches #148415 in the body,
+  # because `.` is a metacharacter. Digits only.
+  [[ "$n" =~ ^[0-9]+$ ]] || fail "plan issue number '$n' is not a number"
   grep -qE "(^|[^0-9])#$n([^0-9]|$)" <<<"$BODY" || fail "#$n is not in the discussion body"
   meta=$(gh api "repos/$REPO/issues/$n" --jq '[.state, (.pull_request != null), (.milestone.title // "")] | @tsv' 2>/dev/null) \
     || fail "#$n does not exist in $REPO"
@@ -59,8 +72,10 @@ for n in "${WANT[@]}"; do
 done
 
 # ── resolve or create the milestone ────────────────────────────────────────
-NUMBER=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --jq \
-  --arg t "$MILESTONE" 'map(select(.title == $t)) | first | .number // empty')
+# `gh api --jq` takes one expression and has no --arg, so pipe to jq instead.
+# --paginate emits one array per page; -s/add folds them into one list.
+NUMBER=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --paginate \
+  | jq -r --slurp --arg t "$MILESTONE" 'add // [] | map(select(.title == $t)) | .[0].number // empty')
 CREATED=false
 if [ -n "$NUMBER" ]; then
   # Adopt, never PATCH: a description on an existing milestone is a human's edit.

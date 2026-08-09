@@ -2,25 +2,39 @@ name: Discussion milestone
 
 # Apply a release-planning discussion's agreed issue set to a milestone, when a
 # maintainer says so. The command IS the decision: convergence is declared by a
-# human typing it, never inferred from the thread. Nothing fires without it.
+# human running this workflow, never inferred from the thread.
 #
 # Shape, and why:
-#   - Claude reads the discussion and emits a PLAN as strict JSON. It never
+#   - Claude reads the discussion and returns a list of issue numbers. It never
 #     calls the GitHub API and holds no token.
-#   - A script validates that plan against facts it fetched itself, then applies
+#   - A script validates that list against facts it fetched itself, then applies
 #     it. Every post-plan decision is a comparison against an API value, so a
 #     model there would add nondeterminism to a write path and buy nothing.
 #   - The script posts back exactly what it changed, with a reversal manifest.
 #
 # The discussion body and every comment are attacker-controllable text on a
 # PUBLIC repo. They are data, never instructions. Three things keep that true:
-# the plan schema has no field expressing "close", "delete" or "assign"; the
-# validator rejects any issue number not present in the discussion body; and the
-# posted comment is rendered from the validated plan, never from model prose.
+# the model's whole output is an array of integers, so there is no field an
+# injected "close this" could land in; the validator rejects any number not in
+# the discussion body; and the posted comment is rendered from a fixed template
+# in apply.sh, never from model output.
 
+# workflow_dispatch ONLY, and not by preference: anthropics/claude-code-action@v1
+# cannot run on a discussion event at all. Its parseGitHubContext() switches on
+# the event name and the default branch throws "Unsupported event type", and
+# `discussion_comment` is in neither ENTITY_EVENT_NAMES nor
+# AUTOMATION_EVENT_NAMES (src/github/context.ts). The word "discussion" does not
+# appear anywhere in the action's source. A `@claude prepare the milestone`
+# comment trigger would fail in the planner step every time.
+#
+# Routing a comment back here via `gh workflow run` does not rescue it either:
+# workflow_dispatch sent with GITHUB_TOKEN does not start a new run, so that
+# shape needs a PAT — a strictly worse trade than losing the comment trigger.
+#
+# The consolation is real: dispatch is gated on repo write access, so the
+# thread's text is no longer the thing that STARTS a privileged job. A stranger's
+# comment can still be read by the model, but only a maintainer can fire it.
 on:
-  discussion_comment:
-    types: [created]
   workflow_dispatch:
     inputs:
       discussion: { description: Discussion number, required: true, type: string }
@@ -28,22 +42,13 @@ on:
 # Per discussion, and never cancel: this job writes. A cancelled run leaves
 # issues half-assigned with no comment saying why. Let the second run queue.
 concurrency:
-  group: discussion-milestone-${{ github.event.discussion.number || inputs.discussion }}
+  group: discussion-milestone-${{ inputs.discussion }}
   cancel-in-progress: false
 
 permissions: {}
 
 jobs:
   apply:
-    # `edited` is deliberately not a trigger: it would let the text change after
-    # a maintainer read it. Re-run via workflow_dispatch instead.
-    if: >-
-      github.event_name == 'workflow_dispatch' || (
-        github.event.sender.type == 'User' &&
-        contains(github.event.comment.body, '@claude prepare the milestone') &&
-        (github.event.comment.author_association == 'MEMBER' ||
-         github.event.comment.author_association == 'OWNER')
-      )
     runs-on: ubuntu-latest
     permissions:
       contents: read      # checkout the validator
@@ -52,12 +57,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # author_association MEMBER means "in the org", NOT "can write here" — a
-      # read-only member passes it. The allowlist is the real gate, and it lives
-      # in this file because /.github/ is CODEOWNERS-gated with required review.
+      # Write access is what dispatch already requires; this narrows it further
+      # to named people. It lives in this file because /.github/ is
+      # CODEOWNERS-gated with required review.
       - name: Check the caller may do this
         env:
-          ACTOR: ${{ github.event.comment.user.login || github.actor }}
+          ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
           case "$ACTOR" in
@@ -65,29 +70,63 @@ jobs:
             *) echo "::error::$ACTOR is not on the maintainer allowlist."; exit 1 ;;
           esac
 
-      - name: Fetch the discussion
+      # The action has no prompt_file or input_file input, so the thread has to
+      # travel inside `prompt`. Assemble it here.
+      #
+      # The heredoc delimiter is random ON PURPOSE. Everything after
+      # <discussion_thread> is text a stranger can write, and a fixed delimiter
+      # would let a comment containing that word close the block early and set
+      # arbitrary step outputs of its own.
+      - name: Assemble the planner prompt
+        id: prompt
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NUM: ${{ github.event.discussion.number || inputs.discussion }}
-        run: scripts/discussion-milestone/fetch.sh "$NUM" > thread.json
+          NUM: ${{ inputs.discussion }}
+        run: |
+          set -euo pipefail
+          scripts/discussion-milestone/fetch.sh "$NUM" > thread.json
+          D="PROMPT_EOF_$(openssl rand -hex 16)"
+          {
+            echo "text<<$D"
+            cat scripts/discussion-milestone/prompt.md
+            echo
+            echo "<discussion_thread>"
+            cat thread.json
+            echo
+            echo "</discussion_thread>"
+            echo "$D"
+          } >> "$GITHUB_OUTPUT"
 
-      # Claude gets the thread as a FILE and no token. A fully-compromised
-      # prompt cannot reach the API from here; it can only write a bad plan,
+      # Claude gets text and returns JSON. It is granted no tools and no token,
+      # so a fully-compromised prompt can only produce a bad list of numbers,
       # which the next step is built to reject.
+      #
+      # --setting-sources user pins the sandbox shut. The SDK otherwise defaults
+      # to user,project,local, which would load the checked-out repo's
+      # .claude/settings.json — making this job's blast radius depend on a file
+      # people edit for unrelated local-dev reasons.
       - name: Ask Claude for a plan
+        id: plan
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-opus-4-5
-          thinking: low
-          prompt_file: scripts/discussion-milestone/prompt.md
-          input_file: thread.json
-          output_file: plan.json
+          prompt: ${{ steps.prompt.outputs.text }}
+          claude_args: |
+            --model claude-opus-5
+            --setting-sources user
+            --json-schema '{"type":"object","properties":{"issues":{"type":"array","items":{"type":"integer"}}},"required":["issues"],"additionalProperties":false}'
 
+      # structured_output goes through env, never into the script text: it is
+      # model-authored, and `${{ }}` interpolated into a run block is executed.
       - name: Validate and apply
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          NUM: ${{ github.event.discussion.number || inputs.discussion }}
-          ACTOR: ${{ github.event.comment.user.login || github.actor }}
-        run: scripts/discussion-milestone/apply.sh plan.json thread.json
+          NUM: ${{ inputs.discussion }}
+          ACTOR: ${{ github.actor }}
+          STRUCTURED: ${{ steps.plan.outputs.structured_output }}
+        run: |
+          set -euo pipefail
+          [ -n "$STRUCTURED" ] || { echo "::error::the planner produced no structured output"; exit 1; }
+          jq -e '.issues' <<<"$STRUCTURED" > plan.json
+          scripts/discussion-milestone/apply.sh plan.json thread.json
