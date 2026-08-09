@@ -347,12 +347,16 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     where: { personId: targetId, associatedEventId: eventId, ...LIVE_VISIT }
                 });
 
+                // arrivedVia records how the arrival was measured, not who last
+                // touched the row, so only a visit this mark creates is staff-
+                // asserted: an adopted walk-in keeps its SCANNER/WEB. A departure
+                // the lead typed is staff-asserted whatever the arrival was.
                 const times = {
                     arrivedAt: arrival!,
                     departedAt: dep,
-                    arrivedVia: "WEB",
-                    departedVia: departedAt ? "WEB" : null
+                    departedVia: departedAt ? "LEAD_MARKED" : null
                 } satisfies Prisma.VisitUncheckedUpdateInput;
+                const createTimes = { ...times, arrivedVia: "LEAD_MARKED" } satisfies Prisma.VisitUncheckedUpdateInput;
 
                 // Every human visit-write logs (design "Audit substrate"), with
                 // secondaryAffectedEntity = the subject so a correction review
@@ -389,7 +393,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     });
                 } else {
                     const created = await tx.visit.create({
-                        data: { ...times, personId: targetId, associatedEventId: eventId }
+                        data: { ...createTimes, personId: targetId, associatedEventId: eventId }
                     });
                     await tx.auditLog.create({
                         data: {
@@ -398,7 +402,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                             tableName: "Visit",
                             affectedEntityId: created.id,
                             secondaryAffectedEntity: targetId,
-                            newData: { ...times, type: "lead_attendance_correction", status: "Present" }
+                            newData: { ...createTimes, type: "lead_attendance_correction", status: "Present" }
                         }
                     });
                 }

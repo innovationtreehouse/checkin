@@ -265,7 +265,10 @@ describe('AuditLog Integration Tests', () => {
         // newData is now a raw JSON object (legacy rows may still be strings).
         const newData = normalizeAuditData(log?.newData) as Record<string, unknown>;
         expect(newData.type).toBe('lead_attendance_correction');
-        expect(newData.arrivedVia).toBe('WEB');
+        // The update branch leaves arrivedVia alone, so the audit must not claim
+        // it changed; the departure the lead typed IS staff-asserted.
+        expect(newData).not.toHaveProperty('arrivedVia');
+        expect(newData.departedVia).toBe('LEAD_MARKED');
     });
 
     it('should generate an AuditLog when an Admin edits participant PII', async () => {
