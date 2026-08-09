@@ -26,10 +26,12 @@ const utcDay = (d: Date) => d.toISOString().slice(0, 10);
  *
  * Also returns two PERSON-scoped lists (program people may not sit in a member
  * household, so they can't key on householdId):
- *   peopleNeedingBgCheck — program-attached people ≥18 (as of the boundary) with
- *                          no fresh check. Skipped when the policy is unset.
- *   peopleMissingDob     — program-attached people whose age is unknown (no DOB,
+ *   peopleNeedingBgCheck — check-obligated people ≥18 (as of the boundary) with no
+ *                          fresh check. Skipped when the policy is unset.
+ *   peopleMissingDob     — check-obligated people whose age is unknown (no DOB,
  *                          not declared 25+): data hygiene, NOT bg-needed.
+ * Check-obligated = BG_OBLIGATED_WHERE: program-attached, or a signing adult (lead)
+ * of an ACTIVE member household.
  *
  * And two lists of background-check dates that trace to no named person (#1260):
  *   blanketStamped          — households cleared before per-adult subjects existed,
@@ -86,8 +88,9 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     // PENDING_BG_CLEARANCE is a household-process status; orgMembership is always set.
     for (const p of stuck) if (p.orgMembership) add(p.orgMembership.householdId, "STUCK_BG_CLEARANCE");
 
-    // 4. Program-attached people ≥18 without a fresh background check (warn-only).
-    //    Subject = union of ProgramParticipant / ProgramVolunteer / Program.leadMentor.
+    // 4. Check-obligated people ≥18 without a fresh background check (warn-only).
+    //    Subject = BG_OBLIGATED_WHERE: (ProgramParticipant ∪ ProgramVolunteer ∪
+    //    Program.leadMentor) ∪ the leads of ACTIVE member households.
     //    A program lead/volunteer may sit in a household that isn't a member household,
     //    so these are person-scoped, NOT folded into the householdId reason map above.
     //    Skip the whole bucket when the board hasn't set a recheck window or a

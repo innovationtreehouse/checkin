@@ -270,8 +270,9 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         expect(await personBgCountFor(named.id)).toBe(0); // already fresh
     });
 
-    it('Trigger A covers a household lead with no program attachment', async () => {
+    it('Trigger A covers a member household lead with no program attachment', async () => {
         const hh = await makeHousehold('sweepLeadHh');
+        await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
         const lead = await makeLead('sweep-lead', hh.id, { dateOfBirth: ADULT_DOB });
         // Not a lead and in no program: an adult child the household never put forward.
         const bystander = await makePerson('sweep-bystander', hh.id, { dateOfBirth: ADULT_DOB });
@@ -279,6 +280,34 @@ describe('PERSON_BG triggers + subject-scoped clear + gate', () => {
         await runPersonBgAnnualSweep(new Date());
         expect(await personBgCountFor(lead.id)).toBe(1);
         expect(await personBgCountFor(bystander.id)).toBe(0);
+    });
+
+    it('Trigger A leaves alone the leads of households that never became members', async () => {
+        // isHouseholdLead marks the lead of EVERY household the app creates. A bare lead
+        // arm on the daily cron would open a PERSON_BG — closable only by a board member
+        // recording an external check and two reviewers attesting — on people who never
+        // applied. startIntake anchors an abandoned application's membership at NONE; a
+        // denial writes DENIED; an import-only or program-only household has none at all.
+        const abandoned = await makeHousehold('sweepAbandonedHh');
+        await prisma.orgMembership.create({ data: { householdId: abandoned.id, status: 'NONE' } });
+        const abandonedLead = await makeLead('sweep-abandoned-lead', abandoned.id, { dateOfBirth: ADULT_DOB });
+
+        const denied = await makeHousehold('sweepDeniedHh');
+        await prisma.orgMembership.create({ data: { householdId: denied.id, status: 'DENIED' } });
+        const deniedLead = await makeLead('sweep-denied-lead', denied.id, { dateOfBirth: ADULT_DOB });
+
+        const revoked = await makeHousehold('sweepRevokedHh');
+        await prisma.orgMembership.create({ data: { householdId: revoked.id, status: 'REVOKED' } });
+        const revokedLead = await makeLead('sweep-revoked-lead', revoked.id, { dateOfBirth: ADULT_DOB });
+
+        const noMembership = await makeHousehold('sweepNoMembershipHh');
+        const strangerLead = await makeLead('sweep-stranger-lead', noMembership.id, { dateOfBirth: ADULT_DOB });
+
+        await runPersonBgAnnualSweep(new Date());
+        expect(await personBgCountFor(abandonedLead.id)).toBe(0);
+        expect(await personBgCountFor(deniedLead.id)).toBe(0);
+        expect(await personBgCountFor(revokedLead.id)).toBe(0);
+        expect(await personBgCountFor(strangerLead.id)).toBe(0);
     });
 
     it('gate: a REJECT moves the PERSON_BG to BLOCKED', async () => {

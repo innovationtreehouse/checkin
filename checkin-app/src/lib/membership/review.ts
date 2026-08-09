@@ -174,12 +174,13 @@ export function establishedSubject(attestations: { result: string; subjectPerson
 }
 
 /**
- * Approvals standing behind `subject`. An approval that names nobody counts toward
- * it: it vouched for the household's one report, and holding it back strands the
- * review on a third reviewer the two-reviewer rule does not require to exist.
+ * Approvals standing behind `subject` — NAMED ones only. An approval that named
+ * nobody counts toward nobody: nothing records whose report it read, so counting it
+ * would date a clearance on a single reviewer's reading. A review carrying one takes
+ * a board reset and two fresh attestations, which is what the two-reviewer rule asks.
  */
 function approvalsForSubject(attestations: { result: string; subjectPersonId: number | null }[], subject: number): number {
-    return attestations.filter((a) => a.result === "APPROVE" && (a.subjectPersonId === null || a.subjectPersonId === subject)).length;
+    return attestations.filter((a) => a.result === "APPROVE" && a.subjectPersonId === subject).length;
 }
 
 /**
@@ -327,10 +328,10 @@ export async function attest(
         }
 
         const withThis = [...process.attestations, { result: "APPROVE", subjectPersonId }];
-        // A household clears when the adult it named reaches two approvals (one checked
-        // adult satisfies membership); a PERSON_BG counts the process as a whole. Both
-        // report the very count that decided it, so a reported 2 always means cleared —
-        // a reviewer is never told the review is done while it silently stays open.
+        // A household clears when the adult it named reaches two NAMED approvals (one
+        // checked adult satisfies membership); a PERSON_BG counts the process as a whole.
+        // Both report the very count that decided it, so a reported 2 always means
+        // cleared — a reviewer is never told the review is done while it stays open.
         const approvals = isHousehold && subjectPersonId !== null
             ? approvalsForSubject(withThis, subjectPersonId)
             : withThis.filter((a) => a.result === "APPROVE").length;
@@ -393,8 +394,8 @@ export async function clearBackgroundCheck(tx: TxClient, processId: number, acto
     const paid = !!process.paidAt;
 
     // Stamp only the adults this review actually covered — the subjects the reviewers
-    // read off the Averity reports. A process where no approval named anyone stamps
-    // nobody: better a household that reads stale than another unchecked adult cleared.
+    // read off the Averity reports. A legacy process names nobody and so stamps nobody:
+    // better a household that reads stale than another unchecked adult marked cleared.
     // Expiry is derived from this plus BoardSettings.bgRecheckMonths at read time (see
     // householdBgIsFresh) — not stored.
     const cleared = subjectOverride ?? subjectsWithTwoApprovals(process.attestations);
