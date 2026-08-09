@@ -123,21 +123,6 @@ _(VOCAB #6)_
 
 ---
 
-## 🟢 Dedup `SessionUser` type
-
-`SessionUser` declared 4 times: the one export
-([types/participant.ts:5](../../src/types/participant.ts#L5), role booleans
-**required**, stale "Prisma Participant model" comment) plus 3 local structural
-subsets ([attendance/current/page.tsx:50](../../src/app/attendance/current/page.tsx#L50),
-[programs/[id]/page.tsx:50](../../src/app/programs/[id]/page.tsx#L50),
-[AppFrame.tsx:54](../../src/components/AppFrame.tsx#L54)). Real source of truth is
-`Session["user"]` in [next-auth.d.ts](../../src/types/next-auth.d.ts). Consolidate to
-one export in `types/auth.ts`; rename the Participant-era `types/participant.ts`.
-Watch the optionality gap — `lib/auth.ts` consumes the required-flag shape.
-_(VOCAB #8)_
-
----
-
 ## 🟢 Retire `dependent` + fix intake `children` bucket (BUG-2)
 
 "dependent" is UI jargon for a **non-lead** household member — resolve to "household member".
@@ -256,8 +241,11 @@ here rather than graduating.
 - **EmergencyContact** — clear, well-commented; not-a-household-member invariant
   documented. (`conflictParticipantId` is Person-migration tail, not new.)
 - **Audit / Error / Metric / Integration / Dev logs** — internal, self-describing.
-- **Account / Session / VerificationToken** — standard NextAuth; only smell
-  (`@map("participant_id")` + "user") is the SessionUser dedup item above.
+- **Account / Session / VerificationToken** — standard NextAuth. The remaining
+  smell is the `userId Int @map("participant_id")` on `Account`/`Session`
+  ([schema.prisma:1189](../../prisma/schema.prisma#L1189), `:1222`) — a
+  Participant-era physical column NextAuth insists on calling "user". Left
+  alone: renaming it is a migration, not a vocab fix.
 - **AttestationResult / OrgMembershipStatus / ProgramPhase / EnrollmentStatus** —
   well-scoped status enums; no cross-layer drift. (Was `MembershipStatus`; renamed
   with the model in Phase 4 #735.)
