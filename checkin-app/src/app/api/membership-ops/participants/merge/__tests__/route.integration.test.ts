@@ -1120,27 +1120,27 @@ describe("Merge Participants API", () => {
             expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status: "PENDING_BG_REVIEW", cleared: null });
         });
 
-        it("leaves every state alone while a live intake note holds the household, and audits why", async () => {
+        // One case per from-state the carryover reads. Separate tests, not one with three
+        // rows: membership_one_inflight_initial caps a household at ONE in-flight INITIAL,
+        // and the tombstone CAS lets each fixture be merged only once.
+        const NOTE_HELD_CASES: Array<[OrgMembershipProcessStatus, Record<string, unknown>]> = [
+            ["PENDING_EXTERNAL_ACTION", { contractSignedAt: new Date() }],
+            ["PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() }],
+            ["PENDING_BG_REVIEW", { contractSignedAt: new Date() }],
+        ];
+
+        it.each(NOTE_HELD_CASES)("leaves a %s row alone while a live intake note holds the household, and audits why", async (status, extra) => {
             await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: "please call us first" } });
-            // Every from-state the carryover would otherwise act on, so "every state" is
-            // what the assertion actually covers.
-            const held = [
-                await makeApplication("PENDING_EXTERNAL_ACTION", { contractSignedAt: new Date() }),
-                await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() }),
-                await makeApplication("PENDING_BG_REVIEW", { contractSignedAt: new Date() }),
-            ];
+            const held = await makeApplication(status, extra);
 
             expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
 
-            for (const process of held) {
-                const after = await reload(process.id);
-                expect({ id: process.id, status: after.status, cleared: after.bgClearedAt })
-                    .toEqual({ id: process.id, status: process.status, cleared: null });
-                // The operator changed the facts under a held application; the trail says so.
-                const log = await prisma.auditLog.findFirst({ where: { tableName: "OrgMembershipProcess", affectedEntityId: process.id } });
-                expect(log?.actorId).toBe(actorId);
-                expect(log?.newData).toMatchObject({ bgClearedAt: false, via: "merge", sourcePersonId: pMergeId });
-            }
+            const after = await reload(held.id);
+            expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status, cleared: null });
+            // The operator changed the facts under a held application; the trail says so.
+            const log = await prisma.auditLog.findFirst({ where: { tableName: "OrgMembershipProcess", affectedEntityId: held.id } });
+            expect(log?.actorId).toBe(actorId);
+            expect(log?.newData).toMatchObject({ bgClearedAt: false, via: "merge", sourcePersonId: pMergeId });
         });
 
         it("stamps nothing when the carried check is outside the recheck window", async () => {
