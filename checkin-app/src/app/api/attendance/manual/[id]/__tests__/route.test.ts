@@ -265,6 +265,11 @@ describe("household-lead correction of a member's visit", () => {
         (visitSubject as jest.Mock).mockImplementation(leadScope);
         visitFindUnique.mockResolvedValue(memberVisit);
         tx.visit.findFirst.mockResolvedValue({ id: 42 });
+        // The row written back is the MEMBER's. Leaving the default (personId =
+        // OWN_ID) let their_own resolve on it, which masks what led_households
+        // does or doesn't grant — the whole point of this block.
+        tx.visit.update.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ ...memberVisit, ...args.data }));
+        (processVisitCheckout as jest.Mock).mockResolvedValue([{ ...memberVisit }]);
     });
 
     it("edits a member's visit, locking and matching on the MEMBER, auditing the actor", async () => {
@@ -320,6 +325,23 @@ describe("household-lead correction of a member's visit", () => {
         for (const internal of ["deletedAt", "deletedById", "forceCloseWarnedAt"]) {
             expect(visit).not.toHaveProperty(internal);
         }
+    });
+
+    // The other edge: led_households is gated on the roster, not on "is a lead".
+    // visitSubject (DB leadship) and ledHouseholdMemberIds (session householdLead
+    // + householdId) are different sources and can disagree on a stale session —
+    // when they do, the grant must not resolve and the times must not ship.
+    it("strips the times when the roster does not contain the visit's person", async () => {
+        mockSession.mockResolvedValue({ user: { id: OWN_ID, householdLead: true, householdId: HOUSEHOLD_ID } });
+        personFindMany.mockResolvedValue([{ id: OWN_ID }]); // MEMBER_ID absent
+
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+        expect(res.status).toBe(200);
+        const { visit } = await res.json();
+
+        expect(visit).not.toHaveProperty("arrivedAt");
+        expect(visit).not.toHaveProperty("departedAt");
+        expect(visit.personId).toBe(MEMBER_ID); // public tier still rides through
     });
 
     it("404s a visit belonging to someone outside the lead's household", async () => {
