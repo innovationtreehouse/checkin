@@ -27,3 +27,23 @@ export const PROGRAM_ATTACHED_WHERE: Prisma.PersonWhereInput = {
         { programsLed: { some: {} } },
     ],
 };
+
+/**
+ * Person who owes a background check of their own: program-attached, or a signing
+ * adult of an ACTIVE member household. Clearing a household review stamps only the one
+ * adult its reviewers named, so without the lead arm the other signing adult — the
+ * parent who signs and drops off, attached to no program — is on no track at all.
+ *
+ * The ACTIVE bound is load-bearing, not decoration. `isHouseholdLead` marks the lead of
+ * EVERY household the app creates: imported legacy, program-only, abandoned intakes
+ * (startIntake anchors a membership at status NONE), DENIED and REVOKED. A bare lead arm
+ * would open a PERSON_BG on the daily cron for people who never became members. Mirrors
+ * the agreement track's autoPopulationWhere, and matches the rule the obligation states
+ * ("activating a membership opens...").
+ *
+ * The PERSON_BG openers and the board's compliance worklist share it, so what the
+ * triggers open is what the board can act on.
+ */
+export const BG_OBLIGATED_WHERE: Prisma.PersonWhereInput = {
+    OR: [PROGRAM_ATTACHED_WHERE, { isHouseholdLead: true, household: { orgMembership: { status: "ACTIVE" } } }],
+};

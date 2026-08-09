@@ -208,6 +208,12 @@ Procedure below is built on them.
   reviewer who believes the named person is wrong rejects, rather than naming
   someone else.  [Decision]
 
+- An approval that named nobody counts toward nobody, including toward the adult a
+  later reviewer names. Nothing records whose report it read, so counting it would
+  date a clearance on one reviewer's reading and leave a row no worklist can tell
+  from a real one. A review carrying one is reset by the board and re-reviewed by
+  two.  [Decision — *Principle: fail closed*]
+
 - A board override names the adult it covers. It cannot infer one: a blocked
   application never holds the second approval that would identify a subject, so
   an override naming nobody would date a clearance against no one.  [Decision]
@@ -313,11 +319,22 @@ Procedure below is built on them.
 - Nobody is removed for falling out of compliance. The view reports and sends
   nothing, so a violation waits until a person looks.  [Decision — deliberate limit; *Principle: people decide about people*]
 
-### Background checks for program-attached adults
+### Background checks for individual adults
 
 - Activating a membership opens a background-check obligation for that
-  household's program-attached adults. It is surfaced for follow-up and gates
-  nothing — chasing it is a conversation, not a refusal at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+  household's program-attached adults and for its signing adults. It is surfaced
+  for follow-up and gates nothing — chasing it is a conversation, not a refusal
+  at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+
+- A signing adult whom the household's own review did not name is covered here
+  rather than by that review, because a clearance covers only the adult who took
+  the check. Otherwise the second parent on the application — often the one
+  holding a key — belongs to no track at all.  [Decision — *Policy: Membership Policy, Art. VI §VI.1*]
+
+- The obligation follows an active membership. Leads of households that only ever
+  started an application, were denied or revoked, or were created by an import owe
+  nothing: they never became members, and the annual sweep must not open a check on
+  someone who did not apply.  [Decision — deliberate limit]
 
 - The annual sweep judges age as of the membership-year boundary, which counts as
   inside it: turning 18 afterwards waits for the next sweep rather than firing on
