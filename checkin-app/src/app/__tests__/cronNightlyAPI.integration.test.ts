@@ -291,5 +291,65 @@ describe('Cron Nightly API Integration Tests', () => {
             expect(closed?.departedAt).toEqual(new Date(arrivedAt.getTime() + MAX_VISIT_MS));
             expect(closed?.departedVia).toBe('AUTO_CLOSE');
         });
+
+        it('audits the DoB purge per person, attributed to cron:nightly, without recording the date', async () => {
+            await closeAllOpenVisits();
+            await prisma.auditLog.deleteMany();
+            mockBadVisitIds.clear();
+
+            const dob = new Date(Date.UTC(1990, 3, 17));
+            const agedOut = await prisma.person.create({
+                data: {
+                    email: 'agedout-nightly@example.com',
+                    name: 'Aged Out',
+                    dateOfBirth: dob,
+                    household: { create: { name: 'Test HH' } }
+                }
+            });
+
+            const res = await GET(cronReq());
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.adultDobPurged).toBeGreaterThanOrEqual(1);
+
+            const purged = await prisma.person.findUnique({ where: { id: agedOut.id } });
+            expect(purged?.dateOfBirth).toBeNull();
+            expect(purged?.isDeclaredAdult).toBe(true);
+
+            const row = await prisma.auditLog.findFirst({
+                where: { tableName: 'Person', affectedEntityId: agedOut.id, action: 'DELETE' }
+            });
+            expect(row).not.toBeNull();
+            expect(row?.actorId).toBe(0);
+            expect(row?.actorSystem).toBe('cron:nightly');
+
+            // The purge exists to destroy the date; a row that carries it out
+            // has re-stored it. Scan every field the purge wrote, not just the
+            // one we expect the date to hide in, so a later `context` blob or a
+            // pre-image in `oldData` fails here too. `timestamp` is excluded —
+            // it is the audit's own clock, not anybody's date of birth.
+            const purgeRows = await prisma.auditLog.findMany({
+                where: { tableName: 'Person', actorSystem: 'cron:nightly', action: 'DELETE' }
+            });
+            expect(purgeRows.length).toBeGreaterThanOrEqual(1);
+            for (const r of purgeRows) {
+                const serialized = JSON.stringify({ ...r, timestamp: undefined });
+                expect(serialized).not.toContain(String(dob.getTime()));
+                expect(serialized).not.toContain(dob.toISOString());
+                expect(serialized).not.toContain(dob.toISOString().slice(0, 10));
+
+                // Anything date-shaped, in any format, anywhere a value can be
+                // carried. Scoped to the free-form columns because the numeric
+                // id columns are autoincrement and can hit a year by accident.
+                const payload = JSON.stringify({
+                    actorSystem: r.actorSystem,
+                    tableName: r.tableName,
+                    oldData: r.oldData,
+                    newData: r.newData
+                });
+                expect(payload).not.toMatch(/\b(?:19|20)\d{2}\b/);
+                expect(payload).not.toMatch(/dateOfBirth"\s*:\s*(?!null)[^,}]/);
+            }
+        });
     });
 });
