@@ -1,10 +1,9 @@
 /**
  * @jest-environment node
  *
- * Node, not the default jsdom: the route's graph reaches @aws-sdk/client-s3 via
- * mergeBgAdvance -> external.ts -> agreementDocument. jsdom resolves the SDK's
- * `browser` export condition to an untransformable ESM build; node resolves the
- * CJS one. Every other SDK-touching suite does the same.
+ * Node, not jsdom: the route's graph reaches @aws-sdk/client-s3 (via external.ts ->
+ * agreementDocument), and jsdom resolves the SDK's `browser` export condition to an
+ * ESM build jest cannot transform. Every SDK-touching suite here runs on node.
  */
 import { POST } from "../route";
 import { GET as analyzeGET } from "../analyze/route";

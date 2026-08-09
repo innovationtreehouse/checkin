@@ -42,12 +42,11 @@ export async function householdBgFresh(householdId: number | null): Promise<bool
  * AFTER the merge transaction commits: the survivor's live leads are only final
  * then, and the predicate reads the root client.
  *
- * `wasFreshBeforeMerge` is the same predicate read before the transaction. The
- * question is "did THIS merge make the household covered?", not "is it covered?" —
- * an already-covered household is one whose parked rows are parked for a reason
- * this merge did not change (a board reset re-opens a review on a household whose
- * leads still hold a valid check), and stamping those ends a re-review with no way
- * back and attributes it to a person who carried nothing in.
+ * The question is "did THIS merge make the household covered?", so
+ * `wasFreshBeforeMerge` carries the same predicate read before the transaction.
+ * A household already covered has its rows parked for a reason no merge changed —
+ * a board reset re-opens a review whose leads still hold a valid check — and
+ * stamping one of those ends a re-review that has no way back.
  *
  * Never throws — the merge has already committed, so a failure here must not be
  * reported to the operator as a failed merge. It lands in the error log instead.
@@ -99,10 +98,9 @@ function uncleared(householdId: number, from: object, extra: object = {}): Promi
  * cycle, and without it a pre-designated volunteer household gets non-volunteer
  * dues (#874). Returns false when the row moved on under us.
  *
- * One transaction, FOR UPDATE first: the attestation count is read under the lock
- * because an `attest(APPROVE)` committing beside an unlocked read would be orphaned
- * on a row that just left the reviewer queue, and the stamp, its audit row and the
- * volunteer write must land together or not at all.
+ * One transaction, FOR UPDATE first: the attestation count only excludes a review a
+ * human is mid-way through if it is read under the lock, and the stamp, its audit
+ * row and the volunteer write must land together or not at all.
  */
 async function stampBgCleared(process: Candidate, householdId: number, actorId: number, from: object, source: Provenance): Promise<boolean> {
     return prisma.$transaction(async (tx) => {
@@ -133,12 +131,9 @@ async function stampBgCleared(process: Candidate, householdId: number, actorId: 
 /**
  * PENDING_EXTERNAL_ACTION whose agreement is ALREADY signed: that row has no event
  * left to fire the advance, so without this it strands with its gate met (the reason
- * `submitIntake` re-runs the advance after its own shortcut).
- *
- * Signed only. An unsigned row still has `markContractSigned` coming, and stamping
- * ahead of it flips `advanceExternalIfComplete`'s `holdForNote` to false for good —
- * a note added between now and signing would then skip PENDING_BG_REVIEW and
- * `notifyReviewers()`, reaching no reviewer at all.
+ * `submitIntake` re-runs the advance after its own shortcut). An unsigned row still
+ * has `markContractSigned` coming, and stamping ahead of it would disarm the note
+ * hold for good — `advanceExternalIfComplete` reads `holdForNote` off `!bgClearedAt`.
  */
 async function stampPendingExternal(householdId: number, actorId: number, source: Provenance): Promise<void> {
     const from = fromWhere("PENDING_EXTERNAL_ACTION");
