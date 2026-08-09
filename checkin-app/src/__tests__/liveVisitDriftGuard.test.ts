@@ -26,7 +26,6 @@ import { join, relative, sep } from 'node:path';
 const SRC = join(__dirname, '..');
 
 const ALLOWLIST: Record<string, string> = {
-    'security/access-resolvers.ts': 'Boundary file (security-boundary-isolation.yml): the keyholder-scope query gains its LIVE_VISIT filter in an isolated boundary PR, not in the feature PR that introduced the tombstone. Remove this entry in that PR.',
     'app/api/facility/trends/route.ts': 'Scanner is textually blind to the variable-held where: the findMany passes `whereClause`, which is built a few lines up WITH `deletedAt: null`.',
     'app/api/membership-ops/participants/merge/analyze/route.ts': 'Merge PREVIEW: `_count.visits` counts the rows the merge will move, and a merge moves tombstoned visits with the person (provenance travels). Filtering would understate the preview against the actual move.',
     'app/api/membership-ops/participants/merge/route.ts': 'The merge itself: tombstoned visits travel with the person, same rule the PREVIEW counts by — filtering would strand them on the merged-away tombstone.',
