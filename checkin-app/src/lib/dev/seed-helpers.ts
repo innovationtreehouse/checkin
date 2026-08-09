@@ -3,7 +3,7 @@ import { addHouseholdLead } from "@/lib/household/leads";
 import { setRoleFlag, type RoleFlag } from "@/lib/roles";
 
 /**
- * Dev seed + macro helpers (DEV_DASHBOARD_DESIGN.md §4) — the ONE source of truth for creating
+ * Dev seed + macro helpers (docs/ops/dev-instance.md, "Macros") — the ONE source of truth for creating
  * dev fixtures. Both `prisma/seed.ts` (the CLI seed + the reset baseline) and the dashboard's
  * one-click macros call into here, so there is no copy-paste drift between them.
  *

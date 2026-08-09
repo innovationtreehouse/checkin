@@ -10,7 +10,7 @@ function requireEnv(name: string): string {
 }
 
 /**
- * The single environment-personality switch (see docs/designs/DEV_INSTANCE_DESIGN.md).
+ * The single environment-personality switch (see docs/ops/dev-instance.md).
  *   prod  — production (default when unset). Real data, public landing, no impersonation.
  *   dev   — cloud dev instance. Entire site behind org login.
  *   local — a developer laptop. Permits offline credential login + keyless kiosk.
@@ -188,7 +188,7 @@ export const DEV_MOCK_MEMBERSHIP_VARIANT_ID = 'dev-mock-variant-membership';
  * (/dev/bg-consent) instead of Averity's hosted page, so the check can be started
  * in debug mode; board members then sign off through the normal two-reviewer
  * attestation. Setting AVERITY_CONSENT_URL opts back into the real link.
- * See docs/designs/BG_CHECK_DEV_MOCK.md.
+ * See docs/ops/background-check-mock.md.
  */
 function bgMockActiveEnv(): boolean {
     return !process.env.AVERITY_CONSENT_URL && readCheckinEnv() !== 'prod';

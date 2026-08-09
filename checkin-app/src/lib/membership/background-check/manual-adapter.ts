@@ -16,7 +16,7 @@ export class ManualBackgroundCheckProvider implements BackgroundCheckProvider {
 }
 
 /**
- * Dev/local mock provider (see BG_CHECK_DEV_MOCK.md). Averity has no dev sandbox, so
+ * Dev/local mock provider (see docs/ops/background-check-mock.md). Averity has no dev sandbox, so
  * when its consent URL is unset on a non-prod instance the mock hands the applicant an
  * in-app consent page (/dev/bg-consent) that records consent for real — driving the
  * same markBgConsent → parallel review path prod does. Board members then sign off

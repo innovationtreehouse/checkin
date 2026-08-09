@@ -102,7 +102,7 @@ Things the app takes as true because they are handled outside it.
   lead cap is the app's proxy for the two-adult limit; membership itself is not
   capped.  [Decision — *Policy: Definitions Policy, Art. III, "Member Family"*]
 
-- A lead always leads their own household; leading another is unsupported.  [Decision]
+- A lead always leads their own household; leading another is unsupported.  [Decision — deliberate limit]
 
 - A youth cannot be made a household lead. An unknown date of birth reads as
   adult here — a standing exception to *Principle: fail closed*.  [Decision — deliberate limit]

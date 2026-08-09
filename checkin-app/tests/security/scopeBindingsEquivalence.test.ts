@@ -232,16 +232,20 @@ const ROWS: Array<{ label: string; row: unknown }> = [
         row: { id: 5, householdId: 2, participantId: 5, personId: 5, programId: 100, eventId: 200, userId: 5, actorId: 5, departedAt: null },
     },
     {
-        label: 'household co-member (hh 2)',
-        row: { id: 6, householdId: 2, participantId: 6, personId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
+        // isHouseholdLead exercises Person.their_program_households (hh 2 is in
+        // the lead's/core-vol's scope). Row id 9 below is the same household
+        // WITHOUT the flag, and row id 7 carries the flag in an out-of-scope
+        // household — together the positive and both negatives.
+        label: 'household co-member + household lead (hh 2)',
+        row: { id: 6, householdId: 2, isHouseholdLead: true, participantId: 6, personId: 6, programId: 100, eventId: 200, userId: 6, actorId: 6, departedAt: null },
     },
     {
         label: 'program participant / coreVol prog / active visitor',
         row: { id: 9, householdId: 2, participantId: 9, personId: 9, programId: 101, eventId: 201, userId: 9, actorId: 9, departedAt: null },
     },
     {
-        label: "another's / out-of-program / departed",
-        row: { id: 7, householdId: 99, participantId: 7, personId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
+        label: "another's / out-of-program / departed / household lead",
+        row: { id: 7, householdId: 99, isHouseholdLead: true, participantId: 7, personId: 7, programId: 88, eventId: 88, userId: 7, actorId: 7, departedAt: new Date() },
     },
     {
         label: "lead's own program (Program row id 100)",
@@ -296,6 +300,15 @@ function eq(a: Set<string>, b: Set<string>): boolean {
  * for leads). On a Visit row whose personId is in that roster, a lead therefore
  * holds 'led_households' where the snapshot did not. That is the third
  * expected diff.
+ *
+ * Person.their_program_households: the switch's Person case had no household-
+ * scoped program grant, so a lead held nothing on a parent's row. Person was
+ * later bound `their_program_households` on (householdId ∈
+ * householdIdsInScopePrograms AND isHouseholdLead), so GET /api/programs/[id]
+ * can hand a program lead the parents' phone/email on the roster. On a
+ * household-lead row in an in-scope household the resolver therefore adds
+ * their_program_households where the snapshot did not. That is the fourth
+ * expected diff.
  */
 function expectedFromSnapshot(
     model: string,
@@ -323,6 +336,16 @@ function expectedFromSnapshot(
         callerCtx.ledHouseholdMemberIds.has(row.personId)
     ) {
         expected.add('led_households');
+    }
+    if (
+        model === 'Person' &&
+        row &&
+        typeof row === 'object' &&
+        row.isHouseholdLead === true &&
+        typeof row.householdId === 'number' &&
+        callerCtx.householdIdsInScopePrograms.has(row.householdId)
+    ) {
+        expected.add('their_program_households');
     }
     return expected;
 }

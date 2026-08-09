@@ -118,6 +118,11 @@ Things the app takes as true because they are handled outside it.
 - Charged is owed minus discount, so a charge below the amount owed is expected,
   never a mismatch.  [Decision]
 
+- Nothing waits on a payment notification arriving. Reconciliation reads what the
+  store says was paid and finishes anything the notification missed, so a dropped
+  one delays an activation rather than losing it. The delay is bounded by the
+  mirror's catch-up cadence, never by someone noticing.  [Decision — deliberate limit]
+
 - A reversal seen at the store — a refund, chargeback or cancellation — must
   reach membership and enrollment state. The app raises it for the board to work;
   it does not undo anything by itself.  [Decision — *Principle: people decide about people*]
