@@ -721,4 +721,39 @@ describe('runExpirySweep edge cases', () => {
         expect(sendEmail).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('Renewed Grandma'), expect.anything());
         expect(sendEmail).toHaveBeenCalledTimes(1);
     });
+
+    // Pins "one notice per ADULT, not one per row" — a property of statement ORDER: each
+    // row's flip commits before the next row's authorization check reads, so only the last
+    // row to lapse finds no approval and mails. Batch the flips into one upfront
+    // transaction and every row sees zero approvals: one email per row again. The
+    // `expired` assertion pins the other half — `continue` stays AFTER `expired++`, so
+    // per-review bookkeeping is byte-identical to the pre-fix behaviour.
+    it('two lapsed reviews on ONE adult expire both rows but send exactly one de-authorization email', async () => {
+        const now = new Date();
+        const ta = await prisma.trustedAdult.create({
+            data: { householdId, trustedAdultName: `Twice Lapsed ${SWEEP_TAG}`, trustedAdultEmail: 'twice@example.com', familyContext: 'ctx', disclosedById: leadId },
+        });
+        // A year-old original and the renewal that replaced it, both now past reviewBy.
+        const older = await prisma.trustedAdultReview.create({
+            data: { householdId, trustedAdultId: ta.id, kind: 'INITIAL', status: 'APPROVED', reviewBy: new Date(now.getTime() - 400 * DAY) },
+        });
+        const newer = await prisma.trustedAdultReview.create({
+            data: { householdId, trustedAdultId: ta.id, kind: 'RENEWAL', status: 'APPROVED', reviewBy: new Date(now.getTime() - 1 * DAY) },
+        });
+
+        const run = await runExpirySweep(now);
+
+        // Per-review bookkeeping unchanged: both rows counted, both flipped.
+        expect(run.expired).toBe(2);
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: older.id } }))!.status).toBe('EXPIRED');
+        expect((await prisma.trustedAdultReview.findUnique({ where: { id: newer.id } }))!.status).toBe('EXPIRED');
+        // The adult really is de-authorized now, so the notice is owed — exactly once.
+        expect(await prisma.trustedAdult.count({ where: { id: ta.id, reviews: { some: { status: 'APPROVED' } } } })).toBe(0);
+        expect(sendEmail).toHaveBeenCalledTimes(1);
+        expect(sendEmail).toHaveBeenCalledWith(
+            `sweeplead-${SWEEP_TAG}@ex.com`,
+            `Trusted adult approval expired: Twice Lapsed ${SWEEP_TAG}`,
+            expect.stringContaining('no longer authorized at the front desk'),
+        );
+    });
 });
