@@ -92,6 +92,18 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          # The scope-oracle pin (checkin-app/tests/security/scopeOracleSet.test.ts)
+          # is what makes a deleted oracle fail loudly, but a deleted test cannot
+          # fail, so the pin cannot guard itself. This is where that regress
+          # terminates: a check that is not a test. Deliberately against the
+          # checked-out merge ref (refs/pull/N/merge), not HEAD_SHA — that tree is
+          # what actually lands on main, and a branch cut before the pin existed
+          # would fail a HEAD_SHA check while removing nothing.
+          test -f checkin-app/tests/security/scopeOracleSet.test.ts || {
+            echo "::error::checkin-app/tests/security/scopeOracleSet.test.ts is missing — it pins the security scope-oracle set and cannot guard its own deletion."
+            exit 1
+          }
+
           # Diff the PR's OWN head, not the checked-out merge ref. On a
           # pull_request, checkout resolves refs/pull/N/merge — the branch
           # merged with the current tip of main — so HEAD carries main's newest
