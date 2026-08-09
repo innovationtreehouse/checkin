@@ -100,7 +100,7 @@ Rules:
 
 ## Money
 
-**The canonical money word is `fee`.** Kinds: **membership fee** *(rename pending from "dues": `normalDuesCents`→`standardMembershipFeeCents`, `volunteerDuesCents`→`volunteerMembershipFeeCents`)*, **program fee** (`Fee`), plus **shop fee** and **facility fee** (shop and facility are billed separately). `price` = the cents **amount** on a fee, not a rival concept.
+**The canonical money word is `fee`.** Kinds: **membership fee** (`BoardSettings.standardMembershipFeeCents`, `BoardSettings.volunteerMembershipFeeCents`), **program fee** (`Fee`), plus **shop fee** and **facility fee** (shop and facility are billed separately). `price` = the cents **amount** on a fee, not a rival concept.
 
 **Payment vs relief** (keep separate):
 - **Manual payment** — payment landed **outside Shopify** (recorded in QuickBooks), so a membership activates without a Shopify order. `via: "manual"` / `manualPaymentById`. **Not** a comp.

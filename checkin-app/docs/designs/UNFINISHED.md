@@ -125,11 +125,11 @@ and a payment-plan approval. _(VOCAB #17)_
 
 ---
 
-## 🟢 "dues" → "membership fee"
+## 🟢 Drop the `BoardSettings` membership-fee `@map` shims (contract stage)
 
-Canonical money word = **fee**. Rename `normalDuesCents` →
-`standardMembershipFeeCents`, `volunteerDuesCents` → `volunteerMembershipFeeCents`
-(kills the `normal`=non-member trap). Coordinate with P4's `*PriceCents` work.
+"dues" → "membership fee" shipped the Prisma/API/UI half; both fields still `@map`
+to the old physical columns, which a rolling deploy can't rename in the same
+release. Rename them once that release is out — [#1583](https://github.com/innovationtreehouse/checkin/issues/1583).
 _(VOCAB #6)_
 
 ---

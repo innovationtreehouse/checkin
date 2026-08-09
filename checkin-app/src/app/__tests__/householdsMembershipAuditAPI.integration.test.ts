@@ -76,7 +76,7 @@ describe('POST /api/membership-ops/households — grant/revoke audit logging', (
         prevBoundary = existingSettings?.orgMembershipYearBoundary ?? null;
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: BOUNDARY, bgRecheckMonths: BG_RECHECK_MONTHS },
+            create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: BOUNDARY, bgRecheckMonths: BG_RECHECK_MONTHS },
             update: { orgMembershipYearBoundary: BOUNDARY, bgRecheckMonths: BG_RECHECK_MONTHS },
         });
 

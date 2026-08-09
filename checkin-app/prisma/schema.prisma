@@ -571,10 +571,14 @@ model VolunteerDesignation {
 model BoardSettings {
   /// @sensitivity:public
   id                         Int       @id @default(1)
+  // The @maps hold the physical columns on their old names: a bare
+  // boardSettings.findUnique selects every column by name, so the previous release
+  // reads these through a rolling deploy's drain window. Rename them in a later
+  // release (contract stage).
   /// @sensitivity:public
-  normalDuesCents            Int       @default(0)
+  standardMembershipFeeCents Int       @default(0) @map("normalDuesCents")
   /// @sensitivity:public
-  volunteerDuesCents         Int       @default(0)
+  volunteerMembershipFeeCents Int      @default(0) @map("volunteerDuesCents")
   /// @sensitivity:public
   orgMembershipYearBoundary  DateTime? @db.Date
   /// Shopify variant ID of the membership product everyone checks out through.
