@@ -1,3 +1,10 @@
+/**
+ * @jest-environment node
+ *
+ * Node, not jsdom: the route's graph reaches @aws-sdk/client-s3 (via external.ts ->
+ * agreementDocument), and jsdom resolves the SDK's `browser` export condition to an
+ * ESM build jest cannot transform. Every SDK-touching suite here runs on node.
+ */
 import { POST } from "../route";
 import { GET as analyzeGET } from "../analyze/route";
 import { GET as searchGET } from "@/app/api/people/search/route";
@@ -7,6 +14,10 @@ import { getServerSession } from "next-auth/next";
 
 jest.mock("next-auth/next");
 const mockGetServerSession = getServerSession as jest.Mock;
+
+// The background-check carryover below converges a held application, which sends the
+// family a payment-open notice. Stub the transport, as every other membership suite does.
+jest.mock("@/lib/email", () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 // runMatchAudit (matrix #17) gates on mirror.isConfigured() before touching the
 // enrollment sweep this test cares about. The mirror itself (order-side) isn't
@@ -23,7 +34,7 @@ jest.mock("@/lib/shopifyRead/client", () => ({
 }));
 import { runMatchAudit } from "@/lib/finance/matchAudit";
 import { orgMembershipStatusBlocksLogin } from "@/lib/orgMembership";
-import type { OrgMembershipStatus } from "@/generated/prisma/client";
+import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 
 // Base fixture participants differ on name+email by design (realistic collision
 // data for the field-picker tests below). name is a per-field conflict and both
@@ -993,6 +1004,200 @@ describe("Merge Participants API", () => {
 
             const open = await openForKeeper();
             expect(open.map(p => ({ id: p.id, status: p.status }))).toEqual([{ id: tombstoneProc.id, status: "PENDING_BG_REVIEW" }]);
+        });
+    });
+
+    // #1396: the merge carries the newer lastBackgroundCheck onto the survivor, which can
+    // make the household background-check fresh. Nothing re-derived the state that date
+    // feeds, so a covered application stayed parked.
+    describe("background-check carryover", () => {
+        // Only month/day matter — nextBoundary projects it onto the coming year.
+        const BOUNDARY_SEED = new Date(Date.UTC(2000, 7, 1));
+        const RECHECK_MONTHS = 24;
+        const FRESH = new Date();
+        const STALE = new Date(Date.now() - 5 * 365 * 24 * 3600 * 1000);
+        let savedSettings: { bgRecheckMonths: number; orgMembershipYearBoundary: Date | null } | null = null;
+        let hadSettings = false;
+        let membershipId: number;
+
+        beforeAll(async () => {
+            const prev = await prisma.boardSettings.findUnique({ where: { id: 1 } });
+            hadSettings = !!prev;
+            savedSettings = prev ? { bgRecheckMonths: prev.bgRecheckMonths, orgMembershipYearBoundary: prev.orgMembershipYearBoundary } : null;
+            await prisma.boardSettings.upsert({
+                where: { id: 1 },
+                create: { id: 1, bgRecheckMonths: RECHECK_MONTHS, orgMembershipYearBoundary: BOUNDARY_SEED },
+                update: { bgRecheckMonths: RECHECK_MONTHS, orgMembershipYearBoundary: BOUNDARY_SEED },
+            });
+        });
+
+        afterAll(async () => {
+            if (hadSettings && savedSettings) await prisma.boardSettings.update({ where: { id: 1 }, data: savedSettings });
+            else await prisma.boardSettings.delete({ where: { id: 1 } }).catch(() => {});
+        });
+
+        beforeEach(async () => {
+            // householdBgIsFresh asks about live household LEADS, so the keeper must be one
+            // and must have no check of its own — the merge is what makes the household fresh.
+            await prisma.person.update({ where: { id: pKeepId }, data: { isHouseholdLead: true, lastBackgroundCheck: null } });
+            await prisma.person.update({ where: { id: pMergeId }, data: { lastBackgroundCheck: FRESH } });
+            const membership = await prisma.orgMembership.create({ data: { householdId, status: "NONE" } });
+            membershipId = membership.id;
+        });
+
+        afterEach(async () => {
+            // The carryover's own audit rows (and advanceExternalIfComplete's system-actor
+            // row) aren't covered by the outer teardown's actorId filter.
+            await prisma.auditLog.deleteMany({ where: { tableName: "OrgMembershipProcess", affectedEntityId: { in: createdProcessIds } } });
+        });
+
+        async function makeApplication(status: OrgMembershipProcessStatus, extra: Record<string, unknown> = {}) {
+            const process = await prisma.orgMembershipProcess.create({
+                data: { orgMembershipId: membershipId, kind: "INITIAL", status, ...extra },
+            });
+            createdProcessIds.push(process.id);
+            return process;
+        }
+
+        const reload = (id: number) => prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id } });
+
+        it("stamps and advances a PENDING_EXTERNAL_ACTION row whose agreement is already signed", async () => {
+            // The row's gate is met the instant bgClearedAt lands, and no later event would
+            // re-fire the advance — a stamp alone would strand it one state further on.
+            const process = await makeApplication("PENDING_EXTERNAL_ACTION", { contractSignedAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_PAYMENT");
+        });
+
+        it("stamps an unsigned PENDING_EXTERNAL_ACTION row without moving its status", async () => {
+            // The stamp is what lets the row advance on signature: a covered household
+            // never records bgConsentAt, and advanceExternalIfComplete needs one or other.
+            const process = await makeApplication("PENDING_EXTERNAL_ACTION");
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_EXTERNAL_ACTION");
+        });
+
+        it("stamps a parallel-track PENDING_PAYMENT row, dropping it out of the reviewer queue", async () => {
+            // Status is already correct here; the stamp IS the work — it ends the redundant
+            // 2-of-N and pre-decides activate()'s ACTIVE-vs-PENDING_BG_CLEARANCE branch.
+            const process = await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_PAYMENT");
+        });
+
+        it("clears a PENDING_BG_REVIEW row with no attestations, moving the status in the same write", async () => {
+            // Stamping bgClearedAt without moving the status would leave the row with no exit
+            // but archival — out of the reviewer queue and past the board's own reset.
+            const process = await makeApplication("PENDING_BG_REVIEW", { contractSignedAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_PAYMENT");
+        });
+
+        it("leaves a PENDING_BG_REVIEW row a reviewer has already attested", async () => {
+            const process = await makeApplication("PENDING_BG_REVIEW", { contractSignedAt: new Date() });
+            await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: actorId, result: "APPROVE", subjectPersonId: pKeepId } });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status: "PENDING_BG_REVIEW", cleared: null });
+        });
+
+        it("carries the check over a household that has a live intake note (#1499)", async () => {
+            // A note is shown to the reviewers and gates nothing, so it does not gate this
+            // either — the same rule submitIntake's fresh-check shortcut follows.
+            await prisma.household.update({ where: { id: householdId }, data: { intakeNotes: "please call us first" } });
+            const process = await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect(after.bgClearedAt).not.toBeNull();
+            expect(after.status).toBe("PENDING_PAYMENT");
+        });
+
+        it("stamps nothing when the carried check is outside the recheck window", async () => {
+            await prisma.person.update({ where: { id: pMergeId }, data: { lastBackgroundCheck: STALE } });
+            const process = await makeApplication("PENDING_BG_REVIEW", { contractSignedAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status: "PENDING_BG_REVIEW", cleared: null });
+        });
+
+        it("never unstamps or re-stamps an already-cleared row", async () => {
+            // Advance-only. The household IS made fresh here, so the run reaches the
+            // candidate query and the CAS — both of which filter bgClearedAt: null.
+            // Drop either filter and this row gets re-stamped with today's date.
+            const clearedAt = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+            const process = await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date(), bgClearedAt: clearedAt });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect(after.bgClearedAt?.getTime()).toBe(clearedAt.getTime());
+            // Never in the candidate set at all, so no carryover audit row either.
+            expect(await prisma.auditLog.count({ where: { tableName: "OrgMembershipProcess", affectedEntityId: process.id } })).toBe(0);
+        });
+
+        it("leaves a parked row alone when the household was ALREADY fresh before the merge", async () => {
+            // The predicate is "did THIS merge make the household covered?", not "is it
+            // covered?". A board reset re-opens a review on a household whose leads still
+            // hold a valid check; stamping that row ends the re-review with no way back
+            // (attest then throws wrong_phase) and blames a person who carried nothing in.
+            await prisma.person.update({ where: { id: pKeepId }, data: { lastBackgroundCheck: FRESH } });
+            await prisma.person.update({ where: { id: pMergeId }, data: { lastBackgroundCheck: null } });
+            const process = await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(process.id);
+            expect({ status: after.status, cleared: after.bgClearedAt }).toEqual({ status: "PENDING_PAYMENT", cleared: null });
+            expect(await prisma.auditLog.count({ where: { tableName: "OrgMembershipProcess", affectedEntityId: process.id } })).toBe(0);
+        });
+
+        it("never touches a PERSON_BG re-pointed onto the survivor", async () => {
+            // householdBgIsFresh asks about household LEADS. Answering it for an adult
+            // child's own check would clear them because a parent's check is fresh.
+            const personBg = await prisma.orgMembershipProcess.create({
+                data: { kind: "PERSON_BG", subjectPersonId: pMergeId, status: "PENDING_BG_REVIEW", bgConsentAt: new Date() },
+            });
+            createdProcessIds.push(personBg.id);
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const after = await reload(personBg.id);
+            expect({ status: after.status, cleared: after.bgClearedAt, subject: after.subjectPersonId })
+                .toEqual({ status: "PENDING_BG_REVIEW", cleared: null, subject: pKeepId });
+        });
+
+        it("attributes the carryover to the merging board member, naming the record it came from", async () => {
+            const process = await makeApplication("PENDING_PAYMENT", { contractSignedAt: new Date(), bgConsentAt: new Date() });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            const log = await prisma.auditLog.findFirst({ where: { tableName: "OrgMembershipProcess", affectedEntityId: process.id } });
+            expect(log?.actorId).toBe(actorId);
+            expect(log?.actorSystem).toBeNull();
+            expect(log?.secondaryAffectedEntity).toBe(householdId);
+            expect(log?.newData).toMatchObject({ bgClearedAt: true, via: "merge", sourcePersonId: pMergeId });
         });
     });
 

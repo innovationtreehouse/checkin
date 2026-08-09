@@ -336,20 +336,7 @@ export async function attest(
     });
 
     // Side effects outside the transaction (a slow/failed send must not roll it back).
-    if ("activated" in result) {
-        if (result.activated) {
-            await sendCongrats(result.householdId!, result.isInitial);
-            // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
-            // for any program-attached ≥18 person in the household (as-of activation).
-            if (result.isInitial) await openPersonBgForNewMember(result.householdId!, new Date());
-            // Same activation, the agreement side — an adult child signs their own.
-            if (result.isInitial) await openPersonAgreementForNewMember(result.householdId!, new Date());
-        } else if (result.householdId) {
-            // Household process cleared into PENDING_PAYMENT (a PERSON_BG has no
-            // household/payment) — tell the family payment is open (#907).
-            await notifyPaymentOpen(result.householdId);
-        }
-    }
+    if ("activated" in result) await notifyClearanceOutcome(result);
     if ("notifyPaidReject" in result && result.notifyPaidReject) await notifyBoardPaidReject(processId);
 
     if ("approvals" in result) return { status: result.status, approvals: result.approvals };
@@ -369,7 +356,7 @@ export async function attest(
  * than counting attestations — a BLOCKED process carries at most one APPROVE per
  * subject, so counting there always yields nobody.
  */
-async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: number, subjectOverride?: number[]): Promise<{ activated: boolean; householdId: number | null; isInitial: boolean }> {
+export async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: number, subjectOverride?: number[]): Promise<ClearanceOutcome> {
     const process = await tx.orgMembershipProcess.findUnique({
         where: { id: processId },
         include: { attestations: true },
@@ -416,6 +403,31 @@ async function clearBackgroundCheck(tx: TxClient, processId: number, actorId: nu
 
     await audit(tx, personActor(actorId), processId, { status: process.status }, { status: paid ? "ACTIVE" : "PENDING_PAYMENT", bgCleared: true, clearedPersonIds: cleared });
     return { activated: paid, householdId, isInitial: process.kind === "INITIAL" };
+}
+
+/** What a clearance settled to, for the sends that run after the transaction commits. */
+export type ClearanceOutcome = { activated: boolean; householdId: number | null; isInitial: boolean };
+
+/**
+ * The sends every clearance owes, outside the transaction so a slow/failed send
+ * can't roll it back: congrats + the new-member triggers on activation, else the
+ * payment-open notice.
+ */
+export async function notifyClearanceOutcome(outcome: ClearanceOutcome) {
+    if (outcome.activated) {
+        await sendCongrats(outcome.householdId!, outcome.isInitial);
+        // Trigger C: a brand-new (INITIAL) member just activated — open PERSON_BG
+        // for any program-attached ≥18 person in the household, and the agreement
+        // side, where an adult child signs their own.
+        if (outcome.isInitial) {
+            await openPersonBgForNewMember(outcome.householdId!, new Date());
+            await openPersonAgreementForNewMember(outcome.householdId!, new Date());
+        }
+    } else if (outcome.householdId) {
+        // Household process cleared into PENDING_PAYMENT (a PERSON_BG has no
+        // household/payment) — tell the family payment is open (#907).
+        await notifyPaymentOpen(outcome.householdId);
+    }
 }
 
 /**
@@ -518,23 +530,13 @@ export async function overrideBlocked(processId: number, actorId: number, action
     // FOR UPDATE per clearBackgroundCheck's contract: serializes a board approve
     // against a late payment webhook (activate also locks), so the override reads
     // a fresh paidAt and converges to ACTIVE rather than parking it at PENDING_PAYMENT.
-    const { activated, householdId, isInitial } = await prisma.$transaction(async (tx) => {
+    const cleared = await prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${processId} FOR UPDATE`;
         return clearBackgroundCheck(tx, processId, actorId, subjectOverride);
     });
-    if (activated) {
-        await sendCongrats(householdId!, isInitial);
-        // Trigger C: a board force-clear can be the first activation of a brand-new
-        // (INITIAL) member — open PERSON_BG for the household's program-attached adults.
-        if (isInitial) await openPersonBgForNewMember(householdId!, new Date());
-        // Same activation, the agreement side — an adult child signs their own.
-        if (isInitial) await openPersonAgreementForNewMember(householdId!, new Date());
-    } else if (householdId) {
-        // Household process cleared into PENDING_PAYMENT — payment just opened (#907).
-        await notifyPaymentOpen(householdId);
-    }
+    await notifyClearanceOutcome(cleared);
     // A cleared PERSON_BG resolves to ACTIVE; a household process gates on PENDING_PAYMENT.
-    const status: OrgMembershipProcessStatus = activated ? "ACTIVE" : process.subjectPersonId ? "ACTIVE" : "PENDING_PAYMENT";
+    const status: OrgMembershipProcessStatus = cleared.activated ? "ACTIVE" : process.subjectPersonId ? "ACTIVE" : "PENDING_PAYMENT";
     return { status };
 }
 
