@@ -1,4 +1,10 @@
 /**
+ * @jest-environment node
+ *
+ * Node, not jsdom: the merge route's graph reaches @aws-sdk/client-s3, and jsdom
+ * resolves the SDK's `browser` export condition to an ESM build jest cannot
+ * transform. Every SDK-touching suite here runs on node.
+ *
  * Integration Test for Audit Logs
  * Ensures that various actions across the system correctly generate an AuditLog.
  * Using Next.js testing practices with local Prisma DB.
