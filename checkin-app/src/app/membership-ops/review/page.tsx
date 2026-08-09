@@ -125,8 +125,8 @@ export default function MembershipReviewPage() {
     return p?.name || p?.email || `Person #${personId}`;
   };
 
-  // Attesting is a one-click, two-of-two decision, and the SECOND approval clears the
-  // check outright — stamping the named adult, opening payment or activating, and
+  // Attesting is a one-click, two-of-two decision, and the SECOND approval
+  // completes the check — stamping the named adult, opening payment or activating, and
   // emailing the family. Confirm both actions, and say what the click actually does
   // rather than "are you sure?", which trains people to click through.
   const confirmSubmit = (item: QueueItem, result: "APPROVE" | "REJECT") => {
@@ -159,7 +159,7 @@ export default function MembershipReviewPage() {
           )}
         </Text>
       ),
-      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Attest — the check passed" : "Approve", cancel: "Cancel" },
+      labels: { confirm: result === "REJECT" ? "Reject" : clearing ? "Confirm — the check passed" : "Approve", cancel: "Cancel" },
       confirmProps: { color: result === "REJECT" ? "red" : clearing ? "orange" : undefined },
       onConfirm: () => submit(item.id, result),
     });
@@ -288,7 +288,7 @@ export default function MembershipReviewPage() {
                   loading={busyId === item.id}
                   onClick={() => confirmSubmit(item, "APPROVE")}
                 >
-                  Attest — check is clean
+                  Attest — the check passed
                 </Button>
                 <Button color="red" variant="light" disabled={busyId === item.id || !reviewNotes[item.id]?.trim()} onClick={() => confirmSubmit(item, "REJECT")}>
                   Reject
