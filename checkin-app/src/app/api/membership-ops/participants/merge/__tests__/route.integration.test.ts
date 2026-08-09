@@ -58,11 +58,24 @@ describe("Merge Participants API", () => {
     let createdProcessIds: number[];
 
     beforeEach(async () => {
+        extraPersonIds = [];
+        extraHouseholdIds = [];
+        createdProgramId = undefined;
+        createdToolId = undefined;
+        createdEventId = undefined;
+        createdCorporationId = undefined;
+        createdProcessIds = [];
+
         const hh = await prisma.household.create({ data: { name: "Merge Test Household" } });
         householdId = hh.id;
 
+        // The actor lives OUTSIDE the merge subjects' household: the route refuses any
+        // merge touching the actor's own household (conflict of interest, #1588).
         const actor = await prisma.person.create({
-            data: { name: "Board Actor", email: "actor@example.com", householdId: hh.id, isBoardMember: true }
+            data: {
+                name: "Board Actor", email: "actor@example.com", isBoardMember: true,
+                householdId: await makeHousehold("Merge Test Actor Household"),
+            }
         });
         actorId = actor.id;
 
@@ -79,14 +92,6 @@ describe("Merge Participants API", () => {
             data: { name: "Merge User", email: "merge@example.com", phone: "123-456-7890", householdId: hh.id }
         });
         pMergeId = pMerge.id;
-
-        extraPersonIds = [];
-        extraHouseholdIds = [];
-        createdProgramId = undefined;
-        createdToolId = undefined;
-        createdEventId = undefined;
-        createdCorporationId = undefined;
-        createdProcessIds = [];
     });
 
     /** A second household for the membership-guard tests; no OrgMembership row reads as NONE. */
@@ -503,6 +508,55 @@ describe("Merge Participants API", () => {
             await prisma.person.update({ where: { id: pMergeId }, data: { householdId } });
             const clean = await analyzeGET(analyzeReq(pKeepId, pMergeId));
             expect((await clean.json()).membershipBlock).toEqual({ aAsKeeper: null, bAsKeeper: null });
+        });
+    });
+
+    // The merge takes the newer lastBackgroundCheck of the two records, so merging is a
+    // way to seat a background-check date on a person — with no second actor. Both
+    // subjects are checked: the two need not share a household (#1588).
+    describe("conflict of interest", () => {
+        it("403s when the actor shares a household with the kept record", async () => {
+            const tombstoneHh = await makeHousehold("Tombstone Household");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: tombstoneHh } });
+            await prisma.person.update({ where: { id: actorId }, data: { householdId } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(403);
+            expect((await res.json()).error).toContain("your own household");
+
+            // Refused before the transaction — nothing moved.
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.email).toBe("merge@example.com");
+        });
+
+        it("403s when the actor shares a household with the merged-away record only", async () => {
+            const keeperHh = await makeHousehold("Keeper Household");
+            await prisma.person.update({ where: { id: pKeepId }, data: { householdId: keeperHh } });
+            await prisma.person.update({ where: { id: actorId }, data: { householdId } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(403);
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+        });
+
+        it("403s a sysadmin too — no role bypasses the rule", async () => {
+            await prisma.person.update({ where: { id: actorId }, data: { householdId } });
+            mockGetServerSession.mockResolvedValue({
+                user: { id: actorId, email: "actor@example.com", isSysadmin: true, isBoardMember: true }
+            });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(403);
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+        });
+
+        it("allows the merge when the actor is outside both households", async () => {
+            const tombstoneHh = await makeHousehold("Unrelated Household");
+            await prisma.person.update({ where: { id: pMergeId }, data: { householdId: tombstoneHh } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBe(pKeepId);
         });
     });
 

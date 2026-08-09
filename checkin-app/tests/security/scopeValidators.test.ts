@@ -45,7 +45,7 @@ describe('validateBindings — coverage (forgotten-model catcher)', () => {
         // createdById FK; with an empty queue it must error. (MembershipProcess
         // was the old exemplar but is now un-scopable by the direct-FK heuristic
         // once bare `id` left SCOPABLE_FIELDS — it has only membershipId/
-        // certifiedById, neither a recognised actor FK.)
+        // manualPaymentById, neither a recognised actor FK.)
         const errs = validateBindings(SCOPE_BINDINGS, CLS, new Set());
         expect(errs.some(e => e.startsWith('VolunteerDesignation is sensitive and scopable'))).toBe(true);
     });
