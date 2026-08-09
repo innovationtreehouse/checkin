@@ -256,10 +256,9 @@ so a reviewer can judge a diff against it without opening code:
 
 ## Procedure
 
-- An intake note holds the application at background-check review, so reviewers
-  read it before dues are settled — a family writing "treat us as a volunteer
-  household" must not pay first. A household that already holds a still-valid
-  background clearance is exempt and goes straight to payment.
+- An application needs a fresh background check before it can activate. A
+  household whose lead already holds a still-valid clearance is exempt: the
+  requirement is cleared at submission and only the signature is left.
 ```
 
 Note what the second rule spends a whole clause on: the **exemption**. An earlier
@@ -272,8 +271,8 @@ policy-backed is settled during the migration, against the real policy corpus.)
 
 **Write rules as constraints, not descriptions.** If the sentence does not let a
 reviewer tell whether a change violates it, rewrite the sentence.
-"Payment does not open until reviewers have read the note" is checkable.
-"The intake system supports notes" is not.
+"Membership does not activate until two reviewers have cleared the check" is
+checkable. "The intake system supports notes" is not.
 
 **No PR numbers, issue numbers, or dates.** These files say what is true, not
 how it came to be. Change history lives in git and in the PR record, where it is

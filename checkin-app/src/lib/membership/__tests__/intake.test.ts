@@ -503,7 +503,7 @@ describe('submitIntake', () => {
         expect(result).toEqual({ id: 11, status: 'PENDING_EXTERNAL_ACTION' });
     });
 
-    it('complete + fresh check + intake note → shortcut disqualified: no bgClearedAt, review holds payment (#907)', async () => {
+    it('complete + fresh check + intake note → the note does not disqualify the shortcut', async () => {
         prisma.person.findUnique.mockResolvedValue({
             ...inFlightUser,
             household: { ...inFlightUser.household, intakeNotes: 'please treat us as a volunteer household' },
@@ -514,8 +514,7 @@ describe('submitIntake', () => {
 
         expect(prisma.orgMembershipProcess.update).toHaveBeenCalledWith({
             where: { id: 11 },
-            data: expect.not.objectContaining({ bgClearedAt: expect.anything() }),
+            data: expect.objectContaining({ bgClearedAt: expect.any(Date) }),
         });
-        expect(applyVolunteerStatus).not.toHaveBeenCalled();
     });
 });

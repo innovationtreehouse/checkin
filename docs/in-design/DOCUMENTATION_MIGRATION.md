@@ -14,10 +14,11 @@ lands.
 
 Two examples surfaced during a single design review:
 
-- **The intake-note hold.** An applicant note holds the membership application
-  at background-check review so reviewers read it before dues are settled —
-  unless the household already holds a still-valid background clearance, which
-  takes the direct path to payment. Stated only in a code comment in
+- **The intake-note hold** (since removed — the note no longer gates payment).
+  An applicant note held the membership application at background-check review
+  so reviewers read it before dues were settled — unless the household already
+  held a still-valid background clearance, which took the direct path to
+  payment. Stated only in a code comment in
   `checkin-app/src/lib/membership/external.ts`, a parenthetical inside the
   lifecycle transition table, and one aside in `docs/backlog/CUJS.md`.
 
