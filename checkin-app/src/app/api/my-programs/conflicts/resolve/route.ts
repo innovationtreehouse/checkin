@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { intervalsOverlap } from "@/lib/attendanceConflicts";
 import { apiError } from "@/lib/api-response";
+import { deleteSignificance } from "@/lib/visit/significance";
 
 /**
  * Resolve an attendance conflict by deleting one of the duplicate Visit rows.
@@ -94,6 +95,10 @@ export const POST = withAuth({}, async (req, auth) => {
           associatedEventId: current.associatedEventId,
           reason: "duplicate-attendance-conflict",
         },
+        // Scored off the same in-lock `current` snapshot as oldData above, not
+        // the pre-lock row: a departure landing between the two reads is exactly
+        // what the lock exists to order, and it changes the score.
+        newData: { type: "conflict_resolution", significance: deleteSignificance(current, { byProxy: user.id !== current.personId }) },
       },
     });
     return null;

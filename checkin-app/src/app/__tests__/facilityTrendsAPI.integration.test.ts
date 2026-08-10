@@ -9,11 +9,14 @@
  * path: bucketing visits by period, the volunteer/participant split (by program
  * enrollment — ProgramParticipant, NOT age), structured (event-associated) vs
  * unstructured hours, the `arrivedVia=LEAD_MARKED` exclusion (synthetic "marked
- * present" visits, plus its pre-split `SYSTEM` spelling) and the untagged-arrival
- * case it must not swallow, the `programId` filter, and the invalid-period 400.
+ * present" visits, plus its pre-split `SYSTEM` spelling) and the two cases it must
+ * not swallow — an untagged arrival, and a real visit whose time staff corrected
+ * (driven through the PATCH route, since a hand-built fixture cannot catch a wrong
+ * stamp) — the `programId` filter, and the invalid-period 400.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
+import { PATCH } from '@/app/api/facility/visits/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { getAppSettings } from '@/lib/appSettings';
@@ -215,6 +218,58 @@ describe('Facility trends API', () => {
         expect(data.totals.totalVolunteerHours).toBe(2);
         expect(data.totals.uniqueParticipants).toBe(0);
         expect(data.totals.structuredHours).toBe(2);
+    });
+
+    // Driven through the PATCH route on purpose. Every other case here builds its
+    // `arrivedVia` by hand, so both the correct behaviour and the broken one pass
+    // them — only calling the real correction path can catch a wrong stamp.
+    //
+    // A board member fixing a badge time must not delete the visit's hours. The
+    // exclusion is for visits only a third party asserts happened (LEAD_MARKED);
+    // this one was scanned, so correcting its arrival re-times it, never removes it.
+    it('keeps a corrected scanner visit in the hours after a staff PATCH', async () => {
+        const program = await prisma.program.create({ data: { name: `Corrected ${TAG}` } });
+        const event = await prisma.event.create({
+            data: { programId: program.id, name: `Corrected event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
+        });
+        // Both ends in the past: the PATCH route rejects a future time, and the
+        // shared `departure()` helper lands hours ahead of now.
+        const now = Date.now();
+        const visit = await prisma.visit.create({
+            data: {
+                personId: volunteerId,
+                arrivedAt: new Date(now - 4 * 3600000),
+                departedAt: new Date(now - 2 * 3600000),
+                arrivedVia: 'SCANNER',
+                departedVia: 'SCANNER',
+                associatedEventId: event.id,
+            },
+        });
+        visitIds.push(visit.id);
+
+        const before = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
+        expect(before.totals.totalVolunteerHours).toBe(2);
+
+        // The board fixes the arrival: the member badged in an hour later than recorded.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+        const patch = await PATCH(new Request('http://localhost:4000/api/facility/visits', {
+            method: 'PATCH',
+            body: JSON.stringify({ visitId: visit.id, arrivedAt: new Date(now - 3 * 3600000).toISOString() }),
+        }) as unknown as import('next/server').NextRequest);
+        expect(patch.status).toBe(200);
+
+        // Still counted, now at the corrected 1h. Restamping the arrival
+        // LEAD_MARKED would make these 0 — the visit would vanish from the trend
+        // for having been fixed.
+        const after = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
+        expect(after.totals.uniqueVolunteers).toBe(1);
+        expect(after.totals.totalVolunteerHours).toBe(1);
+        expect(after.totals.structuredHours).toBe(1);
+
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
+        await prisma.visit.delete({ where: { id: visit.id } });
+        await prisma.event.delete({ where: { id: event.id } });
+        await prisma.program.delete({ where: { id: program.id } });
     });
 
     it('scopes to a single program via programId', async () => {
