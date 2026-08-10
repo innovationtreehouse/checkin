@@ -41,3 +41,33 @@ describe('pageRegistry drift guard', () => {
     expect(hrefs.length).toBe(new Set(hrefs).size);
   });
 });
+
+// Operations reaches the four Facility Ops tools (and the index, which redirects
+// into Visits), so they must appear in the directory rather than being URL-only.
+// Corrections is the exception: its page gate stays board/sysadmin, so listing it
+// for operations would advertise a tab that ejects them — see #1476.
+describe('Facility Ops visibility for operations', () => {
+  const ops = { isOperations: true };
+  const entryFor = (href: string) => PAGES.find((p) => p.href === href)!;
+
+  it.each([
+    '/facility-ops',
+    '/facility-ops/badges',
+    '/facility-ops/print-badges',
+    '/facility-ops/trends',
+    '/facility-ops/visits',
+  ])('shows %s to an operations user', (href) => {
+    expect(entryFor(href).visible(ops, true, null)).toBe(true);
+  });
+
+  it('hides /facility-ops/corrections from an operations user (page gate is still board-only)', () => {
+    expect(entryFor('/facility-ops/corrections').visible(ops, true, null)).toBe(false);
+  });
+
+  it('still shows every Facility Ops entry to a board member', () => {
+    const board = { isBoardMember: true };
+    for (const p of PAGES.filter((p) => p.section === 'Facility Ops')) {
+      expect(p.visible(board, true, null)).toBe(true);
+    }
+  });
+});

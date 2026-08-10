@@ -17,7 +17,7 @@ type BadgeEvent = {
 };
 
 export default function AdminBadgesPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isOperations']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isOperations']);
   const { formatDateTime } = useOrgTime();
 
   // Built here, not at module scope: the time column needs the org zone from context.

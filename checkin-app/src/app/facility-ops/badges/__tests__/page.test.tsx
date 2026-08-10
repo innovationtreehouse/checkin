@@ -4,7 +4,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
 import { screen } from "@testing-library/react";
-import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import AdminBadgesPage from "../page";
 
 beforeEach(() => resetRtl());
@@ -34,6 +34,22 @@ describe("facility-ops/badges page", () => {
     renderWithProviders(<AdminBadgesPage />);
 
     expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
+  });
+
+  // The layout gate and GET /api/facility/badges both admit board, and
+  // useRequireRole has no implicit fallthrough — omitting isBoardMember here
+  // bounced a board member off a page the API serves them.
+  it("admits a board member (matches the layout gate and the API)", async () => {
+    setSession({ id: 3, isBoardMember: true });
+    mockFetchJson({
+      "/api/facility/badges": {
+        badges: [{ id: 1, timestamp: "2026-01-01T14:00:00.000Z", person: { name: "Val Volunteer", email: "val@example.com" }, location: "Side Door" }],
+      },
+    });
+    renderWithProviders(<AdminBadgesPage />);
+
+    expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("shows an error message when the fetch fails", async () => {

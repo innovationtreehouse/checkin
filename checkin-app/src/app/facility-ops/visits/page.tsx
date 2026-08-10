@@ -68,7 +68,11 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 
 export default function AdminVisitsPage() {
   const { formatDateTime } = useOrgTime();
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isOperations']);
+  const { user, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isOperations']);
+  // Add Visit POSTs /api/facility/visits/insert, which stays sysadmin/board-only
+  // (registered route; widening it is the board call in #1476). Operations reads
+  // and edits here, so the button must not render for them — it would only 403.
+  const canAddVisit = !!user?.isSysadmin || !!user?.isBoardMember;
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -285,9 +289,11 @@ export default function AdminVisitsPage() {
     <Stack>
       <AlertBanner message={message?.text} tone={message?.tone} />
 
-      <Group justify="flex-end">
-        <Button size="xs" fz={15} onClick={openAddModal}>Add Visit</Button>
-      </Group>
+      {canAddVisit && (
+        <Group justify="flex-end">
+          <Button size="xs" fz={15} onClick={openAddModal}>Add Visit</Button>
+        </Group>
+      )}
 
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>
