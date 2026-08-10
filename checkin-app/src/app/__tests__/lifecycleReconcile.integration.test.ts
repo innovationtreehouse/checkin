@@ -134,6 +134,20 @@ describe('lifecycle reconciler — invariant-driven sweep over a real DB', () =>
         expect(after.paidAt).not.toBeNull();
     });
 
+    it('a settled PERSON_AGREEMENT is not a violation — the signature alone completes it', async () => {
+        // markContractSigned flips an individual agreement straight to ACTIVE with no
+        // bgClearedAt: it has no membership, no payment and no background-check gate.
+        // Judging it by the membership convergence reports every adult child who signs.
+        const proc = await prisma.orgMembershipProcess.create({
+            data: { kind: 'PERSON_AGREEMENT', status: 'ACTIVE', subjectPersonId: selfId, contractSignedAt: new Date() },
+        });
+        processIds.push(proc.id);
+
+        const { violations } = await scanLifecycleViolations();
+
+        expect(violations.filter((v) => v.key === `process ${proc.id}`)).toEqual([]);
+    });
+
     it('clean: a row that validates clean produces no violation', async () => {
         await prisma.programParticipant.create({
             data: { programId, personId: selfId, status: 'ACTIVE', inventoryHeldAt: null },

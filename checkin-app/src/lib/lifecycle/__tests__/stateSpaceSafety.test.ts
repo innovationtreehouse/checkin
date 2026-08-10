@@ -28,6 +28,7 @@ import {
     validate as validateMembership,
     TRANSITIONS as MEMBERSHIP_TRANSITIONS,
     ALL_STATUSES as MEMBERSHIP_ALL_STATUSES,
+    ALL_KINDS as MEMBERSHIP_ALL_KINDS,
     INITIAL_STATES as MEMBERSHIP_INITIAL_STATES,
     LEGACY_STATUSES as MEMBERSHIP_LEGACY_STATUSES,
     type ClassifyRow as MembershipRow,
@@ -85,27 +86,32 @@ describe('membership — exhaustive state space', () => {
     const legacy = new Set<string>(MEMBERSHIP_LEGACY_STATUSES);
     const realized = new Set<string>();
 
-    test('every (status × 4 flags) tuple is on-diagram-clean or off-diagram-flagged', () => {
+    // Kind is the second axis because the machine's ACTIVE edges are kind-specific:
+    // a PERSON_AGREEMENT settles on the signature and owes no clearance stamp.
+    test('every (status × kind × 4 flags) tuple is on-diagram-clean or off-diagram-flagged', () => {
         for (const status of MEMBERSHIP_ALL_STATUSES) {
-            for (const contractSignedAt of BOOLS) {
-                for (const bgConsentAt of BOOLS) {
-                    for (const bgClearedAt of BOOLS) {
-                        for (const paidAt of BOOLS) {
-                            const row: MembershipRow = {
-                                status,
-                                contractSignedAt,
-                                bgConsentAt,
-                                bgClearedAt,
-                                paidAt,
-                            };
-                            const name = classifyMembership(row);
-                            if (name !== null) {
-                                expect(validateMembership(row)).toBeNull();
-                                // reachable, or the dead-but-guarded legacy status
-                                expect(reachable.has(name) || legacy.has(name)).toBe(true);
-                                realized.add(name);
-                            } else {
-                                expect(validateMembership(row)).not.toBeNull();
+            for (const kind of MEMBERSHIP_ALL_KINDS) {
+                for (const contractSignedAt of BOOLS) {
+                    for (const bgConsentAt of BOOLS) {
+                        for (const bgClearedAt of BOOLS) {
+                            for (const paidAt of BOOLS) {
+                                const row: MembershipRow = {
+                                    status,
+                                    kind,
+                                    contractSignedAt,
+                                    bgConsentAt,
+                                    bgClearedAt,
+                                    paidAt,
+                                };
+                                const name = classifyMembership(row);
+                                if (name !== null) {
+                                    expect(validateMembership(row)).toBeNull();
+                                    // reachable, or the dead-but-guarded legacy status
+                                    expect(reachable.has(name) || legacy.has(name)).toBe(true);
+                                    realized.add(name);
+                                } else {
+                                    expect(validateMembership(row)).not.toBeNull();
+                                }
                             }
                         }
                     }

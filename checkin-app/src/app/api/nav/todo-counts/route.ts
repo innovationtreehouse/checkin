@@ -7,7 +7,7 @@ import { canReviewBackgroundChecks, reviewQueueCounts } from "@/lib/membership/r
 import { getLeadConflicts } from "@/lib/attendanceConflicts";
 import { pickAddress, validateAddress } from "@/lib/address";
 import { openConfigIssues } from "@/lib/configHealth";
-import { countStaleCronJobs } from "@/lib/cronRuns";
+import { countUnhealthyCronJobs } from "@/lib/cronRuns";
 import { PROGRAM_CHECKOUT_BROKEN_WHERE } from "@/lib/programCheckout";
 import { apiError } from "@/lib/api-response";
 import { BROKEN_HOUSEHOLD_WHERE, UNCLAIMED_OR_BROKEN_HOUSEHOLD_WHERE } from "@/lib/household/filters";
@@ -83,10 +83,12 @@ export type TodoCounts = {
     // Status nav badge; the full detail lives at /api/system-status/config-health.
     // `openIssues` = failing system-config checks (e.g. Zoho e-sign unconfigured) —
     // synchronous env presence checks, see lib/configHealth.ts.
-    // `staleCronJobs` = cron sweeps with no successful run inside CRON_STALE_AFTER_MS.
-    // Computed here rather than in getConfigHealth() because it needs a DB read and
-    // that function is deliberately synchronous. See lib/cronRuns.ts.
-    configHealth?: { openIssues: number; staleCronJobs: number };
+    // `unhealthyCronJobs` = cron sweeps that have stopped running (no completed run
+    // inside CRON_STALE_AFTER_MS) OR whose latest run could not process every row.
+    // Both mean "go look at Scheduled Jobs"; the panel says which. Computed here
+    // rather than in getConfigHealth() because it needs a DB read and that function
+    // is deliberately synchronous. See lib/cronRuns.ts.
+    configHealth?: { openIssues: number; unhealthyCronJobs: number };
     // Background-check reviewer surface (reviewers + board, per-viewer). `canActOn`
     // = applications this reviewer may attest now (green). `approvedAwaitingSecond`
     // = ones they approved that still need a second reviewer (gray).
@@ -370,7 +372,7 @@ export const GET = withAuth({}, async (_req, auth) => {
 
     // ---- Admin surface (board's own queue) — only for board/isSysadmin ----
     if (user.isSysadmin || user.isBoardMember) {
-        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, programsMisconfig, openPaymentExceptions, boardSettings, staleCronJobs] = await Promise.all([
+        const [membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, programsMisconfig, openPaymentExceptions, boardSettings, unhealthyCronJobs] = await Promise.all([
             prisma.orgMembershipProcess.count({
                 where: { status: { in: BOARD_ACTIONABLE_MEMBERSHIP } },
             }),
@@ -426,10 +428,10 @@ export const GET = withAuth({}, async (_req, auth) => {
                 where: { id: 1 },
                 select: { orgMembershipVariantId: true, volunteerDiscountCode: true, bgRecheckMonths: true, orgMembershipYearBoundary: true },
             }),
-            // Cron sweeps with no successful run in the last CRON_STALE_AFTER_MS. The
+            // Cron sweeps that stopped running, plus ones running but failing rows. The
             // schedule lives in a separate infra repo, so this is the app's only way to
-            // notice its own nightly sweep stopped firing. See lib/cronRuns.ts.
-            countStaleCronJobs(),
+            // notice its own nightly sweep stopped working. See lib/cronRuns.ts.
+            countUnhealthyCronJobs(),
         ]);
         const settingsMisconfig =
             (boardSettings?.orgMembershipVariantId ? 0 : 1) +
@@ -438,9 +440,9 @@ export const GET = withAuth({}, async (_req, auth) => {
             (boardSettings?.orgMembershipYearBoundary ? 0 : 1);
         result.admin = { membership, applicationsTotal, paymentPlanPending, membershipPaymentPlanPending, trustedAdults, householdsMissingContact, unclaimedHouseholds, brokenHouseholds, brokenEmails, settingsMisconfig, programsMisconfig, openPaymentExceptions };
         // Infra health: env-var/deploy gaps (synchronous presence checks) plus cron
-        // sweeps that have stopped running. Same admin+board gate as the rest of this
-        // block — both fold into the single red System Status pill.
-        result.configHealth = { openIssues: openConfigIssues(), staleCronJobs };
+        // sweeps that stopped running or stopped working. Same admin+board gate as the
+        // rest of this block — both fold into the single red System Status pill.
+        result.configHealth = { openIssues: openConfigIssues(), unhealthyCronJobs };
     }
 
     // ---- Reviewer surface (per-viewer background-check queue) ----

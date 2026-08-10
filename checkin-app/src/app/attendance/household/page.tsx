@@ -7,7 +7,8 @@ import { notifications } from "@mantine/notifications";
 import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
-import { formatDateOnly, formatVisitRange, formatDateTime, toDatetimeLocal } from "@/lib/time";
+import { formatDateOnly, toDatetimeLocal } from "@/lib/time";
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -17,6 +18,7 @@ type Visit = { id: number; person?: { name: string }; event?: { name: string }; 
 // trust-first terms as their own (design 1256_ATTENDANCE_CORRECTION_SURFACE.md
 // §3) — the server flags significant changes to the board.
 export default function HouseholdCheckins() {
+  const { formatVisitRange, formatDateTime } = useOrgTime();
   const { ready, loading: authLoading, user } = useRequireRole([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [filterDate, setFilterDate] = useState("");

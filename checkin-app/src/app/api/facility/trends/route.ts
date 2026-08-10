@@ -70,14 +70,17 @@ export const GET = withAuth(
                 arrivedAt: { gte: since },
                 departedAt: { not: null },
                 deletedAt: null,
-                // Exclude synthetic "marked present" visits (events attendance route): their
-                // arrivedAt/departedAt is the event window, not a measured duration.
-                // arrivedVia=LEAD_MARKED is the marker — real visits use SCANNER/WEB on
-                // arrival. Legacy SYSTEM is listed too: the previous release can still write
-                // it through a rolling deploy's drain window, and it meant the same thing on
-                // this field. The departure-side split (FACILITY_CLOSE / AUTO_CLOSE) does not
-                // reach here — this keys on arrival only.
-                arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] },
+                // Drop staff-asserted arrivals (LEAD_MARKED, and its legacy spelling
+                // SYSTEM): those times are an event window, not a measured duration.
+                // An untagged (null) arrival is an ordinary visit and counts — it needs
+                // the explicit OR, because NULL never satisfies a SQL NOT IN.
+                // ponytail: this only reaches rows that already carry LEAD_MARKED. The
+                // events roster mark stamps WEB, so its visits are still counted as
+                // measured hours until that writer stamps LEAD_MARKED.
+                OR: [
+                    { arrivedVia: null },
+                    { arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] } },
+                ],
             };
 
             if (programId) {

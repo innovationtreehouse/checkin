@@ -2,16 +2,17 @@
  * @jest-environment node
  */
 /**
- * Concurrency regression tests for the two visit-write paths that had no
- * per-person advisory lock: PATCH /api/events/[id] (manualEditAttendance) and
- * DELETE /api/facility/visits.
+ * Concurrency regression tests for the visit-write paths that do a
+ * read-then-write on Visit: PATCH /api/events/[id] (manualEditAttendance),
+ * DELETE /api/facility/visits, and POST /api/my-programs/conflicts/resolve.
  *
- * Both did a read-then-write on Visit with nothing serializing them, so a
- * concurrent writer could invalidate the pre-check before the write landed:
- * two Present marks on different events both saw "no open visit" and both
- * created one (P2002 on Visit_one_open_per_participant → 500), and two deletes
- * both saw the row live and both tombstoned it, the second overwriting who
- * deleted it. Each now runs inside a $transaction that takes
+ * With nothing serializing them a concurrent writer could invalidate the
+ * pre-check before the write landed: two Present marks on different events both
+ * saw "no open visit" and both created one (P2002 on
+ * Visit_one_open_per_participant → 500), two deletes both saw the row live and
+ * both tombstoned it, and two conflict resolutions each saw the other half of
+ * the overlap still live and tombstoned both, erasing the session entirely.
+ * Each now runs inside a $transaction that takes
  * `pg_advisory_xact_lock(<the visit's personId>)` and re-checks under the lock,
  * matching /api/scan and /api/attendance/manual.
  *
@@ -22,6 +23,7 @@
  */
 import { PATCH as EVENT_PATCH } from '@/app/api/events/[id]/route';
 import { DELETE as VISIT_DELETE } from '@/app/api/facility/visits/route';
+import { POST as CONFLICT_RESOLVE } from '@/app/api/my-programs/conflicts/resolve/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 
@@ -48,6 +50,14 @@ function visitDelete(visitId: number) {
         body: JSON.stringify({ visitId }),
     });
     return VISIT_DELETE(req as unknown as import('next/server').NextRequest) as Promise<Response>;
+}
+
+function resolveConflict(visitId: number) {
+    const req = new Request('http://localhost:4000/api/my-programs/conflicts/resolve', {
+        method: 'POST',
+        body: JSON.stringify({ visitId }),
+    });
+    return CONFLICT_RESOLVE(req as unknown as import('next/server').NextRequest) as Promise<Response>;
 }
 
 describe('visit-write advisory locks', () => {
@@ -137,5 +147,26 @@ describe('visit-write advisory locks', () => {
         expect(after.deletedAt).not.toBeNull();
         expect(after.deletedById).toBe(adminId);
         expect(await prisma.visit.count({ where: { personId: subjectId, deletedAt: null } })).toBe(0);
+    });
+
+    it('two concurrent conflict resolutions on both halves of one overlap → one survives', async () => {
+        await prisma.visit.deleteMany({ where: { personId: subjectId } });
+        const [visitA, visitB] = await Promise.all([
+            prisma.visit.create({
+                data: { personId: subjectId, arrivedAt: new Date(Date.now() - 3 * HOUR), departedAt: new Date(Date.now() - HOUR) },
+            }),
+            prisma.visit.create({
+                data: { personId: subjectId, arrivedAt: new Date(Date.now() - 2 * HOUR), departedAt: new Date(Date.now() - HOUR) },
+            }),
+        ]);
+
+        const [resA, resB] = await Promise.all([resolveConflict(visitA.id), resolveConflict(visitB.id)]);
+
+        // Winner tombstones its half (200); the loser re-checks under the lock,
+        // finds its visit no longer overlaps anything live, and refuses (409).
+        expect([resA.status, resB.status].sort()).toEqual([200, 409]);
+
+        // The whole point: the participant keeps one visit for the session.
+        expect(await prisma.visit.count({ where: { personId: subjectId, deletedAt: null } })).toBe(1);
     });
 });

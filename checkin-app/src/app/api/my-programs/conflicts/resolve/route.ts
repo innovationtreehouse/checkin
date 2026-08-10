@@ -47,24 +47,34 @@ export const POST = withAuth({}, async (req, auth) => {
     return apiError("Forbidden: not authorized to resolve this visit", 403);
   }
 
-  // Guard: only delete a visit that genuinely overlaps another of the same
-  // participant's visits. Refuse to delete an isolated, legitimate visit.
-  const siblings = await prisma.visit.findMany({
-    where: { personId: visit.personId, id: { not: visit.id }, deletedAt: null },
-    select: { arrivedAt: true, departedAt: true },
-  });
-  const isConflicting = siblings.some((s) => intervalsOverlap(visit, s));
-  if (!isConflicting) {
-    return apiError("Visit is not part of an attendance conflict", 409);
-  }
+  // Per-person advisory xact lock, as /api/scan and /api/facility/visits take:
+  // the overlap guard and the tombstone must be one atomic step. Two leads
+  // resolving opposite halves of the same overlap each see the other still live
+  // otherwise, and both tombstone — erasing the session outright.
+  const failure = await prisma.$transaction(async (tx): Promise<{ error: string; status: number } | null> => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${visit.personId})`;
 
-  await prisma.$transaction(async (tx) => {
+    const current = await tx.visit.findUnique({ where: { id: visit.id } });
+    if (!current || current.deletedAt) {
+      return { error: "Visit not found", status: 404 };
+    }
+
+    // Only delete a visit that genuinely overlaps another of the same
+    // participant's live visits. Refuse to delete an isolated, legitimate one.
+    const siblings = await tx.visit.findMany({
+      where: { personId: current.personId, id: { not: current.id }, deletedAt: null },
+      select: { arrivedAt: true, departedAt: true },
+    });
+    if (!siblings.some((s) => intervalsOverlap(current, s))) {
+      return { error: "Visit is not part of an attendance conflict", status: 409 };
+    }
+
     // Tombstone, never a row removal — the same reversible delete every other
     // visit-write path takes (design §3). Resolving a conflict is a judgement
     // about which of two overlapping records is real; it must be possible to
     // back that judgement out.
     await tx.visit.update({
-      where: { id: visit.id },
+      where: { id: current.id },
       data: { deletedAt: new Date(), deletedById: user.id },
     });
     await tx.auditLog.create({
@@ -72,21 +82,24 @@ export const POST = withAuth({}, async (req, auth) => {
         actorId: user.id,
         action: "DELETE",
         tableName: "Visit",
-        affectedEntityId: visit.id,
+        affectedEntityId: current.id,
         // The subject, not the event — the event is in oldData below.
-        secondaryAffectedEntity: visit.personId,
+        secondaryAffectedEntity: current.personId,
         oldData: {
-          personId: visit.personId,
-          arrivedAt: visit.arrivedAt,
-          departedAt: visit.departedAt,
-          arrivedVia: visit.arrivedVia,
-          departedVia: visit.departedVia,
-          associatedEventId: visit.associatedEventId,
+          personId: current.personId,
+          arrivedAt: current.arrivedAt,
+          departedAt: current.departedAt,
+          arrivedVia: current.arrivedVia,
+          departedVia: current.departedVia,
+          associatedEventId: current.associatedEventId,
           reason: "duplicate-attendance-conflict",
         },
       },
     });
-  });
+    return null;
+  }, { maxWait: 5000, timeout: 15000 });
+
+  if (failure) return apiError(failure.error, failure.status);
 
   return NextResponse.json({ success: true, deletedVisitId: visit.id });
 });

@@ -303,7 +303,7 @@ export default function CompliancePage() {
 
       <PersonSection
         title="Background check needed"
-        description="Program-attached people 18 or older with no current background check. Warn-only — nothing is blocked. Once an external check exists, submit it below for two-reviewer approval."
+        description="People 18 or older with no current background check: anyone attached to a program, plus the signing adults on an active member household. Warn-only — nothing is blocked. Once an external check exists, submit it below for two-reviewer approval."
         color="orange"
         people={peopleNeedingBgCheck}
         renderAction={(p) =>
@@ -414,7 +414,7 @@ export default function CompliancePage() {
 
       <PersonSection
         title="Missing date of birth"
-        description="Program-attached people with no recorded age. Confirm their date of birth before a background check can be assessed."
+        description="Program-attached people and member-household signing adults with no recorded age. Confirm their date of birth before a background check can be assessed."
         color="grape"
         people={peopleMissingDob}
       />

@@ -29,6 +29,9 @@ import {
     isLegalTransition,
     TRANSITIONS,
     ALL_STATUSES,
+    ALL_KINDS,
+    ARCHIVABLE_STATUSES,
+    RESTORABLE_STATUSES,
     INITIAL_STATES,
     type ProcessStatus,
 } from '@/lib/membership/lifecycle';
@@ -144,9 +147,9 @@ describe('IN_FLIGHT lists', () => {
 
 // ── classify / validate ────────────────────────────────────────────────────────
 
-describe('classify', () => {
-    const flags = { contractSignedAt: false, bgConsentAt: false, bgClearedAt: false, paidAt: false };
+const flags = { kind: 'INITIAL', contractSignedAt: false, bgConsentAt: false, bgClearedAt: false, paidAt: false } as const;
 
+describe('classify', () => {
     test('names on-diagram rows by status', () => {
         expect(classify({ ...flags, status: 'PENDING_PAYMENT' })).toBe('PENDING_PAYMENT');
         expect(classify({ ...flags, status: 'ACTIVE', bgClearedAt: true })).toBe('ACTIVE');
@@ -157,10 +160,13 @@ describe('classify', () => {
         expect(classify({ ...flags, status: 'INTAKE', paidAt: true })).toBeNull(); // paid before external
         expect(classify({ ...flags, status: 'ACTIVE', bgClearedAt: false })).toBeNull(); // active must be cleared
     });
+
+    test('an ACTIVE PERSON_AGREEMENT is on-diagram without a clearance', () => {
+        expect(classify({ ...flags, kind: 'PERSON_AGREEMENT', status: 'ACTIVE' })).toBe('ACTIVE');
+    });
 });
 
 describe('validate', () => {
-    const flags = { contractSignedAt: false, bgConsentAt: false, bgClearedAt: false, paidAt: false };
     test('clean rows validate null', () => {
         expect(validate({ ...flags, status: 'ACTIVE', bgClearedAt: true })).toBeNull();
         expect(validate({ ...flags, status: 'INTAKE' })).toBeNull();
@@ -168,6 +174,16 @@ describe('validate', () => {
     test('flags the violated invariant', () => {
         expect(validate({ ...flags, status: 'INTAKE', paidAt: true })).toEqual({ invariant: 'intake-is-unpaid' });
         expect(validate({ ...flags, status: 'ACTIVE', bgClearedAt: false })).toEqual({ invariant: 'active-is-bg-cleared' });
+    });
+    test('active-is-bg-cleared is the MEMBERSHIP convergence, and holds for the other kinds', () => {
+        // The individual agreement completes on the signature alone (the machine's own
+        // PENDING_EXTERNAL_ACTION→ACTIVE edge, kind PERSON_AGREEMENT) — it has no
+        // payment and no check to converge, so no clearance stamp is owed.
+        expect(validate({ ...flags, kind: 'PERSON_AGREEMENT', status: 'ACTIVE' })).toBeNull();
+        // PERSON_BG does clear before it activates, so nothing is relaxed for it — it is
+        // NOT in SETTLES_ON_SIGNATURE, and this fails the moment someone puts it there.
+        expect(validate({ ...flags, kind: 'PERSON_BG', status: 'ACTIVE' })).toEqual({ invariant: 'active-is-bg-cleared' });
+        expect(validate({ ...flags, kind: 'RENEWAL', status: 'ACTIVE' })).toEqual({ invariant: 'active-is-bg-cleared' });
     });
 });
 
@@ -204,9 +220,21 @@ describe('isLegalTransition covers §5', () => {
         for (const to of ['INTAKE', 'PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW', 'PENDING_PAYMENT', 'PENDING_BG_CLEARANCE', 'PENDING_RENEWAL', 'BLOCKED'] as ProcessStatus[]) {
             expect(isLegalTransition('ARCHIVED', to)).toBe(true);
         }
-        // Nothing is ever archived from these two, so neither is a restore target.
-        expect(isLegalTransition('ARCHIVED', 'RENEWAL_PENDING_BG')).toBe(false);
         expect(isLegalTransition('ARCHIVED', 'ARCHIVED')).toBe(false);
+    });
+
+    // GUARD (new): the restore set and the transition table are two lists, and the
+    // gap between them is deliberate. RENEWAL_PENDING_BG IS restorable at runtime —
+    // archive's gate is `status !== ACTIVE`, and migration 20260806160000 backfills
+    // that value — but declaring the edge would make an unreachable status reachable
+    // and delete the unreachable report machineSpecs.ts exists to surface. So the
+    // table stays silent and this records the divergence instead of denying it.
+    test('GUARD: the restore set is the archivable set plus the legacy status, and nothing else', () => {
+        expect([...RESTORABLE_STATUSES].sort()).toEqual(
+            [...ARCHIVABLE_STATUSES, ...LEGACY_STATUSES].sort(),
+        );
+        expect(RESTORABLE_STATUSES.has('RENEWAL_PENDING_BG')).toBe(true);
+        expect(isLegalTransition('ARCHIVED', 'RENEWAL_PENDING_BG')).toBe(false);
     });
 
     test('rejects undeclared edges', () => {
@@ -244,6 +272,6 @@ describe('enum parity with Prisma', () => {
         expect(() => assertEnumParity(ALL_STATUSES, OrgMembershipProcessStatus, 'OrgMembershipProcessStatus')).not.toThrow();
     });
     test('ProcessKind union matches OrgMembershipProcessKind keys', () => {
-        expect(() => assertEnumParity(['INITIAL', 'RENEWAL', 'PERSON_BG', 'PERSON_AGREEMENT'], OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
+        expect(() => assertEnumParity(ALL_KINDS, OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
     });
 });

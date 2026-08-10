@@ -67,19 +67,20 @@ export const GET = withAuth(
                     take: PAGE_SIZE,
                 }),
                 // Distinct entity types / actors for the filter dropdowns (unfiltered, stable).
-                prisma.auditLog.findMany({
-                    distinct: ['tableName'],
-                    select: { tableName: true },
+                // groupBy, not findMany+distinct: Prisma's `distinct` dedups in the client,
+                // so it drags every AuditLog row across the wire. groupBy emits SQL GROUP BY.
+                // ponytail: still an index-only scan of the whole column; a loose index scan
+                // (recursive CTE) is the next rung if the dropdowns ever get slow.
+                prisma.auditLog.groupBy({
+                    by: ['tableName'],
                     orderBy: { tableName: 'asc' },
                 }),
-                prisma.auditLog.findMany({
-                    distinct: ['actorId'],
-                    select: { actorId: true },
+                prisma.auditLog.groupBy({
+                    by: ['actorId'],
                     where: { actorId: { gt: 0 } },
                 }),
-                prisma.auditLog.findMany({
-                    distinct: ['actorSystem'],
-                    select: { actorSystem: true },
+                prisma.auditLog.groupBy({
+                    by: ['actorSystem'],
                     where: { actorSystem: { not: null } },
                     orderBy: { actorSystem: 'asc' },
                 }),

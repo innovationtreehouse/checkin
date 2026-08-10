@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, Badge, Group, SegmentedControl, Stack, Switch, Table, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
-import { formatDateTime } from "@/lib/time";
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { MAX_ROWS } from "@/lib/corrections";
 import { SYSTEM_ACTOR } from "@/lib/auditActor";
 import type { PeriodType } from "@/lib/timePeriods";
@@ -87,6 +87,7 @@ function nameFor(id: number | null, people: Map<number, PersonRef>): string {
 // touched that field — render "—", never infer a value: arrivedVia and
 // departedVia are not stamped onto a self-correction's newData.
 function VisitTimes({ v }: { v: VisitPick }) {
+  const { formatDateTime } = useOrgTime();
   if (!v || (!("arrivedAt" in v) && !("departedAt" in v))) {
     return <Text c="dimmed" size="sm">—</Text>;
   }
@@ -120,6 +121,7 @@ function ActorBadge({ cls }: { cls: "self" | "proxy" | "system" | "unknown" }) {
 }
 
 export default function CorrectionsPage() {
+  const { formatDateTime } = useOrgTime();
   const { ready, loading: authLoading } = useRequireRole(["isSysadmin", "isBoardMember"]);
 
   const [period, setPeriod] = useState<PeriodType>("month");
