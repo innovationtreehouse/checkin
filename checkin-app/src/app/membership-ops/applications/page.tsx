@@ -199,7 +199,7 @@ function ApplicationsBoard() {
           mistake — the check itself has not cleared yet, so nothing else changes.
         </Text>
       ),
-      labels: { confirm: "Clear approvals", cancel: "Cancel" },
+      labels: { confirm: "Discard approvals", cancel: "Cancel" },
       onConfirm: () => override(r.id, "reset"),
     });
   };
@@ -415,10 +415,10 @@ function ApplicationsBoard() {
                     Background check (in parallel) — <Text component="span" fw={600}>{approvals(r)}/2</Text> approvals recorded.
                   </Text>
                   {/* The board's way back from a reviewer's misclick: the review is still
-                      open, so clearing the attestations undoes it with nothing to unwind. */}
+                      open, so discarding the attestations undoes it with nothing to unwind. */}
                   {approvals(r) > 0 && (
                     <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => confirmResetReview(r)}>
-                      Clear approvals — start the review over
+                      Discard approvals — start the review over
                     </Button>
                   )}
                 </Group>

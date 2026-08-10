@@ -67,7 +67,7 @@ describe("membership-audit/compliance page", () => {
     expect(screen.getByText(/Submitted their own consent/)).toBeInTheDocument();
     expect(screen.getByText(/No evidence either way/)).toBeInTheDocument();
     // Both leads get a button — the evidence is a label, not a decision.
-    expect(screen.getAllByRole("button", { name: "Clear this date" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Remove this date" })).toHaveLength(2);
     // The board's confirmed cutoff is the default, so the list starts narrowed.
     // Unfiltered on load: a list that already hides everything before the cutoff
     // cannot be used to confirm the cutoff.
@@ -82,9 +82,9 @@ describe("membership-audit/compliance page", () => {
     renderPage();
     await screen.findByText("Rivera Household");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Clear this date" })[1]);
-    expect(await screen.findByText("Clear this background-check date?")).toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Clear the date" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove this date" })[1]);
+    expect(await screen.findByText("Remove this background-check date?")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove the date" }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
