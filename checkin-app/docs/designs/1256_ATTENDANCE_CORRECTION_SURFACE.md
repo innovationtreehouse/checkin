@@ -289,8 +289,8 @@ the change is (below). No reason field.
 
 ### Significance: what gets flagged
 
-A flag is raised **after** the edit lands, when the change is large *relative to
-how authoritative the value it overwrote was*. Two inputs:
+A change is scored **after** the edit lands, when the change is large *relative
+to how authoritative the value it overwrote was*. Two inputs:
 
 - **Source trust-weight** — how much we trust the old value. Highest for
   `SCANNER` (a physical measurement), then `LEAD_MARKED` (another person's
@@ -386,12 +386,12 @@ machine-close suppression is a source rule, not a threshold, and is not a knob.
   plus the significance object so AT12 can filter to the flagged ones without
   re-deriving (§4).
 
-### Which paths raise the live flag
+### Which paths email the board
 
 The real-time board email fires on the **self and household-lead** corrections
 only (`attendance/manual/[id]`). The staff and lead paths — `facility/visits`
 `PATCH`/`DELETE`, `manualEditAttendance`, `my-programs/conflicts/resolve` —
-deliberately do **not** raise it, for two reasons:
+deliberately do **not** email, for two reasons:
 
 - **The delete floor would make it noise.** `deleteSignificance` always flags, by
   design: a member erasing their own visit should always be seen. But marking a
@@ -434,7 +434,7 @@ then — YAGNI until they ask.)
 
 **"Correct my hours" UI** resolves to: show the member their own visits (already
 possible via the manual-entry surface); every field is inline-editable; a
-significant save just goes through, with the flag raised quietly behind it.
+significant save just goes through, with the score written quietly behind it.
 
 ### Abuse: it's audited, and the big moves are seen
 The manual-insert route already accepts that a member can inflate their own
@@ -578,8 +578,8 @@ corrections never score themselves". Rows that never scored are *outside* the
 lens, not "reviewed and found insignificant". AT12's default lens is "flagged
 changes" — big or high-trust-overwriting edits, and deletes — with the full
 correction feed behind a filter. A member whose edits flag often is a standing
-signal. This *is* the "raise it to the board" surface; the write-time
-notification (§2) is the push, AT12 is the pull.
+signal. This *is* the board-review surface; the write-time notification (§2)
+is the push, AT12 is the pull.
 
 **Audience:** board + sysadmin, and ops once #1476 widens the section gate. The
 existing `/system-status/audit-log` viewer is sysadmin-gated and buries visit

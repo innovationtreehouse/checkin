@@ -42,6 +42,9 @@ const TYPE_LABEL: Record<string, string> = {
   self_correction: "Self correction",
   staff_entry: "Staff entry",
   lead_attendance_correction: "Attendance correction",
+  staff_correction: "Staff correction",
+  staff_removal: "Staff removal",
+  conflict_resolution: "Conflict resolution",
 };
 
 // `newData.type` names the ROUTE, not the actor relationship — a household lead

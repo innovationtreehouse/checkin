@@ -268,7 +268,7 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(new Date(data.visit.departedAt).toISOString()).toBe(now.toISOString());
-            expect(data.visit.departedVia).toBe('WEB');
+            expect(data.visit.departedVia).toBe('LEAD_MARKED');
 
             const updatedVisit = await prisma.visit.findUnique({ where: { id: testVisitId } });
             expect(updatedVisit?.departedAt?.toISOString()).toBe(now.toISOString());
@@ -286,6 +286,41 @@ describe('Admin Visits API Integration Tests', () => {
             });
             expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
                 .toEqual({ score: 0, flagged: false });
+        });
+
+        // The via records how a time was MEASURED, not who last touched the row,
+        // so only the field the board actually typed becomes staff-asserted. WEB
+        // here would claim the member self-reported it, keep it in trends as
+        // measured hours, and weigh it 1 instead of 2 on the next correction.
+        it('stamps LEAD_MARKED on the time the board typed and leaves the untouched side alone', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const scanned = await prisma.visit.create({
+                data: {
+                    personId: testUserId,
+                    arrivedAt: new Date(Date.now() - 4 * 3600000),
+                    departedAt: new Date(Date.now() - 2 * 3600000),
+                    arrivedVia: 'SCANNER',
+                    departedVia: 'SCANNER',
+                }
+            });
+
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({
+                    visitId: scanned.id,
+                    arrivedAt: new Date(Date.now() - 3 * 3600000).toISOString()
+                })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const stored = await prisma.visit.findUnique({ where: { id: scanned.id } });
+            expect(stored?.arrivedVia).toBe('LEAD_MARKED'); // typed by staff
+            expect(stored?.departedVia).toBe('SCANNER');    // not sent — still the badge reading
         });
     });
 
@@ -380,8 +415,12 @@ describe('Admin Visits API Integration Tests', () => {
             expect(auditLog).not.toBeNull();
             expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
 
-            // A delete always flags (the floor) even though the visit never
-            // closed, so there's no duration to weigh — score is 0.
+            // UNRESOLVED — 0 is what ships, not what is right. The visit is still
+            // open, so deleteSignificance weighs no duration: deleting a live 6h
+            // scanned visit scores 0, while deleting that same row after checkout
+            // scores 2160. The lowest score destroys the live in-building roster.
+            // TODO(#TBD): "deleteSignificance scores an open visit 0" — issue text
+            // is in PR #1558's description ("NOT YET FILED"); swap in the number.
             expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
                 .toEqual({ score: 0, flagged: true });
         });

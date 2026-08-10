@@ -140,22 +140,22 @@ Things the app takes as true because they are handled outside it.
 
 - Significance is the size of a change weighted by how authoritative the value it
   overwrote was. A measured badge outweighs somebody else's observation of a
-  member, which outweighs the member's own earlier report. Every removal is
-  raised whatever it overwrote, because erasing a record is notable at any size.  [Decision]
+  member, which outweighs the member's own earlier report. Every removal shows
+  on the review screen whatever it overwrote, because erasing a record is
+  notable at any size.  [Decision]
 
-- Every correction or removal is weighed and raised on the same terms whoever
-  made it — the member, their household lead, a program's leader, the board — and
-  stays on the record to be reviewed. Being raised and the board being told at
+- Every correction or removal is weighed on the same terms whoever made it — the
+  member, their household lead, a program's leader, the board — and stays on the
+  record to be reviewed. Showing on that screen and the board being emailed at
   the time are separate: only a member's change to their own visit, or their
-  household lead's on their behalf, reaches the board as it happens. Marking who
+  household lead's on their behalf, emails the board as it happens. Marking who
   did not turn up and clearing duplicate visits are a leader's routine week, and
-  on the board's own corrections the board would be telling itself; sending those
-  would train everyone to ignore the alert and cost it the signal.  [Decision — deliberate limit]
+  on the board's own corrections the board would be telling itself.  [Decision — deliberate limit]
 
 - A departure that the building closing or the overnight sweep stamped is a
-  placeholder the member is meant to fix, so correcting one is never raised
-  however large the correction. The suppression keys on where the value came
-  from, not on its size: the sweep stamps at its own run time, so the least
+  placeholder the member is meant to fix, so correcting one adds nothing to the
+  score however large the correction. The suppression keys on where the value
+  came from, not on its size: the sweep stamps at its own run time, so the least
   trustworthy guess is exactly the one producing the largest correction.  [Decision]
 
 - A visit cannot run longer than 24 hours.  [Decision]
