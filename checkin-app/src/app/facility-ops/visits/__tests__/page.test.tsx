@@ -30,10 +30,19 @@ describe("facility-ops/visits page", () => {
   });
 
   // The page must gate on the same roles the PATCH/DELETE /api/facility/visits
-  // route allows (['isSysadmin', 'isBoardMember']) — UI and API agree on who
-  // may edit/delete a visit.
+  // route allows (['isSysadmin', 'isBoardMember', 'isOperations']) — UI and API
+  // agree on who may edit/delete a visit.
   it("admits a board member (matches the API's edit/delete grant)", async () => {
     setSession({ id: 3, isBoardMember: true });
+    mockFetchJson({ "/api/facility/visits": { visits } });
+    renderWithProviders(<AdminVisitsPage />);
+
+    expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("admits an operations user (matches the API's edit/delete grant)", async () => {
+    setSession({ id: 5, isOperations: true });
     mockFetchJson({ "/api/facility/visits": { visits } });
     renderWithProviders(<AdminVisitsPage />);
 

@@ -64,6 +64,15 @@ describe("FacilityLayout role gate", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("admits an operations user", () => {
+    renderLayout("/facility-ops/print-badges", {
+      data: { user: { id: 5, isOperations: true } },
+      status: "authenticated",
+    });
+    expect(screen.getByText(CHILD)).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("redirects an authenticated user with none of the allowed roles", () => {
     renderLayout("/facility-ops/visits", {
       data: { user: { id: 2 } },

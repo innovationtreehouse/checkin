@@ -24,6 +24,18 @@ describe("facility-ops/badges page", () => {
     expect(screen.getByText("Side Door")).toBeInTheDocument();
   });
 
+  it("admits an operations user", async () => {
+    setSession({ id: 5, isOperations: true });
+    mockFetchJson({
+      "/api/facility/badges": {
+        badges: [{ id: 1, timestamp: "2026-01-01T14:00:00.000Z", person: { name: "Val Volunteer", email: "val@example.com" }, location: "Side Door" }],
+      },
+    });
+    renderWithProviders(<AdminBadgesPage />);
+
+    expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
+  });
+
   it("shows an error message when the fetch fails", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({});

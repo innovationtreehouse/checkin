@@ -7,7 +7,7 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { useRequireRole } from "@/hooks/useRequireRole";
 
 export default function FacilityLayout({ children }: { children: React.ReactNode }) {
-  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember", "isOperations"]);
 
   if (loading) {
     return (

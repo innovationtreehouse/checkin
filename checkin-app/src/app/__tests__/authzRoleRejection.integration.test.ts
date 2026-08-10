@@ -245,6 +245,24 @@ describe('Protected-route role rejection', () => {
         });
     });
 
+    // ---- Facility Ops routes — operations clears the role gate ----------------
+    // The four Facility Ops tools (Visit History, Raw Badge Events, Print ID
+    // Badges, Participation Trends) are granted to isOperations alongside
+    // sysadmin/board. An operations actor must PASS the withAuth roles gate on
+    // each backing route (i.e. NOT 401/403) — contrast with /visits/insert,
+    // which stays board/sysadmin-only and is deliberately excluded here.
+    const facilityOpsGranted = roleGated.filter((c) =>
+        ['GET /api/facility/trends', 'GET /api/facility/badges', 'GET /api/facility/visits', 'PATCH /api/facility/visits'].includes(c.name),
+    );
+    describe.each(facilityOpsGranted)('$name — operations clears the gate', ({ invoke }) => {
+        it('does not 401/403 an operations actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            const status = (await invoke()).status;
+            expect(status).not.toBe(401);
+            expect(status).not.toBe(403);
+        });
+    });
+
     // ---- membership/reviews POST — reviewer PII boundary ----------------------
     // The attestation surface exposes applicant parents' names/emails. Reviewers
     // AND board members (implicit reviewers, canReviewBackgroundChecks) may pass;

@@ -49,7 +49,7 @@ export interface TrendBucket {
 }
 
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember', 'isOperations'] },
     async (req) => {
         try {
             const url = new URL(req.url);

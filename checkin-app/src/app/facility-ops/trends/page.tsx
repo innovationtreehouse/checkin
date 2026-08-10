@@ -24,7 +24,7 @@ interface ProgramOption {
 }
 
 export default function ParticipationTrendsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isOperations']);
 
   const [period, setPeriod] = useState<PeriodType>("month");
   const [programId, setProgramId] = useState<string>("");
