@@ -35,7 +35,6 @@ const styles = StyleSheet.create({
     badge: {
         width: '3.5in',
         height: '2.25in',
-        border: '1px dashed #cccccc', // Faint dashed line to help with cutting if not using perforated sheets
         padding: '0.2in',
         display: 'flex',
         flexDirection: 'column',
@@ -45,7 +44,6 @@ const styles = StyleSheet.create({
     badgeBack: {
         width: '3.5in',
         height: '2.25in',
-        border: '1px dashed #cccccc',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
@@ -74,24 +72,6 @@ const styles = StyleSheet.create({
         fontSize: 22,
         textAlign: 'center',
     },
-    roleContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 6,
-        marginTop: 10,
-    },
-    rolePill: {
-        backgroundColor: '#4ade80', // green
-        paddingVertical: 4,
-        paddingHorizontal: 8,
-        borderRadius: 4,
-    },
-    roleText: {
-        fontFamily: 'Roboto-Bold',
-        fontSize: 10,
-        color: '#fff',
-    },
     logo: {
         width: 150,
         height: 71, // source 1198x568 ≈ 2.11:1
@@ -111,9 +91,6 @@ const styles = StyleSheet.create({
 interface ParticipantBadge {
     id: number;
     name: string;
-    isMember: boolean;
-    isBoardMember: boolean;
-    isKeyholder: boolean;
     qrDataUri: string;
 }
 
@@ -172,19 +149,6 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
 
                                     <View style={styles.nameContainer}>
                                         <Text style={styles.nameText}>{displayNames.get(badge.id) || `User #${badge.id}`}</Text>
-                                    </View>
-
-                                    <View style={styles.roleContainer}>
-                                        {badge.isBoardMember && (
-                                            <View style={{ ...styles.rolePill, backgroundColor: '#3b82f6' }}>
-                                                <Text style={styles.roleText}>BOARD</Text>
-                                            </View>
-                                        )}
-                                        {badge.isKeyholder && (
-                                            <View style={{ ...styles.rolePill, backgroundColor: '#f59e0b' }}>
-                                                <Text style={styles.roleText}>KEYHOLDER</Text>
-                                            </View>
-                                        )}
                                     </View>
                                 </View>
                             ))}
