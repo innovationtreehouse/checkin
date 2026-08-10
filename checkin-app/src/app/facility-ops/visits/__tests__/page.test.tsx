@@ -30,8 +30,8 @@ describe("facility-ops/visits page", () => {
   });
 
   // The page must gate on the same roles the PATCH/DELETE /api/facility/visits
-  // route allows (['isSysadmin', 'isBoardMember', 'isOperations']) — UI and API
-  // agree on who may edit/delete a visit.
+  // route allows (['isSysadmin', 'isBoardMember']) — UI and API agree on who
+  // may edit/delete a visit.
   it("admits a board member (matches the API's edit/delete grant)", async () => {
     setSession({ id: 3, isBoardMember: true });
     mockFetchJson({ "/api/facility/visits": { visits } });
@@ -41,37 +41,14 @@ describe("facility-ops/visits page", () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  it("admits an operations user (matches the API's edit/delete grant)", async () => {
+  // Operations reaches attendance in aggregate only (#1633) — one person's visit
+  // record is outside that reach, on the page as on the API.
+  it("redirects an operations user", async () => {
     setSession({ id: 5, isOperations: true });
     mockFetchJson({ "/api/facility/visits": { visits } });
     renderWithProviders(<AdminVisitsPage />);
 
-    expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
-    expect(router.push).not.toHaveBeenCalled();
-  });
-
-  // Add Visit POSTs /api/facility/visits/insert, which is still sysadmin/board
-  // only. Rendering it for operations would produce "Failed to add visit." on
-  // submit — the button has to track the insert gate, not the page gate.
-  it.each([
-    ["a sysadmin", { id: 1, isSysadmin: true }],
-    ["a board member", { id: 3, isBoardMember: true }],
-  ])("shows Add Visit to %s (they may call insert)", async (_label, session) => {
-    setSession(session);
-    mockFetchJson({ "/api/facility/visits": { visits } });
-    renderWithProviders(<AdminVisitsPage />);
-    await screen.findByText("Val Volunteer");
-
-    expect(screen.getByRole("button", { name: "Add Visit" })).toBeInTheDocument();
-  });
-
-  it("hides Add Visit from an operations user (insert is still board/sysadmin-only)", async () => {
-    setSession({ id: 5, isOperations: true });
-    mockFetchJson({ "/api/facility/visits": { visits } });
-    renderWithProviders(<AdminVisitsPage />);
-    await screen.findByText("Val Volunteer");
-
-    expect(screen.queryByRole("button", { name: "Add Visit" })).not.toBeInTheDocument();
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/"));
   });
 
   it("redirects a non-privileged user (denied like the API)", async () => {

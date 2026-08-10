@@ -93,15 +93,15 @@ export const PAGES: PageEntry[] = [
   { href: '/shop-ops/live', label: 'Live', section: 'Shop Ops', visible: SHOP },
   { href: '/shop-ops/manage', label: 'Manage', section: 'Shop Ops', visible: SHOP },
 
-  // Facility Ops — board or operations, except Corrections. The index redirects
-  // to /facility-ops/visits, and the four tools each admit operations. Corrections
-  // stays board-only: its page gate is unchanged, so it would eject operations —
-  // widening it is part of the #1476 board decision.
-  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD_OR_OPS },
-  { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: BOARD_OR_OPS },
+  // Facility Ops — board, plus operations on the two aggregate tools (#1633:
+  // operations reach attendance in aggregate only). Visits, Badges (the raw
+  // badge-event log) and Corrections are one person's record, so they stay
+  // board-only — as does the index, which redirects to /facility-ops/visits.
+  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD },
+  { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD_OR_OPS },
   { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD_OR_OPS },
-  { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD_OR_OPS },
+  { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/corrections', label: 'Corrections', section: 'Facility Ops', keywords: 'audit attendance edit delete flagged significance review', visible: BOARD },
 
   // Membership Ops — board

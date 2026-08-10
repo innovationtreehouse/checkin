@@ -5,7 +5,7 @@ import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember', 'isOperations'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
             const badges = await prisma.rawBadgeLog.findMany({

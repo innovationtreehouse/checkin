@@ -7,7 +7,7 @@ import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember', 'isOperations'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async () => {
         try {
             const visits = await prisma.visit.findMany({
@@ -30,7 +30,7 @@ export const GET = withAuth(
 );
 
 export const PATCH = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember', 'isOperations'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const { visitId, arrivedAt, departedAt } = await req.json();
@@ -123,7 +123,7 @@ export const PATCH = withAuth(
 );
 
 export const DELETE = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember', 'isOperations'] },
+    { roles: ['isSysadmin', 'isBoardMember'] },
     async (req, auth) => {
         try {
             const { visitId } = await req.json();

@@ -5,6 +5,7 @@ import { Alert, Button, Group, Modal, Select, Stack, Table, Text, TextInput, Too
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconLock, IconRobot, IconScan, IconSelector, IconUserCheck } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { FACILITY_RECORD_ROLES } from '@/lib/facilityNav';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
 import { toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -68,11 +69,7 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 
 export default function AdminVisitsPage() {
   const { formatDateTime } = useOrgTime();
-  const { user, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember', 'isOperations']);
-  // Add Visit POSTs /api/facility/visits/insert, which stays sysadmin/board-only
-  // (registered route; widening it is the board call in #1476). Operations reads
-  // and edits here, so the button must not render for them — it would only 403.
-  const canAddVisit = !!user?.isSysadmin || !!user?.isBoardMember;
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_RECORD_ROLES);
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -289,11 +286,9 @@ export default function AdminVisitsPage() {
     <Stack>
       <AlertBanner message={message?.text} tone={message?.tone} />
 
-      {canAddVisit && (
-        <Group justify="flex-end">
-          <Button size="xs" fz={15} onClick={openAddModal}>Add Visit</Button>
-        </Group>
-      )}
+      <Group justify="flex-end">
+        <Button size="xs" fz={15} onClick={openAddModal}>Add Visit</Button>
+      </Group>
 
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>

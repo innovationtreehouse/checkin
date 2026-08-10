@@ -3,7 +3,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import AdminBadgesPage from "../page";
 
@@ -24,21 +24,20 @@ describe("facility-ops/badges page", () => {
     expect(screen.getByText("Side Door")).toBeInTheDocument();
   });
 
-  it("admits an operations user", async () => {
+  // The raw badge-event log is one person's record, not the aggregate — #1633
+  // keeps operations out of it, and the API agrees.
+  it("redirects an operations user", async () => {
     setSession({ id: 5, isOperations: true });
-    mockFetchJson({
-      "/api/facility/badges": {
-        badges: [{ id: 1, timestamp: "2026-01-01T14:00:00.000Z", person: { name: "Val Volunteer", email: "val@example.com" }, location: "Side Door" }],
-      },
-    });
+    mockFetchJson({ "/api/facility/badges": { badges: [] } });
     renderWithProviders(<AdminBadgesPage />);
 
-    expect(await screen.findByText("Val Volunteer")).toBeInTheDocument();
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/"));
   });
 
   // The layout gate and GET /api/facility/badges both admit board, and
   // useRequireRole has no implicit fallthrough — omitting isBoardMember here
-  // bounced a board member off a page the API serves them.
+  // bounced a board member off a page the API serves them. Unrelated to the
+  // operations grant; the bug predates it.
   it("admits a board member (matches the layout gate and the API)", async () => {
     setSession({ id: 3, isBoardMember: true });
     mockFetchJson({

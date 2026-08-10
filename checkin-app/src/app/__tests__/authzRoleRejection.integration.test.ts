@@ -246,24 +246,29 @@ describe('Protected-route role rejection', () => {
         });
     });
 
-    // ---- Facility Ops routes — operations clears the role gate ----------------
-    // The four Facility Ops tools (Visit History, Raw Badge Events, Print ID
-    // Badges, Participation Trends) are granted to isOperations alongside
-    // sysadmin/board. An operations actor must PASS the withAuth roles gate on
-    // each backing route (i.e. NOT 401/403) — contrast with /visits/insert,
-    // which stays board/sysadmin-only and is deliberately excluded here.
-    const facilityOpsGrantedNames = [
-        'GET /api/facility/trends',
+    // ---- Facility Ops — operations reaches the aggregate, not the record ------
+    // #1633 [Decision]: operations reach attendance in aggregate only — the
+    // trends, and printing the ID badges (whose /api/people/search + /api/programs
+    // already admit them). One person's record sits outside that reach: they do
+    // not record, correct or remove a visit, and do not read the raw badge events
+    // behind one. So trends must NOT 401/403 an operations actor, and every
+    // /api/facility/visits verb plus the raw badge log must 403 them.
+    const facilityOpsGrantedNames = ['GET /api/facility/trends'];
+    const facilityOpsWithheldNames = [
         'GET /api/facility/badges',
         'GET /api/facility/visits',
         'PATCH /api/facility/visits',
         'DELETE /api/facility/visits',
+        'POST /api/facility/visits/insert',
     ];
-    const facilityOpsGranted = roleGated.filter((c) => facilityOpsGrantedNames.includes(c.name));
-    // Guard: the filter matches on literal names, so a renamed or removed case
-    // would silently shrink the sweep instead of failing it.
-    it('guard: every granted Facility Ops route is present in the harness', () => {
-        expect(facilityOpsGranted.map((c) => c.name).sort()).toEqual([...facilityOpsGrantedNames].sort());
+    const byName = (names: string[]) => roleGated.filter((c) => names.includes(c.name));
+    const facilityOpsGranted = byName(facilityOpsGrantedNames);
+    const facilityOpsWithheld = byName(facilityOpsWithheldNames);
+    // Guard: the filters match on literal names, so a renamed or removed case
+    // would silently shrink a sweep instead of failing it.
+    it('guard: every Facility Ops route named above is present in the harness', () => {
+        expect([...facilityOpsGranted, ...facilityOpsWithheld].map((c) => c.name).sort())
+            .toEqual([...facilityOpsGrantedNames, ...facilityOpsWithheldNames].sort());
     });
     describe.each(facilityOpsGranted)('$name — operations clears the gate', ({ invoke }) => {
         it('does not 401/403 an operations actor', async () => {
@@ -271,6 +276,12 @@ describe('Protected-route role rejection', () => {
             const status = (await invoke()).status;
             expect(status).not.toBe(401);
             expect(status).not.toBe(403);
+        });
+    });
+    describe.each(facilityOpsWithheld)('$name — operations is denied', ({ invoke }) => {
+        it('403s an operations-only actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            expect((await invoke()).status).toBe(403);
         });
     });
 
