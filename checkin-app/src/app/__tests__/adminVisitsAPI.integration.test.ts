@@ -413,12 +413,10 @@ describe('Admin Visits API Integration Tests', () => {
             expect(auditLog).not.toBeNull();
             expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
 
-            // UNRESOLVED — 0 is what ships, not what is right. The visit is still
-            // open, so deleteSignificance weighs no duration: deleting a live 6h
+            // UNRESOLVED (#1630) — 0 is what ships, not what is right. The visit is
+            // still open, so deleteSignificance weighs no duration: deleting a live 6h
             // scanned visit scores 0, while deleting that same row after checkout
             // scores 2160. The lowest score destroys the live in-building roster.
-            // TODO(#TBD): "deleteSignificance scores an open visit 0" — issue text
-            // is in PR #1558's description ("NOT YET FILED"); swap in the number.
             expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
                 .toEqual({ score: 0, flagged: true });
         });
