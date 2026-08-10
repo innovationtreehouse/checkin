@@ -89,12 +89,12 @@ export const PATCH = withAuth(
                     visit: await tx.visit.update({
                         where: { id: visitId },
                         data: {
-                            // The via records how a time was MEASURED, so a time staff
-                            // typed here is staff-asserted — LEAD_MARKED, never WEB (the
-                            // member's own report, which trends counts as measured hours).
-                            // Stamped per field: a side not sent keeps its existing via,
-                            // the roster mark's rule for an adopted walk-in.
-                            ...(parsedArrived ? { arrivedAt: nextArrived, arrivedVia: "LEAD_MARKED" } : {}),
+                            // `arrivedVia` is left alone, as on the `events/[id]` update
+                            // branch: a correction re-times a visit, it does not change
+                            // how the arrival was measured, and restamping LEAD_MARKED
+                            // drops a corrected SCANNER visit out of `facility/trends`.
+                            // A departure staff typed is theirs; trends keys on arrival.
+                            ...(parsedArrived ? { arrivedAt: nextArrived } : {}),
                             ...(parsedDeparted ? { departedAt: nextDeparted, departedVia: "LEAD_MARKED" } : {}),
                         },
                     })

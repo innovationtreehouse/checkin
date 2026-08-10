@@ -288,11 +288,10 @@ describe('Admin Visits API Integration Tests', () => {
                 .toEqual({ score: 0, flagged: false });
         });
 
-        // The via records how a time was MEASURED, not who last touched the row,
-        // so only the field the board actually typed becomes staff-asserted. WEB
-        // here would claim the member self-reported it, keep it in trends as
-        // measured hours, and weigh it 1 instead of 2 on the next correction.
-        it('stamps LEAD_MARKED on the time the board typed and leaves the untouched side alone', async () => {
+        // `arrivedVia` records how the arrival was measured, not who last touched
+        // the row, so correcting the time must not restamp it: this person did
+        // badge in, and `facility/trends` drops LEAD_MARKED arrivals outright.
+        it('leaves arrivedVia alone when the board corrects a scanned arrival', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true }
             });
@@ -307,20 +306,19 @@ describe('Admin Visits API Integration Tests', () => {
                 }
             });
 
+            const corrected = new Date(Date.now() - 3 * 3600000).toISOString();
             const req = new Request('http://localhost:4000/api/facility/visits', {
                 method: 'PATCH',
-                body: JSON.stringify({
-                    visitId: scanned.id,
-                    arrivedAt: new Date(Date.now() - 3 * 3600000).toISOString()
-                })
+                body: JSON.stringify({ visitId: scanned.id, arrivedAt: corrected })
             });
 
             const res = await PATCH(req as unknown as import("next/server").NextRequest);
             expect(res.status).toBe(200);
 
             const stored = await prisma.visit.findUnique({ where: { id: scanned.id } });
-            expect(stored?.arrivedVia).toBe('LEAD_MARKED'); // typed by staff
-            expect(stored?.departedVia).toBe('SCANNER');    // not sent — still the badge reading
+            expect(stored?.arrivedAt.toISOString()).toBe(corrected);
+            expect(stored?.arrivedVia).toBe('SCANNER');  // re-timed, still a badge reading
+            expect(stored?.departedVia).toBe('SCANNER'); // not sent — untouched
         });
     });
 
