@@ -157,6 +157,15 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(visits.length).toBe(1);               // not a second visit
             expect(visits[0].id).toBe(openVisit.id);     // same row, updated in place
             expect(visits[0].arrivedAt.getTime()).toBe(newArrival.getTime());
+
+            // 10-minute arrival shift on an untagged (weight 1) visit, doubled
+            // for proxy (admin != participant): 10 * 1 * 2 = 20, under the
+            // 90-point flag threshold.
+            const audit = await prisma.auditLog.findFirst({
+                where: { tableName: 'Visit', affectedEntityId: openVisit.id, action: 'EDIT' },
+            });
+            expect((audit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 20, flagged: false });
         });
     });
 
@@ -207,6 +216,11 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(audit).not.toBeNull();
             expect(audit!.actorId).toBe(adminId);
             expect(audit!.secondaryAffectedEntity).toBe(participantId);
+
+            // 30-minute visit, untagged sources (weight 1), doubled for proxy
+            // (admin != participant): 30 * 1 * 2 = 60. Always flagged (delete floor).
+            expect((audit!.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 60, flagged: true });
         });
 
         it('rejects and deletes nothing when an open visit coexists with a closed one', async () => {
@@ -309,6 +323,121 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
             expect(visits.find(v => v.id === walkIn.id)!.departedAt).toBeNull();
             const forEvent = visits.find(v => v.associatedEventId === event.id)!;
             expect(forEvent.departedAt!.getTime()).toBe(departure.getTime());
+        });
+
+        // "No reopening a closed visit" is a route-level validity rule
+        // (1256 §2) that facility/visits PATCH enforces. A Present mark with no
+        // departure against a closed visit would null it, destroying a recorded
+        // departure — the single most damaging edit this surface can make.
+        it('refuses to reopen a closed visit, leaving its departure and writing no audit row', async () => {
+            const event = await makeEvent('manual-present-no-reopen', -9 * HOUR);
+            const arrival = new Date(Date.now() - 8 * HOUR);
+            const departure = new Date(Date.now() - 1 * HOUR);
+            const closed = await prisma.visit.create({
+                data: { personId: participantId, arrivedAt: arrival, departedAt: departure, associatedEventId: event.id },
+            });
+
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: arrival.toISOString(),
+            });
+            expect(res.status).toBe(400);
+
+            const after = await prisma.visit.findUniqueOrThrow({ where: { id: closed.id } });
+            expect(after.departedAt!.getTime()).toBe(departure.getTime());
+
+            const audits = await prisma.auditLog.findMany({
+                where: { tableName: 'Visit', affectedEntityId: closed.id },
+            });
+            expect(audits).toHaveLength(0);
+        });
+    });
+
+    // ─── 2c. VISIT SOURCE ON A ROSTER MARK ──────────────────────────────────
+
+    // arrivedVia is how the arrival was MEASURED, so only a visit this mark
+    // creates is LEAD_MARKED. Stamping it unconditionally would relabel a real
+    // badge-in as staff-asserted and drop it out of facility/trends, which
+    // excludes LEAD_MARKED — trading an over-count for an under-count on
+    // exactly the people who did scan in.
+    describe('manualEditAttendance — arrivedVia/departedVia', () => {
+        it('stamps LEAD_MARKED on both fields of a visit it creates', async () => {
+            const event = await makeEvent('source-create', -3 * HOUR);
+            const arrival = new Date(Date.now() - 150 * MIN);
+            const departure = new Date(Date.now() - 30 * MIN);
+
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: arrival.toISOString(),
+                departedAt: departure.toISOString(),
+            });
+            expect(res.status).toBe(200);
+
+            const visit = await prisma.visit.findFirstOrThrow({ where: { personId: participantId, associatedEventId: event.id } });
+            expect(visit.arrivedVia).toBe('LEAD_MARKED');
+            expect(visit.departedVia).toBe('LEAD_MARKED');
+
+            const audit = await prisma.auditLog.findFirstOrThrow({
+                where: { tableName: 'Visit', affectedEntityId: visit.id, action: 'CREATE' },
+            });
+            expect(audit.newData).toMatchObject({ arrivedVia: 'LEAD_MARKED', departedVia: 'LEAD_MARKED' });
+        });
+
+        it('leaves an adopted walk-in on its measured SCANNER arrival', async () => {
+            const event = await makeEvent('source-adopt', -1 * HOUR);
+            const walkIn = await prisma.visit.create({
+                data: {
+                    personId: participantId, arrivedAt: new Date(Date.now() - 90 * MIN),
+                    departedAt: null, associatedEventId: null, arrivedVia: 'SCANNER',
+                },
+            });
+
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: new Date(Date.now() - 80 * MIN).toISOString(),
+                departedAt: null,
+            });
+            expect(res.status).toBe(200);
+
+            const after = await prisma.visit.findUniqueOrThrow({ where: { id: walkIn.id } });
+            expect(after.associatedEventId).toBe(event.id); // adopted
+            expect(after.arrivedVia).toBe('SCANNER');       // still a measured arrival
+            expect(after.departedVia).toBeNull();           // no departure supplied
+
+            // The audit must not claim a field it did not write.
+            const audit = await prisma.auditLog.findFirstOrThrow({
+                where: { tableName: 'Visit', affectedEntityId: walkIn.id, action: 'EDIT' },
+            });
+            expect(audit.newData).not.toHaveProperty('arrivedVia');
+        });
+
+        it('keeps the arrival source but stamps the departure a lead types on an existing visit', async () => {
+            const event = await makeEvent('source-edit-existing', -4 * HOUR);
+            const existing = await prisma.visit.create({
+                data: {
+                    personId: participantId, arrivedAt: new Date(Date.now() - 200 * MIN),
+                    departedAt: null, associatedEventId: event.id, arrivedVia: 'SCANNER',
+                },
+            });
+
+            const res = await patch(event.id, {
+                action: 'manualEditAttendance',
+                participantId,
+                status: 'Present',
+                arrivedAt: new Date(Date.now() - 200 * MIN).toISOString(),
+                departedAt: new Date(Date.now() - 60 * MIN).toISOString(),
+            });
+            expect(res.status).toBe(200);
+
+            const after = await prisma.visit.findUniqueOrThrow({ where: { id: existing.id } });
+            expect(after.arrivedVia).toBe('SCANNER');        // not overwritten
+            expect(after.departedVia).toBe('LEAD_MARKED');   // the lead asserted this
         });
     });
 

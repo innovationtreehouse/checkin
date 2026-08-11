@@ -27,6 +27,7 @@ export default function PrintBadgesPage() {
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [hideInactive, setHideInactive] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -67,35 +68,36 @@ export default function PrintBadgesPage() {
     setSelectedIds(newSet);
   };
 
+  // Every count, every checkbox and the PDF itself read `visible`/`selectedVisible`,
+  // never `participants`/`selectedIds` — a hidden person can't leak into a print run.
+  const visible = hideInactive ? participants.filter(p => p.isMember) : participants;
+  const selectedVisible = visible.filter(p => selectedIds.has(p.id));
+
   const toggleAll = () => {
-    if (selectedIds.size === participants.length) {
+    if (selectedVisible.length === visible.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(participants.map(p => p.id)));
+      setSelectedIds(new Set(visible.map(p => p.id)));
     }
   };
 
   const generate = async (kind: 'badge' | 'sticker') => {
-    if (selectedIds.size === 0) return;
+    if (selectedVisible.length === 0) return;
     setIsGenerating(true);
 
     try {
-      const selectedParticipants = participants.filter(p => selectedIds.has(p.id));
-
       // Add QR code data URIs
       const badgesWithQr = await Promise.all(
-        selectedParticipants.map(async (p) => {
+        selectedVisible.map(async (p) => {
           const qrDataUri = await QRCode.toDataURL(p.id.toString(), {
             width: 200,
             margin: 1,
             color: { dark: '#000000', light: '#FFFFFF' }
           });
+          // `name` feeds both documents: BadgeDocument disambiguates it, StickerDocument prints it raw.
           return {
             id: p.id,
             name: p.name ?? '',
-            isMember: !!p.isMember,
-            isBoardMember: !!p.isBoardMember,
-            isKeyholder: !!p.isKeyholder,
             qrDataUri,
           };
         })
@@ -130,7 +132,7 @@ export default function PrintBadgesPage() {
       header: (
         <Checkbox
           radius={2}
-          checked={participants.length > 0 && selectedIds.size === participants.length}
+          checked={visible.length > 0 && selectedVisible.length === visible.length}
           onChange={toggleAll}
           aria-label="Select all"
         />
@@ -180,17 +182,22 @@ export default function PrintBadgesPage() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.currentTarget.value)}
         />
-        <Button onClick={() => generate('badge')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
-          Generate Badge ({selectedIds.size})
+        <Checkbox
+          label="Hide inactive"
+          checked={hideInactive}
+          onChange={(e) => setHideInactive(e.currentTarget.checked)}
+        />
+        <Button onClick={() => generate('badge')} disabled={selectedVisible.length === 0 || isGenerating} loading={isGenerating}>
+          Generate Badge ({selectedVisible.length})
         </Button>
-        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
-          Generate Sticker ({selectedIds.size})
+        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedVisible.length === 0 || isGenerating} loading={isGenerating}>
+          Generate Sticker ({selectedVisible.length})
         </Button>
       </Group>
 
       <DataTable
         columns={columns}
-        rows={participants}
+        rows={visible}
         getRowKey={(p) => p.id}
         loading={loading}
         emptyMessage="No participants found."

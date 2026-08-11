@@ -163,12 +163,12 @@ export default function CompliancePage() {
     }
   };
 
-  // Clear one person's background-check date. Not a new capability: the same
+  // Remove one person's background-check date. Not a new capability: the same
   // board-gated PUT the participants edit modal already uses, one person at a time,
   // audited with the acting board member as the actor. It never touches a process or
   // its bgClearedAt, and it can never cost a household its membership — one checked
   // adult is all membership requires, so the worst case is a redundant re-check.
-  const clearStamp = async (personId: number) => {
+  const removeStamp = async (personId: number) => {
     setBusyId(personId);
     try {
       const res = await fetch(`/api/membership-ops/participants/${personId}`, {
@@ -178,10 +178,10 @@ export default function CompliancePage() {
       });
       if (res.ok) {
         setClearedStampIds((s) => new Set(s).add(personId));
-        notifications.show({ message: "Stamp cleared — they will show up as needing a check." });
+        notifications.show({ message: "Date removed — they will show up as needing a check." });
       } else {
         const data = await res.json().catch(() => ({}));
-        notifications.show({ color: "red", message: data.error || "Could not clear the stamp." });
+        notifications.show({ color: "red", message: data.error || "Could not remove the date." });
       }
     } catch {
       notifications.show({ color: "red", message: "Network error." });
@@ -190,9 +190,9 @@ export default function CompliancePage() {
     }
   };
 
-  const confirmClearStamp = (row: BlanketStampedRow, lead: BlanketStampedRow["leads"][number]) =>
+  const confirmRemoveStamp = (row: BlanketStampedRow, lead: BlanketStampedRow["leads"][number]) =>
     modals.openConfirmModal({
-      title: "Clear this background-check date?",
+      title: "Remove this background-check date?",
       children: (
         <Text size="sm">
           This removes <strong>{lead.name}</strong>&apos;s background-check date, so they will be
@@ -201,9 +201,9 @@ export default function CompliancePage() {
           adult. Do this when their report is not the one that was reviewed.
         </Text>
       ),
-      labels: { confirm: "Clear the date", cancel: "Cancel" },
+      labels: { confirm: "Remove the date", cancel: "Cancel" },
       confirmProps: { color: "orange" },
-      onConfirm: () => clearStamp(lead.personId),
+      onConfirm: () => removeStamp(lead.personId),
     });
 
   const load = useCallback(async (since: string) => {
@@ -325,7 +325,7 @@ export default function CompliancePage() {
         <Title order={4}>Background-check dates to confirm</Title>
         <Text c="dimmed" size="sm">
           These households had one check approved, but every lead was marked checked. Confirm who
-          actually had the check and clear the others. Clearing the wrong one costs a redundant
+          actually had the check and remove the others. Removing the wrong one costs a redundant
           re-check, never a membership.
         </Text>
         <TextInput
@@ -371,9 +371,9 @@ export default function CompliancePage() {
                           color="orange"
                           loading={busyId === lead.personId}
                           disabled={busyId === lead.personId}
-                          onClick={() => confirmClearStamp(row, lead)}
+                          onClick={() => confirmRemoveStamp(row, lead)}
                         >
-                          Clear this date
+                          Remove this date
                         </Button>
                       )}
                     </Group>

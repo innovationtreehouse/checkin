@@ -10,7 +10,7 @@
  *   - advanceExternalIfComplete: the volunteer-designation allowlist is matched
  *     at the PENDING_PAYMENT transition (#874) — and only by the race winner.
  */
-import { setZohoEnvelope, findProcessByEnvelope, getOrCreateContractSigningUrl, selfAttestBgConsent, advanceExternalIfComplete, ExternalError } from '@/lib/membership/external';
+import { setZohoEnvelope, findProcessByEnvelope, getOrCreateContractSigningUrl, selfRecordBgConsent, advanceExternalIfComplete, ExternalError } from '@/lib/membership/external';
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -118,7 +118,7 @@ describe('findProcessByEnvelope', () => {
     });
 });
 
-describe('selfAttestBgConsent', () => {
+describe('selfRecordBgConsent', () => {
     const pendingProcess = {
         id: 20,
         status: 'PENDING_EXTERNAL_ACTION',
@@ -137,17 +137,17 @@ describe('selfAttestBgConsent', () => {
 
     it('not_found when the user does not exist', async () => {
         prisma.person.findUnique.mockResolvedValue(null);
-        await expect(selfAttestBgConsent(1)).rejects.toMatchObject({ code: 'not_found' });
+        await expect(selfRecordBgConsent(1)).rejects.toMatchObject({ code: 'not_found' });
     });
 
     it('no_household when the user has no household', async () => {
         prisma.person.findUnique.mockResolvedValue({ ...leadUser, householdId: null });
-        await expect(selfAttestBgConsent(1)).rejects.toMatchObject({ code: 'no_household' });
+        await expect(selfRecordBgConsent(1)).rejects.toMatchObject({ code: 'no_household' });
     });
 
     it('not_lead when the caller is not a household lead and not a sysadmin', async () => {
         prisma.person.findUnique.mockResolvedValue({ ...leadUser, isHouseholdLead: false });
-        await expect(selfAttestBgConsent(1)).rejects.toMatchObject({ code: 'not_lead' });
+        await expect(selfRecordBgConsent(1)).rejects.toMatchObject({ code: 'not_lead' });
     });
 
     it('wrong_phase when no process is awaiting external action', async () => {
@@ -155,7 +155,7 @@ describe('selfAttestBgConsent', () => {
             ...leadUser,
             household: { orgMembership: { processes: [{ ...pendingProcess, status: 'PENDING_PAYMENT' }] } },
         });
-        await expect(selfAttestBgConsent(1)).rejects.toMatchObject({ code: 'wrong_phase' });
+        await expect(selfRecordBgConsent(1)).rejects.toMatchObject({ code: 'wrong_phase' });
     });
 
     it('records consent with the applicant as the audit actor and returns the external status', async () => {
@@ -167,7 +167,7 @@ describe('selfAttestBgConsent', () => {
             // advanceExternalIfComplete re-read: consent set, contract still unsigned → no advance
             .mockResolvedValueOnce({ ...pendingProcess, bgConsentAt: new Date() });
 
-        const status = await selfAttestBgConsent(1);
+        const status = await selfRecordBgConsent(1);
 
         expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith(
             expect.objectContaining({ where: { id: 20, bgConsentAt: null } }),

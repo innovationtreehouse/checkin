@@ -151,6 +151,12 @@ describe('My-programs conflicts resolve API', () => {
             // The subject, not the event; the event stays in oldData.
             expect(audit?.secondaryAffectedEntity).toBe(participantId);
             expect((audit?.oldData as { personId: number })?.personId).toBe(participantId);
+
+            // 3h span, LEAD_MARKED arrival (weight 2) beats the untagged
+            // departure (weight 1) -> weight 2; proxy delete (lead != subject)
+            // doubles it: 180 * 2 * 2 = 720. Always flagged (delete floor).
+            expect((audit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 720, flagged: true });
         } finally {
             await prisma.visit.deleteMany({ where: { id: { in: [anchor.id, sibling.id] } } });
         }

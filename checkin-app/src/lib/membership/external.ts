@@ -21,8 +21,8 @@ import { systemActor, personOrSystemActor } from "@/lib/auditActor";
  * the final ACTIVE transition waits on it.
  *
  * The contract is recorded automatically (Zoho webhook) or manually by the
- * board. BG consent is human-marked (no Averity API): the applicant self-attests
- * after submitting on Averity (selfAttestBgConsent, #875), with the board's
+ * board. BG consent is human-marked (no Averity API): the applicant self-reports
+ * after submitting on Averity (selfRecordBgConsent, #875), with the board's
  * mark-bg-consent action as the backstop. The system never sees contract content
  * or check results.
  *
@@ -195,16 +195,16 @@ export async function markBgConsent(processId: number, actorId: number) {
 }
 
 /**
- * Applicant self-attestation that they submitted background-check consent on
+ * Applicant self-report that they submitted background-check consent on
  * Averity (#875). Honor-system by design: Averity has no API, so the applicant's
  * own claim records consent the same way a board mark does — through
- * markBgConsent, with the applicant as the audit actor, so a self-attested
+ * markBgConsent, with the applicant as the audit actor, so a self-reported
  * consent stays distinguishable from a board-confirmed one. The board
  * mark-bg-consent action remains as the backstop. Idempotent (markBgConsent
  * no-ops on a second call), and restricted to a household lead — the person who
  * actually consents on Averity.
  */
-export async function selfAttestBgConsent(userId: number): Promise<ExternalStatus> {
+export async function selfRecordBgConsent(userId: number): Promise<ExternalStatus> {
     const user = await prisma.person.findUnique({
         where: { id: userId },
         include: {

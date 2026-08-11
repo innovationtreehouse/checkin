@@ -8,6 +8,7 @@ import { apiError } from "@/lib/api-response";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
+import { editSignificance, deleteSignificance } from "@/lib/visit/significance";
 
 // FAIL-CLOSED, staff-only. This payload is fundamentally a roster — who is
 // enrolled / RSVP'd / attended — and a participant's name, id, and the very
@@ -311,7 +312,10 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                                     arrivedVia: v.arrivedVia, departedVia: v.departedVia,
                                     associatedEventId: v.associatedEventId
                                 },
-                                newData: { type: "lead_attendance_correction", status: "Absent" }
+                                newData: {
+                                    type: "lead_attendance_correction", status: "Absent",
+                                    significance: deleteSignificance(v, { byProxy: userId !== targetId }),
+                                }
                             }))
                         });
                     }
@@ -343,16 +347,27 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                     where: { personId: targetId, associatedEventId: eventId, ...LIVE_VISIT }
                 });
 
+                // arrivedVia records how the arrival was measured, not who last
+                // touched the row, so only a visit this mark creates is staff-
+                // asserted: an adopted walk-in keeps its SCANNER/WEB. A departure
+                // the lead typed is staff-asserted whatever the arrival was.
                 const times = {
                     arrivedAt: arrival!,
                     departedAt: dep,
-                    arrivedVia: "WEB",
-                    departedVia: departedAt ? "WEB" : null
+                    departedVia: departedAt ? "LEAD_MARKED" : null
                 } satisfies Prisma.VisitUncheckedUpdateInput;
+                const createTimes = { ...times, arrivedVia: "LEAD_MARKED" } satisfies Prisma.VisitUncheckedUpdateInput;
 
                 // Every human visit-write logs (design "Audit substrate"), with
                 // secondaryAffectedEntity = the subject so a correction review
                 // reads actor ≠ subject without a join (§6.6).
+                // Never reopen a closed visit: a Present mark with no departure
+                // against a visit that has one would null it. facility/visits
+                // PATCH refuses the same edit.
+                if (existingVisit?.departedAt && !dep) {
+                    return "This visit is already closed. Provide a departure time, or remove the visit instead of reopening it.";
+                }
+
                 if (existingVisit) {
                     const updated = await tx.visit.update({
                         where: { id: existingVisit.id },
@@ -370,12 +385,15 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                                 arrivedVia: existingVisit.arrivedVia, departedVia: existingVisit.departedVia,
                                 associatedEventId: existingVisit.associatedEventId
                             },
-                            newData: { ...times, type: "lead_attendance_correction", status: "Present" }
+                            newData: {
+                                ...times, type: "lead_attendance_correction", status: "Present",
+                                significance: editSignificance(existingVisit, { arrivedAt: arrival!, departedAt: dep }, { byProxy: userId !== targetId }),
+                            }
                         }
                     });
                 } else {
                     const created = await tx.visit.create({
-                        data: { ...times, personId: targetId, associatedEventId: eventId }
+                        data: { ...createTimes, personId: targetId, associatedEventId: eventId }
                     });
                     await tx.auditLog.create({
                         data: {
@@ -384,7 +402,7 @@ export const PATCH = withAuth({}, async (req: Request, auth, { params }: { param
                             tableName: "Visit",
                             affectedEntityId: created.id,
                             secondaryAffectedEntity: targetId,
-                            newData: { ...times, type: "lead_attendance_correction", status: "Present" }
+                            newData: { ...createTimes, type: "lead_attendance_correction", status: "Present" }
                         }
                     });
                 }

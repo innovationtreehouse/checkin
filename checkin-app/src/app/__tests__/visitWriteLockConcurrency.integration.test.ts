@@ -26,6 +26,7 @@ import { DELETE as VISIT_DELETE } from '@/app/api/facility/visits/route';
 import { POST as CONFLICT_RESOLVE } from '@/app/api/my-programs/conflicts/resolve/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { Client } from 'pg';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -50,6 +51,25 @@ function visitDelete(visitId: number) {
         body: JSON.stringify({ visitId }),
     });
     return VISIT_DELETE(req as unknown as import('next/server').NextRequest) as Promise<Response>;
+}
+
+/**
+ * Block until someone is WAITING on the advisory lock for `key` in this
+ * database — pg_locks is cluster-wide, so filter both, or a sibling jest
+ * worker's lock answers for ours.
+ */
+async function waitForBlockedAdvisoryLock(client: Client, key: number) {
+    for (let i = 0; i < 200; i++) {
+        const { rows } = await client.query(
+            `SELECT 1 FROM pg_locks l JOIN pg_database d ON d.oid = l.database
+             WHERE l.locktype = 'advisory' AND NOT l.granted
+               AND l.objid = $1 AND d.datname = current_database() LIMIT 1`,
+            [key],
+        );
+        if (rows.length) return;
+        await new Promise(r => setTimeout(r, 25));
+    }
+    throw new Error(`no waiter appeared on advisory lock ${key}`);
 }
 
 function resolveConflict(visitId: number) {
@@ -168,5 +188,67 @@ describe('visit-write advisory locks', () => {
 
         // The whole point: the participant keeps one visit for the session.
         expect(await prisma.visit.count({ where: { personId: subjectId, deletedAt: null } })).toBe(1);
+    });
+
+    it('audits the delete off the in-lock re-read, not the stale pre-lock row', async () => {
+        await prisma.visit.deleteMany({ where: { personId: subjectId } });
+        await prisma.auditLog.deleteMany({ where: { actorId: adminId } });
+
+        // The visit to resolve is still OPEN (no departure yet), overlapping a
+        // closed sibling so the in-lock overlap guard accepts it. Only one open
+        // visit per participant is allowed, hence the sibling is the closed one.
+        const arrivedAt = new Date(Date.now() - 3 * HOUR);
+        const open = await prisma.visit.create({
+            data: { personId: subjectId, arrivedAt, departedAt: null, arrivedVia: 'SCANNER' },
+        });
+        await prisma.visit.create({
+            data: { personId: subjectId, arrivedAt: new Date(Date.now() - 2 * HOUR), departedAt: new Date(Date.now() - HOUR) },
+        });
+
+        // Hold the participant's advisory lock on connections outside prisma's
+        // pool, so the route's pre-lock read lands first and its in-lock re-read
+        // is forced to wait behind the departure we land in between.
+        const holder = new Client({ connectionString: process.env.DATABASE_URL });
+        const watcher = new Client({ connectionString: process.env.DATABASE_URL });
+        await holder.connect();
+        await watcher.connect();
+        let pending: Promise<Response> | undefined;
+        try {
+            await holder.query('BEGIN');
+            await holder.query('SELECT pg_advisory_xact_lock($1)', [subjectId]);
+
+            pending = resolveConflict(open.id);
+
+            // No sleep: an ungranted advisory lock on this key IS the signal
+            // that the route is parked, and it only gets there after its
+            // pre-lock read.
+            await waitForBlockedAdvisoryLock(watcher, subjectId);
+
+            // The departure the lock exists to order against. 3h, SCANNER.
+            await prisma.visit.update({
+                where: { id: open.id },
+                data: { departedAt: new Date(arrivedAt.getTime() + 3 * HOUR), departedVia: 'SCANNER' },
+            });
+            await holder.query('COMMIT'); // releases the lock; the route proceeds
+
+            expect((await pending).status).toBe(200);
+        } finally {
+            await holder.query('ROLLBACK').catch(() => { });
+            await pending?.catch(() => { });
+            await holder.end();
+            await watcher.end();
+        }
+
+        const audit = await prisma.auditLog.findFirst({
+            where: { tableName: 'Visit', affectedEntityId: open.id, action: 'DELETE' },
+            orderBy: { id: 'desc' },
+        });
+        // 180 min x SCANNER weight 3 x proxy 2 (admin != subject) = 1080, and it
+        // must agree with the oldData snapshot beside it. Scoring the pre-lock
+        // row instead sees departedAt: null -> duration 0 -> score 0, an audit
+        // row claiming nothing was lost while its own oldData shows a 3h visit.
+        expect((audit?.oldData as { departedAt: string | null })?.departedAt).not.toBeNull();
+        expect((audit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+            .toEqual({ score: 1080, flagged: true });
     });
 });

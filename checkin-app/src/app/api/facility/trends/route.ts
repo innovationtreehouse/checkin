@@ -72,11 +72,10 @@ export const GET = withAuth(
                 deletedAt: null,
                 // Drop staff-asserted arrivals (LEAD_MARKED, and its legacy spelling
                 // SYSTEM): those times are an event window, not a measured duration.
+                // The events roster mark stamps LEAD_MARKED on the visits it creates;
+                // a walk-in it adopts keeps its measured SCANNER/WEB and still counts.
                 // An untagged (null) arrival is an ordinary visit and counts — it needs
                 // the explicit OR, because NULL never satisfies a SQL NOT IN.
-                // ponytail: this only reaches rows that already carry LEAD_MARKED. The
-                // events roster mark stamps WEB, so its visits are still counted as
-                // measured hours until that writer stamps LEAD_MARKED.
                 OR: [
                     { arrivedVia: null },
                     { arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] } },
