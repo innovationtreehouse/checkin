@@ -51,6 +51,7 @@ import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import { navBadgeFor, leadsAnyProgram } from '@/components/navBadges';
 import { CountBadge, badgeIntentFor } from '@/components/ui/CountBadge';
 import type { SessionUser } from '@/types/auth';
+import { FACILITY_SECTION_ROLES } from '@/lib/facilityNav';
 
 type NavItem = {
   href: string;
@@ -102,7 +103,9 @@ const NAV_ITEMS: NavItem[] = [
     href: '/facility-ops',
     label: 'Facility Ops',
     icon: <IconBuildingWarehouse size={18} />,
-    visible: (u) => !!u?.isSysadmin || !!u?.isBoardMember,
+    // Same union the section layout gates on — operations reach the two aggregate
+    // tools (#1633), so they get the nav entry too. Derived, never a second table.
+    visible: (u) => FACILITY_SECTION_ROLES.some((r) => !!u?.[r]),
   },
   {
     href: '/membership-ops',
