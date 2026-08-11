@@ -9,11 +9,13 @@ answered here.
 [#1357](https://github.com/innovationtreehouse/checkin/pull/1357); AT3 (#1254) stacks on it —
 household-lead correction, staff insert-for-others, the program-lead tombstone
 + audit, and the `VisitSource` split. AT13 landed separately in
-[#1350](https://github.com/innovationtreehouse/checkin/pull/1350). **Still open:** AT12 (§4,
-unbuilt), the `isOperations` gate decision (§6.1), dropping the legacy `SYSTEM`
-enum value (§3, contract stage). The advisory-lock work tracked as §7 has
-landed. Sections below are written in the present tense and describe the code
-as it stands; anything not built says so in its heading or carries a 🟡.
+[#1350](https://github.com/innovationtreehouse/checkin/pull/1350). **Still open:** dropping the
+legacy `SYSTEM` enum value (§3, contract stage). AT12 (§4) has since shipped,
+and the `isOperations` gate decision (§6.1) is **answered** —
+[#1633](https://github.com/innovationtreehouse/checkin/pull/1633) keeps operations' reach into
+attendance aggregate-only. The advisory-lock work tracked as §7 has landed.
+Sections below are written in the present tense and describe the code as it
+stands; anything not built says so in its heading or carries a 🟡.
 
 ## Why one design, not three
 
@@ -206,7 +208,7 @@ editing an underlying visit — there is no separate hours write.
 | **self** | ✅ `personId` forced self | ⛔ never another person | ✅ own visits — any field; significant changes flag (§2) | ✅ own visits (tombstone; delete flags) |
 | **household-lead** | ✅ (as self) | ✅ own household members | ✅ household members' visits, same as self | ✅ household members' visits (tombstone) |
 | **program-lead** | ✅ (as self) | ✅ program roster (synthetic mark at event window) | ✅ visits associated to their program's events (`manualEditAttendance`) | ✅ same program-event scope (tombstone) |
-| **ops** (`isOperations`) | ✅ (as self) | 🟡 facility-wide — *gate widen, [#1476](https://github.com/innovationtreehouse/checkin/issues/1476)* | 🟡 facility-wide — *[#1476](https://github.com/innovationtreehouse/checkin/issues/1476)* | 🟡 facility-wide — *[#1476](https://github.com/innovationtreehouse/checkin/issues/1476)* |
+| **ops** (`isOperations`) | ✅ (as self) | ⛔ not another person's record ([#1633](https://github.com/innovationtreehouse/checkin/pull/1633)) | ⛔ not another person's record | ⛔ not another person's record |
 | **board** | ✅ (as self) | ✅ facility-wide | ✅ facility-wide | ✅ facility-wide (tombstone) |
 | **sysadmin** | ✅ | ✅ facility-wide | ✅ facility-wide | ✅ facility-wide (tombstone) |
 
@@ -246,9 +248,10 @@ useRequireRole(['isSysadmin'])                      // was — wrong, dropped bo
 
 The rule that outlives the fix: **the two role sets must stay equal.** AT13 was
 precisely "they drifted apart", and this matrix is the single source that
-re-couples them. If ops is added
-([#1476](https://github.com/innovationtreehouse/checkin/issues/1476)), the same set widens on
-both the route (`withAuth roles`) and the page (`useRequireRole`) together.
+re-couples them. Ops is not added — [#1633](https://github.com/innovationtreehouse/checkin/pull/1633)
+keeps one person's record outside operations' reach — but the rule holds for any
+future widening: the same set widens on both the route (`withAuth roles`) and
+the page (`useRequireRole`) together.
 
 ---
 
@@ -581,7 +584,8 @@ correction feed behind a filter. A member whose edits flag often is a standing
 signal. This *is* the board-review surface; the write-time notification (§2)
 is the push, AT12 is the pull.
 
-**Audience:** board + sysadmin, and ops once #1476 widens the section gate. The
+**Audience:** board + sysadmin. Reviewing other people's corrections is one
+person's record, so operations stay out ([#1633](https://github.com/innovationtreehouse/checkin/pull/1633)). The
 existing `/system-status/audit-log` viewer is sysadmin-gated and buries visit
 corrections among all tables — that is the "missed screen" AT12 exists to replace.
 
@@ -591,12 +595,14 @@ list. Reuse the existing audit-log route's shape (it already filters
 `tableName`/`action`/date and resolves `actorId → name`) and pin
 `tableName='Visit'` in the handler. Do not build a second generic audit browser.
 
-**The gate is sysadmin + board, not ops.** `facility-ops/layout.tsx` gates the
-whole section on those two roles, and every tab sits under it. Granting ops the
-route while the layout keeps them out of the section produces a role that can
-call the API and cannot reach a page — the AT13 defect this design family exists
-to close. Widening the section gate is an open decision (#1476); when it lands,
-the layout, this route and its page widen together.
+**The gate is sysadmin + board, not ops.** The section gate
+(`FACILITY_SECTION_ROLES` in [lib/facilityNav.ts](../../src/lib/facilityNav.ts))
+admits operations for the two aggregate tools ([#1623](https://github.com/innovationtreehouse/checkin/pull/1623)),
+but each tab carries its own roles and Corrections is `FACILITY_RECORD_ROLES` —
+sysadmin + board. The route is gated to that same set, so the two stay equal:
+granting ops the route while the tab filter keeps them off the page would
+produce a role that can call the API and cannot reach a page — the AT13 defect
+this design family exists to close.
 
 **It cannot return a group-by aggregate.** The boundary stripper drops any bag
 key that is not a model name, and copies only fields declared on that model, so
@@ -638,10 +644,13 @@ client-side from what ships.
 
 ## 6. Open questions
 
-1. **Widen the `facility/visits` gate to `isOperations`?** Split out to
-   [#1476](https://github.com/innovationtreehouse/checkin/issues/1476) so this doc describes
-   only what is built. AT3 shipped deliberately without it; the gate stays
-   `['isSysadmin', 'isBoardMember']` on both route and page.
+1. **Widen the `facility/visits` gate to `isOperations`? — ANSWERED: no.**
+   [#1633](https://github.com/innovationtreehouse/checkin/pull/1633) puts operations'
+   reach into attendance at aggregate only, and
+   [#1623](https://github.com/innovationtreehouse/checkin/pull/1623) granted the two tools
+   that follow from it (Participation Trends, Print ID Badges). The
+   `facility/visits` gate stays `['isSysadmin', 'isBoardMember']` on both route and
+   page. ([#1476](https://github.com/innovationtreehouse/checkin/issues/1476))
 2. **Significance thresholds — the actual cutoffs.** Shipped as v1 constants in
    [lib/visit/significance.ts](../../src/lib/visit/significance.ts) — source
    weights 3 / 2 / 1 / 0, threshold 90 weighted minutes, proxy ×2. The numbers
