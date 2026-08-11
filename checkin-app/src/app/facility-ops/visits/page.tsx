@@ -5,6 +5,7 @@ import { Alert, Button, Group, Modal, Select, Stack, Table, Text, TextInput, Too
 import { useDisclosure } from '@mantine/hooks';
 import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconLock, IconRobot, IconScan, IconSelector, IconUserCheck } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { FACILITY_RECORD_ROLES } from '@/lib/facilityNav';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
 import { toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
@@ -68,7 +69,7 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 
 export default function AdminVisitsPage() {
   const { formatDateTime } = useOrgTime();
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_RECORD_ROLES);
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
