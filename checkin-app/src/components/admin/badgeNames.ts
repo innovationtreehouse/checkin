@@ -9,38 +9,47 @@ export function membershipYearLabel(now: Date): string {
     return `${startYear}-${startYear + 1}`;
 }
 
-// First name only, adding the minimum last-name prefix needed to disambiguate within this batch.
+type NamedPerson = { id: number; name: string };
+
+// First name only, adding the minimum last-name prefix needed to disambiguate within `cohort`.
 // Unique first name → first name alone. Collision → shortest prefix (1+ chars) that no other
-// same-first-name badge shares; a partial prefix gets a trailing "." (e.g. "John S.", "John Sm.").
+// same-first-name person shares; a partial prefix gets a trailing "." (e.g. "John S.", "John Sm.").
 // True duplicates (identical full name) fall back to the full last name.
-export function computeDisplayNames(badges: { id: number; name: string }[]): Map<number, string> {
+//
+// `cohort` is the population a name has to be unique against — the active membership, not the
+// batch being printed. A person's badge must read the same whether they are printed alone or
+// alongside the whole roster, so each subject is resolved against the cohort (minus itself) and
+// never against its fellow subjects.
+export function computeDisplayNames(
+    subjects: NamedPerson[],
+    cohort: NamedPerson[] = subjects,
+): Map<number, string> {
     const parse = (full: string) => {
         const parts = (full || '').trim().split(/\s+/);
         return { first: parts[0] || '', last: parts.slice(1).join(' ') };
     };
-    const parsed = badges.map(b => ({ id: b.id, ...parse(b.name) }));
-    const groups = new Map<string, typeof parsed>();
-    for (const p of parsed) {
-        const key = p.first.toLowerCase();
-        (groups.get(key) ?? groups.set(key, []).get(key)!).push(p);
+    const groups = new Map<string, { id: number; last: string }[]>();
+    for (const c of cohort) {
+        const { first, last } = parse(c.name);
+        const key = first.toLowerCase();
+        (groups.get(key) ?? groups.set(key, []).get(key)!).push({ id: c.id, last });
     }
     const result = new Map<number, string>();
-    for (const group of groups.values()) {
-        for (const p of group) {
-            if (group.length === 1 || !p.last) {
-                result.set(p.id, p.first || `User #${p.id}`);
-                continue;
-            }
-            const others = group.filter(o => o !== p);
-            let len = 1;
-            while (len < p.last.length &&
-                others.some(o => o.last.slice(0, len).toLowerCase() === p.last.slice(0, len).toLowerCase())) {
-                len++;
-            }
-            const prefix = p.last.slice(0, len);
-            const abbreviated = prefix.length < p.last.length;
-            result.set(p.id, `${p.first} ${prefix}${abbreviated ? '.' : ''}`);
+    for (const s of subjects) {
+        const { first, last } = parse(s.name);
+        const others = (groups.get(first.toLowerCase()) ?? []).filter(o => o.id !== s.id);
+        if (others.length === 0 || !last) {
+            result.set(s.id, first || `User #${s.id}`);
+            continue;
         }
+        let len = 1;
+        while (len < last.length &&
+            others.some(o => o.last.slice(0, len).toLowerCase() === last.slice(0, len).toLowerCase())) {
+            len++;
+        }
+        const prefix = last.slice(0, len);
+        const abbreviated = prefix.length < last.length;
+        result.set(s.id, `${first} ${prefix}${abbreviated ? '.' : ''}`);
     }
     return result;
 }

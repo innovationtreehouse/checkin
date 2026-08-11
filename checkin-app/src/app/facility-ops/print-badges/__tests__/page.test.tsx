@@ -40,10 +40,18 @@ const withInactive = [
   { id: 3, name: "Lapsed Larry", email: "larry@example.com", isMember: false },
 ];
 
+// The active membership — wider than what the search returns, and the only thing badge names
+// may depend on. Kim Kowalski is a member who is NOT in the search results above.
+const orgMembers = [
+  { id: 1, name: "Kim Keyholder" },
+  { id: 2, name: "Bo Board" },
+  { id: 4, name: "Kim Kowalski" },
+];
+
 describe("facility-ops/print-badges page", () => {
   it("loads and renders the participant roster", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/people/search": { people: participants } });
+    mockFetchJson({ "/api/people/search": { people: participants }, "/api/shop/org-members": { orgMembers } });
     renderWithProviders(<PrintBadgesPage />);
 
     expect(await screen.findByText("Kim Keyholder")).toBeInTheDocument();
@@ -54,7 +62,7 @@ describe("facility-ops/print-badges page", () => {
 
   it("re-searches participants as the search box changes", async () => {
     setSession({ id: 1, isSysadmin: true });
-    const fetchMock = mockFetchJson({ "/api/people/search": { people: participants } });
+    const fetchMock = mockFetchJson({ "/api/people/search": { people: participants }, "/api/shop/org-members": { orgMembers } });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 
@@ -65,9 +73,35 @@ describe("facility-ops/print-badges page", () => {
     );
   });
 
+  it("shows the badge name resolved against the whole active membership, not the listed rows", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/people/search": { people: participants }, "/api/shop/org-members": { orgMembers } });
+    renderWithProviders(<PrintBadgesPage />);
+
+    // Kim collides with Kim Kowalski, who is a member but not on screen — the badge still needs
+    // the last initial. Bo is unique in the membership, so a bare first name.
+    expect(await screen.findByText("Kim Ke.")).toBeInTheDocument();
+    expect(screen.getByText("Bo")).toBeInTheDocument();
+  });
+
+  it("holds badge generation until the member roster has loaded", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    // No org-members route: the roster never resolves, so a badge would carry an unresolved name.
+    // The page logs that failure, which jest-fail-on-console would otherwise treat as a defect.
+    const logged = jest.spyOn(console, "error").mockImplementation(() => {});
+    mockFetchJson({ "/api/people/search": { people: participants } });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("Kim Keyholder");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+    expect(screen.getByRole("button", { name: "Generate Badge (2)" })).toBeDisabled();
+    await waitFor(() => expect(logged).toHaveBeenCalled());
+    logged.mockRestore();
+  });
+
   it("selects participants and generates a badge PDF", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/people/search": { people: participants } });
+    mockFetchJson({ "/api/people/search": { people: participants }, "/api/shop/org-members": { orgMembers } });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 
@@ -81,7 +115,7 @@ describe("facility-ops/print-badges page", () => {
 
   it("hides inactive people by default and reveals them when unchecked", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/people/search": { people: withInactive } });
+    mockFetchJson({ "/api/people/search": { people: withInactive }, "/api/shop/org-members": { orgMembers } });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 
@@ -95,7 +129,7 @@ describe("facility-ops/print-badges page", () => {
 
   it("drops hidden people from the selection count, so the PDF matches the button", async () => {
     setSession({ id: 1, isSysadmin: true });
-    mockFetchJson({ "/api/people/search": { people: withInactive } });
+    mockFetchJson({ "/api/people/search": { people: withInactive }, "/api/shop/org-members": { orgMembers } });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 

@@ -24,7 +24,7 @@ describe("BadgeDocument", () => {
     // Every fixture row carries both role flags, so a pill that came back would render.
     const badges = Array.from({ length: 9 }, (_, i) => ({
       id: i + 1,
-      name: `Person ${i + 1}`,
+      displayName: `Person ${i + 1}`,
       isBoardMember: true,
       isKeyholder: true,
       qrDataUri: `data:image/png;base64,QR${i}`,
