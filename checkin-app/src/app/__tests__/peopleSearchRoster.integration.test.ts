@@ -23,7 +23,31 @@ const TAG = 'roster-1625';
 describe('GET /api/people/search?roster=active', () => {
     let adminId: number;
 
-    /** Delete this file's people, their memberships, then the households left empty. */
+    let prevBoundary: Date | null = null;
+
+    const shiftMonths = (from: Date, months: number) => {
+        const d = new Date(from);
+        d.setUTCMonth(d.getUTCMonth() + months);
+        return d;
+    };
+
+    // Anchor the renewal window to the run date rather than a fixed calendar date, so
+    // the suite means the same thing whenever CI runs it: a boundary one month out puts
+    // `now` inside the 2-month lead window, with settledSince about a month behind.
+    const now = new Date();
+    const BOUNDARY = shiftMonths(now, 1);
+    const INSIDE_WINDOW = shiftMonths(now, 0);
+    const BEFORE_WINDOW = shiftMonths(now, -6);
+
+    async function setBoundary(boundary: Date | null) {
+        await prisma.boardSettings.upsert({
+            where: { id: 1 },
+            create: { id: 1, orgMembershipYearBoundary: boundary },
+            update: { orgMembershipYearBoundary: boundary },
+        });
+    }
+
+    /** Delete this file's people, their processes and memberships, then the empty households. */
     async function wipe() {
         const rows = await prisma.person.findMany({
             where: { email: { contains: TAG } },
@@ -31,6 +55,10 @@ describe('GET /api/people/search?roster=active', () => {
         });
         const householdIds = [...new Set(rows.map(r => r.householdId).filter((id): id is number => id != null))];
         if (householdIds.length) {
+            // Processes first: the OrgMembership FK is onDelete: Restrict.
+            await prisma.orgMembershipProcess.deleteMany({
+                where: { orgMembership: { householdId: { in: householdIds } } },
+            });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: householdIds } } });
         }
         await prisma.person.deleteMany({ where: { email: { contains: TAG } } });
@@ -39,18 +67,35 @@ describe('GET /api/people/search?roster=active', () => {
         }
     }
 
-    /** One person in their own household, whose membership sits at `status`. */
-    const makePerson = (name: string, slug: string, status: 'ACTIVE' | 'NONE') =>
+    /** One person in their own household, whose membership sits at `status` and carries
+     *  `process` (the membership-year settlement, or the lack of one). */
+    const makePerson = (
+        name: string,
+        slug: string,
+        status: 'ACTIVE' | 'NONE',
+        process?: { kind: 'INITIAL' | 'RENEWAL'; status: 'ACTIVE' | 'ARCHIVED'; stageEnteredAt: Date },
+    ) =>
         prisma.person.create({
             data: {
                 name,
                 email: `${slug}-${TAG}@example.com`,
-                household: { create: { name: `HH ${slug} ${TAG}`, orgMembership: { create: { status } } } },
+                household: {
+                    create: {
+                        name: `HH ${slug} ${TAG}`,
+                        orgMembership: { create: { status, ...(process ? { processes: { create: process } } : {}) } },
+                    },
+                },
             },
         });
 
     beforeAll(async () => {
         await wipe();
+        prevBoundary = (await prisma.boardSettings.findUnique({
+            where: { id: 1 },
+            select: { orgMembershipYearBoundary: true },
+        }))?.orgMembershipYearBoundary ?? null;
+        await setBoundary(BOUNDARY);
+
         const admin = await makePerson('Admin Roster', 'admin', 'NONE');
         await prisma.person.update({ where: { id: admin.id }, data: { isSysadmin: true } });
         adminId = admin.id;
@@ -63,22 +108,42 @@ describe('GET /api/people/search?roster=active', () => {
         const ghost = await makePerson('John Ghost', 'ghost', 'ACTIVE');
         await prisma.person.update({ where: { id: ghost.id }, data: { mergedIntoId: adminId } });
 
+        // The #1628 cohort. Every one of these is an ACTIVE member — status cannot be
+        // what separates them, only whether they settled the current cycle.
+        await makePerson('Renewed Rita', 'rita', 'ACTIVE', { kind: 'RENEWAL', status: 'ACTIVE', stageEnteredAt: INSIDE_WINDOW });
+        await makePerson('Joined Jo', 'jo', 'ACTIVE', { kind: 'INITIAL', status: 'ACTIVE', stageEnteredAt: INSIDE_WINDOW });
+        await makePerson('Stale Sam', 'sam', 'ACTIVE', { kind: 'RENEWAL', status: 'ACTIVE', stageEnteredAt: BEFORE_WINDOW });
+        await makePerson('Archived Al', 'al', 'ACTIVE', { kind: 'RENEWAL', status: 'ARCHIVED', stageEnteredAt: INSIDE_WINDOW });
+
         (getServerSession as jest.Mock).mockResolvedValue({
             user: { id: adminId, isSysadmin: true, isBoardMember: false },
         });
     });
 
-    afterAll(wipe);
+    afterAll(async () => {
+        await wipe();
+        await setBoundary(prevBoundary);
+    });
 
-    const roster = async (query: string) => {
+    const rosterRows = async (query: string) => {
         const req = new Request(`http://localhost:4000/api/people/search?${query}`);
         const res = await GET(req as unknown as Parameters<typeof GET>[0]);
         expect(res.status).toBe(200);
         const { people } = await res.json();
-        return (people as { id: number; name: string }[])
+        return people as { id: number; name: string; year: string | null }[];
+    };
+
+    const roster = async (query: string) =>
+        (await rosterRows(query))
             .filter(p => ['John Smith', 'John Doe', 'John Lapsed', 'John Ghost'].includes(p.name))
             .map(p => p.name)
             .sort();
+
+    /** The year each #1628 fixture is handed, keyed by name. */
+    const years = async () => {
+        const rows = await rosterRows('roster=active');
+        const names = ['Renewed Rita', 'Joined Jo', 'Stale Sam', 'Archived Al', 'John Smith'];
+        return Object.fromEntries(rows.filter(p => names.includes(p.name)).map(p => [p.name, p.year]));
     };
 
     it('returns ACTIVE members only, excluding non-members and merge tombstones', async () => {
@@ -91,5 +156,32 @@ describe('GET /api/people/search?roster=active', () => {
 
     it('still searches normally without the roster flag', async () => {
         expect(await roster('q=John Smith')).toEqual(['John Smith']);
+    });
+
+    describe('the membership year (#1628)', () => {
+        it('goes only to households that settled this renewal cycle', async () => {
+            const y = await years();
+            expect(y['Renewed Rita']).toMatch(/^\d{4}-\d{4}$/);
+            // ACTIVE members every one of them, and none has settled this cycle.
+            expect(y['Stale Sam']).toBeNull();
+            expect(y['Archived Al']).toBeNull();
+            expect(y['John Smith']).toBeNull();
+        });
+
+        it('counts an INITIAL settled this cycle, not just a RENEWAL', async () => {
+            // A family that joined this cycle has paid for this year exactly as one that
+            // renewed. A `kind: "RENEWAL"` filter would blank every new member's badge.
+            const y = await years();
+            expect(y['Joined Jo']).toBe(y['Renewed Rita']);
+        });
+
+        it('with no boundary configured, nobody has a year', async () => {
+            await setBoundary(null);
+            try {
+                expect(Object.values(await years()).every(v => v === null)).toBe(true);
+            } finally {
+                await setBoundary(BOUNDARY);
+            }
+        });
     });
 });

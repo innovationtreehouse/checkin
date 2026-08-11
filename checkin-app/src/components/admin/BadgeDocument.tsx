@@ -2,7 +2,6 @@
 
 import React, { useMemo } from 'react';
 import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
-import { membershipYearLabel } from './badgeNames';
 
 // Font registration for a modern sans-serif look
 Font.register({
@@ -93,12 +92,13 @@ interface ParticipantBadge {
     // Already resolved by the page against the ACTIVE roster. Computing it here would
     // make it a function of the current print batch, which is the #1625 bug.
     displayName: string;
+    // The membership year, per badge — null for a household that has not settled this
+    // renewal cycle, which prints no year at all rather than an unearned one.
+    year: string | null;
     qrDataUri: string;
 }
 
 export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }) {
-    const yearLabel = useMemo(() => membershipYearLabel(new Date()), []);
-
     // We chunk the badges into arrays of 8, because Avery 5390 takes 8 per page
     const chunkedBadges: ParticipantBadge[][] = useMemo(() => {
         const chunks = [];
@@ -145,7 +145,7 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
                                     <View style={styles.headerRow}>
                                         {/* eslint-disable-next-line jsx-a11y/alt-text */}
                                         <Image src={TREEHOUSE_LOGO_URL} style={styles.logo} />
-                                        <Text style={styles.yearText}>{yearLabel}</Text>
+                                        {badge.year ? <Text style={styles.yearText}>{badge.year}</Text> : null}
                                     </View>
 
                                     <View style={styles.nameContainer}>

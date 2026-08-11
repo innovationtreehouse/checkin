@@ -11,7 +11,7 @@
  *     each cycle) and only a still-valid background check with no household
  *     note pre-stamps bgClearedAt.
  */
-import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary } from '@/lib/membership/renewal';
+import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary, badgeYearCycle } from '@/lib/membership/renewal';
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
@@ -121,6 +121,30 @@ describe('bgValidUntilBoundary', () => {
     it('orgMembershipYearBoundary = null → null', () => {
         const last = new Date(Date.UTC(2026, 0, 15));
         expect(bgValidUntilBoundary(last, { ...settings, orgMembershipYearBoundary: null })).toBeNull();
+    });
+});
+
+describe('badgeYearCycle', () => {
+    // Sep 1 boundary (year ignored — month/day only), so the lead window opens Jul 1.
+    const boundary = new Date(Date.UTC(2000, 8, 1));
+
+    // One flip per year, at windowStart, and continuous across the boundary itself:
+    // every date in a cycle reports the same label and the same settledSince.
+    it.each([
+        ['in season, before the boundary', Date.UTC(2026, 7, 10), '2026-2027', Date.UTC(2026, 6, 1)],
+        ['just past the boundary', Date.UTC(2026, 8, 15), '2026-2027', Date.UTC(2026, 6, 1)],
+        ['deep off-season, next spring', Date.UTC(2027, 5, 15), '2026-2027', Date.UTC(2026, 6, 1)],
+        ['the next window opens', Date.UTC(2027, 6, 15), '2027-2028', Date.UTC(2027, 6, 1)],
+    ])('%s', (_label, now, expectedLabel, expectedSettledSince) => {
+        expect(badgeYearCycle(boundary, new Date(now))).toEqual({
+            label: expectedLabel,
+            settledSince: new Date(expectedSettledSince),
+        });
+    });
+
+    it('flips on the day the window opens, not the day before', () => {
+        expect(badgeYearCycle(boundary, new Date(Date.UTC(2027, 5, 30))).label).toBe('2026-2027');
+        expect(badgeYearCycle(boundary, new Date(Date.UTC(2027, 6, 1))).label).toBe('2027-2028');
     });
 });
 

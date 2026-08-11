@@ -28,7 +28,8 @@ export default function PrintBadgesPage() {
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   // Every ACTIVE member org-wide — the population printed names disambiguate against.
   // Separate from `participants`, which is whatever the search box last matched.
-  const [roster, setRoster] = useState<{ id: number; name: string }[] | null>(null);
+  // `year` is per person: only a household that settled this renewal cycle gets one.
+  const [roster, setRoster] = useState<{ id: number; name: string; year: string | null }[] | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideInactive, setHideInactive] = useState(true);
@@ -81,6 +82,7 @@ export default function PrintBadgesPage() {
   }, [status]);
 
   const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
+  const printedYears = useMemo(() => new Map((roster ?? []).map(m => [m.id, m.year])), [roster]);
 
   // The badge name and this column read the same map, so the column is proof of what
   // will print. Someone off the ACTIVE roster is not in that population at all, so
@@ -128,6 +130,7 @@ export default function PrintBadgesPage() {
             id: p.id,
             name: p.name ?? '',
             displayName: printedName(p),
+            year: printedYears.get(p.id) ?? null,
             qrDataUri,
           };
         })
@@ -188,6 +191,11 @@ export default function PrintBadgesPage() {
     {
       header: 'Membership',
       render: (p) => (p.isMember ? <Text c="green">Active</Text> : <Text c="red">Inactive</Text>),
+    },
+    {
+      // Blank here means blank on the badge — the renewal prompt, visible before printing.
+      header: 'Year',
+      render: (p) => <Text c={printedYears.get(p.id) ? undefined : 'dimmed'}>{printedYears.get(p.id) ?? 'Not renewed'}</Text>,
     },
     {
       header: 'Roles',
