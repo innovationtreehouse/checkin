@@ -1,6 +1,7 @@
 import { readdirSync } from 'fs';
 import { join } from 'path';
 import { PAGES, REGISTRY_EXCLUDED } from '@/components/pageRegistry';
+import { FACILITY_NAV_LINKS } from '@/lib/facilityNav';
 
 // Walk src/app for every page.tsx and turn it into its route path, skipping
 // dynamic segments ([id]) which the directory deliberately omits.
@@ -39,5 +40,29 @@ describe('pageRegistry drift guard', () => {
   it('has no duplicate hrefs in the registry', () => {
     const hrefs = PAGES.map((p) => p.href);
     expect(hrefs.length).toBe(new Set(hrefs).size);
+  });
+});
+
+// Operations reaches Facility Ops in aggregate only (#1633): Print ID Badges and
+// Participation Trends. Each directory row must agree with the tab's own gate, or
+// the directory advertises a page that ejects the viewer — the same fork #1569 is
+// about, so the expectation is read off FACILITY_NAV_LINKS rather than retyped.
+describe('Facility Ops directory agrees with the section gates', () => {
+  const ops = { isOperations: true };
+  const entryFor = (href: string) => PAGES.find((p) => p.href === href)!;
+
+  it.each(FACILITY_NAV_LINKS)('$href is listed to operations iff its page admits them', ({ href, roles }) => {
+    expect(entryFor(href).visible(ops, true, null)).toBe(roles.includes('isOperations'));
+  });
+
+  it('hides the /facility-ops index from operations (it redirects into Visits)', () => {
+    expect(entryFor('/facility-ops').visible(ops, true, null)).toBe(false);
+  });
+
+  it('still shows every Facility Ops entry to a board member', () => {
+    const board = { isBoardMember: true };
+    for (const p of PAGES.filter((p) => p.section === 'Facility Ops')) {
+      expect(p.visible(board, true, null)).toBe(true);
+    }
   });
 });

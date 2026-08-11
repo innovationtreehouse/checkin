@@ -44,7 +44,7 @@ import { POST as ONBOARDING_POST } from '@/app/api/profile/onboarding/route';
 import { GET as BROKEN_HH_GET } from '@/app/api/admin/broken-households/route';
 import { GET as LOCALIZATION_GET, PUT as LOCALIZATION_PUT } from '@/app/api/admin/settings/localization/route';
 import { GET as BADGES_GET } from '@/app/api/facility/badges/route';
-import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH } from '@/app/api/facility/visits/route';
+import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH, DELETE as FAC_VISITS_DELETE } from '@/app/api/facility/visits/route';
 import { POST as FAC_VISITS_INSERT_POST } from '@/app/api/facility/visits/insert/route';
 import { GET as MISSING_CONTACT_GET } from '@/app/api/membership-audit/households-missing-contact/route';
 import { GET as UNCLAIMED_GET } from '@/app/api/membership-audit/unclaimed-households/route';
@@ -188,6 +188,7 @@ describe('Protected-route role rejection', () => {
         { name: 'PATCH /api/finance-ops/payments/[id]', invoke: () => FIN_PAYMENTS_PATCH(nreq('http://localhost/api/finance-ops/payments/1', 'PATCH', {}), idCtx(1)) },
         { name: 'GET /api/facility/visits', invoke: () => FAC_VISITS_GET(nreq('http://localhost/api/facility/visits')) },
         { name: 'PATCH /api/facility/visits', invoke: () => FAC_VISITS_PATCH(nreq('http://localhost/api/facility/visits', 'PATCH', {})) },
+        { name: 'DELETE /api/facility/visits', invoke: () => FAC_VISITS_DELETE(nreq('http://localhost/api/facility/visits', 'DELETE', {})) },
         // Staff insert-for-others: personId comes from the body, so the role gate
         // is the entire subject boundary — a wrong-role caller must never reach it.
         { name: 'POST /api/facility/visits/insert', invoke: () => FAC_VISITS_INSERT_POST(nreq('http://localhost/api/facility/visits/insert', 'POST', {})) },
@@ -239,6 +240,45 @@ describe('Protected-route role rejection', () => {
     // own integration suite).
     const participantsEditRoutes = roleGated.filter((c) => c.name.includes('/membership-ops/participants'));
     describe.each(participantsEditRoutes)('$name — operations-only is denied', ({ invoke }) => {
+        it('403s an operations-only actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            expect((await invoke()).status).toBe(403);
+        });
+    });
+
+    // ---- Facility Ops — operations reaches the aggregate, not the record ------
+    // #1633 [Decision]: operations reach attendance in aggregate only — the
+    // trends, and printing the ID badges (whose /api/people/search + /api/programs
+    // already admit them). One person's record sits outside that reach: they do
+    // not record, correct or remove a visit, and do not read the raw badge events
+    // behind one. So trends must NOT 401/403 an operations actor, and every
+    // /api/facility/visits verb plus the raw badge log must 403 them.
+    const facilityOpsGrantedNames = ['GET /api/facility/trends'];
+    const facilityOpsWithheldNames = [
+        'GET /api/facility/badges',
+        'GET /api/facility/visits',
+        'PATCH /api/facility/visits',
+        'DELETE /api/facility/visits',
+        'POST /api/facility/visits/insert',
+    ];
+    const byName = (names: string[]) => roleGated.filter((c) => names.includes(c.name));
+    const facilityOpsGranted = byName(facilityOpsGrantedNames);
+    const facilityOpsWithheld = byName(facilityOpsWithheldNames);
+    // Guard: the filters match on literal names, so a renamed or removed case
+    // would silently shrink a sweep instead of failing it.
+    it('guard: every Facility Ops route named above is present in the harness', () => {
+        expect([...facilityOpsGranted, ...facilityOpsWithheld].map((c) => c.name).sort())
+            .toEqual([...facilityOpsGrantedNames, ...facilityOpsWithheldNames].sort());
+    });
+    describe.each(facilityOpsGranted)('$name — operations clears the gate', ({ invoke }) => {
+        it('does not 401/403 an operations actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            const status = (await invoke()).status;
+            expect(status).not.toBe(401);
+            expect(status).not.toBe(403);
+        });
+    });
+    describe.each(facilityOpsWithheld)('$name — operations is denied', ({ invoke }) => {
         it('403s an operations-only actor', async () => {
             as(plainId, { householdId: plainHh, isOperations: true });
             expect((await invoke()).status).toBe(403);

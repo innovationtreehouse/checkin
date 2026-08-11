@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Alert, Badge, Group, SegmentedControl, Stack, Switch, Table, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { FACILITY_RECORD_ROLES } from "@/lib/facilityNav";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { useOrgTime } from '@/components/TimezoneProvider';
 import { MAX_ROWS } from "@/lib/corrections";
@@ -125,7 +126,7 @@ function ActorBadge({ cls }: { cls: "self" | "proxy" | "system" | "unknown" }) {
 
 export default function CorrectionsPage() {
   const { formatDateTime } = useOrgTime();
-  const { ready, loading: authLoading } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_RECORD_ROLES);
 
   const [period, setPeriod] = useState<PeriodType>("month");
   // Defaults to the significant changes (executive summary); the full feed
