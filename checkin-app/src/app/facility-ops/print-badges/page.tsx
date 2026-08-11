@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
@@ -10,6 +10,7 @@ import { notifications } from "@mantine/notifications";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
+import { computeDisplayNames } from "@/components/admin/badgeNames";
 
 type ParticipantRow = {
   id: number;
@@ -25,6 +26,9 @@ export default function PrintBadgesPage() {
   const router = useRouter();
 
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
+  // Every ACTIVE member org-wide — the population printed names disambiguate against.
+  // Separate from `participants`, which is whatever the search box last matched.
+  const [roster, setRoster] = useState<{ id: number; name: string }[] | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideInactive, setHideInactive] = useState(true);
@@ -61,6 +65,30 @@ export default function PrintBadgesPage() {
     }
   }, [status, fetchParticipants]);
 
+  // Once on mount — deliberately NOT keyed on searchTerm. The printed name must not
+  // move when the operator types.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const url = new URL('/api/people/search', window.location.origin);
+    url.searchParams.set('roster', 'active');
+    fetch(url.toString())
+      .then(res => res.json())
+      .then(data => setRoster(data.people ?? []))
+      .catch(e => {
+        console.error("Failed to load the active-member roster for badge names:", e);
+        setRoster([]);
+      });
+  }, [status]);
+
+  const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
+
+  // The badge name and this column read the same map, so the column is proof of what
+  // will print. Someone off the ACTIVE roster is not in that population at all, so
+  // they get a bare first name rather than being folded into it — folding them in is
+  // what lets a non-member move a member's name, which is the bug.
+  const printedName = (p: ParticipantRow) =>
+    printedNames.get(p.id) ?? ((p.name ?? '').trim().split(/\s+/)[0] || `User #${p.id}`);
+
   const toggleSelection = (id: number) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) newSet.delete(id);
@@ -94,10 +122,12 @@ export default function PrintBadgesPage() {
             margin: 1,
             color: { dark: '#000000', light: '#FFFFFF' }
           });
-          // `name` feeds both documents: BadgeDocument disambiguates it, StickerDocument prints it raw.
+          // `displayName` is the badge's; `name` is retained solely for StickerDocument,
+          // which prints the full name raw and is not changing.
           return {
             id: p.id,
             name: p.name ?? '',
+            displayName: printedName(p),
             qrDataUri,
           };
         })
@@ -152,6 +182,10 @@ export default function PrintBadgesPage() {
       render: (p) => <Text fw={600}>{p.name || 'N/A'}</Text>,
     },
     {
+      header: 'Printed Name',
+      render: (p) => <Text>{printedName(p)}</Text>,
+    },
+    {
       header: 'Membership',
       render: (p) => (p.isMember ? <Text c="green">Active</Text> : <Text c="red">Inactive</Text>),
     },
@@ -187,10 +221,12 @@ export default function PrintBadgesPage() {
           checked={hideInactive}
           onChange={(e) => setHideInactive(e.currentTarget.checked)}
         />
-        <Button onClick={() => generate('badge')} disabled={selectedVisible.length === 0 || isGenerating} loading={isGenerating}>
+        {/* Held until the roster lands: printing first would silently emit un-disambiguated
+            names onto physical badges, with nothing on screen to say so. */}
+        <Button onClick={() => generate('badge')} disabled={selectedVisible.length === 0 || isGenerating || roster === null} loading={isGenerating}>
           Generate Badge ({selectedVisible.length})
         </Button>
-        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedVisible.length === 0 || isGenerating} loading={isGenerating}>
+        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedVisible.length === 0 || isGenerating || roster === null} loading={isGenerating}>
           Generate Sticker ({selectedVisible.length})
         </Button>
       </Group>

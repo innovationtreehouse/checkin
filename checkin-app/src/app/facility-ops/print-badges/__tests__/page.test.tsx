@@ -40,6 +40,19 @@ const withInactive = [
   { id: 3, name: "Lapsed Larry", email: "larry@example.com", isMember: false },
 ];
 
+// Two ACTIVE members whose first names collide. `?roster=active` is keyed first so it
+// wins mockFetchJson's substring match over the plain search URL.
+const johns = [
+  { id: 1, name: "John Smith", email: "js@example.com", isMember: true },
+  { id: 2, name: "John Doe", email: "jd@example.com", isMember: true },
+];
+const johnRoutes = {
+  "/api/people/search?roster=active": { people: johns.map(({ id, name }) => ({ id, name })) },
+  "/api/people/search": { people: johns },
+};
+const printedNameCell = (fullName: string) =>
+  screen.getByText(fullName).closest("tr")!.querySelectorAll("td")[3].textContent;
+
 describe("facility-ops/print-badges page", () => {
   it("loads and renders the participant roster", async () => {
     setSession({ id: 1, isSysadmin: true });
@@ -110,4 +123,49 @@ describe("facility-ops/print-badges page", () => {
     // and "select all" still reads as fully selected over what is actually visible
     expect(screen.getByRole("checkbox", { name: "Select all" })).toBeChecked();
   });
+
+  // #1625. The Printed Name column exists so this pair of assertions is writable at all:
+  // it is the only place the value the badge will print is observable without generating
+  // a PDF. Both were red against the old behaviour, where the name was computed over the
+  // current print batch inside BadgeDocument.
+  it("keeps the printed name fixed to the ACTIVE roster, not the current selection", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson(johnRoutes);
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    // Two ACTIVE Johns on the roster, so Smith prints disambiguated — with nothing ticked.
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+    expect(printedNameCell("John Doe")).toBe("John D.");
+
+    // Tick only Smith: he is now the entire print batch. His name must not move.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select John Smith" }));
+    expect(screen.getByRole("button", { name: "Generate Badge (1)" })).toBeInTheDocument();
+    expect(printedNameCell("John Smith")).toBe("John S.");
+    // Headroom over rtl's 5s asyncUtilTimeout, so a failing waitFor reports its own
+    // assertion diff instead of being cut off by jest's equal-length test timeout.
+  }, 15000);
+
+  it("keeps the printed name fixed when the search box narrows the visible rows", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const searchResults = { current: johns };
+    mockFetchJson({
+      "/api/people/search?roster=active": { people: johns.map(({ id, name }) => ({ id, name })) },
+      "/api/people/search": () => ({ people: searchResults.current }),
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+
+    // Search away the other John. He is still an ACTIVE member, so Smith stays "John S.".
+    searchResults.current = [johns[0]];
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Smi" } });
+
+    // Settle on the narrowed table — mid-fetch the DataTable shows a spinner and no rows.
+    await waitFor(() => {
+      expect(screen.getByText("John Smith")).toBeInTheDocument();
+      expect(screen.queryByText("John Doe")).not.toBeInTheDocument();
+    });
+    expect(printedNameCell("John Smith")).toBe("John S.");
+  }, 15000);
 });

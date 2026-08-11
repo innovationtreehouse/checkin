@@ -2,7 +2,7 @@
 
 import React, { useMemo } from 'react';
 import { Document, Page, Text, View, StyleSheet, Image, Font } from '@react-pdf/renderer';
-import { computeDisplayNames, membershipYearLabel } from './badgeNames';
+import { membershipYearLabel } from './badgeNames';
 
 // Font registration for a modern sans-serif look
 Font.register({
@@ -90,12 +90,13 @@ const styles = StyleSheet.create({
 
 interface ParticipantBadge {
     id: number;
-    name: string;
+    // Already resolved by the page against the ACTIVE roster. Computing it here would
+    // make it a function of the current print batch, which is the #1625 bug.
+    displayName: string;
     qrDataUri: string;
 }
 
 export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }) {
-    const displayNames = useMemo(() => computeDisplayNames(badges), [badges]);
     const yearLabel = useMemo(() => membershipYearLabel(new Date()), []);
 
     // We chunk the badges into arrays of 8, because Avery 5390 takes 8 per page
@@ -148,7 +149,7 @@ export default function BadgeDocument({ badges }: { badges: ParticipantBadge[] }
                                     </View>
 
                                     <View style={styles.nameContainer}>
-                                        <Text style={styles.nameText}>{displayNames.get(badge.id) || `User #${badge.id}`}</Text>
+                                        <Text style={styles.nameText}>{badge.displayName}</Text>
                                     </View>
                                 </View>
                             ))}
