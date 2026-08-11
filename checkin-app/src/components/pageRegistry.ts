@@ -96,8 +96,9 @@ export const PAGES: PageEntry[] = [
   // Facility Ops — board, plus operations on the two aggregate tools (#1633:
   // operations reach attendance in aggregate only). Visits, Badges (the raw
   // badge-event log) and Corrections are one person's record, so they stay
-  // board-only — as does the index, which redirects to /facility-ops/visits.
-  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD },
+  // board-only. The index redirects to the caller's first visible tab, so it is
+  // listed to anyone the section admits.
+  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD_OR_OPS },
   { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: BOARD },
   { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD_OR_OPS },
   { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD_OR_OPS },
