@@ -172,13 +172,19 @@ describe('GET /api/people/search?roster=active', () => {
             // A family that joined this cycle has paid for this year exactly as one that
             // renewed. A `kind: "RENEWAL"` filter would blank every new member's badge.
             const y = await years();
+            expect(y['Joined Jo']).toMatch(/^\d{4}-\d{4}$/);
             expect(y['Joined Jo']).toBe(y['Renewed Rita']);
         });
 
         it('with no boundary configured, nobody has a year', async () => {
             await setBoundary(null);
             try {
-                expect(Object.values(await years()).every(v => v === null)).toBe(true);
+                const y = await years();
+                // Named explicitly: `every` over an empty object would pass vacuously.
+                expect(y).toEqual({
+                    'Renewed Rita': null, 'Joined Jo': null, 'Stale Sam': null,
+                    'Archived Al': null, 'John Smith': null,
+                });
             } finally {
                 await setBoundary(BOUNDARY);
             }
