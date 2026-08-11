@@ -34,14 +34,11 @@ export const GET = withAuth(
                 const cycle = settings?.orgMembershipYearBoundary
                     ? badgeYearCycle(settings.orgMembershipYearBoundary, new Date())
                     : null;
-                // `year` is the renewal trigger: a household earns it by settling THIS
-                // cycle, not by being ACTIVE — nothing revokes a membership at the
-                // boundary, so ACTIVE outlives the year it was paid for. No `kind`
-                // filter: an INITIAL settled this cycle has paid for this year exactly
-                // as a RENEWAL has. ARCHIVED excluded (matches lib/outreach/recipients) —
-                // a wrong blank prompts a renewal conversation, a wrong year suppresses one.
-                // No boundary ⇒ the sentinel matches nothing and `label` is null, so
-                // nobody is renewed (same fail-closed shape as membershipValidThrough).
+                // A household earns `year` by settling THIS cycle, not by being ACTIVE —
+                // nothing revokes a membership at the boundary, so ACTIVE outlives the
+                // year it paid for. No `kind` filter (an INITIAL settled this cycle has
+                // paid for it too) and no ARCHIVED, matching lib/outreach/recipients.
+                // No boundary ⇒ the sentinel matches nothing, so nobody gets a year.
                 const members = await prisma.person.findMany({
                     where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
                     select: {
