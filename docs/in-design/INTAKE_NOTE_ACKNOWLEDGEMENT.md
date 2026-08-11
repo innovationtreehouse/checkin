@@ -27,13 +27,19 @@ would not otherwise need.
 - **For applicants:** no change. Writing a note neither holds the application nor
   triggers a background check. It is now read.
 - **For the board:** a list of applications carrying an unread note, worked like
-  any other queue. One reader, not two.
+  any other queue. One reader, not two. The readers are **board members** — this
+  is settled, not open.
 - **What deliberately does not change:** the note does not gate payment, does not
   gate membership, and does not enter the background-check review. Those
   couplings were removed on purpose and this does not restore them.
 - **Cost:** three columns on the existing process record and a migration, one
-  mutation, one board-facing list, and the security-registry grant that list
-  needs — which ships as its own change, before the route.
+  mutation, the snapshot write at two sites, one board-facing list, **a boundary
+  PR raising `OrgMembershipProcess` to `pii` and re-clearing the four routes that
+  return it**, and the security-registry grant the list needs — the boundary work
+  shipping as its own change, before the route.
+- **What this PR does not do:** it does not edit `docs/rules/membership.md`. The
+  access rule is relaxed to its policy limit by the implementation PR, using the
+  replacement text fixed below.
 
 ## What changed under this design
 
@@ -67,10 +73,15 @@ the ordinary way, when the check clears.
 
 ## Rules this relies on or intends to change
 
-`docs/rules/membership.md` states:
+Two rules in `docs/rules/membership.md` are in scope, and they are in scope
+differently. **Neither is edited by this PR** — see "When the amendments land".
+
+### The reviewer-reads rule — over-broad, plainly renegotiable
+
+Under Procedure → Application and review:
 
 > An intake note does not hold the application. It is shown to the reviewers,
-> who read it while the family pays.
+> who read it while the family pays.  [Decision]
 
 The first sentence is a standing decision and this design keeps it. **The second
 sentence is over-broad and this design intends to correct it.** It is true only
@@ -78,10 +89,86 @@ of applications that enter the background-check reviewer queue, and the
 fresh-check household never does — which is the whole of the problem above. The
 register currently promises a reader that the code does not provide.
 
-The same file's access rule — an intake note is readable by the household's leads
-and the reviewers, not by its other members — is unchanged. Widening who may read
-a note is a separate decision, and the board list below is what forces it to be
-made.
+The tag is a plain `[Decision]` — "a choice we made, renegotiable in review"
+(`DOCUMENTATION_STANDARD.md` §3.6). Nothing outside this repo has to move for it.
+
+### The access rule — Policy-tier, and stricter than its policy
+
+Under Procedure → Renewal:
+
+> An intake note is readable by the household's leads and the reviewers, not by
+> its other members.  [Decision — *Policy: Membership Policy, Art. VI §VI.2;
+> Records Policy, Art. IV*]
+
+The tag is the load-bearing part, and it is a different tier from the one above.
+Board members are not inside this rule as written, and the list this design
+proposes is board-facing.
+
+**Relaxing this rule is the manoeuvre §3.6 warns about, so it is recorded here
+rather than assumed.** The tier table's entry for `[Decision — *Policy: …*]`:
+
+> the app's specific expression of a policy stated generally above — a threshold
+> picked, a proxy chosen, need-to-know made concrete for one field. Sometimes
+> **stricter** than the policy requires, in which case say so: the risk is
+> someone relaxing it while believing they are aligning to policy.
+
+That is this case exactly, and the risk it names is exactly the mistake available
+here. So, on the record:
+
+- **The rule is stricter than the policies it cites.** `Membership Policy,
+  Art. VI §VI.2` and `Records Policy, Art. IV` already permit board members to
+  read intake notes. The rule in `docs/rules/membership.md` is a narrower
+  app-level expression of them, not a restatement of their limit.
+- **The policy text was read to establish this** — by the owner, against the
+  policy documents themselves. It was *not* inferred from the rule's wording, and
+  *not* deduced from the board owning the membership process. Inferring it is
+  precisely the failure §3.6 describes, and the distinction is the reason this
+  bullet exists.
+- **The amendment relaxes the rule to the policy limit, not past it.** The
+  household's other members stay outside; the leads and the reviewers stay
+  inside; the board joins them. The rule keeps its tier and both anchors, because
+  after the amendment it is still the app's specific expression of those two
+  policies — it simply no longer draws the line tighter than they do.
+- **The policies are not in this repository.** Per §3.10 they live on Google
+  Drive, which is the canonical source. **A future reader cannot re-verify this
+  claim from the codebase** — no grep, no test, and no file in this tree
+  establishes what `Art. VI §VI.2` permits. Checking it means opening the policy
+  documents on Drive, and §3.10 requires checking them *there* rather than any
+  local or cached copy, since a copy predating an amendment would enshrine a
+  superseded rule behind a citation that still looks correct.
+
+### When the amendments land, and why not here
+
+**This PR does not edit `docs/rules/membership.md`.** #1525 is a design doc and
+the board-facing list does not exist yet. Amending the access rule now would put
+a rule in the register that the app does not implement, and §3.7's reason applies
+directly — *"a reader who finds their answer stops reading"*. A register
+describing a surface nobody has built is worse than one that is merely narrow.
+
+Both amendments land **in the implementation PR that ships the list**, in that
+same change. The replacement text is fixed here so the implementer does not
+re-derive it:
+
+**Replace, under Procedure → Renewal:**
+
+```markdown
+- An intake note is readable by the household's leads, the reviewers, and the
+  board, not by its other members.  [Decision — *Policy: Membership Policy,
+  Art. VI §VI.2; Records Policy, Art. IV*]
+```
+
+**Replace, under Procedure → Application and review:**
+
+```markdown
+- An intake note does not hold the application. Every note is read and
+  acknowledged by one named person, and the record shows who read it and what it
+  said.  [Decision]
+```
+
+The second replacement drops "shown to the reviewers, who read it while the
+family pays" because that clause is the falsehood this design was written to
+correct. Neither replacement names a screen or a route: which surface carries the
+list is mechanism, and §6.13 keeps mechanism out of the register.
 
 ## The rule
 
@@ -216,12 +303,13 @@ Three columns on `OrgMembershipProcess`, not a new model:
 back-relation; Prisma will not generate without both sides.
 
 Snapshotting at submit rather than acknowledging a live string is what makes the
-record answerable a week later, and it settles three questions outright: there is
-no "was the edit material" comparison to define, because an edit does not re-open
-anything; there is no re-read semantics; and renewals are per-cycle for free,
-because each process carries its own snapshot. A household editing its note after
-submit does not reach the reader — correctly, since the note is part of the
-application it was submitted with.
+record answerable a week later. It settles two questions outright — there is no
+re-read semantics, and an edit does not re-open anything — and it makes renewals
+per-cycle, because each process carries its own snapshot. The third question,
+"was this edit material", it **narrows rather than settles**; see "Renewals: the
+skip, and what it costs" below. A household editing its note after submit does
+not reach the reader — correctly, since the note is part of the application it
+was submitted with.
 
 Retention: the snapshot is disclosure-equivalent to the note itself, and a
 household clearing its live note to null does not clear the snapshot — that is
@@ -229,6 +317,127 @@ the point of taking one, and it needs stating rather than discovering. It is
 deleted with the process and has no separate lifetime.
 
 Where the note is empty at submit there is no snapshot and no obligation.
+
+#### Where the snapshot is written
+
+The three columns are inert until something writes them, and **the snapshot is a
+different write from the acknowledgement**. The acknowledgement is the board's
+action on `noteAckById`/`noteAckAt`, priced in Cost as one mutation. The snapshot
+is a system write at process advance, and it needs a site per kind.
+
+**`submitIntake` (`lib/membership/intake.ts`) — cheap, but not for the reason it
+first appears.** `submitIntake` does *not* write `intakeNotes`. That write lives
+in `saveIntake`, the earlier save that also normalizes the address, and by submit
+time it has already happened; the snapshot cannot ride it. What makes the submit
+site cheap is different, and better:
+
+- **No new read.** `loadUserWithHousehold` pulls the household with a full
+  `include`, so `household.intakeNotes` is already in memory when `submitIntake`
+  runs.
+- **No new write.** `submitIntake` already issues one
+  `prisma.orgMembershipProcess.update` to advance `INTAKE` →
+  `PENDING_EXTERNAL_ACTION` and stamp `bgClearedAt`. The snapshot is one more
+  field on that `data`.
+
+Unlike the renewal site, that advance is an unconditional `update` by id rather
+than a status-conditional `updateMany`. A concurrent double-submit there is a
+pre-existing race that this design neither worsens nor fixes.
+
+**`beginRenewal` (`lib/membership/renewal.ts`) — not cheap.** #1499 removed the
+note read: the membership lookup now selects `householdId` alone, where it
+previously pulled the household's note to compute `hasNote`. So renewals need a
+**new read as well as a new write**.
+
+The write must land **inside** the existing conditional `updateMany` on
+`PENDING_RENEWAL` — the one whose comment reads *"a double-submit has both
+callers reach here, but only the winner's updateMany flips it (count === 1) — so
+the audit row is written exactly once."* That comment is the specification, not
+commentary: attached outside the `updateMany`, a double-submit snapshots twice.
+
+#### Renewals: the skip, and what it costs
+
+"Renewals are per-cycle" is free on the read. On the write it is a defect, and
+the defect is worth stating before the fix.
+
+Nothing re-prompts the family at renewal. `POST /api/membership/renew` reaches
+`beginRenewal` directly — a signature flow with no intake form in it — and
+`intakeNotes` lives on `Household`, editable by a lead from household settings at
+any time and untouched by anything in the renewal path. So the sentence
+snapshotted onto a renewal process is whatever has been sitting on that row,
+possibly for years.
+
+A household that once wrote *"treat us as a volunteer household"* therefore
+produces a fresh unacknowledged snapshot **every renewal, indefinitely**, with
+nothing marking it as text a board member has already acknowledged three times.
+Dropping the gate makes that non-blocking, not harmless: it is a queue that
+refills annually with re-reads of identical sentences, which is how a list stops
+being worked — **and the list being worked is the entire enforcement mechanism
+this design has.**
+
+**The fix, adopted:** at the write site, skip the snapshot when the text is
+byte-identical to the most recent acknowledged snapshot on that membership. No
+snapshot, no row on the list, no obligation.
+
+**Its cost, stated plainly: this displaces the edit-materiality question rather
+than eliminating it.** The snapshot is credited above with removing "was this
+edit material", and against a live, still-editable string it does. The skip puts
+a smaller version of the same question back — exact equality across cycles rather
+than materiality against a live string. That is genuinely easier: byte comparison
+needs no judgement and no definition of "material". But it is still a comparison,
+and a household that rewords the same request lands back on the list. That is the
+right direction to fail in, and it is not nothing.
+
+#### The boundary cost of a `pii` column here
+
+`intakeNoteSnapshot` would be the **first `pii` field on `OrgMembershipProcess`**.
+The model's ceiling today is `personal`, held by `shopifyInvoiceUrl` alone;
+every other field is `internal` or `public`. This raises the ceiling for the
+first time.
+
+**Four registered routes return the model in their view bag**, and all four are
+re-cleared against the new tier:
+
+| Route | Band today |
+|---|---|
+| `POST /api/membership-audit/person-agreement` | `everyones:internal`, `public` — **no pii band at all** |
+| `GET /api/membership-ops/applications` | `everyones:pii` and below |
+| `GET /api/membership/reviews` | `everyones:pii`, `member`, `public` |
+| `GET /api/finance-ops/membership-payment-plans` | `everyones:pii` and below |
+
+That, plus regenerating `src/security/generated/classifications.ts`, is a
+boundary change, and AGENTS.md's boundary-isolation rule ships it **in its own
+PR** with no feature code. The previous revision's Cost budgeted the new list's
+registry grant and not this; it is priced below.
+
+**The argument that keeps the note narrow today does not transfer, and this
+paragraph exists so the next person finds that out from the doc rather than the
+hard way.** `registry.ts` argues explicitly that `Household.intakeNotes` is out
+of reach for `programLeadMentor` and `programCoreVolunteer` because *"Household
+binds no scope beyond their_households, so a their_program_households token
+resolves to nothing on a Household row."* **That argument is about `Household`'s
+bindings.** On `OrgMembershipProcess` the conclusion still holds, but for an
+entirely different reason: that model is **unbound**. `scopeBindings.ts` lists it
+in `OPT_OUT_PENDING_ROUTE`, annotated *"board/admin today; a household-facing
+status route is plausible."* That set is a work queue rather than a permanent
+exemption — each entry leaves it in the same PR that ships its scoped route.
+**Whoever ships that household-facing route will be binding a model that by then
+carries pii, with the reasoning that kept the note narrow living in a comment
+attached to a different model.**
+
+#### A correction this design owes its review
+
+The snapshot-on-process shape was recommended over a separate
+`IntakeNoteAcknowledgement` model, and **on the boundary axis the separate model
+was the cheaper one**: it would have bound no scopes, appeared in no existing
+view bag, and left all four registered routes untouched. That was not weighed
+when the shape was chosen, and neither this document nor the review that
+recommended it priced it.
+
+The snapshot remains the chosen shape. It removes the re-open semantics, the
+edit-materiality comparison against a live string, and a join table, and those
+are worth more than the boundary work. But it buys that simplicity **with
+boundary surface**, and the trade belongs here rather than in the implementer's
+surprise.
 
 ### A note on citations
 
@@ -238,6 +447,16 @@ table's own `guardSite` strings, and by the time it was reviewed most pointed at
 the wrong function — including the strings on `main`, which have drifted from the
 code they describe. A symbol name is checkable and does not rot on an unrelated
 insertion.
+
+Rules in `docs/rules/membership.md` are therefore cited here by **section heading
+plus quoted text** — "Procedure → Renewal", and the sentence itself — never by
+line. The review of this document supplied the live counterexample: it quoted the
+access rule at `membership.md:302`, #1579 landed an edit above it and moved the
+rule to 308, and by the time these changes were written it had moved again, to
+314. Three numbers, one unchanged rule, and nothing in the file's own content
+signalling the drift. A heading and a quotation survive all of it, and a reader
+who cannot find the quoted sentence learns something real — that the rule
+changed — instead of silently reading the wrong line.
 
 ## What this is not
 
@@ -253,30 +472,58 @@ insertion.
 
 ## Open questions
 
-1. **Who counts as a reader?** Board members only, or background-check reviewers
-   too? The existing queue gate, `canReviewBackgroundChecks`, is broader than the
-   board. This decides the security grant, so it is answered before the registry
-   change rather than after.
+Numbering is kept from the reviewed revision so the review still lines up against
+it. 1 and 3 are now answered; only 2 is open.
 
-2. **What happens if the list is not worked?** With no gate the answer is milder
-   than it was — nobody is stranded — but the note is still unread. A staleness
-   notice to the board after some interval is the cheap answer. This is a
-   commitment question, not a technical one.
+1. **Who counts as a reader? — ANSWERED: the list is board-facing.** Board
+   members read it. `canReviewBackgroundChecks`, the existing queue gate, is
+   broader than the board and is **not** the gate for this list. Reviewers keep
+   the note where they already see it, on `GET /api/membership/reviews`; they do
+   not gain the new list. This settles the security grant, which is why it had to
+   be answered before the registry change rather than after.
 
-3. **Does the board list widen who may read a note?** The access rule names the
-   household's leads and the reviewers. If readers are board members, the rule
-   changes and `docs/rules/membership.md` changes with it.
+2. **What happens if the list is not worked?** *(open)* With no gate the answer
+   is milder than it was — nobody is stranded — but the note is still unread. The
+   byte-identical skip keeps the list from refilling with sentences already
+   acknowledged, so what remains on it is genuinely unread; that makes the
+   question sharper, not softer. A staleness notice to the board after some
+   interval is the cheap answer. This is a commitment question, not a technical
+   one.
+
+3. **Does the board list widen who may read a note? — ANSWERED: yes, and the
+   widening is a relaxation to the policy limit rather than past it.** The access
+   rule is Policy-tier and stricter than `Membership Policy, Art. VI §VI.2` and
+   `Records Policy, Art. IV` require; the owner read those policy documents to
+   establish that, and they are on Drive rather than in this repo. The rule is
+   amended **in the implementation PR**, not this one, and the exact replacement
+   text is fixed above. **This PR does not touch `docs/rules/membership.md`.** See
+   "Rules this relies on or intends to change".
 
 ## Cost
 
 - Three columns and a migration.
 - One mutation to record the acknowledgement.
+- **The snapshot write itself, at two sites.** One extra field on the existing
+  `orgMembershipProcess.update` in `submitIntake`; in `beginRenewal`, a new read
+  of the household's note plus a write placed inside the existing conditional
+  `updateMany`, with the byte-identical skip at both.
+- **The boundary PR that raises `OrgMembershipProcess`'s ceiling to `pii`.**
+  Re-clear the four registered routes that return the model against the new tier
+  and regenerate `src/security/generated/classifications.ts`. Ships alone, no
+  feature code, per AGENTS.md's boundary-isolation rule. **The previous revision
+  missed this item entirely.**
 - One board-facing list route and screen.
 - **The security-registry grant for that list, as its own change, merged before
   the route.** The registry carries an explicit guard against granting a
   household-scoped pii token to a lead- or keyholder-facing view returning
   household rows; reviewers reach `intakeNotes` today through the reviewer grant
   on `GET /api/membership/reviews`. A new board-facing surface cannot borrow it.
+- **The two `docs/rules/membership.md` amendments, in the implementation PR** —
+  text fixed above, so this is transcription rather than a decision.
+
+Both boundary items above are boundary-only and may ship as one PR or two; what
+AGENTS.md fixes is that no feature code rides along, and that the registry entry
+lands before the route that uses it.
 
 No cutover: nothing in flight is held, and no existing row needs moving. Per §4.2
 there is no migration document, because nothing here expires on a nameable date.
