@@ -90,12 +90,10 @@ export default function PrintBadgesPage() {
             margin: 1,
             color: { dark: '#000000', light: '#FFFFFF' }
           });
+          // `name` feeds both documents: BadgeDocument disambiguates it, StickerDocument prints it raw.
           return {
             id: p.id,
             name: p.name ?? '',
-            isMember: !!p.isMember,
-            isBoardMember: !!p.isBoardMember,
-            isKeyholder: !!p.isKeyholder,
             qrDataUri,
           };
         })

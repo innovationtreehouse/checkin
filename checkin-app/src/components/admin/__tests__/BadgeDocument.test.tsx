@@ -20,13 +20,13 @@ jest.mock("@react-pdf/renderer", () => ({
 }));
 
 describe("BadgeDocument", () => {
-  it("renders names, role pills, and chunks front/back pages of 8", () => {
+  it("renders names without role pills, and chunks front/back pages of 8", () => {
+    // Every fixture row carries both role flags, so a pill that came back would render.
     const badges = Array.from({ length: 9 }, (_, i) => ({
       id: i + 1,
       name: `Person ${i + 1}`,
-      isMember: true,
-      isBoardMember: i === 0,
-      isKeyholder: i === 1,
+      isBoardMember: true,
+      isKeyholder: true,
       qrDataUri: `data:image/png;base64,QR${i}`,
     }));
 
@@ -34,8 +34,8 @@ describe("BadgeDocument", () => {
 
     expect(screen.getByText("Person 1")).toBeInTheDocument();
     expect(screen.getByText("Person 9")).toBeInTheDocument();
-    expect(screen.getByText("BOARD")).toBeInTheDocument();
-    expect(screen.getByText("KEYHOLDER")).toBeInTheDocument();
+    expect(screen.queryByText("BOARD")).toBeNull();
+    expect(screen.queryByText("KEYHOLDER")).toBeNull();
     expect(screen.getByText("ID: 1")).toBeInTheDocument();
     expect(screen.getByText("ID: 9")).toBeInTheDocument();
     expect(screen.getAllByText(/^\d{4}-\d{4}$/).length).toBeGreaterThan(0);
