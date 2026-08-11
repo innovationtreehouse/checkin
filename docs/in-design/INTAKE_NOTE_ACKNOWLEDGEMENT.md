@@ -81,7 +81,8 @@ differently. **Neither is edited by this PR** — see "When the amendments land"
 Under Procedure → Application and review:
 
 > An intake note does not hold the application. It is shown to the reviewers,
-> who read it while the family pays.  [Decision]
+> who read it while the family pays.
+> (`checkin-app/src/lib/membership/external.ts`)  [Decision]
 
 The first sentence is a standing decision and this design keeps it. **The second
 sentence is over-broad and this design intends to correct it.** It is true only
@@ -167,8 +168,14 @@ re-derive it:
 
 The second replacement drops "shown to the reviewers, who read it while the
 family pays" because that clause is the falsehood this design was written to
-correct. Neither replacement names a screen or a route: which surface carries the
-list is mechanism, and §6.13 keeps mechanism out of the register.
+correct. It also drops the `external.ts` hint, deliberately: that path pointed at
+the clause being removed, and the replacement's enforcement is spread across the
+two snapshot write sites and the board list — no single file to point at. §3.5
+allows this ("most rules need none") and a hint pointing at the wrong file is
+worse than none.
+
+Neither replacement names a screen or a route: which surface carries the list is
+mechanism, and §6.13 keeps mechanism out of the register.
 
 ## The rule
 
