@@ -76,7 +76,9 @@ defineRoute({
 // back on and no scope resolver in play. Sysadmin and board only: the same set
 // the sibling GET/PATCH/DELETE on /api/facility/visits carry and the same set
 // facility-ops/visits gates the page on, which must stay equal (their drifting
-// apart was AT13/#1259). Widening to isOperations is an open decision, #1476.
+// apart was AT13/#1259). Widening to isOperations was answered NO: #1633 puts
+// operations' reach into attendance at aggregate only (the trends, printing ID
+// badges), so one person's visit record stays outside it. #1476, closed.
 //
 // Its own endpoint rather than a POST on /api/facility/visits: adding a verb to
 // an existing legacy route file cannot satisfy this registry's own lints in any
