@@ -1,6 +1,6 @@
 import type { OrgMembershipStatus, Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
-import { nextBoundary, renewalSeasonWindow } from "@/lib/membership/renewal";
+import { nextBoundary, renewalSeasonWindow, MAX_DATE } from "@/lib/membership/renewal";
 import { duesSettledAwaitingBg } from "@/lib/membership/lifecycle";
 
 /**
@@ -147,7 +147,7 @@ export async function membershipValidThrough(householdId: number, now = new Date
         where: {
             orgMembershipId: membership.id,
             status: "ACTIVE",
-            stageEnteredAt: { gte: window?.windowStart ?? new Date(8.64e15) },
+            stageEnteredAt: { gte: window?.windowStart ?? MAX_DATE },
         },
         select: { id: true },
     })) !== null;

@@ -84,6 +84,14 @@ export function bgValidUntilBoundary(
 }
 
 /**
+ * Off-season / boundary-unset sentinel. Every caller reads the same shape —
+ * `stageEnteredAt: { gte: window?.windowStart ?? MAX_DATE }` — where "no window"
+ * must match nobody rather than everybody. Named once here, beside the window
+ * functions that return the null it stands in for.
+ */
+export const MAX_DATE = new Date(8.64e15);
+
+/**
  * From a configured boundary date, the next boundary occurrence and whether `now`
  * sits inside the renewal lead window before it. Pure; the single source of the
  * "are we in renewal season" calc shared by runRenewalSweep and isRenewalSeason.
