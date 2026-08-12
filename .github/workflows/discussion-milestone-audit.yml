@@ -1,0 +1,27 @@
+name: Discussion milestone audit
+
+# Read-only. No secrets, no discussion triggers, no writes — the job is a
+# report, so the token is read-only and there is nothing here to hijack.
+on:
+  workflow_dispatch:
+    inputs:
+      discussion:
+        description: Discussion number to audit
+        required: true
+
+permissions:
+  contents: read
+  issues: read
+  discussions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ inputs.discussion }}
+        run: |
+          scripts/discussion-milestone-audit.sh "$NUM" | tee -a "$GITHUB_STEP_SUMMARY"
