@@ -22,9 +22,11 @@ jest.mock("@react-pdf/renderer", () => ({
 describe("BadgeDocument", () => {
   it("renders names without role pills, and chunks front/back pages of 8", () => {
     // Every fixture row carries both role flags, so a pill that came back would render.
+    // displayName arrives pre-resolved from the page (#1625) — BadgeDocument prints it
+    // verbatim and no longer derives anything from the batch it was handed.
     const badges = Array.from({ length: 9 }, (_, i) => ({
       id: i + 1,
-      name: `Person ${i + 1}`,
+      displayName: `Person ${i + 1}`,
       isBoardMember: true,
       isKeyholder: true,
       qrDataUri: `data:image/png;base64,QR${i}`,

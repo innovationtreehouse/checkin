@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { personRecordIsActiveOrgMember } from "@/lib/orgMembership";
+import { ACTIVE_ORG_MEMBER_PERSON_WHERE, personRecordIsActiveOrgMember } from "@/lib/orgMembership";
 import { apiError } from "@/lib/api-response";
 import { rolesToFlags } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
@@ -14,6 +14,22 @@ export const GET = withAuth(
     async (req, auth) => {
         try {
             const url = new URL(req.url);
+
+            // Roster mode: every ACTIVE member org-wide, ignoring `q` and the 200-row cap.
+            // Badge display names have to disambiguate against the whole membership, not
+            // against whichever rows the search box happened to return (#1625). A mode on
+            // this route rather than a new one: `GET /api/people/search` is already on the
+            // legacy-authz baseline, so no new method key and no registry change, and the
+            // shape here is a strict subset of what the search below already returns.
+            // ponytail: unbounded — ACTIVE members only (hundreds). Paginate if that changes.
+            if (url.searchParams.get('roster') === 'active') {
+                const members = await prisma.person.findMany({
+                    where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
+                    select: { id: true, name: true },
+                });
+                return NextResponse.json({ people: members.map(m => ({ id: m.id, name: m.name ?? '' })) });
+            }
+
             const q = url.searchParams.get('q') || '';
             // Only `adults` is recognized; any other value (or none) filters by age not at all.
             const adultsOnly = url.searchParams.get('filter') === 'adults';
