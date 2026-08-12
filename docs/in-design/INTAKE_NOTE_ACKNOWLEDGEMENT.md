@@ -33,10 +33,11 @@ would not otherwise need.
   gate membership, and does not enter the background-check review. Those
   couplings were removed on purpose and this does not restore them.
 - **Cost:** three columns on the existing process record and a migration, one
-  mutation, the snapshot write at two sites, one board-facing list, **a boundary
-  PR raising `OrgMembershipProcess` to `pii` and re-clearing the four routes that
-  return it**, and the security-registry grant the list needs — the boundary work
-  shipping as its own change, before the route.
+  mutation, the snapshot write at two sites, one board-facing list, **raising
+  `OrgMembershipProcess` to `pii` and re-clearing the four routes that return
+  it — which rides with the schema change rather than a boundary PR of its own**,
+  and the security-registry grant the list needs, shipping as its own change
+  before the route.
 - **What this PR does not do:** it does not edit `docs/rules/membership.md`. The
   access rule is relaxed to its policy limit by the implementation PR, using the
   replacement text fixed below.
@@ -299,15 +300,37 @@ Three columns on `OrgMembershipProcess`, not a new model:
   /// what the applicant actually said.
   /// @sensitivity:pii
   intakeNoteSnapshot String?
-  /// @sensitivity:public
+  /// Who read the snapshot, and when. Staff-action audit metadata like every other
+  /// actor/stamp pair on this model — internal, not public: who has read a family's
+  /// note is not a fact the row publishes.
+  /// @sensitivity:internal
   noteAckById        Int?
   noteAckBy          Person?  @relation("IntakeNoteReads", fields: [noteAckById], references: [id])
-  /// @sensitivity:public
+  /// @sensitivity:internal
   noteAckAt          DateTime?
 ```
 
 `Person` gains the matching `intakeNoteAcks OrgMembershipProcess[] @relation("IntakeNoteReads")`
 back-relation; Prisma will not generate without both sides.
+
+**The acknowledgement pair is `internal`, not `public`.** It records *which
+internal actor* acknowledged and when — a workflow stamp, not member-facing data.
+Every other staff-action actor/stamp pair on this model is `internal`
+(`manualPaymentById`, `bgClearedAt`, `contractSignedAt`, `paidAt`,
+`renewalReminderSentAt`); what is `public` on `OrgMembershipProcess` is the row's
+own identity and shape (`id`, `kind`, `orgMembershipId`, `subjectPersonId`,
+`createdAt`). `SECURITY-POLICY.md`'s tier table puts this in `internal` by name:
+*"Role/audit metadata."* The repo also carries the alternative going wrong —
+`BackgroundCheckAttestation.reviewerId` is `public`, and `registry.ts` has to
+defend against it at the route because it *"would tell reviewer B that reviewer A
+already signed off"*. "Who has read this family's note" is the same shape of fact,
+and `internal` is strictly narrower than `public`, so it widens nothing this
+design contemplated.
+
+The tier is load-bearing downstream rather than a detail: it is what makes the
+board list's registry entry need `everyones:internal` **alongside**
+`everyones:pii`, to render "acknowledged by X at T". Read as `public`, that entry
+would appear to need the `pii` band alone.
 
 Snapshotting at submit rather than acknowledging a live string is what makes the
 record answerable a week later. It settles two questions outright — there is no
@@ -411,10 +434,13 @@ re-cleared against the new tier:
 | `GET /api/membership/reviews` | `everyones:pii`, `member`, `public` |
 | `GET /api/finance-ops/membership-payment-plans` | `everyones:pii` and below |
 
-That, plus regenerating `src/security/generated/classifications.ts`, is a
-boundary change, and AGENTS.md's boundary-isolation rule ships it **in its own
-PR** with no feature code. The previous revision's Cost budgeted the new list's
-registry grant and not this; it is priced below.
+That re-clearing, plus regenerating `src/security/generated/classifications.ts`,
+**rides with the schema change rather than shipping in its own PR**:
+`security-boundary-isolation.yml` excludes
+`checkin-app/src/security/generated/*` from `is_boundary()`, and annotating new
+columns is not the re-tier of an existing field that its only other trigger looks
+for. The previous revision's Cost budgeted the new list's registry grant and not
+this re-clearing; it is priced below.
 
 **The argument that keeps the note narrow today does not transfer, and this
 paragraph exists so the next person finds that out from the doc rather than the
@@ -514,11 +540,14 @@ it. 1 and 3 are now answered; only 2 is open.
   `orgMembershipProcess.update` in `submitIntake`; in `beginRenewal`, a new read
   of the household's note plus a write placed inside the existing conditional
   `updateMany`, with the byte-identical skip at both.
-- **The boundary PR that raises `OrgMembershipProcess`'s ceiling to `pii`.**
-  Re-clear the four registered routes that return the model against the new tier
-  and regenerate `src/security/generated/classifications.ts`. Ships alone, no
-  feature code, per AGENTS.md's boundary-isolation rule. **The previous revision
-  missed this item entirely.**
+- **Raising `OrgMembershipProcess`'s ceiling to `pii` — which rides with the
+  schema change rather than shipping alone.** Re-clear the four registered routes
+  that return the model against the new tier and regenerate
+  `src/security/generated/classifications.ts`. There is no separate boundary PR:
+  `security-boundary-isolation.yml` excludes
+  `checkin-app/src/security/generated/*` from `is_boundary()`, and its only other
+  trigger is a re-tier of an existing field, which annotating new columns is not.
+  **The previous revision missed this item entirely.**
 - One board-facing list route and screen.
 - **The security-registry grant for that list, as its own change, merged before
   the route.** The registry carries an explicit guard against granting a
@@ -528,9 +557,9 @@ it. 1 and 3 are now answered; only 2 is open.
 - **The two `docs/rules/membership.md` amendments, in the implementation PR** —
   text fixed above, so this is transcription rather than a decision.
 
-Both boundary items above are boundary-only and may ship as one PR or two; what
-AGENTS.md fixes is that no feature code rides along, and that the registry entry
-lands before the route that uses it.
+The registry grant is the only boundary item above; what AGENTS.md fixes is that
+no feature code rides along, and that the registry entry lands before the route
+that uses it.
 
 No cutover: nothing in flight is held, and no existing row needs moving. Per §4.2
 there is no migration document, because nothing here expires on a nameable date.

@@ -98,6 +98,9 @@ export const classifications = {
         certificationNote: 'internal',
         renewalReminderSentAt: 'internal',
         isPaymentPlanRequested: 'internal',
+        intakeNoteSnapshot: 'pii',
+        noteAckById: 'internal',
+        noteAckAt: 'internal',
     },
     BackgroundCheckAttestation: {
         id: 'public',
@@ -401,6 +404,7 @@ export const relations = {
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         bgAttestationsAsSubject: { model: 'BackgroundCheckAttestation', isList: true },
         personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
+        intakeNoteAcks: { model: 'OrgMembershipProcess', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
         programVolunteers: { model: 'ProgramVolunteer', isList: true },
@@ -443,6 +447,7 @@ export const relations = {
     OrgMembershipProcess: {
         orgMembership: { model: 'OrgMembership', isList: false },
         subjectPerson: { model: 'Person', isList: false },
+        noteAckBy: { model: 'Person', isList: false },
         attestations: { model: 'BackgroundCheckAttestation', isList: true },
     },
     BackgroundCheckAttestation: {

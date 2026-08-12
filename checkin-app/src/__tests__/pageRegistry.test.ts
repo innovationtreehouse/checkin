@@ -55,8 +55,8 @@ describe('Facility Ops directory agrees with the section gates', () => {
     expect(entryFor(href).visible(ops, true, null)).toBe(roles.includes('isOperations'));
   });
 
-  it('hides the /facility-ops index from operations (it redirects into Visits)', () => {
-    expect(entryFor('/facility-ops').visible(ops, true, null)).toBe(false);
+  it('lists the /facility-ops index to operations (it redirects into their first visible tab)', () => {
+    expect(entryFor('/facility-ops').visible(ops, true, null)).toBe(true);
   });
 
   it('still shows every Facility Ops entry to a board member', () => {
