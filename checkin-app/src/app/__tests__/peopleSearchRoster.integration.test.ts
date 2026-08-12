@@ -24,6 +24,10 @@ describe('GET /api/people/search?roster=active', () => {
     let adminId: number;
 
     let prevBoundary: Date | null = null;
+    // setBoundary upserts, so it can CREATE the singleton. A null prevBoundary can't tell
+    // "row absent" from "row present, value null" — record it, or teardown leaves behind a
+    // row that any suite asserting on an unconfigured install would inherit.
+    let boardSettingsExisted = false;
 
     const shiftMonths = (from: Date, months: number) => {
         const d = new Date(from);
@@ -90,10 +94,12 @@ describe('GET /api/people/search?roster=active', () => {
 
     beforeAll(async () => {
         await wipe();
-        prevBoundary = (await prisma.boardSettings.findUnique({
+        const existing = await prisma.boardSettings.findUnique({
             where: { id: 1 },
             select: { orgMembershipYearBoundary: true },
-        }))?.orgMembershipYearBoundary ?? null;
+        });
+        boardSettingsExisted = existing !== null;
+        prevBoundary = existing?.orgMembershipYearBoundary ?? null;
         await setBoundary(BOUNDARY);
 
         const admin = await makePerson('Admin Roster', 'admin', 'NONE');
@@ -122,7 +128,8 @@ describe('GET /api/people/search?roster=active', () => {
 
     afterAll(async () => {
         await wipe();
-        await setBoundary(prevBoundary);
+        if (boardSettingsExisted) await setBoundary(prevBoundary);
+        else await prisma.boardSettings.delete({ where: { id: 1 } });
     });
 
     const rosterRows = async (query: string) => {

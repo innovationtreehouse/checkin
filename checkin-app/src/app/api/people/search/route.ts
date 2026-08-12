@@ -6,7 +6,7 @@ import { ACTIVE_ORG_MEMBER_PERSON_WHERE, personRecordIsActiveOrgMember } from "@
 import { apiError } from "@/lib/api-response";
 import { rolesToFlags } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
-import { badgeYearCycle } from "@/lib/membership/renewal";
+import { badgeYearCycle, MAX_DATE } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +51,7 @@ export const GET = withAuth(
                                         processes: {
                                             where: {
                                                 status: 'ACTIVE',
-                                                stageEnteredAt: { gte: cycle?.settledSince ?? new Date(8.64e15) },
+                                                stageEnteredAt: { gte: cycle?.settledSince ?? MAX_DATE },
                                             },
                                             select: { id: true },
                                             take: 1,
@@ -62,6 +62,10 @@ export const GET = withAuth(
                         },
                     },
                 });
+                // Ops sees `year`: Operations prints badges (#1623), so it has to see which
+                // households renewed. It derives from OrgMembershipProcess.status and
+                // stageEnteredAt (both @sensitivity:internal) but exposes only the printed
+                // year string — no process row, no dates, no payment detail.
                 return NextResponse.json({
                     people: members.map(m => ({
                         id: m.id,

@@ -47,8 +47,9 @@ describe("BadgeDocument", () => {
   });
 
   // #1628. The year is per badge, so one print run mixes renewed and not-renewed
-  // households. A null year must emit no element at all — an empty <Text> would still
-  // occupy the header row's space-between slot and shove the logo off the left edge.
+  // households. Rendering nothing rather than an empty <Text> keeps the header row to a
+  // single child (the logo stays at flex-start either way under space-between), so no
+  // stray element can pick up yearText's marginLeft or a future style.
   it("prints the year only on the badge that carries one", () => {
     const badges = [
       { id: 1, displayName: "Renewed Rita", year: "2026-2027", qrDataUri: "data:image/png;base64,QR1" },

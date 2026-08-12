@@ -90,12 +90,20 @@ export default function PrintBadgesPage() {
   const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
   const printedYears = useMemo(() => new Map((roster ?? []).map(m => [m.id, m.year])), [roster]);
 
-  // The badge name and this column read the same map, so the column is proof of what
-  // will print. Someone off the ACTIVE roster is not in that population at all, so
-  // they get a bare first name rather than being folded into it — folding them in is
-  // what lets a non-member move a member's name, which is the bug.
+  // Off-roster people are absent from the ACTIVE population, so folding them into it is
+  // what lets a non-member move a member's name — the #1625 bug. Disambiguate them among
+  // themselves instead, over the fetched batch, so two non-member Johns don't both print
+  // "John". Fallback only: the roster map is consulted first and never sees this one.
+  const offRosterNames = useMemo(
+    () => computeDisplayNames((roster ? participants : []).filter(p => !printedNames.has(p.id))
+      .map(p => ({ id: p.id, name: p.name ?? '' }))),
+    [roster, participants, printedNames],
+  );
+
+  // The badge name and this column read the same maps, so the column is proof of what
+  // will print.
   const printedName = (p: ParticipantRow) =>
-    printedNames.get(p.id) ?? ((p.name ?? '').trim().split(/\s+/)[0] || `User #${p.id}`);
+    printedNames.get(p.id) ?? offRosterNames.get(p.id) ?? `User #${p.id}`;
 
   const toggleSelection = (id: number) => {
     const newSet = new Set(selectedIds);

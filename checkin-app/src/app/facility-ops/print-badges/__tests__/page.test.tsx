@@ -196,6 +196,31 @@ describe("facility-ops/print-badges page", () => {
   // and can be selected. A 500 from apiError is valid JSON, so `.catch` alone never sees
   // it — only the `res.ok` check does. The guard must hold either way: releasing it here
   // would print bare, un-disambiguated first names onto physical badges.
+  // Off-roster people take no name from the ACTIVE roster, so without a fallback cohort
+  // two non-member Johns in one run both print "John" onto physical badges.
+  it("disambiguates off-roster people among themselves, without moving a member's name", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/people/search?roster=active": { people: [{ id: 1, name: "John Smith", year: null }] },
+      "/api/people/search": {
+        people: [
+          { id: 1, name: "John Smith", email: "js@example.com", isMember: true },
+          { id: 8, name: "John Nonmember", email: "jn@example.com", isMember: false },
+          { id: 9, name: "John Guest", email: "jg@example.com", isMember: false },
+        ],
+      },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    fireEvent.click(screen.getByRole("checkbox", { name: /hide inactive/i }));
+
+    await waitFor(() => expect(printedNameCell("John Nonmember")).toBe("John N."));
+    expect(printedNameCell("John Guest")).toBe("John G.");
+    // The only John on the ACTIVE roster, so his name is unqualified — the two off-roster
+    // Johns are not in that population and must not pull him to "John S.".
+    expect(printedNameCell("John Smith")).toBe("John");
+  }, 15000);
+
   it("holds badge generation when the member roster request fails", async () => {
     setSession({ id: 1, isSysadmin: true });
     const logged = jest.spyOn(console, "error").mockImplementation(() => {});
