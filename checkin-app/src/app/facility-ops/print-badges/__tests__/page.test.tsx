@@ -3,6 +3,7 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- jest.mock factories run hoisted, before imports exist
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("qrcode", () => ({ toDataURL: jest.fn(async () => "data:image/png;base64,QR") }));
+jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 // @react-pdf/renderer is pure ESM/non-DOM (see BadgeDocument.test.tsx); swap its
 // primitives for DOM stand-ins and stub `pdf().toBlob()` so the "Generate" flow
 // (which renders BadgeDocument/StickerDocument through it) runs under RTL/jsdom.
@@ -21,6 +22,7 @@ jest.mock("@react-pdf/renderer", () => ({
 import type { ReactNode } from "react";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { notifications } from "@mantine/notifications";
 import PrintBadgesPage from "../page";
 
 beforeEach(() => {
@@ -189,4 +191,32 @@ describe("facility-ops/print-badges page", () => {
     });
     expect(printedNameCell("John Smith")).toBe("John S.");
   }, 15000);
+
+  // #1625/#1638. The roster load fails while the plain search succeeds, so rows render
+  // and can be selected. A 500 from apiError is valid JSON, so `.catch` alone never sees
+  // it — only the `res.ok` check does. The guard must hold either way: releasing it here
+  // would print bare, un-disambiguated first names onto physical badges.
+  it("holds badge generation when the member roster request fails", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const logged = jest.spyOn(console, "error").mockImplementation(() => {});
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      const isRoster = input.toString().includes("roster=active");
+      return {
+        ok: !isRoster,
+        status: isRoster ? 500 : 200,
+        json: async () => (isRoster ? { error: "Internal Server Error" } : { people: participants }),
+      } as Response;
+    }) as unknown as typeof fetch;
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("Kim Keyholder");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+    await waitFor(() => expect(logged).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Generate Badge (2)" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Generate Sticker (2)" })).toBeDisabled();
+    expect(notifications.show).toHaveBeenCalledWith(
+      expect.objectContaining({ color: "red", autoClose: false }),
+    );
+    logged.mockRestore();
+  });
 });

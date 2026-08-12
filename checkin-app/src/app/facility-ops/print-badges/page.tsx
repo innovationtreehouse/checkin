@@ -73,11 +73,17 @@ export default function PrintBadgesPage() {
     const url = new URL('/api/people/search', window.location.origin);
     url.searchParams.set('roster', 'active');
     fetch(url.toString())
-      .then(res => res.json())
+      // apiError returns valid JSON, so a 500 would resolve to `[]` and release the
+      // Generate guard — the roster must stay null on any failure.
+      .then(res => {
+        if (!res.ok) throw new Error(`roster request failed: ${res.status}`);
+        return res.json();
+      })
       .then(data => setRoster(data.people ?? []))
       .catch(e => {
         console.error("Failed to load the active-member roster for badge names:", e);
-        setRoster([]);
+        setRoster(null);
+        notifications.show({ color: 'red', message: 'Could not load the active member roster, so badge names cannot be resolved. Reload to retry.', autoClose: false });
       });
   }, [status]);
 
