@@ -15,7 +15,7 @@ and the `isOperations` gate decision (§6.1) is **answered** —
 [#1633](https://github.com/innovationtreehouse/checkin/pull/1633) keeps operations' reach into
 attendance aggregate-only. The advisory-lock work tracked as §7 has landed.
 Sections below are written in the present tense and describe the code as it
-stands; anything not built says so in its heading or carries a 🟡.
+stands; anything not built says so in its heading.
 
 ## Why one design, not three
 
@@ -212,7 +212,7 @@ editing an underlying visit — there is no separate hours write.
 | **board** | ✅ (as self) | ✅ facility-wide | ✅ facility-wide | ✅ facility-wide (tombstone) |
 | **sysadmin** | ✅ | ✅ facility-wide | ✅ facility-wide | ✅ facility-wide (tombstone) |
 
-✅ = allowed, built · 🟡 = open decision · ⛔ = deny by design
+✅ = allowed, built · ⛔ = deny by design
 
 **Enforcing boundaries:**
 - The self / household-lead scope is one server-side resolution,
@@ -235,7 +235,7 @@ editing an underlying visit — there is no separate hours write.
 - program-lead scope = roster membership (the enrolled + volunteering set the
   events route already computes) **and** the visit's `associatedEventId`
   belonging to that program.
-- ops / board / sysadmin facility-wide = the `withAuth` role gate on the route.
+- board / sysadmin facility-wide = the `withAuth` role gate on the route.
 
 ### AT13 — answered (fixed in PR #1350)
 The matrix puts board at **allow** for edit + delete, and the API already granted
@@ -546,7 +546,7 @@ its own.
 
 ---
 
-## 4. AT12 — correction-review screen — *not built ([#1258](https://github.com/innovationtreehouse/checkin/issues/1258))*
+## 4. AT12 — correction-review screen — *built in [#1560](https://github.com/innovationtreehouse/checkin/pull/1560) ([#1258](https://github.com/innovationtreehouse/checkin/issues/1258))*
 
 **Surfaces** attendance corrections by **kind** (insert / edit / delete),
 **actor class** (self vs proxy) and **time**, as a filterable feed carrying the
@@ -664,8 +664,10 @@ client-side from what ships.
 4. **Flag = feed or worklist?** v1 is a notification + an AT12 lens (no state). If
    the board wants to *track* "reviewed / acknowledged" per flag, add a light ack
    state (not a full approval model). Defer until asked.
-5. **AT12 home.** A new scoped `facility/corrections` route/page (recommended) vs
-   extending the sysadmin-gated `/system-status/audit-log` with a visit rollup.
+5. **AT12 home — ANSWERED: the scoped route.**
+   [#1560](https://github.com/innovationtreehouse/checkin/pull/1560) shipped
+   `facility-ops/corrections` over `GET /api/facility/corrections`, not a rollup
+   bolted onto the sysadmin-gated `/system-status/audit-log`.
 6. **Exact self=actor proof in AT12.** ~~Marker-only~~ — **adopted.** Every visit
    audit write now sets `secondaryAffectedEntity` = the subject person, so
    self = `actorId === secondaryAffectedEntity` without a join, and a proxy
