@@ -13,31 +13,37 @@ import type { AuthenticatedUser, BusinessRole, AuthResult } from '@/types/auth';
  */
 async function resolveAuthResult(
     req: NextRequest,
-    body?: string
+    body?: string,
+    opts?: { sessionOnly?: boolean }
 ): Promise<AuthResult> {
-    // 1. Try kiosk signature
-    const pubKeys = getKioskPublicKeys();
-    const hasKioskHeaders = req.headers.get('x-kiosk-signature');
+    // 1. Try kiosk signature. Skipped for session-only resolution: verifying a
+    // signature consumes its single-use nonce, so a caller that discards kiosk
+    // results (getOptionalSessionUser) must not verify here — the kiosk-tolerant
+    // route's own verification of the same request would then see a replay.
+    if (!opts?.sessionOnly) {
+        const pubKeys = getKioskPublicKeys();
+        const hasKioskHeaders = req.headers.get('x-kiosk-signature');
 
-    if (pubKeys.length > 0 && hasKioskHeaders) {
-        const method = req.method;
-        const path = new URL(req.url).pathname;
-        const result = verifyKioskSignature(
-            method, path, body || '',
-            req.headers.get('x-kiosk-timestamp'),
-            req.headers.get('x-kiosk-signature'),
-            req.headers.get('x-kiosk-nonce'),
-            pubKeys
-        );
-        if (result.ok) return { type: 'kiosk' };
-    } else if (pubKeys.length === 0 && config.isLocal()) {
-        // Local laptops only (CHECKIN_ENV=local): treat as kiosk when no signing key is
-        // configured, so the kiosk/check-in flows can be exercised without provisioning keys.
-        // Deliberately NOT enabled on the cloud dev instance (CHECKIN_ENV=dev) — that box is
-        // publicly reachable and must require a real kiosk key, exactly like prod. CHECKIN_ENV
-        // is unset under tests, so this stays off there too.
-        if (hasKioskHeaders || !req.headers.get('cookie')) {
-            return { type: 'kiosk' };
+        if (pubKeys.length > 0 && hasKioskHeaders) {
+            const method = req.method;
+            const path = new URL(req.url).pathname;
+            const result = verifyKioskSignature(
+                method, path, body || '',
+                req.headers.get('x-kiosk-timestamp'),
+                req.headers.get('x-kiosk-signature'),
+                req.headers.get('x-kiosk-nonce'),
+                pubKeys
+            );
+            if (result.ok) return { type: 'kiosk' };
+        } else if (pubKeys.length === 0 && config.isLocal()) {
+            // Local laptops only (CHECKIN_ENV=local): treat as kiosk when no signing key is
+            // configured, so the kiosk/check-in flows can be exercised without provisioning keys.
+            // Deliberately NOT enabled on the cloud dev instance (CHECKIN_ENV=dev) — that box is
+            // publicly reachable and must require a real kiosk key, exactly like prod. CHECKIN_ENV
+            // is unset under tests, so this stays off there too.
+            if (hasKioskHeaders || !req.headers.get('cookie')) {
+                return { type: 'kiosk' };
+            }
         }
     }
 
@@ -71,9 +77,10 @@ async function resolveAuthResult(
  */
 export async function authenticateRequest(
     req: NextRequest,
-    body?: string
+    body?: string,
+    opts?: { sessionOnly?: boolean }
 ): Promise<AuthResult> {
-    const result = await resolveAuthResult(req, body);
+    const result = await resolveAuthResult(req, body, opts);
 
     if (config.isStaging()) {
         const claims = result.type === 'session' ? result.user : null;
@@ -96,7 +103,10 @@ export async function authenticateRequest(
  * authenticateRequest, so it falls through to `undefined` here → sees the
  * public-only view, same as anonymous. Kiosk requests also resolve to
  * `undefined` (this returns only real session users); a kiosk-tolerant route
- * keeps its own kiosk plumbing.
+ * keeps its own kiosk plumbing. Resolution is session-only: kiosk signatures
+ * are NOT verified here, because verification consumes the single-use nonce
+ * and would make the route's own verification of the same request fail as a
+ * replay.
  *
  * Scope: this is for genuinely PUBLIC / optional-session reads only. It is NOT
  * an escape hatch for routes that should require a session — those use withAuth
@@ -106,7 +116,7 @@ export async function authenticateRequest(
  * the auth boundary, alongside authenticateRequest.
  */
 export async function getOptionalSessionUser(req: Request): Promise<AuthenticatedUser | undefined> {
-    const auth = await authenticateRequest(req as NextRequest);
+    const auth = await authenticateRequest(req as NextRequest, undefined, { sessionOnly: true });
     return auth.type === 'session' ? auth.user : undefined;
 }
 
