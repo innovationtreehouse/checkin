@@ -15,17 +15,10 @@
  */
 import { loginAs, api } from "./helpers";
 
-type PersonaList = { personas: { id: number; email: string }[] };
 type ProgramCreate = { success: boolean; program: { id: number; shopifyVariantId: string | null } };
 type DiscountCode = { code: string | null; reason?: string };
 type Enrollment = { success: boolean; enrollment: { status: string } };
 type OrdersPaid = { ok: boolean; participants: { personId: number; status: string }[] };
-
-async function personaId(list: PersonaList["personas"], email: string): Promise<number> {
-    const persona = list.find((p) => p.email === email);
-    if (!persona) throw new Error(`dev persona not found in /api/auth/dev-personas: ${email}`);
-    return persona.id;
-}
 
 describe("flow: program purchase with member pricing", () => {
     it("board creates a priced program; member gets a discount code and settles by payment; non-member gets no code", async () => {
@@ -33,10 +26,8 @@ describe("flow: program purchase with member pricing", () => {
         const member = await loginAs("member.pricing@example.com");
         const nonMember = await loginAs("certified.adult@example.com");
 
-        const personas = await api<PersonaList>(board, "/api/auth/dev-personas");
-        expect(personas.status).toBe(200);
-        const boardId = await personaId(personas.json.personas, "boardmember@example.com");
-        const memberId = await personaId(personas.json.personas, "member.pricing@example.com");
+        const boardId = board.personaId;
+        const memberId = member.personaId;
 
         const tag = Date.now().toString(36);
         // Keep the program short: member pricing requires the membership to cover
