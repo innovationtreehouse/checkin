@@ -32,3 +32,8 @@
 **Vulnerability:** Found early returns checking buffer lengths (e.g., `providedBuffer.length !== expectedBuffer.length`) on webhook secrets and cron auth tokens before using `crypto.timingSafeEqual`.
 **Learning:** Returning early on length mismatch leaks the exact length of the expected secret.
 **Prevention:** Hash both the expected and provided secrets to a fixed length (e.g., using SHA-256) before passing them to `crypto.timingSafeEqual` to avoid leaking secret lengths while still safely catching any mismatch.
+
+## 2026-08-15 - [XSS Vulnerability in Email Mock Dev Tool]
+**Vulnerability:** Used `dangerouslySetInnerHTML` to render captured email bodies in the dev-only Sent Mail tool (`checkin-app/src/app/dev/sent-mail/page.tsx`).
+**Learning:** Even in dev-only tools, injecting unsanitized HTML is a security risk. If a malicious user manages to inject a payload into an email body, viewing the sent email could execute the script in the developer's context.
+**Prevention:** To safely render raw HTML in React without using `dangerouslySetInnerHTML`, use an `iframe` with the `srcDoc` attribute and an appropriate `sandbox` attribute (e.g., `sandbox="allow-popups allow-popups-to-escape-sandbox"`).

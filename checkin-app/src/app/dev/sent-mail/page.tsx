@@ -68,8 +68,10 @@ export default async function DevSentMailPage() {
                                 style={{ border: "1px solid rgba(0,0,0,0.08)", borderRadius: 6, padding: "0.75rem", background: "#fff", color: "#111" }}
                                 // Dev-only rendering of our own captured template HTML so embedded links/tokens
                                 // are clickable. Never runs in prod (page 404s); content is what we ourselves sent.
-                                dangerouslySetInnerHTML={{ __html: email.html }}
-                            />
+                                // Using a sandboxed iframe to prevent XSS from injected payloads in email bodies
+                            >
+                                <iframe srcDoc={email.html} sandbox="allow-popups allow-popups-to-escape-sandbox" style={{ width: "100%", border: "none", minHeight: "200px", display: "block" }} />
+                            </div>
                         </li>
                     ))}
                 </ul>
