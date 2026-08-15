@@ -185,6 +185,27 @@ describe('program access for a paid, not-yet-cleared household', () => {
     });
 });
 
+// coversThrough (private, exercised here via isDuesSettledThrough) deliberately
+// fails OPEN when a coverage horizon can't be computed: a dues-settled
+// household still gets member pricing even though the board hasn't configured
+// orgMembershipYearBoundary, rather than losing member pricing for a settings gap.
+describe('isDuesSettledThrough fail-open when no coverage horizon is configured', () => {
+    it('dues-settled household + no board-configured boundary → covers any through-date', async () => {
+        prisma.person.findFirst.mockResolvedValue({ id: 1 }); // dues settled
+        prisma.person.findUnique.mockResolvedValue({ householdId: 5 });
+        prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'ACTIVE' } });
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: null });
+
+        const farFuture = new Date(Date.UTC(2099, 0, 1));
+        expect(await isDuesSettledThrough(1, farFuture)).toBe(true);
+    });
+
+    it('a program with no coverage date (through === null) → status alone decides', async () => {
+        prisma.person.findFirst.mockResolvedValue({ id: 1 }); // dues settled
+        expect(await isDuesSettledThrough(1, null)).toBe(true);
+    });
+});
+
 describe('programCoverageDate', () => {
     it('endAt wins when both are set', () => {
         const startAt = new Date('2026-01-01');
