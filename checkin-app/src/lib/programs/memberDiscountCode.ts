@@ -29,18 +29,15 @@ export function usesProgramMemberCode(discountCodes: string[], programId: number
  * the program's coverage date. Callers (the orders/paid webhook, and the reconciler's
  * forward pass recovering a missed one) flag DISCOUNT_UNAUTHORIZED and do not activate.
  *
- * Asked once, when the money moves, and never re-derived from live household state
- * afterwards — an ordinary deactivation must never retro-flag orders that were honest
- * when they were paid. The PaymentException row is the durable judgement: a row means
- * "this order was judged unentitled", no row means "judged clean".
- *
- * Inherits isDuesSettledThrough's fail-open: with no membership-year boundary
- * configured, coverage passes rather than flagging every member for a settings gap.
+ * Asked once, when the money moves, and never re-derived afterwards — an ordinary
+ * deactivation must not retro-flag orders that were honest when they were paid. The
+ * PaymentException row is the durable judgement. Inherits isDuesSettledThrough's
+ * fail-open when no membership-year boundary is configured.
  *
  * ACCEPTED WINDOW (named, not engineered away): a minted code lives 48h and is not
- * identity-bound, so entitlement can move between mint and checkout. Judging at the
- * money event means a code minted while entitled but redeemed after the household
- * lapses is flagged at redemption; that is the intended answer, not a gap to close.
+ * identity-bound, so entitlement can move between mint and checkout. We judge at
+ * checkout, so a code minted while entitled but redeemed after the household lapses
+ * is flagged at redemption — the intended answer, not a gap to close.
  */
 export async function unentitledMemberCodeUse(
     programId: number,
