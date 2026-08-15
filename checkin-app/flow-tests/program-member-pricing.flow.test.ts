@@ -30,20 +30,15 @@ describe("flow: program purchase with member pricing", () => {
         const memberId = member.personaId;
 
         const tag = Date.now().toString(36);
-        // Keep the program short: member pricing requires the membership to cover
-        // the program's END date, and the seeded member holds no renewal. A
-        // near-term endAt keeps the code assertion valid even if the seed ever
-        // gains a configured orgMembershipYearBoundary just ahead.
-        const startAt = new Date();
-        const endAt = new Date(startAt.getTime() + 3 * 24 * 60 * 60 * 1000);
-
+        // Dateless on purpose: programCoverageDate returns null, so member pricing
+        // here rests on dues STATUS alone. The duration half can't be exercised in
+        // flow anyway — the flow DB is built by `prisma db push` (no migrations,
+        // no BoardSettings row), so coverage fails open; see the integration test.
         const created = await api<ProgramCreate>(board, "/api/programs", {
             method: "POST",
             body: JSON.stringify({
                 name: `Member Pricing Program ${tag}`,
                 leadMentorId: boardId,
-                startAt: startAt.toISOString().slice(0, 10),
-                endAt: endAt.toISOString().slice(0, 10),
                 memberPrice: "40",
                 nonMemberPrice: "50",
                 maxParticipants: 10,
