@@ -97,6 +97,36 @@ async function makeApplicant(opts: {
 // unregistered-as-volunteer so they exercise the codes-are-Shopify's-business path.
 const VOLUNTEER_CODE = "VOLFAM";
 
+/**
+ * A household with one lead Person enrolled in one Program, mirroring the shape
+ * `usesProgramMemberCode`/`isDuesSettledThrough` need: a Program with dates (so
+ * `programCoverageDate` yields a real through-date), a Household, and a
+ * ProgramParticipant at the given status. `isMember` seeds an ACTIVE OrgMembership
+ * on the household (no `orgMembershipYearBoundary` is configured in this suite's
+ * BoardSettings, so `isDuesSettledThrough` covers any date once dues-settled).
+ */
+async function makeProgramEnrollment(opts: {
+    email: string;
+    status: "PENDING" | "ACTIVE";
+    isMember?: boolean;
+    shopifyOrderId?: string;
+}): Promise<{ householdId: number; personId: number; programId: number }> {
+    const hh = await prisma.household.create({ data: { name: `HH ${TAG} ${opts.email}` } });
+    const person = await prisma.person.create({
+        data: { email: opts.email, name: `Lead ${opts.email}`, isHouseholdLead: true, householdId: hh.id },
+    });
+    if (opts.isMember) {
+        await prisma.orgMembership.create({ data: { householdId: hh.id, status: "ACTIVE" } });
+    }
+    const program = await prisma.program.create({
+        data: { name: `Program ${TAG} ${opts.email}`, startAt: new Date("2026-06-01"), endAt: new Date("2026-08-01") },
+    });
+    await prisma.programParticipant.create({
+        data: { programId: program.id, personId: person.id, status: opts.status, shopifyOrderId: opts.shopifyOrderId ?? null },
+    });
+    return { householdId: hh.id, personId: person.id, programId: program.id };
+}
+
 beforeAll(async () => {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
@@ -122,6 +152,17 @@ afterAll(async () => {
         await prisma.paymentException.deleteMany({ where: { processId: { in: procs.map((p) => p.id) } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
+    }
+
+    const programs = await prisma.program.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
+    const programIds = programs.map((p) => p.id);
+    if (programIds.length) {
+        await prisma.paymentException.deleteMany({ where: { programId: { in: programIds } } });
+        await prisma.programParticipant.deleteMany({ where: { programId: { in: programIds } } });
+        await prisma.program.deleteMany({ where: { id: { in: programIds } } });
+    }
+
+    if (ids.length) {
         await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
         await prisma.household.deleteMany({ where: { id: { in: ids } } });
     }
@@ -395,6 +436,81 @@ describe("reversal detection", () => {
         ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, cancelledAt: new Date() })]);
         await runReconcile();
         expect(await prisma.paymentException.findFirst({ where: { kind: "CANCELLED", processId } })).toBeTruthy();
+    });
+});
+
+describe("program member-code entitlement", () => {
+    it("raises DISCOUNT_UNAUTHORIZED on an ACTIVE enrollment redeeming its program's PRG code without dues settled, leaving it ACTIVE", async () => {
+        // Parallel to the volunteer-code reversal audit above: the webhook activates
+        // program orders in real time, so this loop over ACTIVE enrollments is the
+        // daily check that catches an unentitled household's minted member code.
+        const oid = `${TAG}-500`;
+        const { personId, programId } = await makeProgramEnrollment({ email: `prgunent-${TAG}@ex.com`, status: "ACTIVE", isMember: false, shopifyOrderId: oid });
+        ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, financialStatus: "PAID", discountCodes: [`PRG${programId}-ABCD1234`] })]);
+
+        await runReconcile();
+        expect((await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } }))?.status).toBe("ACTIVE");
+        const ex = await prisma.paymentException.findFirst({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } });
+        expect(ex?.programId).toBe(programId);
+        expect(ex?.personId).toBe(personId);
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
+
+        // Idempotent: a second run does not duplicate the exception.
+        await runReconcile();
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
+    });
+
+    it("does not flag an ACTIVE enrollment whose household is dues-settled, even carrying the program's PRG code", async () => {
+        // No orgMembershipYearBoundary is configured in this suite's BoardSettings, so
+        // an ACTIVE membership covers any program date (isDuesSettledThrough fails open).
+        const oid = `${TAG}-501`;
+        const { personId, programId } = await makeProgramEnrollment({ email: `prgent-${TAG}@ex.com`, status: "ACTIVE", isMember: true, shopifyOrderId: oid });
+        ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, financialStatus: "PAID", discountCodes: [`prg${programId}-abcd1234`] })]);
+
+        await runReconcile();
+        expect((await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } }))?.status).toBe("ACTIVE");
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(0);
+    });
+
+    it("does not flag when the order carries no program member code (empty list or an unrelated code)", async () => {
+        const oidA = `${TAG}-502`;
+        const oidB = `${TAG}-503`;
+        await makeProgramEnrollment({ email: `prgnocodea-${TAG}@ex.com`, status: "ACTIVE", isMember: false, shopifyOrderId: oidA });
+        await makeProgramEnrollment({ email: `prgnocodeb-${TAG}@ex.com`, status: "ACTIVE", isMember: false, shopifyOrderId: oidB });
+        ordersByLegacyIds.mockResolvedValue([
+            order({ legacyId: oidA, financialStatus: "PAID", discountCodes: [] }),
+            order({ legacyId: oidB, financialStatus: "PAID", discountCodes: ["SUMMER26"] }),
+        ]);
+
+        await runReconcile();
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: { in: [oidA, oidB] } } })).toBe(0);
+    });
+
+    it("raises DISCOUNT_UNAUTHORIZED and does NOT activate a PENDING enrollment when the order carries the program's PRG code and the household is unentitled", async () => {
+        const email = `prgfwd-${TAG}@ex.com`;
+        const oid = `${TAG}-510`;
+        const { personId, programId } = await makeProgramEnrollment({ email, status: "PENDING", isMember: false });
+        // Preferred attribute path (mirrors the enroll checkout link) — no customer
+        // email on the order at all, so the attribute alone must carry it.
+        ordersChangedSince.mockResolvedValue([
+            order({
+                legacyId: oid,
+                customerEmail: null,
+                discountCodes: [`PRG${programId}-ABCD1234`],
+                noteAttributes: attrs({ Program_ID: String(programId), CheckMeIn_Account_ID: String(personId) }),
+            }),
+        ]);
+
+        await runReconcile();
+        const p = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
+        expect(p?.status).toBe("PENDING");
+        expect(p?.shopifyOrderId).toBeNull();
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
+
+        // Idempotent: never activated, so the order is re-examined every run — the
+        // exception still must not duplicate.
+        await runReconcile();
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
     });
 });
 

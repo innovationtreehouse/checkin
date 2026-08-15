@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { notifyBoardPaymentException } from "@/lib/membership/boardAlerts";
+import { isDuesSettledThrough, programCoverageDate, coversThrough, DUES_SETTLED_PERSON_WHERE } from "@/lib/orgMembership";
 import * as mirror from "@/lib/shopifyRead/client";
 import type { MirrorOrder } from "@/lib/shopifyRead/client";
 
@@ -39,6 +40,13 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * than activating. One policy check rides on top of the variant gate: a
  * non-volunteer family redeeming the board's volunteer discount code raises
  * DISCOUNT_UNAUTHORIZED instead of activating (see usesVolunteerCodeUnentitled).
+ *
+ * The program side carries the parallel check: a minted `PRG{programId}-XXXXXXXX`
+ * member-discount code (see mintMemberDiscountCode in lib/shopify.ts) redeemed by a
+ * household that isn't dues-settled through the program's coverage date raises the
+ * same DISCOUNT_UNAUTHORIZED — the forward pass raises it instead of activating; the
+ * reversal audit raises it for the board while leaving the enrollment ACTIVE (see
+ * usesProgramMemberCode). Same never-auto-revert posture as every other reversal.
  */
 
 export type PaymentExceptionKind =
@@ -174,6 +182,19 @@ export function usesVolunteerCodeUnentitled(order: MirrorOrder, volunteerCode: s
     const vc = volunteerCode.trim().toUpperCase();
     if (!vc) return false;
     return order.discountCodes.some((c) => c.trim().toUpperCase() === vc);
+}
+
+/**
+ * Does this order carry THIS program's minted member-discount code? Codes are minted
+ * as `PRG{programId}-XXXXXXXX`, always uppercase (mintMemberDiscountCode in
+ * lib/shopify.ts); Shopify codes are case-insensitive, so the compare upper-cases
+ * both sides and tolerates whitespace. Prefix-matched on the program's OWN id so a
+ * code minted for a different program on the same order isn't misattributed. An
+ * EMPTY discountCodes list is never evidence (parity with usesVolunteerCodeUnentitled).
+ */
+export function usesProgramMemberCode(order: MirrorOrder, programId: number): boolean {
+    const prefix = `PRG${programId}-`.toUpperCase();
+    return order.discountCodes.some((c) => c.trim().toUpperCase().startsWith(prefix));
 }
 
 // ── forward pass (recover missed payments) ───────────────────────────────────
@@ -387,6 +408,21 @@ async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
 
 /** Shared tail for both program-matching paths: activate through the one choke point. */
 async function activateProgramFromOrder(order: MirrorOrder, programId: number, personIds: number[]): Promise<boolean> {
+    // Coupon entitlement, parity with the membership forward branch above: the order
+    // may well contain the program's product, but the member code on it is only
+    // honest if SOME enrollee's household is actually dues-settled through the
+    // program's coverage date. None entitled → tell the board, do NOT activate.
+    if (usesProgramMemberCode(order, programId)) {
+        const program = await prisma.program.findUnique({ where: { id: programId }, select: { startAt: true, endAt: true } });
+        const through = programCoverageDate(program ?? { startAt: null, endAt: null });
+        const entitled = await Promise.all(personIds.map((personId) => isDuesSettledThrough(personId, through)));
+        if (!entitled.some(Boolean)) {
+            logger.warn(`[reconcile] program member discount code on non-member order ${order.legacyId} (program ${programId})`);
+            await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, programId, personId: personIds[0] ?? null });
+            return true;
+        }
+    }
+
     const { activateProgramEnrollment } = await import("@/lib/programs/activateEnrollment");
     const res = await activateProgramEnrollment({
         programId,
@@ -456,16 +492,38 @@ async function reconcileReversals(): Promise<number> {
     const byLegacy = new Map(orders.map((o) => [o.legacyId ?? "", o]));
     const disputed = await mirror.disputedOrderGids(orders.map((o) => o.orderGid));
 
-    // Expected dues per membership (for the "order edited down below dues" case).
+    // Expected dues per membership (for the "order edited down below dues" case);
+    // orgMembershipYearBoundary drives the program member-code batch check below.
     const settings = await prisma.boardSettings.findUnique({
         where: { id: 1 },
-        select: { standardMembershipFeeCents: true, volunteerMembershipFeeCents: true, volunteerDiscountCode: true },
+        select: { standardMembershipFeeCents: true, volunteerMembershipFeeCents: true, volunteerDiscountCode: true, orgMembershipYearBoundary: true },
     });
     const memberIds = procs.map((p) => p.orgMembershipId).filter((v): v is number => v != null);
     const members = memberIds.length
         ? await prisma.orgMembership.findMany({ where: { id: { in: memberIds } }, select: { id: true, isVolunteer: true } })
         : [];
     const isVolunteerById = new Map(members.map((m) => [m.id, m.isVolunteer]));
+
+    // Programs referenced by the ACTIVE enrollments below — needed for the member-code
+    // entitlement check's coverage date (programCoverageDate).
+    const programIds = [...new Set(enrolls.map((e) => e.programId))];
+    const programs = programIds.length
+        ? await prisma.program.findMany({ where: { id: { in: programIds } }, select: { id: true, startAt: true, endAt: true } })
+        : [];
+    const programById = new Map(programs.map((p) => [p.id, p]));
+
+    // Batch entitlement pre-check for the program member-code audit below: one indexed
+    // query over every enrollee's dues-settled STATUS at once — every member-priced
+    // ACTIVE enrollment carries a PRG code, so a per-row isDuesSettledThrough() call
+    // here would be an O(N) round-trip on the daily sweep's hot path. The DURATION half
+    // (coversThrough) only needs a per-person query when a year boundary is actually
+    // configured (the uncommon case — coversThrough always passes without one), so it
+    // stays out-of-loop below rather than being batched here.
+    const enrolleePersonIds = [...new Set(enrolls.map((e) => e.personId))];
+    const duesSettledPersons = enrolleePersonIds.length
+        ? await prisma.person.findMany({ where: { AND: [{ id: { in: enrolleePersonIds } }, DUES_SETTLED_PERSON_WHERE] }, select: { id: true } })
+        : [];
+    const duesSettledPersonIds = new Set(duesSettledPersons.map((p) => p.id));
 
     let raised = 0;
     for (const proc of procs) {
@@ -497,7 +555,26 @@ async function reconcileReversals(): Promise<number> {
     for (const e of enrolls) {
         const o = byLegacy.get(e.shopifyOrderId!);
         if (!o) continue;
-        const kind = classifyReversal(o, disputed.has(o.orderGid));
+        let kind = classifyReversal(o, disputed.has(o.orderGid));
+        if (!kind) {
+            // Coupon entitlement, shared with the forward pass — and load-bearing here:
+            // program orders are activated in real time by the webhook, so they never
+            // reach the forward pass (already recorded on the enrollment → early return).
+            // This loop over ACTIVE enrollments is the daily audit that catches a member
+            // code redeemed by a household that isn't actually dues-settled. Status comes
+            // from the batched set above; duration only needs a query when a boundary is
+            // configured — see the note there.
+            const prog = programById.get(e.programId);
+            if (prog && usesProgramMemberCode(o, e.programId)) {
+                const entitled =
+                    duesSettledPersonIds.has(e.personId) &&
+                    (!settings?.orgMembershipYearBoundary || (await coversThrough(e.personId, programCoverageDate(prog))));
+                if (!entitled) {
+                    logger.warn(`[reconcile] program member discount code on non-member activated order ${e.shopifyOrderId} (program ${e.programId}, person ${e.personId})`);
+                    kind = "DISCOUNT_UNAUTHORIZED";
+                }
+            }
+        }
         if (kind) {
             await raisePaymentException(kind, { shopifyOrderId: e.shopifyOrderId, programId: e.programId, personId: e.personId });
             raised++;

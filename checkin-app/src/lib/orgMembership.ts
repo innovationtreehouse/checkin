@@ -164,8 +164,13 @@ export async function membershipValidThrough(householdId: number, now = new Date
  * passes — preserves current behavior rather than penalizing every member for a
  * board settings gap. Callers gate on membership/dues status FIRST; this only
  * answers the duration half.
+ *
+ * Exported for callers batching entitlement over many people (e.g. the finance
+ * reconciler): pre-check status/membership in one query, then call this only for
+ * the rows that need the duration half — skips the per-row query entirely for
+ * the common case where no boundary is configured and status alone decides it.
  */
-async function coversThrough(personId: number, through: Date | null): Promise<boolean> {
+export async function coversThrough(personId: number, through: Date | null): Promise<boolean> {
     if (through === null) return true;
 
     const person = await prisma.person.findUnique({ where: { id: personId }, select: { householdId: true } });
