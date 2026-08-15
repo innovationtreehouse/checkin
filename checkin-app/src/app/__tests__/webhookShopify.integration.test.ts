@@ -11,6 +11,8 @@
  *   - comma-separated multi-participant activation
  *   - the program-enrollment Shopify-variant guard (fails closed when the
  *     paid order doesn't contain the program's own variant)
+ *   - member-discount-code entitlement, judged at this money event: an
+ *     unentitled household's redemption is flagged and not activated
  */
 import crypto from 'crypto';
 import { POST } from '@/app/api/webhooks/shopify/route';
@@ -115,10 +117,11 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     // Defaults to a line item matching the program's own variant, since most
     // tests here aren't exercising the variant guard — pass variantId: null for
     // no line items, or an explicit mismatched id, to exercise it.
-    function programPayload(accountIds: string, variantId: string | null = PROGRAM_VARIANT_ID) {
+    function programPayload(accountIds: string, variantId: string | null = PROGRAM_VARIANT_ID, discountCodes?: string[]) {
         return JSON.stringify({
             id: 555,
             ...(variantId ? { line_items: [{ variant_id: variantId }] } : {}),
+            ...(discountCodes ? { discount_codes: discountCodes.map((code) => ({ code })) } : {}),
             note_attributes: [
                 { name: 'CheckMeIn_Account_ID', value: accountIds },
                 { name: 'Program_ID', value: String(programId) },
@@ -256,6 +259,54 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         });
         expect(row?.status).toBe('PENDING');
         expect(row?.pendingSince).not.toBeNull();
+    });
+
+    it('flags DISCOUNT_UNAUTHORIZED and does NOT activate when the order redeems the program member code from an unentitled household', async () => {
+        // Member-code entitlement is judged HERE, at the money event — seconds after
+        // checkout, against the household's state at the sale. h1 holds no
+        // OrgMembership, so it is not dues-settled through the program's dates.
+        await setPending(p1);
+        const body = programPayload(String(p1), PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
+        try {
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200); // still acks Shopify — only the DB state-change is gated
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: p1 } },
+            });
+            expect(row?.status).toBe('PENDING');
+            const ex = await prisma.paymentException.findFirst({
+                where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' },
+            });
+            expect(ex?.programId).toBe(programId);
+            expect(ex?.personId).toBe(p1);
+
+            // A redelivery re-detects the same condition and must not duplicate the row.
+            await POST(webhookReq(body, sign(body)));
+            expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(1);
+        } finally {
+            await prisma.paymentException.deleteMany({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } });
+        }
+    });
+
+    it('activates as usual when the same member code comes from a dues-settled household', async () => {
+        // The entitled half of the same judgement: the code is only evidence when the
+        // paying family has no membership behind it.
+        await setPending(p1);
+        const membership = await prisma.orgMembership.create({ data: { householdId: h1, status: 'ACTIVE' } });
+        const body = programPayload(String(p1), PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
+        try {
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: p1 } },
+            });
+            expect(row?.status).toBe('ACTIVE');
+            expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(0);
+        } finally {
+            await prisma.orgMembership.delete({ where: { id: membership.id } });
+        }
     });
 
     it('fails closed when the Program has no Shopify variant configured at all', async () => {

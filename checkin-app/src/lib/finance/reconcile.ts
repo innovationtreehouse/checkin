@@ -3,8 +3,7 @@ import { logger } from "@/lib/logger";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { notifyBoardPaymentException } from "@/lib/membership/boardAlerts";
-import { isDuesSettledThroughMany, programCoverageDate } from "@/lib/orgMembership";
-import { programMemberCodePrefix } from "@/lib/programs/memberDiscountCode";
+import { unentitledMemberCodeUse } from "@/lib/programs/memberDiscountCode";
 import * as mirror from "@/lib/shopifyRead/client";
 import type { MirrorOrder } from "@/lib/shopifyRead/client";
 
@@ -42,12 +41,14 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * non-volunteer family redeeming the board's volunteer discount code raises
  * DISCOUNT_UNAUTHORIZED instead of activating (see usesVolunteerCodeUnentitled).
  *
- * The program side carries the parallel check: a minted `PRG{programId}-XXXXXXXX`
- * member-discount code (see mintMemberDiscountCode in lib/shopify.ts) redeemed by a
- * household that isn't dues-settled through the program's coverage date raises the
- * same DISCOUNT_UNAUTHORIZED — the forward pass raises it instead of activating; the
- * reversal audit raises it for the board while leaving the enrollment ACTIVE (see
- * usesProgramMemberCode). Same never-auto-revert posture as every other reversal.
+ * The program side carries the parallel check, judged AT THE MONEY EVENT: a minted
+ * `PRG{programId}-XXXXXXXX` member-discount code redeemed by a household that isn't
+ * dues-settled through the program's coverage date raises the same
+ * DISCOUNT_UNAUTHORIZED instead of activating. The orders/paid webhook asks it for a
+ * live checkout; this forward pass asks it when recovering a missed webhook. The
+ * reversal pass deliberately does NOT re-ask it: entitlement is a fact about the
+ * moment money moved, so a household deactivated later never retro-flags orders that
+ * were honest when they were paid (see unentitledMemberCodeUse).
  */
 
 export type PaymentExceptionKind =
@@ -183,20 +184,6 @@ export function usesVolunteerCodeUnentitled(order: MirrorOrder, volunteerCode: s
     const vc = volunteerCode.trim().toUpperCase();
     if (!vc) return false;
     return order.discountCodes.some((c) => c.trim().toUpperCase() === vc);
-}
-
-/**
- * Does this order carry THIS program's minted member-discount code? The prefix
- * comes from the same helper the minter uses (programMemberCodePrefix, always
- * uppercase); Shopify codes are case-insensitive, so the compare upper-cases the
- * order's side and tolerates whitespace. Prefix-matched on the program's OWN id
- * so a code minted for a different program on the same order isn't misattributed.
- * An EMPTY discountCodes list is never evidence (parity with
- * usesVolunteerCodeUnentitled).
- */
-export function usesProgramMemberCode(order: MirrorOrder, programId: number): boolean {
-    const prefix = programMemberCodePrefix(programId);
-    return order.discountCodes.some((c) => c.trim().toUpperCase().startsWith(prefix));
 }
 
 // ── forward pass (recover missed payments) ───────────────────────────────────
@@ -411,18 +398,14 @@ async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
 /** Shared tail for both program-matching paths: activate through the one choke point. */
 async function activateProgramFromOrder(order: MirrorOrder, programId: number, personIds: number[]): Promise<boolean> {
     // Coupon entitlement, parity with the membership forward branch above: the order
-    // may well contain the program's product, but the member code on it is only
-    // honest if SOME enrollee's household is actually dues-settled through the
-    // program's coverage date. None entitled → tell the board, do NOT activate.
-    if (usesProgramMemberCode(order, programId)) {
-        const program = await prisma.program.findUnique({ where: { id: programId }, select: { startAt: true, endAt: true } });
-        const through = programCoverageDate(program ?? { startAt: null, endAt: null });
-        const entitled = await isDuesSettledThroughMany(personIds.map((personId) => ({ personId, through })));
-        if (!entitled.some(Boolean)) {
-            logger.warn(`[reconcile] program member discount code on non-member order ${order.legacyId} (program ${programId})`);
-            await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, programId, personId: personIds[0] ?? null });
-            return true;
-        }
+    // may well contain the program's product, but the member code on it is only honest
+    // if some enrollee's household is dues-settled through the program's coverage date.
+    // This IS the money event for a missed webhook — same judgement the webhook makes,
+    // asked once. None entitled → tell the board, do NOT activate.
+    if (await unentitledMemberCodeUse(programId, personIds, order.discountCodes)) {
+        logger.warn(`[reconcile] program member discount code on non-member order ${order.legacyId} (program ${programId})`);
+        await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, programId, personId: personIds[0] ?? null });
+        return true;
     }
 
     const { activateProgramEnrollment } = await import("@/lib/programs/activateEnrollment");
@@ -505,29 +488,6 @@ async function reconcileReversals(): Promise<number> {
         : [];
     const isVolunteerById = new Map(members.map((m) => [m.id, m.isVolunteer]));
 
-    // Programs referenced by the ACTIVE enrollments below — needed for the member-code
-    // entitlement check's coverage date (programCoverageDate).
-    const programIds = [...new Set(enrolls.map((e) => e.programId))];
-    const programs = programIds.length
-        ? await prisma.program.findMany({ where: { id: { in: programIds } }, select: { id: true, startAt: true, endAt: true } })
-        : [];
-    const programById = new Map(programs.map((p) => [p.id, p]));
-
-    // Member-code entitlement, batched for the audit below: every member-priced
-    // ACTIVE enrollment carries a PRG code, so per-row entitlement calls would be
-    // an O(N) round-trip on the daily sweep's hot path. isDuesSettledThroughMany
-    // answers all (person, coverage-date) pairs at once and owns the fail-open
-    // policy; answers are positional, mapped back per enrollment here.
-    const codeCandidates = enrolls.filter((e) => {
-        const o = byLegacy.get(e.shopifyOrderId!);
-        const prog = programById.get(e.programId);
-        return o !== undefined && prog !== undefined && usesProgramMemberCode(o, e.programId);
-    });
-    const codeEntitled = await isDuesSettledThroughMany(
-        codeCandidates.map((e) => ({ personId: e.personId, through: programCoverageDate(programById.get(e.programId)!) })),
-    );
-    const entitledByEnroll = new Map(codeCandidates.map((e, i) => [e, codeEntitled[i]]));
-
     let raised = 0;
     for (const proc of procs) {
         const o = byLegacy.get(proc.shopifyOrderId!);
@@ -558,19 +518,11 @@ async function reconcileReversals(): Promise<number> {
     for (const e of enrolls) {
         const o = byLegacy.get(e.shopifyOrderId!);
         if (!o) continue;
-        let kind = classifyReversal(o, disputed.has(o.orderGid));
-        if (!kind) {
-            // Coupon entitlement, shared with the forward pass — and load-bearing here:
-            // program orders are activated in real time by the webhook, so they never
-            // reach the forward pass (already recorded on the enrollment → early return).
-            // This loop over ACTIVE enrollments is the daily audit that catches a member
-            // code redeemed by a household that isn't actually dues-settled, answered
-            // by the batched entitlement map above.
-            if (entitledByEnroll.get(e) === false) {
-                logger.warn(`[reconcile] program member discount code on non-member activated order ${e.shopifyOrderId} (program ${e.programId}, person ${e.personId})`);
-                kind = "DISCOUNT_UNAUTHORIZED";
-            }
-        }
+        // Money-out only. Member-code entitlement is NOT re-asked here: it was judged
+        // when the money moved (webhook / forward pass), and this loop has no bound on
+        // time — re-deriving it from live household state would raise a fresh flag on
+        // every past member-priced order the morning after an ordinary deactivation.
+        const kind = classifyReversal(o, disputed.has(o.orderGid));
         if (kind) {
             await raisePaymentException(kind, { shopifyOrderId: e.shopifyOrderId, programId: e.programId, personId: e.personId });
             raised++;

@@ -170,12 +170,8 @@ async function coversThrough(personId: number, through: Date | null): Promise<bo
 
     const person = await prisma.person.findUnique({ where: { id: personId }, select: { householdId: true } });
     const validThrough = person ? await membershipValidThrough(person.householdId) : null;
-    return coverageReaches(validThrough, through);
-}
-
-/** Day-granularity coverage compare; a null horizon passes (see coversThrough). */
-function coverageReaches(validThrough: Date | null, through: Date): boolean {
     if (validThrough === null) return true;
+
     const throughDay = Date.UTC(through.getUTCFullYear(), through.getUTCMonth(), through.getUTCDate());
     const validDay = Date.UTC(validThrough.getUTCFullYear(), validThrough.getUTCMonth(), validThrough.getUTCDate());
     return validDay >= throughDay;
@@ -195,49 +191,6 @@ export async function isActiveOrgMemberThrough(personId: number, through: Date |
  */
 export async function isDuesSettledThrough(personId: number, through: Date | null): Promise<boolean> {
     return (await isDuesSettled(personId)) && coversThrough(personId, through);
-}
-
-/**
- * Batched {@link isDuesSettledThrough} over many (person, through) pairs,
- * answered positionally. The reconciler's daily sweep asks this for every
- * member-priced ACTIVE enrollment at once, where the per-pair form's queries
- * multiply into an N+1: here the STATUS half is one indexed query over all
- * people, and the DURATION half is computed once per distinct household
- * (co-enrolled family members share one coverage horizon), only for pairs that
- * still need it. Same fail-open rule as the single form: no computable horizon
- * → coverage passes.
- */
-export async function isDuesSettledThroughMany(
-    items: { personId: number; through: Date | null }[],
-): Promise<boolean[]> {
-    if (items.length === 0) return [];
-
-    const ids = [...new Set(items.map((i) => i.personId))];
-    const settledRows = await prisma.person.findMany({
-        where: { AND: [{ id: { in: ids } }, DUES_SETTLED_PERSON_WHERE] },
-        select: { id: true },
-    });
-    const settled = new Set(settledRows.map((r) => r.id));
-
-    const needCoverage = [...new Set(
-        items.filter((i) => settled.has(i.personId) && i.through !== null).map((i) => i.personId),
-    )];
-    const persons = needCoverage.length
-        ? await prisma.person.findMany({ where: { id: { in: needCoverage } }, select: { id: true, householdId: true } })
-        : [];
-    const householdByPerson = new Map(persons.map((p) => [p.id, p.householdId]));
-    const validThroughByHousehold = new Map<number, Date | null>();
-    for (const householdId of new Set(persons.map((p) => p.householdId))) {
-        validThroughByHousehold.set(householdId, await membershipValidThrough(householdId));
-    }
-
-    return items.map((i) => {
-        if (!settled.has(i.personId)) return false;
-        if (i.through === null) return true;
-        const householdId = householdByPerson.get(i.personId);
-        const validThrough = householdId === undefined ? null : validThroughByHousehold.get(householdId) ?? null;
-        return coverageReaches(validThrough, i.through);
-    });
 }
 
 /**

@@ -99,24 +99,24 @@ const VOLUNTEER_CODE = "VOLFAM";
 
 /**
  * A household with one lead Person enrolled in one Program, mirroring the shape
- * `usesProgramMemberCode`/`isDuesSettledThrough` need: a Program with dates (so
- * `programCoverageDate` yields a real through-date), a Household, and a
- * ProgramParticipant at the given status. `isMember` seeds an ACTIVE OrgMembership
- * on the household (no `orgMembershipYearBoundary` is configured in this suite's
- * BoardSettings, so `isDuesSettledThrough` covers any date once dues-settled).
+ * `unentitledMemberCodeUse` needs: a Program with dates (so `programCoverageDate`
+ * yields a real through-date), a Household, and a ProgramParticipant at the given
+ * status. `membership` seeds an OrgMembership at that status — REVOKED is the
+ * deactivated household (no `orgMembershipYearBoundary` is configured in this
+ * suite's BoardSettings, so an ACTIVE one covers any date).
  */
 async function makeProgramEnrollment(opts: {
     email: string;
     status: "PENDING" | "ACTIVE";
-    isMember?: boolean;
+    membership?: "ACTIVE" | "REVOKED";
     shopifyOrderId?: string;
 }): Promise<{ householdId: number; personId: number; programId: number }> {
     const hh = await prisma.household.create({ data: { name: `HH ${TAG} ${opts.email}` } });
     const person = await prisma.person.create({
         data: { email: opts.email, name: `Lead ${opts.email}`, isHouseholdLead: true, householdId: hh.id },
     });
-    if (opts.isMember) {
-        await prisma.orgMembership.create({ data: { householdId: hh.id, status: "ACTIVE" } });
+    if (opts.membership) {
+        await prisma.orgMembership.create({ data: { householdId: hh.id, status: opts.membership } });
     }
     const program = await prisma.program.create({
         data: { name: `Program ${TAG} ${opts.email}`, startAt: new Date("2026-06-01"), endAt: new Date("2026-08-01") },
@@ -439,57 +439,63 @@ describe("reversal detection", () => {
     });
 });
 
-describe("program member-code entitlement", () => {
-    it("raises DISCOUNT_UNAUTHORIZED on an ACTIVE enrollment redeeming its program's PRG code without dues settled, leaving it ACTIVE", async () => {
-        // Parallel to the volunteer-code reversal audit above: the webhook activates
-        // program orders in real time, so this loop over ACTIVE enrollments is the
-        // daily check that catches an unentitled household's minted member code.
+describe("program member-code entitlement (judged at the money event)", () => {
+    it("does NOT flag a settled past order when the household is later deactivated — status change alone is not evidence", async () => {
+        // The scenario the reversal audit used to break: a board member REVOKEs a
+        // household through ordinary membership ops, and every past member-priced
+        // program order that household holds gets a fraud-shaped flag the next
+        // morning. Entitlement is judged when the money moved and never re-derived,
+        // so the daily sweep must leave an unreversed, already-ACTIVE order alone.
         const oid = `${TAG}-500`;
-        const { personId, programId } = await makeProgramEnrollment({ email: `prgunent-${TAG}@ex.com`, status: "ACTIVE", isMember: false, shopifyOrderId: oid });
+        const { personId, programId } = await makeProgramEnrollment({ email: `prgrevoked-${TAG}@ex.com`, status: "ACTIVE", membership: "REVOKED", shopifyOrderId: oid });
         ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, financialStatus: "PAID", discountCodes: [`PRG${programId}-ABCD1234`] })]);
 
         await runReconcile();
         expect((await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } }))?.status).toBe("ACTIVE");
-        const ex = await prisma.paymentException.findFirst({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } });
-        expect(ex?.programId).toBe(programId);
-        expect(ex?.personId).toBe(personId);
-        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(0);
 
-        // Idempotent: a second run does not duplicate the exception.
+        // ...and it stays quiet run after run — no reopen loop against the household.
         await runReconcile();
-        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(1);
-    });
-
-    it("does not flag an ACTIVE enrollment whose household is dues-settled, even carrying the program's PRG code", async () => {
-        // No orgMembershipYearBoundary is configured in this suite's BoardSettings, so
-        // an ACTIVE membership covers any program date (isDuesSettledThrough fails open).
-        const oid = `${TAG}-501`;
-        const { personId, programId } = await makeProgramEnrollment({ email: `prgent-${TAG}@ex.com`, status: "ACTIVE", isMember: true, shopifyOrderId: oid });
-        ordersByLegacyIds.mockResolvedValue([order({ legacyId: oid, financialStatus: "PAID", discountCodes: [`prg${programId}-abcd1234`] })]);
-
-        await runReconcile();
-        expect((await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } }))?.status).toBe("ACTIVE");
         expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(0);
     });
 
-    it("does not flag when the order carries no program member code (empty list or an unrelated code)", async () => {
-        const oidA = `${TAG}-502`;
-        const oidB = `${TAG}-503`;
-        await makeProgramEnrollment({ email: `prgnocodea-${TAG}@ex.com`, status: "ACTIVE", isMember: false, shopifyOrderId: oidA });
-        await makeProgramEnrollment({ email: `prgnocodeb-${TAG}@ex.com`, status: "ACTIVE", isMember: false, shopifyOrderId: oidB });
+    it("still raises REFUND on a member-priced enrollment whose money actually came back out", async () => {
+        // Guard for the delete above: dropping the entitlement branch must not take
+        // the ordinary reversal classification with it.
+        const oid = `${TAG}-501`;
+        const { programId } = await makeProgramEnrollment({ email: `prgrefund-${TAG}@ex.com`, status: "ACTIVE", membership: "ACTIVE", shopifyOrderId: oid });
         ordersByLegacyIds.mockResolvedValue([
-            order({ legacyId: oidA, financialStatus: "PAID", discountCodes: [] }),
-            order({ legacyId: oidB, financialStatus: "PAID", discountCodes: ["SUMMER26"] }),
+            order({ legacyId: oid, financialStatus: "REFUNDED", totalRefundedCents: 5000, discountCodes: [`PRG${programId}-ABCD1234`] }),
         ]);
 
         await runReconcile();
-        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: { in: [oidA, oidB] } } })).toBe(0);
+        expect(await prisma.paymentException.count({ where: { kind: "REFUND", shopifyOrderId: oid } })).toBe(1);
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(0);
+    });
+
+    it("activates normally when the paying household IS dues-settled through the program's coverage date", async () => {
+        // The entitled money event: same code, same forward path, no flag.
+        const oid = `${TAG}-502`;
+        const { personId, programId } = await makeProgramEnrollment({ email: `prgent-${TAG}@ex.com`, status: "PENDING", membership: "ACTIVE" });
+        ordersChangedSince.mockResolvedValue([
+            order({
+                legacyId: oid,
+                customerEmail: null,
+                discountCodes: [`prg${programId}-abcd1234`],
+                noteAttributes: attrs({ Program_ID: String(programId), CheckMeIn_Account_ID: String(personId) }),
+            }),
+        ]);
+
+        await runReconcile();
+        const p = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
+        expect(p?.status).toBe("ACTIVE");
+        expect(await prisma.paymentException.count({ where: { kind: "DISCOUNT_UNAUTHORIZED", shopifyOrderId: oid } })).toBe(0);
     });
 
     it("raises DISCOUNT_UNAUTHORIZED and does NOT activate a PENDING enrollment when the order carries the program's PRG code and the household is unentitled", async () => {
         const email = `prgfwd-${TAG}@ex.com`;
         const oid = `${TAG}-510`;
-        const { personId, programId } = await makeProgramEnrollment({ email, status: "PENDING", isMember: false });
+        const { personId, programId } = await makeProgramEnrollment({ email, status: "PENDING" });
         // Preferred attribute path (mirrors the enroll checkout link) — no customer
         // email on the order at all, so the attribute alone must carry it.
         ordersChangedSince.mockResolvedValue([
