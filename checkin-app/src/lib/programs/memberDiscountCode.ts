@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { isDuesSettledThrough, programCoverageDate } from "@/lib/orgMembership";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 /**
  * Canonical prefix of a program's minted member-discount code
@@ -53,8 +54,10 @@ export async function unentitledMemberCodeUse(
     // Only ids actually enrolled in THIS program can carry the entitlement. An id that
     // isn't enrolled can't be activated by the order either, so no entitled row here
     // (an empty intersection included) means nobody paying was allowed the price.
+    // LIVE_PERSON: a merge leaves the tombstone's enrollment row behind, and a
+    // tombstone must not lend its old household's dues to someone else's checkout.
     const enrolled = await prisma.programParticipant.findMany({
-        where: { programId, personId: { in: personIds } },
+        where: { programId, personId: { in: personIds }, person: LIVE_PERSON },
         select: { personId: true },
     });
     const program = await prisma.program.findUnique({ where: { id: programId }, select: { startAt: true, endAt: true } });
