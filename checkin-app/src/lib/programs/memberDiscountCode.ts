@@ -29,6 +29,11 @@ export function usesProgramMemberCode(discountCodes: string[], programId: number
  * the program's coverage date. Callers (the orders/paid webhook, and the reconciler's
  * forward pass recovering a missed one) flag DISCOUNT_UNAUTHORIZED and do not activate.
  *
+ * `personIds` may come straight off the customer-controlled CheckMeIn_Account_ID cart
+ * attribute, so it is intersected with this program's real ProgramParticipant rows
+ * FIRST: otherwise stuffing any dues-settled person's id into the permalink buys the
+ * member price for an unentitled enrollee. Believe the DB about who is enrolled.
+ *
  * Asked once, when the money moves, and never re-derived afterwards — an ordinary
  * deactivation must not retro-flag orders that were honest when they were paid. The
  * PaymentException row is the durable judgement. Inherits isDuesSettledThrough's
@@ -45,10 +50,17 @@ export async function unentitledMemberCodeUse(
     discountCodes: string[],
 ): Promise<boolean> {
     if (!usesProgramMemberCode(discountCodes, programId)) return false;
+    // Only ids actually enrolled in THIS program can carry the entitlement. An id that
+    // isn't enrolled can't be activated by the order either, so no entitled row here
+    // (an empty intersection included) means nobody paying was allowed the price.
+    const enrolled = await prisma.programParticipant.findMany({
+        where: { programId, personId: { in: personIds } },
+        select: { personId: true },
+    });
     const program = await prisma.program.findUnique({ where: { id: programId }, select: { startAt: true, endAt: true } });
     const through = programCoverageDate(program ?? { startAt: null, endAt: null });
     // ponytail: per-person loop, not a batched query — one order enrols one household.
-    for (const personId of personIds) {
+    for (const { personId } of enrolled) {
         if (await isDuesSettledThrough(personId, through)) return false;
     }
     return true;

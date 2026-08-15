@@ -289,6 +289,35 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         }
     });
 
+    it('still flags when a dues-settled person id is STUFFED into CheckMeIn_Account_ID by an unentitled enrollee', async () => {
+        // The permalink attack: CheckMeIn_Account_ID is customer-controlled, so the
+        // attacker appends any settled person's id (autoincrement — easy to guess) to
+        // their own. That person is not enrolled in this program, so they cannot lend
+        // their entitlement; activateProgramEnrollment would ignore them and activate
+        // the attacker. Entitlement is judged over the DB's enrollees, not the payload.
+        await setPending(p1);
+        const outsider = await prisma.person.create({
+            data: { name: 'Settled Outsider', email: `outsider-${TAG}@example.com`, household: { create: { name: 'Settled HH' } } },
+        });
+        const membership = await prisma.orgMembership.create({ data: { householdId: outsider.householdId, status: 'ACTIVE' } });
+        const body = programPayload(`${p1},${outsider.id}`, PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
+        try {
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: p1 } },
+            });
+            expect(row?.status).toBe('PENDING');
+            expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(1);
+        } finally {
+            await prisma.paymentException.deleteMany({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } });
+            await prisma.orgMembership.delete({ where: { id: membership.id } });
+            await prisma.person.delete({ where: { id: outsider.id } });
+            await prisma.household.delete({ where: { id: outsider.householdId } });
+        }
+    });
+
     it('activates as usual when the same member code comes from a dues-settled household', async () => {
         // The entitled half of the same judgement: the code is only evidence when the
         // paying family has no membership behind it.

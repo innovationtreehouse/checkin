@@ -10,7 +10,10 @@
  */
 jest.mock("@/lib/prisma", () => ({
     __esModule: true,
-    default: { program: { findUnique: jest.fn() } },
+    default: {
+        program: { findUnique: jest.fn() },
+        programParticipant: { findMany: jest.fn() },
+    },
 }));
 jest.mock("@/lib/orgMembership", () => ({
     isDuesSettledThrough: jest.fn(),
@@ -22,11 +25,17 @@ import { isDuesSettledThrough } from "@/lib/orgMembership";
 import { usesProgramMemberCode, unentitledMemberCodeUse } from "../memberDiscountCode";
 
 const findUnique = prisma.program.findUnique as jest.Mock;
+const participants = prisma.programParticipant.findMany as jest.Mock;
 const settledThrough = isDuesSettledThrough as jest.Mock;
 
 beforeEach(() => {
     jest.clearAllMocks();
     findUnique.mockResolvedValue({ startAt: new Date("2026-06-01"), endAt: new Date("2026-08-01") });
+    // Default: every id asked about really is enrolled in the program. The
+    // stuffed-id test below overrides this with the DB's narrower answer.
+    participants.mockImplementation(({ where }: { where: { personId: { in: number[] } } }) =>
+        Promise.resolve(where.personId.in.map((personId) => ({ personId }))),
+    );
 });
 
 describe("usesProgramMemberCode", () => {
@@ -81,6 +90,27 @@ describe("unentitledMemberCodeUse", () => {
         expect(settledThrough).toHaveBeenCalledWith(1, new Date("2026-08-01"));
     });
 
+    it("still flags when a foreign dues-settled id is STUFFED into the cart permalink", async () => {
+        // CheckMeIn_Account_ID is customer-controlled: a non-member enrolls (PENDING,
+        // unpaid), then builds the permalink as `<own id>,<any settled person's id>`
+        // (ids are autoincrement, so one is easy to guess). Only person 1 is enrolled
+        // in this program, so person 99's household must not lend its entitlement —
+        // activateProgramEnrollment ignores the stuffed id and would activate person 1.
+        participants.mockResolvedValue([{ personId: 1 }]);
+        settledThrough.mockImplementation(async (personId: number) => personId === 99);
+
+        expect(await unentitledMemberCodeUse(42, [1, 99], ["PRG42-ABCD1234"])).toBe(true);
+        expect(settledThrough).toHaveBeenCalledTimes(1);
+        expect(settledThrough).toHaveBeenCalledWith(1, new Date("2026-08-01"));
+    });
+
+    it("flags when NO supplied id is enrolled in the program at all (empty intersection)", async () => {
+        participants.mockResolvedValue([]);
+        settledThrough.mockResolvedValue(true);
+        expect(await unentitledMemberCodeUse(42, [99], ["PRG42-ABCD1234"])).toBe(true);
+        expect(settledThrough).not.toHaveBeenCalled();
+    });
+
     it("never judges an order that does not carry this program's code — no entitlement query at all", async () => {
         settledThrough.mockResolvedValue(false);
         expect(await unentitledMemberCodeUse(42, [1], [])).toBe(false);
@@ -88,6 +118,7 @@ describe("unentitledMemberCodeUse", () => {
         expect(await unentitledMemberCodeUse(42, [1], ["PRG7-ABCD1234"])).toBe(false);
         expect(settledThrough).not.toHaveBeenCalled();
         expect(findUnique).not.toHaveBeenCalled();
+        expect(participants).not.toHaveBeenCalled();
     });
 
     it("a program with no dates asks the status-only question (through = null)", async () => {
