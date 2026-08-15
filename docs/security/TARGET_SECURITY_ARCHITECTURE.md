@@ -28,9 +28,10 @@ Two facts about visibility, and they are different in kind:
 The threat model, in priority order, based on every incident to date:
 
 - **T1: a well-intentioned PR leaks data.** The dominant, proven class:
-  field over-return (#129, #127, #122), row over-return (P0-C, #575). The
-  contributors are increasingly AI agents producing plausible-looking code,
-  and review alone has repeatedly failed to catch this class.
+  field over-return (#129), error-response leaks (#127, #122), row
+  over-return (P0-C, #575). The contributors are increasingly AI agents
+  producing plausible-looking code, and review alone has repeatedly
+  failed to catch this class.
 - **T2: a route bypasses the security layer entirely** (forgot the wrapper,
   reached for the session directly). Has re-grown once already (#580).
 - **T3: an authenticated user probes.** IDOR on ids, enumeration, aggregate
@@ -159,12 +160,16 @@ Where it deviates from the verdict; these are structural, not tuning:
   human review, and a prose allowlist (`EDGE_INCLUDE_ALLOWLIST`). P0-C and
   #575 shipped through this gap. #1134's diagnosis, that rows must be
   filtered query-side, is correct and is half of the verdict above.
-- **Coverage is the binding constraint.** About 19 registered endpoints; 14
-  of 142 route files enter through handler(); 118 still enter through
-  `withAuth`, guarded by a regex scan, a guard class this repo has already
-  watched fail three times (`livePersonDriftGuard`, per #1456). Every
-  guarantee any of this machinery provides applies only to the registered
-  surface.
+- **Coverage is the binding constraint.** About 19 registered endpoints
+  across 14 of 142 route files; **116** files call `withAuth` (measured
+  by call sites, not string mentions; 5 use the generic `withAuth<T>(`
+  form that naive greps miss), **7** files are dual-wrapper (a
+  `handler()` GET beside `withAuth` write verbs, so they migrate
+  per-verb), and the distinct session-authenticated surface is **123**
+  files, guarded outside the registry by a regex scan, a guard class
+  this repo has already watched fail three times
+  (`livePersonDriftGuard`, per #1456). Every guarantee any of this
+  machinery provides applies only to the registered surface.
 - **Aggregates are dishonest.** `_count` values are computed over the
   unfiltered relation; the stripper gates only whether the number is shown.
   Only query-side filtering can make a count true.
@@ -184,9 +189,9 @@ Where it deviates from the verdict; these are structural, not tuning:
 |---|---|---|---|
 | I1 | A field reaches a caller only if their view grants its tier on a row where they hold the scope | the query's select, **generated from the caller's resolved view** (construction); stripper handles only per-row scope subsetting within that view | field contract tests (shipped) |
 | I2 | A row reaches a caller only if they hold a declared row relationship for that route | the query's **generated where** (construction) | persona row-contract walker + `rowFilterEquivalence` |
-| I3 | Aggregates and existence signals (counts, 404-vs-403) are computed over the I2-filtered set only | the query | walker assertions |
+| I3 | Aggregates and existence signals (counts, 404-vs-403) are computed over the I2-filtered set only, except counts a route explicitly declares public (see Aggregates) | the query | walker assertions |
 | I4 | A mutation touches a row only if the caller holds a declared act-on relationship | route `where`/ownership composed from the same fragments | walker driving writes as personas |
-| I5 | Caller-independent lifecycle exclusions (tombstone, archive) apply structurally, below the permission layer | the same query-construction point (shared with #1456) | #1456's done-when list |
+| I5 | Caller-independent lifecycle exclusions (tombstone, archive) apply structurally, below the permission layer | the same query-construction point | facade injection tests: every read of an excluded-lifecycle model carries the exclusion fragment |
 
 ### The mechanism: the registry compiles into the query
 
@@ -233,8 +238,11 @@ Properties this buys, none of which subtraction-after-fetch can:
 - Scope-key columns are auto-included, which ends the silent missing-key
   failure class.
 - `_count` and pagination are computed over the filtered set: I3 falls out.
-- #1456's tombstone exclusion and any future archive flag compose at the
-  same point (I5): one injection site, two ledgers.
+- Lifecycle exclusions of the `LIVE_PERSON` class compose at the same
+  point (I5). #1456 pursues its own endgame independently (removing the
+  tombstone outright) and deliberately declines coupling with this work;
+  the facade's injection site is an offer to whatever caller-independent
+  exclusions remain, not a dependency in either direction.
 - Every governed read passes one point that knows the caller, the model,
   the admitting scope, and the row count, so **the facade records reads of
   the highest-tier models**, and a per-caller daily volume threshold raises
@@ -389,7 +397,7 @@ every row, by construction. **Unconditional tokens are not** (`everyones:*`,
 every holder of the base role, silently defeating first-match's fail-closed
 property, and the merge is exactly what a support ticket produces, because
 the ticket says a real person cannot see something they need. So the
-resolutions are: merge freely when the tokens are scope-qualified; for
+resolutions are: merge when the tokens are scope-qualified; for
 unconditional tokens, author a **conjunction entry** (`orderedView` entries
 may match a conjunction of roles: `keyholder AND programLeadMentor`, placed
 above both single-role entries) or annotate the entry as deliberately
@@ -398,6 +406,16 @@ are not trained to ignore false alarms, and the walker's persona world
 includes a persona holding *only* the base role, asserting the merged or
 conjunction grants are absent for it; without that assertion a merge is a
 visibility change no test distinguishes from a correct one.
+
+One more consequence of merging is easy to miss and must not be silent:
+adding a second scope's tokens to a single-scope view **changes the
+route's tripwire class** from fail-closed (empty expected-removal set) to
+alarm-only (nonempty), because the class is derived from the declaration.
+A merge that looks like a pure visibility fix is also an
+enforcement-mode downgrade. The validator therefore reports the class
+transition alongside the overlap resolution, and the governance report's
+per-route appendix marks which class each route is in, so the downgrade
+is a reviewed fact rather than a side effect.
 
 ### Relationship edges are policy writes
 
@@ -491,21 +509,44 @@ construction instead of by discipline. The walker asserts it: for every
 persona, a real-but-invisible id and a fabricated id must produce
 byte-identical responses.
 
+One shipped route deviates on record. The pentest findings deliberately
+split `programs/[id]`: unauthenticated callers get 404, while
+authenticated non-members get 403 ("join to see this"). That is a
+**recorded exception**, declared on the registry entry and rendered in
+the governance report, and the walker asserts the declared behavior
+rather than the blanket convention. It is also expected to become moot:
+the product direction is for non-members to see member-only programs
+without being able to act on them, at which point the exception is
+deleted rather than carried.
+
 ### Aggregates can disclose by shape
 
-I3 makes counts honest: computed over the filtered set, a count tells the
-caller how many rows they may see. It does not address **cell size**. A
-dashboard grouping households by scholarship status or background-check
-state can report a cell of one, and a cell of one in a program of twelve
-identifies a family to anyone who knows the roster. The caller is fully
-authorized for every row in the aggregate; the disclosure is in the shape
-of the summary. So **an aggregate over rows the caller cannot individually
-see declares either a minimum cell size or an explicit grant permitting
-exact small counts**: one field on the declaration, checked at
-registration. The surface is small today (two dashboard routes, nine
-`_count` files), which is the argument for deciding now; aggregate
-disclosure control is never retrofitted, because by the time anyone wants
-it there are forty dashboards.
+I3 makes counts honest by default: computed over the filtered set, a
+count tells the caller how many rows they may see. It carries one
+declared exception, already decided three times in this repo's history
+(the pentest findings, the rejected re-litigation recorded in
+`auth-consistency-analysis.md`, and the `routeAuthDrift` pin): **a route
+may declare a count public over rows the caller cannot see**: the
+"rows private, count public" shape that lets an anonymous catalog show
+`_count.participants` capacity without exposing the roster (#575's fix
+kept exactly this). Under bare I3 an anonymous caller's filtered set is
+empty and every public program would render zero capacity, re-breaking
+that fix; the exception is therefore a first-class declaration
+(`counts: public` on the route's model entry), rendered in the
+governance report, not a route-code workaround.
+
+The second aggregate control is **cell size**, and it is independent of
+row visibility. A dashboard grouping households by scholarship status or
+background-check state can report a cell of one, and a cell of one in a
+program of twelve identifies a family to anyone who knows the roster,
+with the caller fully authorized for every row; the disclosure is in the
+shape of the summary. So the trigger keys on shape, not visibility:
+**any grouped aggregate declares either a minimum cell size or an
+explicit grant permitting exact small counts**, one field on the
+declaration, checked at registration. The surface is small today (two
+dashboard routes, nine `_count` files), which is the argument for
+deciding now; aggregate disclosure control is never retrofitted, because
+by the time anyone wants it there are forty dashboards.
 
 ### Derived values: declassification as a declared projection
 
@@ -531,10 +572,15 @@ information-flow treatment:
   system where sensitivity is deliberately reduced, and gets the
   security-boundary PR treatment. `isAdult: public` derived from
   `dateOfBirth: personal` is exactly such a reviewed decision.
-- The facade auto-includes the `needs` fields in the select, computes
-  server-side, and the stripper ships the projection under its declared
-  tier while stripping the raw inputs the view doesn't grant. The DOB never
-  leaves the server; the age band does.
+- The facade selects **only the projection field, never its inputs**:
+  Prisma's result-extension machinery fetches `needs` fields internally
+  and omits them from the returned object unless they were explicitly
+  selected (verified on Prisma 7). The raw input never enters the result
+  object, so there is nothing for an error serializer or log line to
+  observe and nothing for the stripper to remove. The DOB never leaves
+  the database round-trip; the age band does. (Auto-including the inputs
+  in the select would reintroduce exactly the pre-stripper exposure the
+  per-view select exists to end.)
 
 This is easier than today for the route author, who references a declared
 projection instead of shipping inputs plus client math, and better for
@@ -601,35 +647,63 @@ where a family reads its own review, so they are two tiers. The class
 has one more prose-guarded member, `Household.intakeNotes`
 (family-authored narrative held at `pii` so reviewers can read it,
 guarded today by a schema comment); it is the next re-tier candidate
-under the same rule. One neighboring case is deliberately not solved by
-a tier: `GET /api/membership/reviews` hides reviewer A's identity from
-reviewer B, but `reviewerId` is `public` and needed as a foreign key, so
-that remains a declared-projection problem, not a tier problem.
+under the same rule.
+
+One neighboring case needs a third mechanism, because neither tiers nor
+projections can express it. `GET /api/membership/reviews` hides reviewer
+A's identity from reviewer B, but `reviewerId` is `public`-tier and
+needed as a foreign key elsewhere, so the generated select would ship it
+and a projection can only add or declassify, never withhold. The
+mechanism is a **declared field withhold**: a registry entry may name
+fields excluded from its generated select (`withhold: {
+BackgroundCheckAttestation: ['reviewerId'] }`), which is narrowing as
+policy rather than as route code: CODEOWNERS-reviewed, walker-asserted
+(the field absent for every persona), and rendered in the governance
+report ("reviewers cannot see who else has signed off"). Withholds share
+the tier split's deadline: they must be declared before the generated
+select reaches their routes, because today's protection is the same
+hand-written select in both cases.
 
 ### Surfaces without a session caller
 
 The registry models one situation well: a session-holding human calling a
-route. Four surfaces fall outside it. They are not deferred as a unit,
-because three are cheap to declare and the fourth is the largest
-uncontrolled disclosure channel in the system:
+route. Five surfaces fall outside it. They are not deferred as a unit,
+because most are cheap to declare and one is the largest uncontrolled
+disclosure channel in the system:
 
-- **Outbound** (`defineOutbound`) is where the work is, and it needs one
-  concept the registry lacks: a **recipient**. Tiers alone cannot make an
-  email safe; the question is not only which fields the message carries but
-  whether *this recipient* may receive facts about *these people*. The
-  existing vocabulary answers it without extension: **a message is
-  well-formed when the recipient holds a declared scope over every row the
-  message describes.** That one rule catches the wrong-join class, the
-  realistic outbound failure, and makes outbound renderable into the
-  governance report.
+- **Outbound** is where the work is, and its control state must be
+  stated honestly: `defineOutbound` surfaces exist in the registry, but
+  the enforcement wrapper (`outboundCall`) has **zero production call
+  sites**; real mail goes through `sendEmail` directly, so both the
+  tier list and everything else are unenforced today. The work is
+  therefore adoption first, and then one concept the registry lacks: a
+  **recipient**. Tiers alone cannot make an email safe; the question is
+  not only which fields the message carries but whether *this recipient*
+  may receive facts about *these people*. The existing vocabulary
+  answers it without extension: **a message is well-formed when the
+  recipient holds a declared scope over every row the message
+  describes.** That one rule catches the wrong-join class, the realistic
+  outbound failure, and makes outbound renderable into the governance
+  report. Adoption has its own sequencing step, so this channel has an
+  owner rather than an adjective.
 - **Cron** (`withCron`) has no caller and is system-context by nature:
   declared as such, jobs enumerated, printed in the report alongside the
   `asSystem()` inventory.
 - **Webhooks** (`withWebhook`) carry a verified machine identity: a
   principal with a fixed declared scope set. A small declaration.
-- **Kiosk** (`withKiosk`) shows what is already on the wall: one fixed
-  public band, no row vocabulary. Declaring it costs a line and closes a
-  silent hole in the report.
+- **Kiosk** (`withKiosk`) is not the fixed public band it first appears:
+  the presence-identity tiering design has the kiosk view holding
+  `all_current_visitors:personal`, a row-scoped grant (who is in the
+  building, with the fields the front desk needs). The kiosk therefore
+  enters the registry as a principal with a declared row-scoped view,
+  same grammar as everything else.
+- **`GET /api/attendance`** fits no wrapper at all today: it hand-rolls
+  `verifyKioskSignature` plus an optional session, serving both the
+  kiosk presence board and signed-in views from one route. It is named
+  here so the taxonomy has no silent fifth door: it migrates as part of
+  the kiosk-principal declaration, and the presence-tiering design marks
+  it as the route that breaks if migrated naively, so it converts
+  deliberately, not in the bulk wave.
 
 ### The governance view: policy renders to English
 
@@ -637,7 +711,9 @@ Because the policy is data (registry + bindings + classifications), a
 plain-language report is a **generated artifact**, not a writing task. The
 scope names were already designed to read as English possessives
 (`their_program_households:personal` → "their program households' personal
-data"; see the "reads as" table in SECURITY-POLICY.md).
+data"; see the "reads as" table in SECURITY-POLICY.md, which needs its two
+later-added scopes, `their_program_households` and `keyholders`, filled
+in as part of the generator work).
 
 **The primary rendering pivots by data subject and tier, not by route.**
 Route-by-route is the engineer's axis; across the full surface it produces
@@ -690,14 +766,21 @@ because the code is correct, and no human ever suspects it. Today's
 assertion against it passes vacuously.
 
 Ownership by convention will not hold, so completeness is **derived and
-mandatory**: the check enumerates every scope×model pair from
-`SCOPE_BINDINGS` and fails if any pair lacks its discriminating pair of
-rows. Adding a scope creates the obligation automatically instead of
-depending on memory. The world **extends `seedBaseline`** rather than
-standing alone: data developers use daily has its gaps noticed, while an
-independent fixture set rots unwatched. The fixture requirement is behind
-the same CODEOWNERS gate as the registry, because adding a scope without
-its discriminating pair is a change to what the system can prove.
+mandatory**, and derived from the right set. Enumerating scope×model
+pairs from `SCOPE_BINDINGS` alone would exempt exactly the models parked
+in `OPT_OUT_PENDING_ROUTE` (including `VolunteerDesignation`, the
+motivating vacuous case), so the enumeration runs over **every sensitive,
+scopable model in the classifications**, bindings present or pending:
+bound pairs need their discriminating rows now; pending models need them
+the day their binding lands, enforced by the same check. Adding a scope
+creates the obligation automatically instead of depending on memory. The
+world **extends `seedBaseline`** rather than standing alone: data
+developers use daily has its gaps noticed, while an independent fixture
+set rots unwatched. Gating has one mechanical prerequisite: the seed
+helpers file joins the boundary workflow's companion list, because
+otherwise a scope PR carrying its discriminating rows fails boundary
+isolation while splitting the PRs leaves the mandatory check red in
+between; the check must be satisfiable by a compliant PR shape.
 
 ### Where scope predicates get their answers
 
@@ -734,17 +817,22 @@ gated by `ctxNeeds`**, never from session claims.
   from `ctx.programsLed`.)
 - **Row-policy predicates are computed fresh in `CallerContext`**, because
   a stale row predicate is a fail-open leak window, not a latency
-  inconvenience. `org_members` is the proving case: `isActiveOrgMember` is
-  one indexed existence check against the same Postgres the request
-  already uses (`lib/orgMembership.ts`, no external dependency), the same
-  cost class as the existing program/visitor prefetches, and `ctxNeeds`
-  means only routes whose grants consult the scope pay for it. A JWT claim
-  wired into the session callback would be re-derived per request, the
-  same query paid on *every* request instead of only where needed; any
-  attempt to cache it recreates the lapsed-household fail-open window
-  (P0-C's shape); and it collapses deliberately distinct predicates
-  (strict ACTIVE vs the wider dues-settled program-access check, #1397)
-  into one boolean.
+  inconvenience. Honesty about the alternative: for `org_members`
+  specifically, a session claim would be neither costly nor stale: the
+  jwt callback already loads `household: { include: { orgMembership:
+  true } }` on every request (`auth-options.ts:343`), so an
+  `isActiveOrgMember` claim would cost zero extra queries and be exactly
+  as fresh as the role flags above. The rejection stands on the two legs
+  that survive that concession. First, **predicate collapse**: program
+  visibility needs the wider dues-settled check (#1397), whose data the
+  callback does not load, and a single membership boolean on the session
+  is precisely the conflation `orgMembership.ts` forbids; two claims
+  with different data needs is the session growing into a second,
+  partial `CallerContext`. Second, **uniformity**: every scope predicate
+  resolving through one `ctxNeeds`-gated path keeps the invariant
+  auditable ("row policy is answered here, always") and keeps the
+  callback from accreting per-scope loads. The general rule below is a
+  design rule, not a cost claim.
 
 The general rule: **a fact that decides row visibility must be readable at
 request time from the database of record; the session may cache capability,
@@ -861,11 +949,13 @@ The security-relevant difference is **how a filter composes**. In Kysely,
 injecting policy is appending `.where()` calls: every clause ANDs, so
 composition is *monotonic narrowing by construction*; a route cannot
 accidentally weaken an injected filter, only add to it. In Prisma,
-injecting policy means **merging object trees**, and merge semantics are
-where the fail-open bug hides: spreading a policy fragment into a `where`
-that already has an `OR:` block, or a route key colliding with a fragment
-key, can silently widen the result. That is why ZenStack rebased onto a
-query builder for v3, and it is a design rule our bespoke facade inherits:
+injecting policy means **merging object trees**, and the fail-open case
+is key collision: a route key shadowing a fragment key on spread
+replaces the policy condition outright. (Sibling keys beside a route
+`OR:` block still AND in Prisma's semantics; collision, not
+coexistence, is the widening mechanism.) A query builder has no merge
+step to get wrong, which is consistent with ZenStack's v3 move to one;
+either way the design rule our bespoke facade adopts is:
 
 > **The facade composes filters as `where: { AND: [policyFragment,
 > routeWhere] }`: always wrapped, never spread.** The equivalence tests
@@ -880,8 +970,11 @@ cheap to enforce and test.
 The nested-include leak class is the decisive test case for this choice.
 The row leaks that actually shipped did not enter through the top-level
 model; they rode in on relation traversal: #575 (`programs/[id]` including
-full participant/volunteer rosters), the raw-row echoes on household write
-routes (#957), the whole `EDGE_INCLUDE_ALLOWLIST` class. The lesson is
+full participant/volunteer rosters) and the whole `EDGE_INCLUDE_ALLOWLIST`
+class. (#957, the raw-row echoes on household write routes, is the
+neighboring top-level class: whole rows echoed from writes, caught by the
+same generated-select rule rather than by relation recursion.) The lesson
+is
 mechanism-independent: enforcement must be **per model, applied recursively
 at every node of the query graph**, because a route author reasons about
 the top model and the leak enters through the include. Both build and adopt
@@ -1032,10 +1125,24 @@ practice, not a new philosophy.
 
 The design applies to the entire session-authenticated read/write surface:
 **every `withAuth` route is in scope, and each migrates once, directly to
-the facade form**, with no interim bare-`handler()` generation. The
-non-session wrappers (`withKiosk`, `withCron`, `withWebhook`) are outside
-that mandate; their treatment is designed in "Surfaces without a session
-caller" above. Build order and migration mechanics are in
+the facade form**, with no interim bare-`handler()` generation. Two
+qualifications keep the mandate honest:
+
+- **Computed-envelope routes wait for projections.** The standing
+  DECISION RECORD in `auth-consistency-analysis.md` blocks the `withAuth`
+  collapse on a `derive` hook: `handler()`'s strip path silently drops
+  computed and derived response fields (`isMember`, `isPresent`, fallback
+  names), so those routes "must not be force-migrated." The projection
+  catalog is this design's `derive` answer, so the one-hop rule stands
+  with an ordering constraint: a route returning computed envelopes
+  migrates only after its fields exist in the projection catalog, never
+  before.
+- The **7 dual-wrapper files** migrate per-verb, and the non-session
+  wrappers (`withKiosk`, `withCron`, `withWebhook`) plus the hand-rolled
+  `GET /api/attendance` are outside the mandate; their treatment is
+  designed in "Surfaces without a session caller" above.
+
+Build order and migration mechanics are in
 [TARGET_ARCHITECTURE_SEQUENCING.md](TARGET_ARCHITECTURE_SEQUENCING.md),
 deliberately not here.
 
@@ -1065,7 +1172,16 @@ change what gets built.
    proven by a standing test that issues a query with no context and
    asserts an empty result. That test is most of the layer's value,
    because the guarded failure is someone restoring a permission during an
-   incident and never removing it.
+   incident and never removing it. Two honesty conditions attach. First,
+   **system readers need an explicit design before the criterion is
+   adoptable**: the candidate tables are exactly what the cron jobs and
+   `asSystem` paths touch, and under no-context-equals-zero-rows those
+   silently no-op; the system context must be a designed, enumerated
+   role, not an afterthought. Second, the escape (an app-set GUC or
+   privileged role) is settable by the very subverted app layer T4
+   posits, so RLS **narrows** T4 rather than surviving it outright; the
+   claim must be stated at that strength and the system-context path kept
+   as small as the `asSystem` inventory.
 2. **Second-party confirmation on the highest-stakes relationship edges.**
    The audit trail and governance-report section for access-granting edges
    are decided (see "Relationship edges are policy writes"); still open is
@@ -1077,7 +1193,8 @@ change what gets built.
    hand-written select also withholds `origin`, `disclosedById`,
    `hiddenAt`, and `updatedAt`: all `internal`, all granted on paper, and
    provenance rather than deliberation, so the `deliberative` split does
-   not cover them. Decide whether a family may see who disclosed a
-   trusted adult and how; then either re-tier or record the exposure as
-   deliberate. Due before a generated select would ship them (sequencing
-   step 5 reaching this route).
+   not cover them. The mechanism now exists (a declared field withhold,
+   see "The tier split"); what remains is the product decision: may a
+   family see who disclosed a trusted adult and how? Declare the
+   withhold or record the exposure as deliberate. Due before a generated
+   select would ship them (sequencing step 5 reaching this route).
