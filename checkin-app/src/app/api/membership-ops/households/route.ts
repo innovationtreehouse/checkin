@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { renewalSeasonWindow, nextBoundary, bgValidUntilBoundary, grantRenewalPayment } from "@/lib/membership/renewal";
+import { renewalSeasonWindow, nextBoundary, bgValidUntilBoundary, grantRenewalPayment, MAX_DATE } from "@/lib/membership/renewal";
 import { grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 import { PaymentError } from "@/lib/membership/payment";
 import { LIVE_PERSON } from "@/lib/person/filters";
@@ -89,7 +89,7 @@ export const GET = withAuth(
                     ? (await prisma.orgMembershipProcess.findFirst({
                           where: {
                               orgMembershipId: household.orgMembership.id,
-                              ...settledThisCycleWhere(detailWindow?.windowStart ?? new Date(8.64e15)),
+                              ...settledThisCycleWhere(detailWindow?.windowStart ?? MAX_DATE),
                           },
                           select: { id: true },
                       })) !== null
@@ -153,7 +153,7 @@ export const GET = withAuth(
                                 where: {
                                     OR: [
                                         grantableRenewalWhere,
-                                        settledThisCycleWhere(window?.windowStart ?? new Date(8.64e15)),
+                                        settledThisCycleWhere(window?.windowStart ?? MAX_DATE),
                                     ],
                                 },
                                 select: { id: true, status: true },
