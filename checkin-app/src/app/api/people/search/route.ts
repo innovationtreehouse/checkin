@@ -6,6 +6,7 @@ import { ACTIVE_ORG_MEMBER_PERSON_WHERE, personRecordIsActiveOrgMember } from "@
 import { apiError } from "@/lib/api-response";
 import { rolesToFlags } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { badgeYearCycle, MAX_DATE } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +24,55 @@ export const GET = withAuth(
             // shape here is a strict subset of what the search below already returns.
             // ponytail: unbounded — ACTIVE members only (hundreds). Paginate if that changes.
             if (url.searchParams.get('roster') === 'active') {
+                const settings = await prisma.boardSettings.findUnique({
+                    where: { id: 1 },
+                    select: { orgMembershipYearBoundary: true },
+                });
+                if (!settings?.orgMembershipYearBoundary) {
+                    logger.warn('No membership-year boundary configured — badges will print no year (#1628)');
+                }
+                const cycle = settings?.orgMembershipYearBoundary
+                    ? badgeYearCycle(settings.orgMembershipYearBoundary, new Date())
+                    : null;
+                // A household earns `year` by settling THIS cycle, not by being ACTIVE —
+                // nothing revokes a membership at the boundary, so ACTIVE outlives the
+                // year it paid for. No `kind` filter (an INITIAL settled this cycle has
+                // paid for it too) and no ARCHIVED, matching lib/outreach/recipients.
+                // No boundary ⇒ the sentinel matches nothing, so nobody gets a year.
                 const members = await prisma.person.findMany({
                     where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
-                    select: { id: true, name: true },
+                    select: {
+                        id: true,
+                        name: true,
+                        household: {
+                            select: {
+                                orgMembership: {
+                                    select: {
+                                        processes: {
+                                            where: {
+                                                status: 'ACTIVE',
+                                                stageEnteredAt: { gte: cycle?.settledSince ?? MAX_DATE },
+                                            },
+                                            select: { id: true },
+                                            take: 1,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
                 });
-                return NextResponse.json({ people: members.map(m => ({ id: m.id, name: m.name ?? '' })) });
+                // Ops sees `year`: Operations prints badges (#1623), so it has to see which
+                // households renewed. It derives from OrgMembershipProcess.status and
+                // stageEnteredAt (both @sensitivity:internal) but exposes only the printed
+                // year string — no process row, no dates, no payment detail.
+                return NextResponse.json({
+                    people: members.map(m => ({
+                        id: m.id,
+                        name: m.name ?? '',
+                        year: cycle && m.household?.orgMembership?.processes.length ? cycle.label : null,
+                    })),
+                });
             }
 
             const q = url.searchParams.get('q') || '';

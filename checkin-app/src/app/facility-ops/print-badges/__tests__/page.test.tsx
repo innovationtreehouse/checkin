@@ -48,12 +48,20 @@ const johns = [
   { id: 1, name: "John Smith", email: "js@example.com", isMember: true },
   { id: 2, name: "John Doe", email: "jd@example.com", isMember: true },
 ];
+// Smith settled this renewal cycle; Doe is ACTIVE but has not — nothing revokes a
+// membership at the boundary, so both are on the roster and only one has earned a year.
+const johnRoster = [
+  { id: 1, name: "John Smith", year: "2026-2027" },
+  { id: 2, name: "John Doe", year: null },
+];
 const johnRoutes = {
-  "/api/people/search?roster=active": { people: johns.map(({ id, name }) => ({ id, name })) },
+  "/api/people/search?roster=active": { people: johnRoster },
   "/api/people/search": { people: johns },
 };
-const printedNameCell = (fullName: string) =>
-  screen.getByText(fullName).closest("tr")!.querySelectorAll("td")[3].textContent;
+const cell = (fullName: string, index: number) =>
+  screen.getByText(fullName).closest("tr")!.querySelectorAll("td")[index].textContent;
+const printedNameCell = (fullName: string) => cell(fullName, 3);
+const yearCell = (fullName: string) => cell(fullName, 5);
 
 describe("facility-ops/print-badges page", () => {
   it("loads and renders the participant roster", async () => {
@@ -148,11 +156,24 @@ describe("facility-ops/print-badges page", () => {
     // assertion diff instead of being cut off by jest's equal-length test timeout.
   }, 15000);
 
+  // #1628. Both Johns are ACTIVE members, so "is a member" cannot be what decides this —
+  // only settling the current renewal cycle can. The column is the operator's warning
+  // that a blank badge is coming, before the sheet is in the printer.
+  it("shows the membership year only for a household that settled this cycle", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson(johnRoutes);
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    await waitFor(() => expect(yearCell("John Smith")).toBe("2026-2027"));
+    expect(yearCell("John Doe")).toBe("Not renewed");
+  }, 15000);
+
   it("keeps the printed name fixed when the search box narrows the visible rows", async () => {
     setSession({ id: 1, isSysadmin: true });
     const searchResults = { current: johns };
     mockFetchJson({
-      "/api/people/search?roster=active": { people: johns.map(({ id, name }) => ({ id, name })) },
+      "/api/people/search?roster=active": { people: johnRoster },
       "/api/people/search": () => ({ people: searchResults.current }),
     });
     renderWithProviders(<PrintBadgesPage />);
@@ -175,6 +196,31 @@ describe("facility-ops/print-badges page", () => {
   // and can be selected. A 500 from apiError is valid JSON, so `.catch` alone never sees
   // it — only the `res.ok` check does. The guard must hold either way: releasing it here
   // would print bare, un-disambiguated first names onto physical badges.
+  // Off-roster people take no name from the ACTIVE roster, so without a fallback cohort
+  // two non-member Johns in one run both print "John" onto physical badges.
+  it("disambiguates off-roster people among themselves, without moving a member's name", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/people/search?roster=active": { people: [{ id: 1, name: "John Smith", year: null }] },
+      "/api/people/search": {
+        people: [
+          { id: 1, name: "John Smith", email: "js@example.com", isMember: true },
+          { id: 8, name: "John Nonmember", email: "jn@example.com", isMember: false },
+          { id: 9, name: "John Guest", email: "jg@example.com", isMember: false },
+        ],
+      },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    fireEvent.click(screen.getByRole("checkbox", { name: /hide inactive/i }));
+
+    await waitFor(() => expect(printedNameCell("John Nonmember")).toBe("John N."));
+    expect(printedNameCell("John Guest")).toBe("John G.");
+    // The only John on the ACTIVE roster, so his name is unqualified — the two off-roster
+    // Johns are not in that population and must not pull him to "John S.".
+    expect(printedNameCell("John Smith")).toBe("John");
+  }, 15000);
+
   it("holds badge generation when the member roster request fails", async () => {
     setSession({ id: 1, isSysadmin: true });
     const logged = jest.spyOn(console, "error").mockImplementation(() => {});

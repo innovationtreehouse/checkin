@@ -84,6 +84,14 @@ export function bgValidUntilBoundary(
 }
 
 /**
+ * Off-season / boundary-unset sentinel. Every caller reads the same shape —
+ * `stageEnteredAt: { gte: window?.windowStart ?? MAX_DATE }` — where "no window"
+ * must match nobody rather than everybody. Named once here, beside the window
+ * functions that return the null it stands in for.
+ */
+export const MAX_DATE = new Date(8.64e15);
+
+/**
  * From a configured boundary date, the next boundary occurrence and whether `now`
  * sits inside the renewal lead window before it. Pure; the single source of the
  * "are we in renewal season" calc shared by runRenewalSweep and isRenewalSeason.
@@ -92,6 +100,24 @@ export function renewalWindow(configuredBoundary: Date, now: Date): { boundary: 
     const boundary = nextBoundary(configuredBoundary, now);
     const windowStart = monthsBefore(boundary, RENEWAL_LEAD_MONTHS);
     return { boundary, windowStart, inSeason: now.getTime() >= windowStart.getTime() };
+}
+
+/**
+ * The membership year a badge printed at `now` advertises, and the date a household
+ * must have settled on or after to have earned it. The label flips at windowStart, so
+ * the badge starts advertising the coming year exactly when that year becomes
+ * renewable and keeps advertising it until the next window opens. Pure, and driven by
+ * the configured boundary rather than a hardcoded month.
+ */
+export function badgeYearCycle(configuredBoundary: Date, now: Date): { label: string; settledSince: Date } {
+    const { boundary, windowStart, inSeason } = renewalWindow(configuredBoundary, now);
+    // Off-season, `boundary` is already next year's, so the live cycle is the one that
+    // opened at the previous windowStart.
+    const endYear = boundary.getUTCFullYear() + (inSeason ? 1 : 0);
+    const settledSince = inSeason
+        ? windowStart
+        : new Date(Date.UTC(windowStart.getUTCFullYear() - 1, windowStart.getUTCMonth(), windowStart.getUTCDate()));
+    return { label: `${endYear - 1}-${endYear}`, settledSince };
 }
 
 /**
