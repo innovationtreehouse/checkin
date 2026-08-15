@@ -38,8 +38,10 @@ parse_candidates() {
 milestone_from_title() { grep -oE 'v[0-9]+\.[0-9]+' <<<"$1" | head -1 || true; }
 
 self_test() {
-  local got want
-  got=$(parse_candidates <<'FIXTURE'
+  # The fixture is read into a variable first: bash 3.2's `$( )` scanner cannot
+  # skip heredoc bodies, and this one contains both `#` and `'`.
+  local fixture got want
+  IFS= read -r -d '' fixture <<'FIXTURE' || true
 ## Candidates
 
 - [ ] **#1409** — roster "Pending Since" always reads *Unknown*
@@ -52,7 +54,7 @@ self_test() {
 Prose mentioning #9999 is not a candidate.
 | #1508 already carries v1.2 | table row, not a box |
 FIXTURE
-)
+  got=$(printf '%s' "$fixture" | parse_candidates)
   want=$'unchecked\t1409\nchecked\t1487\nunchecked\t1435\nunchecked\t1520\nchecked\t1441\nchecked\t1134'
   diff <(echo "$got") <(echo "$want") || { echo "FAIL: parse_candidates"; exit 1; }
   test "$(milestone_from_title 'v1.2 — leaders can trust their screen')" = v1.2 || { echo "FAIL: milestone"; exit 1; }
@@ -76,19 +78,28 @@ MS=$(milestone_from_title "$TITLE")
 # Dedupe by number, preferring "checked" (sorts before "unchecked").
 CANDS=$(parse_candidates <<<"$BODY" | sort -t$'\t' -k2,2n -k1,1 | awk -F'\t' '!seen[$2]++')
 
+ERR=$(mktemp "${TMPDIR:-/tmp}/dma.XXXXXX"); trap 'rm -f "$ERR"' EXIT
+
 closed=(); elsewhere=(); notissue=(); nchk=0; nunchk=0
 while IFS=$'\t' read -r st n; do
   [ -n "${n:-}" ] || continue
   if [ "$st" = checked ]; then nchk=$((nchk + 1)); else nunchk=$((nunchk + 1)); fi
-  meta=$(gh api "repos/$REPO/issues/$n" --jq '[.state,(.pull_request!=null),(.milestone.title//"")]|@tsv' 2>/dev/null) \
-    || { notissue+=("- **#$n** ($st) — not an issue in this repo (a discussion, or deleted)"); continue; }
+  # Only a real 404 is a finding. A rate limit, a 5xx or a broken token is a
+  # broken run, and must not be reported as something wrong with the discussion.
+  if ! meta=$(gh api "repos/$REPO/issues/$n" --jq '[.state,(.pull_request!=null),(.milestone.title//"")]|@tsv' 2>"$ERR"); then
+    grep -q 'HTTP 404' "$ERR" || { echo "gh api failed reading issue #$n:" >&2; cat "$ERR" >&2; exit 1; }
+    notissue+=("- **#$n** ($st) — not an issue in this repo (a discussion, or deleted)")
+    continue
+  fi
   IFS=$'\t' read -r state ispr msname <<<"$meta"
   if [ "$ispr" = true ]; then
     notissue+=("- **#$n** ($st) — is a pull request, not an issue")
     continue
   fi
   [ "$state" = open ] || closed+=("- **#$n** ($st) — is **$state**")
-  [ -z "$msname" ] || [ "$msname" = "$MS" ] || elsewhere+=("- **#$n** ($st) — already on milestone **$msname**")
+  if [ -n "$MS" ] && [ -n "$msname" ] && [ "$msname" != "$MS" ]; then
+    elsewhere+=("- **#$n** ($st) — already on milestone **$msname**")
+  fi
 done <<<"$CANDS"
 
 MSJSON=$(gh api "repos/$REPO/milestones?state=all&per_page=100" --paginate \
@@ -97,6 +108,10 @@ MSNUM=$(jq -r '.number // empty' <<<"$MSJSON"); MSSTATE=$(jq -r '.state // empty
 
 unlisted=()
 if [ -n "$MSNUM" ]; then
+  # Assigned, not `< <(…)`: a failed listing must abort the run, not silently
+  # report an empty milestone.
+  ONMS=$(gh api "repos/$REPO/issues?milestone=$MSNUM&state=all&per_page=100" --paginate \
+    --jq '.[] | select(.pull_request == null) | [.number, .state] | @tsv')
   while IFS=$'\t' read -r n state; do
     [ -n "${n:-}" ] || continue
     cut -f2 <<<"$CANDS" | grep -qx "$n" && continue
@@ -105,8 +120,7 @@ if [ -n "$MSNUM" ]; then
     else
       unlisted+=("- **#$n** ($state) — **not mentioned anywhere** in the discussion")
     fi
-  done < <(gh api "repos/$REPO/issues?milestone=$MSNUM&state=all&per_page=100" --paginate \
-    --jq '.[] | select(.pull_request == null) | [.number, .state] | @tsv')
+  done <<<"$ONMS"
 fi
 
 section() { local h=$1; shift; printf '### %s\n\n' "$h"
@@ -114,14 +128,14 @@ section() { local h=$1; shift; printf '### %s\n\n' "$h"
 
 printf '## Staleness audit — [#%s](%s)\n\n%s\n\n' "$NUM" "$URL" "$TITLE"
 printf 'Target milestone from the title: **%s** — ' "${MS:-(none found)}"
-if [ -z "$MS" ]; then echo "the title names no \`vMAJOR.MINOR\`, so nothing below is milestone-scoped."
+if [ -z "$MS" ]; then echo "the title names no \`vMAJOR.MINOR\`, so the two milestone-scoped sections are skipped."
 elif [ -z "$MSNUM" ]; then echo "does not exist yet."
 else echo "exists (#$MSNUM, **$MSSTATE**)."; fi
 printf '\nCandidates parsed: **%s** checked, **%s** unchecked.\n\n' "$nchk" "$nunchk"
 
 section "Candidates that are closed" ${closed[@]+"${closed[@]}"}
-section "Candidates already on a different milestone" ${elsewhere[@]+"${elsewhere[@]}"}
+if [ -n "$MS" ]; then section "Candidates already on a different milestone" ${elsewhere[@]+"${elsewhere[@]}"}; fi
 section "Candidates that are not issues" ${notissue[@]+"${notissue[@]}"}
-section "On **${MS:-?}** but not a candidate" ${unlisted[@]+"${unlisted[@]}"}
+if [ -n "$MS" ]; then section "On **$MS** but not a candidate" ${unlisted[@]+"${unlisted[@]}"}; fi
 
 echo "_Read-only: this run made no writes and called no model._"

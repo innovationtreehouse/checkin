@@ -23,5 +23,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           NUM: ${{ inputs.discussion }}
+        # Without pipefail the job's status is `tee`'s, so a failed audit reports
+        # green; `2>&1` puts the error in the summary instead of leaving it blank.
+        shell: bash
         run: |
-          scripts/discussion-milestone-audit.sh "$NUM" | tee -a "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          scripts/discussion-milestone-audit.sh "$NUM" 2>&1 | tee -a "$GITHUB_STEP_SUMMARY"
