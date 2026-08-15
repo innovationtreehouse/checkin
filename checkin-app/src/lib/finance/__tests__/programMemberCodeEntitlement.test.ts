@@ -14,10 +14,8 @@ jest.mock("@/lib/prisma", () => ({ __esModule: true, default: {} }));
 jest.mock("@/lib/membership/payment", () => ({ activateByProcessId: jest.fn() }));
 jest.mock("@/lib/membership/boardAlerts", () => ({ notifyBoardPaymentException: jest.fn() }));
 jest.mock("@/lib/orgMembership", () => ({
-    isDuesSettledThrough: jest.fn(),
+    isDuesSettledThroughMany: jest.fn(),
     programCoverageDate: jest.fn(),
-    coversThrough: jest.fn(),
-    DUES_SETTLED_PERSON_WHERE: {},
 }));
 jest.mock("@/lib/shopifyRead/client", () => ({}));
 
