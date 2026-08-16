@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { certifyPaymentPlan, PaymentError } from "./payment";
-import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
+import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, handledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { systemActor } from "@/lib/auditActor";
 
@@ -162,19 +162,20 @@ export async function runRenewalSweep(now: Date) {
     const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
         // "Handled this cycle" = an in-flight RENEWAL by status (matches the partial
-        // unique index + openRenewalsForAllActive), OR any process already settled
-        // this cycle — a finished renewal, the admin "Grant for coming year"
-        // override, a board archive, or an INITIAL that activated inside the window
-        // (that family just bought the coming year; opening a renewal would bill
-        // them twice). The settled clause is the same kind-agnostic fragment the
-        // households valid-until and membershipValidThrough read.
+        // unique index + openRenewalsForAllActive), OR any process terminal in-window
+        // (handledThisCycleWhere): a finished renewal, the "Grant for coming year"
+        // override, an INITIAL that activated inside the window (that family just
+        // bought the coming year; opening a renewal would bill them twice), or a
+        // board archive (already looked at — reopening would pester a family the
+        // board just declined). ARCHIVED counts HERE only; money horizons use the
+        // narrower settledThisCycleWhere.
         select: {
             id: true,
             processes: {
                 where: {
                     OR: [
                         { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL] } },
-                        settledThisCycleWhere(windowStart),
+                        handledThisCycleWhere(windowStart),
                     ],
                 },
                 select: { id: true },

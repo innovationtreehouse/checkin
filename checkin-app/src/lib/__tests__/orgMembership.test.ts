@@ -72,7 +72,7 @@ describe('membershipValidThrough', () => {
         await membershipValidThrough(1, new Date(Date.UTC(2026, 0, 1)));
         const where = prisma.orgMembershipProcess.findFirst.mock.calls[0][0].where;
         expect(where).not.toHaveProperty('kind');
-        expect(where.status).toEqual({ in: ['ACTIVE', 'ARCHIVED'] });
+        expect(where.status).toEqual('ACTIVE'); // ARCHIVED never paid — must not extend
     });
 
     it('not ACTIVE → null', async () => {

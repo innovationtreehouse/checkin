@@ -20,7 +20,7 @@ import {
 import {
     awaitingBgReview,
     grantableRenewalWhere,
-    settledThisCycleWhere,
+    settledThisCycleWhere, handledThisCycleWhere,
     IN_FLIGHT_INITIAL,
     IN_FLIGHT_RENEWAL,
     LEGACY_STATUSES,
@@ -104,12 +104,20 @@ describe('grantableRenewalWhere / settledThisCycleWhere', () => {
         expect(grantableRenewalWhere).toEqual({ kind: 'RENEWAL', status: 'PENDING_PAYMENT' });
     });
 
-    test('settledThisCycleWhere is kind-AGNOSTIC: any terminal process in-window settles the coming year', () => {
+    test('settledThisCycleWhere (money) is kind-agnostic and ACTIVE-only', () => {
         // A family that joins during the renewal window (INITIAL) buys the coming
-        // year exactly as a renewer does, so no kind clause — valid-until, pricing,
-        // and the sweep's skip-test all read this one shape.
+        // year exactly as a renewer does, so no kind clause. ARCHIVED never
+        // completed payment (archive refuses ACTIVE) and must not extend a horizon.
         const windowStart = new Date('2026-06-01T00:00:00.000Z');
         expect(settledThisCycleWhere(windowStart)).toEqual({
+            status: 'ACTIVE',
+            stageEnteredAt: { gte: windowStart },
+        });
+    });
+
+    test('handledThisCycleWhere (sweep) additionally counts ARCHIVED — board already closed this cycle', () => {
+        const windowStart = new Date('2026-06-01T00:00:00.000Z');
+        expect(handledThisCycleWhere(windowStart)).toEqual({
             status: { in: ['ACTIVE', 'ARCHIVED'] },
             stageEnteredAt: { gte: windowStart },
         });

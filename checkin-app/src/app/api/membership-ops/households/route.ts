@@ -80,11 +80,13 @@ export const GET = withAuth(
                 const detailBoundary = settings?.orgMembershipYearBoundary
                     ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
                     : null;
-                // "Settled this cycle" = ANY process resolved (ACTIVE/ARCHIVED) inside
+                // "Settled this cycle" = ANY process COMPLETED (terminal ACTIVE) inside
                 // the window (settledThisCycleWhere) — a family that JOINS in-window buys
-                // the coming year exactly as a renewer does, so INITIAL counts too. Same
-                // test the list branch, membershipValidThrough, and runRenewalSweep use.
-                // Out of season the window start is "never" (matches nothing).
+                // the coming year exactly as a renewer does, so INITIAL counts too.
+                // ARCHIVED never completed payment and does not extend the horizon (the
+                // sweep alone treats it as handled). Same test the list branch and
+                // membershipValidThrough use. Out of season the window start is "never"
+                // (matches nothing).
                 const detailSettled = household.orgMembership
                     ? (await prisma.orgMembershipProcess.findFirst({
                           where: {
@@ -142,11 +144,12 @@ export const GET = withAuth(
                     // ONE probe serves both flags computed below, from the shared lifecycle
                     // definitions: grantableRenewalWhere (payable renewal → grantability)
                     // and settledThisCycleWhere (ANY process — INITIAL or RENEWAL —
-                    // resolved ACTIVE/ARCHIVED inside the renewal window → coming year
-                    // settled, the same test membershipValidThrough and runRenewalSweep
-                    // use). Out of season the window start is "never" (matches no row),
-                    // keeping one query shape and one inferred type. orgMembership's own
-                    // scalars (status, memberSince) still ride along via this include.
+                    // COMPLETED terminal ACTIVE inside the renewal window → coming year
+                    // settled, the same test membershipValidThrough uses; ARCHIVED never
+                    // paid, so it is the sweep's business only). Out of season the window
+                    // start is "never" (matches no row), keeping one query shape and one
+                    // inferred type. orgMembership's own scalars (status, memberSince)
+                    // still ride along via this include.
                     orgMembership: {
                         include: {
                             processes: {
@@ -183,13 +186,13 @@ export const GET = withAuth(
             const withGrantable = households.map((h) => {
                 // Split the single OR probe by status: PENDING_PAYMENT = grantable renewal
                 // (grantableRenewalWhere — kind RENEWAL, so an in-flight INITIAL at
-                // payment never reads as grantable); a terminal ACTIVE/ARCHIVED process
-                // of EITHER kind = the coming cycle is already settled
-                // (settledThisCycleWhere: finished renewal, admin override, board
-                // archive, or a family that joined inside the window).
+                // payment never reads as grantable); a completed (ACTIVE) process of
+                // EITHER kind = the coming cycle is settled (settledThisCycleWhere:
+                // finished renewal, admin override, or a family that joined inside
+                // the window).
                 const { processes = [], ...orgMembership } = h.orgMembership ?? {};
                 const renewalGrantable = processes.some((p) => p.status === "PENDING_PAYMENT");
-                const settledForComingYear = processes.some((p) => p.status === "ACTIVE" || p.status === "ARCHIVED");
+                const settledForComingYear = processes.some((p) => p.status === "ACTIVE");
                 // Household-level BG "valid until" — later lastBackgroundCheck among leads
                 // who passed; no per-member values in the list response.
                 const latestLeadBg = h.householdMembers
