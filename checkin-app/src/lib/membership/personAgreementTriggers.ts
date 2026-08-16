@@ -73,9 +73,9 @@ export function agreementCycleFloor(configuredBoundary: Date, now: Date): Date {
 
 /**
  * Already handled: an obligation still in flight (from any cycle — an unsigned one is no
- * reason to open a second), or one settled since `floor`. Same shape as
- * lifecycle.settledThisCycleWhere, written here because that helper is pinned to
- * kind: "RENEWAL" and belongs to the #1080 lifecycle work.
+ * reason to open a second), or one settled since `floor`. The settled arm matches
+ * lifecycle.settledThisCycleWhere's shape; written here because this probe is pinned to
+ * kind: "PERSON_AGREEMENT" + subject and also needs the in-flight arm.
  */
 function handledThisCycleWhere(personId: number, floor: Date) {
     return {

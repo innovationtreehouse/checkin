@@ -162,19 +162,18 @@ export async function runRenewalSweep(now: Date) {
     const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
         // "Handled this cycle" = an in-flight RENEWAL by status (matches the partial
-        // unique index + openRenewalsForAllActive), OR a RENEWAL already resolved this
-        // cycle — a member who finished renewal early, or the admin "Grant for coming
-        // year" override, both leave a terminal (ACTIVE/ARCHIVED) RENEWAL with
-        // stageEnteredAt in this window. Without the second clause a completed renewal
-        // gets re-opened, since terminal rows aren't in-flight.
+        // unique index + openRenewalsForAllActive), OR any process already settled
+        // this cycle — a finished renewal, the admin "Grant for coming year"
+        // override, a board archive, or an INITIAL that activated inside the window
+        // (that family just bought the coming year; opening a renewal would bill
+        // them twice). The settled clause is the same kind-agnostic fragment the
+        // households valid-until and membershipValidThrough read.
         select: {
             id: true,
             processes: {
                 where: {
-                    kind: "RENEWAL",
                     OR: [
-                        { status: { in: [...IN_FLIGHT_RENEWAL] } },
-                        // "resolved this cycle" — shared with the households route (fix #4).
+                        { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL] } },
                         settledThisCycleWhere(windowStart),
                     ],
                 },

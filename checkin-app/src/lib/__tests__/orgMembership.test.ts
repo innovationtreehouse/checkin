@@ -64,6 +64,17 @@ describe('membershipValidThrough', () => {
         expect(result).toEqual(new Date(Date.UTC(boundary.getUTCFullYear() + 1, boundary.getUTCMonth(), boundary.getUTCDate())));
     });
 
+    it('the settled probe is kind-agnostic — a new family joining in-window counts, not only a RENEWAL', async () => {
+        prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'ACTIVE' } });
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: BOUNDARY });
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue({ id: 99 });
+
+        await membershipValidThrough(1, new Date(Date.UTC(2026, 0, 1)));
+        const where = prisma.orgMembershipProcess.findFirst.mock.calls[0][0].where;
+        expect(where).not.toHaveProperty('kind');
+        expect(where.status).toEqual({ in: ['ACTIVE', 'ARCHIVED'] });
+    });
+
     it('not ACTIVE → null', async () => {
         prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'REVOKED' } });
         const result = await membershipValidThrough(1, new Date());

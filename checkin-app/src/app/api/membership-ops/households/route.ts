@@ -80,11 +80,11 @@ export const GET = withAuth(
                 const detailBoundary = settings?.orgMembershipYearBoundary
                     ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
                     : null;
-                // "Settled this cycle" = a RENEWAL resolved (ACTIVE/ARCHIVED) inside the
-                // window (fix #4, settledThisCycleWhere) — same test the list branch and
-                // runRenewalSweep use, so a stray INITIAL activation no longer flips
-                // derivedValidUntil a year forward. Out of season the window start is
-                // "never" (matches nothing).
+                // "Settled this cycle" = ANY process resolved (ACTIVE/ARCHIVED) inside
+                // the window (settledThisCycleWhere) — a family that JOINS in-window buys
+                // the coming year exactly as a renewer does, so INITIAL counts too. Same
+                // test the list branch, membershipValidThrough, and runRenewalSweep use.
+                // Out of season the window start is "never" (matches nothing).
                 const detailSettled = household.orgMembership
                     ? (await prisma.orgMembershipProcess.findFirst({
                           where: {
@@ -140,13 +140,13 @@ export const GET = withAuth(
                         select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true, isHouseholdLead: true, lastBackgroundCheck: true }
                     },
                     // ONE probe serves both flags computed below, from the shared lifecycle
-                    // definitions: grantableRenewalWhere (payable renewal → grantability,
-                    // fix #3) and settledThisCycleWhere (a RENEWAL resolved ACTIVE/ARCHIVED
-                    // inside the renewal window → coming year settled, the same "handled this
-                    // cycle" test runRenewalSweep uses, fix #4). Out of season the window
-                    // start is "never" (matches no row), keeping one query shape and one
-                    // inferred type. orgMembership's own scalars (status, memberSince) still
-                    // ride along via this include.
+                    // definitions: grantableRenewalWhere (payable renewal → grantability)
+                    // and settledThisCycleWhere (ANY process — INITIAL or RENEWAL —
+                    // resolved ACTIVE/ARCHIVED inside the renewal window → coming year
+                    // settled, the same test membershipValidThrough and runRenewalSweep
+                    // use). Out of season the window start is "never" (matches no row),
+                    // keeping one query shape and one inferred type. orgMembership's own
+                    // scalars (status, memberSince) still ride along via this include.
                     orgMembership: {
                         include: {
                             processes: {
@@ -182,11 +182,11 @@ export const GET = withAuth(
 
             const withGrantable = households.map((h) => {
                 // Split the single OR probe by status: PENDING_PAYMENT = grantable renewal
-                // (grantableRenewalWhere — any payable renewal; the grant comps payment and
-                // BG stays an independent gate on ACTIVE, so no bgFresh gate); a terminal
-                // ACTIVE/ARCHIVED renewal = the coming cycle is already settled
-                // (settledThisCycleWhere: member finished renewal, admin override, or
-                // board-archived this cycle).
+                // (grantableRenewalWhere — kind RENEWAL, so an in-flight INITIAL at
+                // payment never reads as grantable); a terminal ACTIVE/ARCHIVED process
+                // of EITHER kind = the coming cycle is already settled
+                // (settledThisCycleWhere: finished renewal, admin override, board
+                // archive, or a family that joined inside the window).
                 const { processes = [], ...orgMembership } = h.orgMembership ?? {};
                 const renewalGrantable = processes.some((p) => p.status === "PENDING_PAYMENT");
                 const settledForComingYear = processes.some((p) => p.status === "ACTIVE" || p.status === "ARCHIVED");

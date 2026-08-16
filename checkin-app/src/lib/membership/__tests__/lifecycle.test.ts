@@ -104,10 +104,12 @@ describe('grantableRenewalWhere / settledThisCycleWhere', () => {
         expect(grantableRenewalWhere).toEqual({ kind: 'RENEWAL', status: 'PENDING_PAYMENT' });
     });
 
-    test('settledThisCycleWhere adds kind=RENEWAL + ARCHIVED + window (fix #4)', () => {
+    test('settledThisCycleWhere is kind-AGNOSTIC: any terminal process in-window settles the coming year', () => {
+        // A family that joins during the renewal window (INITIAL) buys the coming
+        // year exactly as a renewer does, so no kind clause — valid-until, pricing,
+        // and the sweep's skip-test all read this one shape.
         const windowStart = new Date('2026-06-01T00:00:00.000Z');
         expect(settledThisCycleWhere(windowStart)).toEqual({
-            kind: 'RENEWAL',
             status: { in: ['ACTIVE', 'ARCHIVED'] },
             stageEnteredAt: { gte: windowStart },
         });

@@ -195,16 +195,16 @@ export const grantableRenewalWhere: Where = {
 };
 
 /**
- * "Handled this renewal cycle": a RENEWAL that reached a terminal state
- * (ACTIVE finished, or ARCHIVED by the board) stamped inside the current renewal
- * window. Consumed by BOTH the households route probe and runRenewalSweep's
- * skip-test so they can't disagree. The `kind=RENEWAL` and `ARCHIVED` clauses are
- * the fix: without them a stray INITIAL activation in-window falsely settles the
- * household (flipping derived validUntil a year forward), and a board-archived
- * renewal is missed by the route.
+ * "Settled for the coming membership year": a process that reached a terminal
+ * state (ACTIVE finished, or ARCHIVED by the board) stamped inside the current
+ * renewal window — INITIAL and RENEWAL alike, because a family that joins during
+ * the window buys the coming year exactly as a renewer does
+ * (docs/rules/membership.md). Deliberately kind-agnostic: any settlement whose
+ * money moved in-window covers the coming year, so the households valid-until,
+ * membershipValidThrough, and runRenewalSweep's skip-test all read this ONE
+ * fragment and cannot disagree.
  */
 export const settledThisCycleWhere = (windowStart: Date): Where => ({
-    kind: "RENEWAL",
     status: { in: ["ACTIVE", "ARCHIVED"] },
     stageEnteredAt: { gte: windowStart },
 });
