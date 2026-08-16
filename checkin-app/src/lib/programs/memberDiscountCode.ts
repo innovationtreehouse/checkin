@@ -34,6 +34,10 @@ export function usesProgramMemberCode(discountCodes: string[], programId: number
  * attribute, so it is intersected with this program's real ProgramParticipant rows
  * FIRST: otherwise stuffing any dues-settled person's id into the permalink buys the
  * member price for an unentitled enrollee. Believe the DB about who is enrolled.
+ * The intersect keeps only rows THIS order is paying for — PENDING, or already
+ * stamped with this same shopifyOrderId (a webhook redelivery must recognize its own
+ * rows and stay quiet) — so a co-enrollee activated by some OTHER order cannot lend
+ * their household's dues to this checkout.
  *
  * Asked once, when the money moves, and never re-derived afterwards — an ordinary
  * deactivation must not retro-flag orders that were honest when they were paid. The
@@ -49,15 +53,21 @@ export async function unentitledMemberCodeUse(
     programId: number,
     personIds: number[],
     discountCodes: string[],
+    shopifyOrderId: string | null,
 ): Promise<boolean> {
     if (!usesProgramMemberCode(discountCodes, programId)) return false;
-    // Only ids actually enrolled in THIS program can carry the entitlement. An id that
-    // isn't enrolled can't be activated by the order either, so no entitled row here
-    // (an empty intersection included) means nobody paying was allowed the price.
+    // Only rows THIS order pays for carry entitlement: PENDING (about to be activated
+    // by it) or already stamped with this order id (redelivery). An id enrolled-ACTIVE
+    // via some OTHER order clears neither arm, so it cannot lend its household's dues.
     // LIVE_PERSON: a merge leaves the tombstone's enrollment row behind, and a
     // tombstone must not lend its old household's dues to someone else's checkout.
     const enrolled = await prisma.programParticipant.findMany({
-        where: { programId, personId: { in: personIds }, person: LIVE_PERSON },
+        where: {
+            programId,
+            personId: { in: personIds },
+            person: LIVE_PERSON,
+            OR: [{ status: "PENDING" }, ...(shopifyOrderId ? [{ shopifyOrderId }] : [])],
+        },
         select: { personId: true },
     });
     const program = await prisma.program.findUnique({ where: { id: programId }, select: { startAt: true, endAt: true } });

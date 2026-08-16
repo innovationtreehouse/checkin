@@ -402,7 +402,7 @@ async function activateProgramFromOrder(order: MirrorOrder, programId: number, p
     // if some enrollee's household is dues-settled through the program's coverage date.
     // This IS the money event for a missed webhook — same judgement the webhook makes,
     // asked once. None entitled → tell the board, do NOT activate.
-    if (await unentitledMemberCodeUse(programId, personIds, order.discountCodes)) {
+    if (await unentitledMemberCodeUse(programId, personIds, order.discountCodes, order.legacyId ?? null)) {
         logger.warn(`[reconcile] program member discount code on non-member order ${order.legacyId} (program ${programId})`);
         await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, programId, personId: personIds[0] ?? null });
         return true;

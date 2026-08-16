@@ -75,18 +75,18 @@ describe("usesProgramMemberCode", () => {
 describe("unentitledMemberCodeUse", () => {
     it("flags when the order carries the program's code and no enrollee is dues-settled", async () => {
         settledThrough.mockResolvedValue(false);
-        expect(await unentitledMemberCodeUse(42, [1, 2], ["PRG42-ABCD1234"])).toBe(true);
+        expect(await unentitledMemberCodeUse(42, [1, 2], ["PRG42-ABCD1234"], "ord-1")).toBe(true);
         expect(settledThrough).toHaveBeenCalledTimes(2);
     });
 
     it("does not flag when SOME enrollee's household is dues-settled through the coverage date", async () => {
         settledThrough.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-        expect(await unentitledMemberCodeUse(42, [1, 2], ["PRG42-ABCD1234"])).toBe(false);
+        expect(await unentitledMemberCodeUse(42, [1, 2], ["PRG42-ABCD1234"], "ord-1")).toBe(false);
     });
 
     it("asks entitlement against the program's coverage date (endAt), not today", async () => {
         settledThrough.mockResolvedValue(true);
-        await unentitledMemberCodeUse(42, [1], ["PRG42-ABCD1234"]);
+        await unentitledMemberCodeUse(42, [1], ["PRG42-ABCD1234"], "ord-1");
         expect(settledThrough).toHaveBeenCalledWith(1, new Date("2026-08-01"));
     });
 
@@ -99,7 +99,7 @@ describe("unentitledMemberCodeUse", () => {
         participants.mockResolvedValue([{ personId: 1 }]);
         settledThrough.mockImplementation(async (personId: number) => personId === 99);
 
-        expect(await unentitledMemberCodeUse(42, [1, 99], ["PRG42-ABCD1234"])).toBe(true);
+        expect(await unentitledMemberCodeUse(42, [1, 99], ["PRG42-ABCD1234"], "ord-1")).toBe(true);
         expect(settledThrough).toHaveBeenCalledTimes(1);
         expect(settledThrough).toHaveBeenCalledWith(1, new Date("2026-08-01"));
     });
@@ -107,15 +107,47 @@ describe("unentitledMemberCodeUse", () => {
     it("flags when NO supplied id is enrolled in the program at all (empty intersection)", async () => {
         participants.mockResolvedValue([]);
         settledThrough.mockResolvedValue(true);
-        expect(await unentitledMemberCodeUse(42, [99], ["PRG42-ABCD1234"])).toBe(true);
+        expect(await unentitledMemberCodeUse(42, [99], ["PRG42-ABCD1234"], "ord-1")).toBe(true);
         expect(settledThrough).not.toHaveBeenCalled();
+    });
+
+
+    it("scopes the intersect to rows THIS order pays for — PENDING or stamped with this order id", async () => {
+        // A dues-settled co-enrollee who is already ACTIVE via some OTHER order must
+        // not lend entitlement (thpr's residual: guess an enrolled+settled id, ride
+        // their status-blind row). The DB-side OR narrows to this order's own rows.
+        settledThrough.mockResolvedValue(false);
+        await unentitledMemberCodeUse(42, [1, 7], ["PRG42-ABCD1234"], "ord-1");
+        expect(participants).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    OR: [{ status: "PENDING" }, { shopifyOrderId: "ord-1" }],
+                }),
+            }),
+        );
+    });
+
+    it("a redelivered webhook still recognizes its own already-ACTIVE rows and stays quiet", async () => {
+        // Redelivery: the honest order's rows are ACTIVE but stamped with this same
+        // shopifyOrderId, so the OR's second arm matches them and entitlement holds.
+        participants.mockResolvedValue([{ personId: 1 }]);
+        settledThrough.mockResolvedValue(true);
+        expect(await unentitledMemberCodeUse(42, [1], ["PRG42-ABCD1234"], "ord-1")).toBe(false);
+    });
+
+    it("with no order id the intersect keeps only the PENDING arm", async () => {
+        settledThrough.mockResolvedValue(false);
+        await unentitledMemberCodeUse(42, [1], ["PRG42-ABCD1234"], null);
+        expect(participants).toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ OR: [{ status: "PENDING" }] }) }),
+        );
     });
 
     it("never judges an order that does not carry this program's code — no entitlement query at all", async () => {
         settledThrough.mockResolvedValue(false);
-        expect(await unentitledMemberCodeUse(42, [1], [])).toBe(false);
-        expect(await unentitledMemberCodeUse(42, [1], ["SUMMER26"])).toBe(false);
-        expect(await unentitledMemberCodeUse(42, [1], ["PRG7-ABCD1234"])).toBe(false);
+        expect(await unentitledMemberCodeUse(42, [1], [], "ord-1")).toBe(false);
+        expect(await unentitledMemberCodeUse(42, [1], ["SUMMER26"], "ord-1")).toBe(false);
+        expect(await unentitledMemberCodeUse(42, [1], ["PRG7-ABCD1234"], "ord-1")).toBe(false);
         expect(settledThrough).not.toHaveBeenCalled();
         expect(findUnique).not.toHaveBeenCalled();
         expect(participants).not.toHaveBeenCalled();
@@ -124,7 +156,7 @@ describe("unentitledMemberCodeUse", () => {
     it("a program with no dates asks the status-only question (through = null)", async () => {
         findUnique.mockResolvedValue({ startAt: null, endAt: null });
         settledThrough.mockResolvedValue(false);
-        expect(await unentitledMemberCodeUse(42, [1], ["PRG42-ABCD1234"])).toBe(true);
+        expect(await unentitledMemberCodeUse(42, [1], ["PRG42-ABCD1234"], "ord-1")).toBe(true);
         expect(settledThrough).toHaveBeenCalledWith(1, null);
     });
 });

@@ -179,7 +179,7 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // the membership branch's volunteer-code check, and fails the same way
                 // as NO_ITEM — flag for the board, do NOT activate. Never re-asked later.
                 const codes = (order.discount_codes ?? []).map((d) => String(d.code ?? ""));
-                if (hasProgramItem && await unentitledMemberCodeUse(programId, participantIds, codes)) {
+                if (hasProgramItem && await unentitledMemberCodeUse(programId, participantIds, codes, order.id ? String(order.id) : null)) {
                     logger.warn(`[SHOPIFY WEBHOOK] Program member discount code on a non-member order ${order.id ?? "?"} (program ${programId}) — flagged, NOT activated`);
                     await raisePaymentException("DISCOUNT_UNAUTHORIZED", {
                         shopifyOrderId: order.id ? String(order.id) : null,
