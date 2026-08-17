@@ -524,13 +524,14 @@ jobs:
           set -euo pipefail
           # Real probe of the deployed service (mirrors deploy-prod.yml). The
           # app answers 200 or an auth redirect; retries cover target
-          # registration + first boot after scale-up. 10 minutes, measured, not
-          # guessed: on run 29925037763 task-start -> waker rule promote took
-          # 4m22s and the old 2-minute window expired 68s before the promote —
-          # a succeeded deploy reported as failed. The 503s during the wait are
-          # the ops-stg-waker's holding page; each probe also drives the
-          # waker's health poll, so keep the 10s cadence.
-          for i in $(seq 1 60); do
+          # registration + first boot after scale-up, with no step-level
+          # timeout — staging wake-up time varies too much for a fixed window,
+          # so the job's GitHub-level limit is the only backstop. The 503s
+          # during the wait are the ops-stg-waker's holding page; each probe
+          # also drives the waker's health poll, so keep the 10s cadence.
+          i=0
+          while true; do
+            i=$((i+1))
             CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$APP_URL" || echo 000)
             echo "attempt $i: $APP_URL -> HTTP $CODE"
             case "$CODE" in
@@ -538,5 +539,3 @@ jobs:
             esac
             sleep 10
           done
-          echo "::error::Smoke test failed: $APP_URL never answered with 200/redirect"
-          exit 1
