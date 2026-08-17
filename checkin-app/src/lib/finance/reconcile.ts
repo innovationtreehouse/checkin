@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { notifyBoardPaymentException } from "@/lib/membership/boardAlerts";
+import { unentitledMemberCodeUse } from "@/lib/programs/memberDiscountCode";
 import * as mirror from "@/lib/shopifyRead/client";
 import type { MirrorOrder } from "@/lib/shopifyRead/client";
 
@@ -39,6 +40,15 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * than activating. One policy check rides on top of the variant gate: a
  * non-volunteer family redeeming the board's volunteer discount code raises
  * DISCOUNT_UNAUTHORIZED instead of activating (see usesVolunteerCodeUnentitled).
+ *
+ * The program side carries the parallel check, judged AT THE MONEY EVENT: a minted
+ * `PRG{programId}-XXXXXXXX` member-discount code redeemed by a household that isn't
+ * dues-settled through the program's coverage date raises the same
+ * DISCOUNT_UNAUTHORIZED instead of activating. The orders/paid webhook asks it for a
+ * live checkout; this forward pass asks it when recovering a missed webhook. The
+ * reversal pass deliberately does NOT re-ask it: entitlement is a fact about the
+ * moment money moved, so a household deactivated later never retro-flags orders that
+ * were honest when they were paid (see unentitledMemberCodeUse).
  */
 
 export type PaymentExceptionKind =
@@ -387,6 +397,17 @@ async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
 
 /** Shared tail for both program-matching paths: activate through the one choke point. */
 async function activateProgramFromOrder(order: MirrorOrder, programId: number, personIds: number[]): Promise<boolean> {
+    // Coupon entitlement, parity with the membership forward branch above: the order
+    // may well contain the program's product, but the member code on it is only honest
+    // if some enrollee's household is dues-settled through the program's coverage date.
+    // This IS the money event for a missed webhook — same judgement the webhook makes,
+    // asked once. None entitled → tell the board, do NOT activate.
+    if (await unentitledMemberCodeUse(programId, personIds, order.discountCodes, order.legacyId ?? null)) {
+        logger.warn(`[reconcile] program member discount code on non-member order ${order.legacyId} (program ${programId})`);
+        await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, programId, personId: personIds[0] ?? null });
+        return true;
+    }
+
     const { activateProgramEnrollment } = await import("@/lib/programs/activateEnrollment");
     const res = await activateProgramEnrollment({
         programId,
@@ -497,6 +518,10 @@ async function reconcileReversals(): Promise<number> {
     for (const e of enrolls) {
         const o = byLegacy.get(e.shopifyOrderId!);
         if (!o) continue;
+        // Money-out only. Member-code entitlement is NOT re-asked here: it was judged
+        // when the money moved (webhook / forward pass), and this loop has no bound on
+        // time — re-deriving it from live household state would raise a fresh flag on
+        // every past member-priced order the morning after an ordinary deactivation.
         const kind = classifyReversal(o, disputed.has(o.orderGid));
         if (kind) {
             await raisePaymentException(kind, { shopifyOrderId: e.shopifyOrderId, programId: e.programId, personId: e.personId });

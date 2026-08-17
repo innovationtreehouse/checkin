@@ -8,6 +8,7 @@ import { escapeHtml } from "@/lib/email-templates/base";
 import { logIntegrationError } from "@/lib/logger";
 import { config } from "@/lib/config";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { programMemberCodePrefix } from "@/lib/programs/memberDiscountCode";
 
 let cachedToken: string | null = null;
 let tokenExpiresAt: number = 0;
@@ -575,7 +576,7 @@ export async function mintMemberDiscountCode(
 ): Promise<string | null> {
     if (amountOffCents <= 0) return null;
 
-    const code = `PRG${programId}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const code = `${programMemberCodePrefix(programId)}${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
     // See createShopifySingleVariantProgram for why this branch exists (CHECKIN_ENV=local mock).
     if (config.shopifyMockActive()) {
