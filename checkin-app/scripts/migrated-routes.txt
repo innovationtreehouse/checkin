@@ -4,10 +4,14 @@
 # here, and once every route is listed the file can be deleted.
 #
 # Comment lines and blank lines are ignored.
+GET /api/events
 GET /api/facility/badges
 GET /api/facility/visits
 GET /api/profile
+GET /api/profile/visits
 GET /api/programs/[id]
 GET /api/safety/board-contacts
 PATCH /api/attendance/manual/[id]
 DELETE /api/attendance/manual/[id]
+GET /api/system-status/errors
+GET /api/system-status/links
