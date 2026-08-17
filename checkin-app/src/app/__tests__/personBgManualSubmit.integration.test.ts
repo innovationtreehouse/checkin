@@ -25,7 +25,7 @@ import { sendEmail } from '@/lib/email';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 // The reviewer ping is exercised (notifyReviewers) but must not hit Resend.
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 const sendEmailMock = sendEmail as jest.Mock;
 
 const TAG = 'person-bg-submit-test';

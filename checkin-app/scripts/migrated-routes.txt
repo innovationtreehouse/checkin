@@ -11,3 +11,5 @@ GET /api/safety/board-contacts
 GET /api/settings/email
 GET /api/settings/membership
 GET /api/settings/membership/volunteer-designations
+PATCH /api/attendance/manual/[id]
+DELETE /api/attendance/manual/[id]

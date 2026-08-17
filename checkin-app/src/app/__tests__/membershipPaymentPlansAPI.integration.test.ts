@@ -17,6 +17,7 @@ import { GET as PlansGet, POST as PlansPost } from '@/app/api/finance-ops/member
 import { POST as DenyPost } from '@/app/api/finance-ops/membership-payment-plans/refuse/route';
 import { POST as RequestPost } from '@/app/api/membership/request-payment-plan/route';
 import prisma from '@/lib/prisma';
+import { DEFAULT_ACK_SUBJECT, DEFAULT_ACK_MEMBERSHIP_BODY, renderAckBody } from '@/lib/scholarshipEmails';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 jest.mock('@/lib/email');
@@ -184,7 +185,7 @@ describe('Membership payment-plan routes', () => {
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
             expect(proc?.status).toBe('ACTIVE'); // bgClearedAt was set, so certify -> ACTIVE
             expect(proc?.isPaymentPlanRequested).toBe(false);
-            expect(proc?.certifiedById).toBe(boardId);
+            expect(proc?.manualPaymentById).toBe(boardId);
             expect(proc?.certificationNote).toBe('Board approved scholarship');
 
             const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
@@ -196,7 +197,7 @@ describe('Membership payment-plan routes', () => {
             });
             expect(audits.length).toBeGreaterThan(0);
             // Written inside activate() (via certifyPaymentPlan) — carries the reason.
-            const certifyAudit = audits.find(a => (a.newData as { via?: string })?.via === 'certified');
+            const certifyAudit = audits.find(a => (a.newData as { via?: string })?.via === 'manual');
             expect(certifyAudit).toBeTruthy();
             expect((certifyAudit!.newData as { certificationNote?: string }).certificationNote).toBe('Board approved scholarship');
             // Supplementary marker written by the route itself.
@@ -235,7 +236,7 @@ describe('Membership payment-plan routes', () => {
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: leadProcessId } });
             expect(proc?.isPaymentPlanRequested).toBe(false);
             expect(proc?.status).toBe('PENDING_PAYMENT'); // stays awaiting payment — no seat, no grace, pay-to-activate
-            expect(proc?.certifiedById).toBeNull(); // denial never certifies/activates
+            expect(proc?.manualPaymentById).toBeNull(); // denial never records a payment/activates
 
             const membership = await prisma.orgMembership.findUnique({ where: { id: leadMembershipId } });
             expect(membership?.status).toBe('NONE'); // untouched by denial
@@ -274,7 +275,7 @@ describe('Membership payment-plan routes', () => {
             await prisma.person.delete({ where: { id: boardKin.id } });
         });
 
-        it('a sysadmin may deny their own household (COI bypass)', async () => {
+        it('a board+sysadmin may NOT deny their own household either', async () => {
             const own = await makeProc('DenySysadmin', { requested: true });
             const sysKin = await prisma.person.create({
                 data: { name: 'Sys Kin', email: `sys-kin-${own.processId}-${TAG}@example.com`, isBoardMember: true, householdId: own.householdId },
@@ -282,9 +283,9 @@ describe('Membership payment-plan routes', () => {
             mockSession.mockResolvedValue({ user: { id: sysKin.id, isBoardMember: true, isSysadmin: true } });
 
             const res = await DenyPost(denyReq({ processId: own.processId }));
-            expect(res.status).toBe(200);
+            expect(res.status).toBe(403);
             const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: own.processId } });
-            expect(proc?.isPaymentPlanRequested).toBe(false);
+            expect(proc?.isPaymentPlanRequested).toBe(true); // flag NOT flipped by the refused deny
 
             await prisma.person.delete({ where: { id: sysKin.id } }); // keep it out of the board-member fallback set
         });
@@ -442,6 +443,65 @@ describe('Membership payment-plan routes', () => {
 
             const sent = __getSentEmails().filter((e) => !e.subject.startsWith('Welcome to the Treehouse'));
             expect(sent).toHaveLength(0);
+        });
+    });
+
+    describe('scholarship ACK settings (subject + membership body)', () => {
+        let prevAck: { scholarshipAckSubject: string | null; scholarshipAckMembershipBody: string | null } | null = null;
+        beforeAll(async () => {
+            const s = await prisma.boardSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+            prevAck = { scholarshipAckSubject: s.scholarshipAckSubject, scholarshipAckMembershipBody: s.scholarshipAckMembershipBody };
+        });
+        afterAll(async () => {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: prevAck! });
+        });
+
+        it('a configured subject + body are used for the membership ACK', async () => {
+            await prisma.boardSettings.update({
+                where: { id: 1 },
+                data: { scholarshipAckSubject: 'Custom ACK Subject', scholarshipAckMembershipBody: 'Custom ACK body text.' },
+            });
+            const fresh = await makeProc('AckConfigured', { requested: false, withLead: true });
+            mockSession.mockResolvedValue({ user: { id: fresh.personId } });
+
+            const res = await RequestPost(requestReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const ack = __getSentEmails().find((e) => e.subject === 'Custom ACK Subject');
+            expect(ack).toBeTruthy();
+            expect(ack!.html).toBe('<p>Custom ACK body text.</p>');
+        });
+
+        it('unset ACK settings fall back verbatim to the default subject + body', async () => {
+            await prisma.boardSettings.update({
+                where: { id: 1 },
+                data: { scholarshipAckSubject: null, scholarshipAckMembershipBody: null },
+            });
+            const fresh = await makeProc('AckDefault', { requested: false, withLead: true });
+            mockSession.mockResolvedValue({ user: { id: fresh.personId } });
+
+            const res = await RequestPost(requestReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const ack = __getSentEmails().find((e) => e.subject === DEFAULT_ACK_SUBJECT);
+            expect(ack).toBeTruthy();
+            expect(ack!.html).toBe(renderAckBody(DEFAULT_ACK_MEMBERSHIP_BODY));
+        });
+
+        it('blank/whitespace ACK settings fall back the same as unset', async () => {
+            await prisma.boardSettings.update({
+                where: { id: 1 },
+                data: { scholarshipAckSubject: '   ', scholarshipAckMembershipBody: '\n  ' },
+            });
+            const fresh = await makeProc('AckBlank', { requested: false, withLead: true });
+            mockSession.mockResolvedValue({ user: { id: fresh.personId } });
+
+            const res = await RequestPost(requestReq({ processId: fresh.processId }));
+            expect(res.status).toBe(200);
+
+            const ack = __getSentEmails().find((e) => e.subject === DEFAULT_ACK_SUBJECT);
+            expect(ack).toBeTruthy();
+            expect(ack!.html).toBe(renderAckBody(DEFAULT_ACK_MEMBERSHIP_BODY));
         });
     });
 });

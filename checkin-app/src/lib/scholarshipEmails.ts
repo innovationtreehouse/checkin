@@ -4,6 +4,8 @@ import type { HouseholdRecipient as ScholarshipRecipient } from "@/lib/emailReci
 import { parseEmailHeaderList } from "@/lib/emailHeader";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
+import { DEFAULT_ACK_SUBJECT, DEFAULT_ACK_MEMBERSHIP_BODY, DEFAULT_ACK_PROGRAM_BODY, renderAckBody } from "@/lib/scholarshipAckCopy";
+export { DEFAULT_ACK_SUBJECT, DEFAULT_ACK_MEMBERSHIP_BODY, DEFAULT_ACK_PROGRAM_BODY, renderAckBody };
 
 /**
  * Scholarship / payment-plan notification helpers. Small, dependency-light
@@ -18,6 +20,36 @@ import prisma from "@/lib/prisma";
  * Scholarship Review Team, not by an automated status email — see
  * docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md §5.
  */
+
+type AckSettings = {
+    scholarshipAckSubject?: string | null;
+    scholarshipAckMembershipBody?: string | null;
+    scholarshipAckProgramBody?: string | null;
+} | null | undefined;
+
+/**
+ * Resolve the ACK subject + body for one send variant, falling back to the
+ * default copy when the configured value is unset or blank/whitespace.
+ * `variant: "membership"` renders no tokens; `"program"` substitutes
+ * `{{programName}}`. Callers needing the hard-coded Shopify-failure copy
+ * build that body themselves — it deliberately bypasses this resolver.
+ */
+export function resolveAckCopy(
+    settings: AckSettings,
+    variant: "membership" | "program",
+    vars: { programName?: string } = {},
+): { subject: string; body: string } {
+    const subjectRaw = settings?.scholarshipAckSubject?.trim();
+    // Mirrors renderAckBody's {{programName}} fallback (?? ""); subject is plain text, no HTML escaping.
+    const subject = (subjectRaw || DEFAULT_ACK_SUBJECT).replaceAll("{{programName}}", vars.programName ?? "");
+
+    const bodyTemplateRaw = variant === "membership" ? settings?.scholarshipAckMembershipBody : settings?.scholarshipAckProgramBody;
+    const bodyTemplate = bodyTemplateRaw?.trim()
+        ? bodyTemplateRaw
+        : (variant === "membership" ? DEFAULT_ACK_MEMBERSHIP_BODY : DEFAULT_ACK_PROGRAM_BODY);
+
+    return { subject, body: renderAckBody(bodyTemplate, vars) };
+}
 
 export type { HouseholdRecipient as ScholarshipRecipient } from "@/lib/emailRecipients";
 export { resolveHouseholdRecipients as resolveScholarshipRecipients } from "@/lib/emailRecipients";

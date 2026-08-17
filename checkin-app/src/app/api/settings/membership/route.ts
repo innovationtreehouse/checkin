@@ -7,7 +7,7 @@ import { handler } from "@/security/handler";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULTS = { id: 1, normalDuesCents: 0, volunteerDuesCents: 0 };
+const DEFAULTS = { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0 };
 
 /** GET /api/settings/membership — board settings singleton (created on first read).
  *  Registry-governed: admission anyRole sysadmin/board; envelope 'settings'.
@@ -19,19 +19,19 @@ export const GET = handler('GET /api/settings/membership', async () => {
 
 /**
  * PUT /api/settings/membership — update board settings.
- * Body may include: normalDuesCents, volunteerDuesCents, orgMembershipYearBoundary (ISO|null),
+ * Body may include: standardMembershipFeeCents, volunteerMembershipFeeCents, orgMembershipYearBoundary (ISO|null),
  * orgMembershipVariantId (string|null),
  * orgMembershipProductUrl (string|null), volunteerDiscountCode (string|null),
  * scholarshipDenialGraceDays (positive int|null — null disables the grace-period expiry cron).
- * Dues must be finite and >= 0; an invalid value rejects the whole update (400) so the
+ * Membership fees must be finite and >= 0; an invalid value rejects the whole update (400) so the
  * previous value survives rather than silently collapsing to zero. (The Averity consent
  * link is an env var, not a board setting. Email sender identity lives in /api/settings/email.)
  */
 export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
     let body: {
-        normalDuesCents?: number;
-        volunteerDuesCents?: number;
+        standardMembershipFeeCents?: number;
+        volunteerMembershipFeeCents?: number;
         orgMembershipYearBoundary?: string | null;
         orgMembershipVariantId?: string | null;
         orgMembershipProductUrl?: string | null;
@@ -47,14 +47,14 @@ export const PUT = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     }
 
     const data: Record<string, unknown> = {};
-    const invalidDues = (v: number) => !Number.isFinite(v) || v < 0;
-    if (body.normalDuesCents !== undefined) {
-        if (invalidDues(body.normalDuesCents)) return apiError("normalDuesCents must be a number >= 0", 400);
-        data.normalDuesCents = Math.round(body.normalDuesCents);
+    const invalidFee = (v: number) => !Number.isFinite(v) || v < 0;
+    if (body.standardMembershipFeeCents !== undefined) {
+        if (invalidFee(body.standardMembershipFeeCents)) return apiError("standardMembershipFeeCents must be a number >= 0", 400);
+        data.standardMembershipFeeCents = Math.round(body.standardMembershipFeeCents);
     }
-    if (body.volunteerDuesCents !== undefined) {
-        if (invalidDues(body.volunteerDuesCents)) return apiError("volunteerDuesCents must be a number >= 0", 400);
-        data.volunteerDuesCents = Math.round(body.volunteerDuesCents);
+    if (body.volunteerMembershipFeeCents !== undefined) {
+        if (invalidFee(body.volunteerMembershipFeeCents)) return apiError("volunteerMembershipFeeCents must be a number >= 0", 400);
+        data.volunteerMembershipFeeCents = Math.round(body.volunteerMembershipFeeCents);
     }
     if (body.orgMembershipYearBoundary !== undefined) {
         data.orgMembershipYearBoundary = body.orgMembershipYearBoundary ? new Date(body.orgMembershipYearBoundary) : null;

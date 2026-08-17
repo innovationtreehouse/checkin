@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, runPaced } from "@/lib/email";
 import { logger } from "@/lib/logger";
 import { LIVE_PERSON } from "@/lib/person/filters";
 
@@ -52,7 +52,7 @@ export async function resolveHouseholdRecipients(
  * nothing left to catch here.
  */
 function fanOutEmails(emails: string[], subject: string, html: string): Promise<boolean[]> {
-    return Promise.all(emails.map((email) => sendEmail(email, subject, html)));
+    return runPaced(emails.map((email) => () => sendEmail(email, subject, html)));
 }
 
 /** Email every lead of a household. Resolve + fan-out; all errors logged and swallowed. */

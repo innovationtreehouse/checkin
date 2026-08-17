@@ -48,11 +48,11 @@ export const POST = withAuth(
                 return apiError("Membership application not found", 404);
             }
 
-            // Conflict of interest: mirrors certifyPaymentPlan (approve) — a board
-            // member may not deny their OWN household's request either. Sysadmin bypasses.
+            // Conflict of interest: mirrors certifyPaymentPlan (approve) — no actor may
+            // deny their OWN household's request either. No role bypasses this.
             if (auth.type === 'session') {
-                if (await hasHouseholdConflict(prisma, auth.user.id, process.orgMembership?.householdId, { isSysadmin: auth.user.isSysadmin === true })) {
-                    return apiError("You cannot deny your own household's payment plan — a sysadmin must.", 403);
+                if (await hasHouseholdConflict(prisma, auth.user.id, process.orgMembership?.householdId)) {
+                    return apiError("You cannot deny your own household's payment plan — someone outside your household must.", 403);
                 }
             }
 

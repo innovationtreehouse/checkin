@@ -10,6 +10,7 @@ import { GET, POST } from '@/app/api/programs/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { classifications } from '@/security/generated/classifications';
+import { ORG_DOMAIN } from '@/lib/config';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -135,6 +136,45 @@ describe('Programs API Integration Tests', () => {
              expect(orgMemberOnly).toBeDefined(); // Revealed because admin
         });
 
+        // #1397: dues paid, background check still with the board — the catalog
+        // shows them members-only programs, same as an ACTIVE household.
+        it('reveals member-only programs to a household that has paid but is awaiting background clearance', async () => {
+             const paidPending = await prisma.person.create({
+                 data: {
+                     email: 'paid-pending-programs-api-test@example.com',
+                     name: 'Paid Pending',
+                     household: {
+                         create: {
+                             name: 'Test HH',
+                             orgMembership: {
+                                 create: {
+                                     status: 'NONE',
+                                     processes: { create: { kind: 'INITIAL', status: 'PENDING_BG_CLEARANCE', paidAt: new Date() } },
+                                 },
+                             },
+                         },
+                     },
+                 },
+                 select: { id: true, householdId: true },
+             });
+
+             try {
+                 (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPending.id } });
+
+                 const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+                 const res = await GET(req as unknown as import("next/server").NextRequest);
+                 expect(res.status).toBe(200);
+
+                 const programs = await res.json();
+                 const orgMemberOnly = programs.find((p: { name?: string }) => p.name === 'Member Only API Test Program');
+                 expect(orgMemberOnly).toBeDefined();
+             } finally {
+                 await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: paidPending.householdId } } });
+                 await prisma.orgMembership.deleteMany({ where: { householdId: paidPending.householdId } });
+                 await prisma.person.delete({ where: { id: paidPending.id } });
+             }
+        });
+
         // The catalog is deliberately anonymous-readable, so the projection — not a
         // route gate — is what keeps `personal`-tier data off the wire. Both the
         // cached anonymous path and the live session path must ship public columns only.
@@ -157,14 +197,85 @@ describe('Programs API Integration Tests', () => {
              const programs = await res.json();
              const publicActive = programs.find((p: { name?: string }) => p.name === 'Public API Test Program');
 
+             // The legacy two-variant columns are still declared (and still
+             // classified 'public') but no route selects them any more — the
+             // schema fields and this exclusion both go away with the DROP COLUMN
+             // migration (docs/designs/975-LEGACY_VARIANT_CONTRACT.md, Release 2).
+             const DROPPED_SOON = ['shopifyOrgMemberVariantId', 'shopifyNonOrgMemberVariantId'];
              const publicColumns = Object.entries(classifications.Program)
                  .filter(([, tier]) => tier === 'public')
-                 .map(([field]) => field);
+                 .map(([field]) => field)
+                 .filter((field) => !DROPPED_SOON.includes(field));
 
              expect(publicActive).toBeDefined();
              expect(publicColumns).not.toHaveLength(0); // guard: a broken import would vacuously pass
              expect(Object.keys(publicActive).sort()).toEqual([...publicColumns, '_count'].sort());
              expect(publicActive._count).toEqual({ participants: 0, volunteers: 0, events: 0 });
+        });
+    });
+
+    // ── ops-stg ACCESS GATE regression (Finding 1, 2026-07-20) ──────────────────
+    // This route is a bare `export async function GET` — no withAuth, no
+    // handler()/registry entry — that calls getOptionalSessionUser directly and
+    // treats "no session" as the public-catalog happy path (correct in prod/dev).
+    // getOptionalSessionUser collapses a staging-gate-rejected caller to the SAME
+    // `undefined` shape as a genuinely anonymous visitor, so without an explicit
+    // check an anonymous curl would read the full prod-copied catalog (names,
+    // dates, prices, Shopify ids, live enrollment counts) straight through.
+    describe('GET /api/programs — ops-stg access gate', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES an anonymous caller — the regression case for Finding 1', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(401);
+            const text = await res.text();
+            expect(text).not.toContain('Public API Test Program');
+        });
+
+        it('ALLOWS an authenticated admin who is ALSO a verified org member', async () => {
+            // isSysadmin alone does NOT bypass the staging gate — only a verified
+            // innovationtreehouse.org member or canAccessStaging does (see
+            // isStagingAccessAllowed). Both claims must be on the mocked session.
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: adminId, isSysadmin: true, hd: ORG_DOMAIN, emailVerified: true },
+            });
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('DENIES an authenticated admin who is NOT a verified org member and has no canAccessStaging flag', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('is inert outside staging: the same anonymous request succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest);
+
+            expect(res.status).toBe(200);
         });
     });
 

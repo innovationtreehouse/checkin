@@ -95,6 +95,7 @@ function dbParticipant(overrides: Record<string, unknown> = {}) {
         householdId: 99,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
         household: { orgMembership: { status: 'ACTIVE' } },
+        canAccessStaging: false,
         ...overrides,
     } as Record<string, unknown>;
     // Claims now derive from `roles` (PersonRole rows), not the boolean columns —
@@ -125,6 +126,19 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
         expect(result).toEqual({});
         expect((result as { id?: unknown }).id).toBeUndefined();
         expect((result as { isSysadmin?: unknown }).isSysadmin).toBeUndefined();
+    });
+
+    it('merge tombstone (LIVE_PERSON filter misses) ⇒ returns an empty token', async () => {
+        // A merged-away person keeps its row and its roles; the filter in the where clause
+        // is what makes the lookup miss, so assert the clause itself as well as the outcome.
+        mockFindUnique.mockResolvedValue(null);
+
+        const result = await callRefresh({ id: 7, isBoardMember: true });
+
+        expect(mockFindUnique).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { id: 7, mergedIntoId: null } }),
+        );
+        expect(result).toEqual({});
     });
 
     it('DENIED membership ⇒ denied=true and every role flag forced false', async () => {
@@ -161,7 +175,7 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
         })) as Record<string, unknown>;
 
         expect(mockFindUnique).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { id: 7 } }),
+            expect.objectContaining({ where: { id: 7, mergedIntoId: null } }),
         );
         expect(result.denied).toBe(false);
         expect(result.isSysadmin).toBe(true);
@@ -169,6 +183,14 @@ describe('jwt() callback — revocation enforcement on refresh', () => {
         expect(result.isBoardMember).toBe(true);
         expect(result.isBackgroundCheckReviewer).toBe(true);
         expect(result.toolStatuses).toEqual([{ toolId: 1, level: 'CERTIFIED' }]);
+    });
+
+    it('re-stamps canAccessStaging from the DB column on refresh (ops-stg gate)', async () => {
+        mockFindUnique.mockResolvedValue(dbParticipant({ canAccessStaging: true }));
+
+        const result = (await callRefresh({ id: 7, canAccessStaging: false })) as Record<string, unknown>;
+
+        expect(result.canAccessStaging).toBe(true);
     });
 
     it('no token.id and no user ⇒ no DB lookup, token passed through untouched', async () => {
@@ -192,7 +214,7 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
 
         // Resolved by email on sign-in (not by id).
         expect(mockFindUnique).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { email: 'p@example.com' } }),
+            expect.objectContaining({ where: { email: 'p@example.com', mergedIntoId: null } }),
         );
         expect(result.id).toBe(7);
         expect(result.isSysadmin).toBe(true);
@@ -214,7 +236,7 @@ describe('jwt() callback — initial sign-in branch (user present)', () => {
         // Stored emails are lowercased on write, so the sign-in lookup key must be too —
         // otherwise Google's casing misses the row and NextAuth mints a duplicate.
         expect(mockFindUnique).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { email: 'john.doe@example.com' } }),
+            expect.objectContaining({ where: { email: 'john.doe@example.com', mergedIntoId: null } }),
         );
     });
 
@@ -322,6 +344,7 @@ describe('session() callback', () => {
         expect(user.impersonatedBy).toBeNull();
         expect(user.hd).toBeNull();
         expect(user.emailVerified).toBe(false);
+        expect(user.canAccessStaging).toBe(false);
     });
 
     it('prefers explicit token values over the `??` defaults', async () => {
@@ -336,6 +359,7 @@ describe('session() callback', () => {
                 impersonatedBy: 'real@x.org',
                 hd: ORG_DOMAIN,
                 emailVerified: true,
+                canAccessStaging: true,
             },
         } as unknown as Parameters<SessionCallback>[0]);
 
@@ -345,6 +369,7 @@ describe('session() callback', () => {
         expect(user.programsLed).toEqual([1, 2]);
         expect(user.impersonatedBy).toBe('real@x.org');
         expect(user.hd).toBe(ORG_DOMAIN);
+        expect(user.canAccessStaging).toBe(true);
     });
 
     it('is a no-op when session.user is absent', async () => {

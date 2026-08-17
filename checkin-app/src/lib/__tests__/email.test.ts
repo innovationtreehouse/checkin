@@ -1,6 +1,7 @@
 let mockDevToolsActive = false;
 const mockCapture = jest.fn();
-let mockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
+const mockLogIntegrationError = jest.fn();
+let mockIdentity: { from: string | null; replyTo?: string[] } = { from: 'test@test.com' };
 
 jest.mock('resend');
 jest.mock('../config.ts', () => ({
@@ -16,8 +17,12 @@ jest.mock('../dev/sentMail', () => ({
 jest.mock('../emailIdentity', () => ({
     getEmailSenderIdentity: () => Promise.resolve(mockIdentity),
 }));
+jest.mock('../logger', () => ({
+    logIntegrationError: (...args: unknown[]) => mockLogIntegrationError(...args),
+}));
 
 import { sendEmail } from '../email';
+import { runPaced } from '../email';
 
 // process.env.NODE_ENV is typed read-only; tests need to vary it at runtime
 const setNodeEnv = (value: string | undefined) => {
@@ -34,6 +39,7 @@ describe('sendEmail no-key logging + capture', () => {
         originalEnv = process.env.NODE_ENV;
         mockDevToolsActive = false;
         mockCapture.mockReset();
+        mockLogIntegrationError.mockReset();
         mockIdentity = { from: 'test@test.com' };
     });
 
@@ -98,6 +104,20 @@ describe('sendEmail no-key logging + capture', () => {
         expect(result).toBe(false);
         expect(mockCapture).not.toHaveBeenCalled();
     });
+
+    it('still captures on a dev instance when no From is configured either', async () => {
+        // The no-key path runs first, so a dev box with neither an API key nor a
+        // sender keeps working exactly as before.
+        mockDevToolsActive = true;
+        mockIdentity = { from: null };
+        mockCapture.mockResolvedValue(true);
+
+        const result = await sendEmail('to@test.com', 'Subj', '<p>hi</p>');
+
+        expect(result).toBe(true);
+        expect(mockCapture).toHaveBeenCalledWith('(no From configured)', 'to@test.com', 'Subj', '<p>hi</p>');
+        expect(mockLogIntegrationError).not.toHaveBeenCalled();
+    });
 });
 
 // The describe above mocks resendApiKey to null, so `resend` is null and only the
@@ -106,7 +126,8 @@ describe('sendEmail no-key logging + capture', () => {
 // can't reach: Resend returning `{ error }`, and Resend throwing. Both must → false.
 describe('sendEmail send-failure contract (Resend configured)', () => {
     const sendMock = jest.fn();
-    let doMockIdentity: { from: string; replyTo?: string[] } = { from: 'test@test.com' };
+    let doMockIdentity: { from: string | null; replyTo?: string[] } = { from: 'test@test.com' };
+    let doMockDevToolsActive = false;
     const logIntegrationErrorMock = jest.fn();
     let errorSpy: jest.SpyInstance;
     let logSpy: jest.SpyInstance;
@@ -115,10 +136,16 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         jest.resetModules();
         sendMock.mockReset();
         doMockIdentity = { from: 'test@test.com' };
+        doMockDevToolsActive = false;
         logIntegrationErrorMock.mockReset();
         // Re-mock the module's deps for the fresh module instance loaded below.
         jest.doMock('../config.ts', () => ({
-            config: { resendApiKey: () => 'test-key', emailFrom: () => 'test@test.com', isDevInstance: () => false },
+            config: {
+                resendApiKey: () => 'test-key',
+                emailFrom: () => 'test@test.com',
+                isDevInstance: () => false,
+                devToolsActive: () => doMockDevToolsActive,
+            },
         }));
         jest.doMock('../dev/sentMail', () => ({ captureSentEmail: jest.fn() }));
         jest.doMock('../emailIdentity', () => ({ getEmailSenderIdentity: () => Promise.resolve(doMockIdentity) }));
@@ -201,6 +228,46 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         expect(sendMock.mock.calls[0][0]).not.toHaveProperty('replyTo');
     });
 
+    it('refuses to call Resend and returns false when neither source configures a From', async () => {
+        doMockIdentity = { from: null };
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+
+        const result = await send('to@org.test', 'Subject', '<p>hi</p>');
+
+        expect(result).toBe(false);
+        expect(sendMock).not.toHaveBeenCalled();
+    });
+
+    it('logs the missing sender as an integration error (to+subject, no body)', async () => {
+        doMockIdentity = { from: null };
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+        const html = 'Sensitive body <a href="reset">Link</a>';
+
+        await send('to@org.test', 'Subject', html);
+
+        expect(logIntegrationErrorMock).toHaveBeenCalledTimes(1);
+        const [source, error, context] = logIntegrationErrorMock.mock.calls[0];
+        expect(source).toBe('email');
+        expect(String(error)).toContain('No From address configured');
+        expect(context).toEqual({ to: 'to@org.test', subject: 'Subject' });
+        expect(JSON.stringify(context)).not.toContain(html);
+    });
+
+    it('sends normally once a From is configured (the board override reaches Resend)', async () => {
+        doMockIdentity = { from: 'Org <no-reply@org.test>' };
+        sendMock.mockResolvedValue({ data: { id: '1' }, error: null });
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { sendEmail: send } = require('../email');
+
+        const result = await send('to@org.test', 'Subject', '<p>hi</p>');
+
+        expect(result).toBe(true);
+        expect(sendMock).toHaveBeenCalledWith(expect.objectContaining({ from: 'Org <no-reply@org.test>' }));
+        expect(logIntegrationErrorMock).not.toHaveBeenCalled();
+    });
+
     it('persists an IntegrationErrorLog (to+subject, no body) when Resend responds with an { error }', async () => {
         sendMock.mockResolvedValue({ data: null, error: { name: 'validation_error', message: 'bad recipient' } });
         // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -231,5 +298,46 @@ describe('sendEmail send-failure contract (Resend configured)', () => {
         expect((error as Error).message).toBe('network down');
         expect(context).toEqual({ to: 'bounced@test.com', subject: 'Subject' });
         expect(JSON.stringify(context)).not.toContain(html);
+    });
+});
+
+describe('runPaced pacing', () => {
+    beforeEach(() => {
+        jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+        jest.useRealTimers();
+    });
+
+    it('runs 12 thunks in chunks of 5/5/2 with 2 gaps, preserving order', async () => {
+        const started: number[] = [];
+        const tasks = Array.from({ length: 12 }, (_, i) => async () => {
+            started.push(i);
+            return i;
+        });
+        const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+        const resultsPromise = runPaced(tasks);
+
+        // Before advancing any timers, only the first chunk (5) has run.
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(started).toEqual([0, 1, 2, 3, 4]);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
+        await jest.advanceTimersByTimeAsync(1000);
+        expect(started).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+        const results = await resultsPromise;
+        expect(results).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+        // Exactly 2 gaps (between chunk 1→2 and chunk 2→3); no gap after the last chunk.
+        expect(setTimeoutSpy).toHaveBeenCalledTimes(2);
+        expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 1000);
+
+        setTimeoutSpy.mockRestore();
     });
 });

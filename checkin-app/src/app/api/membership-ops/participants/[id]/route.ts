@@ -49,10 +49,21 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             return apiError("No fields to update provided", 400);
         }
 
-        const prior = await prisma.person.findUnique({
+        // dateOfBirth is read for the guard below but deliberately kept out of the
+        // audit payload — this route neither ships nor writes it.
+        const { dateOfBirth: priorDob, ...prior } = (await prisma.person.findUnique({
             where: { id },
-            select: { name: true, email: true, phone: true, isDeclaredAdult: true, lastBackgroundCheck: true },
-        });
+            select: { name: true, email: true, phone: true, dateOfBirth: true, isDeclaredAdult: true, lastBackgroundCheck: true },
+        })) ?? {};
+
+        // A date of birth on file supersedes the over-25 declaration (normalizeAdultDob):
+        // a person has one or the other, never both. Coerced rather than refused so a row
+        // that holds both — bulk import writes a DOB without touching the flag — is
+        // repaired on its next edit instead of being unsaveable, since the edit form
+        // resubmits the whole record.
+        if (updateData.isDeclaredAdult === true && priorDob) {
+            updateData.isDeclaredAdult = false;
+        }
 
         const updatedParticipant = await prisma.person.update({
             where: { id },
@@ -66,9 +77,9 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             data: {
                 actorId: auth.user.id,
                 action: "EDIT",
-                tableName: "Participant",
+                tableName: "Person",
                 affectedEntityId: id,
-                oldData: prior ?? undefined,
+                oldData: prior,
                 newData: updateData,
             },
         });

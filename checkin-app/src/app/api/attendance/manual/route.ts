@@ -7,26 +7,36 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { withinMaxDuration } from "@/lib/visitTimes";
+import { LIVE_VISIT } from "@/lib/visit/filters";
+import { visitSubject } from "@/lib/visit/scope";
 
 // Self-service manual visit entry. INTENTIONAL by design: a member records a
-// visit for THEMSELVES only (participantId is forced to auth.user.id, never taken
-// from the body) to backfill a forgotten badge-in — left the badge at home, forgot
-// to scan, etc. Every entry is audit-logged (see below). A member CAN backdate a
-// closed visit arbitrarily far; that is accepted on purpose (people remember a
-// past visit days later). The only downside is self-reported hours in
-// facility/trends, which the board reconciles against the audit trail — it is not
-// a security or integrity boundary. Recurring-audit note: this is not an IDOR and
-// not a fabrication vuln; do not re-flag the arbitrary backdate.
+// visit for THEMSELVES, or — as a household lead — for a member of their own
+// household (design §3; a minor cannot self-serve at all). The subject is
+// resolved server-side by visitSubject, so a personId off the body is only ever
+// a target checked against the actor's own household, never the scope itself.
+// Every entry is audit-logged (see below). A member CAN backdate a closed visit
+// arbitrarily far; that is accepted on purpose (people remember a past visit
+// days later). The only downside is self-reported hours in facility/trends,
+// which the board reconciles against the audit trail — it is not a security or
+// integrity boundary. Recurring-audit note: this is not an IDOR and not a
+// fabrication vuln; do not re-flag the arbitrary backdate.
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
     try {
         const userId = auth.user.id;
         const body = await req.json();
-        const { arrivedAt, departedAt } = body;
+        const { arrivedAt, departedAt, personId } = body;
 
         if (!arrivedAt) {
             return apiError("Arrival time is required", 400);
         }
+
+        const subject = await visitSubject(userId, personId ? Number(personId) : userId);
+        if (!subject) {
+            return apiError("You can only record visits for yourself or your household members.", 403);
+        }
+        const subjectId = subject.id;
 
         const arrivalTime = new Date(arrivedAt);
         const departureTime = departedAt ? new Date(departedAt) : null;
@@ -70,33 +80,38 @@ export const POST = withAuth({}, async (req, auth) => {
             }
         }
 
-        const eventId = await findAssociatedEventAt(userId, arrivalTime);
+        const eventId = await findAssociatedEventAt(subjectId, arrivalTime);
 
         // Creating an open visit (no departure) is a read-modify-write on this
         // participant's visit state, just like /api/scan. Take the same
-        // per-participant advisory xact lock and re-check for an existing open
+        // per-participant advisory xact lock — keyed on the SUBJECT, the key the
+        // one-open-visit invariant is per — and re-check for an existing open
         // visit before creating, so two concurrent manual submits — or a manual
         // submit racing a kiosk scan — can't leave two open visits for one
         // participant (checkout closes only one, the other lingers forever).
         const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(userId)})`;
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(subjectId)})`;
 
             // Only an open visit carries dedup-able state; a closed one (departure
             // provided) is just a historical record, so multiple are fine.
             if (!departureTime) {
                 const openVisit = await tx.visit.findFirst({
-                    where: { personId: userId, departedAt: null }
+                    where: { personId: subjectId, departedAt: null, ...LIVE_VISIT }
                 });
                 if (openVisit) return { visit: openVisit, freshCheckin: false };
 
-                // An open backfill claims the actor is in the building NOW, so the
-                // same facility-open guard as /api/scan applies: a non-keyholder
-                // cannot be the first (only) person present. A closed backfill is
-                // historical and never gates. Checked under the lock so a racing
-                // keyholder check-in is either committed-and-seen or not yet.
-                if (!auth.user.isKeyholder) {
+                // An open backfill claims the SUBJECT is in the building NOW, so
+                // the same facility-open guard as /api/scan applies: a
+                // non-keyholder cannot be the first (only) person present.
+                // Whose standing counts is the subject's — a lead cannot open
+                // the building by backfilling a visit for their child. A closed
+                // backfill is historical and never gates. Checked under the lock
+                // so a racing keyholder check-in is either committed-and-seen or
+                // not yet.
+                const subjectIsKeyholder = subjectId === userId ? auth.user.isKeyholder : subject.isKeyholder;
+                if (!subjectIsKeyholder) {
                     const activeKeyholders = await tx.visit.count({
-                        where: { departedAt: null, person: { isKeyholder: true } }
+                        where: { departedAt: null, person: { isKeyholder: true }, ...LIVE_VISIT }
                     });
                     if (activeKeyholders === 0) return { facilityClosed: true as const };
                 }
@@ -104,7 +119,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
             const created = await tx.visit.create({
                 data: {
-                    personId: userId,
+                    personId: subjectId,
                     arrivedAt: arrivalTime,
                     departedAt: departureTime,
                     arrivedVia: "WEB",
@@ -134,17 +149,20 @@ export const POST = withAuth({}, async (req, auth) => {
         // Fire-and-forget: notify only on a fresh active check-in (mirrors /api/scan).
         // A backfilled closed visit is a historical record, not a live arrival.
         if (freshCheckin) {
-            sendCheckinNotifications(Number(userId), 'checkin').catch(err =>
+            sendCheckinNotifications(Number(subjectId), 'checkin').catch(err =>
                 logger.error('Checkin notification error:', err)
             );
         }
 
+        // actorId ≠ secondaryAffectedEntity is what marks a lead's entry for a
+        // household member as acting-for-another, without a join (design §6.6).
         await prisma.auditLog.create({
             data: {
                 actorId: userId,
                 action: "CREATE",
                 tableName: "Visit",
                 affectedEntityId: visit.id,
+                secondaryAffectedEntity: Number(subjectId),
                 newData: { arrivedAt, departedAt, type: "manual_entry" }
             }
         });
