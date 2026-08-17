@@ -61,7 +61,13 @@ describe('Multi-select household enrollment (integration)', () => {
         // One household: a lead + three adult dependents (no age limits in play).
         const household = await prisma.household.create({ data: { name: "Test HH" } });
         const lead = await prisma.person.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'HH Lead', householdId: household.id }
+            // Adult DOB: the lead self-enrolls below, and only a known adult may.
+            data: {
+                email: `lead-${TAG}@example.com`,
+                name: 'HH Lead',
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                householdId: household.id,
+            }
         });
         leadId = lead.id;
         const mkDep = async (label: string) => (await prisma.person.create({

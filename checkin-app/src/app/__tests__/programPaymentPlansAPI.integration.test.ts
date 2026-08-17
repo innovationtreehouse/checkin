@@ -90,13 +90,27 @@ describe('Program payment-plan routes', () => {
         boardKinId = boardKin.id;
 
         const self = await prisma.person.create({
-            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            // Adult DOB: this persona requests its OWN payment plan, and only a
+            // known adult may (docs/rules/programs.md).
+            data: {
+                name: 'PP Self',
+                email: `self-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            },
         });
         selfId = self.id;
         householdIds.push(self.householdId);
 
         const other = await prisma.person.create({
-            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            // Adult DOB: this persona self-enrolls and self-requests in tests whose
+            // subject is capacity / ACK copy, not the youth gate.
+            data: {
+                name: 'PP Other',
+                email: `other-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            },
         });
         otherId = other.id;
         householdIds.push(other.householdId);
@@ -143,9 +157,12 @@ describe('Program payment-plan routes', () => {
         });
     }
 
+    // The cookie is inert except under CHECKIN_ENV=local, where the keyless-kiosk
+    // fallback in authenticateRequest hijacks any cookie-less request as `kiosk`.
     function requestReq(body: unknown) {
         return new Request(`http://localhost/api/programs/${programId}/request-payment-plan`, {
             method: 'POST',
+            headers: { cookie: 'session=test' },
             body: JSON.stringify(body),
         }) as unknown as import("next/server").NextRequest;
     }
@@ -490,7 +507,7 @@ describe('Program payment-plan routes', () => {
                     expect(data.warning).toBeUndefined();
 
                     expect(logSpy).toHaveBeenCalledWith(
-                        expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-apply-pp'),
+                        expect.stringContaining('Would adjust inventory by -1 for variant: dev-mock-variant-apply-pp'),
                     );
                 } finally {
                     logSpy.mockRestore();
@@ -671,6 +688,9 @@ describe('Program payment-plan routes', () => {
 
     describe('Composed: scholarship holds a capacity seat with no Shopify involvement', () => {
         it('enroll (PENDING) -> request plan -> board approves -> ACTIVE, seat held, no fetch fires', async () => {
+            // A priced program needs a variant (an unsellable one is refused at
+            // enrollment), and the hold's -1 goes through the local mock — so the
+            // whole journey still fires no Shopify HTTP call.
             const scholarshipProgram = await prisma.program.create({
                 data: {
                     name: `PP Scholarship Program ${TAG}`,
@@ -678,10 +698,13 @@ describe('Program payment-plan routes', () => {
                     maxParticipants: 1,
                     orgMemberPriceCents: 1000,
                     nonOrgMemberPriceCents: 1500,
+                    shopifyVariantId: `dev-mock-variant-scholarship-${TAG}`,
                 },
             });
 
             const fetchSpy = jest.spyOn(global, 'fetch');
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
 
             try {
                 // 1. Participant enrolls — paid program, so lands PENDING and
@@ -690,6 +713,7 @@ describe('Program payment-plan routes', () => {
                 const enrollRes = await ParticipantsPost(
                     new Request(`http://localhost/api/programs/${scholarshipProgram.id}/participants`, {
                         method: 'POST',
+                        headers: { cookie: 'session=test' },
                         body: JSON.stringify({ participantId: selfId }),
                     }) as unknown as import('next/server').NextRequest,
                     { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
@@ -709,6 +733,7 @@ describe('Program payment-plan routes', () => {
                 const approveRes = await PlansPost(
                     new Request('http://localhost', {
                         method: 'POST',
+                        headers: { cookie: 'session=test' },
                         body: JSON.stringify({ programId: scholarshipProgram.id, participantId: selfId }),
                     }) as unknown as import('next/server').NextRequest,
                 );
@@ -726,6 +751,7 @@ describe('Program payment-plan routes', () => {
                 const secondRes = await ParticipantsPost(
                     new Request(`http://localhost/api/programs/${scholarshipProgram.id}/participants`, {
                         method: 'POST',
+                        headers: { cookie: 'session=test' },
                         body: JSON.stringify({ participantId: otherId }),
                     }) as unknown as import('next/server').NextRequest,
                     { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
@@ -734,6 +760,7 @@ describe('Program payment-plan routes', () => {
                 expect((await secondRes.json()).error).toMatch(/maximum capacity/);
             } finally {
                 fetchSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
                 await prisma.programParticipant.deleteMany({ where: { programId: scholarshipProgram.id } });
                 await prisma.program.delete({ where: { id: scholarshipProgram.id } });
             }
@@ -963,6 +990,8 @@ describe('Program payment-plan routes', () => {
                     name: `Email ${label}`,
                     email,
                     householdId,
+                    // Adult DOB: these personas request their own payment plans.
+                    dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
                     isHouseholdLead: opts.isHouseholdLead ?? false,
                 },
             });

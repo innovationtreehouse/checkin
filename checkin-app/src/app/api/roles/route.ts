@@ -10,6 +10,7 @@ import {
     setRoleFlag,
     RoleMatrixError,
     LastBoardMemberError,
+    DeniedHouseholdBoardError,
 } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { isYouth } from "@/lib/time";
@@ -199,6 +200,9 @@ export const PATCH = withAuth(
             }
             if (error instanceof LastBoardMemberError) {
                 return apiError("Cannot remove the last board member", 409);
+            }
+            if (error instanceof DeniedHouseholdBoardError) {
+                return apiError("This person's household has been denied membership. Restore the household's membership before granting the board role.", 409);
             }
             logger.error("Error updating role:", error);
             return apiError("Internal server error", 500);

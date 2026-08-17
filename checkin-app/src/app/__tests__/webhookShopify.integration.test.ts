@@ -11,6 +11,8 @@
  *   - comma-separated multi-participant activation
  *   - the program-enrollment Shopify-variant guard (fails closed when the
  *     paid order doesn't contain the program's own variant)
+ *   - member-discount-code entitlement, judged at this money event: an
+ *     unentitled household's redemption is flagged and not activated
  */
 import crypto from 'crypto';
 import { POST } from '@/app/api/webhooks/shopify/route';
@@ -59,11 +61,11 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     let prevMembershipVariantId: string | null = null;
 
     beforeAll(async () => {
-        // shopifyNonOrgMemberVariantId is the variant the enroll flow's checkout
-        // link is built from — seed it so the guard under test has something to
-        // match line_items against.
+        // shopifyVariantId is the variant the enroll flow's checkout link is
+        // built from — seed it so the guard under test has something to match
+        // line_items against.
         const program = await prisma.program.create({
-            data: { name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyNonOrgMemberVariantId: PROGRAM_VARIANT_ID },
+            data: { name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: PROGRAM_VARIANT_ID },
         });
         programId = program.id;
 
@@ -115,10 +117,11 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     // Defaults to a line item matching the program's own variant, since most
     // tests here aren't exercising the variant guard — pass variantId: null for
     // no line items, or an explicit mismatched id, to exercise it.
-    function programPayload(accountIds: string, variantId: string | null = PROGRAM_VARIANT_ID) {
+    function programPayload(accountIds: string, variantId: string | null = PROGRAM_VARIANT_ID, discountCodes?: string[]) {
         return JSON.stringify({
             id: 555,
             ...(variantId ? { line_items: [{ variant_id: variantId }] } : {}),
+            ...(discountCodes ? { discount_codes: discountCodes.map((code) => ({ code })) } : {}),
             note_attributes: [
                 { name: 'CheckMeIn_Account_ID', value: accountIds },
                 { name: 'Program_ID', value: String(programId) },
@@ -258,6 +261,83 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         expect(row?.pendingSince).not.toBeNull();
     });
 
+    it('flags DISCOUNT_UNAUTHORIZED and does NOT activate when the order redeems the program member code from an unentitled household', async () => {
+        // Member-code entitlement is judged HERE, at the money event — seconds after
+        // checkout, against the household's state at the sale. h1 holds no
+        // OrgMembership, so it is not dues-settled through the program's dates.
+        await setPending(p1);
+        const body = programPayload(String(p1), PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
+        try {
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200); // still acks Shopify — only the DB state-change is gated
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: p1 } },
+            });
+            expect(row?.status).toBe('PENDING');
+            const ex = await prisma.paymentException.findFirst({
+                where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' },
+            });
+            expect(ex?.programId).toBe(programId);
+            expect(ex?.personId).toBe(p1);
+
+            // A redelivery re-detects the same condition and must not duplicate the row.
+            await POST(webhookReq(body, sign(body)));
+            expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(1);
+        } finally {
+            await prisma.paymentException.deleteMany({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } });
+        }
+    });
+
+    it('still flags when a dues-settled person id is STUFFED into CheckMeIn_Account_ID by an unentitled enrollee', async () => {
+        // The permalink attack: CheckMeIn_Account_ID is customer-controlled, so the
+        // attacker appends any settled person's id (autoincrement — easy to guess) to
+        // their own. That person is not enrolled in this program, so they cannot lend
+        // their entitlement; activateProgramEnrollment would ignore them and activate
+        // the attacker. Entitlement is judged over the DB's enrollees, not the payload.
+        await setPending(p1);
+        const outsider = await prisma.person.create({
+            data: { name: 'Settled Outsider', email: `outsider-${TAG}@example.com`, household: { create: { name: 'Settled HH' } } },
+        });
+        const membership = await prisma.orgMembership.create({ data: { householdId: outsider.householdId, status: 'ACTIVE' } });
+        const body = programPayload(`${p1},${outsider.id}`, PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
+        try {
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: p1 } },
+            });
+            expect(row?.status).toBe('PENDING');
+            expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(1);
+        } finally {
+            await prisma.paymentException.deleteMany({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } });
+            await prisma.orgMembership.delete({ where: { id: membership.id } });
+            await prisma.person.delete({ where: { id: outsider.id } });
+            await prisma.household.delete({ where: { id: outsider.householdId } });
+        }
+    });
+
+    it('activates as usual when the same member code comes from a dues-settled household', async () => {
+        // The entitled half of the same judgement: the code is only evidence when the
+        // paying family has no membership behind it.
+        await setPending(p1);
+        const membership = await prisma.orgMembership.create({ data: { householdId: h1, status: 'ACTIVE' } });
+        const body = programPayload(String(p1), PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
+        try {
+            const res = await POST(webhookReq(body, sign(body)));
+            expect(res.status).toBe(200);
+
+            const row = await prisma.programParticipant.findUnique({
+                where: { programId_personId: { programId, personId: p1 } },
+            });
+            expect(row?.status).toBe('ACTIVE');
+            expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(0);
+        } finally {
+            await prisma.orgMembership.delete({ where: { id: membership.id } });
+        }
+    });
+
     it('fails closed when the Program has no Shopify variant configured at all', async () => {
         // "Cannot verify" must mean "don't activate", not "trust the payload".
         const noVariantProgram = await prisma.program.create({
@@ -340,150 +420,9 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         expect(rows[0].context).toEqual({ operation: 'POST /api/webhooks/shopify' });
     });
 
-    // LEGACY-ONLY two-pool mirror (product decision 2026-07-06, single-pool
-    // redesign): the org-member/non-member variants each carry their OWN
-    // Shopify inventory pool. Shopify auto-decrements only the pool for the
-    // tier actually purchased, so the webhook mirrors the same drop onto the
-    // SIBLING pool after activation — but ONLY for programs still on this
-    // legacy model (no shopifyVariantId). See the 'single-pool model' describe
-    // block below for the new-model equivalent (no mirror needed).
-    describe('sibling inventory mirror after program activation (legacy two-variant programs)', () => {
-        let siblingProgramId: number;
-        let sp1: number;
-        let sp2: number;
-        let sh1: number;
-        let sh2: number;
-        const ORG_VARIANT_ID = '223344';
-        const NONORG_VARIANT_ID = '112233';
-
-        beforeAll(async () => {
-            const program = await prisma.program.create({
-                data: {
-                    name: `Webhook Sibling Test Program ${TAG}`,
-                    enrollmentStatus: 'OPEN',
-                    shopifyOrgMemberVariantId: ORG_VARIANT_ID,
-                    shopifyNonOrgMemberVariantId: NONORG_VARIANT_ID,
-                },
-            });
-            siblingProgramId = program.id;
-
-            const a = await prisma.person.create({
-                data: { name: 'Sib P1', email: `sib1-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
-            });
-            sp1 = a.id;
-            sh1 = a.householdId;
-            const b = await prisma.person.create({
-                data: { name: 'Sib P2', email: `sib2-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
-            });
-            sp2 = b.id;
-            sh2 = b.householdId;
-        });
-
-        afterAll(async () => {
-            await prisma.programParticipant.deleteMany({ where: { programId: siblingProgramId } });
-            await prisma.program.delete({ where: { id: siblingProgramId } });
-            await prisma.person.deleteMany({ where: { id: { in: [sp1, sp2] } } });
-            await prisma.household.deleteMany({ where: { id: { in: [sh1, sh2] } } });
-        });
-
-        async function setSiblingPending(participantId: number) {
-            await prisma.programParticipant.upsert({
-                where: { programId_personId: { programId: siblingProgramId, personId: participantId } },
-                update: { status: 'PENDING', pendingSince: new Date() },
-                create: { programId: siblingProgramId, personId: participantId, status: 'PENDING', pendingSince: new Date() },
-            });
-        }
-
-        function siblingPayload(accountIds: string, variantId: string) {
-            return JSON.stringify({
-                id: 777,
-                line_items: [{ variant_id: variantId }],
-                note_attributes: [
-                    { name: 'CheckMeIn_Account_ID', value: accountIds },
-                    { name: 'Program_ID', value: String(siblingProgramId) },
-                ],
-            });
-        }
-
-        it('mirrors the purchase onto the SIBLING pool after activating (Shopify already decremented the purchased pool)', async () => {
-            const prevEnv = process.env.CHECKIN_ENV;
-            // Arms config.shopifyMockActive() so adjustProgramInventory no-ops via a
-            // log line we can assert on, instead of a real Admin API call.
-            process.env.CHECKIN_ENV = 'local';
-            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-            try {
-                await setSiblingPending(sp1);
-                await setSiblingPending(sp2);
-                // Buys the NON-member tier for both participants in one order.
-                const body = siblingPayload(`${sp1},${sp2}`, NONORG_VARIANT_ID);
-
-                const res = await POST(webhookReq(body, sign(body)));
-                expect(res.status).toBe(200);
-
-                const rows = await prisma.programParticipant.findMany({
-                    where: { programId: siblingProgramId, personId: { in: [sp1, sp2] } },
-                });
-                expect(rows.every(r => r.status === 'ACTIVE')).toBe(true);
-
-                // Sibling = the ORG-member pool (the tier NOT purchased); delta = -2
-                // (both participants activated by this one order).
-                expect(logSpy).toHaveBeenCalledWith(
-                    expect.stringContaining(`Would adjust inventory by -2 for variants: ${ORG_VARIANT_ID}`),
-                );
-            } finally {
-                logSpy.mockRestore();
-                if (prevEnv === undefined) delete process.env.CHECKIN_ENV;
-                else process.env.CHECKIN_ENV = prevEnv;
-            }
-        });
-
-        it('does NOT re-fire the sibling mirror when the same order is redelivered (participant already ACTIVE)', async () => {
-            const prevEnv = process.env.CHECKIN_ENV;
-            process.env.CHECKIN_ENV = 'local';
-            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-            try {
-                await setSiblingPending(sp1);
-                const body = siblingPayload(String(sp1), NONORG_VARIANT_ID);
-
-                // First delivery activates and mirrors -1.
-                expect((await POST(webhookReq(body, sign(body)))).status).toBe(200);
-                const mirrorCalls = () => logSpy.mock.calls.filter(c =>
-                    String(c[0]).includes(`Would adjust inventory by -1 for variants: ${ORG_VARIANT_ID}`)).length;
-                expect(mirrorCalls()).toBe(1);
-
-                // Shopify redelivers the identical order (timeout / non-2xx retry):
-                // the participant is already ACTIVE, so no second -1 may fire.
-                expect((await POST(webhookReq(body, sign(body)))).status).toBe(200);
-                expect(mirrorCalls()).toBe(1);
-            } finally {
-                logSpy.mockRestore();
-                if (prevEnv === undefined) delete process.env.CHECKIN_ENV;
-                else process.env.CHECKIN_ENV = prevEnv;
-            }
-        });
-
-        it('activates the participant and still returns 200 even when the sibling inventory adjust fails', async () => {
-            // Default env here (no CHECKIN_ENV=local, no Shopify creds configured in
-            // this suite) — adjustProgramInventory's real "missing credentials" path
-            // returns false without throwing. Confirms the webhook never fails over an
-            // inventory call (a non-2xx would make Shopify retry the whole order).
-            await setSiblingPending(sp1);
-            const body = siblingPayload(String(sp1), NONORG_VARIANT_ID);
-
-            const res = await POST(webhookReq(body, sign(body)));
-            expect(res.status).toBe(200);
-
-            const row = await prisma.programParticipant.findUnique({
-                where: { programId_personId: { programId: siblingProgramId, personId: sp1 } },
-            });
-            expect(row?.status).toBe('ACTIVE');
-        });
-    });
-
-    // Single-pool model (product decision 2026-07-06): shopifyVariantId is
-    // matched alongside the legacy pair (transition), and activation needs NO
-    // mirror call at all — there's exactly one pool, and Shopify already
-    // auto-decremented it on the sale.
+    // Single-pool model (product decision 2026-07-06): activation needs NO
+    // inventory mirror call at all — there's exactly one pool, and Shopify
+    // already auto-decremented it on the sale.
     describe('single-pool model (shopifyVariantId)', () => {
         let singlePoolProgramId: number;
         let sgp1: number;
@@ -582,7 +521,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
                 expect(row?.inventoryHeldAt).toBeNull(); // hold released
 
                 expect(logSpy).toHaveBeenCalledWith(
-                    expect.stringContaining(`Would adjust inventory by 1 for variants: ${SINGLE_VARIANT_ID}`),
+                    expect.stringContaining(`Would adjust inventory by 1 for variant: ${SINGLE_VARIANT_ID}`),
                 );
             } finally {
                 logSpy.mockRestore();

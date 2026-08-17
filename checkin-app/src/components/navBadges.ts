@@ -179,15 +179,28 @@ export function navBadgeFor(href: string, counts: TodoCounts | null): NavBadge[]
       return b ? [b] : [];
     }
     case '/system-status': {
-      // Red alert: number of failing system-config checks (env-var/deploy gaps,
-      // e.g. Zoho e-sign unconfigured). Distinct from the green/gray queue badges —
-      // this is "infra broken," not "you have a task." Admins + board only (the
-      // count is absent from the payload for everyone else). Links to the page,
-      // where the full per-check list lives. See lib/configHealth.ts.
-      const n = counts.configHealth?.openIssues ?? 0;
-      return n > 0
-        ? [{ count: n, color: 'red', label: `${n} config ${n === 1 ? 'issue' : 'issues'}` }]
-        : [];
+      // Red alert: things broken about the deployment itself — failing system-config
+      // checks (env-var/deploy gaps, e.g. Zoho e-sign unconfigured) plus cron sweeps
+      // that stopped running OR stopped working. Distinct from the
+      // green/gray queue badges — this is "infra broken," not "you have a task."
+      // Admins + board only (the counts are absent from the payload for everyone else).
+      //
+      // ONE pill, not two: both halves mean "go look at System Status", they land on
+      // the same page and the same audience fixes them, and a second red pill on the
+      // same nav item would just be a second number pointing at the same link. The
+      // label keeps them itemized so the pill is still specific. See lib/configHealth.ts
+      // and lib/cronRuns.ts.
+      const config = counts.configHealth?.openIssues ?? 0;
+      // "unhealthy", not "not running": the count also covers a sweep that runs every
+      // night and cannot finish its work. Which one it is, is a panel-level detail.
+      const cron = counts.configHealth?.unhealthyCronJobs ?? 0;
+      const n = config + cron;
+      if (n === 0) return [];
+      const parts = [
+        ...(config > 0 ? [`${config} config ${config === 1 ? 'issue' : 'issues'}`] : []),
+        ...(cron > 0 ? [`${cron} cron job${plural(cron, '', 's')} unhealthy`] : []),
+      ];
+      return [{ count: n, color: 'red', label: parts.join(', ') }];
     }
     // Other admin roll-ups have no badge here: every queue count belongs to another
     // nav item that already badges it, so a roll-up would just duplicate numbers.

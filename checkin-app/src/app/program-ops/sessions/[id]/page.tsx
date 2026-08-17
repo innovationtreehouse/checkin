@@ -7,7 +7,8 @@ import { Alert, Badge, Button, Card, Checkbox, Container, Group, Modal, Select, 
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
-import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { MAX_VISIT_MS } from '@/lib/visitTimes';
 import type { RSVPStatus } from '@/types/rsvp';
 
@@ -54,6 +55,7 @@ const RSVP_BADGE: Record<RSVPStatus, { label: string; color: string }> = {
 };
 
 export default function EventAdminPage({ params }: { params: Promise<{ id: string }> }) {
+  const { formatDateTime } = useOrgTime();
   const { id } = use(params);
   const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
   const router = useRouter();

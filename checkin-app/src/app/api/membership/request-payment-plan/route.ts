@@ -5,6 +5,7 @@ import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck, resolveAckCopy } from "@/lib/scholarshipEmails";
 import { config } from "@/lib/config";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
@@ -18,7 +19,7 @@ export const POST = withAuth({}, async (req, auth) => {
 
         const process = await prisma.orgMembershipProcess.findUnique({
             where: { id: processId },
-            include: { orgMembership: { include: { household: { include: { householdMembers: { where: { isHouseholdLead: true }, select: { id: true } } } } } } },
+            include: { orgMembership: { include: { household: { include: { householdMembers: { where: { isHouseholdLead: true, ...LIVE_PERSON }, select: { id: true } } } } } } },
         });
 
         if (!process || !process.orgMembership) {

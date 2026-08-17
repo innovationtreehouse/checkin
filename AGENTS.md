@@ -36,6 +36,20 @@ Design rationale, regressions-to-learn-from, and past approaches live in
 `docs/` and PR history — not in code comments. (This file's own flow-test
 section is an example: the failure stories sit in docs, not in the source.)
 
+## Lint and type errors
+
+A suppressed error is an error the next reader cannot see. Fix what the tool is
+pointing at, not the fact that it is pointing.
+
+- **Never fix a lint error by disabling the linter.** No
+  `// eslint-disable-next-line`, no `/* eslint-disable */`, no
+  `@ts-expect-error`, no `@ts-ignore`.
+- **Never fix a type error with an `any` coercion.** Type the variables,
+  parameters and return signatures properly. Where the type isn't immediately
+  obvious, use `unknown` and narrow it, or define the interface.
+- **Address the root cause** — the logic, the missing type, the interface that
+  wasn't imported — rather than the message.
+
 ## Test classes
 
 There are **three** classes of tests. Run all commands from `checkin-app/`.
@@ -93,7 +107,7 @@ routes, auth, and DB together.
 - `*.shopify-live.ts` (`checkin-app/shopify-live/`) hits the REAL Shopify
   dev store — excluded from every local/CI run; executed only by
   `.github/workflows/shopify-live.yml` (`npm run test:shopify-live`). Dev-store-only
-  by a triple guard; see `checkin-app/docs/designs/SHOPIFY_LIVE_TESTS.md`.
+  by a triple guard; see `docs/ops/shopify-live-tests.md`.
   Deliberately NOT named `*.test.ts`: that keeps them structurally invisible to
   every other jest invocation, including scripts that override ignore patterns
   on the CLI (the test:coverage class).
@@ -112,7 +126,7 @@ To add a journey: drop a `flow-tests/<name>.flow.test.ts` using `loginAs`/`api`,
 keep it to real HTTP calls + response assertions. Prefer routes that don't need
 external integrations (Zoho/Shopify/Averity); use the board/admin manual-action
 routes to advance flows those would otherwise gate. Real journeys are catalogued
-in `docs/designs/CUJS.md` — start there when choosing what to cover.
+in `docs/backlog/CUJS.md` — start there when choosing what to cover.
 
 ## Issue workflow (org project 1)
 
@@ -150,27 +164,82 @@ standing as a soft reservation, and never trust it as the only signal.
 Project-field writes need the `project` token scope; if GraphQL returns
 INSUFFICIENT_SCOPES, have the user run `gh auth refresh -s project`.
 
+## Your own open PRs
+
+Before opening a PR, search open **and recently closed** PRs for the same fix —
+by the file you are about to touch and by the finding, not just by title. If one
+exists, that PR *is* the work: push to its branch. A second PR for a fix that
+already has one is never the right move, whoever opened the first.
+
+An open PR you authored carrying **CHANGES_REQUESTED**, or unresolved review
+comments, is your next task — ahead of any new finding. Address it or argue it
+on the thread. Do not leave it and start something else.
+
+- **Never re-file instead of revising.** Abandoning a reviewed PR and opening a
+  fresh one with the same fix launders unaddressed feedback into a clean slate:
+  the same review gets written twice and the defect the first review named ships
+  anyway. This is the failure to avoid, and it has happened: #1479 was told on
+  2026-08-03 that its `sandbox` value broke the dev mail viewer's link
+  click-through; #1617 arrived six days later with the identical flags, the
+  identical claim that links stayed clickable, and no reference to #1479.
+- **Disagreeing is fine; ignoring is not.** If you think a review is wrong —
+  including on security grounds, and including when the reviewer is not the
+  repo owner — say so on the PR and let the owner settle it. Unwillingness to
+  take a reviewer's advice is not a licence to re-file: silence plus a duplicate
+  reads as feedback evasion, and it costs the reviewer the same work twice.
+- Same rule for a finding already **rejected**. Re-raising it needs new evidence
+  named in the body, not a new PR number.
+
+## Reviewing a PR
+
+A review comment earns its place only if a careful human reading the diff would
+**miss** the problem. Everything the merge itself surfaces is already known —
+saying it again is noise the reader has to scroll past to find the real finding.
+
+Do **not** comment on:
+
+- **Merge state** — behind `main`, needs a rebase, conflicts, stale branch. The
+  merge box says this.
+- **CI state** — failing tests, lint, type errors, coverage drops. The checks
+  say this, with the actual output.
+- Anything else a bot or the GitHub UI already reports on the PR.
+
+Do comment on what only reading the code reveals — a silent behavior change, a
+missed caller, a broken invariant, a data-loss or security hole, a migration
+that isn't safe against the old code still serving traffic.
+
+Exception: a mechanical failure is worth a comment when the **cause** is
+non-obvious and named — "these three tests fail because the rename missed
+`scopeBindings.ts`" is a finding; "tests are broken" is not. Nothing to say
+means say nothing, or approve.
+
 ## Docs map
 
 Read these before changing the relevant area — start here, then follow links.
 
+**Domain rules — read first** (`docs/rules/`)
+- The register of board and operations decisions, and the invariants a change must not violate: `membership.md`, `programs.md`, `people-households.md`, `finance-payments.md`, `attendance-checkin.md`, `tools-certification.md`, plus `principles.md` for the cross-cutting ones. **Before changing behaviour in a domain, read its file.** If a change contradicts a rule there, raise it — do not quietly proceed. A **Policy**-tier rule is not negotiable in a PR at all: stop and escalate.
+- `docs/DOCUMENTATION_STANDARD.md` — how documentation is organised, written, and retired: the document classes, what belongs in the register and what does not, the citation and format rules, and the working-doc lifecycle (write it in `docs/in-design/`, extract standing rules and delete it at merge). Read before writing or moving any doc.
+- `docs/conventions.md` — how we build, independent of any domain.
+
 **Project-wide**
 - `README.md` — what the app is + Quick Start; OS setup: `docs/setup/SETUP_LINUX.md`, `docs/setup/SETUP_MACOS.md`.
+- `docs/backlog/CUJS.md` — **critical user journeys**, per step with state tags (the basis for flow tests); `docs/backlog/INDEX.md` is the gap inventory behind it.
 - `CONSTITUTION.md` — project principles//ground rules.
+- `docs/WRITING_STANDARD.md` — how agents write: docs prose, PR/issue bodies, review comments, session replies. Voice only; the Comments section above still governs code comments.
 - `GEMINI.md`, `.jules/sentinel.md` — instructions for other agents (Gemini, Jules); keep cross-consistent with this file.
 - `TRADEMARKS.md` — naming/brand constraints.
 
 **Design & product** (`docs/designs/`)
 - `DESIGN.md` — system design overview.
-- `CUJS.md` — **critical user journeys** (the basis for flow tests).
-- `DEV_INSTANCE_DESIGN.md` — the `CHECKIN_ENV` prod/dev/local model + persona-mint/impersonation (read before touching auth/env).
-- `DEV_DASHBOARD_DESIGN.md` — dev dashboard + seed/reset macros.
-- `PRODUCTION_PLAN.md`, `MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
+- `docs/ops/dev-instance.md` — the `CHECKIN_ENV` prod/dev/local model, persona-mint/impersonation, and the dev dashboard's seed macros / reset / ledger (read before touching auth/env, or before adding anything that must not exist in prod).
+- `PRODUCTION_PLAN.md`, `ARCHITECT_IDEAS_*.md` — roadmap/scoping notes.
 
 **Security** (`docs/security/`)
 - `SECURITY-POLICY.md` — the response-stripper / `@sensitivity` registry rules (read before adding API responses or schema fields).
 - `pentest_findings_2026-04-21.md` — prior findings.
-- **Boundary isolation rule**: the handler/registry layer (`checkin-app/src/security/`) exists to make the data policy easy to AUDIT — it is not a substitute for careful route management (tight selects, deliberate response shapes). Any change to the boundary itself — registry grants, token grammar, handler/stripper, scope bindings, or a re-tier of an existing field's `@sensitivity` — must ship **in its own PR** (tests/docs/schema annotations may accompany; no app/feature code). New registered route: land the registry entry PR first (an unused `defineRoute` is inert), then the route PR. CI-enforced by `.github/workflows/security-boundary-isolation.yml`.
+- **Boundary isolation rule**: the handler/registry layer (`checkin-app/src/security/`) exists to make the data policy easy to AUDIT — it is not a substitute for careful route management (tight selects, deliberate response shapes). Any change to the boundary itself — registry grants, token grammar, handler/stripper, scope bindings, or a re-tier of an existing field's `@sensitivity` — must ship **in its own PR** (tests/docs/schema annotations may accompany; no app/feature code). New registered route: land the registry entry PR first (an unused `defineRoute` is inert), then the route PR. CI-enforced by `.github/workflows/security-boundary-isolation.yml`. `checkin-app/src/middleware.ts` counts as a boundary file — it is the site-wide org-login/access gate and nothing imports it, so deleting or renaming it leaves tsc and the build green; a PR touching it ships alone. Security *tests* (`src/security/__tests__/`) are companions, not boundary files. One exception, for decommissions: a boundary diff that only removes *whole* entries whose subjects cease to exist in the same PR (model dropped from schema, route file/verb deleted) may ship with the drop migration and the route files of the removed registry entries — no other deletion — certified fail-closed by `checkin-app/scripts/check-boundary-decommission.js`; see `checkin-app/docs/DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` rule 7.
+  - **Stacking hazard — base the route PR on `main`, not on the registry branch.** Registry-first means two PRs, and stacking the second on the first strands it: when the registry PR merges, the route PR still targets a branch tip nothing will ever merge, while GitHub reports it `MERGED` once you merge it there. Its code never reaches `main`, and a closed PR cannot be retargeted — recovery is a cherry-pick into a fresh PR. This happened to #1447 (stranded on `claude/registry-turning-18` behind #1490; re-landed as #1495). **After any stacked merge, confirm the files are on `main`** (`git show origin/main:<path>`) rather than trusting the PR state.
 
 **Deploy & migrations** (`checkin-app/docs/`)
 - `DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md` — infra rules + order of operations for schema migrations vs. deploys (read before writing a migration); `.claude/skills/migration-safety/` fires this as a checklist whenever a migration is being built.

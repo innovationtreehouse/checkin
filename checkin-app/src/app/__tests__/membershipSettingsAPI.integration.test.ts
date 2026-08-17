@@ -26,7 +26,7 @@ function jsonReq(method: string, body?: unknown, url = 'http://localhost:4000/x'
 
 describe('Membership settings + volunteer designations API', () => {
     let boardId: number, plainId: number;
-    let prevSettings: { normalDuesCents: number; volunteerDuesCents: number } | null = null;
+    let prevSettings: { standardMembershipFeeCents: number; volunteerMembershipFeeCents: number } | null = null;
 
     async function wipe() {
         await prisma.volunteerDesignation.deleteMany({ where: { email: { contains: TAG } } });
@@ -42,7 +42,7 @@ describe('Membership settings + volunteer designations API', () => {
 
     beforeAll(async () => {
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing ? { normalDuesCents: existing.normalDuesCents, volunteerDuesCents: existing.volunteerDuesCents } : null;
+        prevSettings = existing ? { standardMembershipFeeCents: existing.standardMembershipFeeCents, volunteerMembershipFeeCents: existing.volunteerMembershipFeeCents } : null;
         await wipe();
 
         boardId = (await prisma.person.create({ data: { email: `board-${TAG}@example.com`, name: 'Board', isBoardMember: true, household: { create: { name: `Board HH ${TAG}` } } } })).id;
@@ -71,11 +71,11 @@ describe('Membership settings + volunteer designations API', () => {
         const getRes = await SETTINGS_GET(jsonReq('GET'));
         expect(getRes.status).toBe(200);
 
-        const putRes = await SETTINGS_PUT(jsonReq('PUT', { normalDuesCents: 12000, volunteerDuesCents: 3000 }));
+        const putRes = await SETTINGS_PUT(jsonReq('PUT', { standardMembershipFeeCents: 12000, volunteerMembershipFeeCents: 3000 }));
         expect(putRes.status).toBe(200);
         const { settings } = await putRes.json();
-        expect(settings.normalDuesCents).toBe(12000);
-        expect(settings.volunteerDuesCents).toBe(3000);
+        expect(settings.standardMembershipFeeCents).toBe(12000);
+        expect(settings.volunteerMembershipFeeCents).toBe(3000);
     });
 
     it('saves and clears the membership product URL', async () => {
@@ -94,17 +94,17 @@ describe('Membership settings + volunteer designations API', () => {
     it('rejects negative dues and keeps the previous value', async () => {
         asBoard(boardId);
         // Establish a known good value.
-        const seed = await SETTINGS_PUT(jsonReq('PUT', { normalDuesCents: 12000 }));
+        const seed = await SETTINGS_PUT(jsonReq('PUT', { standardMembershipFeeCents: 12000 }));
         expect(seed.status).toBe(200);
 
         // Negative input must be rejected, not clamped to zero.
-        const res = await SETTINGS_PUT(jsonReq('PUT', { normalDuesCents: -50 }));
+        const res = await SETTINGS_PUT(jsonReq('PUT', { standardMembershipFeeCents: -50 }));
         expect(res.status).toBe(400);
 
         // Old value survives untouched.
         const getRes = await SETTINGS_GET(jsonReq('GET'));
         const { settings } = await getRes.json();
-        expect(settings.normalDuesCents).toBe(12000);
+        expect(settings.standardMembershipFeeCents).toBe(12000);
     });
 
     it('accepts a positive scholarshipDenialGraceDays and clears it back to null', async () => {
@@ -149,6 +149,33 @@ describe('Membership settings + volunteer designations API', () => {
         expect(res.status).toBe(201);
         const data = await res.json();
         expect(data.warning).toBeTruthy();
+    });
+
+    it('treats inbox variants of a designated email as already designated', async () => {
+        asBoard(boardId);
+        const base = `voldedupe-${TAG}@gmail.com`;
+        const first = await DESIG_POST(jsonReq('POST', { email: base }));
+        expect(first.status).toBe(201);
+        const { designation } = await first.json();
+
+        for (const variant of [`voldedupe-${TAG}+treehouse@gmail.com`, `vol.dedupe-${TAG}@googlemail.com`, ` VolDedupe-${TAG}@gmail.com `]) {
+            const res = await DESIG_POST(jsonReq('POST', { email: variant }));
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.warning).toBe('This email is already designated.');
+            expect(data.designation.id).toBe(designation.id);
+        }
+
+        expect(await prisma.volunteerDesignation.count({ where: { email: { contains: `voldedupe-${TAG}` } } })).toBe(1);
+    });
+
+    it('dedupes against a row stored before canonicalization', async () => {
+        asBoard(boardId);
+        const legacy = await prisma.volunteerDesignation.create({ data: { email: `legacyvol-${TAG}+tag@gmail.com` } });
+        const res = await DESIG_POST(jsonReq('POST', { email: `legacy.vol-${TAG}@gmail.com` }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).designation.id).toBe(legacy.id);
+        expect(await prisma.volunteerDesignation.count({ where: { email: { contains: `legacyvol-${TAG}` } } })).toBe(1);
     });
 
     it('rejects an invalid email', async () => {

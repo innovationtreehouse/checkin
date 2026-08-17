@@ -32,29 +32,166 @@ defineRoute({
     ],
 });
 
+// Self-correction of a visit the caller may act for: PATCH edits the times,
+// DELETE tombstones the row. `[id]` is a Visit id, NOT a person id, so 'self'
+// cannot express the gate — it compares the id param against auth.user.id.
+// Subject ownership is enforced in the route body, which 404s any id the caller
+// may not act for; the two per-row tokens are the field backstop for the two
+// legitimate subjects:
+//   their_own      — Visit.personId === caller (a member editing their own row)
+//   led_households — Visit.personId is in a household the caller LEADS (AT3,
+//                    #1254: the lead is the responsible adult for members who
+//                    cannot self-serve). Lead-only, not household-wide: a
+//                    non-lead sibling holds neither token and sees nothing.
+// Both are needed — under led_households a plain member editing their own visit
+// is not a household match, so their_own is what keeps self-correction working.
+// The grant stops at 'personal' (arrivedAt/departedAt); 'internal' tombstone
+// fields stay stripped.
+defineRoute({
+    endpoint: 'PATCH /api/attendance/manual/[id]',
+    authorize: 'authenticated',
+    envelope: 'visit',
+    // Bag: { Visit }.
+    returns: ['Visit'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'led_households:personal', 'member', 'public']],
+    ],
+});
+
+defineRoute({
+    endpoint: 'DELETE /api/attendance/manual/[id]',
+    authorize: 'authenticated',
+    // No bag — the response is { success, flagged }, no model data.
+    envelope: null,
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'led_households:personal', 'member', 'public']],
+    ],
+});
+
+// Staff insert of a past visit for ANOTHER person (AT3, #1254) — the walk-in
+// neither the kiosk (live only, personId from the badge) nor the event roster
+// mark (program-scoped, event window) can record. Unlike the self-service
+// routes above, the target personId comes from the REQUEST BODY, so the role
+// gate is the entire subject boundary — there is no 'their_own' leg to fall
+// back on and no scope resolver in play. Sysadmin and board only: the same set
+// the sibling GET/PATCH/DELETE on /api/facility/visits carry and the same set
+// facility-ops/visits gates the page on, which must stay equal (their drifting
+// apart was AT13/#1259). Widening to isOperations was answered NO: #1633 puts
+// operations' reach into attendance at aggregate only (the trends, printing ID
+// badges), so one person's visit record stays outside it. #1476, closed.
+//
+// Its own endpoint rather than a POST on /api/facility/visits: adding a verb to
+// an existing legacy route file cannot satisfy this registry's own lints in any
+// PR ordering — registry-first trips `orphan-registry` (the file exports no such
+// verb yet), route-first trips `new-route-old-authz`, and shipping both together
+// trips boundary isolation. A new path has no route file, which is exactly the
+// register-first state `orphan-registry` warns for. See #1491.
+//
+// The response echoes the single Visit just created, so everyones:internal
+// covers the tombstone columns the model carries (deletedAt/deletedById — both
+// null on a fresh row, declared rather than accidentally stripped).
+defineRoute({
+    endpoint: 'POST /api/facility/visits/insert',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'visit',
+    // Bag: { Visit }.
+    returns: ['Visit'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Board/sysadmin review of recent attendance-correction activity (AT12,
+// #1258). The handler does not query Visit directly — it reads AuditLog rows
+// where tableName === 'Visit' and SYNTHESIZES a Visit view per row from the
+// audit blob (arrivedAt/departedAt/arrivedVia/departedVia extracted from
+// newData). stripValue (stripper.ts) copies any field present on an object
+// without checking provenance, so a synthesized row strips exactly like a
+// real one — that is what makes this legal, not an exception to it.
+//
+// 'everyones:personal' is required: Visit.arrivedAt/departedAt are
+// personal-tier and this is a review-scope surface, not a self-scope one, so
+// no <scope>:<tier> row token applies. 'everyones:internal' is required for
+// AuditLog itself — every field on it (id, timestamp, actorId, action, …) is
+// internal-tier. 'pii' and 'member' are deliberately NOT granted: no field on
+// AuditLog, Person, or Visit needs either for this view.
+//
+// AuditLog.newData is REBUILT by the handler to { type, significance } before
+// it reaches this layer; raw oldData/newData (arbitrary blob shape) must never
+// leave the route. Neither obligation is enforceable HERE: 'everyones:internal'
+// permits both fields wholesale and a tier does not reach inside a JSON blob,
+// so a handler that passed oldData straight through would ship a whole-row
+// snapshot with every suite green. The route PR carries the assertion instead
+// (correctionsAPI.integration.test.ts). No pagination — nothing else here would
+// give total/page/pageSize a legal home under any envelope value (handler.ts
+// strips before the envelope wraps), so the handler caps rows and over-fetches
+// by one to signal "more" instead.
+//
+// This entry also settles the open question #1497 left to the route PR: how a
+// before/after pair crosses the boundary. A separate bag key is not expressible
+// — stripBag drops any top-level key that is not a model name, so there can be
+// exactly one Visit key — and a before row and its after row share a Visit.id,
+// so no field distinguishes them. Array position is the only discriminator, and
+// it survives because stripValue maps arrays element-wise and preserves order.
+//
+// Served by src/app/api/facility/corrections/route.ts. Its flagged-only default
+// view is complete only once every Visit audit write persists
+// newData.significance (#1523, PR #1558) — an unscored write never surfaces.
+defineRoute({
+    endpoint: 'GET /api/facility/corrections',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { AuditLog, Person, Visit } — Visit synthesized from AuditLog blobs,
+    // not queried. Handler always emits all three keys, even empty: handler.ts
+    // unwraps a single-key bag to a bare value.
+    returns: ['AuditLog', 'Person', 'Visit'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
     envelope: null,
     // Bag: { Program } with volunteers (ProgramVolunteer → participant Person),
     // participants (ProgramParticipant → participant Person → household Household
-    // → emergencyContacts EmergencyContact), events (Event), fees (Fee), leadMentor
-    // (Person).
-    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Person', 'Household', 'EmergencyContact', 'Event', 'Fee'],
+    // → emergencyContacts EmergencyContact), events (Event), leadMentor (Person).
+    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Person', 'Household', 'EmergencyContact', 'Event'],
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        // their_program_households:personal delivers the household band leads
-        // operationally need — emergency contacts (personal). It deliberately
-        // does NOT reach the family's home address or intake notes: address is
-        // 'internal' and intakeNotes is 'pii', both outside a household-scoped
-        // personal grant. EC yes, address no.
+        // their_program_households delivers the household band leads operationally
+        // need: the family's emergency contacts (personal) and the parents' own
+        // contact details (pii). Person binds this scope ONLY on isHouseholdLead
+        // rows, so the pii grant reaches the two adults a lead would call and no
+        // one else — siblings and other household members hold nothing.
+        //
+        // FINDING for the CODEOWNERS reviewer: this widens live traffic. The route
+        // already returns full-row Person selects outside the participant bag —
+        // `volunteers.include.person` and `leadMentor` — so a lead/core-vol now
+        // receives, for any program volunteer or lead mentor who is also a household
+        // lead of an in-scope household (a parent volunteer, the common case):
+        // email/phone from this pii grant, plus dateOfBirth/allergies/
+        // notificationSettings/emailSuppressed from the pre-existing :personal token,
+        // which now resolves on those rows too. Those rows held `everyones` only
+        // before. Narrowing the two selects to what the roster renders is a route
+        // change, not a boundary one.
+        //
+        // Still out of reach: the family's home address (Household.line1..postalCode
+        // are 'internal', above every token here) and Household.intakeNotes ('pii',
+        // but Household binds no scope beyond their_households, so a
+        // their_program_households token resolves to nothing on a Household row).
         ['programLeadMentor',    ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['programCoreVolunteer', ['their_program_participants:pii',
                                   'their_program_participants:personal',
+                                  'their_program_households:pii',
                                   'their_program_households:personal',
                                   'member', 'public']],
         ['authenticated',        ['their_own:pii', 'their_own:personal', 'member', 'public']],
@@ -156,6 +293,25 @@ defineRoute({
     ],
 });
 
+// Board opens an individual membership agreement for one adult child (#1224).
+// The response echoes only the obligation it just opened — the route selects
+// id/kind/status and nothing else, so no person, household or Zoho field is in
+// the bag to begin with. `status` is the sole internal-tier field, hence a grant
+// that stops at internal with no pii/personal band: this endpoint has no reason
+// to name anyone. Who currently owes an agreement is a different question, asked
+// through the compliance dashboard's own entry.
+defineRoute({
+    endpoint: 'POST /api/membership-audit/person-agreement',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'process',
+    // Bag: { OrgMembershipProcess }, no relations.
+    returns: ['OrgMembershipProcess'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:internal', 'public']],
+    ],
+});
+
 // Board's in-flight membership applications. Exposes every applicant household's
 // PII (parents + children names/emails), so only isSysadmin/board may see it, and
 // the field grant is explicit per role.
@@ -182,8 +338,13 @@ defineRoute({
     authorize: { anyRole: ['isBackgroundCheckReviewer', 'isBoardMember'] },
     envelope: 'queue',
     // Bag: { OrgMembershipProcess } with membership (OrgMembership → household Household
-    // → householdMembers Person, leads flagged isHouseholdLead).
-    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person'],
+    // → householdMembers Person, leads flagged isHouseholdLead) and the process's
+    // attestations. Reviewers attest PER ADULT, so the card shows each lead's own
+    // approval count; the route selects `subjectPersonId` alone off each attestation.
+    // Widening that select is a policy decision, not a convenience: `reviewerId` is
+    // public-tier and would tell reviewer B that reviewer A already signed off, which
+    // the deliberate `_count`-only shape exists to prevent.
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person', 'BackgroundCheckAttestation'],
     orderedView: [
         ['isBackgroundCheckReviewer', ['everyones:pii', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'member', 'public']],
@@ -264,6 +425,33 @@ defineRoute({
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// The "who is 18 as of the member-year start" roster (Membership Audit). Ships
+// the CLASSIFIED INPUTS, not a verdict: dateOfBirth plus the board's year
+// boundary, so the two as-of ages are derived client-side — the stripper drops
+// ad-hoc computed fields, same reason GET /api/finance-ops/payment-plans ships
+// startAt + boundary instead of a next-year boolean.
+//
+// The grant is deliberately NARROWER than the sibling audit views' everyones:*:
+// this response needs exactly dateOfBirth ('personal') on top of public identity
+// (name, household name, program name). No email/phone, so no ':pii'; no
+// lastBackgroundCheck, so no ':internal'. A later widening has to show up here.
+//
+// ProgramParticipant rides along to mark which of these people are enrolled in a
+// program. That edge is all-public-tier — row EXISTENCE is the sensitive part —
+// so admission is the real boundary, and this view is board/sysadmin only.
+defineRoute({
+    endpoint: 'GET /api/membership-audit/turning-18',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { Person } with household (Household) and programParticipants
+    // (ProgramParticipant → program Program), plus { BoardSettings }.
+    returns: ['Person', 'Household', 'ProgramParticipant', 'Program', 'BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'member', 'public']],
+        ['isBoardMember', ['everyones:personal', 'member', 'public']],
     ],
 });
 

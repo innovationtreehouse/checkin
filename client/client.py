@@ -4,7 +4,7 @@ CheckMeIn Kiosk Client
 
 A thin client for Raspberry Pi that:
   1. Serves a transparent reverse proxy on localhost:8083
-  2. Wraps the Next.js frontend in an iframe at GET / pointing to /kioskdisplay
+  2. Wraps the Next.js frontend in an iframe at GET / pointing to kiosk_path
   3. Injects Ed25519 signature headers automatically into proxied API requests
   4. Listens for USB barcode/QR scanner input
 """
@@ -34,6 +34,10 @@ log = logging.getLogger("kiosk")
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+# The backend page serving the kiosk display; `mode=kiosk` selects its kiosk
+# layout. Overridable per-Pi via config.json.
+DEFAULT_KIOSK_PATH = "/attendance/current?mode=kiosk"
+
 def load_config(path="config.json"):
     if not os.path.exists(path):
         log.error(f"Config file not found: {path}")
@@ -49,13 +53,18 @@ def load_signing_key(path):
         seed = f.read()
     return SigningKey(seed)
 
+def build_signed_message(timestamp, nonce, method, path, body):
+    # The wire contract with the server's verifyKioskSignature. Pinned by the
+    # golden vector in kiosk-signing-vector.test.json, which both this client's
+    # test_signing_vector.py and the server's verifyKioskSignature test read.
+    return f"{timestamp}:{nonce}:{method}:{path}:{body}".encode()
+
 def sign_request(signing_key, method, path, body=""):
     # Nonce is bound into the signed message and is single-use server-side, so a
-    # captured request can't be replayed within the 60s timestamp window. Server
-    # must verify the same format — ship client and server together.
+    # captured request can't be replayed within the 60s timestamp window.
     timestamp = str(int(time.time()))
     nonce = secrets.token_hex(16)
-    message = f"{timestamp}:{nonce}:{method}:{path}:{body}".encode()
+    message = build_signed_message(timestamp, nonce, method, path, body)
     signature = signing_key.sign(message).signature.hex()
     return {
         "X-Kiosk-Timestamp": timestamp,
@@ -110,7 +119,9 @@ class BackendClient:
             return {"error": str(e)}, 0
 
     def get_server_version(self):
-        path = "/api/kiosk/version"
+        # Public, DB-free route returning {"version": <git sha>}; it ignores the
+        # signature headers below, which are sent anyway for uniformity.
+        path = "/api/system-status/kiosk-version"
         headers = self._headers("GET", path)
         try:
             r = self.session.get(
@@ -156,7 +167,7 @@ class AttendanceState:
 class KioskHandler(BaseHTTPRequestHandler):
     state = None
     backend = None
-    kiosk_path = "/kioskdisplay?mode=kiosk"
+    kiosk_path = DEFAULT_KIOSK_PATH
     disable_blackout = False
 
     def do_GET(self):
@@ -619,10 +630,10 @@ def version_poller(backend, state, interval=60):
         
         # 2. Check Client Version Update
         try:
-            subprocess.run(["git", "fetch", "origin", "master"], capture_output=True, timeout=15)
-            
+            subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
+
             local_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-            remote_head = subprocess.check_output(["git", "rev-parse", "origin/master"], text=True).strip()
+            remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
             
             if local_head and remote_head and local_head != remote_head:
                 log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
@@ -636,7 +647,7 @@ def main():
     key_path = config.get("private_key_path", "./client.key")
     usb_device = config.get("usb_device", "")
     port = int(config.get("listen_port", 8080))
-    kiosk_path = config.get("kiosk_path", "/kioskdisplay?mode=kiosk")
+    kiosk_path = config.get("kiosk_path", DEFAULT_KIOSK_PATH)
     attendance_path = config.get("attendance_path", "")
     disable_blackout = config.get("disable_blackout", True)
 

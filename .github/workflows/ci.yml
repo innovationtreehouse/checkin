@@ -38,8 +38,9 @@ jobs:
   # replace the single old "Run Tests" job — see the CAVEAT comment above
   # `unit-tests` below: branch protection / merge-queue settings still say
   # "Run Tests" and need a manual update, which this PR cannot make).
-  # The Python kiosk client (client/**) has no Node CI, so a client-only change has
-  # nothing to test — but skipping the workflow via `paths-ignore` left those required
+  # The Python kiosk client (client/**) has no NODE tests — it has its own tier
+  # (`client-tests` below) — so a client-only change has no Node work to do. But
+  # skipping the workflow via `paths-ignore` left those required
   # checks permanently "pending" and blocked client-only PRs from ever merging.
   # Docs/markdown-only changes (docs/ dirs, or any *.md) are treated the same way:
   # they can't affect the build or the app tests, so there's nothing to build or run.
@@ -54,6 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       app: ${{ steps.detect.outputs.app }}
+      client: ${{ steps.detect.outputs.client }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -91,18 +93,33 @@ jobs:
           if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "Non-PR event ($EVENT_NAME) — running full CI."
             echo "app=true" >> "$GITHUB_OUTPUT"
+            echo "client=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed="$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA")"
           echo "Changed files:"; printf '%s\n' "$changed"
           # grep -v exits 0 if ANY line is NOT skippable (client/, a docs/ dir, or
-          # *.md) → there's real app code to build and test.
-          if printf '%s\n' "$changed" | grep -qvE '(^client/|(^|/)docs/|\.md$)'; then
+          # *.md) → there's real app code to build and test. The kiosk signing
+          # vector is the exception inside client/: both this repo's Python tests
+          # AND the Node verifyKioskSignature test read it, so editing it alone
+          # must still run the Node tier.
+          if printf '%s\n' "$changed" | grep -qvE '(^client/|(^|/)docs/|\.md$)' \
+            || printf '%s\n' "$changed" | grep -qxF 'client/kiosk-signing-vector.test.json'; then
             echo "App code changed — running full CI."
             echo "app=true" >> "$GITHUB_OUTPUT"
           else
             echo "Docs- or client-only change — skipping Node CI work (required checks still pass)."
             echo "app=false" >> "$GITHUB_OUTPUT"
+          fi
+          # The Python kiosk client has its own tier (client-tests below). Also
+          # run it when this workflow changes, so edits to that job are exercised
+          # by the PR that makes them.
+          if printf '%s\n' "$changed" | grep -qE '^(client/|\.github/workflows/ci\.yml$)'; then
+            echo "Kiosk client (or this workflow) changed — running the Python tier."
+            echo "client=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No client/** change — skipping the Python tier."
+            echo "client=false" >> "$GITHUB_OUTPUT"
           fi
 
   # ---------------------------------------------------------------------------
@@ -111,6 +128,9 @@ jobs:
   # That setting must be updated by a repo admin to require the three job names
   # below — "Run Tests (unit)", "Run Tests (integration)", "Coverage gate
   # (merged)" — instead, or none of them will actually gate merges.
+  # "Kiosk client tests (Python)" needs the same admin action: until it is added
+  # to required-status-checks, a PR that breaks the client↔server signing
+  # contract can still merge with that job red.
   #
   # Split from the old single `test` job (lint + typecheck + DB preflight +
   # the FULL unit+integration suite with coverage, ~6m48s, of which
@@ -595,6 +615,48 @@ jobs:
       - name: Test s-read-function
         if: needs.changes.outputs.app == 'true'
         run: npm test -w s-read-function
+
+  # The Raspberry Pi kiosk client (client/**, Python). Its suite includes the
+  # H1 guard that the signing proxy never binds 0.0.0.0, and the golden vector
+  # pinning the Ed25519 request-signing contract against the server's
+  # verifyKioskSignature — both of which had no CI to run them. Gated on
+  # `client` (not `app`) so a client-only PR, which skips every Node job above,
+  # still gets tested; same always-report skip-notice pattern as those jobs so
+  # this can be added as a required check.
+  client-tests:
+    name: Kiosk client tests (Python)
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Skip notice (no client change)
+        if: needs.changes.outputs.client != 'true'
+        run: echo "No client/** change — nothing to test; reporting success."
+
+      - name: Checkout code
+        if: needs.changes.outputs.client == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}   # empty on push/PR = default ref; the tag when called by deploy-prod
+
+      - name: Setup Python
+        if: needs.changes.outputs.client == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      # client.py / badge.py import nacl and requests at module scope, so the
+      # tests can't run without them. evdev is NOT installed: it needs real
+      # input devices, and the client imports it lazily inside the USB-scanner
+      # listener, which no test exercises.
+      - name: Install dependencies
+        if: needs.changes.outputs.client == 'true'
+        run: pip install -r client/requirements.txt
+
+      - name: Run client tests
+        if: needs.changes.outputs.client == 'true'
+        working-directory: client
+        run: python -m unittest discover -v
 
   deploy-build:
     name: Deploy build (no deploy)

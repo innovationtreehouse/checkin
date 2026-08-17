@@ -158,6 +158,13 @@ describe('Cron Scholarship-Grace-Expiry API Integration Tests', () => {
                 // "gone" throws on delete() and is isolated, not counted as released.
                 expect(data.processed).toBe(2);
                 expect(data.released).toBe(1);
+                // Isolating the row keeps the sweep going; it does not make the run
+                // healthy. The run completed, so `success` stays true — the ledger
+                // records the failure on `error` instead, which is what the panel reads.
+                expect(data.failed).toBe(1);
+                const ledger = await prisma.cronRunLog.findFirst({ where: { job: 'scholarship-grace-expiry' }, orderBy: { id: 'desc' } });
+                expect(ledger?.success).toBe(true);
+                expect(ledger?.error).toBe('1 item(s) failed');
 
                 // Inside the window: untouched.
                 const inside = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId: ids.inside } } });
@@ -167,7 +174,7 @@ describe('Cron Scholarship-Grace-Expiry API Integration Tests', () => {
                 // Outside the window: auto-withdrawn (row gone) + released (+1 logged).
                 const outside = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId: ids.outside } } });
                 expect(outside).toBeNull();
-                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1 for variants: dev-mock-variant-grace-cron'));
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1 for variant: dev-mock-variant-grace-cron'));
 
                 const audit = await prisma.auditLog.findFirst({
                     where: { actorId: 0, tableName: 'ProgramParticipant', affectedEntityId: ids.outside, secondaryAffectedEntity: programId },
