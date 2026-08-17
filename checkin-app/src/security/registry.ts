@@ -593,6 +593,19 @@ defineRoute({
     ],
 });
 
+// Server error log (latest 100) — admin surface, all internal tier. Registered
+// ahead of its handler() conversion (inert until then).
+defineRoute({
+    endpoint: 'GET /api/system-status/errors',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['ErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Integration error log (latest 200) — admin surface, all internal tier.
 // Registered ahead of its handler() conversion (inert until then). The response
 // key is `errors` for back-compat with the existing UI.
