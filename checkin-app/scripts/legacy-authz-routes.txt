@@ -39,7 +39,6 @@ POST /api/dev/zoho-sign/complete
 PATCH /api/events/[id]
 PATCH /api/events/[id]/rsvp
 GET /api/events/mine
-GET /api/events
 POST /api/events
 GET /api/facility/badges
 GET /api/facility/trends
