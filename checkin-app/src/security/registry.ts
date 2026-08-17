@@ -606,6 +606,20 @@ defineRoute({
     ],
 });
 
+// Integration error log (latest 200) — admin surface, all internal tier.
+// Registered ahead of its handler() conversion (inert until then). The response
+// key is `errors` for back-compat with the existing UI.
+defineRoute({
+    endpoint: 'GET /api/system-status/links',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['IntegrationErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Volunteer designations (dues-discount allowlist; email is pii) — admin
 // surface, registered ahead of its handler() conversion (inert until then). GET
 // is a pure findMany (create/delete live on other HTTP methods).
