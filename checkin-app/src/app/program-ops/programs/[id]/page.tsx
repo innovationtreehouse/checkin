@@ -26,6 +26,7 @@ export type ProgramDetail = {
   maxAge: number | null;
   maxParticipants: number | null;
   orgMemberOnly: boolean;
+  announceOnOpen: boolean;
   participants: {
     personId: number;
     status: string;
@@ -43,8 +44,7 @@ export type ProgramDetail = {
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
   shopifyProductId: string | null;
-  shopifyOrgMemberVariantId: string | null;
-  shopifyNonOrgMemberVariantId: string | null;
+  shopifyVariantId: string | null;
 };
 
 export type ParticipantOption = { id: number; name: string | null; email: string; dateOfBirth?: string | null };
@@ -72,6 +72,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   const [phase, setPhase] = useState("PLANNING");
   const [enrollmentStatus, setEnrollmentStatus] = useState("CLOSED");
   const [orgMemberOnly, setMemberOnly] = useState(false);
+  const [announceOnOpen, setAnnounceOnOpen] = useState(false);
   const [leadMentorIdInput, setLeadMentorIdInput] = useState("");
   const [memberPrice, setMemberPrice] = useState("");
   const [nonMemberPrice, setNonMemberPrice] = useState("");
@@ -79,8 +80,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
   // Shopify identifiers, editable by sysadmin/board only (manual repair when
   // there's no live Shopify to sync against).
   const [shopifyProductIdInput, setShopifyProductIdInput] = useState("");
-  const [orgVariantInput, setOrgVariantInput] = useState("");
-  const [nonOrgVariantInput, setNonOrgVariantInput] = useState("");
+  const [variantInput, setVariantInput] = useState("");
 
   // EntityPicker owns the transient query/results/loading; we keep only the selected id + its display label.
   const [mentorSearch, setMentorSearch] = useState("");
@@ -107,13 +107,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setPhase(data.phase || "PLANNING");
         setEnrollmentStatus(data.enrollmentStatus || "CLOSED");
         setMemberOnly(Boolean(data.orgMemberOnly));
+        setAnnounceOnOpen(Boolean(data.announceOnOpen));
         setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
         setMemberPrice(data.orgMemberPriceCents !== null ? String(data.orgMemberPriceCents / 100) : "");
         setNonMemberPrice(data.nonOrgMemberPriceCents !== null ? String(data.nonOrgMemberPriceCents / 100) : "");
         setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
         setShopifyProductIdInput(data.shopifyProductId ?? "");
-        setOrgVariantInput(data.shopifyOrgMemberVariantId ?? "");
-        setNonOrgVariantInput(data.shopifyNonOrgMemberVariantId ?? "");
+        setVariantInput(data.shopifyVariantId ?? "");
         setIsEditingMentor(false);
       } else if (res.status === 404) {
         setMessage("Program not found.");
@@ -153,7 +153,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
           maxParticipants: maxParticipants ? parseInt(maxParticipants) : null,
-          phase, enrollmentStatus, orgMemberOnly,
+          phase, enrollmentStatus, orgMemberOnly, announceOnOpen,
           leadMentorId: leadMentorIdInput ? parseInt(leadMentorIdInput) : null,
           memberPrice: memberPrice || null,
           nonMemberPrice: nonMemberPrice || null,
@@ -182,8 +182,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shopifyProductId: shopifyProductIdInput || null,
-          shopifyOrgMemberVariantId: orgVariantInput || null,
-          shopifyNonOrgMemberVariantId: nonOrgVariantInput || null,
+          shopifyVariantId: variantInput || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -330,14 +329,14 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                   <Card withBorder radius="md" padding="md">
                     <Text fw={500} mb={4}>Shopify Checkout Identifiers</Text>
                     <Text size="xs" c="dimmed" mb="sm">
-                      Admin/Board only. A priced tier needs its variant ID or paid enrollment can&apos;t check out.
+                      Admin/Board only. A priced program needs its variant ID or paid enrollment can&apos;t check out.
+                      One variant covers both tiers — member pricing is a discount code applied at checkout.
                       Set these manually here (e.g. local/testing where there is no live Shopify), or use “Sync to Shopify” above to create them.
                     </Text>
                     <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                      <TextInput label="Member Variant ID" value={orgVariantInput} onChange={e => setOrgVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456789" />
-                      <TextInput label="Non-Member Variant ID" value={nonOrgVariantInput} onChange={e => setNonOrgVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456790" />
+                      <TextInput label="Variant ID" value={variantInput} onChange={e => setVariantInput(e.currentTarget.value)} placeholder="e.g. 40123456789" />
+                      <TextInput label="Product ID (optional)" value={shopifyProductIdInput} onChange={e => setShopifyProductIdInput(e.currentTarget.value)} placeholder="e.g. 80123456789" />
                     </SimpleGrid>
-                    <TextInput mt="sm" label="Product ID (optional)" value={shopifyProductIdInput} onChange={e => setShopifyProductIdInput(e.currentTarget.value)} placeholder="e.g. 80123456789" />
                     <Group mt="sm">
                       <Button type="button" variant="light" size="xs" loading={syncing} onClick={handleSaveShopifyIds}>
                         Save Shopify IDs
@@ -407,6 +406,13 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                 )}
 
                 <Checkbox checked={orgMemberOnly} onChange={e => setMemberOnly(e.currentTarget.checked)} label="Treehouse Members-Only Program" />
+
+                <Checkbox
+                  checked={announceOnOpen}
+                  onChange={e => setAnnounceOnOpen(e.currentTarget.checked)}
+                  label="Announce to members when enrollment opens"
+                  description="Off by default. When on, reaching Upcoming + Open emails members whose membership covers this program's dates (once)."
+                />
 
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
                   <Select label="Program Phase" value={phase} onChange={v => setPhase(v ?? 'PLANNING')} allowDeselect={false}

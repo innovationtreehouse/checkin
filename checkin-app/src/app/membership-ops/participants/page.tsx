@@ -92,7 +92,7 @@ export default function AdminParticipantsIndex() {
         setResults(data.people);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
     } finally {
       setLoading(false);
     }
@@ -163,7 +163,7 @@ export default function AdminParticipantsIndex() {
         showNotification(data.error || "Failed to assign household", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
       showNotification("Network error", "error");
     } finally {
       setAssigning(false);
@@ -191,7 +191,7 @@ export default function AdminParticipantsIndex() {
         showNotification(data.error || "Failed to update person", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
       showNotification("Network error", "error");
     } finally {
       setSavingDetails(false);
@@ -226,7 +226,7 @@ export default function AdminParticipantsIndex() {
         showNotification(data.error || "Failed to add contact", "error");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Participants page action failed:", err);
       showNotification("Network error", "error");
     } finally {
       setAddContactSaving(false);
@@ -452,7 +452,7 @@ export default function AdminParticipantsIndex() {
             <TextInput
               type="date"
               label="Last Background Check Review"
-              description="Date the board last reviewed this person's background check. Clear the field to remove it."
+              description="Date the board last reviewed this person's background check. Leave the field blank to remove it."
               value={editForm.lastBackgroundCheck}
               onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, lastBackgroundCheck: value })); }}
             />

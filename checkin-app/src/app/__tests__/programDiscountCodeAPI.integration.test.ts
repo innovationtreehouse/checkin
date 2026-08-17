@@ -12,8 +12,18 @@
 import { POST } from '@/app/api/programs/[id]/discount-code/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import * as shopify from '@/lib/shopify';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
+
+// Wrap only mintMemberDiscountCode so its call args are observable while every
+// other export (including its own callees like config) stays real — SWC compiles
+// this module's named exports as non-configurable getters, so jest.spyOn can't
+// redefine the property directly; jest.fn(actual) preserves call-through.
+jest.mock('@/lib/shopify', () => {
+    const actual = jest.requireActual('@/lib/shopify');
+    return { ...actual, mintMemberDiscountCode: jest.fn(actual.mintMemberDiscountCode) };
+});
 
 const TAG = 'discount-code-duration-test';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -137,6 +147,12 @@ describe('POST /api/programs/[id]/discount-code — membership duration', () => 
         await prisma.$disconnect();
     });
 
+    const mintSpy = shopify.mintMemberDiscountCode as jest.Mock;
+
+    afterEach(() => {
+        mintSpy.mockClear();
+    });
+
     it('mints a code when the member\'s validity covers the program\'s endAt', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: unsettledPersonId } });
         const res = await post(coveredProgramId);
@@ -144,6 +160,9 @@ describe('POST /api/programs/[id]/discount-code — membership duration', () => 
         const data = await res.json();
         expect(data.code).toEqual(expect.stringContaining(`PRG${coveredProgramId}-`));
         expect(data.reason).toBeUndefined();
+        // 5000 (non-member) - 4000 (member) = 1000: the amount actually
+        // reaches the minting call, not just the response shape.
+        expect(mintSpy).toHaveBeenCalledWith(coveredProgramId, 'dev-mock-variant-discount-code-covered', 1000);
     });
 
     it('returns { code: null, reason } when the program ends after an unsettled member\'s boundary', async () => {
@@ -153,6 +172,7 @@ describe('POST /api/programs/[id]/discount-code — membership duration', () => 
         const data = await res.json();
         expect(data.code).toBeNull();
         expect(data.reason).toBe('membership_ends_before_program');
+        expect(mintSpy).not.toHaveBeenCalled();
     });
 
     it('mints a code for the same past-boundary program once the household is settled for the coming year', async () => {
@@ -162,6 +182,7 @@ describe('POST /api/programs/[id]/discount-code — membership duration', () => 
         const data = await res.json();
         expect(data.code).toEqual(expect.stringContaining(`PRG${uncoveredProgramId}-`));
         expect(data.reason).toBeUndefined();
+        expect(mintSpy).toHaveBeenCalledWith(uncoveredProgramId, 'dev-mock-variant-discount-code-uncovered', 1000);
     });
 
     it('a non-member still gets { code: null } with no reason (unchanged behavior)', async () => {
@@ -171,5 +192,6 @@ describe('POST /api/programs/[id]/discount-code — membership duration', () => 
         const data = await res.json();
         expect(data.code).toBeNull();
         expect(data.reason).toBeUndefined();
+        expect(mintSpy).not.toHaveBeenCalled();
     });
 });

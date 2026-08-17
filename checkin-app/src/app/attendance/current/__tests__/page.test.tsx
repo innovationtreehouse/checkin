@@ -37,6 +37,11 @@ function mockRoutes(overrides: Record<string, unknown | (() => unknown)> = {}) {
   });
 }
 
+// A roster column is the element wrapping its header label and its card grid.
+function columnFor(label: string) {
+  return screen.getByText(label).closest("div")!.parentElement!.parentElement!;
+}
+
 // The admin (id 1, sysadmin + keyholder) is not checked in and has a household,
 // so both the self check-in button and the household check-in row render.
 function setAdminSession() {
@@ -230,6 +235,62 @@ describe("attendance/current page", () => {
         expect.objectContaining({ color: "red", message: "Network error", autoClose: false }),
       ),
     );
+    expect(await screen.findByText("Network error occurred.")).toBeInTheDocument();
+  });
+
+  it("reports an unknown supervision state instead of an empty facility when the initial load throws", async () => {
+    setAdminSession();
+    global.fetch = jest.fn(async () => { throw new Error("down"); }) as unknown as typeof fetch;
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("The facility is currently empty.")).not.toBeInTheDocument();
+    expect(screen.queryByText("People Present: 0")).not.toBeInTheDocument();
+    expect(screen.getByText("People Present: —")).toBeInTheDocument();
+  });
+
+  it("reports an unknown supervision state when the initial load returns a server error", async () => {
+    setAdminSession();
+    global.fetch = jest.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("/api/attendance")) return { ok: false, json: async () => ({ error: "Server exploded" }) } as Response;
+      return { ok: true, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("The facility is currently empty.")).not.toBeInTheDocument();
+    expect(screen.getByText("People Present: —")).toBeInTheDocument();
+  });
+
+  it("reports an unknown supervision state when the response payload is unrecognized", async () => {
+    setAdminSession();
+    mockFetchJson({ "/api/attendance": { access: "something-else" } });
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.getByText("Attendance is unavailable — the roster could not be loaded.")).toBeInTheDocument();
+    expect(screen.queryByText("The facility is currently empty.")).not.toBeInTheDocument();
+  });
+
+  it("counts a visitor with no recorded birth date as youth, not as a supervising adult", async () => {
+    setAdminSession();
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": {
+        access: "full",
+        attendance: [
+          // No server-computed isYouth and no birth date — the client fallback decides.
+          { id: 204, arrivedAt: "2026-07-01T14:15:00.000Z", participant: { id: 80, email: "dob@example.com", name: "No Dob", isKeyholder: false, isSysadmin: false, dateOfBirth: null, householdId: 11 } },
+        ],
+        counts: { keyholders: 0, volunteers: 0, youth: 1, total: 1 },
+        safety: { isLastKeyholder: false, isTwoDeepViolation: true },
+      },
+    });
+    renderWithProviders(<KioskDisplay />);
+    await screen.findByText("People Present: 1");
+
+    expect(within(columnFor("Students")).getByText("No Dob")).toBeInTheDocument();
+    expect(within(columnFor("Volunteers/Adults")).queryByText("No Dob")).not.toBeInTheDocument();
   });
 
   it("switches to kiosk mode automatically when the server flags a signed request", async () => {

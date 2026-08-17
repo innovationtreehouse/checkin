@@ -1,4 +1,4 @@
-import { config, ORG_DOMAIN, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET, DEV_MOCK_WEBHOOK_SECRET } from "@/lib/config";
+import { config, ORG_DOMAIN, isStagingAccessAllowed, DEV_MOCK_SHOPIFY_WEBHOOK_SECRET, DEV_MOCK_WEBHOOK_SECRET } from "@/lib/config";
 
 const ENV_KEYS = [
     "DATABASE_URL", "NEXTAUTH_URL", "NEXTAUTH_SECRET", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
@@ -99,6 +99,93 @@ describe("checkinEnv / isProd / isDevInstance / isLocal / devToolsActive", () =>
         } finally {
             Object.defineProperty(process.env, "NODE_ENV", { value: original, configurable: true });
         }
+    });
+});
+
+describe("isStaging — driven by CHECKIN_ENV=stg (no separate variable)", () => {
+    // Control both signals: the raw CHECKIN_ENV and the NEXTAUTH_URL-derived host.
+    beforeEach(() => {
+        delete process.env.CHECKIN_ENV;
+        delete process.env.NEXTAUTH_URL;
+        delete process.env.VERCEL_URL;
+    });
+
+    it("false when CHECKIN_ENV is unset", () => {
+        expect(config.isStaging()).toBe(false);
+    });
+    it("true for the exact value 'stg'", () => {
+        process.env.CHECKIN_ENV = "stg";
+        expect(config.isStaging()).toBe(true);
+    });
+    it("false for any other CHECKIN_ENV — exact match, not truthy/substring", () => {
+        for (const v of ["prod", "dev", "local", "staging", "STG", ""]) {
+            process.env.CHECKIN_ENV = v;
+            expect(config.isStaging()).toBe(false);
+        }
+    });
+    it("checkinEnv() still collapses 'stg' to prod while isStaging() is true — the mock path stays off", () => {
+        process.env.CHECKIN_ENV = "stg";
+        expect(config.checkinEnv()).toBe("prod");
+        expect(config.isProd()).toBe(true);
+        expect(config.isStaging()).toBe(true);
+    });
+
+    // Derived as well as declared: a missing/blank/malformed CHECKIN_ENV fails
+    // readCheckinEnv() SAFE to prod, which fails isStaging() OPEN — so the host
+    // NEXTAUTH_URL points at is a second signal (can't be forgotten, or OAuth breaks).
+    describe("derived from config.baseUrl() as a second signal (CHECKIN_ENV not 'stg')", () => {
+        it("true when NEXTAUTH_URL's host starts with 'ops-stg.'", () => {
+            process.env.NEXTAUTH_URL = "https://ops-stg.innovationtreehouse.org";
+            expect(config.isStaging()).toBe(true);
+        });
+
+        it("false for a similarly-named but different host (e.g. prod's 'ops.')", () => {
+            process.env.NEXTAUTH_URL = "https://ops.innovationtreehouse.org";
+            expect(config.isStaging()).toBe(false);
+        });
+
+        it("false for the localhost default", () => {
+            expect(config.isStaging()).toBe(false);
+        });
+
+        it("does not throw on an unparsable NEXTAUTH_URL — fails closed to false", () => {
+            process.env.NEXTAUTH_URL = "not a url";
+            expect(() => config.isStaging()).not.toThrow();
+            expect(config.isStaging()).toBe(false);
+        });
+
+        it("CHECKIN_ENV=stg still wins even if the host does not match", () => {
+            process.env.NEXTAUTH_URL = "https://checkin.example.org";
+            process.env.CHECKIN_ENV = "stg";
+            expect(config.isStaging()).toBe(true);
+        });
+    });
+});
+
+describe("isStagingAccessAllowed — the ops-stg gate predicate", () => {
+    it("denies null/undefined claims (no token, anonymous caller)", () => {
+        expect(isStagingAccessAllowed(null)).toBe(false);
+        expect(isStagingAccessAllowed(undefined)).toBe(false);
+    });
+    it("denies an empty claims object", () => {
+        expect(isStagingAccessAllowed({})).toBe(false);
+    });
+    it("allows a verified org member", () => {
+        expect(isStagingAccessAllowed({ hd: ORG_DOMAIN, emailVerified: true })).toBe(true);
+    });
+    it("denies the right hd without emailVerified", () => {
+        expect(isStagingAccessAllowed({ hd: ORG_DOMAIN, emailVerified: false })).toBe(false);
+        expect(isStagingAccessAllowed({ hd: ORG_DOMAIN })).toBe(false);
+    });
+    it("denies emailVerified=true with the wrong hd", () => {
+        expect(isStagingAccessAllowed({ hd: "gmail.com", emailVerified: true })).toBe(false);
+    });
+    it("allows canAccessStaging=true regardless of hd/emailVerified", () => {
+        expect(isStagingAccessAllowed({ canAccessStaging: true })).toBe(true);
+        expect(isStagingAccessAllowed({ hd: "gmail.com", emailVerified: false, canAccessStaging: true })).toBe(true);
+    });
+    it("denies canAccessStaging=false with no org claims", () => {
+        expect(isStagingAccessAllowed({ canAccessStaging: false })).toBe(false);
     });
 });
 
@@ -252,9 +339,9 @@ describe("simple optional getters (env-set vs default)", () => {
         process.env.RESEND_API_KEY = "resend-1";
         expect(config.resendApiKey()).toBe("resend-1");
     });
-    it("emailFrom default", () => {
+    it("emailFrom is null when unset (no hardcoded sender to mask a gap)", () => {
         delete process.env.EMAIL_FROM;
-        expect(config.emailFrom()).toBe("CheckMeIn <onboarding@resend.dev>");
+        expect(config.emailFrom()).toBeNull();
         process.env.EMAIL_FROM = "a@b.com";
         expect(config.emailFrom()).toBe("a@b.com");
     });

@@ -58,7 +58,7 @@ describe("live: single-pool product + inventory contract", () => {
     });
 
     it("adjustProgramInventory applies RELATIVE deltas (scholarship hold -1, release +1)", async () => {
-        const program = { shopifyVariantId: variantId, shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: null };
+        const program = { shopifyVariantId: variantId };
         const variant = await getVariant(variantId);
 
         expect(await adjustProgramInventory(program, -1)).toBe(true);

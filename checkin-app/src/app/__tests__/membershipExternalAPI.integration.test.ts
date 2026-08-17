@@ -15,7 +15,7 @@ import { getServerSession } from 'next-auth/next';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 // Advancing to PENDING_BG_REVIEW pings reviewers; don't hit Resend in tests.
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'membership-external-test';
 const SECRET = 'zoho-test-secret';
@@ -99,6 +99,28 @@ describe('Membership EXTERNAL phase API', () => {
         if (prevSecret === undefined) delete process.env.ZOHO_WEBHOOK_SECRET;
         else process.env.ZOHO_WEBHOOK_SECRET = prevSecret;
         await prisma.$disconnect();
+    });
+
+    it('rejects a board member acting on their OWN household application (COI), with no mutation', async () => {
+        // A board member inside the applicant household: marking the contract or the BG
+        // consent would advance it to PENDING_PAYMENT with no Zoho envelope, no
+        // signature and no consent behind it.
+        const insider = await prisma.person.create({
+            data: { email: `insider-${TAG}@example.com`, name: 'Insider Board', isBoardMember: true, householdId: hhB },
+        });
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: insider.id, isSysadmin: true, isBoardMember: true } });
+
+        for (const action of ['mark-contract', 'mark-bg-consent', 'set-envelope']) {
+            const res = await BOARD_EXTERNAL(boardReq({ processId: procB, action, envelopeId: 'zoho-COI' }) as never);
+            expect(res.status).toBe(403);
+        }
+
+        // Sysadmin is no exemption, and nothing moved.
+        const p = await prisma.orgMembershipProcess.findUnique({ where: { id: procB } });
+        expect(p?.contractSignedAt).toBeNull();
+        expect(p?.bgConsentAt).toBeNull();
+        expect(p?.zohoEnvelopeId).toBe('zoho-B');
+        expect(p?.status).toBe('PENDING_EXTERNAL_ACTION');
     });
 
     it('rejects a non-board user from the external controls', async () => {

@@ -18,13 +18,17 @@ export const GET = withAuth({}, async (_req, auth) => {
     }
 });
 
-// POST /api/membership — begin (or resume) an application.
+// POST /api/membership — begin (or resume) an application. Returns the same
+// state shape as GET — deliberately NOT the raw OrgMembershipProcess row from
+// startIntake: on resume that row carries internal-tier fields (zoho
+// envelope/action ids, shopify ids, stage timestamps) no household caller
+// needs; state.process is the {id, kind, status} the UI reads.
 export const POST = withAuth({}, async (_req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);
     try {
-        const process = await startIntake(auth.user.id);
+        await startIntake(auth.user.id);
         const state = await getIntakeState(auth.user.id);
-        return NextResponse.json({ process, state }, { status: 201 });
+        return NextResponse.json({ state }, { status: 201 });
     } catch (error) {
         return handleError(error);
     }

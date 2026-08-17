@@ -44,11 +44,7 @@ function jsonReq(body?: unknown) {
 
 describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
     let originalFetch: typeof global.fetch;
-    let prevSettings: {
-        orgMembershipVariantId: string | null;
-        shopifyNormalVariantId: string | null;
-        shopifyVolunteerVariantId: string | null;
-    } | null;
+    let prevSettings: { orgMembershipVariantId: string | null } | null;
 
     async function wipe() {
         const hhs = await prisma.household.findMany({ where: { name: { contains: TAG } }, select: { id: true } });
@@ -76,7 +72,7 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         await prisma.boardSettings.upsert({
             where: { id: 1 },
             create: { id: 1, orgMembershipVariantId: variantId },
-            update: { orgMembershipVariantId: variantId, shopifyNormalVariantId: null, shopifyVolunteerVariantId: null },
+            update: { orgMembershipVariantId: variantId },
         });
     }
 
@@ -99,13 +95,7 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         for (const k of SHOPIFY_ENV_KEYS) delete process.env[k];
 
         const existing = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-        prevSettings = existing
-            ? {
-                  orgMembershipVariantId: existing.orgMembershipVariantId,
-                  shopifyNormalVariantId: existing.shopifyNormalVariantId,
-                  shopifyVolunteerVariantId: existing.shopifyVolunteerVariantId,
-              }
-            : null;
+        prevSettings = existing ? { orgMembershipVariantId: existing.orgMembershipVariantId } : null;
         await wipe();
 
         global.fetch = jest.fn(async (input, init) => {
@@ -270,9 +260,14 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
             expect(row?.status).toBe('PENDING');
         });
 
-        it('200s, fires the real inbound webhook, and activates the PENDING participant (legacy variant)', async () => {
+        // The mock tool must echo the program's shopifyVariantId, or a fully
+        // configured program's local mock-pay flow 409s.
+        it('200s, fires the real inbound webhook, and activates the PENDING participant', async () => {
             asSession();
-            await prisma.program.update({ where: { id: programId }, data: { shopifyOrgMemberVariantId: 'dev-mock-variant-route-program-test' } });
+            await prisma.program.update({
+                where: { id: programId },
+                data: { shopifyVariantId: 'dev-mock-variant-route-program-test' },
+            });
             await prisma.programParticipant.create({
                 data: { programId, personId, status: 'PENDING', pendingSince: new Date() },
             });
@@ -283,29 +278,6 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
             expect(body).toEqual({ ok: true, participants: [{ personId, status: 'ACTIVE' }] });
 
             // The real proof: the webhook actually ran end-to-end and mutated the DB.
-            const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
-            expect(row?.status).toBe('ACTIVE');
-            expect(row?.pendingSince).toBeNull();
-        });
-
-        // Single-pool model (product decision 2026-07-06): the mock tool must
-        // echo shopifyVariantId too, or every new-model program's local mock-pay
-        // flow 409s despite being fully configured.
-        it('200s, fires the real inbound webhook, and activates the PENDING participant (single-pool variant)', async () => {
-            asSession();
-            await prisma.program.update({
-                where: { id: programId },
-                data: { shopifyOrgMemberVariantId: null, shopifyVariantId: 'dev-mock-variant-single-pool-route-test' },
-            });
-            await prisma.programParticipant.create({
-                data: { programId, personId, status: 'PENDING', pendingSince: new Date() },
-            });
-
-            const res = await POST(jsonReq({ programId, participantIds: [personId] }));
-            expect(res.status).toBe(200);
-            const body = await res.json();
-            expect(body).toEqual({ ok: true, participants: [{ personId, status: 'ACTIVE' }] });
-
             const row = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId, personId } } });
             expect(row?.status).toBe('ACTIVE');
             expect(row?.pendingSince).toBeNull();

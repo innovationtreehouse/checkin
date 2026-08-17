@@ -70,6 +70,7 @@ const AUTHZ_TESTED = new Set<string>([
     'facility/badges',
     'facility/trends',
     'facility/visits',
+    'facility/visits/insert',
     'finance-ops/payments',
     'finance-ops/payments/[id]',
     // POST + GET deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,
@@ -129,9 +130,7 @@ const AUTHZ_TESTED = new Set<string>([
     'settings/shopify-webhook',
     'shop/tools/[id]',
     'system-status/audit-log',
-    'system-status/errors',
     'system-status/health',
-    'system-status/links',
     'system-status/links/[id]',
     // GET deny-path (401 anon / 403 non-board) in lifecycleReconcile.integration.test.ts.
     'system-status/lifecycle',

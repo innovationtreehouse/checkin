@@ -105,7 +105,7 @@ export default function TrustedAdultPanel() {
         fetch("/api/trusted-adults/mine")
             .then((r) => r.json())
             .then((d) => setItems(d.trustedAdults ?? []))
-            .catch(console.error)
+            .catch((err) => console.error("Failed to load your trusted adults:", err))
             .finally(() => setLoading(false));
     }, []);
 

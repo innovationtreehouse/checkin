@@ -2,23 +2,10 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
-import { createContact, listContacts, EmergencyContactError } from "@/lib/emergencyContacts/service";
+import { createContact, listContacts, present, EmergencyContactError } from "@/lib/emergencyContacts/service";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { leadHousehold } from "@/lib/household/leads";
 import { apiError } from "@/lib/api-response";
-
-/** Shape a contact for the client, exposing the validity flag. */
-function present(c: { id: number; name: string; phone: string; email: string | null; relationship: string | null; priority: number; conflictParticipantId: number | null }) {
-    return {
-        id: c.id,
-        name: c.name,
-        phone: c.phone,
-        email: c.email,
-        relationship: c.relationship,
-        priority: c.priority,
-        invalid: c.conflictParticipantId !== null || !c.name.trim() || !c.phone.trim(),
-    };
-}
 
 export const GET = withAuth({}, async (_req, auth) => {
     if (auth.type !== "session") return apiError("Unauthorized", 401);

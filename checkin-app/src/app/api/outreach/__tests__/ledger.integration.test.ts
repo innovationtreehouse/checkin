@@ -17,7 +17,7 @@ import { getServerSession } from 'next-auth/next';
 import { sendEmail } from '@/lib/email';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn() }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn() }));
 // process-batch's join-variant unsubscribe footer (unsubscribeToken.ts hmacKey) reads
 // config.nextAuthSecret(), which throws when unset — fine locally (the gitignored .env
 // supplies it) but CI has no .env. Same partial-mock pattern as auth-options-jwt.test.ts:
@@ -54,7 +54,7 @@ function req(method: string, body?: unknown) {
 async function setBoundary(date: Date | null) {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
-        create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: date },
+        create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: date },
         update: { orgMembershipYearBoundary: date },
     });
 }

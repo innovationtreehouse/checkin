@@ -7,5 +7,7 @@
 GET /api/profile
 GET /api/programs/[id]
 GET /api/safety/board-contacts
+PATCH /api/attendance/manual/[id]
+DELETE /api/attendance/manual/[id]
 GET /api/system-status/errors
 GET /api/system-status/links

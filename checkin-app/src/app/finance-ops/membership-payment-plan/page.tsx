@@ -7,7 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { AlertBanner } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { formatDateTime } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 
 import { PageLoader } from "@/components/ui/PageLoader";
@@ -25,6 +25,7 @@ type MembershipPaymentPlanRequest = {
 };
 
 export default function MembershipPaymentPlansPage() {
+  const { formatDateTime } = useOrgTime();
   const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
 
   const [requests, setRequests] = useState<MembershipPaymentPlanRequest[]>([]);
@@ -181,7 +182,7 @@ export default function MembershipPaymentPlansPage() {
     <Stack>
       <Text c="dimmed">
         Review households that have requested a scholarship or payment plan for their membership
-        dues. Approving a request activates the membership without a Shopify payment (it still holds
+        fee. Approving a request activates the membership without a Shopify payment (it still holds
         for background clearance if that isn&apos;t done yet).
       </Text>
 
@@ -227,7 +228,7 @@ export default function MembershipPaymentPlansPage() {
         centered
       >
         <Text mb="lg">
-          Deny this request? The household stays awaiting payment and can still pay their dues
+          Deny this request? The household stays awaiting payment and can still pay their membership fee
           normally to activate, or re-request later. No automatic email is sent — contact the
           household to let them know.
         </Text>

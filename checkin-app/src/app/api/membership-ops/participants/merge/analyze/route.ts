@@ -3,6 +3,8 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
+import { householdMembershipStatus, membershipMergeBlock } from "../membershipGuard";
 
 export const dynamic = 'force-dynamic';
 
@@ -21,10 +23,45 @@ export const GET = withAuth(
             const getParticipant = async (id: number) => {
                 const p = await prisma.person.findUnique({
                     where: { id },
-                    include: {
+                    // Explicit select, not a bare include — an include returns the whole
+                    // Person row (allergies, notificationSettings, emailVerified,
+                    // lastBackgroundCheck, waiverSignedBy, ...) plus the whole Household
+                    // (intakeNotes, line1/city/state/postalCode), and a plain
+                    // `householdMembers: true` returns full Person rows one level down for
+                    // people who aren't even being merged.
+                    // googleId/dateOfBirth ARE deliberately kept on the two merge subjects:
+                    // they're 2 of the 5 CONFLICT_FIELDS the merge field-picker compares
+                    // (see ../route.ts), and googleIdIdentity() renders the account behind a
+                    // googleId conflict. Stripping them silently breaks the picker.
+                    // Household members get only id/name/isHouseholdLead — all the merge page
+                    // renders (name, "(This)" self-marker, [Lead] marker, isLeadWithOthers
+                    // guard and others-count).
+                    select: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phone: true,
+                        googleId: true,
+                        // Lets the merge picker label which side's identity is
+                        // verified/controlled (the login identity resolves as one
+                        // unit — see ../route.ts). Kept explicit, not a bare include.
+                        emailVerified: true,
+                        dateOfBirth: true,
+                        mergedIntoId: true,
                         household: {
-                            include: {
-                                householdMembers: true
+                            select: {
+                                id: true,
+                                name: true,
+                                // Public-tier; feeds the membership warning the POST guard
+                                // enforces (see ../membershipGuard.ts).
+                                orgMembership: { select: { status: true } },
+                                householdMembers: {
+                                    // Tombstones are not members: the page's
+                                    // isLeadWithOthers guard must match the POST's, and
+                                    // the membership block counts live members only.
+                                    where: LIVE_PERSON,
+                                    select: { id: true, name: true, isHouseholdLead: true }
+                                }
                             }
                         },
                         _count: {
@@ -50,7 +87,25 @@ export const GET = withAuth(
                 return apiError("Cannot analyze: one of these participants has already been merged.", 409);
             }
 
-            return NextResponse.json({ participants: [pA, pB] });
+            // Mirrors the POST guard so the picker warns before the operator commits.
+            // The rule is asymmetric (it turns on which record is merged away) and the
+            // keeper isn't fixed until the UI scores and the operator swaps, so both
+            // directions are reported and the page applies the live one.
+            // householdMembers is already LIVE_PERSON-filtered, so "others" is the count.
+            const subject = (p: typeof pA) => ({
+                status: householdMembershipStatus(p.household),
+                liveOthers: p.household?.householdMembers.filter(m => m.id !== p.id).length ?? 0,
+            });
+            const a = subject(pA);
+            const b = subject(pB);
+
+            return NextResponse.json({
+                participants: [pA, pB],
+                membershipBlock: {
+                    aAsKeeper: membershipMergeBlock(a, b),
+                    bAsKeeper: membershipMergeBlock(b, a),
+                },
+            });
         } catch (error) {
             logger.error("Failed to analyze participants:", error);
             return apiError("Server error", 500);

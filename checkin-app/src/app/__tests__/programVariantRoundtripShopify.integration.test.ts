@@ -122,11 +122,8 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         expect(data.warning).toBeUndefined();
         programIds.push(data.program.id);
 
-        // Synthetic mock id, not a real Shopify product/variant. Single pool: no
-        // legacy org/non-org pair minted for a new program.
+        // Synthetic mock id, not a real Shopify product/variant.
         expect(data.program.shopifyVariantId).toMatch(/^dev-mock-variant-/);
-        expect(data.program.shopifyOrgMemberVariantId).toBeNull();
-        expect(data.program.shopifyNonOrgMemberVariantId).toBeNull();
 
         // Actually PERSISTED, not just echoed in the response.
         const persisted = await prisma.program.findUnique({ where: { id: data.program.id } });
