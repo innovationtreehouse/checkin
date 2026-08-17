@@ -531,6 +531,22 @@ defineRoute({
     ],
 });
 
+// Facility visit log (latest 50, all people) — admin surface. Registered ahead
+// of its handler() conversion (inert until then). Nested person carries email
+// (pii) + role flags; the admin everyones band covers them, and the near-raw
+// response makes the declared view exact.
+defineRoute({
+    endpoint: 'GET /api/facility/visits',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'visits',
+    // Bag: { Visit } with person (Person).
+    returns: ['Visit', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Volunteer designations (dues-discount allowlist; email is pii) — admin
 // surface, registered ahead of its handler() conversion (inert until then). GET
 // is a pure findMany (create/delete live on other HTTP methods).
