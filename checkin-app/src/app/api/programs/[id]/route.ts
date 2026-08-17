@@ -3,13 +3,14 @@ import { logger } from "@/lib/logger";
 import { withAuth, authenticateRequest } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { handler, notFound, forbidden, badRequest } from "@/security/handler";
-import { isActiveOrgMember, isActiveOrgMemberThrough, programCoverageDate } from "@/lib/orgMembership";
-import { notifyNewProgramAnnounced } from "@/lib/notifications";
+import { isActiveOrgMember, isDuesSettled, isDuesSettledThrough, programCoverageDate } from "@/lib/orgMembership";
+import { maybeAnnounceOnOpen } from "@/lib/programAnnounce";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
+import { parseDateOnly } from "@/lib/time";
 
 // ORDER MATTERS: this export sits ABOVE getProgram so the routeAuthDrift
 // guard attributes getProgram's edge-model reads to the nearest preceding
@@ -37,9 +38,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         startAt: body.startAt ? new Date(body.startAt) : null,
         endAt: body.endAt ? new Date(body.endAt) : null,
     });
+    // viewerIsMember answers "is this household a Treehouse Member" (ACTIVE only);
+    // viewerMemberPricingEligible answers the pricing question, which also covers a
+    // paid household still awaiting background clearance (#1397).
     const [viewerIsMember, viewerMemberPricingEligible] = await Promise.all([
         isActiveOrgMember(auth.user.id),
-        isActiveOrgMemberThrough(auth.user.id, coverageDate),
+        isDuesSettledThrough(auth.user.id, coverageDate),
     ]);
     return NextResponse.json({ ...body, viewerIsMember, viewerMemberPricingEligible });
 }
@@ -48,17 +52,57 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const programId = parseInt(params.id, 10);
     if (isNaN(programId)) throw badRequest('Invalid program ID');
 
+    // Explicit select, not include: whole rows would ship every pii/personal
+    // column a lead mentor's view happens to grant (googleId, dateOfBirth,
+    // allergies, the payment-plan flags) plus any column added later. The id /
+    // programId / personId / householdId keys below are ROW_SCOPE_KEYs — drop
+    // one and scopesHeld() fails closed and strips the row for the very roles
+    // this route serves (see the emergencyContacts note).
     const program = await prisma.program.findUnique({
         where: { id: programId },
-        include: {
-            volunteers: { where: { person: LIVE_PERSON }, include: { person: true } },
+        select: {
+            id: true,
+            name: true,
+            leadMentorId: true,
+            startAt: true,
+            endAt: true,
+            phase: true,
+            enrollmentStatus: true,
+            orgMemberOnly: true,
+            announceOnOpen: true,
+            minAge: true,
+            maxAge: true,
+            maxParticipants: true,
+            orgMemberPriceCents: true,
+            nonOrgMemberPriceCents: true,
+            shopifyProductId: true,
+            shopifyVariantId: true,
+            volunteers: {
+                where: { person: LIVE_PERSON },
+                select: {
+                    programId: true,
+                    personId: true,
+                    isCore: true,
+                    person: { select: { id: true, name: true, email: true } },
+                },
+            },
             participants: {
                 where: { person: LIVE_PERSON },
-                include: {
+                select: {
+                    programId: true,
+                    personId: true,
+                    status: true,
+                    pendingSince: true,
                     person: {
-                        include: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone: true,
+                            householdId: true,
                             household: {
-                                include: {
+                                select: {
+                                    id: true,
                                     emergencyContacts: {
                                         where: { conflictParticipantId: null, name: { not: "" }, phone: { not: "" } },
                                         orderBy: [{ priority: "asc" }, { id: "asc" }],
@@ -73,9 +117,18 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
                     },
                 },
             },
-            events: { orderBy: { startAt: 'asc' } },
-            fees: true,
-            leadMentor: true,
+            events: {
+                orderBy: { startAt: 'asc' },
+                select: {
+                    id: true,
+                    programId: true,
+                    name: true,
+                    startAt: true,
+                    endAt: true,
+                    attendanceConfirmedAt: true,
+                },
+            },
+            leadMentor: { select: { id: true, name: true, email: true } },
             _count: { select: { participants: { where: { person: LIVE_PERSON } }, volunteers: { where: { person: LIVE_PERSON } } } },
         },
     });
@@ -89,10 +142,12 @@ const getProgram = handler<{ id: string }>('GET /api/programs/[id]', async ({ au
     const isCoreVolunteer = !!sessionUser && program.volunteers.some(v => v.personId === sessionUser.id && v.isCore);
     const isPrivileged = isSysAdminOrBoard || isLeadMentor || isCoreVolunteer;
 
+    // Dues settled, not "is a member": a paid household awaiting background
+    // clearance is admitted to members-only programs (#1397).
     if (program.orgMemberOnly && !isPrivileged) {
         if (!sessionUser) throw notFound('Program not found');
-        const hasActiveMembership = await isActiveOrgMember(sessionUser.id);
-        if (!hasActiveMembership) throw forbidden('Forbidden: Member-Only Program');
+        const duesSettled = await isDuesSettled(sessionUser.id);
+        if (!duesSettled) throw forbidden('Forbidden: Member-Only Program');
     }
 
     // ── Association gate (deliberate inline exception) ──────────────────────────
@@ -156,7 +211,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
 
         const body = await req.json();
         let { leadMentorId } = body;
-        const { name, startAt, endAt, orgMemberOnly, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId, shopifyOrgMemberVariantId, shopifyNonOrgMemberVariantId } = body;
+        const { name, startAt, endAt, orgMemberOnly, announceOnOpen, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId } = body;
 
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
@@ -176,9 +231,10 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         const updateData: Record<string, unknown> = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),
-            ...(startAt !== undefined && { startAt: startAt ? new Date(startAt) : null }),
-            ...(endAt !== undefined && { endAt: endAt ? new Date(endAt) : null }),
+            ...(startAt !== undefined && { startAt: parseDateOnly(startAt) }),
+            ...(endAt !== undefined && { endAt: parseDateOnly(endAt) }),
             ...(orgMemberOnly !== undefined && { orgMemberOnly }),
+            ...(announceOnOpen !== undefined && { announceOnOpen }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),
             ...(minAge !== undefined && { minAge }),
@@ -193,8 +249,6 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             // no live Shopify to sync against (local/testing).
             ...(isSysAdminOrBoard && shopifyProductId !== undefined && { shopifyProductId: shopifyProductId || null }),
             ...(isSysAdminOrBoard && shopifyVariantId !== undefined && { shopifyVariantId: shopifyVariantId || null }),
-            ...(isSysAdminOrBoard && shopifyOrgMemberVariantId !== undefined && { shopifyOrgMemberVariantId: shopifyOrgMemberVariantId || null }),
-            ...(isSysAdminOrBoard && shopifyNonOrgMemberVariantId !== undefined && { shopifyNonOrgMemberVariantId: shopifyNonOrgMemberVariantId || null }),
         };
 
         const updatedProgram = await prisma.program.update({
@@ -213,13 +267,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             }
         });
 
-        // Announce only on the transition INTO (UPCOMING && OPEN) — not on every
-        // save while already there, and not when only one of the two is set.
-        const wasAnnounced = currentProgram.phase === 'UPCOMING' && currentProgram.enrollmentStatus === 'OPEN';
-        const nowAnnounced = updatedProgram.phase === 'UPCOMING' && updatedProgram.enrollmentStatus === 'OPEN';
-        if (!wasAnnounced && nowAnnounced) {
-            await notifyNewProgramAnnounced(updatedProgram.name);
-        }
+        // Announce trigger — transition rule, once-per-lifetime claim, audit row,
+        // and fire-without-await all live in the helper. Never throws.
+        await maybeAnnounceOnOpen({
+            programId: updatedProgram.id,
+            before: currentProgram,
+            after: updatedProgram,
+            actorId: auth.user.id,
+        });
 
         // Shopify is the source of truth for program capacity (product decision
         // 2026-07-06): cap edits propagate as relative inventory adjustments.
@@ -228,7 +283,7 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         let warning: string | undefined;
         const oldMax = currentProgram.maxParticipants;
         const newMax = updatedProgram.maxParticipants;
-        const hasShopifyVariant = !!(updatedProgram.shopifyVariantId || updatedProgram.shopifyOrgMemberVariantId || updatedProgram.shopifyNonOrgMemberVariantId);
+        const hasShopifyVariant = !!updatedProgram.shopifyVariantId;
 
         if (oldMax !== newMax && hasShopifyVariant) {
             if (oldMax !== null && newMax !== null) {

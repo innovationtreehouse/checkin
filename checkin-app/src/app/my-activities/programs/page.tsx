@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Badge, Button, Card, Container, Group, SimpleGrid, Text, Title } from '@mantine/core';
-import { formatDate } from '@/lib/time';
+import { formatDateOnly } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type UserProgram = {
@@ -27,8 +27,11 @@ type UserProgram = {
 // approve a payment plan (gray, not actionable — don't imply it's settled).
 // ponytail: "Payment due" reads more like a warning than a success state — mechanical
 // off-palette-sweep target is theme-primary green; a maintainer may prefer gray/yellow here.
-function paymentPill(status: string, planRequested: boolean) {
+function paymentPill(status: string, planRequested: boolean, viewerIsYouth: boolean) {
   if (status === 'ACTIVE') return null;
+  // A youth is shown no payment state at all — "Awaiting confirmation" is true
+  // whoever owes it (docs/rules/programs.md, "What a youth sees of money").
+  if (viewerIsYouth) return <Badge color="gray" variant="filled">Awaiting confirmation</Badge>;
   return planRequested
     ? <Badge color="gray" variant="filled">Awaiting finance approval</Badge>
     : <Badge variant="filled">Payment due</Badge>;
@@ -37,6 +40,9 @@ function paymentPill(status: string, planRequested: boolean) {
 export default function MyProgramsDashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
+
+  // See docs/rules/programs.md — a youth sees no payment state.
+  const viewerIsYouth = (session?.user as { ageBand?: string } | undefined)?.ageBand === 'youth';
 
   const [enrollments, setEnrollments] = useState<UserProgram[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,12 +108,12 @@ export default function MyProgramsDashboard() {
                 {showMembers && (
                   <Badge variant="light">{person.name ?? 'Member'}</Badge>
                 )}
-                {paymentPill(enrollStatus, isPaymentPlanRequested)}
+                {paymentPill(enrollStatus, isPaymentPlanRequested, viewerIsYouth)}
               </Group>
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>
-                {program.startAt ? formatDate(program.startAt) : 'Start Date TBD'}
-                {program.endAt ? ` - ${formatDate(program.endAt)}` : ' (Ongoing)'}
+                {program.startAt ? formatDateOnly(program.startAt) : 'Start Date TBD'}
+                {program.endAt ? ` - ${formatDateOnly(program.endAt)}` : ' (Ongoing)'}
               </Text>
               <Button component={Link} href={`/programs/${program.id}`} variant="light" fullWidth mt="md">
                 View Details

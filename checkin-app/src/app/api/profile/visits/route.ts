@@ -1,6 +1,8 @@
 import prisma from "@/lib/prisma";
 import { handler, unauthorized } from "@/security/handler";
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 // Registry-governed (GET /api/profile/visits): admission 'authenticated';
 // view grants their_own:personal only — arrivedAt/departedAt (personal tier)
 // are visible solely on the caller's OWN rows. The select includes personId
@@ -19,11 +21,12 @@ export const GET = handler('GET /api/profile/visits', async ({ req, auth }) => {
     let endDate: Date;
 
     if (filterDateStr) {
-        const baseDate = new Date(filterDateStr);
-        startDate = new Date(baseDate);
-        startDate.setDate(baseDate.getDate() - 7);
-        endDate = new Date(baseDate);
-        endDate.setDate(baseDate.getDate() + 7);
+        // The date-only filter parses to UTC midnight, so shift the window in UTC
+        // too — getDate/setDate read local fields and skew the bounds by the
+        // server's DST offset across a transition.
+        const baseMs = new Date(filterDateStr).getTime();
+        startDate = new Date(baseMs - 7 * DAY_MS);
+        endDate = new Date(baseMs + 7 * DAY_MS);
     } else {
         endDate = new Date();
         startDate = new Date();
@@ -31,10 +34,11 @@ export const GET = handler('GET /api/profile/visits', async ({ req, auth }) => {
     }
 
     // Row filter (security-critical, stays query-side per #1134): own rows
-    // only, ±7-day window.
+    // only, not-deleted, ±7-day window.
     const visits = await prisma.visit.findMany({
         where: {
             personId: userId,
+            deletedAt: null,
             arrivedAt: {
                 gte: startDate,
                 lte: endDate

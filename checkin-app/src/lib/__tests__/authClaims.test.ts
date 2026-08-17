@@ -15,8 +15,11 @@ function participant(overrides: Partial<ClaimSourceParticipant> = {}): ClaimSour
         roles: ALL_ROLES,
         householdId: 99,
         isHouseholdLead: false,
+        dateOfBirth: new Date('1990-01-01'),
+        isDeclaredAdult: false,
         toolStatuses: [{ toolId: 1, level: 'CERTIFIED' }],
         household: { orgMembership: { status: 'ACTIVE' } },
+        canAccessStaging: false,
         ...overrides,
     };
 }
@@ -126,5 +129,28 @@ describe('assignParticipantClaims — householdLead claim', () => {
             household: { orgMembership: { status: 'DENIED' } },
         }));
         expect(token.householdLead).toBe(false);
+    });
+});
+
+describe('assignParticipantClaims — canAccessStaging claim (ops-stg gate)', () => {
+    it('stamps canAccessStaging=true when the Person column is set', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ canAccessStaging: true }));
+        expect(token.canAccessStaging).toBe(true);
+    });
+
+    it('stamps canAccessStaging=false when the Person column is unset', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({ canAccessStaging: false }));
+        expect(token.canAccessStaging).toBe(false);
+    });
+
+    it('forces canAccessStaging=false for a DENIED household even when the column is true', () => {
+        const token = {} as JWT;
+        assignParticipantClaims(token, participant({
+            canAccessStaging: true,
+            household: { orgMembership: { status: 'DENIED' } },
+        }));
+        expect(token.canAccessStaging).toBe(false);
     });
 });

@@ -30,7 +30,7 @@ export default function MissingEmergencyContactsPage() {
         setError("Failed to load households. Ensure you have the proper authorizations.");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load households missing contacts:", e);
       notifications.show({ color: "red", message: "Network error loading households.", autoClose: false });
     } finally {
       setLoading(false);

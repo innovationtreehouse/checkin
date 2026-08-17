@@ -9,6 +9,7 @@
 import { GET, PATCH } from '@/app/api/programs/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { ORG_DOMAIN } from '@/lib/config';
 // Mock NextAuth
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -274,6 +275,89 @@ describe('Individual Program API Integration Tests', () => {
         });
     });
 
+    // ── ops-stg ACCESS GATE regression (the defect that killed the prior staging
+    // design) ─────────────────────────────────────────────────────────────────
+    // GET /api/programs/[id] is registered `authorize: 'public'` (security/registry.ts)
+    // and returns real enrolled participants' names/household/emergency-contact data —
+    // exactly the surface an anonymous `curl` against a copy of PRODUCTION data must
+    // never reach. `authorize: 'public'` unconditionally admits every caller regardless
+    // of session state, so the gate has to be enforced ahead of that check
+    // (resolveAccess in security/access-resolvers.ts), not only in authenticateRequest —
+    // this describe is that regression test, run against the REAL route (handler() ->
+    // registry -> resolveAccess -> stripBag), not a mock of the gate.
+    describe('GET /api/programs/[id] — ops-stg access gate (regression: authorize:"public" must not bypass staging)', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES an anonymous caller — the regression case for the defect that shipped real minors\' data to curl', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).not.toBe(200);
+            expect(res.status).toBe(401);
+            // Belt-and-suspenders: even if the status assertion above were wrong, the
+            // roster identity must never appear in the body.
+            const text = await res.text();
+            expect(text).not.toContain(ENROLLED_NAME);
+        });
+
+        it('DENIES an authenticated non-org caller with canAccessStaging unset (false)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: 'gmail.com', emailVerified: true, canAccessStaging: false } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('DENIES an authenticated non-org caller whose emailVerified is false, even with the right hd', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: ORG_DOMAIN, emailVerified: false } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(401);
+        });
+
+        it('ALLOWS an authenticated non-org caller with canAccessStaging=true (the sysadmin-settable escape hatch)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: 'gmail.com', emailVerified: true, canAccessStaging: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('ALLOWS a verified org member', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId, hd: ORG_DOMAIN, emailVerified: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+
+        it('is inert outside staging (CHECKIN_ENV not stg): the same anonymous request that gets denied above still succeeds', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+
+            expect(res.status).toBe(200);
+        });
+    });
+
     // viewerIsMember / viewerMemberPricingEligible: additive, session-only fields
     // computed AFTER the registry response (see route.ts) — membership pricing
     // applies only when the buyer's membership covers the program's whole run.
@@ -330,6 +414,92 @@ describe('Individual Program API Integration Tests', () => {
             const data = await res.json();
             expect(data.viewerIsMember).toBeUndefined();
             expect(data.viewerMemberPricingEligible).toBeUndefined();
+        });
+
+        // #1397: dues paid, background check still with the board. Not a member
+        // (nothing else in the app treats them as one), but priced as one and
+        // admitted to members-only programs.
+        describe('a household that has paid but is awaiting background clearance', () => {
+            let paidPendingId: number;
+            let paidPendingHouseholdId: number;
+
+            beforeAll(async () => {
+                const person = await prisma.person.create({
+                    data: {
+                        email: 'paid-pending-prog-id-api-test@example.com',
+                        name: 'Paid Pending',
+                        household: {
+                            create: {
+                                name: 'Test HH',
+                                orgMembership: {
+                                    create: {
+                                        status: 'NONE',
+                                        processes: { create: { kind: 'INITIAL', status: 'PENDING_BG_CLEARANCE', paidAt: new Date() } },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    select: { id: true, householdId: true },
+                });
+                paidPendingId = person.id;
+                paidPendingHouseholdId = person.householdId;
+            });
+
+            afterAll(async () => {
+                await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: paidPendingHouseholdId } } });
+                await prisma.orgMembership.deleteMany({ where: { householdId: paidPendingHouseholdId } });
+                await prisma.person.deleteMany({ where: { id: paidPendingId } });
+            });
+
+            it('gets member pricing but is NOT reported as a member', async () => {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPendingId } });
+
+                const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+                const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+
+                const data = await res.json();
+                expect(data.viewerIsMember).toBe(false);
+                expect(data.viewerMemberPricingEligible).toBe(true);
+            });
+
+            it('loses member pricing for a program running past their membership-year boundary', async () => {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPendingId } });
+
+                const req = new Request(`http://localhost:4000/api/programs/${pastBoundaryProgramId}`, { method: 'GET' });
+                const res = await GET(req as unknown as import("next/server").NextRequest, createParams(pastBoundaryProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+
+                const data = await res.json();
+                expect(data.viewerMemberPricingEligible).toBe(false);
+            });
+
+            it('is admitted to a members-only program', async () => {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPendingId } });
+
+                const req = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+                const res = await GET(req as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
+                expect(res.status).toBe(200);
+            });
+
+            // Must run last in this block: it moves the process off PENDING_BG_CLEARANCE.
+            it('an unpaid application in review gets neither member pricing nor members-only access', async () => {
+                await prisma.orgMembershipProcess.updateMany({
+                    where: { orgMembership: { householdId: paidPendingHouseholdId } },
+                    data: { status: 'PENDING_PAYMENT', paidAt: null },
+                });
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: paidPendingId } });
+
+                const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+                const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+                const data = await res.json();
+                expect(data.viewerMemberPricingEligible).toBe(false);
+
+                const memberOnlyReq = new Request(`http://localhost:4000/api/programs/${orgMemberOnlyProgramId}`, { method: 'GET' });
+                const memberOnlyRes = await GET(memberOnlyReq as unknown as import("next/server").NextRequest, createParams(orgMemberOnlyProgramId) as unknown as never);
+                expect(memberOnlyRes.status).toBe(403);
+            });
         });
     });
 
@@ -443,7 +613,7 @@ describe('Individual Program API Integration Tests', () => {
                     leadMentorId: leadId,
                     orgMemberPriceCents: 5000,
                     maxParticipants: 20,
-                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-capacity',
+                    shopifyVariantId: 'dev-mock-variant-capacity',
                 },
             });
             cappedProgramId = capped.id;
@@ -455,7 +625,7 @@ describe('Individual Program API Integration Tests', () => {
                     leadMentorId: leadId,
                     orgMemberPriceCents: 5000,
                     maxParticipants: null,
-                    shopifyOrgMemberVariantId: 'dev-mock-variant-member-uncapped',
+                    shopifyVariantId: 'dev-mock-variant-uncapped',
                 },
             });
             uncappedProgramId = uncapped.id;

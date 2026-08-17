@@ -16,7 +16,7 @@ import { expectAuditRow, auditJson } from '@/test-helpers/expectAuditRow';
 
 jest.mock('next-auth/next', () => ({ getServerSession: jest.fn() }));
 // beginRenewal -> notifyReviewers sends email when re-review is needed; mock it out.
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'membership-intake-test';
 

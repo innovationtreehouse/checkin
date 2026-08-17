@@ -4,7 +4,7 @@
 PENDING) and #931 (`34a92fb7`, org-member snapshot at approval) on top.
 **Product decisions:** 2026-07-06 (single-pool capacity, hold-ledger scholarship lifecycle).
 **Statechart:** the enrollment trunk + scholarship parallel region are formalized as one
-declarative machine — see `designs/LIFECYCLE.md`. This doc (§1–4) is the Shopify/capacity
+declarative machine — see `generated/lifecycle/enrollment.md`. This doc (§1–4) is the Shopify/capacity
 mechanics it builds on.
 
 ## 1. Shopify is the source of truth for program capacity
@@ -26,8 +26,7 @@ Each program has **one** Shopify variant, priced at the base (non-member) rate
 capacity — there is no second, member-priced pool to keep numerically consistent.
 
 Members pay less at the same variant via a **server-minted, single-use discount code**
-(`mintMemberDiscountCode`, `lib/shopify.ts`): a Shopify Price Rule + Discount Code, fixed
-amount off, usage limit 1, ~48h expiry, minted per checkout by
+(`mintMemberDiscountCode`, `lib/shopify.ts`), minted per checkout by
 `POST /api/programs/[id]/discount-code` after recomputing the caller's membership status
 server-side (never trusting a client flag). A failed mint degrades to an undiscounted link
 — checkout is never blocked.
@@ -36,19 +35,14 @@ This is an interim mechanism. `docs/designs/SHOPIFY_MEMBER_SEGMENT_PRICING.md` i
 planned upgrade — segment-gated automatic discounts, once checkout identity (that doc's
 §5) is solved — at which point per-checkout discount codes go away entirely.
 
-### Legacy two-variant transition
+### Legacy two-variant shape (removed)
 
-Programs created before this design still carry two variants
-(`shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId`), each with its own
-inventory pool mirrored via a sibling-adjustment on every seat-consuming event (the
-webhook's `orders/paid` handler mirrors the purchased tier's decrement onto the other
-pool). `adjustProgramInventory` prefers `shopifyVariantId` when set and falls back to the
-legacy pair otherwise — this is additive, not a widening of what any one program accepts;
-a given program only ever populates one shape or the other.
-
-This is an **expand** step. Dropping the legacy pair (**contract**) is a later release,
-once every program has migrated onto the single-pool model — per the repo's
-migration-safety convention of expand/contract as separate steps.
+An earlier design gave each program two variants
+(`shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId`) with separate inventory
+pools kept in step by a sibling-adjustment on every seat-consuming event. All of that
+code is gone: `shopifyVariantId` is the only variant any program has, and
+`adjustProgramInventory` adjusts exactly that one pool. The four dead columns are
+dropped in a follow-up release — see `docs/designs/975-LEGACY_VARIANT_CONTRACT.md`.
 
 ## 3. Scholarship lifecycle — the hold ledger
 
@@ -137,12 +131,9 @@ against *failed calls* but not against *crashes between the two steps*:
   practice.
 
 - **(a) Withdrawal** — `DELETE /api/programs/[id]/participants` (self, admin, or
-  board removal; the same route handles all three) funnels through this. This is
-  also now the *only* path a non-payment kick takes: `cron/pending-participants`
-  no longer removes anyone itself (reviewer decision — removal is a human,
-  board-driven action, not something a cron does unattended). The cron warns the
-  household at day 1/3/6 and, from day 3 on, digests the board so a person
-  decides whether to remove the enrollment via this same admin route.
+  board removal; the same route handles all three) funnels through this, and is
+  the *only* path a non-payment kick takes: `cron/pending-participants` never
+  removes anyone itself (§5.5).
 - **(b) Normal payment** — the `orders/paid` webhook's activation path. A denied
   applicant who pays anyway makes Shopify auto-decrement a *second* unit for the same
   seat (the application's hold already took one out); the webhook releases the hold
@@ -184,6 +175,14 @@ household-generic helper, not scholarship-specific — with `scholarshipEmails.t
 re-exporting it as `resolveScholarshipRecipients` for its existing call sites. The
 pending-participants cron (rows below) calls `resolveHouseholdRecipients` directly.
 
+The ACK's subject and body (per variant: membership dues / program, the latter
+supporting a `{{programName}}` token) are settings-configurable —
+`BoardSettings.scholarshipAck{Subject,MembershipBody,ProgramBody}`, set on the same
+Settings → Email page as `scholarshipNotifyEmail`, NULL/blank falling back to the
+default copy in `scholarshipEmails.ts` (`resolveAckCopy`/`renderAckBody`, plain text,
+HTML-escaped). The contract above is unchanged: still the applicant's only automatic
+email, just with configurable copy; the Shopify-seat-hold-failure body stays hard-coded.
+
 **1. Who is emailed when:**
 
 | Event | Route | Review Team | Household |
@@ -202,12 +201,11 @@ pending-participants cron (rows below) calls `resolveHouseholdRecipients` direct
 denied rows by design; they are ordinary non-payment notices and do not count against the
 one-automatic-email rule.)
 
-**2. Approve/deny are silent by design.** Board decisions — program approve, program deny,
-membership approve — send **no** automatic applicant email; the Scholarship Review Team
-communicates its decision **manually**. A consequence: a **denial** starts the
-`scholarshipDenialGraceDays` clock (§4) with no automatic notice, so the board's manual
-denial message should state the deadline itself; the grace-expiry auto-withdraw (§4) also
-sends nothing when it fires — both silences are deliberate, not gaps.
+**2. Approve/deny are silent by design.** The Scholarship Review Team communicates board
+decisions (program approve/deny, membership approve) **manually** — hence no automatic
+applicant email. A **denial** starts the `scholarshipDenialGraceDays` clock (§4) with no
+automatic notice, so the board's manual denial message should state the deadline itself;
+the grace-expiry auto-withdraw (§4) also sends nothing — both silences are deliberate, not gaps.
 
 **3. Fallback rule.** `BoardSettings.scholarshipNotifyEmail` unset (or unparseable) → email
 **all board members** (the board *is* the review team until configured). Set on
@@ -215,21 +213,17 @@ sends nothing when it fires — both silences are deliberate, not gaps.
 
 **4. Membership deny — parity closed, still silent.** The membership side now has both approve and deny (`POST /api/finance-ops/membership-payment-plans/refuse`). Denial clears `isPaymentPlanRequested` back to `false`; the process stays `PENDING_PAYMENT` and the household returns to normal pay-to-activate (membership holds no seat and has no grace cron, so denial state is the cleared flag plus the audit row). Like every other board decision it sends **no automatic email** — the board communicates the denial manually.
 
-**5. The pending-participants cron never removes anyone — reviewer decision (this is core
-customer service and a computer isn't enough here).** Day-1/3/6 household warnings send to
-leads ∪ participant, ungated, exactly as before (previously `[EMAIL DISPATCH]` log stubs
-while the kick itself really fired — the warnings are real sends, see table above). Day-7+
-rows are classified `overdue`, not deleted; removal is a manual board action via the
-existing `DELETE /api/programs/[id]/participants` admin surface (§3(a)), which still routes
-through `withdrawAndReleaseHold` for the hold-ledger release. Any communication that
-accompanies a manual removal is manual too, the same way the board's manual
-approve/deny/scholarship communications work (§5.2) — there is no automatic
-"you've been removed" email. **In addition to the day-1/3/6 warnings, the cron sends one
+**5. The pending-participants cron never removes anyone — reviewer decision (core customer
+service, not a job for a computer).** Day-1/3/6 household warnings send to leads ∪
+participant, ungated (previously `[EMAIL DISPATCH]` log stubs while the kick really fired —
+now real sends). Day-7+ rows are classified `overdue`, not deleted; removal is a manual
+board action via `DELETE /api/programs/[id]/participants` (§3(a)), which routes through
+`withdrawAndReleaseHold` for the hold-ledger release. Any accompanying communication is
+manual too (§5.2) — no automatic "you've been removed" email. The cron also sends **one
 leadership digest per run** (`emailBoardMembers`, subject `Non-payment digest: <a>
-approaching deadline, <b> overdue`) whenever there's at least one day-3 ("approaching
-deadline") or day-7+ ("overdue") row, listing each by person/program/day-count so the
-board can decide whether to remove an enrollment or reach out to the household. Nothing
-sends when both lists are empty.
+approaching deadline, <b> overdue`) whenever there's ≥1 day-3 ("approaching deadline") or
+day-7+ ("overdue") row, listing each by person/program/day-count so the board can decide to
+remove or reach out. Nothing sends when both lists are empty.
 
 ## 6. Related
 

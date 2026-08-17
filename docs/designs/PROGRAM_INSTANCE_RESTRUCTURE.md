@@ -1,5 +1,9 @@
 # Design Proposal: 3-Tier Program → Instance → Event Restructure
 
+> **Stale on `Fee`/`FeePayment`.** Those models were dropped with issue #354;
+> the M2 step that repoints them has nothing to repoint. The rest of the plan
+> stands. Reworking M2 belongs to this design's owner, not to the drop.
+
 **Status:** Proposal (no code changes)
 **Supersedes:** Audit item **P2-3** (naming confusion around "session"/"program"/"event")
 **Scope:** `checkin-app` (schema + security + UI + data migration)

@@ -37,6 +37,7 @@ const rctx = (
         householdIdsInScopePrograms: new Set(),
         eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
+        ledHouseholdMemberIds: new Set(),
         ...callerOverrides,
     },
 });
@@ -166,5 +167,74 @@ describe("resolveAccess 'kiosk'", () => {
 
     test('a normal session (not kiosk) → denied', async () => {
         expect((await resolveAccess('kiosk', rctx(session(1)))).allowed).toBe(false);
+    });
+});
+
+/**
+ * ops-stg ACCESS GATE — the regression coverage for the defect that killed the prior
+ * staging design. `authorize: 'public'` (case above, line ~220 in access-resolvers.ts)
+ * unconditionally returns `{ allowed: true }`, which is exactly right in every normal
+ * environment but is precisely the surface that would ship real minors' data to an
+ * anonymous `curl` of `GET /api/programs/[id]` on ops-stg. The gate must be checked
+ * BEFORE the `authorize` switch, for every authorize value, not only session-gated ones.
+ */
+describe("resolveAccess — ops-stg access gate (checked ahead of every `authorize` branch)", () => {
+    const ORIGINAL_ENV = process.env.CHECKIN_ENV;
+    beforeEach(() => { process.env.CHECKIN_ENV = 'stg'; });
+    afterEach(() => {
+        if (ORIGINAL_ENV === undefined) delete process.env.CHECKIN_ENV;
+        else process.env.CHECKIN_ENV = ORIGINAL_ENV;
+    });
+
+    const orgMember = (): AuthResult => ({
+        type: 'session',
+        user: {
+            id: 1, email: 'org@innovationtreehouse.org',
+            isSysadmin: false, isBoardMember: false, isKeyholder: false,
+            isBackgroundCheckReviewer: false, isOperations: false,
+            hd: 'innovationtreehouse.org', emailVerified: true,
+        },
+    });
+    const nonOrg = (canAccessStaging: boolean): AuthResult => ({
+        type: 'session',
+        user: {
+            id: 2, email: 'stranger@gmail.com',
+            isSysadmin: false, isBoardMember: false, isKeyholder: false,
+            isBackgroundCheckReviewer: false, isOperations: false,
+            hd: 'gmail.com', emailVerified: true, canAccessStaging,
+        },
+    });
+
+    test("'public' + anonymous (unauthenticated) → DENIED — the regression case", async () => {
+        expect((await resolveAccess('public', rctx({ type: 'unauthenticated' }))).allowed).toBe(false);
+    });
+
+    test("'public' + kiosk → DENIED (a kiosk carries no org/flag claims either)", async () => {
+        expect((await resolveAccess('public', rctx({ type: 'kiosk' }))).allowed).toBe(false);
+    });
+
+    test("'public' + verified org member → allowed", async () => {
+        expect((await resolveAccess('public', rctx(orgMember()))).allowed).toBe(true);
+    });
+
+    test("'public' + non-org, canAccessStaging false → denied", async () => {
+        expect((await resolveAccess('public', rctx(nonOrg(false)))).allowed).toBe(false);
+    });
+
+    test("'public' + non-org, canAccessStaging true → allowed (the sysadmin-settable escape hatch)", async () => {
+        expect((await resolveAccess('public', rctx(nonOrg(true)))).allowed).toBe(true);
+    });
+
+    test("a route-level admin bypass (e.g. isSysadmin) still cannot skip the staging gate", async () => {
+        const admin = nonOrg(false);
+        if (admin.type === 'session') admin.user.isSysadmin = true;
+        // 'program-lead-mentor' grants isAdmin a bypass past ITS OWN check — but the
+        // staging gate runs first and denies before that bypass is ever consulted.
+        expect((await resolveAccess('program-lead-mentor', rctx(admin, { id: '5' }))).allowed).toBe(false);
+    });
+
+    test('is inert outside staging: the same anonymous public request is allowed once CHECKIN_ENV is not stg', async () => {
+        process.env.CHECKIN_ENV = 'prod';
+        expect((await resolveAccess('public', rctx({ type: 'unauthenticated' }))).allowed).toBe(true);
     });
 });

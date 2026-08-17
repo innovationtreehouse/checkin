@@ -17,6 +17,7 @@ import { POST as ManualHoldPost } from '@/app/api/finance-ops/payment-plans/manu
 import { POST as RequestPost } from '@/app/api/programs/[id]/request-payment-plan/route';
 import { POST as ParticipantsPost, DELETE as ParticipantsDelete } from '@/app/api/programs/[id]/participants/route';
 import prisma from '@/lib/prisma';
+import { DEFAULT_ACK_SUBJECT, DEFAULT_ACK_PROGRAM_BODY, renderAckBody } from '@/lib/scholarshipEmails';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -89,13 +90,27 @@ describe('Program payment-plan routes', () => {
         boardKinId = boardKin.id;
 
         const self = await prisma.person.create({
-            data: { name: 'PP Self', email: `self-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            // Adult DOB: this persona requests its OWN payment plan, and only a
+            // known adult may (docs/rules/programs.md).
+            data: {
+                name: 'PP Self',
+                email: `self-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            },
         });
         selfId = self.id;
         householdIds.push(self.householdId);
 
         const other = await prisma.person.create({
-            data: { name: 'PP Other', email: `other-${TAG}@example.com`, household: { create: { name: "Test HH" } } },
+            // Adult DOB: this persona self-enrolls and self-requests in tests whose
+            // subject is capacity / ACK copy, not the youth gate.
+            data: {
+                name: 'PP Other',
+                email: `other-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: "Test HH" } },
+            },
         });
         otherId = other.id;
         householdIds.push(other.householdId);
@@ -142,9 +157,12 @@ describe('Program payment-plan routes', () => {
         });
     }
 
+    // The cookie is inert except under CHECKIN_ENV=local, where the keyless-kiosk
+    // fallback in authenticateRequest hijacks any cookie-less request as `kiosk`.
     function requestReq(body: unknown) {
         return new Request(`http://localhost/api/programs/${programId}/request-payment-plan`, {
             method: 'POST',
+            headers: { cookie: 'session=test' },
             body: JSON.stringify(body),
         }) as unknown as import("next/server").NextRequest;
     }
@@ -489,7 +507,7 @@ describe('Program payment-plan routes', () => {
                     expect(data.warning).toBeUndefined();
 
                     expect(logSpy).toHaveBeenCalledWith(
-                        expect.stringContaining('Would adjust inventory by -1 for variants: dev-mock-variant-apply-pp'),
+                        expect.stringContaining('Would adjust inventory by -1 for variant: dev-mock-variant-apply-pp'),
                     );
                 } finally {
                     logSpy.mockRestore();
@@ -670,6 +688,9 @@ describe('Program payment-plan routes', () => {
 
     describe('Composed: scholarship holds a capacity seat with no Shopify involvement', () => {
         it('enroll (PENDING) -> request plan -> board approves -> ACTIVE, seat held, no fetch fires', async () => {
+            // A priced program needs a variant (an unsellable one is refused at
+            // enrollment), and the hold's -1 goes through the local mock — so the
+            // whole journey still fires no Shopify HTTP call.
             const scholarshipProgram = await prisma.program.create({
                 data: {
                     name: `PP Scholarship Program ${TAG}`,
@@ -677,10 +698,13 @@ describe('Program payment-plan routes', () => {
                     maxParticipants: 1,
                     orgMemberPriceCents: 1000,
                     nonOrgMemberPriceCents: 1500,
+                    shopifyVariantId: `dev-mock-variant-scholarship-${TAG}`,
                 },
             });
 
             const fetchSpy = jest.spyOn(global, 'fetch');
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
 
             try {
                 // 1. Participant enrolls — paid program, so lands PENDING and
@@ -689,6 +713,7 @@ describe('Program payment-plan routes', () => {
                 const enrollRes = await ParticipantsPost(
                     new Request(`http://localhost/api/programs/${scholarshipProgram.id}/participants`, {
                         method: 'POST',
+                        headers: { cookie: 'session=test' },
                         body: JSON.stringify({ participantId: selfId }),
                     }) as unknown as import('next/server').NextRequest,
                     { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
@@ -708,6 +733,7 @@ describe('Program payment-plan routes', () => {
                 const approveRes = await PlansPost(
                     new Request('http://localhost', {
                         method: 'POST',
+                        headers: { cookie: 'session=test' },
                         body: JSON.stringify({ programId: scholarshipProgram.id, participantId: selfId }),
                     }) as unknown as import('next/server').NextRequest,
                 );
@@ -725,6 +751,7 @@ describe('Program payment-plan routes', () => {
                 const secondRes = await ParticipantsPost(
                     new Request(`http://localhost/api/programs/${scholarshipProgram.id}/participants`, {
                         method: 'POST',
+                        headers: { cookie: 'session=test' },
                         body: JSON.stringify({ participantId: otherId }),
                     }) as unknown as import('next/server').NextRequest,
                     { params: Promise.resolve({ id: String(scholarshipProgram.id) }) },
@@ -733,6 +760,7 @@ describe('Program payment-plan routes', () => {
                 expect((await secondRes.json()).error).toMatch(/maximum capacity/);
             } finally {
                 fetchSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
                 await prisma.programParticipant.deleteMany({ where: { programId: scholarshipProgram.id } });
                 await prisma.program.delete({ where: { id: scholarshipProgram.id } });
             }
@@ -962,6 +990,8 @@ describe('Program payment-plan routes', () => {
                     name: `Email ${label}`,
                     email,
                     householdId,
+                    // Adult DOB: these personas request their own payment plans.
+                    dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
                     isHouseholdLead: opts.isHouseholdLead ?? false,
                 },
             });
@@ -1079,6 +1109,90 @@ describe('Program payment-plan routes', () => {
             expect(res.status).toBe(200);
 
             expect(__getSentEmails()).toHaveLength(0);
+        });
+    });
+
+    describe('scholarship ACK settings (subject + program body)', () => {
+        const params = (id: string | number) => ({ params: Promise.resolve({ id: String(id) }) });
+        const PROGRAM_NAME = `PP Program ${TAG}`; // == the name programId was created with, in beforeAll
+        let prevAck: { scholarshipAckSubject: string | null; scholarshipAckProgramBody: string | null } | null = null;
+
+        beforeAll(async () => {
+            const s = await prisma.boardSettings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } });
+            prevAck = { scholarshipAckSubject: s.scholarshipAckSubject, scholarshipAckProgramBody: s.scholarshipAckProgramBody };
+        });
+        afterAll(async () => {
+            await prisma.boardSettings.update({ where: { id: 1 }, data: prevAck! });
+        });
+
+        it('a configured subject + body (with {{programName}}) are used for the program ACK', async () => {
+            await prisma.boardSettings.update({
+                where: { id: 1 },
+                data: { scholarshipAckSubject: 'Custom Program ACK Subject', scholarshipAckProgramBody: 'Thanks for applying to {{programName}}!' },
+            });
+            await enroll(selfId, { requested: false });
+            mockSession.mockResolvedValue({ user: { id: selfId } });
+
+            const res = await RequestPost(requestReq({ participantId: selfId }), params(programId));
+            expect(res.status).toBe(200);
+
+            const ack = __getSentEmails().find((e) => e.subject === 'Custom Program ACK Subject');
+            expect(ack).toBeTruthy();
+            expect(ack!.html).toBe(`<p>Thanks for applying to ${PROGRAM_NAME}!</p>`);
+        });
+
+        it('unset ACK settings fall back verbatim to the default subject + program body', async () => {
+            await prisma.boardSettings.update({
+                where: { id: 1 },
+                data: { scholarshipAckSubject: null, scholarshipAckProgramBody: null },
+            });
+            await enroll(otherId, { requested: false });
+            mockSession.mockResolvedValue({ user: { id: otherId } });
+
+            const res = await RequestPost(requestReq({ participantId: otherId }), params(programId));
+            expect(res.status).toBe(200);
+
+            const ack = __getSentEmails().find((e) => e.subject === DEFAULT_ACK_SUBJECT);
+            expect(ack).toBeTruthy();
+            expect(ack!.html).toBe(renderAckBody(DEFAULT_ACK_PROGRAM_BODY, { programName: PROGRAM_NAME }));
+        });
+
+        it('Shopify-failure branch: configured subject applies, but the body stays the hard-coded warning copy (ignores the configured program template)', async () => {
+            await prisma.boardSettings.update({
+                where: { id: 1 },
+                data: {
+                    scholarshipAckSubject: 'Custom Failure Subject',
+                    scholarshipAckProgramBody: 'This configured template must NOT appear in the failure-branch email.',
+                },
+            });
+            const p = await prisma.program.create({
+                data: { name: `PP Ack Rollback Shopify Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-ack-rollback-pp' },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: p.id, personId: selfId, status: 'PENDING', isPaymentPlanRequested: false, pendingSince: new Date() },
+                });
+                mockSession.mockResolvedValue({ user: { id: selfId } });
+
+                const res = await RequestPost(
+                    new Request(`http://localhost/api/programs/${p.id}/request-payment-plan`, {
+                        method: 'POST',
+                        body: JSON.stringify({ participantId: selfId }),
+                    }) as unknown as import('next/server').NextRequest,
+                    params(p.id),
+                );
+                expect(res.status).toBe(200);
+                const body = await res.json();
+                expect(body.warning).toMatch(/board/i); // the hard-coded operational-incident copy
+
+                const ack = __getSentEmails().find((e) => e.subject === 'Custom Failure Subject');
+                expect(ack).toBeTruthy();
+                expect(ack!.html).toBe(`<p>${body.warning}</p>`); // escapeHtml no-ops here — the warning has no special chars
+                expect(ack!.html).not.toContain('This configured template must NOT appear');
+            } finally {
+                await prisma.programParticipant.deleteMany({ where: { programId: p.id } });
+                await prisma.program.delete({ where: { id: p.id } });
+            }
         });
     });
 });

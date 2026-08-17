@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
-import { renewalSeasonWindow, nextBoundary, bgValidUntilBoundary, grantRenewalPayment } from "@/lib/membership/renewal";
+import { renewalSeasonWindow, nextBoundary, bgValidUntilBoundary, grantRenewalPayment, MAX_DATE } from "@/lib/membership/renewal";
 import { grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 import { PaymentError } from "@/lib/membership/payment";
 import { LIVE_PERSON } from "@/lib/person/filters";
@@ -46,8 +46,12 @@ export const GET = withAuth(
                     where: { id: parseInt(id) },
                     include: {
                         householdMembers: {
+                            where: LIVE_PERSON,
                             select: {
                                 id: true, name: true, email: true, isHouseholdLead: true, lastBackgroundCheck: true,
+                                // dateOfBirth: the Edit Info modal excludes youth from the
+                                // "Make lead" control (mirrors membership-audit/broken).
+                                dateOfBirth: true,
                                 // Program enrollments for the household detail view. Extra field the
                                 // Edit Info modal (same endpoint) simply ignores.
                                 programParticipants: {
@@ -76,16 +80,18 @@ export const GET = withAuth(
                 const detailBoundary = settings?.orgMembershipYearBoundary
                     ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
                     : null;
-                // "Settled this cycle" = a RENEWAL resolved (ACTIVE/ARCHIVED) inside the
-                // window (fix #4, settledThisCycleWhere) — same test the list branch and
-                // runRenewalSweep use, so a stray INITIAL activation no longer flips
-                // derivedValidUntil a year forward. Out of season the window start is
-                // "never" (matches nothing).
+                // "Settled this cycle" = ANY process COMPLETED (terminal ACTIVE) inside
+                // the window (settledThisCycleWhere) — a family that JOINS in-window buys
+                // the coming year exactly as a renewer does, so INITIAL counts too.
+                // ARCHIVED never completed payment and does not extend the horizon (the
+                // sweep alone treats it as handled). Same test the list branch and
+                // membershipValidThrough use. Out of season the window start is "never"
+                // (matches nothing).
                 const detailSettled = household.orgMembership
                     ? (await prisma.orgMembershipProcess.findFirst({
                           where: {
                               orgMembershipId: household.orgMembership.id,
-                              ...settledThisCycleWhere(detailWindow?.windowStart ?? new Date(8.64e15)),
+                              ...settledThisCycleWhere(detailWindow?.windowStart ?? MAX_DATE),
                           },
                           select: { id: true },
                       })) !== null
@@ -129,26 +135,28 @@ export const GET = withAuth(
                 where: whereClause,
                 include: {
                     householdMembers: {
+                        where: LIVE_PERSON,
                         // isHouseholdLead + lastBackgroundCheck drive the household-level "BG valid
                         // until" below. Board-only endpoint; lastBackgroundCheck rides along in the
                         // JSON at the same trust level as the rest of the row.
                         select: { id: true, name: true, email: true, isBoardMember: true, emailUndeliverableAt: true, isHouseholdLead: true, lastBackgroundCheck: true }
                     },
                     // ONE probe serves both flags computed below, from the shared lifecycle
-                    // definitions: grantableRenewalWhere (payable renewal → grantability,
-                    // fix #3) and settledThisCycleWhere (a RENEWAL resolved ACTIVE/ARCHIVED
-                    // inside the renewal window → coming year settled, the same "handled this
-                    // cycle" test runRenewalSweep uses, fix #4). Out of season the window
+                    // definitions: grantableRenewalWhere (payable renewal → grantability)
+                    // and settledThisCycleWhere (ANY process — INITIAL or RENEWAL —
+                    // COMPLETED terminal ACTIVE inside the renewal window → coming year
+                    // settled, the same test membershipValidThrough uses; ARCHIVED never
+                    // paid, so it is the sweep's business only). Out of season the window
                     // start is "never" (matches no row), keeping one query shape and one
-                    // inferred type. orgMembership's own scalars (status, memberSince) still
-                    // ride along via this include.
+                    // inferred type. orgMembership's own scalars (status, memberSince)
+                    // still ride along via this include.
                     orgMembership: {
                         include: {
                             processes: {
                                 where: {
                                     OR: [
                                         grantableRenewalWhere,
-                                        settledThisCycleWhere(window?.windowStart ?? new Date(8.64e15)),
+                                        settledThisCycleWhere(window?.windowStart ?? MAX_DATE),
                                     ],
                                 },
                                 select: { id: true, status: true },
@@ -177,14 +185,14 @@ export const GET = withAuth(
 
             const withGrantable = households.map((h) => {
                 // Split the single OR probe by status: PENDING_PAYMENT = grantable renewal
-                // (grantableRenewalWhere — any payable renewal; the grant comps payment and
-                // BG stays an independent gate on ACTIVE, so no bgFresh gate); a terminal
-                // ACTIVE/ARCHIVED renewal = the coming cycle is already settled
-                // (settledThisCycleWhere: member finished renewal, admin override, or
-                // board-archived this cycle).
+                // (grantableRenewalWhere — kind RENEWAL, so an in-flight INITIAL at
+                // payment never reads as grantable); a completed (ACTIVE) process of
+                // EITHER kind = the coming cycle is settled (settledThisCycleWhere:
+                // finished renewal, admin override, or a family that joined inside
+                // the window).
                 const { processes = [], ...orgMembership } = h.orgMembership ?? {};
                 const renewalGrantable = processes.some((p) => p.status === "PENDING_PAYMENT");
-                const settledForComingYear = processes.some((p) => p.status === "ACTIVE" || p.status === "ARCHIVED");
+                const settledForComingYear = processes.some((p) => p.status === "ACTIVE");
                 // Household-level BG "valid until" — later lastBackgroundCheck among leads
                 // who passed; no per-member values in the list response.
                 const latestLeadBg = h.householdMembers
@@ -279,7 +287,6 @@ export const POST = withAuth(
                 try {
                     const process = await grantRenewalPayment(householdId, {
                         actorId: auth.user.id,
-                        isSysadmin: auth.user.isSysadmin === true,
                         reason: trimmedReason,
                     });
                     return NextResponse.json({ success: true, process });
@@ -293,12 +300,12 @@ export const POST = withAuth(
             }
 
             if (active) {
-                // Conflict of interest: a board member may not grant their OWN household
-                // ACTIVE membership — that bypasses payment AND the background check for
-                // their own family. Sysadmin bypasses. (Mirrors the deny branch's
+                // Conflict of interest: no actor may grant their OWN household ACTIVE
+                // membership — that bypasses payment AND the background check for their
+                // own family. No role bypasses this. (Mirrors the deny branch's
                 // board-member protection, and certifyPaymentPlan's guard.)
-                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId, { isSysadmin: auth.user.isSysadmin === true })) {
-                    return apiError("You cannot activate your own household's membership — a sysadmin must.", 403);
+                if (auth.type === 'session' && await hasHouseholdConflict(prisma, auth.user.id, householdId)) {
+                    return apiError("You cannot activate your own household's membership — someone outside your household must.", 403);
                 }
                 const membership = await prisma.orgMembership.upsert({
                     where: { householdId },

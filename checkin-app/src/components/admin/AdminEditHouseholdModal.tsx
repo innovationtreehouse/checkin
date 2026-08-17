@@ -6,13 +6,21 @@ import { notifications } from "@mantine/notifications";
 import { modals } from "@mantine/modals";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
+import { isYouth } from "@/lib/time";
+import EmergencyContactNotice from "@/components/ui/EmergencyContactNotice";
+
+// Per-household lead cap (issue #269). Server enforces it atomically in
+// lib/household/leads.ts (MAX_HOUSEHOLD_LEADS); hardcoded here — that module
+// pulls in prisma and can't be imported into a client bundle. Mirrors the
+// last-lead guard below, also hardcoded client-side.
+const MAX_HOUSEHOLD_LEADS = 2;
 
 export type AdminHousehold = {
   id: number;
   name: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
-  householdMembers?: Array<{ id: number; name: string | null; email: string | null }>;
+  householdMembers?: Array<{ id: number; name: string | null; email: string | null; dateOfBirth?: string | null }>;
   householdLeads?: Array<{ personId: number }>;
   orgMembership?: { memberSince: string | null; isVolunteer?: boolean } | null;
 } & Partial<StructuredAddress>;
@@ -64,6 +72,7 @@ export function AdminEditHouseholdModal({
   const [members, setMembers] = useState<NonNullable<AdminHousehold["householdMembers"]>>([]);
   const [leadIds, setLeadIds] = useState<number[]>([]);
   const [removingLead, setRemovingLead] = useState<number | null>(null);
+  const [promotingLead, setPromotingLead] = useState<number | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ memberSince?: string }>({});
   const [hasMembership, setHasMembership] = useState(false);
   // Modal-local notice for save-error / lead-remove results, so feedback lands
@@ -133,6 +142,30 @@ export function AdminEditHouseholdModal({
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     } finally {
       setRemovingLead(null);
+    }
+  };
+
+  const handleMakeLead = async (participantId: number) => {
+    if (leadIds.length >= MAX_HOUSEHOLD_LEADS) return; // cap also enforced server-side
+    setNotice(null);
+    setPromotingLead(participantId);
+    try {
+      const res = await fetch(`/api/household/lead`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participantId }),
+      });
+      if (res.ok) {
+        notifications.show({ message: "Lead added." });
+        await loadHousehold();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setNotice({ color: "red", message: data.error || "Failed to add lead." });
+      }
+    } catch {
+      notifications.show({ color: "red", message: "Network error.", autoClose: false });
+    } finally {
+      setPromotingLead(null);
     }
   };
 
@@ -246,6 +279,7 @@ export function AdminEditHouseholdModal({
               <TextInput label="State" maxLength={2} value={form.state} onChange={(e) => update({ state: e.currentTarget.value })} placeholder="TX" />
               <TextInput label="ZIP" value={form.postalCode} onChange={(e) => update({ postalCode: e.currentTarget.value })} placeholder="78701" />
             </SimpleGrid>
+            <EmergencyContactNotice />
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput
                 label="Emergency Contact Name"
@@ -311,6 +345,34 @@ export function AdminEditHouseholdModal({
               {leadIds.length === 1 && (
                 <Text size="xs" c="dimmed">A household must keep at least one lead.</Text>
               )}
+
+              {/* Promote a non-lead member. Youth excluded (mirrors
+                  membership-audit/broken); cap of 2 hides the controls once full. */}
+              {leadIds.length < MAX_HOUSEHOLD_LEADS && (() => {
+                const promotable = members.filter((m) => !leadIds.includes(m.id) && !isYouth(m.dateOfBirth));
+                if (promotable.length === 0) return null;
+                return (
+                  <>
+                    <Text size="xs" c="dimmed" mt="xs">Add another lead:</Text>
+                    {promotable.map((m) => (
+                      <Group key={m.id} justify="space-between" wrap="nowrap">
+                        <div>
+                          <Text size="sm">{m.name || `#${m.id}`}</Text>
+                          {m.email && <Text size="xs" c="dimmed">{m.email}</Text>}
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          loading={promotingLead === m.id}
+                          onClick={() => handleMakeLead(m.id)}
+                        >
+                          Make lead
+                        </Button>
+                      </Group>
+                    ))}
+                  </>
+                );
+              })()}
             </Stack>
 
             <Alert color="orange" mt="md">

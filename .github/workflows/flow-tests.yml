@@ -5,7 +5,10 @@ name: Flow tests
 
 on:
   pull_request:
-    branches: [main]
+    # pull_request triggers evaluate against the BASE branch's workflow file,
+    # so this must exist on both main (every future rel/* cut inherits it)
+    # and rel/1.0 (so current release-line PRs get checks).
+    branches: [main, 'rel/**']
   workflow_dispatch: {}
 
 permissions:

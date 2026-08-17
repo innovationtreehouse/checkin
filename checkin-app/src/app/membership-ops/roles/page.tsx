@@ -29,7 +29,7 @@ export default function RolesPage() {
       const data = await res.json();
       if (data.people) setPeople(data.people);
     } catch (err) {
-      console.error(err);
+      console.error("Failed to load roles:", err);
     } finally {
       setFetching(false);
     }

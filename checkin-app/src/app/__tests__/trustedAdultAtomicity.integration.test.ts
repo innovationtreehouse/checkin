@@ -24,7 +24,10 @@ import {
 import prisma from '@/lib/prisma';
 
 const sendEmail = jest.fn().mockResolvedValue(true);
-jest.mock('@/lib/email', () => ({ sendEmail: (...a: unknown[]) => sendEmail(...a) }));
+jest.mock('@/lib/email', () => ({
+    sendEmail: (...a: unknown[]) => sendEmail(...a),
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
+}));
 
 const TAG = 'trustedadult-atomicity-test';
 
