@@ -52,6 +52,8 @@ interface IntakeState {
   membershipStatus: OrgMembershipStatus | null;
   process: { id: number; kind: string; status: OrgMembershipProcessStatus; isPaymentPlanRequested?: boolean } | null;
   external: ExternalStatus | null;
+  /** The caller's own unsigned individual agreement, independent of the household's. */
+  personAgreement: { id: number; started: boolean } | null;
   prefill: {
     household: ({ name: string | null; notes: string | null; emergencyContactName: string | null; emergencyContactPhone: string | null; emergencyContactEmail: string | null } & Partial<StructuredAddress>) | null;
     primaryParent: PersonPrefill | null;
@@ -157,11 +159,11 @@ export default function MembershipPage() {
   // request as received rather than resurrecting the button.
   const [planRequested, setPlanRequested] = useState(false);
   const [confirmPlanOpened, { open: openConfirmPlan, close: closeConfirmPlan }] = useDisclosure(false);
-  // Self-attest gate for the background-check task (#875): the confirm checkbox
+  // Self-report gate for the background-check task (#875): the confirm checkbox
   // unlocks only after the applicant has opened the Averity consent link this
-  // visit, so they can't attest to a form they never saw.
+  // visit, so they can't confirm a form they never saw.
   const [bgLinkOpened, setBgLinkOpened] = useState(false);
-  const [bgAttesting, setBgAttesting] = useState(false);
+  const [bgConsenting, setBgConsenting] = useState(false);
   // Serialized form as last loaded/saved; isDirty compares it to current state.
   const [savedForm, setSavedForm] = useState<string | null>(null);
 
@@ -282,7 +284,7 @@ export default function MembershipPage() {
     })();
   }, [sessionStatus, load]);
 
-  // When awaiting payment, fetch the dues amount and Shopify checkout link. Leads
+  // When awaiting payment, fetch the membership-fee amount and Shopify checkout link. Leads
   // only — the route refuses anyone else, and the card hides the money from them.
   useEffect(() => {
     if (state?.process?.status !== "PENDING_PAYMENT" || !state.isLead) return;
@@ -352,7 +354,7 @@ export default function MembershipPage() {
 
   // Local dev has no Shopify store, so instead of a checkout redirect we fire the
   // mock orders/paid webhook in-app (same endpoint the Debug → Shopify tool uses),
-  // settling dues end-to-end with zero setup. Only rendered on a local instance.
+  // settling the membership fee end-to-end with zero setup. Only rendered on a local instance.
   const settleMockPayment = async () => {
     if (!state?.process) return;
     setSaving(true);
@@ -539,7 +541,7 @@ export default function MembershipPage() {
     // On success we navigate away, so we intentionally leave `saving` true.
   };
 
-  // Ask the board's Scholarship Review Team for a payment plan on membership dues.
+  // Ask the board's Scholarship Review Team for a payment plan on the membership fee.
   // Mirrors the program-page request; the finance-ops Membership Payment Plan tab
   // picks it up and activates the membership on approval (no Shopify payment).
   // Mirrors the server flag both ways (not just true->true) so a denial that
@@ -595,8 +597,8 @@ export default function MembershipPage() {
   // Applicant confirms they submitted consent on Averity. On success the reload
   // flips the task to done (and may advance the whole card to payment); on
   // failure the checkbox reverts so they can retry.
-  const attestBgConsent = async () => {
-    setBgAttesting(true);
+  const recordBgConsent = async () => {
+    setBgConsenting(true);
     try {
       const res = await fetch("/api/membership/bg-consent", { method: "POST" });
       const data = await res.json().catch(() => ({}));
@@ -604,11 +606,11 @@ export default function MembershipPage() {
         await load();
         notifyNavRefresh();
       } else {
-        setBgAttesting(false);
+        setBgConsenting(false);
         flash(apiError(data, "Could not record your consent. Please try again."), true);
       }
     } catch {
-      setBgAttesting(false);
+      setBgConsenting(false);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
     }
   };
@@ -673,6 +675,24 @@ export default function MembershipPage() {
             {warnings.map((w, i) => <Text key={i} size="sm">{w}</Text>)}
           </Stack>
         </Alert>
+      )}
+
+      {/* Your own agreement, not your household's — an adult can't be bound by a
+          parent's signature. Rendered above the household flow and independent of it:
+          the subject is usually a non-lead in a settled member household, where every
+          branch below shows "you're a member" and nothing else. */}
+      {state?.personAgreement && (
+        <Card withBorder radius="md" padding="lg" mb="lg" maw={640}>
+          <Title order={2}>Sign your individual membership agreement</Title>
+          <Text c="dimmed" my="md">
+            You&apos;re 18 or older, so you sign your own membership agreement rather than
+            being covered by your household&apos;s. Have your insurance details handy — the
+            agreement asks for your provider and policy number.
+          </Text>
+          <Button disabled={saving} loading={saving} onClick={startSigning}>
+            {state.personAgreement.started ? "Resume signing →" : "Sign your agreement →"}
+          </Button>
+        </Card>
       )}
 
       {!state?.process ? (
@@ -811,14 +831,7 @@ export default function MembershipPage() {
                   <section>
                     <Textarea
                       label="Anything else we should know?"
-                      description={
-                        <>
-                          Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled.{" "}
-                          <Text component="span" fw={700} c="red">
-                            Your application will pause for human review before you can pay
-                          </Text>
-                        </>
-                      }
+                      description="Optional. Tell us anything that would help us review your application — for example, if your household is applying to volunteer only, with no students enrolled."
                       autosize
                       minRows={3}
                       value={notes}
@@ -902,9 +915,9 @@ export default function MembershipPage() {
                             <Checkbox
                               label="I submitted my consent on Averity"
                               description={bgLinkOpened ? undefined : "Open the Averity form above first, then confirm here."}
-                              checked={bgAttesting}
-                              disabled={!bgLinkOpened || bgAttesting}
-                              onChange={(e) => { if (e.currentTarget.checked) attestBgConsent(); }}
+                              checked={bgConsenting}
+                              disabled={!bgLinkOpened || bgConsenting}
+                              onChange={(e) => { if (e.currentTarget.checked) recordBgConsent(); }}
                             />
                           </>
                         ) : (
@@ -986,15 +999,6 @@ export default function MembershipPage() {
                 ) : (
                   <Text c="dimmed">Preparing your invoice…</Text>
                 )}
-              </Card>
-            ) : inStatus === "PENDING_BG_REVIEW" ? (
-              <Card withBorder radius="md" padding="lg">
-                <Title order={2} mb="sm">Hang tight — your application is being reviewed</Title>
-                <Text c="dimmed">
-                  A person on our team is reviewing your application (this happens whenever you
-                  leave a note for us). You&apos;ll be able to pay your dues once the review is
-                  complete — we&apos;ll email you then. Nothing else to do right now.
-                </Text>
               </Card>
             ) : inStatus === "PENDING_BG_CLEARANCE" ? (
               <Card withBorder radius="md" padding="lg">

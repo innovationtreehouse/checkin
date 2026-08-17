@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
+import { MAX_VISIT_MS } from "@/lib/visitTimes";
 
 /**
  * Finds all program IDs that a participant is associated with
@@ -74,21 +75,30 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
 /**
  * Processes a checkout. It takes an open visit and a checkout time, and creates multiple
  * visits if the user was enrolled in back-to-back events during their stay.
- * 
+ *
+ * The departure is capped at `arrivedAt + MAX_VISIT_MS`. A caller that took a
+ * typed time has already rejected anything longer, so the cap only ever bites
+ * on a stamped-now close — where the alternative is a record no human path
+ * would have been allowed to write.
+ *
  * It returns the final list of visits spanning their arrival to departure.
  */
-export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "WEB" | "SYSTEM" = "WEB") {
+export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "WEB" | "AUTO_CLOSE" = "WEB") {
     const originalVisit = await db.visit.findUnique({
         where: { id: visitId }
     });
 
-    if (!originalVisit || originalVisit.departedAt) {
-        return []; // Already checked out or doesn't exist
+    if (!originalVisit || originalVisit.departedAt || originalVisit.deletedAt) {
+        return []; // Already checked out, tombstoned, or doesn't exist
     }
 
     // Chunks recreated below are all segments of one physical visit: they keep
     // the original arrival's source and take `source` as their departure channel.
     const { personId: participantId, arrivedAt, arrivedVia } = originalVisit;
+
+    // Cap the whole span, before the event lookup, so every chunk boundary below
+    // derives from the capped departure and the segments still sum to one visit.
+    const departure = new Date(Math.min(checkoutTime.getTime(), arrivedAt.getTime() + MAX_VISIT_MS));
 
     const relevantProgramIds = await getRelevantProgramIds(participantId, db);
 
@@ -96,16 +106,16 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No programs enrolled, just close the visit normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departedAt: checkoutTime, departedVia: source }
+            data: { departedAt: departure, departedVia: source }
         })];
     }
 
-    // Find all events in these programs that fall between arrival and checkoutTime
+    // Find all events in these programs that fall between arrival and departure
     const eventsDuringStay = await db.event.findMany({
         where: {
             programId: { in: relevantProgramIds },
             // An event overlaps if it starts before checkout time AND ends after arrival time
-            startAt: { lt: checkoutTime },
+            startAt: { lt: departure },
             endAt: { gt: arrivedAt }
         },
         orderBy: { startAt: 'asc' }
@@ -115,7 +125,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         // No relevant events during their stay, just close normally
         return [await db.visit.update({
             where: { id: visitId },
-            data: { departedAt: checkoutTime, departedVia: source }
+            data: { departedAt: departure, departedVia: source }
         })];
     }
 
@@ -137,7 +147,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             // If there's a gap between current time and the event start time,
             // create an unassociated visit for the gap time
             if (currentIterStart < event.startAt) {
-                const gapEnd = event.startAt < checkoutTime ? event.startAt : checkoutTime;
+                const gapEnd = event.startAt < departure ? event.startAt : departure;
                 if (currentIterStart < gapEnd) {
                     createdVisits.push(await tx.visit.create({
                         data: {
@@ -154,7 +164,7 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             }
 
             // If we've reached checkout time before the event logic starts, break.
-            if (currentIterStart >= checkoutTime) {
+            if (currentIterStart >= departure) {
                 break;
             }
 
@@ -163,8 +173,8 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
             const eventVisitStart = currentIterStart > event.startAt ? currentIterStart : event.startAt;
 
             // Check out when the next event starts, or when they physically leave
-            let eventVisitEnd = checkoutTime;
-            if (nextEvent && nextEvent.startAt < checkoutTime) {
+            let eventVisitEnd = departure;
+            if (nextEvent && nextEvent.startAt < departure) {
                 eventVisitEnd = nextEvent.startAt;
             }
 
@@ -184,12 +194,12 @@ export async function processVisitCheckout(visitId: number, checkoutTime: Date, 
         }
 
         // If there is still remaining time after the last event until checkOut time, create one last unassociated visit
-        if (currentIterStart < checkoutTime) {
+        if (currentIterStart < departure) {
             createdVisits.push(await tx.visit.create({
                 data: {
                     personId: participantId,
                     arrivedAt: currentIterStart,
-                    departedAt: checkoutTime,
+                    departedAt: departure,
                     arrivedVia,
                     departedVia: source,
                     associatedEventId: null

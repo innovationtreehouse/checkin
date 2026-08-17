@@ -145,36 +145,30 @@ jobs:
           npm -w checkin-app exec -- prisma db seed
 
       # `prisma db seed` (seedBaseline) only populates Household/Person/Tool/
-      # ToolStatus/Program — it never creates Event/Fee/FeePayment/RSVP rows.
-      # Those are exactly the tables the 2026-07-02 incident hit (RSVP,
-      # FeePayment), so top them up here with a handful of rows referencing
-      # the seed's own baseline data (the "Woodworking 101" program + its
-      # personas) — this is what makes a destructive/non-applying migration
-      # on those tables fail here instead of on dev.
-      - name: Top up seed-empty tables the incident hit (Event/Fee/FeePayment/RSVP)
+      # ToolStatus/Program — it never creates Event/RSVP rows. RSVP is one of
+      # the tables the 2026-07-02 incident hit, so top it up here with rows
+      # referencing the seed's own baseline data (the "Woodworking 101"
+      # program + its personas) — this is what makes a destructive or
+      # non-applying migration on those tables fail here instead of on dev.
+      # ON_ERROR_STOP is set so a fixture referencing a table that no longer
+      # exists fails the job instead of printing an error and passing. This runs
+      # against the BASE schema, before the PR's own migrations apply: every
+      # table named below must already exist at the base commit, so a PR adding
+      # a table cannot seed it here.
+      - name: Top up seed-empty tables the incident hit (Event/RSVP)
         if: steps.base.outputs.skip == 'false' && steps.base.outputs.coalesce == 'false'
         env:
           PGPASSWORD: testpassword
         run: |
-          psql -h localhost -U testuser -d checkmein_migtest <<'SQL'
+          psql -v ON_ERROR_STOP=1 -h localhost -U testuser -d checkmein_migtest <<'SQL'
           INSERT INTO "Event" (name, "programId", "startAt", "endAt", description)
           SELECT 'CI Fixture Event', p.id, now(), now() + interval '2 hours', 'migration-safety CI fixture'
-          FROM "Program" p WHERE p.name = 'Woodworking 101';
-
-          INSERT INTO "Fee" (name, "programId", "nonOrgMemberPriceCents", "orgMemberPriceCents")
-          SELECT 'CI Fixture Fee', p.id, 4000, 2500
           FROM "Program" p WHERE p.name = 'Woodworking 101';
 
           INSERT INTO "RSVP" ("eventId", "personId", status)
           SELECT e.id, pe.id, 'ATTENDING'::"RSVPStatus"
           FROM "Event" e, "Person" pe
           WHERE e.name = 'CI Fixture Event'
-            AND pe.email IN ('parent.family@example.com', 'parent2.family@example.com');
-
-          INSERT INTO "FeePayment" ("feeId", "personId")
-          SELECT f.id, pe.id
-          FROM "Fee" f, "Person" pe
-          WHERE f.name = 'CI Fixture Fee'
             AND pe.email IN ('parent.family@example.com', 'parent2.family@example.com');
           SQL
 

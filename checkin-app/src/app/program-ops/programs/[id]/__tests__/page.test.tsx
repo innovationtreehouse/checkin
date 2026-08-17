@@ -568,6 +568,45 @@ describe("ProgramDetailsPage", () => {
     );
   });
 
+  it("surfaces a DELETE notice/warning as a notification, but stays quiet on a bare success", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const responses = [
+      { notice: "Seat freed. Add +1 in Shopify." },
+      { warning: "Shopify inventory release failed." },
+      { success: true },
+    ];
+    let call = 0;
+    routedFetch([
+      { url: "/api/programs/1", method: "GET", result: { ok: true, body: programData } },
+      { url: "/api/programs/1/participants", method: "DELETE", result: () => ({ ok: true, body: responses[call++] }) },
+    ]);
+    renderPage();
+    await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
+    fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
+    await screen.findByText(/Alice Kid/);
+
+    // 1st remove -> notice (blue)
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[1]);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Remove Participant" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "blue", message: "Seat freed. Add +1 in Shopify." })),
+    );
+
+    // 2nd remove -> warning (yellow)
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[1]);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Remove Participant" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: "yellow", message: "Shopify inventory release failed." })),
+    );
+
+    // 3rd remove -> bare success, no further notification
+    const before = (notifications.show as jest.Mock).mock.calls.length;
+    fireEvent.click(screen.getAllByRole("button", { name: "Remove" })[1]);
+    fireEvent.click(within(await screen.findByRole("dialog", { name: "Remove Participant" })).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Remove Participant" })).not.toBeInTheDocument());
+    expect((notifications.show as jest.Mock).mock.calls.length).toBe(before);
+  });
+
   it("shows past-confirmed and future events distinctly, and can schedule a new session", async () => {
     const eventsProgram = {
       ...programData,

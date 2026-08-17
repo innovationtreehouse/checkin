@@ -1,6 +1,6 @@
 /**
  * Invariant-driven lifecycle drift — the scan + reconcile that is the payoff for
- * the two machines' `validate()` oracles (docs/designs/LIFECYCLE.md).
+ * the two machines' `validate()` oracles.
  *
  * `scanLifecycleViolations` runs each machine's OWN `validate` over every live
  * row and returns the off-diagram set — read-only, shared by the System Status
@@ -18,6 +18,7 @@ import {
     validate as validateEnrollment,
 } from "@/lib/programs/enrollmentState";
 import { validate as validateMembership } from "@/lib/membership/lifecycle";
+import { systemActor } from "@/lib/auditActor";
 import { adjustProgramInventory, reportShopifyFailure } from "@/lib/shopify";
 
 export type LifecycleModel = "ProgramParticipant" | "OrgMembershipProcess";
@@ -65,10 +66,13 @@ export async function scanLifecycleViolations(): Promise<{
         }
     }
 
+    // Every kind is scanned; `kind` goes to `validate` because the machine's invariants
+    // are kind-specific, and deciding which rows to skip HERE would re-derive them.
     const processes = await prisma.orgMembershipProcess.findMany({
         select: {
             id: true,
             status: true,
+            kind: true,
             contractSignedAt: true,
             bgConsentAt: true,
             bgClearedAt: true,
@@ -78,6 +82,7 @@ export async function scanLifecycleViolations(): Promise<{
     for (const p of processes) {
         const bad = validateMembership({
             status: p.status,
+            kind: p.kind,
             contractSignedAt: p.contractSignedAt !== null,
             bgConsentAt: p.bgConsentAt !== null,
             bgClearedAt: p.bgClearedAt !== null,
@@ -113,20 +118,14 @@ export type ReconcileSummary = {
  * healed. Per-row isolated; the Shopify leg is non-fatal.
  */
 async function healEnrollmentI1(): Promise<number> {
-    // status=ACTIVE ∧ inventoryHeldAt≠null IS the I1 set (I1, docs/designs/LIFECYCLE.md) — no re-derivation.
+    // status=ACTIVE ∧ inventoryHeldAt≠null IS the I1 set — no re-derivation.
     const stranded = await prisma.programParticipant.findMany({
         where: { status: "ACTIVE", inventoryHeldAt: { not: null } },
         select: {
             programId: true,
             personId: true,
             inventoryHeldAt: true,
-            program: {
-                select: {
-                    shopifyVariantId: true,
-                    shopifyOrgMemberVariantId: true,
-                    shopifyNonOrgMemberVariantId: true,
-                },
-            },
+            program: { select: { shopifyVariantId: true } },
         },
     });
 
@@ -157,7 +156,7 @@ async function healEnrollmentI1(): Promise<number> {
 
             await prisma.auditLog.create({
                 data: {
-                    actorId: 0, // system — no session behind a cron sweep
+                    ...systemActor("cron:lifecycle-reconcile"),
                     action: "EDIT",
                     tableName: "ProgramParticipant",
                     affectedEntityId: row.personId,
@@ -197,7 +196,7 @@ async function reportViolation(v: LifecycleViolation): Promise<void> {
 }
 
 /**
- * The reconciler sweep (docs/designs/LIFECYCLE.md): heal the one safe,
+ * The reconciler sweep: heal the one safe,
  * unambiguous case (enrollment I1), report every remaining violation, return a
  * summary. Complementary to the order-driven `lib/finance/reconcile.ts` — this
  * one is invariant-driven.

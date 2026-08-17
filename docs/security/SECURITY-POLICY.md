@@ -49,6 +49,7 @@ Schema annotations classify *data*. Registry views grant *access* in the form of
 | `everyones` | "everyone's …" — no relationship check (broad grant) |
 | `their_own` | "their own …" — row owner is the caller |
 | `their_households` | "their households' …" — caller and row owner share a household |
+| `led_households` | "their led households' …" — caller is a **lead** of the row owner's household. Strictly narrower than `their_households`: a non-lead member of the same household does not hold it. Use it where acting for another member is the capability, not merely sharing a home |
 | `their_program_participants` | "their program participants' …" — caller leads/coreVols a program containing the row owner |
 | `all_current_visitors` | "all current visitors' …" — keyholder view of people currently in the building |
 

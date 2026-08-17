@@ -17,7 +17,7 @@ import { LIVE_PERSON } from "@/lib/person/filters";
  *   - activations with NO payment basis at all (access, no money) — the
  *     ACTIVE_WITHOUT_PAYMENT case that has had an enum value and board-alert
  *     copy since the reconciler shipped, but which nothing ever computed,
- *   - the legitimately-manual class (board-certified memberships, approved
+ *   - the legitimately-manual class (manually-recorded memberships, approved
  *     scholarships) that an auditor must see separated, not buried.
  *
  * "Should reconcile" is decided by VARIANT ID, the same key the storefront
@@ -58,7 +58,7 @@ export interface AuditOrderRow {
 
 export type MembershipBucket =
     | "ORDER_MATCHED"
-    | "MANUAL_CERTIFIED"
+    | "MANUAL_PAYMENT"
     | "ORDER_NOT_IN_MIRROR"
     | "PRE_MIRROR"
     | "ORDER_REVERSED"
@@ -86,8 +86,8 @@ export interface AuditMembershipRow {
     membershipId: number | null;
     householdName: string | null;
     shopifyOrderId: string | null;
-    /** Who certified, for the MANUAL_CERTIFIED rows — the "what is in audit as manual" answer. */
-    certifiedByName: string | null;
+    /** Who recorded the payment, for the MANUAL_PAYMENT rows — the "what is in audit as manual" answer. */
+    manualPaymentByName: string | null;
 }
 
 export interface AuditEnrollmentRow {
@@ -131,10 +131,10 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     const [settings, programs, variantCoverage] = await Promise.all([
         prisma.boardSettings.findUnique({
             where: { id: 1 },
-            select: { orgMembershipVariantId: true, shopifyNormalVariantId: true, shopifyVolunteerVariantId: true },
+            select: { orgMembershipVariantId: true },
         }),
         prisma.program.findMany({
-            select: { id: true, name: true, shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+            select: { id: true, name: true, shopifyVariantId: true },
         }),
         mirror.lineVariantStats(),
     ]);
@@ -144,9 +144,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     const membershipVariants = membershipVariantIdSet(settings ?? null);
     const programByVariant = new Map<string, { id: number; name: string }>();
     for (const p of programs) {
-        for (const v of [p.shopifyVariantId, p.shopifyOrgMemberVariantId, p.shopifyNonOrgMemberVariantId]) {
-            if (v) programByVariant.set(v, { id: p.id, name: p.name });
-        }
+        if (p.shopifyVariantId) programByVariant.set(p.shopifyVariantId, { id: p.id, name: p.name });
     }
     const allVariants = [...membershipVariants, ...programByVariant.keys()];
 
@@ -264,7 +262,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
             select: {
                 id: true,
                 shopifyOrderId: true,
-                certifiedById: true,
+                manualPaymentById: true,
                 orgMembership: { select: { household: { select: { name: true } } } },
             },
         }),
@@ -280,11 +278,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
                 person: LIVE_PERSON,
                 OR: [
                     { shopifyOrderId: { not: null } },
-                    { program: { OR: [
-                        { shopifyVariantId: { not: null } },
-                        { shopifyOrgMemberVariantId: { not: null } },
-                        { shopifyNonOrgMemberVariantId: { not: null } },
-                    ] } },
+                    { program: { shopifyVariantId: { not: null } } },
                 ],
             },
             select: {
@@ -346,12 +340,12 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
     const createdActive = (e: { personId: number; programId: number; shopifyOrderId: string | null; wasOrgMemberAtApproval: boolean | null }) =>
         !e.shopifyOrderId && e.wasOrgMemberAtApproval == null && createByKey.get(`${e.personId}:${e.programId}`)?.status === "ACTIVE";
 
-    // certifiedById / comp actor ids have no Prisma relation — resolve every name in one batch.
-    const certifierIds = [...new Set(procs.map((p) => p.certifiedById).filter((v): v is number => v != null))];
+    // manualPaymentById / comp actor ids have no Prisma relation — resolve every name in one batch.
+    const manualPaymentActorIds = [...new Set(procs.map((p) => p.manualPaymentById).filter((v): v is number => v != null))];
     const comperActorIds = compCandidates
         .map((e) => (createByKey.get(`${e.personId}:${e.programId}`)?.status === "ACTIVE" ? compActorId(e) : null))
         .filter((v): v is number => v != null);
-    const nameIds = [...new Set([...certifierIds, ...comperActorIds])];
+    const nameIds = [...new Set([...manualPaymentActorIds, ...comperActorIds])];
     const people = nameIds.length
         ? await prisma.person.findMany({ where: { id: { in: nameIds } }, select: { id: true, name: true } })
         : [];
@@ -413,8 +407,8 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
                 : reversedIds.has(p.shopifyOrderId)
                     ? "ORDER_REVERSED"
                     : "ORDER_MATCHED"
-            : p.certifiedById != null
-                ? "MANUAL_CERTIFIED"
+            : p.manualPaymentById != null
+                ? "MANUAL_PAYMENT"
                 : "NO_PAYMENT_BASIS";
         // Override only the two trackable gaps — literal bucket names, so a P2
         // bucket this PR doesn't know about is never touched (see file header).
@@ -428,7 +422,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
             membershipId: null,
             householdName: p.orgMembership?.household?.name ?? null,
             shopifyOrderId: p.shopifyOrderId,
-            certifiedByName: p.certifiedById != null ? (personName.get(p.certifiedById) ?? `person ${p.certifiedById}`) : null,
+            manualPaymentByName: p.manualPaymentById != null ? (personName.get(p.manualPaymentById) ?? `person ${p.manualPaymentById}`) : null,
         };
     });
 
@@ -438,7 +432,7 @@ export async function runMatchAudit(): Promise<MatchAuditResult> {
         membershipId: m.id,
         householdName: m.household?.name ?? null,
         shopifyOrderId: null,
-        certifiedByName: null,
+        manualPaymentByName: null,
     }));
 
     const enrollmentRows: AuditEnrollmentRow[] = enrolls.map((e) => {

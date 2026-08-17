@@ -12,7 +12,7 @@ secret wiring, not new prod code. (This folds in the former separate
 implementation-plan doc; its runbook is §2 below. §2/§4/§6 anchors are kept
 because code comments and PRODUCTION_PLAN.md cite them.)
 
-**Related:** `ZOHO_SIGN_DEV_MOCK.md` (sibling in-process mock), #278
+**Related:** `docs/ops/contract-signing-mock.md` (sibling in-process mock), #278
 (checkout-token honor-system TODO), #624/#625 (order-amount / price-alignment
 safety), #683 (Shopify env routed through `config.ts`).
 
