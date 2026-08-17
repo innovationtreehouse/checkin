@@ -8,7 +8,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 export default function SystemStatusLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
+  const { loading, ready } = useRequireRole(["isSysadmin", "isBoardMember"]);
 
   if (loading) {
     return (
@@ -18,11 +18,9 @@ export default function SystemStatusLayout({ children }: { children: React.React
 
   if (!ready) return null;
 
-  const links = SYSTEM_STATUS_NAV_LINKS.filter((link) => !link.sysadminOnly || user?.isSysadmin);
-
   return (
     <PageContainer>
-      <SectionTabs links={links} mb="md" />
+      <SectionTabs links={SYSTEM_STATUS_NAV_LINKS} mb="md" />
       <Box style={{ minWidth: 0 }}>{children}</Box>
     </PageContainer>
   );

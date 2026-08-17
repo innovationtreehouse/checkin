@@ -197,4 +197,36 @@ describe("RolesEditModal", () => {
         expect(onSaved).not.toHaveBeenCalled();
         expect(onClose).not.toHaveBeenCalled();
     });
+
+    it("toasts a network error and reverts when the PATCH fetch rejects", async () => {
+        const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+        const onSaved = jest.fn();
+        const onClose = jest.fn();
+        renderWithProviders(<RolesEditModal target={jane} me={{ isBoardMember: true }} onClose={onClose} onSaved={onSaved} />);
+
+        fireEvent.click(screen.getByLabelText("Operations")); // grant
+        fireEvent.click(screen.getByLabelText("Keyholder")); // revoke (was checked)
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        const call = (modals.openConfirmModal as jest.Mock).mock.calls[0][0];
+        // Reject the fetch itself (not ok:false) so the catch runs, not the else branch.
+        global.fetch = jest.fn(() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;
+
+        await act(async () => {
+            await call.onConfirm();
+        });
+
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(
+                expect.objectContaining({ color: "red", message: "Network error updating roles" }),
+            ),
+        );
+        expect(spy).toHaveBeenCalledWith(expect.stringContaining("Failed to update roles"), expect.anything());
+
+        // The catch (unlike the ok:false branch) does not revert; it only toasts.
+        // Neither success callback fires.
+        expect(onSaved).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+        spy.mockRestore();
+    });
 });

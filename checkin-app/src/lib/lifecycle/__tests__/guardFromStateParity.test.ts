@@ -11,6 +11,7 @@ import {
     TRANSITIONS as MEMB_TX,
     ALL_STATUSES as MEMB_STATES,
     fromWhere as membFromWhere,
+    personBgOpen,
     type ProcessStatus,
 } from '../../membership/lifecycle';
 
@@ -45,8 +46,8 @@ type GuardSite = {
     machine: 'enrollment' | 'membership';
     /** The from-state the guard's CAS names (a state in that machine). */
     from: string;
-    /** Forward transition the guard drives, as [from, to]; omit for a reverse/entry
-     *  guard whose from-state has no outgoing table edge (e.g. unarchive from ARCHIVED). */
+    /** Transition the guard drives, as [from, to]; omit for a guard that changes no
+     *  status at all (e.g. a flag-only deny). */
     edge?: [string, string];
     /** 'spread' = migrated onto fromWhere; 'literal' = intentionally kept literal. */
     mode: 'spread' | 'literal';
@@ -64,9 +65,15 @@ const GUARDS: GuardSite[] = [
     // ── membership (OrgMembershipProcess) ──
     { file: 'lib/membership/external.ts', machine: 'membership', from: 'PENDING_EXTERNAL_ACTION', edge: ['PENDING_EXTERNAL_ACTION', 'PENDING_PAYMENT'], mode: 'spread' },
     { file: 'lib/membership/renewal.ts', machine: 'membership', from: 'PENDING_RENEWAL', edge: ['PENDING_RENEWAL', 'PENDING_EXTERNAL_ACTION'], mode: 'spread' },
-    { file: 'lib/membership/archive.ts', machine: 'membership', from: 'ARCHIVED', mode: 'spread' }, // unarchive: reverse of #13, no ARCHIVED→ edge
+    { file: 'lib/membership/archive.ts', machine: 'membership', from: 'ARCHIVED', edge: ['ARCHIVED', 'PENDING_PAYMENT'], mode: 'spread' }, // unarchive: reverse of #13 (one representative target)
     { file: 'app/api/finance-ops/membership-payment-plans/route.ts', machine: 'membership', from: 'PENDING_PAYMENT', edge: ['PENDING_PAYMENT', 'ACTIVE'], mode: 'spread' },
     { file: 'app/api/finance-ops/membership-payment-plans/refuse/route.ts', machine: 'membership', from: 'PENDING_PAYMENT', mode: 'spread' }, // deny: flag-only, no status edge
+    // merge BG carryover — two flag-only stamps (advanceExternalIfComplete / activate own the
+    // edges those rows later take) and two real clearances on already-declared edges.
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_EXTERNAL_ACTION', mode: 'spread' },
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_PAYMENT', mode: 'spread' },
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_BG_REVIEW', edge: ['PENDING_BG_REVIEW', 'PENDING_PAYMENT'], mode: 'spread' },
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_BG_CLEARANCE', edge: ['PENDING_BG_CLEARANCE', 'ACTIVE'], mode: 'spread' },
 
     // ── left literal on purpose (documented) ──
     // personBgTriggers is an idempotency EXISTENCE set (∅→PENDING_BG_REVIEW is the edge;
@@ -120,11 +127,15 @@ describe('CAS guard ↔ TRANSITIONS from-state parity (#1080)', () => {
         }
     });
 
-    it('the personBg idempotency guard is left literal, and its states are valid', () => {
-        const src = read('lib/membership/personBgTriggers.ts');
-        // still a raw {in:[…]} literal (NOT fromWhere) — documented as an existence set
-        expect(/status:\s*\{\s*in:\s*\[\s*"PENDING_BG_REVIEW",\s*"BLOCKED"\s*\]/.test(src)).toBe(true);
-        expect(src).not.toMatch(/fromWhere\(/);
-        for (const s of ['PENDING_BG_REVIEW', 'BLOCKED']) expect(MEMB_STATES).toContain(s);
+    it('the personBg existence set lives in the definition, and both consumers spread it', () => {
+        // An existence set, not a from-state (the PERSON_BG edge is ∅→PENDING_BG_REVIEW),
+        // so it is a StateSet rather than fromWhere — and both sites read the SAME one:
+        // the create-idempotency guard and the merge's duplicate resolution.
+        for (const file of ['lib/membership/personBgTriggers.ts', 'app/api/membership-ops/participants/merge/route.ts']) {
+            expect({ file, spreads: /\.\.\.personBgOpen\.where/.test(read(file)) }).toEqual({ file, spreads: true });
+        }
+        expect(read('lib/membership/personBgTriggers.ts')).not.toMatch(/fromWhere\(/);
+        expect([...personBgOpen.statuses].sort()).toEqual(['BLOCKED', 'PENDING_BG_REVIEW']);
+        for (const s of personBgOpen.statuses) expect(MEMB_STATES).toContain(s);
     });
 });

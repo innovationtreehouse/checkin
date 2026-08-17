@@ -15,6 +15,7 @@
 import { GET } from '@/app/api/nav/todo-counts/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
+import { CRON_STALE_AFTER_MS, getCronJobStatuses } from '@/lib/cronRuns';
 
 jest.mock('next-auth/next', () => ({
     getServerSession: jest.fn(),
@@ -291,5 +292,88 @@ describe('Nav todo-counts API', () => {
 
         await prisma.orgMembershipProcess.deleteMany({ where: { id: { in: [...reviewerProcs.map((p) => p.id), blocked.id] } } });
         await prisma.orgMembership.delete({ where: { id: reviewerMembership.id } });
+    });
+
+    // Nothing in this repo schedules the crons, so a sweep that stops firing is
+    // invisible until the ledger goes cold. That has to reach the board's red System
+    // Status pill — and only the board's — as does a sweep that runs but cannot
+    // finish its work.
+    describe('unhealthy cron jobs', () => {
+        const JOB = `nav-badge-${TAG}`;
+
+        const unhealthyCount = async (user: object) => {
+            const res = await callAs(user);
+            const data = await res.json();
+            return data.configHealth?.unhealthyCronJobs as number | undefined;
+        };
+
+        // Functions, not constants: the ids are assigned in beforeAll, which runs
+        // after this describe body is evaluated.
+        const board = () => ({ id: boardId, householdId: householdBId, isBoardMember: true });
+        const nonAdmin = () => ({ id: leadId, householdId: householdAId });
+
+        afterEach(async () => {
+            await prisma.cronRunLog.deleteMany({ where: { job: JOB } });
+        });
+
+        it('a recent success does not count', async () => {
+            const before = (await unhealthyCount(board()))!;
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: new Date(), finishedAt: new Date(), success: true },
+            });
+
+            expect(await unhealthyCount(board())).toBe(before);
+        });
+
+        // The freeze this split exists to prevent: one poison row must not make a job
+        // that ran last night read as stopped, and must not go unreported either.
+        it('a completed-but-unclean run raises the count without ever going stale', async () => {
+            const before = (await unhealthyCount(board()))!;
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: new Date(), finishedAt: new Date(), success: true, error: '1 item(s) failed' },
+            });
+
+            expect(await unhealthyCount(board())).toBe(before + 1);
+
+            // ...and the panel shows it as run-recently, not as stopped.
+            const status = (await getCronJobStatuses()).find((j) => j.job === JOB);
+            expect(status?.stale).toBe(false);
+            expect(status?.lastError).toBe('1 item(s) failed');
+        });
+
+        it('a job whose last success is older than the threshold raises the count', async () => {
+            const before = (await unhealthyCount(board()))!;
+            const long = new Date(Date.now() - (CRON_STALE_AFTER_MS + 60 * 60 * 1000));
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: long, finishedAt: long, success: true },
+            });
+
+            expect(await unhealthyCount(board())).toBe(before + 1);
+        });
+
+        it('failed runs do not refresh a stale job — only a success clears it', async () => {
+            const before = (await unhealthyCount(board()))!;
+            const long = new Date(Date.now() - (CRON_STALE_AFTER_MS + 60 * 60 * 1000));
+            await prisma.cronRunLog.createMany({
+                data: [
+                    { job: JOB, startedAt: long, finishedAt: long, success: true },
+                    { job: JOB, startedAt: new Date(), finishedAt: new Date(), success: false, error: 'boom' },
+                ],
+            });
+
+            expect(await unhealthyCount(board())).toBe(before + 1);
+        });
+
+        it('a non-board, non-admin caller gets no count at all', async () => {
+            const long = new Date(Date.now() - (CRON_STALE_AFTER_MS + 60 * 60 * 1000));
+            await prisma.cronRunLog.create({
+                data: { job: JOB, startedAt: long, finishedAt: long, success: true },
+            });
+
+            const res = await callAs(nonAdmin());
+            const data = await res.json();
+            expect(data.configHealth).toBeUndefined();
+            expect(await unhealthyCount(board())).toBeGreaterThanOrEqual(1);
+        });
     });
 });

@@ -44,9 +44,11 @@ import { POST as ONBOARDING_POST } from '@/app/api/profile/onboarding/route';
 import { GET as BROKEN_HH_GET } from '@/app/api/admin/broken-households/route';
 import { GET as LOCALIZATION_GET, PUT as LOCALIZATION_PUT } from '@/app/api/admin/settings/localization/route';
 import { GET as BADGES_GET } from '@/app/api/facility/badges/route';
-import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH } from '@/app/api/facility/visits/route';
+import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH, DELETE as FAC_VISITS_DELETE } from '@/app/api/facility/visits/route';
+import { POST as FAC_VISITS_INSERT_POST } from '@/app/api/facility/visits/insert/route';
 import { GET as MISSING_CONTACT_GET } from '@/app/api/membership-audit/households-missing-contact/route';
 import { GET as UNCLAIMED_GET } from '@/app/api/membership-audit/unclaimed-households/route';
+import { GET as TURNING_18_GET } from '@/app/api/membership-audit/turning-18/route';
 import { POST as CERTIFY_PAYMENT_POST } from '@/app/api/membership-ops/applications/certify-payment/route';
 import { POST as APP_EXTERNAL_POST } from '@/app/api/membership-ops/applications/external/route';
 import { POST as REVIEW_OVERRIDE_POST } from '@/app/api/membership-ops/applications/review-override/route';
@@ -186,8 +188,13 @@ describe('Protected-route role rejection', () => {
         { name: 'PATCH /api/finance-ops/payments/[id]', invoke: () => FIN_PAYMENTS_PATCH(nreq('http://localhost/api/finance-ops/payments/1', 'PATCH', {}), idCtx(1)) },
         { name: 'GET /api/facility/visits', invoke: () => FAC_VISITS_GET(nreq('http://localhost/api/facility/visits')) },
         { name: 'PATCH /api/facility/visits', invoke: () => FAC_VISITS_PATCH(nreq('http://localhost/api/facility/visits', 'PATCH', {})) },
+        { name: 'DELETE /api/facility/visits', invoke: () => FAC_VISITS_DELETE(nreq('http://localhost/api/facility/visits', 'DELETE', {})) },
+        // Staff insert-for-others: personId comes from the body, so the role gate
+        // is the entire subject boundary — a wrong-role caller must never reach it.
+        { name: 'POST /api/facility/visits/insert', invoke: () => FAC_VISITS_INSERT_POST(nreq('http://localhost/api/facility/visits/insert', 'POST', {})) },
         { name: 'GET /api/membership-audit/households-missing-contact', invoke: () => MISSING_CONTACT_GET(nreq('http://localhost/api/membership-audit/households-missing-contact')) },
         { name: 'GET /api/membership-audit/unclaimed-households', invoke: () => UNCLAIMED_GET(nreq('http://localhost/api/membership-audit/unclaimed-households')) },
+        { name: 'GET /api/membership-audit/turning-18', invoke: () => TURNING_18_GET(nreq('http://localhost/api/membership-audit/turning-18')) },
         { name: 'POST /api/membership-ops/applications/certify-payment', invoke: () => CERTIFY_PAYMENT_POST(nreq('http://localhost/api/membership-ops/applications/certify-payment', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/external', invoke: () => APP_EXTERNAL_POST(nreq('http://localhost/api/membership-ops/applications/external', 'POST', {})) },
         { name: 'POST /api/membership-ops/applications/review-override', invoke: () => REVIEW_OVERRIDE_POST(nreq('http://localhost/api/membership-ops/applications/review-override', 'POST', {})) },
@@ -206,7 +213,7 @@ describe('Protected-route role rejection', () => {
         { name: 'GET /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_GET(nreq('http://localhost/api/settings/membership/volunteer-designations')) },
         { name: 'POST /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_POST(nreq('http://localhost/api/settings/membership/volunteer-designations', 'POST', {})) },
         { name: 'DELETE /api/settings/membership/volunteer-designations', invoke: () => VOL_DESIG_DELETE(nreq('http://localhost/api/settings/membership/volunteer-designations', 'DELETE')) },
-        { name: 'GET /api/system-status/audit-log (sysadmin-only)', invoke: () => AUDIT_LOG_GET(nreq('http://localhost/api/system-status/audit-log')) },
+        { name: 'GET /api/system-status/audit-log', invoke: () => AUDIT_LOG_GET(nreq('http://localhost/api/system-status/audit-log')) },
         { name: 'GET /api/system-status/errors', invoke: () => SS_ERRORS_GET(nreq('http://localhost/api/system-status/errors')) },
         { name: 'GET /api/system-status/links', invoke: () => SS_LINKS_GET(nreq('http://localhost/api/system-status/links')) },
         // links/[id] is a GLOBAL admin resource (integrationErrorLog keyed by a
@@ -233,6 +240,45 @@ describe('Protected-route role rejection', () => {
     // own integration suite).
     const participantsEditRoutes = roleGated.filter((c) => c.name.includes('/membership-ops/participants'));
     describe.each(participantsEditRoutes)('$name — operations-only is denied', ({ invoke }) => {
+        it('403s an operations-only actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            expect((await invoke()).status).toBe(403);
+        });
+    });
+
+    // ---- Facility Ops — operations reaches the aggregate, not the record ------
+    // #1633 [Decision]: operations reach attendance in aggregate only — the
+    // trends, and printing the ID badges (whose /api/people/search + /api/programs
+    // already admit them). One person's record sits outside that reach: they do
+    // not record, correct or remove a visit, and do not read the raw badge events
+    // behind one. So trends must NOT 401/403 an operations actor, and every
+    // /api/facility/visits verb plus the raw badge log must 403 them.
+    const facilityOpsGrantedNames = ['GET /api/facility/trends'];
+    const facilityOpsWithheldNames = [
+        'GET /api/facility/badges',
+        'GET /api/facility/visits',
+        'PATCH /api/facility/visits',
+        'DELETE /api/facility/visits',
+        'POST /api/facility/visits/insert',
+    ];
+    const byName = (names: string[]) => roleGated.filter((c) => names.includes(c.name));
+    const facilityOpsGranted = byName(facilityOpsGrantedNames);
+    const facilityOpsWithheld = byName(facilityOpsWithheldNames);
+    // Guard: the filters match on literal names, so a renamed or removed case
+    // would silently shrink a sweep instead of failing it.
+    it('guard: every Facility Ops route named above is present in the harness', () => {
+        expect([...facilityOpsGranted, ...facilityOpsWithheld].map((c) => c.name).sort())
+            .toEqual([...facilityOpsGrantedNames, ...facilityOpsWithheldNames].sort());
+    });
+    describe.each(facilityOpsGranted)('$name — operations clears the gate', ({ invoke }) => {
+        it('does not 401/403 an operations actor', async () => {
+            as(plainId, { householdId: plainHh, isOperations: true });
+            const status = (await invoke()).status;
+            expect(status).not.toBe(401);
+            expect(status).not.toBe(403);
+        });
+    });
+    describe.each(facilityOpsWithheld)('$name — operations is denied', ({ invoke }) => {
         it('403s an operations-only actor', async () => {
             as(plainId, { householdId: plainHh, isOperations: true });
             expect((await invoke()).status).toBe(403);

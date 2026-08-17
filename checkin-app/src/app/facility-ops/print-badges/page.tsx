@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
@@ -10,6 +10,7 @@ import { notifications } from "@mantine/notifications";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
+import { computeDisplayNames } from "@/components/admin/badgeNames";
 
 type ParticipantRow = {
   id: number;
@@ -25,8 +26,13 @@ export default function PrintBadgesPage() {
   const router = useRouter();
 
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
+  // Every ACTIVE member org-wide — the population printed names disambiguate against.
+  // Separate from `participants`, which is whatever the search box last matched.
+  // `year` is per person: only a household that settled this renewal cycle gets one.
+  const [roster, setRoster] = useState<{ id: number; name: string; year: string | null }[] | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [hideInactive, setHideInactive] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -60,6 +66,45 @@ export default function PrintBadgesPage() {
     }
   }, [status, fetchParticipants]);
 
+  // Once on mount — deliberately NOT keyed on searchTerm. The printed name must not
+  // move when the operator types.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const url = new URL('/api/people/search', window.location.origin);
+    url.searchParams.set('roster', 'active');
+    fetch(url.toString())
+      // apiError returns valid JSON, so a 500 would resolve to `[]` and release the
+      // Generate guard — the roster must stay null on any failure.
+      .then(res => {
+        if (!res.ok) throw new Error(`roster request failed: ${res.status}`);
+        return res.json();
+      })
+      .then(data => setRoster(data.people ?? []))
+      .catch(e => {
+        console.error("Failed to load the active-member roster for badge names:", e);
+        setRoster(null);
+        notifications.show({ color: 'red', message: 'Could not load the active member roster, so badge names cannot be resolved. Reload to retry.', autoClose: false });
+      });
+  }, [status]);
+
+  const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
+  const printedYears = useMemo(() => new Map((roster ?? []).map(m => [m.id, m.year])), [roster]);
+
+  // Off-roster people are absent from the ACTIVE population, so folding them into it is
+  // what lets a non-member move a member's name — the #1625 bug. Disambiguate them among
+  // themselves instead, over the fetched batch, so two non-member Johns don't both print
+  // "John". Fallback only: the roster map is consulted first and never sees this one.
+  const offRosterNames = useMemo(
+    () => computeDisplayNames((roster ? participants : []).filter(p => !printedNames.has(p.id))
+      .map(p => ({ id: p.id, name: p.name ?? '' }))),
+    [roster, participants, printedNames],
+  );
+
+  // The badge name and this column read the same maps, so the column is proof of what
+  // will print.
+  const printedName = (p: ParticipantRow) =>
+    printedNames.get(p.id) ?? offRosterNames.get(p.id) ?? `User #${p.id}`;
+
   const toggleSelection = (id: number) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) newSet.delete(id);
@@ -67,35 +112,39 @@ export default function PrintBadgesPage() {
     setSelectedIds(newSet);
   };
 
+  // Every count, every checkbox and the PDF itself read `visible`/`selectedVisible`,
+  // never `participants`/`selectedIds` — a hidden person can't leak into a print run.
+  const visible = hideInactive ? participants.filter(p => p.isMember) : participants;
+  const selectedVisible = visible.filter(p => selectedIds.has(p.id));
+
   const toggleAll = () => {
-    if (selectedIds.size === participants.length) {
+    if (selectedVisible.length === visible.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(participants.map(p => p.id)));
+      setSelectedIds(new Set(visible.map(p => p.id)));
     }
   };
 
   const generate = async (kind: 'badge' | 'sticker') => {
-    if (selectedIds.size === 0) return;
+    if (selectedVisible.length === 0) return;
     setIsGenerating(true);
 
     try {
-      const selectedParticipants = participants.filter(p => selectedIds.has(p.id));
-
       // Add QR code data URIs
       const badgesWithQr = await Promise.all(
-        selectedParticipants.map(async (p) => {
+        selectedVisible.map(async (p) => {
           const qrDataUri = await QRCode.toDataURL(p.id.toString(), {
             width: 200,
             margin: 1,
             color: { dark: '#000000', light: '#FFFFFF' }
           });
+          // `displayName` is the badge's; `name` is retained solely for StickerDocument,
+          // which prints the full name raw and is not changing.
           return {
             id: p.id,
             name: p.name ?? '',
-            isMember: !!p.isMember,
-            isBoardMember: !!p.isBoardMember,
-            isKeyholder: !!p.isKeyholder,
+            displayName: printedName(p),
+            year: printedYears.get(p.id) ?? null,
             qrDataUri,
           };
         })
@@ -130,7 +179,7 @@ export default function PrintBadgesPage() {
       header: (
         <Checkbox
           radius={2}
-          checked={participants.length > 0 && selectedIds.size === participants.length}
+          checked={visible.length > 0 && selectedVisible.length === visible.length}
           onChange={toggleAll}
           aria-label="Select all"
         />
@@ -150,8 +199,17 @@ export default function PrintBadgesPage() {
       render: (p) => <Text fw={600}>{p.name || 'N/A'}</Text>,
     },
     {
+      header: 'Printed Name',
+      render: (p) => <Text>{printedName(p)}</Text>,
+    },
+    {
       header: 'Membership',
       render: (p) => (p.isMember ? <Text c="green">Active</Text> : <Text c="red">Inactive</Text>),
+    },
+    {
+      // Blank here means blank on the badge — the renewal prompt, visible before printing.
+      header: 'Year',
+      render: (p) => <Text c={printedYears.get(p.id) ? undefined : 'dimmed'}>{printedYears.get(p.id) ?? 'Not renewed'}</Text>,
     },
     {
       header: 'Roles',
@@ -180,17 +238,24 @@ export default function PrintBadgesPage() {
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.currentTarget.value)}
         />
-        <Button onClick={() => generate('badge')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
-          Generate Badge ({selectedIds.size})
+        <Checkbox
+          label="Hide inactive"
+          checked={hideInactive}
+          onChange={(e) => setHideInactive(e.currentTarget.checked)}
+        />
+        {/* Held until the roster lands: printing first would silently emit un-disambiguated
+            names onto physical badges, with nothing on screen to say so. */}
+        <Button onClick={() => generate('badge')} disabled={selectedVisible.length === 0 || isGenerating || roster === null} loading={isGenerating}>
+          Generate Badge ({selectedVisible.length})
         </Button>
-        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedIds.size === 0 || isGenerating} loading={isGenerating}>
-          Generate Sticker ({selectedIds.size})
+        <Button color="grape" onClick={() => generate('sticker')} disabled={selectedVisible.length === 0 || isGenerating || roster === null} loading={isGenerating}>
+          Generate Sticker ({selectedVisible.length})
         </Button>
       </Group>
 
       <DataTable
         columns={columns}
-        rows={participants}
+        rows={visible}
         getRowKey={(p) => p.id}
         loading={loading}
         emptyMessage="No participants found."

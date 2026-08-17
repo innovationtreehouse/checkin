@@ -82,6 +82,7 @@ export const classifications = {
         subjectPersonId: 'public',
         kind: 'public',
         status: 'internal',
+        archivedFromStatus: 'internal',
         stageEnteredAt: 'internal',
         createdAt: 'public',
         zohoEnvelopeId: 'internal',
@@ -93,15 +94,19 @@ export const classifications = {
         shopifyInvoiceUrl: 'personal',
         shopifyOrderId: 'internal',
         paidAt: 'internal',
-        certifiedById: 'internal',
+        manualPaymentById: 'internal',
         certificationNote: 'internal',
         renewalReminderSentAt: 'internal',
         isPaymentPlanRequested: 'internal',
+        intakeNoteSnapshot: 'pii',
+        noteAckById: 'internal',
+        noteAckAt: 'internal',
     },
     BackgroundCheckAttestation: {
         id: 'public',
         processId: 'public',
         reviewerId: 'public',
+        subjectPersonId: 'public',
         result: 'internal',
         note: 'internal',
         isMarkedVolunteer: 'internal',
@@ -115,8 +120,8 @@ export const classifications = {
     },
     BoardSettings: {
         id: 'public',
-        normalDuesCents: 'public',
-        volunteerDuesCents: 'public',
+        standardMembershipFeeCents: 'public',
+        volunteerMembershipFeeCents: 'public',
         orgMembershipYearBoundary: 'public',
         orgMembershipVariantId: 'internal',
         orgMembershipProductUrl: 'internal',
@@ -236,21 +241,6 @@ export const classifications = {
         paymentPlanDeniedAt: 'personal',
         shopifyOrderId: 'internal',
     },
-    Fee: {
-        id: 'public',
-        programId: 'public',
-        name: 'public',
-        nonOrgMemberPriceCents: 'public',
-        orgMemberPriceCents: 'public',
-    },
-    FeePayment: {
-        feeId: 'public',
-        personId: 'public',
-        paidAt: 'personal',
-        shopifyLink: 'personal',
-        quickBooksInvoice: 'personal',
-        customNote: 'personal',
-    },
     Event: {
         id: 'public',
         programId: 'public',
@@ -283,11 +273,15 @@ export const classifications = {
         arrivedVia: 'public',
         departedVia: 'public',
         associatedEventId: 'public',
+        deletedAt: 'internal',
+        deletedById: 'internal',
+        forceCloseWarnedAt: 'internal',
     },
     AuditLog: {
         id: 'internal',
         timestamp: 'internal',
         actorId: 'internal',
+        actorSystem: 'internal',
         action: 'internal',
         tableName: 'internal',
         affectedEntityId: 'internal',
@@ -341,6 +335,14 @@ export const classifications = {
         context: 'internal',
         timestamp: 'internal',
         resolvedAt: 'internal',
+    },
+    CronRunLog: {
+        id: 'internal',
+        job: 'internal',
+        startedAt: 'internal',
+        finishedAt: 'internal',
+        success: 'internal',
+        error: 'internal',
     },
     DevLedger: {
         id: 'internal',
@@ -400,13 +402,14 @@ export const relations = {
         mergedFrom: { model: 'Person', isList: true },
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
+        bgAttestationsAsSubject: { model: 'BackgroundCheckAttestation', isList: true },
         personBgProcesses: { model: 'OrgMembershipProcess', isList: true },
+        intakeNoteAcks: { model: 'OrgMembershipProcess', isList: true },
         corporationLeads: { model: 'CorporationLead', isList: true },
         corporationMembers: { model: 'CorporationMember', isList: true },
         programVolunteers: { model: 'ProgramVolunteer', isList: true },
         programParticipants: { model: 'ProgramParticipant', isList: true },
         programsLed: { model: 'Program', isList: true },
-        feePayments: { model: 'FeePayment', isList: true },
         rsvps: { model: 'RSVP', isList: true },
         rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
         visits: { model: 'Visit', isList: true },
@@ -444,11 +447,13 @@ export const relations = {
     OrgMembershipProcess: {
         orgMembership: { model: 'OrgMembership', isList: false },
         subjectPerson: { model: 'Person', isList: false },
+        noteAckBy: { model: 'Person', isList: false },
         attestations: { model: 'BackgroundCheckAttestation', isList: true },
     },
     BackgroundCheckAttestation: {
         process: { model: 'OrgMembershipProcess', isList: false },
         reviewer: { model: 'Person', isList: false },
+        subjectPerson: { model: 'Person', isList: false },
     },
     VolunteerDesignation: {
     },
@@ -482,7 +487,6 @@ export const relations = {
         leadMentor: { model: 'Person', isList: false },
         volunteers: { model: 'ProgramVolunteer', isList: true },
         participants: { model: 'ProgramParticipant', isList: true },
-        fees: { model: 'Fee', isList: true },
         events: { model: 'Event', isList: true },
     },
     ProgramVolunteer: {
@@ -491,14 +495,6 @@ export const relations = {
     },
     ProgramParticipant: {
         program: { model: 'Program', isList: false },
-        person: { model: 'Person', isList: false },
-    },
-    Fee: {
-        program: { model: 'Program', isList: false },
-        payments: { model: 'FeePayment', isList: true },
-    },
-    FeePayment: {
-        fee: { model: 'Fee', isList: false },
         person: { model: 'Person', isList: false },
     },
     Event: {
@@ -533,6 +529,8 @@ export const relations = {
     SystemMetricLog: {
     },
     IntegrationErrorLog: {
+    },
+    CronRunLog: {
     },
     DevLedger: {
     },
