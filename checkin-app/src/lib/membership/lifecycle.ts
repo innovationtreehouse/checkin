@@ -195,16 +195,28 @@ export const grantableRenewalWhere: Where = {
 };
 
 /**
- * "Handled this renewal cycle": a RENEWAL that reached a terminal state
- * (ACTIVE finished, or ARCHIVED by the board) stamped inside the current renewal
- * window. Consumed by BOTH the households route probe and runRenewalSweep's
- * skip-test so they can't disagree. The `kind=RENEWAL` and `ARCHIVED` clauses are
- * the fix: without them a stray INITIAL activation in-window falsely settles the
- * household (flipping derived validUntil a year forward), and a board-archived
- * renewal is missed by the route.
+ * "Settled for the coming membership year" — the MONEY question: a process that
+ * COMPLETED (terminal ACTIVE: paid and, where required, cleared) inside the
+ * current renewal window, INITIAL and RENEWAL alike, because a family that joins
+ * during the window buys the coming year exactly as a renewer does
+ * (docs/rules/membership.md). ARCHIVED is deliberately absent: archive refuses
+ * ACTIVE processes, so every ARCHIVED row never completed payment and must not
+ * extend a horizon. Read by the households valid-until and membershipValidThrough.
+ * KNOWN LIMIT: settlement time is stageEnteredAt (stage completion), so a
+ * pre-window payment whose review clears in-window reads as coming-year.
  */
 export const settledThisCycleWhere = (windowStart: Date): Where => ({
-    kind: "RENEWAL",
+    status: "ACTIVE",
+    stageEnteredAt: { gte: windowStart },
+});
+
+/**
+ * "Nothing more to open this cycle" — the SWEEP question: settled as above, OR
+ * ARCHIVED in-window — the board already closed this cycle's process, and
+ * reopening would pester a family it just declined or archived. Only
+ * runRenewalSweep's skip-test reads this wider set; money horizons never do.
+ */
+export const handledThisCycleWhere = (windowStart: Date): Where => ({
     status: { in: ["ACTIVE", "ARCHIVED"] },
     stageEnteredAt: { gte: windowStart },
 });

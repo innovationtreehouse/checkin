@@ -1,7 +1,7 @@
 import type { OrgMembershipStatus, Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { nextBoundary, renewalSeasonWindow, MAX_DATE } from "@/lib/membership/renewal";
-import { duesSettledAwaitingBg } from "@/lib/membership/lifecycle";
+import { duesSettledAwaitingBg, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 
 /**
  * Canonical "is this person an active Treehouse Member?" read model.
@@ -110,9 +110,9 @@ export function orgMembershipStatusBlocksLogin(
  * {@link BoardSettings.orgMembershipYearBoundary}). A membership always runs
  * boundary-to-boundary: an un-renewed ACTIVE household is covered through the
  * UPCOMING boundary; one already "settled for the coming year" (a terminal
- * ACTIVE {@link OrgMembershipProcess} stamped inside this cycle's renewal
- * window — the same probe households-ops uses for its `settledForComingYear`
- * flag) is covered one boundary further.
+ * {@link OrgMembershipProcess} — INITIAL or RENEWAL — stamped inside this
+ * cycle's renewal window, {@link settledThisCycleWhere}, the same probe
+ * households-ops renders as valid-until) is covered one boundary further.
  *
  * "Dues settled" here is {@link DUES_SETTLED_PERSON_WHERE}'s rule, so a paid
  * application still awaiting background clearance gets the same horizon. That
@@ -146,8 +146,7 @@ export async function membershipValidThrough(householdId: number, now = new Date
     const settled = (await prisma.orgMembershipProcess.findFirst({
         where: {
             orgMembershipId: membership.id,
-            status: "ACTIVE",
-            stageEnteredAt: { gte: window?.windowStart ?? MAX_DATE },
+            ...settledThisCycleWhere(window?.windowStart ?? MAX_DATE),
         },
         select: { id: true },
     })) !== null;

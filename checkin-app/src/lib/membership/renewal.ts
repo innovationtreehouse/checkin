@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { certifyPaymentPlan, PaymentError } from "./payment";
-import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, settledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
+import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, handledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { systemActor } from "@/lib/auditActor";
 
@@ -162,20 +162,20 @@ export async function runRenewalSweep(now: Date) {
     const memberships = await prisma.orgMembership.findMany({
         where: { status: "ACTIVE" },
         // "Handled this cycle" = an in-flight RENEWAL by status (matches the partial
-        // unique index + openRenewalsForAllActive), OR a RENEWAL already resolved this
-        // cycle — a member who finished renewal early, or the admin "Grant for coming
-        // year" override, both leave a terminal (ACTIVE/ARCHIVED) RENEWAL with
-        // stageEnteredAt in this window. Without the second clause a completed renewal
-        // gets re-opened, since terminal rows aren't in-flight.
+        // unique index + openRenewalsForAllActive), OR any process terminal in-window
+        // (handledThisCycleWhere): a finished renewal, the "Grant for coming year"
+        // override, an INITIAL that activated inside the window (that family just
+        // bought the coming year; opening a renewal would bill them twice), or a
+        // board archive (already looked at — reopening would pester a family the
+        // board just declined). ARCHIVED counts HERE only; money horizons use the
+        // narrower settledThisCycleWhere.
         select: {
             id: true,
             processes: {
                 where: {
-                    kind: "RENEWAL",
                     OR: [
-                        { status: { in: [...IN_FLIGHT_RENEWAL] } },
-                        // "resolved this cycle" — shared with the households route (fix #4).
-                        settledThisCycleWhere(windowStart),
+                        { kind: "RENEWAL", status: { in: [...IN_FLIGHT_RENEWAL] } },
+                        handledThisCycleWhere(windowStart),
                     ],
                 },
                 select: { id: true },

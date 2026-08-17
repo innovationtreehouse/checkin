@@ -301,6 +301,12 @@ Procedure below is built on them.
 
 - A membership stays active while its renewal is in progress.  [Decision]
 
+- Settling inside the renewal window buys the coming membership year — for a
+  family joining (INITIAL) exactly as for one renewing. The derived valid-until,
+  program-pricing coverage, and the renewal sweep's skip-test all read this one
+  rule, so a family that joins in-window is covered through the following
+  boundary and is not asked to renew for the year it just bought.  [Decision]
+
 - A household is never told its background check has gone stale, because nothing
   acts on staleness between renewals. It is read inside a renewal, where it
   decides whether that renewal needs a fresh one.  [Decision — *Policy: Membership Policy, Art. VI §VI.1*]

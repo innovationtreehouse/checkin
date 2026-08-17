@@ -11,14 +11,15 @@
  *     each cycle) and only a still-valid background check with no household
  *     note pre-stamps bgClearedAt.
  */
-import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary, badgeYearCycle } from '@/lib/membership/renewal';
+import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary, badgeYearCycle, runRenewalSweep } from '@/lib/membership/renewal';
+import { IN_FLIGHT_RENEWAL, handledThisCycleWhere } from '@/lib/membership/lifecycle';
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
         person: { findFirst: jest.fn() },
         orgMembershipProcess: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn(), updateMany: jest.fn() },
-        orgMembership: { findUnique: jest.fn() },
+        orgMembership: { findUnique: jest.fn(), findMany: jest.fn() },
         boardSettings: { findUnique: jest.fn() },
         auditLog: { create: jest.fn() },
     },
@@ -241,6 +242,28 @@ describe('beginRenewal', () => {
             expect(prisma.auditLog.create).not.toHaveBeenCalled();
             expect(applyVolunteerStatus).not.toHaveBeenCalled();
             expect(notifyReviewers).not.toHaveBeenCalled();
+        });
+    });
+});
+
+describe('runRenewalSweep skip-probe shape', () => {
+    it('in-flight arm stays kind=RENEWAL; the settled arm is the kind-agnostic handled fragment', async () => {
+        // Pins the OR restructure: re-wrapping the whole probe in kind:"RENEWAL"
+        // would restore double-billing of families that joined inside the window.
+        const boundary = new Date(Date.UTC(2000, 7, 1)); // Aug 1
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: boundary });
+        prisma.orgMembership.findMany.mockResolvedValue([]);
+
+        const now = new Date(Date.UTC(2026, 6, 15)); // Jul 15 — inside the 2-month window
+        await runRenewalSweep(now);
+
+        const arg = prisma.orgMembership.findMany.mock.calls[0][0];
+        const windowStart = monthsBefore(new Date(Date.UTC(2026, 7, 1)), 2);
+        expect(arg.select.processes.where).toEqual({
+            OR: [
+                { kind: 'RENEWAL', status: { in: [...IN_FLIGHT_RENEWAL] } },
+                handledThisCycleWhere(windowStart),
+            ],
         });
     });
 });
