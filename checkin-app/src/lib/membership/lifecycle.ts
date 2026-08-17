@@ -1,7 +1,7 @@
 /**
  * OrgMembershipProcess lifecycle — ONE declarative definition (Phase 2b).
  *
- * See docs/designs/LIFECYCLE.md. This module instances the
+ * This module instances the
  * dependency-free primitives in `@/lib/lifecycle` for the membership machine:
  * the states, the transition-set predicates (as StateSets that emit BOTH a
  * client-safe `has` and a server Prisma `where` from one source), the
@@ -10,16 +10,17 @@
  * `FOR UPDATE` lock, conditional `updateMany`, and partial-unique-index +
  * P2002 catch is unchanged and merely *fed* the status set it names.
  *
- * CLIENT-SAFETY (docs/designs/LIFECYCLE.md) — CRITICAL, pages import
- * this file: NOTHING here value-imports `@/generated/prisma`. `Prisma` and the
- * enums are `import type` only (erased at build); predicates take booleans, not
- * `Date | null`; the `where` fragments are plain object literals typed via the
- * generic. The enum-parity assertion is compile-time here (type-only) and
- * value-based only in the test.
+ * Client-safe — pages import this file, and a Prisma value here would pull the
+ * generated client into a page bundle. `no-restricted-imports` in
+ * `eslint.config.mjs` allows `@/generated/prisma` only as `import type`.
+ * Predicates therefore take booleans, not `Date | null`; the `where` fragments
+ * are plain object literals typed via the generic; enum parity is compile-time
+ * here and value-based only in the test.
  */
 import type { Prisma, OrgMembershipProcessStatus, OrgMembershipProcessKind } from "@/generated/prisma/client";
 import {
     type StateSet,
+    defineStateSet,
     fromStatusWhere,
     assertNever,
     defineValidator,
@@ -44,11 +45,11 @@ export type ProcessStatus =
     | "RENEWAL_PENDING_BG"
     | "ARCHIVED";
 
-export type ProcessKind = "INITIAL" | "RENEWAL" | "PERSON_BG";
+export type ProcessKind = "INITIAL" | "RENEWAL" | "PERSON_BG" | "PERSON_AGREEMENT";
 
 // Compile-time parity: these fail to compile if the schema enum drifts from the
-// local union (docs/designs/LIFECYCLE.md). `import type` keeps the enum out of
-// the client bundle; the TEST does the value-based `assertEnumParity` counterpart.
+// local union. `import type` keeps the enum out of the client bundle; the
+// TEST does the value-based `assertEnumParity` counterpart.
 // Type-only assertions — intentionally unreferenced; their value IS the compile check.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 type _StatusParity = Expect<Equal<ProcessStatus, OrgMembershipProcessStatus>>;
@@ -65,7 +66,7 @@ export type ProcessFlags = {
 
 type Where = Prisma.OrgMembershipProcessWhereInput;
 
-// ── Legacy tag (docs/designs/LIFECYCLE.md) ──────────────────────────────────────────────────────
+// ── Legacy tag ──────────────────────────────────────────────────────────────────────────────────
 // RENEWAL_PENDING_BG is dead-but-guarded: nothing writes it since the 20260715
 // migration, but surviving rows are still read/guarded and it stays in the renewal
 // in-flight index. Kept explicit here instead of quietly appearing in six lists.
@@ -99,6 +100,21 @@ export const IN_FLIGHT_RENEWAL: readonly ProcessStatus[] = [
     "PENDING_BG_CLEARANCE",
     "RENEWAL_PENDING_BG",
 ];
+
+/**
+ * A PERSON_BG obligation still outstanding for its subject: awaiting review, or
+ * BLOCKED (a manual follow-up the board owns, never auto-reopened). NOT a
+ * transition from-state — the PERSON_BG entry edge is ∅→PENDING_BG_REVIEW — so it
+ * stays an existence set rather than going through `fromWhere`.
+ *
+ * ONE definition because two sites must agree on it: `openPersonBg`'s
+ * create-idempotency guard, and the person merge's duplicate resolution. If they
+ * disagreed, a status the merge didn't count as open would let a survivor end up
+ * owing two concurrent 2-of-N reviews.
+ */
+export const personBgOpen = defineStateSet<Where>()({
+    statuses: ["PENDING_BG_REVIEW", "BLOCKED"],
+});
 
 // ── awaiting BG review (fix #1) ────────────────────────────────────────────────
 // Encodes review.ts:75 / AWAITING_BG_WHERE:97 EXACTLY, from one source. Not a
@@ -142,17 +158,36 @@ export const awaitingBgReview: StateSet<AwaitingBgRow, Where> = {
     },
 };
 
+// ── dues settled, background check outstanding ────────────────────────────────
+
+/**
+ * Dues paid in full, waiting on the board's background-check clearance. PROGRAM
+ * ACCESS reads this set: a household here gets the member rate and sees
+ * members-only programs even though its membership is not ACTIVE yet (#1397) —
+ * see lib/orgMembership.ts's DUES_SETTLED_PERSON_WHERE. It is NOT an answer to
+ * "is this a member"; ACTIVE stays that answer for every other benefit and every
+ * member-only audience.
+ *
+ * `paidAt` is redundant with the status today (activate() is the only writer and
+ * always stamps it) and is asserted anyway — the money question must not rest on
+ * a status invariant holding for a row some future path writes differently.
+ */
+export const duesSettledAwaitingBg = defineStateSet<Where>()({
+    statuses: ["PENDING_BG_CLEARANCE"],
+    flags: { paidAt: true },
+});
+
 // ── renewal grantability (fix #3) & settled-this-cycle (fix #4) ────────────────
 
 /**
- * The "this renewal is payable now" set the coming-year grant derives from
- * (docs/designs/LIFECYCLE.md): a RENEWAL at PENDING_PAYMENT — full stop. NOT gated on bgClearedAt: the
+ * The "this renewal is payable now" set the coming-year grant derives from:
+ * a RENEWAL at PENDING_PAYMENT — full stop. NOT gated on bgClearedAt: the
  * grant comps PAYMENT ONLY and the background-check gate stays independent, so a
  * parallel-track renewal (paid ahead of BG, bgClearedAt null) is grantable and
  * settles to PENDING_BG_CLEARANCE, while a cleared one settles to ACTIVE — activate()
  * makes that split, BG is never bypassed. Both the list route's `renewalGrantable`
  * probe and `grantRenewalPayment`'s row lookup use this ONE fragment; the COI check
- * inside certifyPaymentPlan stays on top.
+ * inside certifyPaymentPlan stays on top for every actor.
  */
 export const grantableRenewalWhere: Where = {
     kind: "RENEWAL",
@@ -160,21 +195,33 @@ export const grantableRenewalWhere: Where = {
 };
 
 /**
- * "Handled this renewal cycle" (docs/designs/LIFECYCLE.md): a RENEWAL that reached a terminal state
- * (ACTIVE finished, or ARCHIVED by the board) stamped inside the current renewal
- * window. Consumed by BOTH the households route probe and runRenewalSweep's
- * skip-test so they can't disagree. The `kind=RENEWAL` and `ARCHIVED` clauses are
- * the fix: without them a stray INITIAL activation in-window falsely settles the
- * household (flipping derived validUntil a year forward), and a board-archived
- * renewal is missed by the route.
+ * "Settled for the coming membership year" — the MONEY question: a process that
+ * COMPLETED (terminal ACTIVE: paid and, where required, cleared) inside the
+ * current renewal window, INITIAL and RENEWAL alike, because a family that joins
+ * during the window buys the coming year exactly as a renewer does
+ * (docs/rules/membership.md). ARCHIVED is deliberately absent: archive refuses
+ * ACTIVE processes, so every ARCHIVED row never completed payment and must not
+ * extend a horizon. Read by the households valid-until and membershipValidThrough.
+ * KNOWN LIMIT: settlement time is stageEnteredAt (stage completion), so a
+ * pre-window payment whose review clears in-window reads as coming-year.
  */
 export const settledThisCycleWhere = (windowStart: Date): Where => ({
-    kind: "RENEWAL",
+    status: "ACTIVE",
+    stageEnteredAt: { gte: windowStart },
+});
+
+/**
+ * "Nothing more to open this cycle" — the SWEEP question: settled as above, OR
+ * ARCHIVED in-window — the board already closed this cycle's process, and
+ * reopening would pester a family it just declined or archived. Only
+ * runRenewalSweep's skip-test reads this wider set; money horizons never do.
+ */
+export const handledThisCycleWhere = (windowStart: Date): Where => ({
     status: { in: ["ACTIVE", "ARCHIVED"] },
     stageEnteredAt: { gte: windowStart },
 });
 
-// ── fromWhere (docs/designs/LIFECYCLE.md — CAS from-state, #1080) ───────────────
+// ── fromWhere — the CAS from-state clause ──────────────────────────────────────
 
 /**
  * Emit the `status` clause a CAS transition guard names for its from-state. For this
@@ -193,10 +240,19 @@ export function fromWhere(from: ProcessStatus): Where {
     return fromStatusWhere<Where>([from]);
 }
 
-// ── classify / validate (docs/designs/LIFECYCLE.md) ──────────────────────────
+// ── classify / validate ──────────────────────────────────────────────────────
 
-/** Row shape classify/validate read — all four flags as booleans, no Prisma. */
-export type ClassifyRow = { status: ProcessStatus } & ProcessFlags;
+/**
+ * Row shape classify/validate read — all four flags as booleans, no Prisma. `kind`
+ * is part of the row because the machine's own edges are kind-specific: a
+ * PERSON_AGREEMENT reaches ACTIVE on the signature alone, so "what is legal here"
+ * has no kind-free answer.
+ */
+export type ClassifyRow = { status: ProcessStatus; kind: ProcessKind } & ProcessFlags;
+
+/** The one kind that reaches ACTIVE on a signature, owing no clearance stamp. An
+ *  exemption list, not an allowlist: a kind added later owes the stamp by default. */
+const SETTLES_ON_SIGNATURE: readonly ProcessKind[] = ["PERSON_AGREEMENT"];
 
 /**
  * Name a row's lifecycle state, or null when it's off-diagram. Total over the
@@ -211,7 +267,8 @@ export function classify(row: ClassifyRow): ProcessStatus | null {
             return row.paidAt ? null : "INTAKE";
         case "ACTIVE":
             // Convergence stamps bgClearedAt before flipping ACTIVE (payment.ts / review.ts).
-            return row.bgClearedAt ? "ACTIVE" : null;
+            // A PERSON_AGREEMENT has no convergence to stamp — see SETTLES_ON_SIGNATURE.
+            return row.bgClearedAt || SETTLES_ON_SIGNATURE.includes(row.kind) ? "ACTIVE" : null;
         case "PENDING_EXTERNAL_ACTION":
             return "PENDING_EXTERNAL_ACTION";
         case "PENDING_BG_REVIEW":
@@ -237,20 +294,40 @@ export function classify(row: ClassifyRow): ProcessStatus | null {
 export const INVARIANTS: readonly Invariant<ClassifyRow>[] = [
     // Payment is stamped no earlier than PENDING_PAYMENT; INTAKE is pre-external.
     { name: "intake-is-unpaid", holds: (r) => r.status !== "INTAKE" || !r.paidAt },
-    // ACTIVE is only reached through the two-track convergence, which stamps bgClearedAt.
-    { name: "active-is-bg-cleared", holds: (r) => r.status !== "ACTIVE" || r.bgClearedAt },
+    // ACTIVE is only reached through the two-track convergence, which stamps bgClearedAt —
+    // for the kinds that HAVE one. markContractSigned settles a PERSON_AGREEMENT outright
+    // (the kind-tagged PENDING_EXTERNAL_ACTION→ACTIVE edge below), owing no clearance.
+    { name: "active-is-bg-cleared", holds: (r) => r.status !== "ACTIVE" || SETTLES_ON_SIGNATURE.includes(r.kind) || r.bgClearedAt },
 ];
 
 export const validate = defineValidator(INVARIANTS);
 
-// ── transition table (docs/designs/LIFECYCLE.md) — documentation + test oracle, never executed ────
+// ── transition table — documentation + test oracle, never executed ────────────────────────────────
 
 /** The origin pseudo-state for entry transitions (∅). */
 export type OriginState = "∅";
 type TState = ProcessStatus | OriginState;
 
 /**
- * The 14 machine edges (docs/designs/LIFECYCLE.md), each carrying the (unchanged) enforcement site
+ * The archive edges this machine DECLARES (§5 #13). ACTIVE is never archivable.
+ * RENEWAL_PENDING_BG is out because it is unreachable, so the diagram would gain a
+ * dead pair of arrows and lose the unreachable report that surfaces it — but it is
+ * NOT the archive gate: `archiveApplication` refuses ACTIVE and nothing else, so a
+ * surviving legacy row IS archivable — that gate's set is RESTORABLE_STATUSES below,
+ * and the test pins the one status by which the two differ.
+ */
+export const ARCHIVABLE_STATUSES = [
+    "INTAKE",
+    "PENDING_EXTERNAL_ACTION",
+    "PENDING_BG_REVIEW",
+    "PENDING_PAYMENT",
+    "PENDING_BG_CLEARANCE",
+    "PENDING_RENEWAL",
+    "BLOCKED",
+] as const satisfies readonly ProcessStatus[];
+
+/**
+ * The machine edges, each carrying the (unchanged) enforcement site
  * it feeds. Not a runtime executor — powers isLegalTransition + reachability in
  * tests/doc-artifacts. Flag-only stamps (contractSignedAt/bgConsentAt) are not
  * status edges and are omitted; they gate the advance, not a state change.
@@ -260,18 +337,20 @@ export const TRANSITIONS: readonly Transition<TState, string, ProcessKind>[] = [
     { from: "∅", to: "INTAKE", event: "startIntake", actor: "applicant", guardSite: "intake.ts:154 FOR UPDATE + membership_one_inflight_initial + P2002", kind: "INITIAL" },
     { from: "∅", to: "PENDING_RENEWAL", event: "createRenewalProcess", actor: "cron/board", guardSite: "renewal.ts:243 FOR UPDATE + membership_one_inflight_renewal + P2002", kind: "RENEWAL" },
     { from: "∅", to: "PENDING_BG_REVIEW", event: "personBgTriggers", actor: "system", guardSite: "personBgTriggers", kind: "PERSON_BG" },
+    { from: "∅", to: "PENDING_EXTERNAL_ACTION", event: "personAgreementTriggers", actor: "system/board", guardSite: "personAgreementTriggers FOR UPDATE + handled-this-cycle guard", kind: "PERSON_AGREEMENT" },
     // External step (§5 #3,#4)
     { from: "INTAKE", to: "PENDING_EXTERNAL_ACTION", event: "submitIntake", actor: "applicant", guardSite: "intake.ts:392", kind: "INITIAL" },
     { from: "PENDING_RENEWAL", to: "PENDING_EXTERNAL_ACTION", event: "beginRenewal", actor: "member", guardSite: "renewal.ts:219 updateMany where status=PENDING_RENEWAL", kind: "RENEWAL" },
     // Advance (§5 #7)
     { from: "PENDING_EXTERNAL_ACTION", to: "PENDING_PAYMENT", event: "advanceExternalIfComplete", actor: "system", guardSite: "external.ts:113 updateMany" },
-    { from: "PENDING_EXTERNAL_ACTION", to: "PENDING_BG_REVIEW", event: "advanceExternalIfComplete", actor: "system", guardSite: "external.ts:113 updateMany (household note held, #907)" },
+    // Signature completes a person-scoped agreement outright — no payment, no BG gate
+    { from: "PENDING_EXTERNAL_ACTION", to: "ACTIVE", event: "markContractSigned", actor: "subject", guardSite: "external.ts updateMany where contractSignedAt=null", kind: "PERSON_AGREEMENT" },
     // Payment convergence (§5 #8, #12)
     { from: "PENDING_PAYMENT", to: "ACTIVE", event: "activate", actor: "shopify/board", guardSite: "payment.ts:204 FOR UPDATE (bgClearedAt set)" },
     { from: "PENDING_PAYMENT", to: "PENDING_BG_CLEARANCE", event: "activate", actor: "shopify/board", guardSite: "payment.ts:204 FOR UPDATE (not cleared)" },
     { from: "PENDING_PAYMENT", to: "ACTIVE", event: "grantRenewalPayment", actor: "board/sysadmin", guardSite: "renewal.ts:339 → certifyPaymentPlan (COI) → activate", kind: "RENEWAL" },
     // Clearance convergence (§5 #10, #14)
-    { from: "PENDING_BG_REVIEW", to: "PENDING_PAYMENT", event: "clearBackgroundCheck", actor: "reviewer", guardSite: "review.ts:256 FOR UPDATE (2nd APPROVE, unpaid)" },
+    { from: "PENDING_BG_REVIEW", to: "PENDING_PAYMENT", event: "clearBackgroundCheck", actor: "reviewer", guardSite: "review.ts:256 FOR UPDATE (2nd APPROVE, unpaid legacy household row)", legacy: true },
     { from: "PENDING_BG_REVIEW", to: "ACTIVE", event: "clearBackgroundCheck", actor: "reviewer", guardSite: "review.ts:256/304 FOR UPDATE (2nd APPROVE, paid / PERSON_BG subject)" },
     { from: "PENDING_BG_CLEARANCE", to: "ACTIVE", event: "clearBackgroundCheck", actor: "reviewer", guardSite: "review.ts:326 FOR UPDATE (2nd APPROVE)" },
     // Reject → BLOCKED (§5 #9)
@@ -279,19 +358,30 @@ export const TRANSITIONS: readonly Transition<TState, string, ProcessKind>[] = [
     { from: "PENDING_PAYMENT", to: "BLOCKED", event: "attest REJECT", actor: "reviewer", guardSite: "review.ts:247 FOR UPDATE (parallel review)" },
     { from: "PENDING_BG_CLEARANCE", to: "BLOCKED", event: "attest REJECT", actor: "reviewer", guardSite: "review.ts:247 FOR UPDATE" },
     // overrideBlocked reset/approve (§5 #11)
-    { from: "BLOCKED", to: "PENDING_PAYMENT", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (unpaid, no note)" },
+    { from: "BLOCKED", to: "PENDING_PAYMENT", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (unpaid)" },
     { from: "BLOCKED", to: "PENDING_BG_CLEARANCE", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (paid)" },
-    { from: "BLOCKED", to: "PENDING_BG_REVIEW", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (note / PERSON_BG)" },
+    { from: "BLOCKED", to: "PENDING_BG_REVIEW", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (PERSON_BG)", kind: "PERSON_BG" },
     { from: "BLOCKED", to: "PENDING_EXTERNAL_ACTION", event: "overrideBlocked reset", actor: "board/sysadmin", guardSite: "review.ts:368 (RENEWAL, no consent)", kind: "RENEWAL", legacy: true },
     { from: "BLOCKED", to: "ACTIVE", event: "overrideBlocked approve", actor: "board/sysadmin", guardSite: "review.ts:411 FOR UPDATE (paid)" },
     // Archive (§5 #13) — every pre-terminal status
-    ...(["INTAKE", "PENDING_EXTERNAL_ACTION", "PENDING_BG_REVIEW", "PENDING_PAYMENT", "PENDING_BG_CLEARANCE", "PENDING_RENEWAL", "BLOCKED"] as const).map(
+    ...ARCHIVABLE_STATUSES.map(
         (from): Transition<TState, string, ProcessKind> => ({
             from,
             to: "ARCHIVED",
             event: "archiveApplication",
             actor: "board",
             guardSite: "archive.ts:13 (status≠ACTIVE, idempotent)",
+        }),
+    ),
+    // Unarchive (§5 #13 reversed) — back to the status the archive write captured.
+    // ARCHIVED is where processes come to rest, but it is not sealed.
+    ...ARCHIVABLE_STATUSES.map(
+        (to): Transition<TState, string, ProcessKind> => ({
+            from: "ARCHIVED",
+            to,
+            event: "unarchiveApplication",
+            actor: "board",
+            guardSite: "archive.ts:88 updateMany CAS + P2002",
         }),
     ),
 ];
@@ -303,6 +393,9 @@ export function isLegalTransition(from: ProcessStatus, to: ProcessStatus, kind?:
 
 /** Entry states for reachability analysis (the ∅-edges' targets). */
 export const INITIAL_STATES: readonly ProcessStatus[] = ["INTAKE", "PENDING_RENEWAL", "PENDING_BG_REVIEW"];
+
+/** Every declared kind — the second axis of the exhaustive state-space test. */
+export const ALL_KINDS: readonly ProcessKind[] = ["INITIAL", "RENEWAL", "PERSON_BG", "PERSON_AGREEMENT"];
 
 /** Every declared status (for reachability's `unreachable` computation). */
 export const ALL_STATUSES: readonly ProcessStatus[] = [
@@ -317,3 +410,14 @@ export const ALL_STATUSES: readonly ProcessStatus[] = [
     "RENEWAL_PENDING_BG",
     "ARCHIVED",
 ];
+
+/**
+ * What `archiveApplication` can actually capture — its gate is `status !== ACTIVE`
+ * (ARCHIVED returns early) — and so the only targets `unarchiveApplication` restores
+ * to. Wider than ARCHIVABLE_STATUSES by the legacy RENEWAL_PENDING_BG, which
+ * TRANSITIONS omits on purpose; lifecycle.test.ts pins that gap so neither list moves
+ * unnoticed and the restore set is no longer a second, unlinked list.
+ */
+export const RESTORABLE_STATUSES: ReadonlySet<ProcessStatus> = new Set(
+    ALL_STATUSES.filter((s) => s !== "ACTIVE" && s !== "ARCHIVED"),
+);

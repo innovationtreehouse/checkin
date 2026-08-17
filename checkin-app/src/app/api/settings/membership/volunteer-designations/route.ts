@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { canonicalizeEmail } from "@/lib/emailNormalize";
 
 export const dynamic = "force-dynamic";
 
@@ -26,12 +27,17 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     } catch {
         return apiError("Invalid JSON", 400);
     }
-    const email = body.email?.trim().toLowerCase();
+    // Store the canonical inbox key, the same key matchesVolunteerDesignation
+    // matches on — otherwise the @unique column guards a key nobody reads and
+    // variants of one inbox (plus-tag, Gmail dots) become separate designations.
+    const email = body.email ? canonicalizeEmail(body.email) : undefined;
     if (!email || !emailRegex.test(email)) {
         return apiError("A valid email is required", 400);
     }
 
-    const existing = await prisma.volunteerDesignation.findUnique({ where: { email } });
+    // Canonicalize both sides: rows stored before canonicalization still dedupe.
+    const all = await prisma.volunteerDesignation.findMany();
+    const existing = all.find((d) => canonicalizeEmail(d.email) === email);
     if (existing) return NextResponse.json({ designation: existing, warning: "This email is already designated." });
 
     // Non-blocking warning: is this email already an active full-price member?

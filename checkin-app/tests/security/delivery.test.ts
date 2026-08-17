@@ -52,6 +52,7 @@ function emptyCtx(): CallerContext {
         householdIdsInScopePrograms: new Set(),
         eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
+        ledHouseholdMemberIds: new Set(),
     };
 }
 

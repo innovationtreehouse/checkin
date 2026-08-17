@@ -84,7 +84,7 @@ export default function VolunteerMembershipsPage() {
         <Title order={3} mb="xs">Volunteer-only designated emails</Title>
         <Text c="dimmed" mb="md">
           If one of these emails applies for membership, that whole household is treated as a
-          volunteer only family (lower dues).
+          volunteer only family (lower membership fee).
         </Text>
         <Group gap="sm" wrap="wrap" mb="md" align="flex-end">
           <TextInput

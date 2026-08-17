@@ -452,7 +452,7 @@ export default function AdminParticipantsIndex() {
             <TextInput
               type="date"
               label="Last Background Check Review"
-              description="Date the board last reviewed this person's background check. Clear the field to remove it."
+              description="Date the board last reviewed this person's background check. Leave the field blank to remove it."
               value={editForm.lastBackgroundCheck}
               onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, lastBackgroundCheck: value })); }}
             />

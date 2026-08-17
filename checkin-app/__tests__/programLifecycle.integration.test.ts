@@ -71,8 +71,7 @@ describe('Program Lifecycle Integration Tests', () => {
                 orgMemberPriceCents: 50,
                 nonOrgMemberPriceCents: 100,
                 shopifyProductId: "test-prod",
-                shopifyOrgMemberVariantId: "test-mem-var",
-                shopifyNonOrgMemberVariantId: "test-non-var",
+                shopifyVariantId: "test-non-var",
                 enrollmentStatus: "OPEN"
             }
         });
@@ -180,8 +179,8 @@ describe('Program Lifecycle Integration Tests', () => {
         });
 
         // 2. Build Shopify webhook payload. line_items must contain the program's
-        // own Shopify variant (shopifyNonOrgMemberVariantId set in beforeAll) —
-        // the route now verifies this before activating (see route.ts).
+        // own Shopify variant (shopifyVariantId set in beforeAll) — the route
+        // verifies this before activating (see route.ts).
         const payload = JSON.stringify({
             id: 12345,
             line_items: [{ variant_id: "test-non-var" }],

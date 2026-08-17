@@ -6,12 +6,16 @@ import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateProgramEnrollment } from "@/lib/programs/activateEnrollment";
+import { unentitledMemberCodeUse } from "@/lib/programs/memberDiscountCode";
+import { raisePaymentException } from "@/lib/finance/reconcile";
 import { recordShopifyWebhookReceipt, tryParseJson } from "@/lib/shopifyWebhookReceipt";
 
 interface ShopifyOrder {
     id?: number | string;
     note_attributes?: { name: string; value: string }[];
     line_items?: { variant_id?: number | string }[];
+    /** Coupons applied at checkout — the program member-code entitlement check below. */
+    discount_codes?: { code?: string }[];
 }
 
 /**
@@ -117,8 +121,6 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 const membershipVariantIds = new Set(
                     [
                         settings?.orgMembershipVariantId,
-                        settings?.shopifyNormalVariantId,
-                        settings?.shopifyVolunteerVariantId,
                         // Local mock's self-fired order carries this synthetic id (config).
                         config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
                     ].filter((v): v is string => !!v),
@@ -167,38 +169,37 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 // built from — not order total. Fail CLOSED: no variant
                 // configured on the Program, or
                 // no line-item match, means we do NOT activate.
-                // Single-pool model (product decision 2026-07-06): shopifyVariantId,
-                // when set, is matched alongside the legacy pair during the
-                // transition — old programs never get shopifyVariantId, new ones
-                // never get the legacy pair, so this is additive, not a widening
-                // of what any one program accepts.
                 const program = await prisma.program.findUnique({ where: { id: programId } });
-                const programVariantIds = new Set(
-                    [program?.shopifyVariantId, program?.shopifyOrgMemberVariantId, program?.shopifyNonOrgMemberVariantId].filter(
-                        (v): v is string => !!v,
-                    ),
-                );
-                const hasProgramItem = (order.line_items ?? []).some((li) => programVariantIds.has(String(li.variant_id)));
+                const hasProgramItem = !!program?.shopifyVariantId &&
+                    (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyVariantId);
 
-                // Which tier Shopify actually sold — needed for the legacy two-pool
-                // sibling-inventory mirror. buildShopifyCheckoutUrl fixes ONE variant per
-                // order (one household = one tier per checkout), so if hasProgramItem
-                // matched and this is false, the non-member tier is the one purchased.
-                const purchasedOrgMember = !!program?.shopifyOrgMemberVariantId &&
-                    (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyOrgMemberVariantId);
+                // Member-code entitlement, judged HERE because this is the money event:
+                // the item gate proves the order is this program's, this proves the
+                // family was allowed the price it paid. Sits after the item gate, like
+                // the membership branch's volunteer-code check, and fails the same way
+                // as NO_ITEM — flag for the board, do NOT activate. Never re-asked later.
+                const codes = (order.discount_codes ?? []).map((d) => String(d.code ?? ""));
+                if (hasProgramItem && await unentitledMemberCodeUse(programId, participantIds, codes, order.id ? String(order.id) : null)) {
+                    logger.warn(`[SHOPIFY WEBHOOK] Program member discount code on a non-member order ${order.id ?? "?"} (program ${programId}) — flagged, NOT activated`);
+                    await raisePaymentException("DISCOUNT_UNAUTHORIZED", {
+                        shopifyOrderId: order.id ? String(order.id) : null,
+                        programId,
+                        personId: participantIds[0] ?? null,
+                    });
+                    outcome = `program ${programId}: unentitled member discount code — flagged, not activated`;
+                } else {
+                    // Shared choke point — same path the reconciler uses to recover a
+                    // MISSED webhook (lib/programs/activateEnrollment). Idempotent; the
+                    // inventory side effects are non-fatal (Shopify retries on a non-2xx).
+                    const { activatedCount } = await activateProgramEnrollment({
+                        programId,
+                        personIds: participantIds,
+                        shopifyOrderId: order.id ? String(order.id) : "",
+                        hasProgramItem,
+                    });
 
-                // Shared choke point — same path the reconciler uses to recover a
-                // MISSED webhook (lib/programs/activateEnrollment). Idempotent; the
-                // inventory side effects are non-fatal (Shopify retries on a non-2xx).
-                const { activatedCount } = await activateProgramEnrollment({
-                    programId,
-                    personIds: participantIds,
-                    shopifyOrderId: order.id ? String(order.id) : "",
-                    hasProgramItem,
-                    purchasedOrgMember,
-                });
-
-                outcome = `program ${programId}: activated ${activatedCount} of ${participantIds.length} participant(s)`;
+                    outcome = `program ${programId}: activated ${activatedCount} of ${participantIds.length} participant(s)`;
+                }
             }
         } else {
              logger.info(`[SHOPIFY WEBHOOK] Payload received but missing CheckMeIn_Account_ID or Program_ID attributes. Ignoring.`);

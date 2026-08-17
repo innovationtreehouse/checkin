@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 /**
- * Validator-oracle integration tests (docs/designs/LIFECYCLE.md).
+ * Validator-oracle integration tests.
  *
  * Drives each real transition (T3, T3f, T3m, T4, T5, T6, T7/T8/T9) against a real
  * DB through its OWNING code — the route handler / shared mutator that carries the
@@ -36,7 +36,14 @@ describe('enrollment state — validator oracle over real transitions', () => {
 
     beforeAll(async () => {
         const self = await prisma.person.create({
-            data: { name: 'Oracle Self', email: `self-${TAG}@example.com`, household: { create: { name: 'HH' } } },
+            // Adult DOB: the oracle drives self-service transitions (request a
+            // payment plan), which only a known adult may do.
+            data: {
+                name: 'Oracle Self',
+                email: `self-${TAG}@example.com`,
+                dateOfBirth: new Date(Date.now() - (30 * 31556952000)),
+                household: { create: { name: 'HH' } },
+            },
         });
         selfId = self.id;
         const board = await prisma.person.create({
@@ -148,7 +155,7 @@ describe('enrollment state — validator oracle over real transitions', () => {
     it('T4 activate (payment) from PENDING_HELD → ACTIVE, hold released', async () => {
         await seed({ req: true, held: true, den: false }); // PENDING_HELD
         const { activatedCount, releasedHoldCount } = await activateProgramEnrollment({
-            programId, personIds: [selfId], shopifyOrderId: 'order-oracle-1', hasProgramItem: true, purchasedOrgMember: null,
+            programId, personIds: [selfId], shopifyOrderId: 'order-oracle-1', hasProgramItem: true,
         });
         expect(activatedCount).toBe(1);
         expect(releasedHoldCount).toBe(1);
@@ -158,7 +165,7 @@ describe('enrollment state — validator oracle over real transitions', () => {
     it('T4 activate (payment) from PENDING_UNPAID → ACTIVE, no hold to release', async () => {
         await seed({ req: false, held: false, den: false }); // PENDING_UNPAID
         const { activatedCount, releasedHoldCount } = await activateProgramEnrollment({
-            programId, personIds: [selfId], shopifyOrderId: 'order-oracle-2', hasProgramItem: true, purchasedOrgMember: null,
+            programId, personIds: [selfId], shopifyOrderId: 'order-oracle-2', hasProgramItem: true,
         });
         expect(activatedCount).toBe(1);
         expect(releasedHoldCount).toBe(0);

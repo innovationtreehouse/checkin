@@ -213,21 +213,6 @@ ProgramParticipants
 Program int (pk, fk)
 Participant int (pk, fk)
 
-Fees
-ID int (pk)
-Program int (primary foreign key)
-Name string
-NonMemberPrice int
-MemberPrice int
-
-FeePayments
-FeeID int (pk,fk)
-Participant int (pk, fk)
-PaidOn datetime
-ShopifyLink string
-QuickBooksInvoice string
-CustomNote string
-
 Events
 ID int
 Program int?

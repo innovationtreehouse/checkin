@@ -41,6 +41,16 @@ describe("facility-ops/visits page", () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  // Operations reaches attendance in aggregate only (#1633) — one person's visit
+  // record is outside that reach, on the page as on the API.
+  it("redirects an operations user", async () => {
+    setSession({ id: 5, isOperations: true });
+    mockFetchJson({ "/api/facility/visits": { visits } });
+    renderWithProviders(<AdminVisitsPage />);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/"));
+  });
+
   it("redirects a non-privileged user (denied like the API)", async () => {
     setSession({ id: 4 });
     mockFetchJson({ "/api/facility/visits": { visits } });

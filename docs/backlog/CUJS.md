@@ -21,11 +21,11 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 0a. ❌ Pre-membership: prospect logs in, subscribes to newsletter, gets program notifications; open house on public calendar (`CM14`)
 0b. ❌ Preview the membership agreement as view-only PDF without triggering Zoho Sign (`M20`)
 1. ✅ Intake application incl "anything else" note (captured + surfaced to reviewers)
-2. ✅ Board pre-designation of volunteer household — but drives **dues only**, NOT skip-review→payment (that's a separate `bgFresh` path; a designated vol WITH an intake note is still held at review)
+2. ✅ Board pre-designation of volunteer household — but drives **dues only**, NOT skip-review→payment (that's a separate `bgFresh` path)
 3. ✅ Contract sent + signed (Zoho, embedded)
 4. ✅ BG sent + consent (self-attest honor + board backstop; no Averity API)
 5. ✅ BG review (2-of-N, anti-collusion gates, board override w/ COI gate)
-6. ✅ Reviewer volunteer bit / intake-note gates review
+6. ✅ Reviewer volunteer bit; intake note shown to reviewers (does NOT gate payment — review runs in parallel)
 7. ✅ Payment via Shopify (member vs volunteer price + discount code)
 8. ✅ Webhook validates payment→activation (HMAC + variant-id check; H2 no-item → stays PENDING + board alert). NOTE: volunteer discount-code entitlement still NOT validated (`CO2`/#278)
 9. 🟡 Post-activation fan-out: welcome/congrats ✅ · **mailing-list `CM1` ❌ + badge-print `AT11` ❌ NOT wired to activation**
@@ -57,7 +57,7 @@ Status: **ALL 7 chips folded (V1–V7).** Every step tagged vs live code at base
 ### A4. Program leader  [bucket P/GC-ROLES]  — validated V2
 1. ✅ Assigned to program — `Program.leadMentorId` FK + `ProgramVolunteer{isCore}` join
 2. 🟡 Create program ✅ (`api/programs` POST + `program-ops/new`) — but **ProgramInstance tier ❌** (`P1`/#953 not in base schema; nothing reads an instance)
-3. ✅ Set capacity/fee/dates (create form + PATCH; `Fee` model)
+3. ✅ Set capacity/fee/dates (create form + PATCH; `Program.orgMemberPriceCents`/`nonOrgMemberPriceCents`)
 4. ⛔ Assign keyholder per event (manual by design)
 5. ✅ Assign 2nd volunteer (`ProgramVolunteer` join) — recruitment/comms itself is AT domain
 6. 🟡 Enrollment mgmt — lead can **remove** ✅, **cannot add** (`"Program leads cannot manually add participants"`, by design; only self/household-lead/board/sysadmin)
@@ -90,7 +90,7 @@ _Extraction adds (2026-07-22):_
 2. 🟡 Youth enrollment rules (`P16`) — age gate **enforced** ✅ (`checkProgramAge`, min/max as-of start, declared-adult/no-DOB handled); youth-specific slot-reserve/parent-notify/limit ❌ (open DECISION, not built)
 3. ✅ Check-in / out
 4. ✅ Insert own past visit — `attendance/manual` forces `personId=self` (never from body), backdate allowed by design, audit-logged CREATE
-5. 🟡 Edit an inserted visit (`AT3` — **now fully mapped**): **user self-edit ⛔ none** (manual route INSERT-only) · **staff edit ✅** board/sysadmin PATCH/DELETE `facility/visits` (⚠️ UI page gates sysadmin-only but API allows board too — role discrepancy) · **lead/ops add-for-others ✅ scoped** (event-roster synthetic visit via `events/[id]/attendance`, or live `scan`) — but **no arbitrary-past-time insert for others** exists
+5. 🟡 Edit an inserted visit (`AT3` — **now fully mapped**): **user self-edit ⛔ none** (manual route INSERT-only) · **staff edit ✅** board/sysadmin PATCH/DELETE `facility/visits` (⚠️ UI page gates sysadmin-only but API allows board too — role discrepancy) · **lead/ops add-for-others ✅ scoped** (per-session correction via `PATCH events/[id]` `manualEditAttendance`, or live `scan`) — but **no arbitrary-past-time insert for others** exists
 6. ❌ Waiver-gated enrollment where the program requires one — camps (`P28`)
 7. ❌ Age-out → alumni pipeline (`M21`; SA1 BG trigger already covers the mentor return)
 
@@ -124,7 +124,7 @@ _Extraction adds (2026-07-22):_
 
 ### Finance / ops — 7 distinct journeys (A10–A16)  [bucket FR/FE/FD/CI + GC-QB]  — mostly PORT from Inventory monorepo; depth per `sources/inventory_capabilities.md`; checkin side validated V5
 _Finance is **not one persona journey** — it's 7 Inventory apps, each its own state machine with its own exception/queue screen (those queues are the "missed oversight surfaces"). **The PORT gap is specifically receipts (A10) / catalog (A11) / inventory (A12) / expense→QB (A13) / donations (A14) / hours-alloc (A16)** — 18 of 23 steps ❌ (empty-grep confirmed V5). Every "exception:" line is a distinct screen; each app is separately ownable + shippable._
-_**But payment-reconciliation is NOT a gap** — V5 found checkin already ships an undocumented, mature **`finance-ops/`** domain around Shopify payment truth (see A15 + B1): an 11-kind `PaymentException` state machine, daily cursor reconciler, bidirectional match-audit, reversal webhooks, board-alert, and resolution screens. **Zero QuickBooks integration** anywhere (only a free-text `FeePayment.quickBooksInvoice` column) — so A13/A16's QB post is entirely unbuilt. `@inventory/money` (`formatCents`/`dollarsToCents`) is already a **live shared dependency** between checkin and the Inventory monorepo — the port isn't purely future. Reframe (owner): receipt toil = **inventory cataloging** (thousands of receipts) NOT reimbursement (~10/yr) — high-volume driver is card-receipt intake, so A10-5 upload/line cap is a real throughput+DoS concern._
+_**But payment-reconciliation is NOT a gap** — V5 found checkin already ships an undocumented, mature **`finance-ops/`** domain around Shopify payment truth (see A15 + B1): an 11-kind `PaymentException` state machine, daily cursor reconciler, bidirectional match-audit, reversal webhooks, board-alert, and resolution screens. **Zero QuickBooks integration** anywhere (no QB model, field, client, or credential in the schema or `src/`) — so A13/A16's QB post is entirely unbuilt. `@inventory/money` (`formatCents`/`dollarsToCents`) is already a **live shared dependency** between checkin and the Inventory monorepo — the port isn't purely future. Reframe (owner): receipt toil = **inventory cataloging** (thousands of receipts) NOT reimbursement (~10/yr) — high-volume driver is card-receipt intake, so A10-5 upload/line cap is a real throughput+DoS concern._
 
 ### A10. Receipt intake  (receipt-app)
 1. ❌ Upload receipt jpg/gif/pdf/text + blob store

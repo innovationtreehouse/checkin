@@ -29,7 +29,7 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
     const kiosk = opts.kiosk === true;
 
     const activeVisits = await prisma.visit.findMany({
-        where: { departedAt: null, person: LIVE_PERSON },
+        where: { departedAt: null, deletedAt: null, person: LIVE_PERSON },
         include: {
             person: {
                 select: {

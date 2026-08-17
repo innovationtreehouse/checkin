@@ -177,10 +177,12 @@ describe('Attendance API Integration Tests', () => {
             });
 
             const res = await DELETE(req as unknown as import("next/server").NextRequest);
-            expect(res.status).toBe(403);
-            
+            // 404, not 403: a visit id the caller may not touch must be
+            // indistinguishable from one that does not exist.
+            expect(res.status).toBe(404);
+
             const data = await res.json();
-            expect(data.error).toContain('Forbidden');
+            expect(data.error).toBe('Visit not found');
         });
     });
 
