@@ -175,9 +175,9 @@ describe('kind: order', () => {
 describe('kind: membership', () => {
     beforeEach(asBoard);
 
-    it('active, no order, no certification → 200 tracked, raises ACTIVE_WITHOUT_PAYMENT keyed by processId', async () => {
+    it('active, no order, no manual payment → 200 tracked, raises ACTIVE_WITHOUT_PAYMENT keyed by processId', async () => {
         prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
-            status: 'ACTIVE', kind: 'INITIAL', shopifyOrderId: null, certifiedById: null,
+            status: 'ACTIVE', kind: 'INITIAL', shopifyOrderId: null, manualPaymentById: null,
         });
         const res = await POST(req({ kind: 'membership', processId: 42 }));
         expect(res.status).toBe(200);
@@ -185,9 +185,9 @@ describe('kind: membership', () => {
         expect(raisePaymentExceptionMock).toHaveBeenCalledWith('ACTIVE_WITHOUT_PAYMENT', { processId: 42 });
     });
 
-    it('409 when since certified', async () => {
+    it('409 when the payment has since been recorded manually', async () => {
         prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
-            status: 'ACTIVE', kind: 'INITIAL', shopifyOrderId: null, certifiedById: 7,
+            status: 'ACTIVE', kind: 'INITIAL', shopifyOrderId: null, manualPaymentById: 7,
         });
         const res = await POST(req({ kind: 'membership', processId: 42 }));
         expect(res.status).toBe(409);
@@ -196,7 +196,7 @@ describe('kind: membership', () => {
 
     it('409 when the order is now present in the mirror', async () => {
         prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
-            status: 'ACTIVE', kind: 'INITIAL', shopifyOrderId: '800', certifiedById: null,
+            status: 'ACTIVE', kind: 'INITIAL', shopifyOrderId: '800', manualPaymentById: null,
         });
         mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set(['800']));
         const res = await POST(req({ kind: 'membership', processId: 42 }));
@@ -206,7 +206,7 @@ describe('kind: membership', () => {
 
     it('recorded order absent from the mirror → PAYMENT_UNVERIFIABLE, not ACTIVE_WITHOUT_PAYMENT', async () => {
         prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
-            status: 'ACTIVE', kind: 'RENEWAL', shopifyOrderId: '801', certifiedById: null,
+            status: 'ACTIVE', kind: 'RENEWAL', shopifyOrderId: '801', manualPaymentById: null,
         });
         mirrorMock.orderLegacyIdsPresent.mockResolvedValue(new Set()); // 801 not present
         const res = await POST(req({ kind: 'membership', processId: 42 }));
@@ -217,7 +217,7 @@ describe('kind: membership', () => {
 
     it('409 for a process outside the audit-swept status/kind population', async () => {
         prismaMock.orgMembershipProcess.findUnique.mockResolvedValue({
-            status: 'PENDING_PAYMENT', kind: 'INITIAL', shopifyOrderId: null, certifiedById: null,
+            status: 'PENDING_PAYMENT', kind: 'INITIAL', shopifyOrderId: null, manualPaymentById: null,
         });
         const res = await POST(req({ kind: 'membership', processId: 42 }));
         expect(res.status).toBe(409);

@@ -205,6 +205,32 @@ describe('Trusted Adults API', () => {
         expect(auditJson(overrideLog.newData).override).toBe('approve');
     });
 
+    // The override route's gate accepts a sysadmin in place of a board member, but the
+    // conflict-of-interest check exempts no role: the household's own lead is refused
+    // whether they reach the route as a bare sysadmin or as board+sysadmin.
+    it("refuses a sysadmin overriding their OWN household's review, with or without the board role", async () => {
+        const ta = await prisma.trustedAdult.create({
+            data: {
+                householdId: familyHh, trustedAdultName: 'Great-aunt', trustedAdultPhone: '555-0201',
+                familyContext: 'Maternal great-aunt.', origin: 'SELF_DISCLOSED', disclosedById: leadId,
+                reviews: { create: { householdId: familyHh, kind: 'INITIAL', status: 'PENDING_BOARD_REVIEW' } },
+            },
+            include: { reviews: true },
+        });
+        const reviewId = ta.reviews[0].id;
+
+        for (const roles of [{ isSysadmin: true }, { isSysadmin: true, isBoardMember: true }]) {
+            as(leadId, familyHh, roles);
+            const res = await OVERRIDE(post('/api/safety/trusted-adults/override', { reviewId, action: 'approve', sharedNote: SHARED }));
+            expect(res.status).toBe(403);
+            expect((await res.json()).code).toBe('forbidden');
+        }
+        // Nothing decided: the review is still awaiting the board.
+        const after = await prisma.trustedAdultReview.findUnique({ where: { id: reviewId } });
+        expect(after?.status).toBe('PENDING_BOARD_REVIEW');
+        expect(after?.decidedById).toBeNull();
+    });
+
     // Full trusted-adult journey as one continuous flow through the real routes: a lead
     // SUBMITS → it's pending and NOT yet an authorized pickup → the board APPROVES →
     // it becomes an authorized pickup on the operational (front-desk) view → the nightly

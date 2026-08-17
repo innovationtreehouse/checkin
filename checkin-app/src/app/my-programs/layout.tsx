@@ -13,7 +13,7 @@ import { leadsAnyProgram, leadPendingCount } from "@/components/navBadges";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 /**
- * Staff "My Programs" chrome: section title + subtabs (Attendance inbox /
+ * Program-leader "My Programs" chrome: section title + subtabs (Attendance inbox /
  * Conflicts), gated to program lead mentors. Lead status rides in on the
  * todo-counts payload the nav already fetches — no new session field. Matches the
  * program-ops layout's route-driven Tabs pattern.

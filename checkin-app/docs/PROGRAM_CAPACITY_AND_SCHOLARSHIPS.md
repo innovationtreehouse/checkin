@@ -4,7 +4,7 @@
 PENDING) and #931 (`34a92fb7`, org-member snapshot at approval) on top.
 **Product decisions:** 2026-07-06 (single-pool capacity, hold-ledger scholarship lifecycle).
 **Statechart:** the enrollment trunk + scholarship parallel region are formalized as one
-declarative machine — see `designs/LIFECYCLE.md`. This doc (§1–4) is the Shopify/capacity
+declarative machine — see `generated/lifecycle/enrollment.md`. This doc (§1–4) is the Shopify/capacity
 mechanics it builds on.
 
 ## 1. Shopify is the source of truth for program capacity
@@ -35,19 +35,14 @@ This is an interim mechanism. `docs/designs/SHOPIFY_MEMBER_SEGMENT_PRICING.md` i
 planned upgrade — segment-gated automatic discounts, once checkout identity (that doc's
 §5) is solved — at which point per-checkout discount codes go away entirely.
 
-### Legacy two-variant transition
+### Legacy two-variant shape (removed)
 
-Programs created before this design still carry two variants
-(`shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId`), each with its own
-inventory pool mirrored via a sibling-adjustment on every seat-consuming event (the
-webhook's `orders/paid` handler mirrors the purchased tier's decrement onto the other
-pool). `adjustProgramInventory` prefers `shopifyVariantId` when set and falls back to the
-legacy pair otherwise — this is additive, not a widening of what any one program accepts;
-a given program only ever populates one shape or the other.
-
-This is an **expand** step. Dropping the legacy pair (**contract**) is a later release,
-once every program has migrated onto the single-pool model — per the repo's
-migration-safety convention of expand/contract as separate steps.
+An earlier design gave each program two variants
+(`shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId`) with separate inventory
+pools kept in step by a sibling-adjustment on every seat-consuming event. All of that
+code is gone: `shopifyVariantId` is the only variant any program has, and
+`adjustProgramInventory` adjusts exactly that one pool. The four dead columns are
+dropped in a follow-up release — see `docs/designs/975-LEGACY_VARIANT_CONTRACT.md`.
 
 ## 3. Scholarship lifecycle — the hold ledger
 

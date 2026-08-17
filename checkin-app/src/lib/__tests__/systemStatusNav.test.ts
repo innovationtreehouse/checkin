@@ -14,13 +14,15 @@ describe("SYSTEM_STATUS_NAV_LINKS", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
-  it("flags only Audit Log as sysadmin-only", () => {
-    const sysadminOnly = SYSTEM_STATUS_NAV_LINKS.filter((l) => l.sysadminOnly).map((l) => l.name);
-    expect(sysadminOnly).toEqual(["Audit Log"]);
-  });
-
-  it("leaves the other tabs visible to everyone (sysadminOnly unset)", () => {
-    const everyone = SYSTEM_STATUS_NAV_LINKS.filter((l) => !l.sysadminOnly).map((l) => l.name);
-    expect(everyone).toEqual(["System Status", "Link Status", "Lifecycle", "Errors"]);
+  // Every tab, Audit Log included, is open to the whole section audience
+  // (sysadmin + board) — the layout filters nothing.
+  it("exposes every tab to the section audience", () => {
+    expect(SYSTEM_STATUS_NAV_LINKS.map((l) => l.name)).toEqual([
+      "System Status",
+      "Link Status",
+      "Lifecycle",
+      "Errors",
+      "Audit Log",
+    ]);
   });
 });

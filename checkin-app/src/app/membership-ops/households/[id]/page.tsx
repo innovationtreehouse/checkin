@@ -6,6 +6,7 @@ import { Badge, Button, Card, Group, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
+import { formatDateOnly } from "@/lib/time";
 
 type Enrollment = {
   status: "PENDING" | "ACTIVE";
@@ -26,8 +27,10 @@ type Household = {
   bgValidUntil?: string | null;
 };
 
+// Every date this renders (memberSince, validUntil, bgValidUntil) is a calendar
+// date at UTC midnight, so it must be read UTC-pinned or it shows the day before.
 const fmtDate = (s?: string | null) =>
-  s ? new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }) : "—";
+  s ? formatDateOnly(s, { year: "numeric", month: "short", day: "numeric" }) : "—";
 
 // A household detail view for the board — its members and each member's program
 // enrollments in one focused screen, off the noisy households list.

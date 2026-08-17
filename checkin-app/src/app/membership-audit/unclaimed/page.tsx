@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Box, Card, Stack, Text } from "@mantine/core";
+import { useState, useEffect, useCallback } from "react";
+import { Alert, Box, Button, Card, Stack, Text } from "@mantine/core";
 
 type UnclaimedHousehold = {
   id: number;
@@ -12,20 +12,26 @@ type UnclaimedHousehold = {
 export default function UnclaimedHouseholdsIndex() {
   const [households, setHouseholds] = useState<UnclaimedHousehold[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch('/api/membership-audit/unclaimed-households');
+      const data = await res.json();
+      if (data.households) setHouseholds(data.households);
+    } catch (err) {
+      console.error("Failed to load unclaimed households:", err);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/membership-audit/unclaimed-households');
-        const data = await res.json();
-        if (data.households) setHouseholds(data.households);
-      } catch (err) {
-        console.error("Failed to load unclaimed households:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    load();
+  }, [load]);
 
   return (
     <Stack>
@@ -34,7 +40,14 @@ export default function UnclaimedHouseholdsIndex() {
       </div>
 
       <Box>
-        {households.length > 0 ? (
+        {error ? (
+          <Alert color="red" title="Couldn't load unclaimed households.">
+            The list didn&apos;t load, so this isn&apos;t an all-clear.
+            <Button mt="sm" size="xs" variant="white" color="red" onClick={load}>
+              Retry
+            </Button>
+          </Alert>
+        ) : households.length > 0 ? (
           <Stack gap="sm">
             {households.map((h) => (
               <Card key={h.id} withBorder radius="md" padding="md">

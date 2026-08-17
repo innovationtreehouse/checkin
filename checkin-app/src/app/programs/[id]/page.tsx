@@ -14,6 +14,7 @@ import FirstTimeIntakePanel from './FirstTimeIntakePanel';
 import { useIsLocalInstance, useShopifyStoreDomain } from '@/components/EnvProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
+
 type ProgramDetail = {
   id: number;
   name: string;
@@ -31,13 +32,10 @@ type ProgramDetail = {
   enrollmentStatus: string;
   orgMemberPriceCents: number | null;
   nonOrgMemberPriceCents: number | null;
-  // Single-pool model (product decision 2026-07-06): when set, this is the
-  // ONE variant for both tiers — member pricing comes from a checkout-time
-  // discount code (see handleEnroll), not a separate variant. Legacy programs
-  // leave this null and keep using the pair below.
+  // Single-pool model (product decision 2026-07-06): the ONE variant for both
+  // tiers — member pricing comes from a checkout-time discount code (see
+  // handleEnroll), not a separate variant.
   shopifyVariantId: string | null;
-  shopifyOrgMemberVariantId: string | null;
-  shopifyNonOrgMemberVariantId: string | null;
   minAge: number | null;
   maxAge: number | null;
   orgMemberOnly: boolean;
@@ -50,11 +48,9 @@ type ProgramDetail = {
   viewerMemberPricingEligible?: boolean;
 };
 
-type SessionUser = { isSysadmin?: boolean; isBoardMember?: boolean; id: number; householdId?: number | null };
-
 export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data: session, status } = useSession();
+  const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
   const isLocalInstance = useIsLocalInstance();
   const shopifyStoreDomain = useShopifyStoreDomain();
@@ -64,7 +60,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   const [enrolling, setEnrolling] = useState(false);
   const [message, setMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [requiresOverride, setRequiresOverride] = useState(false);
 
   const [showEnrollmentSelection, setShowEnrollmentSelection] = useState(false);
   const [householdMembers, setHouseholdMembers] = useState<{ id: number; name: string | null; dateOfBirth: string | null; isDeclaredAdult?: boolean }[]>([]);
@@ -101,29 +96,48 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // Why a member can't be enrolled. Shared by the default selection and the row
   // render so an ineligible member is never auto-selected and then POSTed (which
   // returned a confusing "Date of Birth is missing" for over-25 adults).
-  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'pending' | 'age' | 'dob' | null; label: string } => {
+  const enrollBlock = (member: { id: number; dateOfBirth: string | null; isDeclaredAdult?: boolean }): { reason: 'enrolled' | 'pending' | 'awaiting' | 'age' | 'dob' | 'lead' | null; label: string } => {
+    // Only a known adult may commit THEMSELVES to a program and its charge — the
+    // enroll route refuses the rest, so the viewer's own row must never offer it.
+    const viewer = session?.user;
+    const selfBlocked = member.id === viewer?.id && viewer?.ageBand !== 'adult';
     const enrolledRow = (program?.participants ?? []).find(p => p.personId === member.id);
     // ACTIVE = paid/free/override (truly done) — locked. PENDING = payment still
     // owed: SELECTABLE, so the household can re-run checkout to finish paying
     // (the participants POST 409s and aggregateEnrollOutcomes folds a 409 back
     // into the checkout set — the same idempotent path as a double-click).
     if (enrolledRow) {
-        return enrolledRow.status === 'ACTIVE'
-            ? { reason: 'enrolled', label: 'Enrolled' }
-            : { reason: 'pending', label: 'Payment pending — select to finish payment' };
+        if (enrolledRow.status === 'ACTIVE') return { reason: 'enrolled', label: 'Enrolled' };
+        // A youth is never shown the payment behind a pending row — the resume
+        // affordance is a checkout they may not reach. "Awaiting confirmation"
+        // stays true whether or not the household ever pays.
+        if (selfBlocked) {
+            return viewer?.ageBand === 'youth'
+                ? { reason: 'awaiting', label: 'Awaiting confirmation' }
+                : { reason: 'dob', label: 'DOB missing' };
+        }
+        return { reason: 'pending', label: 'Payment pending — select to finish payment' };
     }
     if (!program) return { reason: null, label: '' };
     // Same eligibility rule as the enroll route: a declared over-25 adult clears
     // a youth minimum like "16 and up" without a DOB on file.
     const check = checkProgramAge(member, { minAge: program.minAge, maxAge: program.maxAge, asOf: program.startAt ?? undefined });
-    return check.ok ? { reason: null, label: '' } : { reason: check.reason, label: check.label };
+    if (!check.ok) return { reason: check.reason, label: check.label };
+    // An unverifiable age keeps the 'dob' reason so the row still routes into the
+    // intake panel, where a DOB or "over 25" can be set.
+    if (selfBlocked) {
+      return viewer?.ageBand === 'youth'
+        ? { reason: 'lead', label: 'A household lead must enroll you' }
+        : { reason: 'dob', label: 'DOB missing' };
+    }
+    return { reason: null, label: '' };
   };
 
   // Load the caller's household into the member-select, and decide whether they
   // still need first-time setup (no enrollable participant, or no valid emergency
   // contact). Shared by the initial "Enroll" click and the post-intake re-fetch.
   const populateHousehold = async () => {
-    const currentUserId = (session!.user as SessionUser).id;
+    const currentUserId = session!.user.id;
     setLoadingHousehold(true);
     try {
       const res = await fetch(`/api/household`);
@@ -134,19 +148,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         if (data.household?.householdMembers) members = data.household.householdMembers;
       }
       setHouseholdMembers(members);
-      // Default to me if I'm eligible, else the first eligible member, else none —
-      // never auto-select someone who'd fail the age/DOB check.
-      const me = members.find((p) => p.id === currentUserId);
-      const def = me && enrollBlock(me).reason === null
-        ? me.id
-        : members.find((m) => enrollBlock(m).reason === null)?.id;
-      if (def != null) {
-        setSelectedParticipantIds([def]);
-      } else {
-        // Nobody new to enroll — preselect everyone with a payment still owed,
-        // so the page loads ready to finish that checkout in one click.
-        setSelectedParticipantIds(members.filter((m) => enrollBlock(m).reason === 'pending').map((m) => m.id));
-      }
+      // Nobody is pre-checked: enrolling creates a PENDING row and a payment
+      // obligation, so each participant must be an explicit click — including
+      // the account holder, the easiest person to enroll by accident.
+      setSelectedParticipantIds([]);
 
       const hasEnrollable = members.some((m) => { const r = enrollBlock(m).reason; return r === null || r === 'pending'; });
       // Emergency contact isn't in /api/household; probe the process-free intake
@@ -167,8 +172,13 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
       }
       setNeedsSetup(!hasEnrollable || !hasValidEmergencyContact);
     } catch {
-      setHouseholdMembers([{ id: currentUserId, name: "Myself", dateOfBirth: null }]);
-      setSelectedParticipantIds([currentUserId]);
+      const solo = { id: currentUserId, name: "Myself", dateOfBirth: null };
+      setHouseholdMembers([solo]);
+      // The solo entry carries no DOB, so an age-gated program blocks it and
+      // leaves nothing to check. Offer household setup instead of a panel whose
+      // only row is disabled.
+      const reason = enrollBlock(solo).reason;
+      setNeedsSetup(!(reason === null || reason === 'pending'));
     } finally {
       setLoadingHousehold(false);
     }
@@ -187,11 +197,17 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
   // emergency contact are now saved) and drop into the normal member-select.
   const handleIntakeSaved = async () => {
     setShowIntake(false);
+    // Intake just set a DOB or the over-25 flag. Re-stamp the session so the
+    // ageBand claim reflects it NOW — the jwt callback refreshes on its own
+    // schedule, and this is the one flow where waiting would leave a member who
+    // just proved their age still blocked from enrolling.
+    await updateSession();
     await populateHousehold();
   };
 
   const handleRequestPaymentPlan = async () => {
-    if (!session || selectedParticipantIds.length === 0) return router.push('/');
+    if (!session) return router.push('/');
+    if (selectedParticipantIds.length === 0) return;
 
     setEnrolling(true);
     setMessage("");
@@ -239,13 +255,14 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     }
   };
 
-  const handleEnroll = async (override = false) => {
-    if (!session || selectedParticipantIds.length === 0) {
+  const handleEnroll = async () => {
+    if (!session) {
       router.push('/');
       return;
     }
+    if (selectedParticipantIds.length === 0) return;
 
-    const isPayingOnShopify = !override && (program?.orgMemberPriceCents || program?.nonOrgMemberPriceCents);
+    const isPayingOnShopify = program?.orgMemberPriceCents || program?.nonOrgMemberPriceCents;
 
     setEnrolling(true);
     setMessage("");
@@ -276,15 +293,15 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           isMember = householdData.household?.orgMembership?.status === "ACTIVE" || false;
         }
         pricingEligible = program.viewerMemberPricingEligible ?? isMember;
-        // Single-pool programs sell the SAME variant to everyone — the discount
-        // code (below, at redirect time) does the member pricing, not a variant pick.
-        variantId = program.shopifyVariantId || (pricingEligible ? program.shopifyOrgMemberVariantId : program.shopifyNonOrgMemberVariantId);
+        // Every program sells the SAME variant to everyone — the discount code
+        // (below, at redirect time) does the member pricing, not a variant pick.
+        variantId = program.shopifyVariantId;
         storeDomain = shopifyStoreDomain ?? undefined;
         mockPay = isLocalInstance;
         if (!variantId || (!mockPay && !storeDomain)) {
           notifications.show({ color: "red", autoClose: false, message: variantId
             ? "Cannot enroll: Shopify store domain not configured. Contact an admin."
-            : "Cannot enroll: no pricing variant set for this program tier — set one in program-ops." });
+            : "Cannot enroll: no pricing variant set for this program — set one in program-ops." });
           return; // no enrollment created — payment path is broken
         }
       }
@@ -294,7 +311,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         const res = await fetch(`/api/programs/${id}/participants`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ participantId, override })
+          body: JSON.stringify({ participantId })
         });
 
         // Only the error path carries a JSON body we need (error/requiresOverride);
@@ -303,7 +320,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
         outcomes.push({ participantId, ok: res.ok, status: res.status, error: data.error, requiresOverride: data.requiresOverride });
       }
 
-      const { enrolledIds, errors, needsOverride } = aggregateEnrollOutcomes(outcomes);
+      const { enrolledIds, errors } = aggregateEnrollOutcomes(outcomes);
 
       if (enrolledIds.length > 0) {
         notifyNavRefresh();
@@ -320,7 +337,6 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           } else {
             notifications.show({ color: "red", autoClose: false, message: "Enrolled, but the mock payment failed — fire it from the Debug → Shopify tool." });
           }
-          setRequiresOverride(false);
           fetchProgram();
         } else if (isPayingOnShopify && program && variantId && storeDomain) {
           setSuccessMessage("Redirecting to Shopify for secure payment...");
@@ -344,12 +360,10 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           return; // spinner stays; page unloads on redirect
         } else {
           notifications.show({ message: enrolledIds.length > 1 ? `Successfully enrolled ${enrolledIds.length} members!` : "Successfully enrolled!" });
-          setRequiresOverride(false);
           fetchProgram();
         }
       }
 
-      if (needsOverride) setRequiresOverride(true);
       if (errors.length > 0) setMessage(errors.join(" "));
     } catch {
       notifications.show({ color: "red", message: "Network error during enrollment.", autoClose: false });
@@ -373,7 +387,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     </Container>
   );
 
-  const user = session?.user as SessionUser | undefined;
+  const user = session?.user;
   const canManage = !!(session && (user?.isSysadmin || user?.isBoardMember || user?.id === program.leadMentorId));
 
   // My household's already-enrolled members — shown so a returning parent doesn't
@@ -387,6 +401,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
     }));
   const isClosed = program.enrollmentStatus === 'CLOSED';
   const hasPrice = !!(program.orgMemberPriceCents || program.nonOrgMemberPriceCents);
+  // A youth is shown no payment obligation, action, or status — their own or
+  // their household's (docs/rules/programs.md). An unverifiable age is NOT a
+  // youth: they keep every affordance so they can reach the intake panel and
+  // establish an age.
+  const viewerIsYouth = user?.ageBand === 'youth';
 
   const ageRange = program.minAge !== null && program.maxAge !== null ? `ages ${program.minAge}–${program.maxAge}`
     : program.minAge !== null ? `ages ${program.minAge} and up`
@@ -446,7 +465,7 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 {program.orgMemberOnly && <Text><strong>Eligibility:</strong> Treehouse Members only</Text>}
               </>
             )}
-            {myEnrolled.length > 0 && (
+            {myEnrolled.length > 0 && !viewerIsYouth && (
               <>
                 <Divider />
                 <Text><strong>Already enrolled from your household:</strong></Text>
@@ -484,11 +503,14 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
           {!showEnrollmentSelection ? (
             <Group justify="center" wrap="wrap">
               {session ? (
-                <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed}>
+                <Button size="md" onClick={startEnrollmentProcess} disabled={isClosed || viewerIsYouth}>
                   {/* A payment-pending household reads "Continue enrollment" — the
                       button resumes their checkout (see the pending picker state),
-                      it doesn't start a new one. */}
-                  {isClosed ? <>Enrollment Closed{closedSuffix}</> : myEnrolled.some((m) => !m.active) ? "Continue enrollment" : "Enroll"}
+                      it doesn't start a new one. A youth is told who may act
+                      instead, which holds whether or not the program is priced. */}
+                  {isClosed ? <>Enrollment Closed{closedSuffix}</>
+                    : viewerIsYouth ? "A household lead must enroll you"
+                    : myEnrolled.some((m) => !m.active) ? "Continue enrollment" : "Enroll"}
                 </Button>
               ) : (
                 // Auth-first: route through /signin (which picks Google vs. the
@@ -534,8 +556,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                               label={member.name || 'Unnamed Participant'}
                             />
                             {reason === 'enrolled' && <Text size="sm" c="green">({label})</Text>}
-                            {reason === 'pending' && <Text size="sm" c="yellow">({label})</Text>}
-                            {disabled && reason !== 'enrolled' && <Text size="sm" c="red">({label})</Text>}
+                            {(reason === 'pending' || reason === 'awaiting') && <Text size="sm" c="yellow">({label})</Text>}
+                            {disabled && reason !== 'enrolled' && reason !== 'awaiting' && <Text size="sm" c="red">({label})</Text>}
                           </Group>
                         </Card>
                       );
@@ -557,23 +579,30 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
                 </Stack>
               ) : (
               <Stack align="center">
+                {selectedParticipantIds.length === 0 && (
+                  <Text size="sm" c="dimmed" ta="center">
+                    Check the box next to each person you want to enroll.
+                  </Text>
+                )}
+
                 <Button
                   fullWidth
                   size="md"
-                  onClick={() => handleEnroll(false)}
+                  onClick={() => handleEnroll()}
                   disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
                   loading={enrolling}
                 >
                   {hasPrice ? "Pay on Shopify" : "Complete Enrollment"}
                 </Button>
 
-                {hasPrice && !isClosed && (
+                {hasPrice && !isClosed && !viewerIsYouth && (
                   <Button
                     fullWidth
                     size="md"
                     variant="light"
                     type="button"
                     onClick={handleRequestPaymentPlan}
+                    disabled={enrolling || selectedParticipantIds.length === 0 || loadingHousehold}
                     styles={{ root: { height: 'auto', paddingBlock: 'var(--mantine-spacing-xs)' }, label: { whiteSpace: 'normal' } }}
                   >
                     Request a scholarship or payment plan from the Scholarship Review Team
@@ -582,17 +611,11 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
               </Stack>
               )}
 
-              {requiresOverride && canManage && (
-                <Alert color="yellow" variant="light" mt="lg" title="Warning: Enrollment rules not met.">
-                  <Text size="sm" mb="md">
-                    As an Admin or Lead Mentor, you can bypass this restriction. Are you sure you want
-                    to force enroll?
-                  </Text>
-                  <Button color="yellow" fullWidth onClick={() => handleEnroll(true)}>
-                    Force Enroll (Override)
-                  </Button>
-                </Alert>
-              )}
+              {/* No force-enroll here: this picker only ever offers the caller's
+                  own household, so every enrollment from this page is conflicted
+                  and the server refuses the limit override. The refusal reason
+                  shows in the red message Alert above. Comping someone else is
+                  program-ops (ProgramRosterTab). */}
               </>
               )}
             </Card>

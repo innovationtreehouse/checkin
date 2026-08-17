@@ -3,14 +3,20 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
+// Front-desk contact sheet. Merged-away people are tombstones, so both the
+// household filter and the member list count live people only — a household
+// whose members have all been merged away has nobody to look up.
 export const GET = withAuth(
     { roles: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     async () => {
         try {
             const households = await prisma.household.findMany({
+                where: { householdMembers: { some: LIVE_PERSON } },
                 include: {
                     householdMembers: {
+                        where: LIVE_PERSON,
                         select: {
                             id: true,
                             name: true,
@@ -18,7 +24,7 @@ export const GET = withAuth(
                             phone: true,
                             isHouseholdLead: true,
                             visits: {
-                                where: { departedAt: null },
+                                where: { departedAt: null, deletedAt: null },
                                 select: { id: true }
                             }
                         }

@@ -9,8 +9,8 @@
  * sees a clean slate, can file a fresh application (past the partial unique index),
  * and cannot resume or submit the archived one.
  *
- * Also covers board recovery (unarchive): round-trips back to the status recorded
- * in the archive audit row, refuses when there's nothing to restore or the target
+ * Also covers board recovery (unarchive): round-trips back to the status captured
+ * on the row at archive time, refuses when there's nothing to restore or the target
  * is no longer restorable, and refuses when a fresh in-flight process now occupies
  * the one-in-flight slot for the same membership (P2002 → wrong_phase).
  */
@@ -200,12 +200,14 @@ describe('Membership application archive API', () => {
 
     // --- board recovery: unarchive ---
 
-    it('archive→unarchive round-trip restores the audit-recorded prior status', async () => {
+    it('archive→unarchive round-trip restores the captured prior status', async () => {
         const { processId } = await makeProcess('RoundTrip', 'PENDING_PAYMENT');
         asBoard(boardId);
         await ARCHIVE(req({ processId }) as never);
         const archived = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(archived?.status).toBe('ARCHIVED');
+        // The archive write captured the collapsed phase on the row itself.
+        expect(archived?.archivedFromStatus).toBe('PENDING_PAYMENT');
         await new Promise((r) => setTimeout(r, 5)); // ensure stageEnteredAt strictly advances
 
         const res = await UNARCHIVE(unarchiveReq({ processId }) as never);
@@ -214,12 +216,32 @@ describe('Membership application archive API', () => {
 
         const after = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(after?.status).toBe('PENDING_PAYMENT');
+        expect(after?.archivedFromStatus).toBeNull();
         expect(after!.stageEnteredAt!.getTime()).toBeGreaterThan(archived!.stageEnteredAt!.getTime());
 
         const audit = await prisma.auditLog.findFirst({ where: { tableName: 'OrgMembershipProcess', affectedEntityId: processId }, orderBy: { id: 'desc' } });
         expect(audit?.actorId).toBe(boardId);
         expect(audit?.oldData).toMatchObject({ status: 'ARCHIVED' });
         expect(audit?.newData).toMatchObject({ status: 'PENDING_PAYMENT', unarchived: true });
+    });
+
+    it('round-trips a renewal archived from the legacy RENEWAL_PENDING_BG', async () => {
+        // archiveApplication gates on ACTIVE alone, so this status is archivable today —
+        // and migration 20260806160000 backfills it for rows archived before the column
+        // existed. A restore list narrower than the archive gate strands them in ARCHIVED.
+        const hh = await prisma.household.create({ data: { name: `LegacyRenewal ${TAG}` } });
+        const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
+        const p = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'RENEWAL_PENDING_BG' } });
+        asBoard(boardId);
+
+        expect((await ARCHIVE(req({ processId: p.id }) as never)).status).toBe(200);
+        expect((await prisma.orgMembershipProcess.findUnique({ where: { id: p.id } }))?.archivedFromStatus).toBe('RENEWAL_PENDING_BG');
+
+        const res = await UNARCHIVE(unarchiveReq({ processId: p.id }) as never);
+        expect(res.status).toBe(200);
+
+        const after = await prisma.orgMembershipProcess.findUnique({ where: { id: p.id } });
+        expect({ status: after?.status, from: after?.archivedFromStatus }).toEqual({ status: 'RENEWAL_PENDING_BG', from: null });
     });
 
     it('refuses to unarchive a non-archived process (409 wrong_phase)', async () => {
@@ -249,9 +271,9 @@ describe('Membership application archive API', () => {
         expect(after?.status).toBe('ARCHIVED');
     });
 
-    it('refuses to unarchive when there is no ARCHIVED audit row to restore from (409 wrong_phase)', async () => {
-        const { processId } = await makeProcess('NoAudit', 'PENDING_PAYMENT');
-        // Hand-set to ARCHIVED without going through archiveApplication — no audit row records it.
+    it('refuses to unarchive when no pre-archive status was captured (409 wrong_phase)', async () => {
+        const { processId } = await makeProcess('NoPreImage', 'PENDING_PAYMENT');
+        // Hand-set to ARCHIVED without going through archiveApplication — archivedFromStatus stays null.
         await prisma.orgMembershipProcess.update({ where: { id: processId }, data: { status: 'ARCHIVED' } });
         asBoard(boardId);
         const res = await UNARCHIVE(unarchiveReq({ processId }) as never);

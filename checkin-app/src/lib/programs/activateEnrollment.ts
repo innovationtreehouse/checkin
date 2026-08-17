@@ -14,11 +14,10 @@ import { fromWhere } from "@/lib/programs/enrollmentState";
  * clearing the pending timer, stamping the paying order id, and releasing any
  * scholarship inventory hold (compensating Shopify's sale-time auto-decrement).
  *
- * The membership-item / tier check lives with the CALLER, because only the webhook
- * has the order's line-item variant ids — the mirror does not. The webhook passes
- * the computed values; the reconciler passes hasProgramItem=true (it matched the
- * order to a pending enrollment by email) and purchasedTier=null (tier unknown), in
- * which case the legacy two-pool sibling-inventory mirror is skipped.
+ * The membership-item check lives with the CALLER, because only the webhook has
+ * the order's line-item variant ids — the mirror does not. The webhook passes the
+ * computed value; the reconciler passes hasProgramItem=true (it matched the order
+ * to a pending enrollment by email).
  */
 export interface ActivateEnrollmentInput {
     programId: number;
@@ -28,11 +27,6 @@ export interface ActivateEnrollmentInput {
     shopifyOrderId: string;
     /** Did the paid order contain this program's product? Fail-closed: false = don't activate. */
     hasProgramItem: boolean;
-    /**
-     * Which tier Shopify sold (true = org-member variant), for the legacy two-pool
-     * sibling-inventory mirror. null = unknown (reconciler path) → skip the mirror.
-     */
-    purchasedOrgMember: boolean | null;
 }
 
 export interface ActivateEnrollmentResult {
@@ -41,7 +35,7 @@ export interface ActivateEnrollmentResult {
 }
 
 export async function activateProgramEnrollment(input: ActivateEnrollmentInput): Promise<ActivateEnrollmentResult> {
-    const { programId, personIds, shopifyOrderId, hasProgramItem, purchasedOrgMember } = input;
+    const { programId, personIds, shopifyOrderId, hasProgramItem } = input;
     const program = await prisma.program.findUnique({ where: { id: programId } });
 
     let activatedCount = 0;
@@ -79,25 +73,8 @@ export async function activateProgramEnrollment(input: ActivateEnrollmentInput):
 
     // Compensating +1 for every hold released, in one call. Never fatal.
     if (releasedHoldCount > 0) {
-        const ok = await adjustProgramInventory(
-            {
-                shopifyVariantId: program?.shopifyVariantId ?? null,
-                shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null,
-                shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null,
-            },
-            releasedHoldCount,
-        );
+        const ok = await adjustProgramInventory({ shopifyVariantId: program?.shopifyVariantId ?? null }, releasedHoldCount);
         if (!ok) logger.error(`[enroll] Failed to release ${releasedHoldCount} scholarship hold(s) for program ${programId} — capacity may be out of sync.`);
-    }
-
-    // LEGACY two-pool sibling mirror: only when we know the tier. Single-pool programs
-    // (shopifyVariantId) need no mirror; the reconciler (tier unknown) skips it.
-    if (activatedCount > 0 && !program?.shopifyVariantId && purchasedOrgMember !== null) {
-        const siblingOnly = purchasedOrgMember
-            ? { shopifyOrgMemberVariantId: null, shopifyNonOrgMemberVariantId: program?.shopifyNonOrgMemberVariantId ?? null }
-            : { shopifyOrgMemberVariantId: program?.shopifyOrgMemberVariantId ?? null, shopifyNonOrgMemberVariantId: null };
-        const ok = await adjustProgramInventory({ shopifyVariantId: null, ...siblingOnly }, -activatedCount);
-        if (!ok) logger.error(`[enroll] Failed to mirror sibling-variant inventory for program ${programId} — pools may be out of sync.`);
     }
 
     return { activatedCount, releasedHoldCount };
