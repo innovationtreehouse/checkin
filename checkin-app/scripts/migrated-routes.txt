@@ -5,6 +5,8 @@
 #
 # Comment lines and blank lines are ignored.
 GET /api/events
+GET /api/facility/badges
+GET /api/facility/visits
 GET /api/profile
 GET /api/profile/visits
 GET /api/programs/[id]
