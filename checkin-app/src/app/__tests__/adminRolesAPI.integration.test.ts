@@ -340,6 +340,60 @@ describe('Admin Roles API Integration Tests', () => {
         });
     });
 
+    describe('PATCH /api/roles — board grant into a DENIED household', () => {
+        let deniedPersonId: number;
+        let deniedHouseholdId: number;
+
+        beforeAll(async () => {
+            const person = await prisma.person.create({
+                data: { email: `denied-target-${TAG}@example.com`, name: 'Denied Target', household: { create: { name: "Test HH" } } },
+            });
+            deniedPersonId = person.id;
+            deniedHouseholdId = person.householdId;
+            await prisma.orgMembership.create({ data: { householdId: deniedHouseholdId, status: 'DENIED' } });
+        });
+
+        afterAll(async () => {
+            if (deniedPersonId === undefined) return;
+            await prisma.auditLog.deleteMany({ where: { affectedEntityId: deniedPersonId } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: deniedHouseholdId } });
+            await prisma.person.deleteMany({ where: { id: deniedPersonId } });
+        });
+
+        it('refuses the grant (409) and writes neither the PersonRole row nor the mirror', async () => {
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: deniedPersonId, isBoardMember: true }));
+            expect(res.status).toBe(409);
+            const data = await res.json();
+            expect(data.error).toContain('denied membership');
+
+            expect(await prisma.personRole.findUnique({
+                where: { personId_role: { personId: deniedPersonId, role: 'BOARD' } },
+            })).toBeNull();
+            const row = await prisma.person.findUnique({ where: { id: deniedPersonId } });
+            expect(row?.isBoardMember).toBe(false);
+        });
+
+        it('still allows a non-board flag on the same person (the guard is BOARD-only)', async () => {
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: deniedPersonId, isOperations: true }));
+            expect(res.status).toBe(200);
+            expect(await hasOperationsRow(deniedPersonId)).toBe(true);
+        });
+
+        it('allows the grant once the household is restored', async () => {
+            await prisma.orgMembership.update({ where: { householdId: deniedHouseholdId }, data: { status: 'NONE' } });
+            asSession({ id: testSysAdminId, isSysadmin: true });
+            const res = await PATCH(patchReq({ targetUserId: deniedPersonId, isBoardMember: true }));
+            expect(res.status).toBe(200);
+
+            // Leave no BOARD row behind: the last-board describes below assert a zero
+            // ambient board count.
+            await prisma.personRole.deleteMany({ where: { personId: deniedPersonId, role: 'BOARD' } });
+            await prisma.person.update({ where: { id: deniedPersonId }, data: { isBoardMember: false } });
+        });
+    });
+
     describe('PATCH /api/roles — canAccessStaging (ops-stg gate escape hatch, sysadmin-only, NOT board-symmetric)', () => {
         let stagingTargetId: number;
         let stagingBoardActorId: number;

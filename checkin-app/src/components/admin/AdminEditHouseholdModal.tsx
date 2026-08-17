@@ -7,6 +7,7 @@ import { modals } from "@mantine/modals";
 import { pickAddress, type StructuredAddress } from "@/lib/address";
 import { isValidPhone, PHONE_ERROR } from "@/lib/phone";
 import { isYouth } from "@/lib/time";
+import EmergencyContactNotice from "@/components/ui/EmergencyContactNotice";
 
 // Per-household lead cap (issue #269). Server enforces it atomically in
 // lib/household/leads.ts (MAX_HOUSEHOLD_LEADS); hardcoded here — that module
@@ -278,6 +279,7 @@ export function AdminEditHouseholdModal({
               <TextInput label="State" maxLength={2} value={form.state} onChange={(e) => update({ state: e.currentTarget.value })} placeholder="TX" />
               <TextInput label="ZIP" value={form.postalCode} onChange={(e) => update({ postalCode: e.currentTarget.value })} placeholder="78701" />
             </SimpleGrid>
+            <EmergencyContactNotice />
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <TextInput
                 label="Emergency Contact Name"

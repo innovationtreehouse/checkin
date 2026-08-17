@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { isKnownAdult } from "@/lib/programAge";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { fromWhere } from "@/lib/programs/enrollmentState";
 import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck, resolveAckCopy } from "@/lib/scholarshipEmails";
@@ -66,6 +67,16 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         if (!isSelf && !isSysAdminOrBoard && !isHouseholdLead) {
             return apiError("Forbidden: Not authorized to request a payment plan for this participant", 403);
+        }
+
+        // A scholarship request IS a payment situation, so it is not a youth's to
+        // make about themselves — a household lead does it. Same known-adult rule
+        // as the enroll route (docs/rules/programs.md).
+        if (isSelf && !isKnownAdult({
+            dateOfBirth: participant.person?.dateOfBirth ?? null,
+            isDeclaredAdult: participant.person?.isDeclaredAdult,
+        })) {
+            return apiError("A household lead must request a payment plan for a participant under 18.", 403);
         }
 
         if (participant.status !== 'PENDING') {

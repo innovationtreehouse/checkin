@@ -9,6 +9,15 @@ jest.mock("@/lib/prisma", () => ({ __esModule: true, default: { visit: { findMan
 
 import { getFullAttendance } from "@/lib/getFullAttendance";
 
+// Age fixtures are relative to now so they never age past the youth boundary the
+// way a hardcoded year would; the day step keeps the age unambiguous mid-year.
+const yearsAgo = (n: number) => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - n);
+    d.setDate(d.getDate() - 1);
+    return d;
+};
+
 const rows = [
     {
         id: 201, arrivedAt: new Date("2026-07-01T14:00:00Z"), departedAt: null, personId: 50,
@@ -23,7 +32,7 @@ const rows = [
         id: 203, arrivedAt: new Date("2026-07-01T14:10:00Z"), departedAt: null, personId: 70,
         person: {
             id: 70, email: "stu@example.com", name: null, isKeyholder: false,
-            dateOfBirth: new Date("2012-01-01"), householdId: 8, phone: "5557654321",
+            dateOfBirth: yearsAgo(10), householdId: 8, phone: "5557654321",
             household: { id: 8, emergencyContacts: [{ id: 2, name: "Con Two", phone: "5559990002", relationship: null }] },
         },
         event: null,

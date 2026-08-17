@@ -11,7 +11,7 @@ import { relTime } from "@/lib/time";
  * GET /api/finance-ops/s-read/diagnose — walk the s-read feature's dependency
  * chain and report the FIRST broken link with its specific cause.
  *
- * Why this exists (docs/designs/S_READ_DIAGNOSTICS.md): the sync-status feature
+ * Why this exists (docs/ops/shopify-mirror.md): the sync-status feature
  * sits at the end of a nine-link chain (env → derived URL → network → auth → DB
  * exists → table exists → SELECT grant → rows exist → trigger IAM), and without
  * this endpoint every broken link collapses into "the status line doesn't render"

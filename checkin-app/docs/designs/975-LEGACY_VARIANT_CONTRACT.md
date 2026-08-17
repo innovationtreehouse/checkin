@@ -1,9 +1,16 @@
 # Dropping the legacy two-variant product shape
 
-**Status: DESIGN — not built.** Addresses #975 ("Do we need the legacy product
-shape with 2 variants in Shopify?"). Answer: **no.** Both legacy two-variant
-pairs are dead — nothing writes them, and (confirmed by the board) no live prod
-row still depends on them. This doc is the plan to remove them safely.
+**Status: code removal SHIPPED (PR #1464); the `DROP COLUMN` migration is
+outstanding.** Addresses #975 ("Do we need the legacy product shape with 2
+variants in Shopify?"). Answer: **no.** Both legacy two-variant pairs are dead —
+nothing writes them, and (confirmed by the board) no live prod row still depends
+on them.
+
+Releases 0 and 1 below shipped together in PR #1464: the write path is closed and
+no code reads the columns any more. The four columns are still declared in
+`schema.prisma`, so **Release 2 is what actually closes #975** — see
+[the deploy hazard](#the-deploy-hazard-why-the-drop-is-its-own-release) for what's
+left and the two gotchas it must not miss.
 
 ## What "legacy two-variant shape" means
 
@@ -21,36 +28,37 @@ applies member pricing via a server-minted single-use discount code — no
 client-side tier pick, so the whole tier-confusion + variant-presence bug class
 (#739) goes away by construction.
 
-## Why it's safe to remove — and the one write path that isn't yet closed
+## Why it's safe to remove — and the write path that is now closed
+
+> **Closed by #1464.** The write described here is gone. Retained because it is
+> what justifies still running the cutover re-verify query before Release 2.
 
 - **No live data depends on them** (board-confirmed for #975): every program
   that had the legacy pair has retired; membership moved fully to
-  `orgMembershipVariantId`. The columns persist only as read-fallbacks for rows
+  `orgMembershipVariantId`. The columns persisted only as read-fallbacks for rows
   that no longer exist.
-- **Program *create* writes `shopifyVariantId` only** (`api/programs/route.ts`),
-  and nothing writes the membership pair at all.
+- **Program *create* wrote `shopifyVariantId` only** (`api/programs/route.ts`),
+  and nothing ever wrote the membership pair.
 
-**But the program pair is NOT write-dead.** `api/programs/[id]/route.ts:197-198`
-still accepts `shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId` from
-the PATCH body and writes them for any sysadmin/board caller — onto *any*
-program, including one that never had them. So a board member could mint a fresh
-legacy-dependent row **between the board's "no live rows" confirmation and the
-cutover.** If that happens, Release 1 (which removes the checkout ternary and the
-webhook matcher) leaves that program charging the wrong tier and its paid
-webhook unable to activate.
+**The program pair was not write-dead, though.** `PATCH /api/programs/[id]`
+accepted `shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId` from the
+body and wrote them for any sysadmin/board caller — onto *any* program, including
+one that never had them. A board member could therefore have minted a fresh
+legacy-dependent row **after the board's "no live rows" confirmation**, and the
+Release 1 removals (checkout ternary, webhook matcher) would leave that program
+charging the wrong tier with its paid webhook unable to activate.
 
-This does not block removal, but it means the board confirmation is a
-point-in-time fact, not a standing guarantee. The plan closes the gap with a
-**Release 0** below (strip the PATCH writes first) plus a **re-verify-at-cutover**
-gate.
+That made the board confirmation a point-in-time fact rather than a standing
+guarantee — which is why Release 0 closed the write, and why the cutover re-verify
+gate below still earns its keep even now that it has.
 
-The `isLegacy` branch of `api/programs/[id]/sync-shopify/route.ts` also re-writes
-the pair, but only for a program that **already** carries it — it cannot
-introduce the pair, so it is not a new-row source.
+The `isLegacy` branch of `api/programs/[id]/sync-shopify/route.ts` also re-wrote
+the pair, but only for a program that **already** carried it — it could not
+introduce the pair, so it was never a new-row source.
 
-Net: the columns are dead weight whose only remaining effect is misleading
-readers (human and Claude) about how checkout works today — the complaint that
-opened #975 — once the lingering PATCH write is closed.
+Net: the columns are dead weight whose only remaining effect is misleading readers
+(human and Claude) about how checkout works today — the complaint that opened
+#975.
 
 ## Blast radius
 
@@ -59,9 +67,13 @@ Dropping the four columns removes real legacy-only code, not just fields.
 ### Dead code that collapses (deletion)
 
 - **`lib/programs/activateEnrollment.ts`** — the `purchasedOrgMember` param and
-  the entire "sibling-inventory mirror" block. With no program carrying legacy
-  variants, `purchasedOrgMember` is always `null`, so the block is unreachable.
-  Drop the param; drop the block.
+  the entire "sibling-inventory mirror" block. (This doc originally justified it
+  as "`purchasedOrgMember` is always `null`" — that is wrong: on the webhook path
+  it is `false`, only the reconciler passes `null`. The block is dead anyway, for
+  a different reason: with no legacy program, either `shopifyVariantId` is set —
+  so the `!program?.shopifyVariantId` guard is false — or the program is free, in
+  which case `hasProgramItem` never matches and nothing activates in the first
+  place.) Drop the param; drop the block.
 - **`lib/shopify.ts` `createShopifyProgramVariants`** — its only non-test caller
   is the `isLegacy` branch below. Once that goes, the function is dead. Delete it.
 - **`api/programs/[id]/sync-shopify/route.ts`** — the `isLegacy` fork collapses;
@@ -70,8 +82,13 @@ Dropping the four columns removes real legacy-only code, not just fields.
   legacy ids (both membership and program); `purchasedOrgMember` computation and
   the arg passed to `activateProgramEnrollment` go away.
 - **`lib/finance/reconcile.ts` `membershipVariantIdSet`** — drop the two legacy
-  membership ids from the *live reconcile* match set. **NOT from the audit
-  universe** — see the audit hazard below.
+  membership ids. This is the one shared set the live reconciler and `matchAudit`
+  both consume; see the audit hazard below for why dropping them from it turned
+  out to be a no-op rather than a narrowing.
+- **`lib/shopify.ts` `adjustProgramInventory`** — takes `{ shopifyVariantId }`
+  only, and adjusts that one pool instead of looping a variant array. (Missed by
+  this doc's original blast radius; it is the function `lib/program/capacity.ts`
+  and `lib/lifecycleDrift.ts` both feed.)
 - **`app/programs/[id]/page.tsx`** — checkout link becomes
   `variantId = program.shopifyVariantId`; the member/non-member ternary and its
   `pricingEligible` plumbing (where used only for the variant pick) go away.
@@ -80,70 +97,108 @@ Dropping the four columns removes real legacy-only code, not just fields.
 
 - `api/programs/route.ts` — GET `select`.
 - `api/programs/[id]/route.ts` — PATCH body destructure, conditional writes, and
-  the `hasShopifyVariant` presence check. (Removing the two conditional writes is
-  also the Release-0 fix above — do it first, on its own.)
+  the `hasShopifyVariant` presence check. (The two conditional writes are the
+  Release-0 fix above.)
 - `lib/programCheckout.ts` — `isProgramCheckoutBroken` and the
   `PROGRAM_CHECKOUT_BROKEN_WHERE` Prisma `where`. **Shared predicate** — consumed
   by `api/nav/todo-counts`, both program-ops pages, and `sync-shopify`. Missing
   this means Release 2's DROP breaks nav/todo-counts during the drain window.
-- `lib/lifecycleDrift.ts:125-127` — `select` of all three variant columns; feeds
-  the lifecycle-reconcile cron / system-status. A stale `select` here aborts the
-  cron after DROP.
-- `lib/program/capacity.ts:69` — the `program` param type lists the legacy pair.
+- `lib/lifecycleDrift.ts` — `healEnrollmentI1`'s `program` `select` of all three
+  variant columns; feeds the lifecycle-reconcile cron / system-status. A stale
+  `select` here aborts the cron after DROP.
+- `lib/program/capacity.ts` — `withdrawAndReleaseHold`'s `program` param type
+  lists the legacy pair.
 - `api/dev/shopify/orders-paid/route.ts` — membership + program fallbacks.
 - `app/dev/shopify/page.tsx`, `app/program-ops/programs/page.tsx` — selects /
   presence checks.
 - `src/security/generated/classifications.ts` — **generated**; regenerate, don't
-  hand-edit.
-- ~10 test files reference the fields in fixtures/assertions — update alongside.
+  hand-edit. Because the fields are *removed* rather than re-tiered, the
+  `security-boundary-isolation` workflow's re-tier detection does not fire, so
+  this may ride along with the schema change (`generated/` is not a boundary file).
+- `shopify-live/product-inventory.shopify-live.ts` — builds a program literal for
+  `adjustProgramInventory`. No local or CI run executes it (`*.shopify-live.ts` is
+  excluded everywhere), but `tsconfig.json` includes `**/*.ts`, so **`tsc` type-checks
+  it** and a stale literal fails the build on excess-property. Also missed by the
+  original blast radius.
+- `docs/PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` §2 asserted the two-pool shape as
+  current — per the deploy doc's rule 2, docs asserting a shape are part of the
+  cutover.
+- 14 test files reference the fields in fixtures/assertions — update alongside.
+  Two of them (`activateEnrollmentRedelivery`, `enrollmentStateOracle`) name only
+  `purchasedOrgMember`, so a grep for the column names misses them; `tsc` catches
+  both.
 
-### The audit hazard — do NOT drop legacy ids from the audit universe
+### The audit hazard — RESOLVED: no snapshot needed
 
-`lib/finance/matchAudit.ts` builds its *entire* order universe from
+This section originally framed the removal as *causing* a loss of audit coverage,
+and left a choice open ("decide before Release 2") between snapshotting the legacy
+ids into a `LEGACY_AUDIT_VARIANT_IDS` const or accepting the loss. **Neither is
+needed. The premise was wrong.**
+
+`lib/finance/matchAudit.ts` builds its order universe from
 `mirror.ordersForVariants(allVariants)`, where `allVariants` = the membership
-variant set + every program variant. If the legacy ids simply disappear (both
-the membership pair and the program columns), historical legacy-era orders fall
-out of the audited set completely — they don't stay `MATCHED`, they stop being
-looked at. A legacy order whose claim later breaks (e.g. a refund) could then
-never surface as `UNCLAIMED_PAID`, reintroducing the #1074 invisible-money class
-**by construction.**
+variant set + every program variant. But it assembles `programByVariant` by
+iterating **live row values** and skipping nulls (`if (v)`). With no prod row
+carrying a legacy id, those ids contribute nothing to `allVariants` **today** —
+so removing the `select` entries is behaviour-identical, not a narrowing.
 
-The four DB columns are also literally the audit's only record of which variant
-ids were legacy, so once they're dropped the audit can't reconstruct the set.
-Resolution options (decide before Release 2):
+Two consequences worth stating plainly, because the original framing obscured
+both:
 
-- **(i) Snapshot the legacy ids into a static const** captured at drop time
-  (`LEGACY_AUDIT_VARIANT_IDS`) and keep feeding them into the audit universe
-  read-only. Preserves audit coverage with no live column.
-- **(ii) Accept the coverage loss** with a written rationale — only valid if the
-  board confirms every legacy order is fully settled and refund-closed, i.e. no
-  legacy claim can ever break. Stronger claim than "no live programs."
+- **There is nothing to snapshot.** A snapshot const would faithfully reproduce
+  the columns' contents, which is the empty set. Options (i) and (ii) collapse
+  into the same no-op.
+- **Any legacy-era-order coverage gap already exists** and was created when those
+  programs were retired, not by this work. If that gap matters, it is a separate
+  question about historical orders in the mirror — do not conflate it with this
+  removal, which cannot make it worse.
 
-Recommend (i): cheap, and it keeps the money-audit invariant intact.
+Note the decision *does* depend on the no-legacy-rows fact, so the cutover
+re-verify query below is what keeps this reasoning honest. Had a legacy row
+survived, option (i) as written would also have been insufficient: the audit maps
+variant → program to test a claim (`claimedSet.has(program.id)`), so a bare id
+list would leave every legacy order permanently `UNCLAIMED_PAID`. A real snapshot
+would have needed `{ variantId, programId, programName }`.
 
-## The deploy hazard (why this is two releases)
+## The deploy hazard (why the DROP is its own release)
 
-A dropped column cannot ship in the same release as the code that stops
-selecting it. During a rolling deploy the old pods keep running the old code —
-`select: { shopifyOrgMemberVariantId: true }` — against the already-migrated
-table, so every such query errors for the whole drain window. Standard
-expand/contract, in order:
+A dropped column cannot ship in the same release as the code that stops selecting
+it. The reason is **step ordering, not task concurrency**: `deploy-prod.yml` runs
+"Run database migrations" (`prisma migrate deploy`, to completion) as a separate,
+*earlier* step than "Deploy to ECS" (`update-service`). So the schema is fully
+migrated while the old task is still serving live traffic, and every query still
+selecting a dropped column errors until the new task takes over.
 
-0. **Release 0 — close the write.** Strip the two `shopifyOrgMemberVariantId` /
-   `shopifyNonOrgMemberVariantId` conditional writes from
-   `api/programs/[id]/route.ts` (and drop the fields from the program-ops edit
-   UI if present). After this deploys, no path can mint a fresh legacy row, so
-   the board's "no live rows" fact becomes stable. Tiny, low-risk, ships first.
-1. **Release 1 — code only.** Remove every read reference and all the dead code
-   above (keeping the audit-universe ids per the hazard section). Schema still
-   declares the four columns (now unused). After this deploys, nothing in the
-   running fleet selects them.
-2. **Release 2 — schema + migration.** Remove the four fields from
-   `schema.prisma` and add a `DROP COLUMN` migration. **Re-verify at cutover**
-   (query below) that no `Program` row has a legacy variant with a null
-   `shopifyVariantId` — the Release-0 → Release-2 window is short, but the check
-   is cheap and closes the race for good. Deploys only after Release 1 is fully
-   rolled out.
+Standard expand/contract, in order:
+
+0. **Release 0 — close the write.** ✅ *Shipped in #1464.* Strip the two
+   `shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId` conditional writes
+   from `api/programs/[id]/route.ts`, and the fields from the program-ops edit UI.
+   After this deploys, no path can mint a fresh legacy row, so the board's "no live
+   rows" fact becomes stable.
+   - The program-ops "Shopify Checkout Identifiers" card turned out to expose *only*
+     the two legacy inputs, with no `shopifyVariantId` field at all — so deleting
+     them outright would have removed the manual-repair path the card exists for.
+     Replaced with a single Variant ID input (the PATCH already accepted it).
+1. **Release 1 — code only.** ✅ *Shipped in #1464, folded in with Release 0.*
+   Remove every read reference and all the dead code above. Schema still declares
+   the four columns (now unused). After this deploys, nothing in the running fleet
+   selects them.
+   - Folding 0 into 1 is safe *because* Release 0 also replaces the only UI that
+     could mint a legacy row; the window it guarded is closed by the same deploy.
+2. **Release 2 — schema + migration.** ⬜ *Outstanding.* Remove the four fields
+   from `schema.prisma`, add a `DROP COLUMN` migration, regenerate
+   `classifications.ts`. **Re-verify at cutover** (query below) that no `Program`
+   row has a legacy variant with a null `shopifyVariantId`. Deploys only after
+   Release 1 is fully rolled out in **prod** — note that merging to `main` only
+   deploys *dev*; prod cuts from a published release, so two PRs merged before one
+   release still land in prod together and re-open this hazard.
+   - **Must also delete the `DROPPED_SOON` array** in
+     `src/app/__tests__/programsAPI.integration.test.ts`. That test derives its
+     expected public-column set from the generated classifications, which still
+     tier the two dead `Program` fields `public` while the schema declares them;
+     Release 1 excluded them by name to keep the oracle honest. Leaving the array
+     in place after the regeneration makes the oracle silently under-check.
 
 Cutover re-verify query:
 
@@ -160,20 +215,32 @@ Prod has live data — the migration is `DROP COLUMN` on four nullable columns
 (no backfill, no data movement), but it must still be a plain drop, never a
 table rebuild / accept-data-loss reset.
 
-**If deploys use a maintenance window / single instance** (no drain overlap),
-Releases 1 and 2 collapse into one PR — there is no old pod to break. Release 0
-still ships first so the cutover re-verify is meaningful.
+> **Correction — an earlier version of this doc said Releases 1 and 2 could
+> collapse into one PR "if deploys use a maintenance window / single instance (no
+> drain overlap), because there is no old pod to break." That escape clause does
+> not apply to this pipeline and must not be used.** The prod service does run at
+> `desiredCount 1`, but the hazard is not overlap: migrations complete in their own
+> earlier workflow step, before `update-service` is issued at all, so the old task
+> serves traffic against the migrated schema regardless of how many tasks there
+> are or what `minimumHealthyPercent` is set to. Only scaling the service to 0
+> *before* migrating would earn the collapse, and neither deploy workflow does
+> that. Concretely, collapsing them would 500 the **public** program catalog
+> (`GET /api/programs` via `PUBLIC_PROGRAM_SELECT`), `GET /api/programs/[id]`,
+> `nav/todo-counts`, and the lifecycle-reconcile cron for the length of that window.
 
-## Shopify-side caveat (the plan is DB-only)
+## Shopify-side: nothing to clean up (confirmed 2026-08-02)
 
-Everything above is app + database. Nothing here archives/unpublishes the legacy
-two-variant Shopify **products** or voids carts already built against a legacy
-variant. After Release 1 removes the webhook matcher, a customer who still has a
-stale legacy cart open can complete checkout against a legacy variant and the
-paid order will not activate anything — a silent paid-but-stuck order. Low
-likelihood once legacy programs are retired, but if any legacy product is still
-purchasable, archive/unpublish it in Shopify as part of Release 1. Add to the
-cutover checklist.
+This plan is app + database only — it never archived/unpublished the legacy
+two-variant Shopify **products**, and it can't void carts already built against a
+legacy variant.
+
+That was worth checking, because Release 1 removed the webhook matcher: a customer
+still holding a stale legacy cart could complete checkout against a legacy variant
+and have the paid order activate nothing — a silent paid-but-stuck order.
+
+**Confirmed there are no stale legacy items in the store**, so there is no
+purchasable legacy product and no cart that can reach that state. No store-side
+action is required, and this is not a Release 2 prerequisite.
 
 ## Not in scope
 

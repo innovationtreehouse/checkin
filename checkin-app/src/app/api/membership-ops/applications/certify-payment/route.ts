@@ -23,7 +23,7 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
     if (!reason) return apiError("A reason is required to certify a payment", 400);
     try {
-        const process = await certifyPaymentPlan(body.processId, auth.user.id, { isSysadmin: auth.user.isSysadmin === true, reason });
+        const process = await certifyPaymentPlan(body.processId, auth.user.id, { reason });
         return NextResponse.json({ process });
     } catch (error) {
         if (error instanceof PaymentError) {

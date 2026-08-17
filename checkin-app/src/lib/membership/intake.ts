@@ -3,11 +3,13 @@ import { Prisma } from "@/generated/prisma/client";
 import { IN_FLIGHT_INITIAL_STATUSES } from "@/lib/membership/phases";
 import { getExternalStatus, advanceExternalIfComplete } from "@/lib/membership/external";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
+import { findOpenPersonAgreement } from "@/lib/membership/personAgreementTriggers";
 import { applyVolunteerStatus } from "@/lib/membership/review";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergencyContacts/service";
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
+import { normalizeAdultDob } from "@/lib/person/adultDob";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -110,7 +112,14 @@ export async function getIntakeState(userId: number) {
         allergies: p.allergies,
     });
 
+    const canSeeNotes = leadIds.has(userId) || user.isSysadmin;
     const external = process ? await getExternalStatus(process) : null;
+
+    // The caller's own individual agreement, if they have one open. Person-scoped,
+    // so it never appears in membership.processes above (orgMembershipId is null) and is
+    // independent of the household's own application state — an adult child in a settled
+    // member household still has one to sign.
+    const ownAgreement = await findOpenPersonAgreement(userId);
 
     return {
         hasHousehold: !!household,
@@ -118,11 +127,16 @@ export async function getIntakeState(userId: number) {
         membershipStatus: membership?.status ?? null,
         process: process ? { id: process.id, kind: process.kind, status: process.status, isPaymentPlanRequested: process.isPaymentPlanRequested } : null,
         external,
+        personAgreement: ownAgreement ? { id: ownAgreement.id, started: !!ownAgreement.zohoEnvelopeId } : null,
         prefill: {
             household: household
                 ? {
                       name: household.name,
-                      notes: household.intakeNotes,
+                      // intakeNotes is the lead's free-text note TO the board
+                      // (pii); household peers — including youth with their own
+                      // logins — must not read it. Same lead gate as
+                      // GET /api/household, and only a lead can write it back.
+                      notes: canSeeNotes ? household.intakeNotes : null,
                       ...pickAddress(household),
                       // The primary (lowest-priority) contact backs the single-field
                       // form. Shown even when flagged invalid so the lead can fix it.
@@ -218,8 +232,6 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     const householdId = user.householdId!;
     const householdMemberIds = new Set((user.household?.householdMembers ?? []).map((p) => p.id));
 
-    const toDate = (d?: string | null) => (d ? new Date(d) : null);
-
     // Promote a guardian to household lead. The per-household cap (#269) is a
     // soft stop here, not a hard failure: the guardian's other details are still
     // saved (above), and the rest of the form (children) still saves below. We
@@ -275,8 +287,11 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             where: { id: userId },
             data: {
                 ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
-                ...(input.primaryParent.dob !== undefined && { dateOfBirth: toDate(input.primaryParent.dob) }),
-                ...(input.primaryParent.over25 !== undefined && { isDeclaredAdult: input.primaryParent.dob ? false : !!input.primaryParent.over25 }),
+                // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a
+                // 26+ DoB is stripped and forces the flag on; an empty DoB honors
+                // the checkbox.
+                ...(input.primaryParent.dob !== undefined && normalizeAdultDob(input.primaryParent.dob)),
+                ...(input.primaryParent.over25 !== undefined && !input.primaryParent.dob && { isDeclaredAdult: !!input.primaryParent.over25 }),
                 ...(input.primaryParent.allergies !== undefined && { allergies: input.primaryParent.allergies }),
             },
         });
@@ -290,8 +305,8 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: sp.id },
                 data: {
                     ...(sp.name !== undefined && { name: sp.name }),
-                    ...(sp.dob !== undefined && { dateOfBirth: toDate(sp.dob) }),
-                    ...(sp.over25 !== undefined && { isDeclaredAdult: sp.dob ? false : !!sp.over25 }),
+                    ...(sp.dob !== undefined && normalizeAdultDob(sp.dob)),
+                    ...(sp.over25 !== undefined && !sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
                 },
             });
@@ -303,8 +318,8 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: sp.name ?? null,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
-                    dateOfBirth: toDate(sp.dob),
-                    isDeclaredAdult: sp.dob ? false : !!sp.over25,
+                    ...normalizeAdultDob(sp.dob),
+                    ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     allergies: sp.allergies ?? null,
                 },
             });
@@ -320,7 +335,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 where: { id: child.id },
                 data: {
                     ...(child.name !== undefined && { name: child.name }),
-                    ...(child.dob !== undefined && { dateOfBirth: toDate(child.dob) }),
+                    ...(child.dob !== undefined && normalizeAdultDob(child.dob)),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
@@ -330,7 +345,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     householdId,
                     name: child.name,
                     ...(child.email && { email: child.email.toLowerCase() }),
-                    dateOfBirth: toDate(child.dob),
+                    ...normalizeAdultDob(child.dob),
                     allergies: child.allergies ?? null,
                 },
             });
@@ -381,13 +396,10 @@ export async function submitIntake(userId: number) {
 
     // If a household guardian already holds a still-valid background check (same
     // rule as renewals), auto-clear the BG requirement now — the applicant won't
-    // need to consent to or wait on a new check, just sign + pay. An intake note
-    // (#900) disqualifies the shortcut: it must reach a human reviewer before
-    // payment (#907), and the review track is the only surface that shows it —
-    // the application instead holds at PENDING_BG_REVIEW (advanceExternalIfComplete).
+    // need to consent to or wait on a new check, just sign + pay.
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
-    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : new Date();
-    const bgFresh = !household.intakeNotes?.trim() && (await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0));
+    const boundary = settings?.orgMembershipYearBoundary ? nextBoundary(settings.orgMembershipYearBoundary, new Date()) : null;
+    const bgFresh = await householdBgIsFresh(household.id, boundary, settings?.bgRecheckMonths ?? 0);
 
     const advanced = await prisma.orgMembershipProcess.update({
         where: { id: process.id },

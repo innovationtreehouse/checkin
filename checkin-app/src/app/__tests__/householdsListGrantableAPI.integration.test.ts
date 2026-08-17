@@ -160,9 +160,9 @@ describe('GET /api/membership-ops/households — renewalGrantable + dates', () =
 });
 
 /**
- * settledForComingYear (docs/designs/LIFECYCLE.md, fix #4). The route's "handled this
- * cycle" probe now consumes settledThisCycleWhere = kind=RENEWAL, status IN
- * (ACTIVE, ARCHIVED), stageEnteredAt≥windowStart. Requires a boundary that puts
+ * settledForComingYear. The route's "settled this
+ * cycle" probe consumes settledThisCycleWhere = kind-agnostic, status ACTIVE,
+ * stageEnteredAt≥windowStart (ARCHIVED never paid — sweep-only). Requires a boundary that puts
  * `now` inside the renewal window so the probe is live (out of season it matches
  * nothing, and settledForComingYear is trivially false — see the describe above).
  */
@@ -256,25 +256,26 @@ describe('GET /api/membership-ops/households — settledForComingYear (fix #4)',
         return data.households as { id: number; settledForComingYear: boolean; validUntil: string | null }[];
     }
 
-    it('a stray INITIAL activation in-window is NOT settled (kind=RENEWAL filter)', async () => {
+    it('an INITIAL activated in-window IS settled — a family joining in-window buys the coming year', async () => {
         const households = await fetchHouseholds();
         const h = households.find((x) => x.id === initialActiveHouseholdId);
         expect(h).toBeDefined();
-        expect(h!.settledForComingYear).toBe(false);
-        // validUntil stays the upcoming boundary — NOT flipped a year forward.
-        const expected = nextBoundary(boundaryConfig, new Date());
-        expect(h!.validUntil).toEqual(expect.stringMatching(new RegExp(`^${expected.toISOString().slice(0, 10)}`)));
-    });
-
-    it('a board-archived RENEWAL in-window IS settled (ARCHIVED counted)', async () => {
-        const households = await fetchHouseholds();
-        const h = households.find((x) => x.id === archivedRenewalHouseholdId);
-        expect(h).toBeDefined();
         expect(h!.settledForComingYear).toBe(true);
-        // settled ⇒ validUntil is the boundary a year later.
+        // Joining in-window buys the coming year: validUntil is one boundary further.
         const boundary = nextBoundary(boundaryConfig, new Date());
         const plusYear = new Date(Date.UTC(boundary.getUTCFullYear() + 1, boundary.getUTCMonth(), boundary.getUTCDate()));
         expect(h!.validUntil).toEqual(expect.stringMatching(new RegExp(`^${plusYear.toISOString().slice(0, 10)}`)));
+    });
+
+    it('a board-archived RENEWAL in-window is NOT settled — archive never completed payment', async () => {
+        // ARCHIVED is the sweep's business only (handledThisCycleWhere: do not
+        // reopen a process the board closed); the money horizon must not extend.
+        const households = await fetchHouseholds();
+        const h = households.find((x) => x.id === archivedRenewalHouseholdId);
+        expect(h).toBeDefined();
+        expect(h!.settledForComingYear).toBe(false);
+        const expected = nextBoundary(boundaryConfig, new Date());
+        expect(h!.validUntil).toEqual(expect.stringMatching(new RegExp(`^${expected.toISOString().slice(0, 10)}`)));
     });
 
     it('a finished RENEWAL (ACTIVE) in-window IS settled (control)', async () => {
