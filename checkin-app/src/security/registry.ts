@@ -620,6 +620,20 @@ defineRoute({
     ],
 });
 
+// Volunteer designations (dues-discount allowlist; email is pii) — admin
+// surface, registered ahead of its handler() conversion (inert until then). GET
+// is a pure findMany (create/delete live on other HTTP methods).
+defineRoute({
+    endpoint: 'GET /api/settings/membership/volunteer-designations',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'designations',
+    returns: ['VolunteerDesignation'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({
