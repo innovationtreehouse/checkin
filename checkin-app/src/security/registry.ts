@@ -329,6 +329,36 @@ defineRoute({
     ],
 });
 
+// Board's volunteer roster: households on volunteer dues + the emails designated
+// ahead of signup. Exposes household leads' addresses and the designated
+// addresses (Person.email and VolunteerDesignation.email are both 'pii'), so
+// only isSysadmin/board may see it.
+//
+// The grant deliberately stops short of 'personal'. The roster is standing +
+// contact data — household name, lead names, one lead email, memberSince, the
+// designated address — and no personal-tier field (dateOfBirth, allergies,
+// notificationSettings) belongs in it. 'internal' IS granted: a row's status
+// is derived from OrgMembershipProcess.status, so a blocked or in-flight
+// application is observable in the response even though the column itself
+// never reaches the wire.
+//
+// Landed registry-first, ahead of the route in #1387, per the AGENTS.md
+// boundary-isolation rule: an unused defineRoute is inert, so the grant is
+// reviewable on its own before anything serves it.
+defineRoute({
+    endpoint: 'GET /api/membership-ops/volunteer-memberships',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'rows',
+    // Bag: { OrgMembership } with household (Household → householdMembers Person,
+    // leads flagged isHouseholdLead) and processes (OrgMembershipProcess), plus
+    // { VolunteerDesignation } for the pre-designated emails.
+    returns: ['OrgMembership', 'Household', 'Person', 'OrgMembershipProcess', 'VolunteerDesignation'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Background-check reviewers' queue. Reviewers must see applicant parents' names
 // + emails (to look them up on Averity) but NOT internal/personal fields — so the
 // grant is deliberately limited to pii + public. Board members are implicit
@@ -541,6 +571,22 @@ defineRoute({
     envelope: 'visits',
     // Bag: { Visit } with person (Person).
     returns: ['Visit', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Raw badge scan log (latest 200) — admin surface, registered ahead of its
+// handler() conversion (inert until then). RawBadgeLog rows are
+// internal/personal tier; nested person name/email for display. Near-raw
+// response, so the declared everyones band is exact.
+defineRoute({
+    endpoint: 'GET /api/facility/badges',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'badges',
+    // Bag: { RawBadgeLog } with person (Person).
+    returns: ['RawBadgeLog', 'Person'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
