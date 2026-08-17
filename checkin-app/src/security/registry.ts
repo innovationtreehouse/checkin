@@ -651,6 +651,49 @@ defineRoute({
     ],
 });
 
+// App-localization singleton (timezone/locale) — sysadmin-only surface,
+// wholly public-tier data; the gate is about who may see admin settings
+// screens, not the fields. Declared public-only ON PURPOSE: AppSettings is the
+// natural home for a future integration key / webhook secret, and a public-only
+// view makes that field fail closed (forcing a boundary PR) instead of shipping
+// to sysadmin through an entry nobody revisited.
+defineRoute({
+    endpoint: 'GET /api/admin/settings/localization',
+    authorize: { anyRole: ['isSysadmin'] },
+    envelope: 'settings',
+    // Bag: { AppSettings } (singleton row).
+    returns: ['AppSettings'],
+    orderedView: [
+        ['isSysadmin', ['public']],
+    ],
+});
+
+// Email identity settings (From/Reply-To/scholarship notify) — admin surface.
+// BoardSettings singleton, narrow select in the handler.
+defineRoute({
+    endpoint: 'GET /api/settings/email',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'settings',
+    returns: ['BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Membership settings singleton (dues, year boundary, Shopify variant ids —
+// internal tier) — admin surface, full row.
+defineRoute({
+    endpoint: 'GET /api/settings/membership',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'settings',
+    returns: ['BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // ─── Outbound surfaces ─────────────────────────────────────────────────────
 
 defineOutbound({

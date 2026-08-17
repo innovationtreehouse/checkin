@@ -38,11 +38,8 @@ POST /api/dev/zoho-sign/complete
 PATCH /api/events/[id]
 PATCH /api/events/[id]/rsvp
 GET /api/events/mine
-GET /api/events
 POST /api/events
-GET /api/facility/badges
 GET /api/facility/trends
-GET /api/facility/visits
 PATCH /api/facility/visits
 DELETE /api/facility/visits
 POST /api/finance-ops/membership-payment-plans/refuse
@@ -118,7 +115,6 @@ GET /api/people/search
 GET /api/profile/onboarding-status
 POST /api/profile/onboarding
 PATCH /api/profile
-GET /api/profile/visits
 POST /api/programs/[id]/discount-code
 POST /api/programs/[id]/participants
 DELETE /api/programs/[id]/participants
@@ -154,12 +150,10 @@ GET /api/shop/tools
 POST /api/shop/tools
 GET /api/system-status/audit-log
 GET /api/system-status/config-health
-GET /api/system-status/errors
 GET /api/system-status/health
 GET /api/system-status/kiosk-version
 GET /api/system-status/lifecycle
 PATCH /api/system-status/links/[id]
-GET /api/system-status/links
 POST /api/trusted-adults/[id]/hide
 POST /api/trusted-adults/[id]/renew
 POST /api/trusted-adults/[id]/resubmit
