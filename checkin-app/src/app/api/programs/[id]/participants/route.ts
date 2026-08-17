@@ -4,8 +4,10 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { lockProgramAndCheckCapacity, ProgramCapacityError, withdrawAndReleaseHold } from "@/lib/program/capacity";
-import { checkProgramAge } from "@/lib/programAge";
-import { isActiveOrgMember } from "@/lib/orgMembership";
+import { checkProgramAge, isKnownAdult } from "@/lib/programAge";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
+import { isDuesSettled } from "@/lib/orgMembership";
+import { isProgramCheckoutBroken } from "@/lib/programCheckout";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { apiError } from "@/lib/api-response";
 
@@ -63,28 +65,37 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         const override = body.override === true;
 
+        // Conflict of interest: an override and a comp are both one-actor
+        // decisions, so neither may be spent on yourself or your own household.
+        // Self is its own leg — an actor with no household is not caught by the
+        // household comparison, but is still enrolling themselves. This is the
+        // route's single notion of "own household"; `isHouseholdLead` above
+        // answers a different question (may you act for this person at all).
+        const isConflicted = isSelfEnrollment
+            || await hasHouseholdConflict(prisma, currentUserId, participantData?.householdId);
+
         // A board/isSysadmin enrolling someone OUTSIDE their own household (the
         // program-ops surface) is a real admin comp: it skips payment. A board
         // member enrolling their own self/dependent through the public program
-        // page is just a parent — they pay like anyone else. Without this, a
-        // board parent got a confusing "bypasses all payment / Force Enroll"
-        // prompt and a free enrollment instead of a Shopify checkout.
-        const isExternalAdmin = isSysAdminOrBoard && !isSelfEnrollment && !isHouseholdLead;
+        // page is just a parent — they pay like anyone else, whether or not they
+        // happen to be the household's lead.
+        const isExternalAdmin = isSysAdminOrBoard && !isConflicted;
 
         if (isExternalAdmin && !override) {
              return NextResponse.json({ error: "This bypasses all payment. Are you sure?", requiresOverride: true }, { status: 400 });
         }
 
         // ponytail: a confirmed board/isSysadmin override INTENTIONALLY bypasses
-        // every soft limit — closed enrollment, age, AND capacity — so the board
-        // can deliberately overfill a program. This is intent, not a missing
-        // guard: see the requiresOverride:true responses the UI turns into a
-        // confirm button. Normal users always hit enforceLimits=true and cannot
-        // overbook (capacity is locked under FOR UPDATE in the tx below; tested in
+        // every soft limit — closed enrollment, members-only, age, AND capacity —
+        // for OTHERS, so the board can deliberately overfill a program. This is
+        // intent, not a missing guard: see the requiresOverride:true responses the
+        // UI turns into a confirm button. Normal users, and any conflicted actor,
+        // always hit enforceLimits=true and cannot overbook (capacity is locked
+        // under FOR UPDATE in the tx below; tested in
         // programsParticipantsConcurrency.integration.test.ts and the FULL-program
         // override test in programsParticipantsAPI.integration.test.ts). Do not
-        // narrow this so it also gates normal users.
-        const enforceLimits = !override || (!isSysAdminOrBoard);
+        // narrow this so it also gates the non-conflicted admin path.
+        const enforceLimits = !override || !isSysAdminOrBoard || isConflicted;
 
         // Validation Checks
         if (enforceLimits) {
@@ -97,8 +108,11 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             // enrolling a dependent is judged on the dependent's household). The
             // sibling read routes only HIDE such a program; the id is a small
             // integer and a program can flip to orgMemberOnly after it was public,
-            // so the write path needs its own gate.
-            if (currentProgram.orgMemberOnly && !(await isActiveOrgMember(participantId))) {
+            // so the write path needs its own gate. Dues-settled, not ACTIVE —
+            // it must admit exactly who the read gates show the program to (#1397),
+            // or a paid household awaiting clearance is offered a program it is
+            // then refused at enrollment.
+            if (currentProgram.orgMemberOnly && !(await isDuesSettled(participantId))) {
                 return NextResponse.json({ error: "This program is for Treehouse Members only.", requiresOverride: true }, { status: 400 });
             }
 
@@ -119,14 +133,39 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
                             : "Participant is outside this program's age range.";
                 return NextResponse.json({ error, requiresOverride: true }, { status: 400 });
             }
+
+            // Only a KNOWN adult may commit THEMSELVES to a program (and to its
+            // Shopify charge). Everyone else needs a household lead to enroll
+            // them — the guardian-consent line at 18, independent of the
+            // program's own minAge/maxAge above. Unverifiable age refuses too,
+            // and routes to the age capture the enroll page already offers.
+            if (isSelfEnrollment && participantData && !isKnownAdult(participantData)) {
+                return apiError(participantData.dateOfBirth
+                    ? "A household lead must enroll a participant under 18."
+                    : "Add your date of birth (or confirm you are over 25) before enrolling yourself.", 403);
+            }
         }
 
-        const isFree = currentProgram.orgMemberPriceCents === null && currentProgram.nonOrgMemberPriceCents === null;
+        // Zero is free, same as unpriced: variants are minted only above zero
+        // (api/programs POST), so a zero-priced program has nothing to charge
+        // through and must not wait on a payment.
+        const isFree = (currentProgram.orgMemberPriceCents ?? 0) === 0 && (currentProgram.nonOrgMemberPriceCents ?? 0) === 0;
         
         // PENDING (awaits payment) unless the program is free or an external
         // admin is comping it. A board parent overriding a soft limit for their
         // own household still pays — the override bypasses limits, not the fee.
         const initialStatus = ((isExternalAdmin && override) || isFree) ? 'ACTIVE' : 'PENDING';
+
+        // Fail closed on a priced-but-unsellable program: PENDING means "awaits a
+        // Shopify payment", and a priced program with no variant has nothing to
+        // pay through — the seat would sit PENDING forever. Keyed off the status,
+        // not the actor, so an admin comp (ACTIVE, skips payment entirely) still
+        // goes through while every payment-bound enrollment — including a
+        // conflicted admin's override, which still owes the fee — is refused.
+        // No requiresOverride: an override cannot make the program sellable.
+        if (initialStatus === 'PENDING' && isProgramCheckoutBroken(currentProgram)) {
+            return apiError("This program has a price but no payment link set up, so enrollment can't be paid for. An admin must fix the Shopify link in program-ops before anyone can enroll.", 400);
+        }
 
         const enrollment = await prisma.$transaction(async (tx) => {
             // Re-check capacity under a row lock right before insert, so
@@ -245,6 +284,19 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
             return apiError("Forbidden: Not authorized to remove this participant", 403);
         }
 
+        // Withdrawal is a household lead's action, not a youth's: beyond matching
+        // the enroll gate, withdrawing a scholarship-held seat releases inventory
+        // back to Shopify below — a financial side effect a youth must not fire.
+        if (isSelfRemoval && !isSysAdminOrBoard) {
+            const self = await prisma.person.findUnique({
+                where: { id: participantId },
+                select: { dateOfBirth: true, isDeclaredAdult: true },
+            });
+            if (self && !isKnownAdult(self)) {
+                return apiError("A household lead must withdraw a participant under 18.", 403);
+            }
+        }
+
         // Hold-ledger (product decision 2026-07-06): withdrawal is one of the
         // three release paths — if this PENDING participant was holding a
         // scholarship seat (inventoryHeldAt set), releasing it back to
@@ -270,6 +322,13 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
         const responseObj: Record<string, unknown> = { success: true, released };
         if (released && !shopifyOk) {
             responseObj.warning = "Participant removed, but the Shopify inventory release failed. Capacity may be out of sync — check System Status > Link Status.";
+        }
+
+        // Advise a manual Shopify restock only when an ACTIVE removal freed a
+        // tracked seat; `released` already handles the PENDING hold path (+1).
+        const hasShopifyVariant = !!(currentProgram.shopifyVariantId || currentProgram.shopifyOrgMemberVariantId || currentProgram.shopifyNonOrgMemberVariantId);
+        if (!released && enrollment.status === 'ACTIVE' && currentProgram.maxParticipants !== null && hasShopifyVariant) {
+            responseObj.notice = "Seat freed. This enrollment held a seat in Shopify; it was NOT put back on sale automatically. If you want it available for a paying family, add +1 to this program's inventory in Shopify.";
         }
         return NextResponse.json(responseObj);
     } catch (error) {

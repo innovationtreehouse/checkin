@@ -25,9 +25,10 @@
  *   scope = 'everyones'     — broad grant; held on every row by default, but a
  *                             row-scoped model missing its scope key fails
  *                             closed and does NOT hold it (see scopesHeld)
- *   scope = 'their_own' | 'their_households' | 'their_program_participants'
- *           | 'all_current_visitors' — per-row predicates evaluated by the
- *                             handler against a prefetched CallerContext.
+ *   scope = 'their_own' | 'their_households' | 'led_households'
+ *           | 'their_program_participants' | 'all_current_visitors' — per-row
+ *                             predicates evaluated by the handler against a
+ *                             prefetched CallerContext.
  *
  * Field visibility (per row):
  *   - field.tier === 'secret'        → never
@@ -57,6 +58,11 @@ export type Scope =
     | 'everyones'
     | 'their_own'
     | 'their_households'
+    // Caller LEADS the household the row belongs to. Deliberately distinct from
+    // their_households, which is household-WIDE (a non-lead member holds it):
+    // this one is the "may act for another member" relationship, so it is the
+    // right token wherever sharing a home is not by itself enough.
+    | 'led_households'
     | 'their_program_participants'
     // Caller leads/core-vols a program that a child of this row's household is
     // enrolled in (used for Trusted Adult pickup notes).
@@ -92,6 +98,7 @@ const VALID_SCOPES = new Set<Scope>([
     'everyones',
     'their_own',
     'their_households',
+    'led_households',
     'their_program_participants',
     'their_program_households',
     'keyholders',
@@ -212,6 +219,8 @@ export interface CtxNeeds {
     programEvents: boolean;
     /** activeVisitorIds (fetched only for keyholders) */
     activeVisitors: boolean;
+    /** ledHouseholdMemberIds (fetched only for household leads) */
+    ledHouseholdMembers: boolean;
 }
 
 export const ALL_CTX_NEEDS: CtxNeeds = Object.freeze({
@@ -219,6 +228,7 @@ export const ALL_CTX_NEEDS: CtxNeeds = Object.freeze({
     programHouseholds: true,
     programEvents: true,
     activeVisitors: true,
+    ledHouseholdMembers: true,
 });
 
 function scopeNeeds(scope: Scope): Partial<CtxNeeds> {
@@ -229,6 +239,10 @@ function scopeNeeds(scope: Scope): Partial<CtxNeeds> {
         case 'keyholders':
             // Resolved from the session alone — no prefetch.
             return {};
+        case 'led_households':
+            // Visit (and any future model keyed on personId rather than
+            // householdId) reaches the household only through its members.
+            return { ledHouseholdMembers: true };
         case 'their_program_participants':
             // participantIds AND (RSVP-only) eventIds both hang off this scope;
             // the bag's models aren't statically known, so fetch both.
@@ -290,6 +304,7 @@ export function deriveCtxNeeds(spec: RouteSpec): CtxNeeds {
         programHouseholds: false,
         programEvents: false,
         activeVisitors: false,
+        ledHouseholdMembers: false,
     };
     Object.assign(needs, authorizeNeeds(spec.authorize));
     for (const [role, tokens] of spec.orderedView) {

@@ -98,6 +98,16 @@ describe("AppFrame", () => {
     expect(screen.queryByText("Membership Audit")).not.toBeInTheDocument();
   });
 
+  it("shows Facility Ops to an operations-only user (#1633's aggregate-tools grant)", () => {
+    setSession({ id: 4, isOperations: true });
+    renderFrame();
+
+    expect(screen.getByText("Facility Ops")).toBeInTheDocument();
+    // Operations-only: the board-only sections stay hidden — the entry appeared
+    // because of the union, not because the gate got sloppy.
+    expect(screen.queryByText("Membership Audit")).not.toBeInTheDocument();
+  });
+
   it("badges the reviewer-only Membership Ops nav with the green can-act-on count", () => {
     setSession({ id: 3, isBackgroundCheckReviewer: true });
     mockedUseTodoCounts.mockReturnValue({

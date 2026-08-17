@@ -155,6 +155,10 @@ describe("AdminMembershipPage", () => {
         fireEvent.click(screen.getByRole("button", { name: "Reset for re-review" }));
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Sent back for re-review." })));
 
+        // A force-approve stamps the adult it names, so it stays disabled until one is
+        // named — an unnamed override would clear the check against nobody.
+        expect(screen.getByRole("button", { name: /Override/ })).toBeDisabled();
+        fireEvent.click(screen.getByRole("radio", { name: "Lead One" }));
         fireEvent.click(screen.getByRole("button", { name: /Override/ }));
         await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Overridden to payment." })));
     });
@@ -168,15 +172,15 @@ describe("AdminMembershipPage", () => {
         await screen.findByText("Payment Family");
 
         // Only the in-review row with an approval on it offers the reset.
-        const reset = screen.getByRole("button", { name: "Clear approvals — start the review over" });
+        const reset = screen.getByRole("button", { name: "Discard approvals — start the review over" });
         fireEvent.click(reset);
         expect(await screen.findByText("Start this background-check review over?")).toBeInTheDocument();
-        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Clear approvals" }));
+        fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Discard approvals" }));
 
         await waitFor(() =>
             expect(fetchMock).toHaveBeenCalledWith(
                 "/api/membership-ops/applications/review-override",
-                expect.objectContaining({ body: JSON.stringify({ processId: 2, action: "reset" }) }),
+                expect.objectContaining({ body: JSON.stringify({ processId: 2, action: "reset", subjectPersonIds: [] }) }),
             ),
         );
     });

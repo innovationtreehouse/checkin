@@ -31,7 +31,8 @@ export type CtxSet =
     | 'participantIdsInScopePrograms'
     | 'householdIdsInScopePrograms'
     | 'eventIdsInScopePrograms'
-    | 'activeVisitorIds';
+    | 'activeVisitorIds'
+    | 'ledHouseholdMemberIds';
 export type CtxFlag = 'isKeyholder' | 'isKiosk';
 
 export type ScopePredicate = (row: Record<string, unknown>, ctx: CallerContext) => boolean;
@@ -43,6 +44,7 @@ export type ScopePredicate = (row: Record<string, unknown>, ctx: CallerContext) 
  *   { field, inCtx } — ctx[set].has(row[field])     (array = OR over sets)
  *   { flag }         — ctx[flag] === true
  *   { field, isNull }— row[field] == null
+ *   { field, isTrue }— row[field] === true
  *   { all }          — every sub-match (AND)
  *   { custom }       — escape hatch; SKIPS validation, must be logged
  */
@@ -51,6 +53,7 @@ export type Match =
     | { field: string; inCtx: CtxSet | readonly CtxSet[] }
     | { flag: CtxFlag }
     | { field: string; isNull: true }
+    | { field: string; isTrue: true }
     | { all: readonly Match[] }
     | { custom: ScopePredicate };
 
@@ -67,6 +70,8 @@ export type ScopeBindings = Record<string, Partial<Record<Scope, Match>>>;
 export function evalMatch(m: Match, row: Record<string, unknown>, ctx: CallerContext): boolean {
     if ('flag' in m) return ctx[m.flag] === true;
     if ('isNull' in m) return row[m.field] == null;
+    // Strict === true: an unselected column is `undefined`, which must not match.
+    if ('isTrue' in m) return row[m.field] === true;
     if ('all' in m) return m.all.every(s => evalMatch(s, row, ctx));
     if ('custom' in m) return m.custom(row, ctx);
     if ('eqCtx' in m) {

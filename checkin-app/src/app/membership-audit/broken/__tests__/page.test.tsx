@@ -6,11 +6,27 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 
 import { screen } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
+import { pinTimezone } from "@/test-helpers/tz";
 import BrokenHouseholdsPage from "../page";
 
 beforeEach(() => resetRtl());
 
 describe("membership-audit/broken page", () => {
+  pinTimezone();
+
+  it("renders a UTC-midnight DOB as its own calendar day, not the day before", async () => {
+    mockFetchJson({
+      "/api/admin/broken-households": {
+        households: [{ id: 1, name: "The Days", members: [{ id: 10, name: "Dee Day", dateOfBirth: "1990-08-15T00:00:00.000Z" }] }],
+      },
+    });
+    const { container } = renderWithProviders(<BrokenHouseholdsPage />);
+    await screen.findByText("Dee Day", { exact: false });
+
+    expect(container.textContent).toContain("8/15/1990");
+    expect(container.textContent).not.toContain("8/14/1990");
+  });
+
   it("shows the empty state when there are no broken households", async () => {
     mockFetchJson({ "/api/admin/broken-households": { households: [] } });
     renderWithProviders(<BrokenHouseholdsPage />);

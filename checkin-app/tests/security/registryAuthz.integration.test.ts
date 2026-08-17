@@ -23,9 +23,10 @@
 // this is an integration test that needs the real client to seed personas.
 jest.unmock('@/lib/prisma');
 
+import * as fs from 'fs';
+import * as path from 'path';
 import { allRoutes, type Authorize } from '@/security/core';
-import type { BusinessRole } from '@/types/auth';
-import type { SessionUser } from '@/types/participant';
+import type { BusinessRole, AuthenticatedUser } from '@/types/auth';
 import prisma from '@/lib/prisma';
 import '@/security/registry';
 
@@ -74,8 +75,16 @@ function importPathFor(routePath: string): string {
     return `@/app${routePath}/route`;
 }
 
+/** A registry entry may legally precede its route file (register-first: an
+ *  unused defineRoute is inert). Cases that drive the handler are skipped until
+ *  the file lands; a file that exists and then fails to import still throws. */
+function routeFileExists(routePath: string): boolean {
+    const base = path.resolve(__dirname, `../../src/app${routePath}/route`);
+    return ['.ts', '.tsx'].some(ext => fs.existsSync(base + ext));
+}
+
 describe('Registry route admission gates', () => {
-    let plainUser: SessionUser;
+    let plainUser: AuthenticatedUser;
     let programId: number;
     let eventId: number;
     const householdIds: number[] = [];
@@ -154,21 +163,31 @@ describe('Registry route admission gates', () => {
         return verb(new Request(url, { method: plan.method }), ctx);
     }
 
+    // Guards the skip below: a wrong path would resolve every route as absent
+    // and skip the whole file green.
+    it('resolves route files on disk', () => {
+        expect(PLANS.filter(p => routeFileExists(p.routePath)).length).toBeGreaterThan(0);
+    });
+
     for (const plan of PLANS) {
         describe(plan.endpoint, () => {
+            // Every case using this drives the real handler, so it waits for the
+            // route file. The gate check below is static and always runs.
+            const itServed = routeFileExists(plan.routePath) ? it : it.skip;
+
             it('has a handled authorize gate (route not silently skipped)', () => {
                 expect(plan.gate).not.toBe('unhandled');
             });
 
             // ── unauthenticated ───────────────────────────────────────────────
             if (plan.gate === 'public') {
-                it('admits an unauthenticated caller (public route)', async () => {
+                itServed('admits an unauthenticated caller (public route)', async () => {
                     mockSession.mockResolvedValue(null);
                     const res = await call(plan);
                     expect(res.status).toBeLessThan(400);
                 });
             } else {
-                it('rejects an unauthenticated caller with 401', async () => {
+                itServed('rejects an unauthenticated caller with 401', async () => {
                     mockSession.mockResolvedValue(null);
                     expect((await call(plan)).status).toBe(401);
                 });
@@ -177,21 +196,21 @@ describe('Registry route admission gates', () => {
             // ── authenticated but under-privileged ───────────────────────────
             if (plan.gate === 'anyRole') {
                 const roles = (plan.requiredRoles ?? []).join(' | ');
-                it(`rejects an authenticated caller holding none of [${roles}] with 403`, async () => {
+                itServed(`rejects an authenticated caller holding none of [${roles}] with 403`, async () => {
                     // plainUser carries every role flag = false → holds none.
                     mockSession.mockResolvedValue({ user: plainUser });
                     expect((await call(plan)).status).toBe(403);
                 });
             }
             if (plan.gate === 'certifier') {
-                it('rejects an authenticated non-certifier (and non-admin) with 403', async () => {
+                itServed('rejects an authenticated non-certifier (and non-admin) with 403', async () => {
                     // plainUser holds no toolStatuses and no admin flag.
                     mockSession.mockResolvedValue({ user: plainUser });
                     expect((await call(plan)).status).toBe(403);
                 });
             }
             if (plan.gate === 'program-scoped') {
-                it('rejects an authenticated caller who is not a lead of this program with 403', async () => {
+                itServed('rejects an authenticated caller who is not a lead of this program with 403', async () => {
                     // plainUser leads no program and is not sysadmin/board.
                     mockSession.mockResolvedValue({ user: plainUser });
                     expect((await call(plan)).status).toBe(403);
@@ -203,7 +222,8 @@ describe('Registry route admission gates', () => {
             // scoping for those is covered by policy.contract + route tests.
 
             // ── allowed (sanity) ─────────────────────────────────────────────
-            it('admits an allowed caller (2xx)', async () => {
+            const admitted = plan.method === 'GET' ? '2xx' : 'not 401/403';
+            itServed(`admits an allowed caller (${admitted})`, async () => {
                 if (plan.gate === 'public') {
                     mockSession.mockResolvedValue(null);
                 } else if (plan.gate === 'anyRole') {
@@ -223,7 +243,11 @@ describe('Registry route admission gates', () => {
                     mockSession.mockResolvedValue({ user: plainUser });
                 }
                 const res = await call(plan);
-                expect(res.status).toBeLessThan(400);
+                // A write verb can't be driven with an empty body and no owned
+                // row, so admission is all that's assertable: a 400 from
+                // validation or a 404 from an ownership check both cleared authz.
+                if (plan.method === 'GET') expect(res.status).toBeLessThan(400);
+                else expect([401, 403]).not.toContain(res.status);
             });
         });
     }

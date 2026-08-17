@@ -14,10 +14,11 @@ lands.
 
 Two examples surfaced during a single design review:
 
-- **The intake-note hold.** An applicant note holds the membership application
-  at background-check review so reviewers read it before dues are settled —
-  unless the household already holds a still-valid background clearance, which
-  takes the direct path to payment. Stated only in a code comment in
+- **The intake-note hold** (since removed — the note no longer gates payment).
+  An applicant note held the membership application at background-check review
+  so reviewers read it before dues were settled — unless the household already
+  held a still-valid background clearance, which took the direct path to
+  payment. Stated only in a code comment in
   `checkin-app/src/lib/membership/external.ts`, a parenthetical inside the
   lifecycle transition table, and one aside in `docs/backlog/CUJS.md`.
 
@@ -88,12 +89,6 @@ already known, before any mining. Sources:
   `programs.md`
 - `docs/backlog/CUJS.md` journey A1, which already states several membership
   rules inline
-
-`checkin-app/docs/designs/HOUSEHOLD_LEAD_MODEL.md` is **not** a source here.
-Its content is guardianship and household leadership, which belongs in
-`people-households.md`, not in either seeded file — forcing it into
-`membership.md` would violate "named for the domain, not for any feature."
-It is handled once, in step 4, and `people-households.md` is created there.
 
 Draft both files with the **Policy / Procedure** split from standard §3.2, even
 if the Policy section starts empty — the shape is part of what this step
@@ -221,68 +216,111 @@ if a domain comes out with dozens of rules, it has almost certainly captured
 mechanism rather than policy, so re-apply the test before accepting the volume.
 Splitting the file is not the fix.
 
-### 3.5 Classify each rule: policy or procedure
+### 3.5 Classify each rule
 
-Standard §3.2 splits every domain file into a **Policy** section above a
-**Procedure** section. The mine cannot make that call on its own — a PR diff
-shows what the code does, never whether a board policy required it.
+Standard §3.2 gives every domain file three sections: **Policy**, then
+**Assumptions**, then **Procedure**. Classify as you write, reading the policy
+text alongside the mined rule rather than deferring every judgement to a later
+pass. The corpus is available (§3.6), so the tier is answerable at the moment
+the rule is drafted.
 
-So the sweep produces everything as **procedure by default**, and a separate
-pass promotes what is genuinely policy-backed:
+What still needs care:
 
-1. Draft every mined rule under Procedure. Never guess at policy authority; an
-   unsupported promotion is the same defect as writing an unratified policy as
-   settled.
-2. Flag candidates — anything touching dues, background checks, eligibility and
-   age gates, refunds, volunteer status, or access and certification is likely
-   to have a policy behind it. These are the ones worth checking.
-3. The owner checks each candidate against the policy corpus (§3.6) and either
-   promotes it with a citation by **policy name and article/section** — never a
-   page, never a path — or leaves it as procedure.
+- **Never promote to Policy without reading the article.** Search the corpus for
+  the rule, not for the topic. Several candidates in the first sweep read as
+  obviously policy-backed and turned out not to be — the college-age dependent
+  rule among them, where the policy defines a term that sounds right and covers
+  something narrower.
+- **Cite by policy name and article or section.** Never a page, a path, or a
+  URL. A citation should break when the policy is amended, which is exactly when
+  it should be re-read.
+- **A rule stricter than its policy says so.** The risk is a later reader
+  relaxing it while believing they are aligning to policy.
+- **Anything holding only because someone outside the app maintains it is an
+  Assumption**, not a Procedure line and not a divergence.
 
-Expect this to reclassify a meaningful share of the membership and finance
-rules, and almost none of the attendance or tooling ones.
-
-**A rule can also be neither.** If a candidate turns out to contradict the
-policy it supposedly implements, that is not a documentation finding — it is a
-compliance finding, and it goes to the owner directly rather than into any file.
+**A rule can also be none of the three.** Where a candidate turns out to be the
+app implementing a policy more loosely than the policy states, it is a
+divergence: it goes in the domain file's closing section (standard §3.7) and is
+also tracked as work. Recording it does not resolve it, and it is not a feature
+request — what closes it is the policy.
 
 ### 3.6 The policy corpus
 
-Canonical policies are on **Google Drive** (standard §3.5).
+Canonical policies live on **Google Drive** (standard §3.5), and a complete
+download of them is available locally to work from. That download is what makes
+§3.5 possible in one pass rather than two.
 
-Consequences for this step:
+- **Check the download's provenance once, at the start of a sweep.** It is sound
+  while it is a current export; the failure it guards against is a copy taken
+  before an amendment, which would enshrine a superseded rule behind a citation
+  that reads as correct.
+- **Citations stay verifiable.** Anyone with Drive access can check a policy-tier
+  rule against the policy it names — unlike the PR corpus (§3.1), this input is
+  not owner-only, so the tier carries real weight.
+- **Read the surrounding article, not the matching line.** Definitions carry
+  scope that a keyword match hides: a term may be defined more narrowly than its
+  everyday sense, and a rule built on the everyday sense will cite an article
+  that does not support it.
 
-- **Confirm on Drive before promoting.** A local or cached copy is fine for
-  finding candidates and drafting; the citation is only sound once checked
-  against Drive. A copy predating an amendment would enshrine a superseded rule
-  behind a citation that looks correct.
-- **Citations stay verifiable.** Anyone with Drive access can check a
-  policy-tier rule against the policy it names — unlike the PR corpus (§3.1),
-  this input is not owner-only, so the tier carries real weight.
-- **Cite name plus article/section only.** Not a page, not a path, not a Drive
-  URL.
+### 3.7 The second source — session transcripts
 
-### 3.7 Owner review
+A PR diff cannot record a decision that produced no diff, and cannot show a road
+deliberately not taken. Session transcripts can. Mining them as a second,
+independent pass yields a different kind of rule: the rejected alternative, the
+thing settled in conversation and never built, the reason behind a number.
 
-The register states board and operations decisions. A rule inferred from a PR
-diff is a *candidate* decision until the owner confirms it. Present each domain
-file for review before it merges; some candidates will turn out to be
-accidents-of-implementation rather than decisions, and those must not be
+Run it after the PR sweep, diffed against the drafts, so each finding arrives
+attached to the line it bears on. Two properties of that output govern how it is
+used:
+
+- **A report describing a decision is more reliable than one describing a
+  mechanism.** Decisions hold; mechanisms get settled after the conversation
+  that discussed them. Several findings in the first pass asserted the opposite
+  of what shipped, all of them mechanism.
+- **"No counterpart in the draft" and "cut on purpose" are indistinguishable
+  from outside.** Only whoever ran the earlier review can tell them apart, which
+  is why this pass hands findings over rather than applying them.
+
+**Verify every finding against the current tree before folding it.** Not the
+schema alone — the enforcement path. A state can be derived rather than stored,
+and a behaviour can live in a function rather than a column; searching for a
+field name and concluding "not built" is the specific mistake to avoid. This
+verification is worth its cost independently: the first pass surfaced two
+defects the reports had not found, both while checking something else.
+
+### 3.8 Owner review
+
+The register states board and operations decisions. A rule inferred from a diff
+or a transcript is a *candidate* until the owner confirms it. Present each
+domain file for review before it merges — grouped by what you propose to do with
+each finding, including the ones you propose to reject, since a silent rejection
+is invisible to the person reviewing. Some candidates will turn out to be
+accidents of implementation rather than decisions, and those must not be
 enshrined as rules.
+
+**Present, then wait.** Do not fold a domain while the answer is outstanding,
+and do not read "go ahead" on one domain as approval of the next. The rule is
+not ceremony: both times it was skipped during the first sweep, rules reached
+the register that the owner then had to catch — including one describing a kind
+of person the app does not have.
 
 ---
 
-## 4. Step 3 — update AGENTS.md
+## 4. Step 3 — update AGENTS.md — **done**
 
-- Point the docs map at `docs/rules/` first, as the place to read before
-  changing behaviour in a domain.
-- Reference `DOCUMENTATION_STANDARD.md` for the working-doc lifecycle and the
-  format rules.
-- Resolve the CUJS ambiguity: two files share the name `CUJS.md`
-  (`docs/designs/CUJS.md`, 98 lines, role-based; `docs/backlog/CUJS.md`,
-  276 lines, per-step with status). The docs map currently points at the thinner
-  one. Merge or delete one.
+- ~~Point the docs map at `docs/rules/` first~~ — a "Domain rules — read first"
+  block now opens the map, carrying the escalation rule for Policy-tier lines.
+- ~~Reference `DOCUMENTATION_STANDARD.md`~~ — cited in the same block, alongside
+  `docs/conventions.md`. README's start-here list points at both.
+- ~~Resolve the CUJS ambiguity~~ — **deleted `docs/designs/CUJS.md`**, nothing
+  merged. It was a route table snapshot whose routes no longer exist (`/admin/*`
+  predates the `*-ops` split), and every journey in it is covered per-step and
+  state-tagged in `docs/backlog/CUJS.md`. AGENTS.md and README now point there.
+
+One entry of the map is deliberately **not** yet rewritten: the
+"Design & product (`docs/designs/`)" block. Step 4 empties that directory, so
+the block is rewritten once, there — not twice.
 
 ---
 
@@ -296,21 +334,26 @@ name collision.
 **→ `docs/in-design/`** — unbuilt proposals. These are working docs by another
 name: `SHOPIFY_MEMBER_SEGMENT_PRICING.md`, `KIOSK_RESILIENCE.md`,
 `MEMBERSHIP_SYNC.md`, `PROGRAM_INSTANCE_RESTRUCTURE.md`,
-`resilient-load-swr.md`, and the numbered set (`167-`, `354-`, `975-`, `1149_`,
-`1224_`, `1256_`, `1333-`). They keep their normal lifecycle from here: extract
-and delete when they land, delete outright when abandoned.
+`resilient-load-swr.md`, and the numbered set (`167-`, `354-`, `975-`, `1224_`,
+`1256_`, `1333-`). They keep their normal lifecycle from here: extract and delete
+when they land, delete outright when abandoned.
+
+`1149_` has already been through that lifecycle and is gone: its standing rule is
+`docs/conventions.md`, "A day is not a moment", and the unbuilt remainder is
+tracked as backlog PL17.
 
 **→ `docs/ops/`** — operational reference that stays true and has no rules-file
 home: `DEV_INSTANCE_DESIGN.md`, `DEV_DASHBOARD_DESIGN.md`,
-`BG_CHECK_DEV_MOCK.md`, `ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`,
-`SHOPIFY_LIVE_TESTS.md`, `S_READ_DIAGNOSTICS.md`. `LIFECYCLE.md` goes here too —
-it documents how the generated artifacts and drift guards work, which is
-mechanism, not policy.
+`ZOHO_SIGN_DEV_MOCK.md`, `SHOPIFY_DEV_STORE_WEBHOOK.md`.
 
-**→ extract, then delete** — shipped feature docs: `HOUSEHOLD_LEAD_MODEL.md`
-(promotes into `people-households.md`, created here), `INDEX_PAGE_SCOPING.md`,
-`MY_PROGRAMS_SCOPING.md`, `ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for
-standing rules first; most will yield none.
+A doc that is mostly mechanism can still hold standing rules, and the ops bucket
+is not a way to avoid looking: `docs/ops/lifecycle-machines.md` carries the
+regeneration and drift-guard procedure, while the rules under it sit in
+`docs/conventions.md` and the domain registers.
+
+**→ extract, then delete** — shipped feature docs: `INDEX_PAGE_SCOPING.md`,
+`ARCHITECT_IDEAS_o46.md`, `DESIGN.md`. Check each for standing rules first; most
+will yield none.
 
 **`PRODUCTION_PLAN.md` moves to `docs/ops/` — do not delete it.** Despite the
 name it is the live "Production Launch Runbook" for ops.innovationtreehouse.org:
@@ -319,13 +362,40 @@ release-gate roster, ECR/ECS task-definition names). Extraction yields no rules,
 so the extract-and-delete bucket would destroy the only deploy/rollback runbook.
 The ops-bucket definition already covers it.
 
-**Unresolved, decide during the sweep:** `CUJS.md` (both copies — see step 3),
-`UNFINISHED.md` (a deferred-decision ledger; arguably belongs in `in-design/`,
-arguably its own thing).
+**Unresolved, decide during the sweep:** `UNFINISHED.md` (a deferred-decision
+ledger; arguably belongs in `in-design/`, arguably its own thing). `CUJS.md` is
+settled — resolved in step 3, one copy left.
 
 **Leave alone entirely:** `docs/security/`, `checkin-app/docs/generated/`,
-`docs/backlog/`, `checkin-app/docs/VOCABULARY.md`, and the deploy/migration docs
-under `checkin-app/docs/`.
+`docs/backlog/`, and the deploy/migration docs under `checkin-app/docs/`.
+
+**`checkin-app/docs/VOCABULARY.md` stays where it is, but three kinds of content
+leave it.** It is the canonical dictionary and should remain one; it currently
+also carries:
+
+- **Build conventions** — that identifiers and prose use the canonical word, that
+  a serialized wire key is a contract rather than a free rename, that age is
+  always derived through the shared helper. These belong in `docs/conventions.md`.
+- **A migration log** — the rename status section and the model-rename pattern
+  note, which cites PR numbers and git history. That is a lesson from past work;
+  per the standard it belongs in a design doc, not in a reference someone opens
+  to look up a term.
+- **Domain facts filed as "reference facts"** — the membership year, which is a
+  policy fact; the single facility and the integration vendors, which are
+  operating assumptions. Defined terms among them, such as *Treehouse Card*,
+  stay.
+
+Rules embedded in its tables move the same way — the per-tool versus global
+certifier grant, age gates enforced outside the software, core volunteers'
+authority being organisational.
+
+**This is already duplicated, not hypothetical.** The rules register now states
+the single facility and the certifier grant, both of which also remain in the
+dictionary. Resolving that is part of this step, not a follow-up.
+
+That covers content leaving the dictionary. Content flowing the other way —
+terms whose definitions are also constraints — is open question 3 in §8, and is
+not settled by this step.
 
 ### 5.1 Reference sweep — do this BEFORE any move or delete
 
@@ -342,20 +412,17 @@ grep -rn "docs/designs/" checkin-app/src .github README.md AGENTS.md docs
 Every hit is updated to the new path, or removed if its target is being deleted.
 The sweep is part of the same change as the move — never a follow-up.
 
-**One reference is not a plain text edit.**
-`checkin-app/src/lib/lifecycle/artifacts.ts:115` bakes the literal string
-`Generated from the machine's TRANSITIONS (docs/designs/LIFECYCLE.md)` into the
-generated artifacts, and `artifactsDrift.test.ts` asserts byte-equality against
-them. So moving `LIFECYCLE.md` requires, in one commit:
-
-1. update the literal in `artifacts.ts`,
-2. re-run `npm run generate:lifecycle-artifacts`,
-3. commit the regenerated files with it.
+**A reference can be baked into a generated artifact.** `artifacts.ts` renders the
+header of every file under `docs/generated/lifecycle/`, and `artifactsDrift.test.ts`
+asserts byte-equality against the checked-in copies. Changing a path a renderer
+emits therefore takes one commit carrying the renderer edit, a re-run of
+`npm run generate:lifecycle-artifacts`, and the regenerated files.
 
 Edit the string without regenerating and CI goes red on a confusing docs-path
 diff; skip the edit and the drift-tested, "do not hand-edit" artifacts ship a
 path that no longer exists — the one document class the standard calls
-machine-verified would be provably wrong.
+machine-verified would be provably wrong. Where the header does not need the
+pointer, drop it rather than repoint it: a path that isn't emitted cannot rot.
 
 ---
 
@@ -363,7 +430,8 @@ machine-verified would be provably wrong.
 
 `docs/` at the repo root and `checkin-app/docs/` both hold app design docs, and
 the line is violated in both directions (`MEMBERSHIP_SYNC.md` is app design at
-the root; `LIFECYCLE.md` is app mechanics under `checkin-app/`).
+the root; `PROGRAM_CAPACITY_AND_SCHOLARSHIPS.md` is app mechanics under
+`checkin-app/`).
 
 Proposed rule: repo root holds product, policy, and cross-cutting process;
 `checkin-app/docs/` holds app-implementation reference. Mechanical once agreed —
@@ -399,6 +467,22 @@ do it last, after the rules register exists, so nothing moves twice.
    and finance-payments collapse into one?
 2. **Who owns a rules file?** CODEOWNERS on `docs/rules/` would route rule
    changes to the board or owner automatically. Worth it, or too heavy?
+3. **Where a definition is also a constraint.** Several terms are stated in both
+   the vocabulary register and the rules register: two deep, tripod, member
+   family, adult, youth, student, visitor, the tool levels and their age
+   minimums. Some of these constrain behaviour — code counting bare adults
+   violates what "two deep" means, which is a divergence the rules register
+   already records — and some only fix a word.
+
+   The tempting split is to leave the name in the dictionary and move the
+   constraint to the rules. **That makes the dictionary worse**: someone looking
+   up "member family" and getting the name without the two-adult cap has been
+   given a partial answer, which is the one thing a dictionary must not do.
+
+   So the duplication may be correct — each register complete for its own
+   purpose, overlapping by design — and the real question is how the two stay in
+   step rather than how to divide them. Needs a decision with the vocabulary
+   owner present, not one taken during a sweep.
 
 **Decided:**
 

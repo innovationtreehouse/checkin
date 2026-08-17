@@ -194,20 +194,69 @@ describe("membership page", () => {
     expect(screen.getByRole("link", { name: /Pay here with Shopify/ })).toHaveAttribute("href", "https://shop.example/checkout");
   });
 
+  // ── non-lead household members see progress, never a lead-only task ────────
+  it("hides the intake form from a non-lead household member", async () => {
+    setSession({ id: 2 });
+    mockFetchJson({ "/api/membership": state({ isLead: false, process: { id: 1, kind: "INITIAL", status: "INTAKE" } }) });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Membership application in progress")).toBeInTheDocument();
+    expect(screen.queryByText("Your household")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save progress" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Submit & continue" })).not.toBeInTheDocument();
+  });
+
+  it("hides contract signing and background-check consent from a non-lead household member", async () => {
+    setSession({ id: 2 });
+    mockFetchJson({
+      "/api/membership": state({
+        isLead: false,
+        process: { id: 1, kind: "INITIAL", status: "PENDING_EXTERNAL_ACTION" },
+        external: { contractSigned: false, contractStarted: false, bgConsented: false, bgCleared: false, deepLinkUrl: "https://averity.example/consent" },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Membership application in progress")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Sign your membership agreement/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Consent on Averity/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /I submitted my consent on Averity/ })).not.toBeInTheDocument();
+  });
+
+  it("hides the renewal confirmation from a non-lead household member", async () => {
+    setSession({ id: 2 });
+    mockFetchJson({ "/api/membership": state({ isLead: false, process: { id: 1, kind: "RENEWAL", status: "PENDING_RENEWAL" } }) });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Your household is up for renewal")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Renew now" })).not.toBeInTheDocument();
+  });
+
+  it("hides the dues and the checkout link from a non-lead household member", async () => {
+    setSession({ id: 2 });
+    const fetchMock = mockFetchJson({
+      "/api/membership/payment": { amountCents: 12500, checkoutUrl: "https://shop.example/checkout" },
+      "/api/membership": state({
+        isLead: false,
+        process: { id: 1, kind: "INITIAL", status: "PENDING_PAYMENT" },
+        external: { contractSigned: true, contractStarted: true, bgConsented: true, bgCleared: true, deepLinkUrl: null },
+      }),
+    });
+    renderWithProviders(<MembershipPage />);
+
+    expect(await screen.findByText("Membership application in progress")).toBeInTheDocument();
+    expect(screen.queryByText("$125.00", { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Pay here with Shopify/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Request a scholarship or payment plan/ })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/api/membership/payment"))).toBe(false);
+  });
+
   it("renders PENDING_BG_CLEARANCE", async () => {
     setSession({ id: 1 });
     mockFetchJson({ "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_BG_CLEARANCE" } }) });
     renderWithProviders(<MembershipPage />);
 
     expect(await screen.findByText("Payment received 🎉", { exact: false })).toBeInTheDocument();
-  });
-
-  it("renders the held-for-review card for PENDING_BG_REVIEW (#907)", async () => {
-    setSession({ id: 1 });
-    mockFetchJson({ "/api/membership": state({ process: { id: 1, kind: "INITIAL", status: "PENDING_BG_REVIEW" } }) });
-    renderWithProviders(<MembershipPage />);
-
-    expect(await screen.findByText("Hang tight — your application is being reviewed")).toBeInTheDocument();
   });
 
   it("renders the default in-progress card for other statuses", async () => {

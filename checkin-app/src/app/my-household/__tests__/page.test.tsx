@@ -7,6 +7,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { notifications } from "@mantine/notifications";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
+import { pinTimezone } from "@/test-helpers/tz";
 import HouseholdPage from "../page";
 
 // Successes toast via notifications.show (no inline banner); assert on the mock.
@@ -67,6 +68,18 @@ function mockRoutes(overrides: Record<string, unknown | (() => unknown)> = {}) {
 }
 
 describe("HouseholdPage", () => {
+  pinTimezone();
+
+  // memberSince is a calendar date at UTC midnight; a Jan 1 start read with a
+  // local getFullYear() west of UTC reports the previous year.
+  it("reads the memberSince year in UTC, not the viewer's local zone", async () => {
+    setSession({ id: 10, email: "sam@example.com" });
+    mockRoutes();
+    renderWithProviders(<HouseholdPage />);
+
+    expect(await screen.findByText("✓ Member since 2024")).toBeInTheDocument();
+  });
+
   it("loads and renders household members", async () => {
     setSession({ id: 10, email: "sam@example.com" });
     mockRoutes();
