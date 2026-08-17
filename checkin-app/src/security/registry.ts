@@ -593,6 +593,19 @@ defineRoute({
     ],
 });
 
+// Server error log (latest 100) — admin surface, all internal tier. Registered
+// ahead of its handler() conversion (inert until then).
+defineRoute({
+    endpoint: 'GET /api/system-status/errors',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['ErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
 // The caller's own visit history (±7-day window). Registered ahead of its
 // handler() conversion (inert until then). their_own:personal delivers
 // arrivedAt/departedAt on the caller's rows — the Visit binding keys on
