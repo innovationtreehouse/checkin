@@ -520,13 +520,15 @@ jobs:
           echo "Service is stable."
 
       - name: Smoke test the live app
+        # 20 min: generous for staging wake-up (the old 10-min loop cap was
+        # the false-negative), but bounded so an ECS-stable-yet-unreachable
+        # app (target group / listener / SG) can't burn the 6-hour default.
+        timeout-minutes: 20
         run: |
           set -euo pipefail
           # Real probe of the deployed service (mirrors deploy-prod.yml). The
           # app answers 200 or an auth redirect; retries cover target
-          # registration + first boot after scale-up, with no step-level
-          # timeout — staging wake-up time varies too much for a fixed window,
-          # so the job's GitHub-level limit is the only backstop. The 503s
+          # registration + first boot after scale-up. The 503s
           # during the wait are the ops-stg-waker's holding page; each probe
           # also drives the waker's health poll, so keep the 10s cadence.
           i=0
