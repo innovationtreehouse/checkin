@@ -21,7 +21,6 @@ jest.mock('@/lib/notifications', () => ({
 }));
 
 jest.mock('@/lib/shopify', () => ({
-    createShopifyProgramVariants: jest.fn().mockResolvedValue(null),
 }));
 
 jest.mock('@/lib/logger', () => ({
@@ -72,8 +71,6 @@ describe('POST /api/programs — startAt/endAt date preservation', () => {
             phase: 'PLANNING',
             enrollmentStatus: 'CLOSED',
             shopifyProductId: null,
-            shopifyOrgMemberVariantId: null,
-            shopifyNonOrgMemberVariantId: null,
         };
         mockProgramCreate.mockResolvedValue(createdProgram);
 
@@ -156,8 +153,6 @@ describe('POST /api/programs — startAt/endAt date preservation', () => {
             phase: 'PLANNING',
             enrollmentStatus: 'CLOSED',
             shopifyProductId: null,
-            shopifyOrgMemberVariantId: null,
-            shopifyNonOrgMemberVariantId: null,
         };
         mockProgramCreate.mockResolvedValue(createdProgram);
 

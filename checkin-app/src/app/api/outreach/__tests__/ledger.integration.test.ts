@@ -54,7 +54,7 @@ function req(method: string, body?: unknown) {
 async function setBoundary(date: Date | null) {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
-        create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: date },
+        create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: date },
         update: { orgMembershipYearBoundary: date },
     });
 }

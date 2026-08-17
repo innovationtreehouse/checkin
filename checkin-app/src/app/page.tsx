@@ -28,7 +28,6 @@ import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
 import { PageLoader } from '@/components/ui/PageLoader';
-import type { SessionUser } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
@@ -49,7 +48,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/attendance');
       const data = await res.json();
-      const currentUserId = (session.user as SessionUser)?.id;
+      const currentUserId = session.user?.id;
 
       // Works with both "full" and "limited" access responses
       if (data.access === "full") {
@@ -65,7 +64,7 @@ export default function Home() {
 
       // Use server-computed safety flags
       if (data.safety) {
-        const userIsKeyholder = (session.user as SessionUser)?.isKeyholder;
+        const userIsKeyholder = session.user?.isKeyholder;
         setIsLastKeyholder(data.safety.isLastKeyholder && userIsKeyholder);
         setIsTwoDeepViolation(data.safety.isTwoDeepViolation);
       } else {
@@ -111,7 +110,7 @@ export default function Home() {
     setLoading(true);
     setMessage("");
     try {
-      const participantId = (session.user as SessionUser)?.id;
+      const participantId = session.user?.id;
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -130,7 +129,7 @@ export default function Home() {
     setLoading(false);
   };
 
-  const user = session?.user as SessionUser | undefined;
+  const user = session?.user;
   const canSelfCheckin =
     !!user?.isSysadmin || !!user?.isBoardMember || !!user?.isKeyholder || isDevInstance;
   const isPrivileged = !!user?.isSysadmin || !!user?.isKeyholder;

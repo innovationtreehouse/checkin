@@ -46,7 +46,7 @@ process.env.CHECKIN_ENV = 'dev';
   // pool of >= 2 so their two enroll transactions run on separate connections,
   // making the program-row FOR UPDATE lock (not pool-1 serialization) the thing
   // that serializes them — matching production.
-  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
+  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|visitWriteLockConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
     process.env.TEST_DB_POOL_MAX = '2';
   }
 }
@@ -195,6 +195,7 @@ const KNOWN_INTENTIONAL = [
   /^Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured\./,
   /^Zoho status sync failed for process/,
   /^Shopify webhook signature mismatch\./,
+  /^Family trusted-adult ping failed:/,    // trusted-adult sweep: send fails, expiry still stands
   /^Failed to check out visit/,            // cron nightly per-visit failure injection
   /^Error in pass \d+ for row/,            // finance reconcile bad-row negative path
 ];

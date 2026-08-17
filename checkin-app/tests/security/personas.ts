@@ -1,10 +1,10 @@
 import prisma from '@/lib/prisma';
 import type { Role } from '@/security/core';
-import type { SessionUser } from '@/types/participant';
+import type { AuthenticatedUser } from '@/types/auth';
 
 export interface Persona {
     role: Role;
-    sessionUser?: SessionUser;
+    sessionUser?: AuthenticatedUser;
     description: string;
 }
 
@@ -57,7 +57,7 @@ export async function loadPersonas(): Promise<Record<string, Persona>> {
         isBoardMember: boolean;
         isKeyholder: boolean;
         isBackgroundCheckReviewer: boolean;
-    }): SessionUser => ({
+    }): AuthenticatedUser => ({
         id: p.id,
         email: p.email ?? '',
         name: p.name ?? undefined,

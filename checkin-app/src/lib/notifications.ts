@@ -2,6 +2,7 @@ import prisma from "./prisma";
 import { sendEmail } from "./email";
 import { runPaced } from "./email";
 import { formatTime, formatDate } from "./time";
+import { resolveDisplayTimezone } from "./appSettings";
 import { checkinReceiptTemplate } from "./email-templates/checkin";
 import { householdMemberTemplate } from "./email-templates/household";
 import { escapeHtml, type VisitSource } from "./email-templates/base";
@@ -156,12 +157,17 @@ export async function sendCheckinNotifications(participantId: number, type: 'che
         if (!participant) return;
 
         const now = new Date();
+        // Server-side render: the client TimezoneProvider never runs here, so the
+        // configured zone is passed per call.
+        const timeZone = await resolveDisplayTimezone();
         const timeStr = formatTime(now, {
+            timeZone,
             hour: 'numeric',
             minute: '2-digit',
             hour12: true
         });
         const dateStr = formatDate(now, {
+            timeZone,
             weekday: 'long',
             month: 'long',
             day: 'numeric'

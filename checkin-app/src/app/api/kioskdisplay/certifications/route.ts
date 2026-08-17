@@ -21,7 +21,7 @@ export const GET = withAuth(
 
         if (limitToPresent) {
             const activeVisits = await prisma.visit.findMany({
-                where: { departedAt: null, person: LIVE_PERSON },
+                where: { departedAt: null, deletedAt: null, person: LIVE_PERSON },
                 include: {
                     person: {
                         select: {

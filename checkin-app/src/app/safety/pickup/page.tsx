@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Button, Card, Center, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { TrustedAdultContact } from "@/components/TrustedAdultContact";
 
 interface Review {
@@ -28,14 +28,26 @@ interface TrustedAdult {
 export default function TrustedAdultPickupPage() {
     const [items, setItems] = useState<TrustedAdult[]>([]);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(false);
+
+    const load = useCallback(async () => {
+        setLoading(true);
+        setError(false);
+        try {
+            const r = await fetch("/api/trusted-adults/operational");
+            const d = await r.json();
+            setItems(d.trustedAdults ?? []);
+        } catch (err) {
+            console.error("Failed to load trusted adults for pickup:", err);
+            setError(true);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
-        fetch("/api/trusted-adults/operational")
-            .then((r) => r.json())
-            .then((d) => setItems(d.trustedAdults ?? []))
-            .catch((err) => console.error("Failed to load trusted adults for pickup:", err))
-            .finally(() => setLoading(false));
-    }, []);
+        load();
+    }, [load]);
 
     if (loading) {
         return (
@@ -55,7 +67,16 @@ export default function TrustedAdultPickupPage() {
                 </Text>
             </div>
 
-            {items.length === 0 && <Text c="dimmed">No approved trusted adults to show.</Text>}
+            {error ? (
+                <Alert color="red" title="Couldn't load the pickup list.">
+                    The list of approved trusted adults didn&apos;t load. Don&apos;t treat this as an empty list.
+                    <Button mt="sm" size="xs" variant="white" color="red" onClick={load}>
+                        Retry
+                    </Button>
+                </Alert>
+            ) : (
+                items.length === 0 && <Text c="dimmed">No approved trusted adults to show.</Text>
+            )}
 
             {items.map((ta) => {
                 const latest = ta.reviews[0];

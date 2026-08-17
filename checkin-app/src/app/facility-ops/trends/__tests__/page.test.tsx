@@ -35,6 +35,14 @@ describe("facility-ops/trends page", () => {
     expect(screen.getAllByText("30m").length).toBeGreaterThan(0); // totalParticipantHours 0.5h -> "30m"
   });
 
+  it("admits an operations user", async () => {
+    setSession({ id: 5, isOperations: true });
+    mockRoutes();
+    renderWithProviders(<ParticipationTrendsPage />);
+
+    expect(await screen.findByText("Jan 2026")).toBeInTheDocument();
+  });
+
   it("re-fetches trends when the period changes", async () => {
     setSession({ id: 1, isBoardMember: true });
     const fetchMock = mockRoutes();
