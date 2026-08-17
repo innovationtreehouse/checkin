@@ -66,10 +66,10 @@ const AUTHZ_TESTED = new Set<string>([
     // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
     'finance-ops/membership-payment-plans/refuse',
     'admin/settings/localization',
-    'events',
     'facility/badges',
     'facility/trends',
     'facility/visits',
+    'facility/visits/insert',
     'finance-ops/payments',
     'finance-ops/payments/[id]',
     // POST + GET deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,

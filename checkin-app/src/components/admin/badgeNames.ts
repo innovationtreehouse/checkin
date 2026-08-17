@@ -1,14 +1,6 @@
 // Pure badge-label helpers, split out of BadgeDocument so they can be unit-tested without
 // pulling in @react-pdf/renderer (ESM, untransformed by jest).
 
-// "2026-2027" style membership year.
-// ponytail: year rolls over in June; make configurable if the org changes its membership year.
-export function membershipYearLabel(now: Date): string {
-    const y = now.getFullYear();
-    const startYear = now.getMonth() >= 5 ? y : y - 1;
-    return `${startYear}-${startYear + 1}`;
-}
-
 // First name only, adding the minimum last-name prefix needed to disambiguate within this batch.
 // Unique first name → first name alone. Collision → shortest prefix (1+ chars) that no other
 // same-first-name badge shares; a partial prefix gets a trailing "." (e.g. "John S.", "John Sm.").

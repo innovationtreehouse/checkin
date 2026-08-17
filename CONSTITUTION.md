@@ -1,7 +1,7 @@
 # CheckMeIn Constitution
 
 ## Purpose and Vision
-CheckMeIn is a dedicated member check-in and program management system designed for makerspaces, community shops, and volunteer organizations. Its primary goal is to provide a seamless, secure, and user-friendly experience for managing member access, tool certifications, program enrollments, and facility usage.
+CheckMeIn is a member check-in and program management system for makerspaces, community shops, and volunteer organizations. It manages member access, tool certifications, program enrollments, and facility usage.
 
 ## Core Principles
 1. **Security and Access Control**: CheckMeIn is responsible for physical and operational security (e.g., verifying who can enter the facility and who is certified to use dangerous tools). Features that bypass or weaken these checks are strictly prohibited.
@@ -9,7 +9,7 @@ CheckMeIn is a dedicated member check-in and program management system designed 
 3. **Reliability in Kiosk Environments**: The system is often deployed unattended on physical kiosks (such as a Raspberry Pi). The UI must remain clean, stable, self-recovering, and optimized for these displays.
 4. **Maintainability**: The codebase uses Next.js, Prisma, and PostgreSQL. Keep dependencies minimal and adhere to existing architectural patterns (Next Auth for sessions, Prisma ORM for data access).
 
-## Guidelines for AI Agents (Jules)
+## Guidelines for AI Agents
 As an AI agent contributing to CheckMeIn, you must:
 - **Read and understand** this Constitution before starting work on any issue.
 - **Reject** feature requests that compromise security, such as disabling authentication checks, bypassing tool certification requirements, or altering the core RBAC (Role-Based Access Control) mechanisms.

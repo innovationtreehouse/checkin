@@ -7,6 +7,7 @@ jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } 
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
+import { pinTimezone } from "@/test-helpers/tz";
 import MergeParticipants from "../page";
 
 beforeEach(() => { resetRtl(); (notifications.show as jest.Mock).mockClear(); });
@@ -41,6 +42,8 @@ async function selectBoth() {
 }
 
 describe("membership-ops/participants/merge page", () => {
+  pinTimezone();
+
   it("searches, selects two participants, and analyzes them", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockRoutes();
@@ -95,7 +98,7 @@ describe("membership-ops/participants/merge page", () => {
         "/api/membership-ops/participants/merge",
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", email: "keep" } }),
+          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", identity: "keep" } }),
         }),
       ),
     );
@@ -296,12 +299,15 @@ describe("membership-ops/participants/merge page", () => {
     await selectBoth();
     await screen.findByText("Keep and augment");
 
-    // Alice/Bob differ on name+email; both share phone: null.
+    // Alice/Bob differ on name; both have an email so the login identity is a
+    // conflict too; both share phone: null and have no dateOfBirth.
     const picker = screen.getByText("Resolve conflicting fields").closest(".mantine-Card-root") as HTMLElement;
     expect(within(picker).getByText("Name")).toBeInTheDocument();
-    expect(within(picker).getByText("Email")).toBeInTheDocument();
-    expect(within(picker).queryByText("Phone")).not.toBeInTheDocument();
+    expect(within(picker).getByText("Login identity")).toBeInTheDocument();
+    // email/googleId are no longer their own radios — folded into "Login identity".
+    expect(within(picker).queryByText("Email")).not.toBeInTheDocument();
     expect(within(picker).queryByText("Google Account")).not.toBeInTheDocument();
+    expect(within(picker).queryByText("Phone")).not.toBeInTheDocument();
     expect(within(picker).queryByText("Date of Birth")).not.toBeInTheDocument();
   });
 
@@ -313,14 +319,15 @@ describe("membership-ops/participants/merge page", () => {
     await selectBoth();
     await screen.findByText("Keep and augment");
 
-    // Alice out-scores Bob (visits + googleId), so she's the default keeper.
+    // Alice out-scores Bob (visits + googleId), so she's the default keeper. The
+    // "keep" radio in each group shows the keeper's value (name + login identity).
     expect(screen.getByRole("radio", { name: "Alice Adams" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "alice@example.com" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /alice@example\.com · Google/ })).toBeChecked();
 
     fireEvent.click(screen.getByRole("button", { name: "Swap Kept / Merged" }));
 
     expect(screen.getByRole("radio", { name: "Bob Adams" })).toBeChecked();
-    expect(screen.getByRole("radio", { name: "bob@example.com" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /bob@example\.com · unverified/ })).toBeChecked();
   });
 
   // Matrix 21
@@ -331,8 +338,8 @@ describe("membership-ops/participants/merge page", () => {
     await selectBoth();
     await screen.findByText("Keep and augment");
 
-    // Pick the tombstone's (Bob's) email instead of the keeper's default.
-    fireEvent.click(screen.getByRole("radio", { name: "bob@example.com" }));
+    // Pick the tombstone's (Bob's) login identity instead of the keeper's default.
+    fireEvent.click(screen.getByRole("radio", { name: /bob@example\.com · unverified/ }));
 
     fireEvent.click(screen.getByRole("button", { name: "Proceed to Preview" }));
     await screen.findByText("Preview & Confirm Merge");
@@ -343,21 +350,23 @@ describe("membership-ops/participants/merge page", () => {
         "/api/membership-ops/participants/merge",
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", email: "merge" } }),
+          body: JSON.stringify({ keepId: 1, mergeId: 2, fieldChoices: { name: "keep", identity: "merge" } }),
         }),
       ),
     );
   });
 
   // Matrix 22
-  it("shows each side's own identity for a googleId conflict instead of 'Connected' on both", async () => {
+  it("shows each side's own login identity (email + Google + verified marker), not 'Connected'", async () => {
     const gia = {
       id: 60, name: "Gia Google", email: "gia@example.com", phone: null, googleId: "g-gia-000000",
+      emailVerified: "2026-01-01T00:00:00.000Z",
       _count: { visits: 5, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
       household: null,
     };
     const gary = {
       id: 61, name: "Gary Gmail", email: null, phone: null, googleId: "g-gary-111111",
+      emailVerified: null,
       _count: { visits: 0, rawBadgeLogs: 0, programParticipants: 0, programVolunteers: 0 },
       household: null,
     };
@@ -376,10 +385,11 @@ describe("membership-ops/participants/merge page", () => {
 
     await screen.findByText("Keep and augment");
     const picker = screen.getByText("Resolve conflicting fields").closest(".mantine-Card-root") as HTMLElement;
-    // Gia has an email, so her radio shows it; Gary has none, so his falls back
-    // to the googleId tail — neither says the uninformative "Connected".
-    expect(within(picker).getByText("gia@example.com")).toBeInTheDocument();
-    expect(within(picker).getByText("…111111")).toBeInTheDocument();
+    // Gia has a verified email; Gary has none, so his falls back to the googleId
+    // tail and shows unverified — neither says the uninformative "Connected".
+    expect(within(picker).getByText(/gia@example\.com · Google/)).toBeInTheDocument();
+    expect(within(picker).getByText(/· verified$/)).toBeInTheDocument();
+    expect(within(picker).getByText(/…111111 · unverified/)).toBeInTheDocument();
     expect(within(picker).queryByText("Connected")).not.toBeInTheDocument();
   });
 
@@ -414,9 +424,11 @@ describe("membership-ops/participants/merge page", () => {
     const warningText = await screen.findByText(/Different birth dates may mean these are NOT the same person/);
     const alertBox = warningText.closest(".mantine-Alert-root") as HTMLElement;
     expect(alertBox).toBeInTheDocument();
-    // Still resolvable via the radio, just nested inside the warning — exact date
-    // text is locale/timezone-formatted (toLocaleDateString), so just count them.
     expect(within(alertBox).getAllByRole("radio")).toHaveLength(2);
+    // DOB is a calendar date at UTC midnight: both options must read as their own
+    // day, not the day before, even west of UTC.
+    expect(alertBox.textContent).toContain("1/1/1990");
+    expect(alertBox.textContent).toContain("6/15/2005");
   });
 
   it("renders nothing for a background-check reviewer who navigates directly", () => {

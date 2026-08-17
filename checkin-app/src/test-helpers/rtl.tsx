@@ -58,6 +58,7 @@ if (typeof window !== "undefined") {
 // setShopifyStoreDomain / setCheckinEnv; resetRtl restores the prod defaults.
 let checkinEnv: CheckinEnv = "prod";
 let shopifyStoreDomain: string | null = null;
+let isStaging = false;
 
 /** Set the mocked CHECKIN_ENV seen by useCheckinEnv/useIsLocalInstance. */
 export function setCheckinEnv(env: CheckinEnv) {
@@ -67,12 +68,16 @@ export function setCheckinEnv(env: CheckinEnv) {
 export function setShopifyStoreDomain(domain: string | null) {
     shopifyStoreDomain = domain;
 }
+/** Set the mocked ops-stg flag seen by useIsStagingInstance. */
+export function setStagingInstance(v: boolean) {
+    isStaging = v;
+}
 
 /** Render `ui` wrapped in the providers a page/component tree needs. */
 export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
     return render(
         <MantineProvider>
-            <EnvProvider value={{ checkinEnv, shopifyStoreDomain }}>{ui}</EnvProvider>
+            <EnvProvider value={{ checkinEnv, shopifyStoreDomain, isStaging }}>{ui}</EnvProvider>
         </MantineProvider>,
         options,
     );
@@ -89,7 +94,7 @@ export const router = {
 };
 let pathname = "/";
 let searchParams = new URLSearchParams();
-let session: { data: unknown; status: string } = { data: null, status: "unauthenticated" };
+let session: { data: unknown; status: string; update?: jest.Mock } = { data: null, status: "unauthenticated" };
 
 /** Factory for `jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock())`. */
 export function navMock() {
@@ -120,7 +125,10 @@ export function setSearchParams(sp: URLSearchParams | string) {
 }
 /** Set the mocked session user (pass null for signed-out). */
 export function setSession(user: Record<string, unknown> | null, status = user ? "authenticated" : "unauthenticated") {
-    session = { data: user ? { user } : null, status };
+    // `update` is next-auth's force-a-re-stamp hook; components call it after a
+    // write that changes their own claims. Resolving to the same session keeps
+    // those call sites from hanging on an undefined function.
+    session = { data: user ? { user } : null, status, update: jest.fn().mockResolvedValue(null) };
 }
 /** Reset router spies + pathname/search/session between tests. */
 export function resetRtl() {
@@ -130,6 +138,7 @@ export function resetRtl() {
     session = { data: null, status: "unauthenticated" };
     checkinEnv = "prod";
     shopifyStoreDomain = null;
+    isStaging = false;
 }
 
 // ── fetch stub ───────────────────────────────────────────────────────────────

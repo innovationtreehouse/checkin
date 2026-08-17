@@ -3,7 +3,7 @@ import { addHouseholdLead } from "@/lib/household/leads";
 import { setRoleFlag, type RoleFlag } from "@/lib/roles";
 
 /**
- * Dev seed + macro helpers (DEV_DASHBOARD_DESIGN.md §4) — the ONE source of truth for creating
+ * Dev seed + macro helpers (docs/ops/dev-instance.md, "Macros") — the ONE source of truth for creating
  * dev fixtures. Both `prisma/seed.ts` (the CLI seed + the reset baseline) and the dashboard's
  * one-click macros call into here, so there is no copy-paste drift between them.
  *
@@ -204,6 +204,20 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     });
     await seedRole(prisma, bgReviewer.id, "isBackgroundCheckReviewer");
 
+    // A member household lead used by program-pricing flow tests: an ACTIVE
+    // OrgMembership so member pricing/discount-code paths have a claimable persona.
+    const memberPricingLead = await prisma.person.upsert({
+        where: { email: "member.pricing@example.com" },
+        update: { name: "Member Pricing Lead", phone: "555-555-0011", dateOfBirth: yearsAgo(40) },
+        create: {
+            email: "member.pricing@example.com",
+            name: "Member Pricing Lead",
+            phone: "555-555-0011",
+            dateOfBirth: yearsAgo(40),
+            household: { create: { name: "Member Pricing Family" } },
+        },
+    });
+
     // 3. Household assignments & leads
     await prisma.person.update({ where: { id: parentFamily.id }, data: { householdId: household1.id } });
     await prisma.person.update({ where: { id: parent2Family.id }, data: { householdId: household1.id } });
@@ -216,6 +230,13 @@ export async function seedBaseline(prisma: Db): Promise<void> {
 
     await prisma.person.update({ where: { id: parentFamily3.id }, data: { householdId: household3.id } });
     await addHouseholdLead(prisma, household3.id, parentFamily3.id);
+
+    await addHouseholdLead(prisma, memberPricingLead.householdId, memberPricingLead.id);
+    await prisma.orgMembership.upsert({
+        where: { householdId: memberPricingLead.householdId },
+        update: { status: "ACTIVE" },
+        create: { householdId: memberPricingLead.householdId, status: "ACTIVE" },
+    });
 
     // 4. Tools & certifications
     const tableSaw = await prisma.tool.upsert({
@@ -302,7 +323,7 @@ export async function createFamily(prisma: Db): Promise<string> {
     return `Created household "Test Family ${tag}" (lead + partner + 1 youth)`;
 }
 
-/** + Program — a program with a materials fee and a couple of active participants. */
+/** + Program — a program with a couple of active participants. */
 export async function createProgram(prisma: Db): Promise<string> {
     const tag = uid();
     const startAt = new Date();
@@ -318,17 +339,13 @@ export async function createProgram(prisma: Db): Promise<string> {
             maxParticipants: 20,
         },
     });
-    await prisma.fee.create({
-        // Integer cents: $25.00 member / $40.00 non-member.
-        data: { programId: program.id, name: "Materials", orgMemberPriceCents: 2500, nonOrgMemberPriceCents: 4000 },
-    });
     const enrollees = await prisma.person.findMany({ take: 2, orderBy: { id: "asc" } });
     for (const p of enrollees) {
         await prisma.programParticipant.create({
             data: { programId: program.id, personId: p.id, status: "ACTIVE" },
         });
     }
-    return `Created program "Test Program ${tag}" with a fee and ${enrollees.length} participants`;
+    return `Created program "Test Program ${tag}" with ${enrollees.length} participants`;
 }
 
 /** + Event — an event (tied to the latest program when one exists) with a few RSVPs. */

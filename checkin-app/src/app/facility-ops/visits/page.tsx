@@ -1,17 +1,19 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Alert, Button, Group, Modal, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
+import { Alert, Button, Group, Modal, Select, Stack, Table, Text, TextInput, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconRobot, IconScan, IconSelector } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronUp, IconDeviceLaptop, IconLock, IconRobot, IconScan, IconSelector, IconUserCheck } from '@tabler/icons-react';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { FACILITY_RECORD_ROLES } from '@/lib/facilityNav';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { notifications } from '@mantine/notifications';
-import { formatDateTime, toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { toDatetimeLocal, fromDatetimeLocal } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { MAX_VISIT_MS } from '@/lib/visitTimes';
 
 import { PageLoader } from "@/components/ui/PageLoader";
-type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
+type VisitSource = 'SCANNER' | 'WEB' | 'LEAD_MARKED' | 'FACILITY_CLOSE' | 'AUTO_CLOSE' | 'SYSTEM';
 
 type Visit = {
   id: number;
@@ -26,7 +28,10 @@ type Visit = {
 const SOURCE_META: Record<VisitSource, { Icon: typeof IconScan; label: string }> = {
   SCANNER: { Icon: IconScan, label: 'Scanner (kiosk badge)' },
   WEB: { Icon: IconDeviceLaptop, label: 'Web (dashboard)' },
-  SYSTEM: { Icon: IconRobot, label: 'Automated (facility close / nightly)' },
+  LEAD_MARKED: { Icon: IconUserCheck, label: 'Marked present by staff (event window, not measured)' },
+  FACILITY_CLOSE: { Icon: IconLock, label: 'Building closed (stamped at the close moment)' },
+  AUTO_CLOSE: { Icon: IconRobot, label: 'Nightly sweep (stamped at cron-run time — likely late)' },
+  SYSTEM: { Icon: IconRobot, label: 'Automated, pre-split (facility close or nightly — indistinguishable)' },
 };
 
 const SourceIcon = ({ via }: { via?: VisitSource | null }) => {
@@ -63,7 +68,8 @@ const sortValue = (v: Visit, key: SortKey): string | number => {
 };
 
 export default function AdminVisitsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin']);
+  const { formatDateTime } = useOrgTime();
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_RECORD_ROLES);
 
   const [loading, setLoading] = useState(true);
   const [visits, setVisits] = useState<Visit[]>([]);
@@ -75,6 +81,14 @@ export default function AdminVisitsPage() {
   // edit mode on failure, and the page-top banner lands off-screen on long tables
   // and reads as "nothing happened". Success uses the standard corner toast.
   const [rowNotice, setRowNotice] = useState<{ id: number; text: string; tone: AlertTone } | null>(null);
+
+  // Insert-for-others: the walk-in path neither the kiosk (live only) nor the
+  // event roster mark (program-scoped, event window) can record.
+  const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false);
+  const [people, setPeople] = useState<{ id: number; name: string | null; email: string }[]>([]);
+  const [addForm, setAddForm] = useState({ personId: '', arrivedAt: '', departedAt: '' });
+  const [addError, setAddError] = useState('');
+  const [adding, setAdding] = useState(false);
 
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'arrivedAt', dir: 'desc' });
   const [confirmEditOpened, { open: openConfirmEdit, close: closeConfirmEdit }] = useDisclosure(false);
@@ -128,6 +142,57 @@ export default function AdminVisitsPage() {
   useEffect(() => {
     if (ready) fetchVisits();
   }, [ready, fetchVisits]);
+
+  // Search endpoint caps at 200 rows; the Select is searchable over what it
+  // returns, which is the whole directory at this org's size.
+  const openAddModal = async () => {
+    setAddError('');
+    setAddForm({ personId: '', arrivedAt: '', departedAt: '' });
+    openAdd();
+    if (people.length === 0) {
+      const res = await fetch('/api/people/search');
+      if (res.ok) {
+        const data = await res.json();
+        setPeople(data.people ?? []);
+      }
+    }
+  };
+
+  const handleAdd = async () => {
+    // Instant feedback only — server remains the trust boundary.
+    if (!addForm.personId) return setAddError('Choose a person.');
+    if (!addForm.arrivedAt || !addForm.departedAt) return setAddError('Arrival and departure times are both required.');
+    if (Date.parse(addForm.departedAt) <= Date.parse(addForm.arrivedAt)) {
+      return setAddError('Departure time must be after arrival time');
+    }
+    if (Date.parse(addForm.departedAt) - Date.parse(addForm.arrivedAt) > MAX_VISIT_MS) {
+      return setAddError('A visit cannot be longer than 24 hours.');
+    }
+    setAdding(true);
+    try {
+      const res = await fetch('/api/facility/visits/insert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personId: Number(addForm.personId),
+          arrivedAt: fromDatetimeLocal(addForm.arrivedAt),
+          departedAt: fromDatetimeLocal(addForm.departedAt),
+        }),
+      });
+      if (res.ok) {
+        notifications.show({ message: 'Visit added.' });
+        closeAdd();
+        fetchVisits();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setAddError(data.error || 'Failed to add visit.');
+      }
+    } catch {
+      notifications.show({ color: 'red', message: 'Network error adding visit.', autoClose: false });
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const handleEditClick = (visit: Visit) => {
     setPendingEditVisit(visit);
@@ -221,6 +286,10 @@ export default function AdminVisitsPage() {
     <Stack>
       <AlertBanner message={message?.text} tone={message?.tone} />
 
+      <Group justify="flex-end">
+        <Button size="xs" fz={15} onClick={openAddModal}>Add Visit</Button>
+      </Group>
+
       <Table.ScrollContainer minWidth={800}>
         <Table verticalSpacing="sm" highlightOnHover>
           <Table.Thead>
@@ -297,6 +366,44 @@ export default function AdminVisitsPage() {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+
+      <Modal
+        opened={addOpened}
+        onClose={closeAdd}
+        title={<Text span fw={700} fz="lg">Add Past Visit</Text>}
+        centered
+      >
+        <Stack>
+          <Text size="sm" c="dimmed">
+            For a walk-in whose visit was never recorded. Closed visits only —
+            live presence comes from the kiosk. This is logged to the audit trail.
+          </Text>
+          {addError && <Alert color="red">{addError}</Alert>}
+          <Select
+            label="Person"
+            searchable
+            data={people.map((p) => ({ value: String(p.id), label: p.name || p.email }))}
+            value={addForm.personId || null}
+            onChange={(v) => setAddForm({ ...addForm, personId: v ?? '' })}
+          />
+          <TextInput
+            type="datetime-local"
+            label="Arrived"
+            value={addForm.arrivedAt}
+            onChange={(e) => setAddForm({ ...addForm, arrivedAt: e.currentTarget.value })}
+          />
+          <TextInput
+            type="datetime-local"
+            label="Departed"
+            value={addForm.departedAt}
+            onChange={(e) => setAddForm({ ...addForm, departedAt: e.currentTarget.value })}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={closeAdd}>Cancel</Button>
+            <Button onClick={handleAdd} loading={adding}>Add Visit</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal
         opened={confirmEditOpened}

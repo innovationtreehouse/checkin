@@ -23,6 +23,11 @@ const bob: RolesEditTarget = {
     id: 2, name: "Bob Board", email: "bob@example.com",
     isSysadmin: false, isBoardMember: true, isKeyholder: false, isBackgroundCheckReviewer: false, isOperations: false,
 };
+const stagingTarget: RolesEditTarget = {
+    id: 3, name: "Staging Candidate", email: "candidate@example.com",
+    isSysadmin: false, isBoardMember: false, isKeyholder: false, isBackgroundCheckReviewer: false, isOperations: false,
+    canAccessStaging: false,
+};
 
 describe("RolesEditModal", () => {
     it("is closed (nothing rendered) when target is null", () => {
@@ -115,6 +120,50 @@ describe("RolesEditModal", () => {
         expect(onClose).toHaveBeenCalledTimes(1);
     });
 
+    describe("canAccessStaging (ops-stg gate, sysadmin-only, not one of the five ROLE_FLAGS)", () => {
+        it("is hidden for a board-only actor (not board-symmetric like the five switches above)", () => {
+            renderWithProviders(<RolesEditModal target={stagingTarget} me={{ isBoardMember: true }} onClose={jest.fn()} onSaved={jest.fn()} />);
+            expect(screen.queryByLabelText(/Staging access/)).not.toBeInTheDocument();
+        });
+
+        it("is visible and togglable for a sysadmin actor", () => {
+            renderWithProviders(<RolesEditModal target={stagingTarget} me={{ isSysadmin: true }} onClose={jest.fn()} onSaved={jest.fn()} />);
+            expect(screen.getByLabelText(/Staging access/)).not.toBeChecked();
+        });
+
+        it("Save with only a staging delta PATCHes canAccessStaging and nothing else", async () => {
+            const onSaved = jest.fn();
+            const onClose = jest.fn();
+            renderWithProviders(<RolesEditModal target={stagingTarget} me={{ isSysadmin: true }} onClose={onClose} onSaved={onSaved} />);
+
+            fireEvent.click(screen.getByLabelText(/Staging access/));
+            fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+            expect(modals.openConfirmModal).toHaveBeenCalledTimes(1);
+            const call = (modals.openConfirmModal as jest.Mock).mock.calls[0][0];
+            const { container, unmount } = renderWithProviders(call.children);
+            expect(container.textContent).toContain("Grant staging access");
+            unmount();
+
+            const updatedUser = { ...stagingTarget, canAccessStaging: true };
+            const patchFetch = jest.fn(async () => ({
+                ok: true,
+                status: 200,
+                json: async () => ({ message: "Roles updated successfully", user: updatedUser }),
+            }));
+            global.fetch = patchFetch as unknown as typeof fetch;
+
+            await act(async () => {
+                await call.onConfirm();
+            });
+
+            await waitFor(() => expect(patchFetch).toHaveBeenCalled());
+            const [, calledInit] = patchFetch.mock.calls[0] as unknown as [string, RequestInit];
+            expect(JSON.parse(calledInit.body as string)).toEqual({ targetUserId: 3, canAccessStaging: true });
+            expect(onSaved).toHaveBeenCalledWith(updatedUser);
+        });
+    });
+
     it("reverts the switches and toasts on a 409, without calling onSaved/onClose", async () => {
         const onSaved = jest.fn();
         const onClose = jest.fn();
@@ -147,5 +196,37 @@ describe("RolesEditModal", () => {
         expect(screen.getByLabelText("Operations")).not.toBeChecked();
         expect(onSaved).not.toHaveBeenCalled();
         expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("toasts a network error and reverts when the PATCH fetch rejects", async () => {
+        const spy = jest.spyOn(console, "error").mockImplementation(() => {});
+        const onSaved = jest.fn();
+        const onClose = jest.fn();
+        renderWithProviders(<RolesEditModal target={jane} me={{ isBoardMember: true }} onClose={onClose} onSaved={onSaved} />);
+
+        fireEvent.click(screen.getByLabelText("Operations")); // grant
+        fireEvent.click(screen.getByLabelText("Keyholder")); // revoke (was checked)
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        const call = (modals.openConfirmModal as jest.Mock).mock.calls[0][0];
+        // Reject the fetch itself (not ok:false) so the catch runs, not the else branch.
+        global.fetch = jest.fn(() => Promise.reject(new Error("network down"))) as unknown as typeof fetch;
+
+        await act(async () => {
+            await call.onConfirm();
+        });
+
+        await waitFor(() =>
+            expect(notifications.show).toHaveBeenCalledWith(
+                expect.objectContaining({ color: "red", message: "Network error updating roles" }),
+            ),
+        );
+        expect(spy).toHaveBeenCalledWith(expect.stringContaining("Failed to update roles"), expect.anything());
+
+        // The catch (unlike the ok:false branch) does not revert; it only toasts.
+        // Neither success callback fires.
+        expect(onSaved).not.toHaveBeenCalled();
+        expect(onClose).not.toHaveBeenCalled();
+        spy.mockRestore();
     });
 });

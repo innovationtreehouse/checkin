@@ -1,6 +1,7 @@
 import { type DbClient, type TxClient, withTx } from "@/lib/db-client";
 import prisma from "@/lib/prisma";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { isYouth } from "@/lib/time";
 
 /**
  * Shared household-lead ownership check (audit P1-2). Loads the person and
@@ -70,12 +71,26 @@ export class HouseholdLeadMismatchError extends Error {
 }
 
 /**
+ * Thrown by {@link addHouseholdLead} when the promotion target is a youth. The UI
+ * hides "Make Lead" for youth, but that's client-side only — this is the server
+ * enforcement so a direct POST can't flag a youth as a household lead. A null/unknown
+ * DOB is NOT a youth ({@link isYouth} returns false), matching the UI which shows the
+ * control for null-DOB members.
+ */
+export class HouseholdLeadYouthError extends Error {
+    constructor(public readonly householdId: number, public readonly personId: number) {
+        super("A youth cannot be a household lead.");
+        this.name = "HouseholdLeadYouthError";
+    }
+}
+
+/**
  * The count-then-flag core, run inside a transaction. Takes a row lock on the
  * household first so concurrent promotions are serialized: a second caller
  * blocks on the lock, then sees the updated count and is rejected — closing the
  * check-then-act (TOCTOU) race that a bare count+update would leave open.
  *
- * Leadership is `Person.isHouseholdLead` (a1, HOUSEHOLD_LEAD_MODEL.md): a person
+ * Leadership is `Person.isHouseholdLead`: a person always
  * leads their OWN household ({@link Person.householdId}), so the cap counts
  * flagged members of `householdId`. Caller guarantees `householdId` is the
  * participant's household.
@@ -92,16 +107,20 @@ async function addHouseholdLeadTx(
 
     const person = await tx.person.findUnique({
         where: { id: participantId },
-        select: { isHouseholdLead: true, householdId: true },
+        select: { isHouseholdLead: true, householdId: true, dateOfBirth: true },
     });
     // Invariant: isHouseholdLead means "lead of their OWN household". Flagging a
-    // person whose householdId != the counted/locked household would create a
-    // divergence the a1 model exists to prevent — reject instead of silently
-    // flagging the wrong household (would also make the cap count meaningless).
+    // person whose householdId != the counted/locked household would silently
+    // flag them as lead of the wrong household and make the cap count
+    // meaningless — reject instead.
     if (person && person.householdId !== householdId) {
         throw new HouseholdLeadMismatchError(householdId, participantId);
     }
     if (person?.isHouseholdLead) return { created: false };
+    // Youth exclusion (server-side; UI also filters). null/unknown DOB is allowed.
+    if (person && isYouth(person.dateOfBirth)) {
+        throw new HouseholdLeadYouthError(householdId, participantId);
+    }
 
     const count = await tx.person.count({ where: { ...householdLeadsWhere(householdId), ...LIVE_PERSON } });
     if (count >= MAX_HOUSEHOLD_LEADS) {

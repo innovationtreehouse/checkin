@@ -3,6 +3,7 @@ import { sendEmail } from "@/lib/email";
 import { GET } from "../api/cron/post-event/route";
 
 jest.mock("@/lib/email", () => ({
+    runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())),
     sendEmail: jest.fn().mockResolvedValue(true)
 }));
 
