@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { sendNotification } from "@/lib/notifications";
 import { createShopifySingleVariantProgram } from "@/lib/shopify";
 import { logBackendError, logger } from "@/lib/logger";
-import { isActiveOrgMember } from "@/lib/orgMembership";
+import { isDuesSettled } from "@/lib/orgMembership";
 import { config } from "@/lib/config";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
@@ -35,8 +35,6 @@ const PUBLIC_PROGRAM_SELECT = {
     orgMemberPriceCents: true,
     nonOrgMemberPriceCents: true,
     shopifyProductId: true,
-    shopifyOrgMemberVariantId: true,
-    shopifyNonOrgMemberVariantId: true,
     shopifyVariantId: true,
 } as const;
 
@@ -45,7 +43,7 @@ const PUBLIC_PROGRAM_SELECT = {
 // so it can't move to withAuth (which 401s anonymous). getOptionalSessionUser
 // applies the shared denied-household gate: a denied member is locked out of
 // the whole app, so it collapses to undefined (anonymous) — they see only the
-// public list and never the orgMemberOnly programs isActiveOrgMember would otherwise
+// public list and never the orgMemberOnly programs isDuesSettled would otherwise
 // reveal (P0-C).
 export async function GET(req: Request) {
     const user = await getOptionalSessionUser(req);
@@ -74,7 +72,9 @@ export async function GET(req: Request) {
             if (user.isSysadmin || user.isBoardMember) {
                 canSeeOrgMemberOnly = true;
             } else {
-                canSeeOrgMemberOnly = await isActiveOrgMember(user.id);
+                // Dues settled, not "is a member": a paid household awaiting
+                // background clearance sees members-only programs too (#1397).
+                canSeeOrgMemberOnly = await isDuesSettled(user.id);
             }
         }
 
@@ -199,11 +199,9 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const nmPrice = dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined);
 
         // Single-pool model (product decision 2026-07-06): ONE Shopify variant,
-        // priced at the base/non-member rate — replaces the two-variant model for
-        // NEW program creation going forward (legacy programs keep working via
-        // the columns createShopifyProgramVariants still writes; see
-        // sync-shopify's repair route). ponytail: falls back to the member price
-        // only when no non-member price is set (e.g. a members-only-priced
+        // priced at the base/non-member rate; member pricing is a checkout-time
+        // discount code, not a second variant. ponytail: falls back to the member
+        // price only when no non-member price is set (e.g. a members-only-priced
         // program with no listed non-member tier) — normally sells at the
         // non-member/base rate per the design.
         const basePriceCents = nmPrice ?? mPrice ?? null;

@@ -5,6 +5,7 @@ jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl, router } from "@/test-helpers/rtl";
+import { pinTimezone } from "@/test-helpers/tz";
 import AdminHouseholdsPage from "../page";
 
 beforeEach(() => resetRtl());
@@ -29,6 +30,25 @@ const households = {
 };
 
 describe("membership-ops/households page", () => {
+  pinTimezone();
+
+  it("renders a UTC-midnight memberSince as its own calendar day, not the day before", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/membership-ops/households": {
+        households: [{
+          ...households.households[0],
+          orgMembership: { status: "ACTIVE", memberSince: "2024-08-15T00:00:00.000Z" },
+        }],
+      },
+    });
+    const { container } = renderWithProviders(<AdminHouseholdsPage />);
+    await screen.findByText("The Smiths");
+
+    expect(container.textContent).toContain("Aug 15, 2024");
+    expect(container.textContent).not.toContain("Aug 14, 2024");
+  });
+
   it("loads and renders households with membership status", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({ "/api/membership-ops/households": households });

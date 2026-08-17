@@ -3,11 +3,31 @@ import { screen } from "@testing-library/react";
 jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
+import { pinTimezone } from "@/test-helpers/tz";
 import HouseholdCheckins from "../page";
+import { fireEvent } from "@testing-library/react";
 
 beforeEach(() => resetRtl());
 
 describe("HouseholdCheckins", () => {
+    pinTimezone();
+
+    it("labels the ±7-day window on the filter date's own calendar days", async () => {
+        setSession({ id: 1 });
+        mockFetchJson({ "/api/household/visits": { visits: [] } });
+        const { container } = renderWithProviders(<HouseholdCheckins />);
+
+        fireEvent.change(await screen.findByLabelText("Lookup Date"), { target: { value: "2026-06-15" } });
+
+        // 2026-06-15 ± 7d, UTC-pinned. Rendered in a wall-clock zone west of UTC
+        // both labels slip to the 7th/21st.
+        expect(container.textContent).toContain("6/8/2026");
+        expect(container.textContent).toContain("6/22/2026");
+        expect(container.textContent).not.toContain("6/7/2026");
+        expect(container.textContent).not.toContain("6/21/2026");
+    });
+
+
     it("shows a loader while the session resolves", () => {
         setSession(null, "loading");
         renderWithProviders(<HouseholdCheckins />);

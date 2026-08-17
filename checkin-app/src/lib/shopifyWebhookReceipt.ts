@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { systemActor } from "@/lib/auditActor";
 
 /**
  * Delivery log for the inbound Shopify webhook, surfaced on the "Shopify
@@ -92,7 +93,7 @@ export async function recordShopifyWebhookReceipt(
         };
         await prisma.auditLog.create({
             data: {
-                actorId: 0, // system — no session behind an inbound webhook
+                ...systemActor("webhook:shopify-receipt"),
                 action: "CREATE",
                 tableName: SHOPIFY_WEBHOOK_RECEIPT_TABLE,
                 affectedEntityId: 0, // no entity row backs a receipt; newData IS the record

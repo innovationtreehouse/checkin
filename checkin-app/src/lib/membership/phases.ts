@@ -35,8 +35,7 @@ export function stepperActiveIndex(status: OrgMembershipProcessStatus | null): n
     switch (status) {
         case "INTAKE": return 0;
         case "PENDING_EXTERNAL_ACTION": return 1;
-        // Held for review (household intake note): external actions are done and
-        // Payment is the pending step — it just won't open until the review clears.
+        // Legacy held-for-review rows: external actions are done, Payment pending.
         case "PENDING_BG_REVIEW": return 2;
         case "PENDING_PAYMENT": return 2;
         case "PENDING_BG_CLEARANCE": return 3;

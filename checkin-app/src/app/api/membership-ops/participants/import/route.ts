@@ -381,12 +381,29 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                                 throw new HouseholdLeadLimitError(targetHouseholdId);
                             }
 
+                            // Pre-image of everything this merge destroys, read before the
+                            // deletes: the household row and any OrgMembership on it.
+                            const sourceHousehold = await tx.household.findUnique({ where: { id: sourceHouseholdId } });
+                            const sourceMemberships = await tx.orgMembership.findMany({ where: { householdId: sourceHouseholdId } });
+
                             // Delete memberships from the old source household
                             await tx.orgMembership.deleteMany({ where: { householdId: sourceHouseholdId } });
 
                             // Finally delete the source household (empty now, so the
                             // RESTRICT FK allows it)
                             await tx.household.delete({ where: { id: sourceHouseholdId } });
+
+                            await tx.auditLog.create({
+                                data: {
+                                    actorId: auth.user.id,
+                                    action: "DELETE",
+                                    tableName: "Household",
+                                    affectedEntityId: sourceHouseholdId,
+                                    secondaryAffectedEntity: targetHouseholdId,
+                                    oldData: { household: sourceHousehold, orgMemberships: sourceMemberships },
+                                    newData: { mergedIntoHouseholdId: targetHouseholdId, movedByImportOfPersonId: participantId },
+                                },
+                            });
 
                             // If the row that initiated the merge is an adult with an email, ensure they are a lead
                             if (pr.email) {

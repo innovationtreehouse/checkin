@@ -9,6 +9,7 @@ import { MergedBadge } from "@/components/ui/MergedBadge";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { formatPhone } from "@/lib/phone";
+import { formatDateOnly } from "@/lib/time";
 
 interface ParticipantMergeView {
   id: number;
@@ -59,9 +60,11 @@ function identityOptionLabel(p: { email?: string; googleId?: string; emailVerifi
 }
 
 function formatFieldValue(field: ConflictField, value: unknown): string {
+  // dateOfBirth is the only date-kind field in CONFLICT_FIELDS, so the calendar-date
+  // (UTC-pinned) read is right for every value that reaches this branch.
   if (field === "dateOfBirth" && typeof value === "string") {
     const d = new Date(value);
-    return isNaN(d.getTime()) ? String(value) : d.toLocaleDateString();
+    return isNaN(d.getTime()) ? String(value) : formatDateOnly(d);
   }
   if (field === "phone" && typeof value === "string") return formatPhone(value);
   return String(value ?? "—");
@@ -91,6 +94,10 @@ export default function MergeParticipants() {
 
   const [previewMode, setPreviewMode] = useState(false);
 
+  // Why the merge is refused on household-membership grounds, per direction —
+  // the rule turns on which record is merged away (see the API's membershipGuard).
+  const [membershipBlock, setMembershipBlock] = useState<{ aAsKeeper: string | null; bAsKeeper: string | null } | null>(null);
+
   // One choice per true conflict field ('keep' | 'merge'); default 'keep' (the
   // keeper's value). Recomputed below (derived from analyzedA/analyzedB + keepId)
   // and reset whenever the keeper flips (Swap Kept/Merged).
@@ -98,6 +105,13 @@ export default function MergeParticipants() {
 
   const mergeParticipant = keepId === analyzedA?.id ? analyzedB : analyzedA;
   const keepParticipant = keepId === analyzedA?.id ? analyzedA : analyzedB;
+
+  // The membership rule turns on which record is merged away, so the block
+  // follows the current keeper — and Swap Kept/Merged can clear it outright.
+  const keeperIsA = keepId === analyzedA?.id;
+  const membershipBlockReason = (keeperIsA ? membershipBlock?.aAsKeeper : membershipBlock?.bAsKeeper) ?? null;
+  const swapDirectionBlock = (keeperIsA ? membershipBlock?.bAsKeeper : membershipBlock?.aAsKeeper) ?? null;
+  const swapClearsMembershipBlock = !!membershipBlockReason && !swapDirectionBlock;
 
   const conflicts: ConflictField[] = keepParticipant && mergeParticipant
     ? CONFLICT_FIELDS.filter((f) => {
@@ -152,6 +166,7 @@ export default function MergeParticipants() {
           if (d.participants) {
             setAnalyzedA(d.participants[0]);
             setAnalyzedB(d.participants[1]);
+            setMembershipBlock(d.membershipBlock ?? null);
 
             // Recommend keeping the one with more activity or better data
             const score = (p: ParticipantMergeView) => {
@@ -178,6 +193,7 @@ export default function MergeParticipants() {
       setAnalyzedB(null);
       setKeepId(null);
       setPreviewMode(false);
+      setMembershipBlock(null);
     }
   }, [pA, pB]);
 
@@ -364,6 +380,13 @@ export default function MergeParticipants() {
                 </Button>
               </Group>
 
+              {membershipBlockReason && (
+                <Alert color="red" variant="light" fw={700} title="Household membership blocks this merge">
+                  {membershipBlockReason}
+                  {swapClearsMembershipBlock && " Swapping which record is kept clears this."}
+                </Alert>
+              )}
+
               <SimpleGrid cols={{ base: 1, md: 2 }}>
                 {renderStats(analyzedA, keepId === analyzedA.id, analyzedA.id !== keepId ? isLeadWithOthers : false)}
                 {renderStats(analyzedB, keepId === analyzedB.id, analyzedB.id !== keepId ? isLeadWithOthers : false)}
@@ -419,7 +442,7 @@ export default function MergeParticipants() {
               )}
 
               <Group justify="flex-end">
-                <Button size="md" disabled={isLeadWithOthers} onClick={() => setPreviewMode(true)}>
+                <Button size="md" disabled={isLeadWithOthers || !!membershipBlockReason} onClick={() => setPreviewMode(true)}>
                   Proceed to Preview
                 </Button>
               </Group>

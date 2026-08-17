@@ -19,7 +19,7 @@ const OFF_SEASON_NOW = new Date(Date.UTC(2026, 0, 15)); // Jan 15 — well outsi
 async function setBoundary(date: Date | null) {
     await prisma.boardSettings.upsert({
         where: { id: 1 },
-        create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: date },
+        create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: date },
         update: { orgMembershipYearBoundary: date },
     });
 }

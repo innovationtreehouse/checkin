@@ -57,10 +57,10 @@ export const PAGES: PageEntry[] = [
   { href: '/my-activities/events', label: 'My Events', section: 'Personal', visible: SIGNED_IN },
   { href: '/my-activities/programs', label: 'My Programs (as Participant)', section: 'Personal', visible: SIGNED_IN },
   { href: '/profile', label: 'My Profile', section: 'Personal', visible: SIGNED_IN },
-  // Staff home for program lead mentors. Lead status rides in on the todo-counts
+  // Home for program lead mentors. Lead status rides in on the todo-counts
   // payload (leadsAnyProgram), matching the nav gate. Distinct from the attendee
   // "My Programs" tab above.
-  { href: '/my-programs/attendance', label: 'My Programs (as Volunteer)', section: 'Personal', keywords: 'lead mentor program staff attendance', visible: LEADS_PROGRAM },
+  { href: '/my-programs/attendance', label: 'My Programs (as Volunteer)', section: 'Personal', keywords: 'lead mentor program volunteer attendance', visible: LEADS_PROGRAM },
   { href: '/my-programs/conflicts', label: 'Attendance Conflicts', section: 'Personal', keywords: 'lead mentor duplicate overlapping visit attendance', visible: LEADS_PROGRAM },
   // Stays visible to all members: also the Join/renewal entry for new applicants
   // who aren't a household lead yet (gating it on lead would break joining).
@@ -70,6 +70,7 @@ export const PAGES: PageEntry[] = [
   // Attendance — any signed-in member
   { href: '/attendance/current', label: 'Attendance', section: 'Attendance', visible: SIGNED_IN },
   { href: '/attendance/manual', label: 'Manual Check-In', section: 'Attendance', visible: SIGNED_IN },
+  { href: '/attendance/my-visits', label: 'My Visits', section: 'Attendance', keywords: 'hours correction edit delete', visible: SIGNED_IN },
   { href: '/attendance/household', label: 'Household Check-ins', section: 'Attendance', keywords: 'visits history dependents', visible: SIGNED_IN },
   { href: '/attendance/certifications', label: 'Certifications', section: 'Attendance', visible: SIGNED_IN },
 
@@ -92,12 +93,17 @@ export const PAGES: PageEntry[] = [
   { href: '/shop-ops/live', label: 'Live', section: 'Shop Ops', visible: SHOP },
   { href: '/shop-ops/manage', label: 'Manage', section: 'Shop Ops', visible: SHOP },
 
-  // Facility Ops — board
-  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD },
+  // Facility Ops — board, plus operations on the two aggregate tools (#1633:
+  // operations reach attendance in aggregate only). Visits, Badges (the raw
+  // badge-event log) and Corrections are one person's record, so they stay
+  // board-only. The index redirects to the caller's first visible tab, so it is
+  // listed to anyone the section admits.
+  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD_OR_OPS },
   { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: BOARD },
-  { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD },
-  { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD },
+  { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD_OR_OPS },
+  { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD_OR_OPS },
   { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD },
+  { href: '/facility-ops/corrections', label: 'Corrections', section: 'Facility Ops', keywords: 'audit attendance edit delete flagged significance review', visible: BOARD },
 
   // Membership Ops — board
   { href: '/membership-ops', label: 'Membership Ops', section: 'Membership Ops', visible: BOARD },
@@ -117,6 +123,7 @@ export const PAGES: PageEntry[] = [
   { href: '/membership-audit/unclaimed', label: 'Unclaimed Accounts', section: 'Membership Audit', visible: BOARD },
   { href: '/membership-audit/broken', label: 'Broken Households', section: 'Membership Audit', keywords: 'lead leadless no lead unclaimed', visible: BOARD },
   { href: '/membership-audit/compliance', label: 'Membership Compliance', section: 'Membership Audit', keywords: 'violations background check revoked denied stale follow-up', visible: BOARD },
+  { href: '/membership-audit/turning-18', label: 'Students 18+', section: 'Membership Audit', keywords: 'age 18 adult turning eighteen agreement member year sept 1 september', visible: BOARD },
 
   // Program Ops — board
   { href: '/program-ops', label: 'Program Ops', section: 'Program Ops', visible: BOARD },
@@ -163,5 +170,5 @@ export const REGISTRY_EXCLUDED: string[] = [
   '/dev/sent-mail',          // dev-only captured-email inbox (EMAIL_DEV_MOCK.md); 404s off dev
   '/dev/zoho-sign',          // dev-only Zoho Sign mock interstitial (404 in prod)
   '/dev/shopify',            // dev-only Shopify orders/paid mock (SHOPIFY_DEV_STORE_WEBHOOK.md); 404s off dev
-  '/dev/bg-consent',         // dev-only background-check consent mock (BG_CHECK_DEV_MOCK.md); 404s off dev
+  '/dev/bg-consent',         // dev-only background-check consent mock (docs/ops/background-check-mock.md); 404s off dev
 ];
