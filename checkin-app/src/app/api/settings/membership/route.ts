@@ -3,15 +3,18 @@ import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { config } from "@/lib/config";
+import { handler } from "@/security/handler";
 
 export const dynamic = "force-dynamic";
 
 const DEFAULTS = { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0 };
 
-/** GET /api/settings/membership — board settings singleton (created on first read). */
-export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
+/** GET /api/settings/membership — board settings singleton (created on first read).
+ *  Registry-governed: admission anyRole sysadmin/board; envelope 'settings'.
+ *  Full row (incl. internal-tier Shopify ids) — covered by the admin band. */
+export const GET = handler('GET /api/settings/membership', async () => {
     const settings = await prisma.boardSettings.upsert({ where: { id: 1 }, create: DEFAULTS, update: {} });
-    return NextResponse.json({ settings });
+    return { BoardSettings: settings };
 });
 
 /**

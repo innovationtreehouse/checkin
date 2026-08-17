@@ -4,15 +4,19 @@ import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { canonicalizeEmail } from "@/lib/emailNormalize";
+import { handler } from "@/security/handler";
 
 export const dynamic = "force-dynamic";
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** GET — list all volunteer email designations. */
-export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
+/** GET — list all volunteer email designations.
+ *  Registry-governed: admission anyRole sysadmin/board; envelope 'designations'.
+ *  Designation email is pii — covered by the admin band, stripped for any
+ *  future role a view adds. */
+export const GET = handler('GET /api/settings/membership/volunteer-designations', async () => {
     const designations = await prisma.volunteerDesignation.findMany({ orderBy: { createdAt: "desc" } });
-    return NextResponse.json({ designations });
+    return { VolunteerDesignation: designations };
 });
 
 /**
