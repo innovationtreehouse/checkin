@@ -130,9 +130,7 @@ const AUTHZ_TESTED = new Set<string>([
     'settings/shopify-webhook',
     'shop/tools/[id]',
     'system-status/audit-log',
-    'system-status/errors',
     'system-status/health',
-    'system-status/links',
     'system-status/links/[id]',
     // GET deny-path (401 anon / 403 non-board) in lifecycleReconcile.integration.test.ts.
     'system-status/lifecycle',

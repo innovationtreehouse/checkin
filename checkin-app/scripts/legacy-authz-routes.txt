@@ -158,12 +158,10 @@ GET /api/shop/tools
 POST /api/shop/tools
 GET /api/system-status/audit-log
 GET /api/system-status/config-health
-GET /api/system-status/errors
 GET /api/system-status/health
 GET /api/system-status/kiosk-version
 GET /api/system-status/lifecycle
 PATCH /api/system-status/links/[id]
-GET /api/system-status/links
 POST /api/trusted-adults/[id]/hide
 POST /api/trusted-adults/[id]/renew
 POST /api/trusted-adults/[id]/resubmit
