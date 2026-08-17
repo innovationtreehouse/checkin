@@ -18,7 +18,7 @@ import {
 } from '../membership/lifecycle';
 
 /**
- * ProgramParticipant enrollment (docs/designs/LIFECYCLE.md). `UNENROLLED`
+ * ProgramParticipant enrollment. `UNENROLLED`
  * is the ∅/no-row state — both an entry and the withdrawal target — so it renders
  * as mermaid `[*]`. `ACTIVE` is the one non-∅ terminal.
  */
@@ -40,9 +40,11 @@ const ENROLLMENT: MachineSpec = {
 };
 
 /**
- * OrgMembershipProcess (docs/designs/LIFECYCLE.md). `∅` is the origin
- * pseudo-state. `ACTIVE`/`ARCHIVED` are the accepting terminals; the legacy
- * `RENEWAL_PENDING_BG` (docs/designs/LIFECYCLE.md) is expected to show up as unreachable — the
+ * OrgMembershipProcess. `∅` is the origin
+ * pseudo-state. `ACTIVE`/`ARCHIVED` are the accepting resting states — ARCHIVED is
+ * where a disposed application stops, not a sealed state (unarchive walks back out
+ * to whatever phase it collapsed); the legacy
+ * `RENEWAL_PENDING_BG` is expected to show up as unreachable — the
  * report is where that dead-but-guarded status is meant to surface.
  */
 const MEMBERSHIP: MachineSpec = {

@@ -14,9 +14,11 @@
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
 import prisma from '@/lib/prisma';
+import { config, isStagingAccessAllowed } from '@/lib/config';
 import type { AuthResult } from '@/types/auth';
 import type { Authorize, CtxNeeds, Role } from './core';
 import { LIVE_PERSON } from '@/lib/person/filters';
+import { LIVE_VISIT } from '@/lib/visit/filters';
 
 export interface CallerContext {
     selfId?: number;
@@ -37,6 +39,12 @@ export interface CallerContext {
     eventIdsInScopePrograms: Set<number>;
     /** Person IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
+    /** Live members of the caller's household, INCLUDING the caller. Populated
+     *  only when the caller is a household lead — the empty set for everyone
+     *  else is what makes 'led_households' narrower than 'their_households'.
+     *  Visit has no householdId column; it reaches a household only via
+     *  personId ∈ this set. Drives 'led_households'. */
+    ledHouseholdMemberIds: Set<number>;
 }
 
 /**
@@ -59,6 +67,7 @@ export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Pro
         householdIdsInScopePrograms: new Set(),
         eventIdsInScopePrograms: new Set(),
         activeVisitorIds: new Set(),
+        ledHouseholdMemberIds: new Set(),
     };
 
     if (auth.type !== 'session') return ctx;
@@ -67,7 +76,7 @@ export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Pro
     ctx.householdId = auth.user.householdId;
     ctx.isKeyholder = auth.user.isKeyholder;
 
-    const [ledPrograms, coreVols, visits] = await Promise.all([
+    const [ledPrograms, coreVols, visits, ledHouseholdMembers] = await Promise.all([
         needs.programs
             ? prisma.program.findMany({
                   where: { leadMentorId: auth.user.id },
@@ -83,10 +92,21 @@ export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Pro
                   },
               })
             : [],
+        // A tombstoned visit keeps departedAt null forever, so LIVE_VISIT is what
+        // stops a deleted open visit from reading as "still in the building".
         needs.activeVisitors && ctx.isKeyholder
             ? prisma.visit.findMany({
-                  where: { departedAt: null },
+                  where: { departedAt: null, ...LIVE_VISIT, person: LIVE_PERSON },
                   select: { personId: true },
+              })
+            : [],
+        // Lead-gated on purpose: sharing a household is not the relationship
+        // 'led_households' names. A non-lead member gets the empty set, so the
+        // scope never resolves for them. Mirrors lib/household/activityMembers.
+        needs.ledHouseholdMembers && auth.user.householdLead && ctx.householdId !== undefined
+            ? prisma.person.findMany({
+                  where: { householdId: ctx.householdId, ...LIVE_PERSON },
+                  select: { id: true },
               })
             : [],
     ]);
@@ -100,6 +120,7 @@ export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Pro
         for (const pp of v.program.participants) ctx.participantIdsInScopePrograms.add(pp.personId);
     }
     for (const v of visits) ctx.activeVisitorIds.add(v.personId);
+    for (const m of ledHouseholdMembers) ctx.ledHouseholdMemberIds.add(m.id);
 
     const scopePrograms = [...ctx.programsLed, ...ctx.programsCoreVolIn];
     await Promise.all([
@@ -207,12 +228,33 @@ export interface ResolverContext {
  * Admission gate — the per-route `authorize` check. Returns whether the
  * caller is even allowed to *invoke* the endpoint (401/403 if not). View
  * resolution (orderedView) is downstream.
+ *
+ * ops-stg ACCESS GATE, checked FIRST, ahead of every `authorize` branch below —
+ * including `'public'`. This is the surface that made the pre-gate design
+ * dangerous: `authenticateRequest` (lib/auth.ts) already downgrades a
+ * non-org/non-flagged caller to `unauthenticated` on staging, but
+ * `authorize: 'public'` unconditionally returns `{ allowed: true }` regardless
+ * of `auth` — so without this check, an anonymous `curl` of
+ * `GET /api/programs/[id]` (registered `authorize: 'public'`, returning real
+ * enrolled minors' names/household/emergency contacts) would sail straight
+ * through on a copy of prod data. Re-derives the predicate independently
+ * (not just `auth.type !== 'unauthenticated'`) as belt-and-suspenders: even if
+ * a future caller ever constructs an `AuthResult` without going through
+ * `authenticateRequest`, this still fails closed on its own.
  */
 export async function resolveAccess(
     authorize: Authorize,
     ctx: ResolverContext,
 ): Promise<{ allowed: boolean }> {
     const { auth, params, callerContext } = ctx;
+
+    if (config.isStaging()) {
+        const claims = auth.type === 'session' ? auth.user : null;
+        if (!isStagingAccessAllowed(claims)) {
+            return { allowed: false };
+        }
+    }
+
     const isAdmin = auth.type === 'session' && (auth.user.isSysadmin || auth.user.isBoardMember);
 
     if (typeof authorize === 'string') {

@@ -31,3 +31,10 @@ export function __getSentEmails(): RecordedEmail[] {
 export function __clearSentEmails(): void {
     sent.length = 0;
 }
+
+// emailRecipients.ts's fanOutEmails routes through runPaced (#1154) — a synchronous
+// passthrough here keeps this mock timer-free, matching every other runPaced mock
+// in the suite (notifications.test.ts, the announce integration tests).
+export async function runPaced<T>(tasks: Array<() => Promise<T>>): Promise<T[]> {
+    return Promise.all(tasks.map((t) => t()));
+}

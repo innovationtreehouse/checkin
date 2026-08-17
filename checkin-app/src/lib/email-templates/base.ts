@@ -11,13 +11,17 @@ export function escapeHtml(value: string): string {
         .replace(/'/g, '&#39;');
 }
 
-export type VisitSource = 'SCANNER' | 'WEB' | 'SYSTEM';
+export type VisitSource = 'SCANNER' | 'WEB' | 'LEAD_MARKED' | 'FACILITY_CLOSE' | 'AUTO_CLOSE' | 'SYSTEM';
 
 /** Human phrase for how a check-in/out was recorded, e.g. "via badge scan". */
 export function sourceLine(source?: VisitSource | null): string {
     const label = source === 'SCANNER' ? 'badge scan'
         : source === 'WEB' ? 'the web app'
-        : source === 'SYSTEM' ? 'the system automatically'
+        : source === 'LEAD_MARKED' ? 'a staff attendance mark'
+        : source === 'FACILITY_CLOSE' ? 'the building closing'
+        // AUTO_CLOSE and legacy SYSTEM: an automatic stamp the member may want
+        // to correct, so name it plainly rather than implying it was measured.
+        : source === 'AUTO_CLOSE' || source === 'SYSTEM' ? 'the system automatically'
         : null;
     return label ? `<p style="color: #6b7280;">📍 via ${label}</p>` : '';
 }

@@ -39,6 +39,21 @@ export interface ContactInput {
     priority?: number;
 }
 
+/** Shape a contact for the client, exposing the validity flag. The ONLY wire
+ *  shape EC routes may ship: it strips the internal tier (createdAt/updatedAt,
+ *  conflict bookkeeping) and the normalization columns a client never needs. */
+export function present(c: { id: number; name: string; phone: string; email: string | null; relationship: string | null; priority: number; conflictParticipantId: number | null }) {
+    return {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        relationship: c.relationship,
+        priority: c.priority,
+        invalid: c.conflictParticipantId !== null || !c.name.trim() || !c.phone.trim(),
+    };
+}
+
 export interface EmergencyContactWarning {
     code: "EMERGENCY_CONTACT_CONFLICT";
     householdId: number;
@@ -159,21 +174,32 @@ export async function deleteContact(db: Db, householdId: number, contactId: numb
  * household settings, membership intake). Upserts the primary (lowest-priority)
  * contact.
  *
- * Tolerant of partial input so resumable forms can save a half-filled contact:
- * blank name+phone is a no-op; a partial contact is persisted as-is without the
- * member check. Direction A is enforced only once BOTH name and phone are
- * present (a "real" contact), at which point a successful check also clears any
- * stale conflict flag. The submit-time floor ({@link householdHasValidContact})
- * is what guarantees a complete, valid contact before a household advances.
+ * Tolerant of partial input so resumable forms can save a half-filled contact,
+ * but never at the expense of one already stored: a field the caller omits keeps
+ * its stored value, and a save that would leave a stored name+phone contact
+ * without one of them is refused. Removing a contact is {@link deleteContact}.
+ * Direction A is enforced only once the merged contact has BOTH name and phone
+ * (a "real" contact), at which point a successful check also clears any stale
+ * conflict flag. The submit-time floor ({@link householdHasValidContact}) is
+ * what guarantees a complete, valid contact before a household advances.
  */
 export async function upsertPrimaryContact(
     db: Db,
     householdId: number,
     fields: { name?: string | null; phone?: string | null; email?: string | null },
 ): Promise<EmergencyContact | null> {
-    const name = (fields.name ?? "").trim();
-    const phone = (fields.phone ?? "").trim();
-    const email = (fields.email ?? "").trim() || null;
+    const primary = await db.emergencyContact.findFirst({
+        where: { householdId },
+        orderBy: [{ priority: "asc" }, { id: "asc" }],
+    });
+
+    // A field the caller never sent is not an instruction to clear it: absent
+    // keys fall back to what is stored, so a form that collects a subset of the
+    // contact can't blank the rest.
+    const sent = (v: string | null | undefined) => (v == null ? undefined : v.trim());
+    const name = sent(fields.name) ?? primary?.name.trim() ?? "";
+    const phone = sent(fields.phone) ?? primary?.phone.trim() ?? "";
+    const email = (sent(fields.email) ?? primary?.email ?? "") || null;
     if (!name && !phone && !email) return null;
 
     if (phone && !isValidPhone(phone)) {
@@ -181,6 +207,15 @@ export async function upsertPrimaryContact(
     }
 
     const complete = !!name && !!phone;
+    // Blanking a field is not a delete path: refuse a save that would strip the
+    // name or phone off a contact that has both.
+    if (!complete && primary?.name.trim() && primary.phone.trim()) {
+        throw new EmergencyContactError(
+            "incomplete",
+            "An emergency contact needs both a name and a phone number. To take this contact off the household, remove it instead of clearing it.",
+        );
+    }
+
     if (complete) await assertExternal(db, householdId, { name, phone, email });
 
     const data = {
@@ -192,10 +227,6 @@ export async function upsertPrimaryContact(
         ...(complete && { conflictParticipantId: null, conflictedAt: null }),
     };
 
-    const primary = await db.emergencyContact.findFirst({
-        where: { householdId },
-        orderBy: [{ priority: "asc" }, { id: "asc" }],
-    });
     if (primary) return db.emergencyContact.update({ where: { id: primary.id }, data });
     return db.emergencyContact.create({ data: { householdId, priority: 0, ...data } });
 }

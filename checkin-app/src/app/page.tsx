@@ -21,13 +21,13 @@ import {
   IconUrgent,
 } from '@tabler/icons-react';
 import { notifications } from "@mantine/notifications";
+import { brand } from '@/brand';
 import DevLoginPicker from '@/components/DevLoginPicker';
 import { useIsDevInstance, useIsLocalInstance } from '@/components/EnvProvider';
 import JoinTreehouseBanner from '@/components/JoinTreehouseBanner';
 import Notifications from '@/components/Notifications';
 import { RoleBadge } from '@/components/ui/RoleBadge';
 import { PageLoader } from '@/components/ui/PageLoader';
-import type { SessionUser } from '@/types/participant';
 
 export default function Home() {
   const router = useRouter();
@@ -48,7 +48,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/attendance');
       const data = await res.json();
-      const currentUserId = (session.user as SessionUser)?.id;
+      const currentUserId = session.user?.id;
 
       // Works with both "full" and "limited" access responses
       if (data.access === "full") {
@@ -64,7 +64,7 @@ export default function Home() {
 
       // Use server-computed safety flags
       if (data.safety) {
-        const userIsKeyholder = (session.user as SessionUser)?.isKeyholder;
+        const userIsKeyholder = session.user?.isKeyholder;
         setIsLastKeyholder(data.safety.isLastKeyholder && userIsKeyholder);
         setIsTwoDeepViolation(data.safety.isTwoDeepViolation);
       } else {
@@ -110,7 +110,7 @@ export default function Home() {
     setLoading(true);
     setMessage("");
     try {
-      const participantId = (session.user as SessionUser)?.id;
+      const participantId = session.user?.id;
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -129,7 +129,7 @@ export default function Home() {
     setLoading(false);
   };
 
-  const user = session?.user as SessionUser | undefined;
+  const user = session?.user;
   const canSelfCheckin =
     !!user?.isSysadmin || !!user?.isBoardMember || !!user?.isKeyholder || isDevInstance;
   const isPrivileged = !!user?.isSysadmin || !!user?.isKeyholder;
@@ -138,9 +138,11 @@ export default function Home() {
     <Container size="sm" py="xl">
       <Card withBorder shadow="sm" radius="md" padding="xl">
         <Stack align="center" gap="xs" mb="lg">
-          <Title order={1} tt="lowercase">{isDevInstance ? 'CMI-dev' : 'CheckMeIn'}</Title>
-          <Text c="dimmed" size="lg">
-            The next-generation facility check-in system.
+          <Title order={1} ta="center">
+            {isDevInstance ? `${brand.home.title} (dev)` : brand.home.title}
+          </Title>
+          <Text c="dimmed" size="lg" ta="center">
+            {brand.home.subtitle}
           </Text>
         </Stack>
 
@@ -182,22 +184,17 @@ export default function Home() {
               )}
 
               {/* Check-in Toggle Button — in production, only privileged users can self-check-in from the web */}
-              {isCheckedIn !== null &&
-                (canSelfCheckin ? (
-                  <Button
-                    size="lg"
-                    fullWidth
-                    color={isCheckedIn ? 'red' : 'treehouseGreen'}
-                    onClick={handleToggleCheckin}
-                    loading={loading}
-                  >
-                    {isCheckedIn ? 'Check Out' : 'Check In'}
-                  </Button>
-                ) : (
-                  <Alert color="gray" variant="light" ta="center">
-                    📛 Please use the kiosk badge scanner to check in and out.
-                  </Alert>
-                ))}
+              {isCheckedIn !== null && canSelfCheckin && (
+                <Button
+                  size="lg"
+                  fullWidth
+                  color={isCheckedIn ? 'red' : 'treehouseGreen'}
+                  onClick={handleToggleCheckin}
+                  loading={loading}
+                >
+                  {isCheckedIn ? 'Check Out' : 'Check In'}
+                </Button>
+              )}
 
               {/* Board Directory Button for Keyholders/Admins */}
               {isPrivileged && (

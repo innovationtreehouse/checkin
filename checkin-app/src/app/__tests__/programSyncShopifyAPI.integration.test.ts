@@ -3,21 +3,14 @@
  */
 /**
  * Integration tests for POST /api/programs/[id]/sync-shopify — the checkout
- * repair path that mints Shopify variant(s) for a program that was priced AFTER
+ * repair path that mints a Shopify variant for a program that was priced AFTER
  * creation (PATCH never mints variants, so it sits checkout-broken). This was
  * the one fully-built-but-untested route in the program domain; webhookShopify
  * covers inbound MEMBERSHIP webhooks, not this outbound program-category sync.
  *
- * Single-pool transition (product decision 2026-07-06): a program with NO
- * legacy variant configured repairs onto the NEW single-variant model
- * (shopifyVariantId); a program already carrying one legacy variant repairs
- * via the LEGACY two-variant path (createShopifyProgramVariants), keeping the
- * matching set — see the route's own comment for why.
- *
  * Runs against the CHECKIN_ENV=local Shopify mock (config.shopifyMockActive) so
- * createShopifySingleVariantProgram/createShopifyProgramVariants return
- * synthetic dev-mock ids instead of hitting the real Admin API — same explicit
- * env gate PR #888 established.
+ * createShopifySingleVariantProgram returns synthetic dev-mock ids instead of
+ * hitting the real Admin API — same explicit env gate PR #888 established.
  *
  * NOTE (Q13): this route has NO empty/mis-categorized-category detection. An
  * IntegrationErrorLog row is written only inside the shopify.ts creation
@@ -114,8 +107,6 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
         // Success contract: a product id + ONE variant id (single pool), echoed back...
         expect(data.program.shopifyProductId).toMatch(/^dev-mock-product-/);
         expect(data.program.shopifyVariantId).toMatch(/^dev-mock-variant-/);
-        expect(data.program.shopifyOrgMemberVariantId).toBeNull();
-        expect(data.program.shopifyNonOrgMemberVariantId).toBeNull();
 
         // ...and PERSISTED — this is what fails if the route stops upserting.
         const persisted = await prisma.program.findUnique({ where: { id: program.id } });
@@ -134,35 +125,9 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
         expect(errLogsAfter).toBe(errLogsBefore);
     });
 
-    it('repairs a program already on the LEGACY model (one variant set) via the two-variant path', async () => {
-        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: boardId, isBoardMember: true } });
-        // Already has ONE legacy variant (partial legacy state) -> still checkout-broken
-        // (the non-org tier has no variant) -> repairs via createShopifyProgramVariants,
-        // not the single-pool path.
-        const program = await prisma.program.create({
-            data: {
-                name: `Legacy Broken Prog ${TAG} ${Math.round(performance.now())}`,
-                phase: 'RUNNING',
-                orgMemberPriceCents: 5000,
-                nonOrgMemberPriceCents: 7500,
-                shopifyProductId: 'dev-mock-product-existing-legacy',
-                shopifyOrgMemberVariantId: 'dev-mock-variant-member-existing-legacy',
-            },
-        });
-
-        const res = await POST(req(), params(program.id));
-        expect(res.status).toBe(200);
-
-        const data = await res.json();
-        expect(data.success).toBe(true);
-        expect(data.program.shopifyVariantId).toBeNull();
-        expect(data.program.shopifyOrgMemberVariantId).toMatch(/^dev-mock-variant-member-/);
-        expect(data.program.shopifyNonOrgMemberVariantId).toMatch(/^dev-mock-variant-nonmember-/);
-    });
-
     it('refuses a program whose checkout is already configured (400)', async () => {
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
-        // Priced AND has both variants -> not broken.
+        // Priced AND has its variant -> not broken.
         const program = await prisma.program.create({
             data: {
                 name: `Configured Prog ${TAG}`,
@@ -170,8 +135,7 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
                 orgMemberPriceCents: 5000,
                 nonOrgMemberPriceCents: 7500,
                 shopifyProductId: 'dev-mock-product-existing',
-                shopifyOrgMemberVariantId: 'dev-mock-variant-member-existing',
-                shopifyNonOrgMemberVariantId: 'dev-mock-variant-nonmember-existing',
+                shopifyVariantId: 'dev-mock-variant-existing',
             },
         });
 

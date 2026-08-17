@@ -1,7 +1,7 @@
 # s-read-function
 
 Pulls **orders**, **payouts**, and **balance transactions** from the Shopify Admin GraphQL
-API into a dedicated Postgres database. Designed to run as an AWS Lambda on a schedule, but
+API into a dedicated Postgres database. Designed to run as a scheduled ECS task, but
 every step runs locally first so the pipeline is proven before deployment.
 
 Database, projection, and normalization logic live in the shared
@@ -49,7 +49,7 @@ Copy `.env.example` to `.env` (git-ignored) and fill it in:
 | `SHOPIFY_READ_DATABASE_URL` | Connection string for a **local Postgres**. |
 | `SHOPIFY_SHOP` | `your-store.myshopify.com`. |
 | `SHOPIFY_ADMIN_TOKEN` | Static Admin API access token (`shpat_...`). Local/legacy shortcut — see below. |
-| `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` | Dev Dashboard app credentials. Set these **instead of** `SHOPIFY_ADMIN_TOKEN` to have the process mint its own token (required for the deployed Lambda, since nobody is around to hand-paste a fresh one every ~24h). |
+| `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` | Dev Dashboard app credentials. Set these **instead of** `SHOPIFY_ADMIN_TOKEN` to have the process mint its own token (required for the deployed sync, since nobody is around to hand-paste a fresh one every ~24h). |
 | `SHOPIFY_API_VERSION` | API version to pin, e.g. `2025-07`. |
 | `STORE_ID` | Seed used **only** by offline `inject` (defaults to `SHOPIFY_SHOP`). Real syncs ignore it and derive `store_id` from the live store's `myshopifyDomain` (recorded in the `store` registry table); a mismatch is logged as a warning. |
 | `CUTOVER_DATE` | ISO date — backfill starts here and moves forward. |
@@ -84,7 +84,7 @@ unattended.
 > Legacy custom apps (stores that still offer "Develop apps" in the admin) instead
 > show a static Admin API access token you can reveal once and paste into `.env`.
 
-**For the deployed Lambda**, skip the static token: set `SHOPIFY_CLIENT_ID` +
+**For the deployed sync**, skip the static token: set `SHOPIFY_CLIENT_ID` +
 `SHOPIFY_CLIENT_SECRET` instead and leave `SHOPIFY_ADMIN_TOKEN` unset. `shopify/client.ts`
 then mints its own token via the client-credentials grant on first use, caches it
 in-memory (refreshing a few minutes before its ~24h expiry so a warm container never
@@ -99,14 +99,12 @@ secret live in the app's Settings in the Dev Dashboard — never commit them or 
 issue one; renewing is just re-running the same client_id/client_secret exchange, so an
 in-memory cache is the whole mechanism. #237)*
 
-### Production (Lambda — deploy infra wiring deferred, see #234/#235)
-The same variable names are read from `process.env`. In Lambda, inject `SHOPIFY_CLIENT_ID`
-/ `SHOPIFY_CLIENT_SECRET` (not a static `SHOPIFY_ADMIN_TOKEN`) from **AWS Secrets
-Manager / SSM Parameter Store** (e.g. via the Secrets Manager Lambda extension or
-environment mapping) — the code does not read AWS APIs directly, it only reads
-`process.env`. Route `SHOPIFY_READ_DATABASE_URL` through **RDS Proxy / pgBouncer**
-with `?pgbouncer=true&connection_limit=1` for connection pooling across warm
-invocations. No secret is ever committed to the repo.
+### Production
+The same variable names are read from `process.env`; the code never calls an AWS API, so
+the deploy platform injects the values from its own secret store. The shipped wiring — a
+scheduled ECS Fargate task with `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` (not a static
+`SHOPIFY_ADMIN_TOKEN`) injected natively by the task definition — is in
+[DEPLOY.md](DEPLOY.md). No secret is ever committed to the repo.
 
 ## Setup
 
@@ -117,8 +115,8 @@ npm run db:deploy   -w @inventory/s-ingest-core   # apply migrations to the DB (
 ```
 
 The schema, migrations, and Prisma client are owned by `@inventory/s-ingest-core` — this
-package consumes the generated client. See [FUTUREWORK.md](FUTUREWORK.md) for how
-migrations are applied in deployment.
+package consumes the generated client. See [DEPLOY.md](DEPLOY.md) for how migrations are
+applied in deployment (the `s-read-<env>-migrate` task).
 
 ## Triggers
 
@@ -140,9 +138,6 @@ like:
 { "objectType": "PAYOUT", "node": { "id": "gid://shopify/ShopifyPaymentsPayout/1", "...": "..." } }
 ```
 
-In Lambda, `handler.ts` routes an EventBridge event to the same `incremental` or
-`backfill` orchestrator based on the event payload.
-
 ## Tests
 
 ```bash
@@ -158,10 +153,11 @@ order status transitions (cancellation/refund), and watermark advancement.
 > fleet strategy, pricing): [MONITORING-PRD.md](MONITORING-PRD.md).
 
 
-- **Lambda reserved concurrency = 1 (deployment requirement).** The sync must never
-  run concurrently with itself — overlapping runs waste API budget and can contend on
-  the same rows. Reserved concurrency = 1 enforces this. It also makes the stale-run
-  reaper unambiguous (any `RUNNING` row at startup is then guaranteed dead).
+- **No self-overlap.** The sync must never run concurrently with itself — overlapping
+  runs waste API budget and can contend on the same rows. Enforced **in code** by a
+  per-store Postgres advisory lock (`withAdvisoryLock` → `ConcurrentRunError`, treated as a
+  benign skip), so it holds under any runtime — ECS has no Lambda `reserved_concurrency`
+  knob to lean on.
 - **Stale-run reaper (built in).** On startup the handler relabels `sync_run` rows
   stuck in `RUNNING` past a staleness threshold to `ABANDONED` (a process killed by
   timeout/OOM). This is cosmetic — it touches no watermark or data; the next scheduled
@@ -170,40 +166,21 @@ order status transitions (cancellation/refund), and watermark advancement.
   `now − (latest COMPLETED sync_run.finishedAt)` exceeding a couple of cron intervals.
   This advances on every successful run, including empty ones, so it does **not**
   false-fire on a quiet store. (Watermark lag — `now − sync_state.lastUpdatedAtProcessed`
-  — is **not** a good primary signal: the watermark only moves when real records arrive,
-  so a genuinely quiet store looks "stale." Use watermark lag only where you have an
-  expected per-store activity cadence.)
+  — only moves when real records arrive, so use it only as a secondary per-store signal
+  where there's a known activity cadence. Rationale: [MONITORING-PRD.md](MONITORING-PRD.md) §4.1.)
 
-## Deployment (Terraform)
+## Deployment
 
-> **Ops runbook: [DEPLOY.md](DEPLOY.md)** — the ordered go-live checklist (Shopify app
-> scopes, init.sql, secrets, first deploy via the `deploy-s-read` workflow, one-time
-> backfill, verification). The shipped architecture is a **scheduled ECS task**
-> (infra#112) built from [`Dockerfile`](Dockerfile), not the Lambda sketch below.
+Shipped as a **scheduled ECS Fargate task** (infra#112), built from
+[`Dockerfile`](Dockerfile) — not a Lambda. Terraform (infra `modules/s-read`) provisions
+the AWS resources (cluster, sync/migrate task-defs, trigger Lambda + schedule, IAM,
+secrets, log groups) and deliberately does **not** run schema migrations — those are a
+separate migrate task ([FUTUREWORK.md](FUTUREWORK.md) §4 for the rationale). The invoke-only
+admin security model is [FUTUREWORK.md](FUTUREWORK.md) §2; alarm wiring is §3.
 
-When this is deployed, **Terraform provisions the infrastructure** — it does **not** run
-schema migrations (those are a separate deploy-time step; see
-[FUTUREWORK.md](FUTUREWORK.md)). What Terraform owns:
-
-- **Networking:** a VPC with private subnets for RDS; the Lambdas' VPC config (subnets +
-  security groups); an SG allowing the Lambdas → RDS Proxy on 5432; and a **NAT gateway**
-  (or equivalent egress) so the VPC-bound read Lambda can still reach the Shopify API.
-- **Database:** the dedicated **RDS PostgreSQL** instance (+ subnet/parameter groups),
-  fronted by **RDS Proxy**. The runtime `SHOPIFY_READ_DATABASE_URL` routes through the proxy with
-  `?pgbouncer=true&connection_limit=1`.
-- **Functions:** `s-read-function` and `s-replay-function` (plus a migrate-runner — see
-  FUTUREWORK), with memory/timeout, VPC config, and env wiring. **Reserved concurrency = 1
-  on `s-read-function`** is required (prevents self-overlap; see Operations & monitoring).
-- **IAM (least privilege):** each function's execution role gets only Secrets Manager read,
-  VPC ENI, and CloudWatch Logs, plus **runtime DB creds that are DML-only (no DDL)**. A
-  separate **ops role** holds `lambda:InvokeFunction` on `s-replay-function`. **No public
-  endpoint** (no Function URL / API Gateway) — admin is IAM-gated invoke only.
-- **Secrets:** Secrets Manager entries for the DB URL and the Shopify client id/secret.
-- **Scheduling:** an **EventBridge** rule invoking `s-read-function` on the sync cadence
-  (optionally a separate backfill schedule). `s-replay-function` is **not** scheduled — it
-  is invoke-only.
-- **Observability:** CloudWatch **log groups with retention set** (Lambda's default never
-  expires), the alarms from [MONITORING-PRD.md](MONITORING-PRD.md), and the SNS alert topic.
+**Ops runbook: [DEPLOY.md](DEPLOY.md)** — the ordered go-live checklist: Shopify app scopes,
+DB bootstrap, secrets, first deploy via the `deploy-s-read` workflow, one-time backfill,
+verification.
 
 ## Status / future work
 
@@ -215,7 +192,8 @@ token" above.)
 
 - Deployment: packaging ([`Dockerfile`](Dockerfile)), the manual deploy workflow
   (`.github/workflows/deploy-s-read.yml`), and the ops runbook ([DEPLOY.md](DEPLOY.md))
-  are in this repo; the AWS resources (ECR/ECS/EventBridge/secrets) are infra#112.
+  are in this repo; the AWS resources (ECS/EventBridge/secrets) are infra#112 — the image
+  lives on GHCR, not ECR.
 - Cross-database de-duplication against `income-app` is **future work**; this
   function persists the identifiers income-app records (legacy order id, order name,
   payout id) so that reconciliation can be deterministic later.

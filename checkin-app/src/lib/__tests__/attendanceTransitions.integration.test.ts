@@ -9,6 +9,7 @@
  * already-closed/missing visits) was untested.
  */
 import { findAssociatedEventAt, processVisitCheckout } from '@/lib/attendanceTransitions';
+import { MAX_VISIT_MS } from '@/lib/visitTimes';
 import prisma from '@/lib/prisma';
 
 const TAG = 'attendance-transitions-test';
@@ -154,6 +155,33 @@ describe('attendanceTransitions', () => {
             expect(v1!.departedAt).toEqual(e2Start);
             expect(v2!.arrivedAt).toEqual(e2Start);
             expect(v2!.departedAt).toEqual(checkout);
+        });
+
+        it('caps a stamped-now close at MAX_VISIT_MS after arrival', async () => {
+            const arrivedAt = new Date(Date.now() - 30 * HOUR);
+            const visit = await prisma.visit.create({ data: { personId: unenrolledId, arrivedAt } });
+
+            const result = await processVisitCheckout(visit.id, new Date(), undefined, 'AUTO_CLOSE');
+
+            expect(result).toHaveLength(1);
+            expect(result[0].departedAt).toEqual(new Date(arrivedAt.getTime() + MAX_VISIT_MS));
+            expect(result[0].departedVia).toBe('AUTO_CLOSE');
+        });
+
+        it('caps the chunked span as a whole: an event past the cap yields no chunk', async () => {
+            const t0 = new Date(Date.now() - 30 * HOUR);
+            const cap = new Date(t0.getTime() + MAX_VISIT_MS);
+            const early = await makeEvent('capped-early', new Date(t0.getTime() + HOUR), new Date(t0.getTime() + 2 * HOUR));
+            // Starts after the cap but before the uncapped checkout time.
+            await makeEvent('capped-late', new Date(cap.getTime() + HOUR), new Date(cap.getTime() + 2 * HOUR));
+            const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
+
+            const result = await processVisitCheckout(visit.id, new Date(), undefined, 'AUTO_CLOSE');
+
+            // Gap then the early event, ending at the cap — the late event is out of span.
+            expect(result.map(v => v.associatedEventId)).toEqual([null, early.id]);
+            expect(result[0].arrivedAt).toEqual(t0);
+            expect(result[result.length - 1].departedAt).toEqual(cap);
         });
 
         it('returns [] for an already-departedAt visit (idempotent)', async () => {

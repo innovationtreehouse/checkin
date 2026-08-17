@@ -55,13 +55,13 @@ beforeEach(() => {
 });
 
 describe("SystemStatusLayout role gate", () => {
-  it("admits a board member but hides the sysadmin-only Audit Log tab", () => {
+  it("admits a board member to every tab, Audit Log included", () => {
     renderLayout("/system-status/health", {
       data: { user: { id: 1, isBoardMember: true } },
       status: "authenticated",
     });
     expect(screen.getByText(CHILD)).toBeInTheDocument();
-    expect(screen.queryByText("Audit Log")).not.toBeInTheDocument();
+    expect(screen.getByText("Audit Log")).toBeInTheDocument();
     expect(push).not.toHaveBeenCalled();
   });
 

@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  * activate(), it synthesizes the order payload Shopify would send, signs it with
  * the mock webhook secret, and fires the REAL inbound webhook — so it exercises
  * the same HMAC-verify → match-by-cart-attribute → activate path prod runs
- * (mirrors the Zoho mock, ZOHO_SIGN_DEV_MOCK.md §4a).
+ * (mirrors the Zoho mock, docs/ops/contract-signing-mock.md).
  *
  * Two payload shapes, discriminated by body:
  *   { processId }                     → membership activation
@@ -75,7 +75,7 @@ async function fireMembership(processId: number): Promise<NextResponse> {
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     // Mock stands in for the manual BoardSettings variant a local seed never sets;
     // the inbound handler echoes the same fallback so the order matches (config).
-    const variantId = settings?.orgMembershipVariantId ?? settings?.shopifyNormalVariantId ?? settings?.shopifyVolunteerVariantId ?? DEV_MOCK_MEMBERSHIP_VARIANT_ID;
+    const variantId = settings?.orgMembershipVariantId ?? DEV_MOCK_MEMBERSHIP_VARIANT_ID;
 
     // Shape mirrors the subset the inbound handler reads: note_attributes (where
     // Shopify maps cart attributes) + line_items + an order id. Stable id so two
@@ -120,15 +120,14 @@ async function fireProgram(programId: number, rawParticipantIds: unknown): Promi
 
     // Mirror the membership variant echo: the program branch of the inbound
     // handler fails CLOSED unless the paid order's line_items contain one of the
-    // program's own Shopify variant ids (webhooks/shopify/route.ts). Program has a
+    // program's own Shopify variant id (webhooks/shopify/route.ts). Program has a
     // price (that's how the participant reached PENDING) but the variant may still
-    // be unset. Single-pool model (product decision 2026-07-06): shopifyVariantId
-    // takes priority — new programs never populate the legacy pair.
+    // be unset.
     const program = await prisma.program.findUnique({
         where: { id: programId },
-        select: { shopifyVariantId: true, shopifyOrgMemberVariantId: true, shopifyNonOrgMemberVariantId: true },
+        select: { shopifyVariantId: true },
     });
-    const variantId = program?.shopifyVariantId ?? program?.shopifyOrgMemberVariantId ?? program?.shopifyNonOrgMemberVariantId;
+    const variantId = program?.shopifyVariantId;
     if (!variantId) {
         return apiError("No Shopify variant configured on this program. Set one on the program in program-ops first, or the webhook leaves the participant PENDING.", 409);
     }

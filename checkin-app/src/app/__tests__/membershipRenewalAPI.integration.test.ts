@@ -12,7 +12,7 @@ import { attest } from '@/lib/membership/review';
 import { markBgConsent, markContractSigned } from '@/lib/membership/external';
 import prisma from '@/lib/prisma';
 
-jest.mock('@/lib/email', () => ({ sendEmail: jest.fn().mockResolvedValue(true) }));
+jest.mock('@/lib/email', () => ({ runPaced: (tasks: Array<() => Promise<unknown>>) => Promise.all(tasks.map((t) => t())), sendEmail: jest.fn().mockResolvedValue(true) }));
 
 const TAG = 'renewal-test';
 const CRON_SECRET = 'cron-test-secret';
@@ -37,7 +37,7 @@ describe('Membership renewal', () => {
         const parent = await prisma.person.create({ data: { name: `${label} Parent`, householdId: hh.id, email: leadEmail, lastBackgroundCheck: parentBg ?? undefined } });
         await prisma.person.update({ where: { id: parent.id }, data: { isHouseholdLead: true } });
         const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
-        return { householdId: hh.id, orgMembershipId: m.id, leadEmail };
+        return { householdId: hh.id, orgMembershipId: m.id, leadEmail, leadId: parent.id };
     }
 
     async function wipe() {
@@ -59,7 +59,7 @@ describe('Membership renewal', () => {
     async function setBoundary(date: Date | null) {
         await prisma.boardSettings.upsert({
             where: { id: 1 },
-            create: { id: 1, normalDuesCents: 0, volunteerDuesCents: 0, orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
+            create: { id: 1, standardMembershipFeeCents: 0, volunteerMembershipFeeCents: 0, orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
             update: { orgMembershipYearBoundary: date, bgRecheckMonths: BG_RECHECK_MONTHS },
         });
     }
@@ -169,7 +169,7 @@ describe('Membership renewal', () => {
         // agreement AND consent on Averity; nothing sits in the review queue yet.
         expect(out.status).toBe('PENDING_EXTERNAL_ACTION');
         expect(out.bgClearedAt).toBeNull();
-        await expect(attest(rev1, proc.id, { result: 'APPROVE' })).rejects.toMatchObject({ code: 'wrong_phase' });
+        await expect(attest(rev1, proc.id, { result: 'APPROVE', subjectPersonIds: [m.leadId] })).rejects.toMatchObject({ code: 'wrong_phase' });
 
         // Consent alone is not enough — the renewal re-signs the agreement too.
         await markBgConsent(proc.id, rev1);
@@ -180,8 +180,8 @@ describe('Membership renewal', () => {
         await markContractSigned(proc.id);
         expect((await prisma.orgMembershipProcess.findUnique({ where: { id: proc.id } }))?.status).toBe('PENDING_PAYMENT');
 
-        await attest(rev1, proc.id, { result: 'APPROVE' });
-        const final = await attest(rev2, proc.id, { result: 'APPROVE' });
+        await attest(rev1, proc.id, { result: 'APPROVE', subjectPersonIds: [m.leadId] });
+        const final = await attest(rev2, proc.id, { result: 'APPROVE', subjectPersonIds: [m.leadId] });
         expect(final.status).toBe('PENDING_PAYMENT');
     });
 

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import '@testing-library/jest-dom'
+import failOnConsole from 'jest-fail-on-console'
 
 // Integration tier (A+B): point THIS worker at its own cloned database before
 // any test module loads @/lib/prisma. integrationGlobalSetup.js created one DB
@@ -45,7 +46,7 @@ process.env.CHECKIN_ENV = 'dev';
   // pool of >= 2 so their two enroll transactions run on separate connections,
   // making the program-row FOR UPDATE lock (not pool-1 serialization) the thing
   // that serializes them — matching production.
-  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
+  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|visitWriteLockConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
     process.env.TEST_DB_POOL_MAX = '2';
   }
 }
@@ -140,4 +141,67 @@ jest.mock('@/lib/prisma', () => {
     __esModule: true,
     default: new Proxy({}, handler),
   };
+});
+
+// ---------------------------------------------------------------------------
+// Fail any test that logs an UNEXPECTED console.error.
+//
+// Jest only fails on a failed assertion or an uncaught throw, so before this a
+// new error could stack-trace into the log and every check still passed green.
+// jest-fail-on-console flips that: an unallowlisted console.error throws and
+// turns the test red. Runs for BOTH tiers (setupFilesAfterEnv covers unit and
+// integration).
+//
+// KNOWN_INTENTIONAL is the allowlist: console.error messages that fire on
+// purpose — catch-block/service logs whose negative path a test deliberately
+// exercises while asserting only the HTTP status/DB outcome, plus React/jsdom
+// test-env noise. Each entry is anchored to the log's FIXED prefix (not `.*`)
+// so a genuinely new, different error still slips past and fails the test.
+//
+// Rules for adding an entry:
+//   1. Only incidental logs — the error is a side effect of the path under
+//      test, NOT the thing the test is checking.
+//   2. Match a stable, specific prefix. Never a broad `.*` that would swallow
+//      unrelated future errors.
+//   3. If a flagged error is actually a REAL bug (something logging where it
+//      shouldn't), FIX it — do not allowlist it. (The runPaced mock-drift found
+//      while building this list was fixed, not allowlisted.)
+// The 9 suites that jest.spyOn(console,...) still suppress their own messages
+// before they reach this guard — left as-is on purpose.
+const KNOWN_INTENTIONAL = [
+  // React / jsdom test-environment noise (emitted via console.error).
+  /Not implemented: navigation/,          // jsdom: window.location navigation
+  /not wrapped in act\(/,                  // React state update outside act()
+  /In HTML, .+ cannot be a (child|descendant) of/, // React DOM-nesting validation
+  /cannot contain a nested/,               // React DOM-nesting validation (alt phrasing)
+  // Bracketed service log namespaces (incidental negative-path logs).
+  /^\[Shopify/,                            // [Shopify], [Shopify Error], [Shopify API Error]
+  /^\[s-read diagnose\]/,                  // shopify-read diagnostics probes
+  /^\[enroll\]/,                           // program enroll compensation logs
+  /^\[CRON\]/,                             // cron job per-item failure logs
+  // Prefixed catch-block/service logs (incidental negative-path logs).
+  /^Failed to fetch household:/,
+  /^Failed to fetch attendance:/,
+  /^Search error:/,
+  /^resolveHouseholdRecipients failed:/,
+  /^Renewal begin error:/,
+  /^Match audit failed:/,
+  /^Failed to trigger s-read sync:/,
+  /^Failed to read the s-read sync status:/,
+  /^Failed to obtain Shopify access token:/,
+  /^Participants page action failed:/,     // membership-ops/participants/page.tsx catches
+  /^Attendance action failed:/,            // attendance/current/page.tsx catches
+  /^Failed to update event:/,
+  /^Zoho webhook received but ZOHO_WEBHOOK_SECRET is not configured\./,
+  /^Zoho status sync failed for process/,
+  /^Shopify webhook signature mismatch\./,
+  /^Family trusted-adult ping failed:/,    // trusted-adult sweep: send fails, expiry still stands
+  /^Failed to check out visit/,            // cron nightly per-visit failure injection
+  /^Error in pass \d+ for row/,            // finance reconcile bad-row negative path
+];
+
+failOnConsole({
+  shouldFailOnError: true,
+  shouldFailOnWarn: false, // errors only this pass; warn (React act() noise) deferred
+  allowMessage: (msg) => KNOWN_INTENTIONAL.some((re) => re.test(msg)),
 });

@@ -7,6 +7,7 @@ import { notifications } from '@mantine/notifications';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
 import { isValidEmail } from '@/lib/emergencyContacts/identity';
 import { isValidPhone, PHONE_ERROR } from '@/lib/phone';
+import EmergencyContactNotice from '@/components/ui/EmergencyContactNotice';
 import {
   Alert,
   Box,
@@ -154,10 +155,11 @@ export default function OnboardingGate({ children }: { children: React.ReactNode
                 <Title order={5} mb="xs">
                   Household Emergency Contact
                 </Title>
-                <Text size="sm" c="dimmed" mb="md">
+                <Text size="sm" c="dimmed" mb="sm">
                   As a household lead, you must designate an emergency contact for your household
                   members.
                 </Text>
+                <EmergencyContactNotice mb="md" />
                 <Stack>
                   <TextInput
                     label="Contact Name"

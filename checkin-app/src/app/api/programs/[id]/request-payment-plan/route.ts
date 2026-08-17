@@ -3,9 +3,10 @@ import { logger } from "@/lib/logger";
 import { withAuth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { apiError } from "@/lib/api-response";
+import { isKnownAdult } from "@/lib/programAge";
 import { adjustProgramInventory } from "@/lib/shopify";
 import { fromWhere } from "@/lib/programs/enrollmentState";
-import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck } from "@/lib/scholarshipEmails";
+import { resolveScholarshipRecipients, notifyReviewTeam, sendScholarshipAck, resolveAckCopy } from "@/lib/scholarshipEmails";
 import { config } from "@/lib/config";
 import { escapeHtml } from "@/lib/email-templates/base";
 
@@ -66,6 +67,16 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
 
         if (!isSelf && !isSysAdminOrBoard && !isHouseholdLead) {
             return apiError("Forbidden: Not authorized to request a payment plan for this participant", 403);
+        }
+
+        // A scholarship request IS a payment situation, so it is not a youth's to
+        // make about themselves — a household lead does it. Same known-adult rule
+        // as the enroll route (docs/rules/programs.md).
+        if (isSelf && !isKnownAdult({
+            dateOfBirth: participant.person?.dateOfBirth ?? null,
+            isDeclaredAdult: participant.person?.isDeclaredAdult,
+        })) {
+            return apiError("A household lead must request a payment plan for a participant under 18.", 403);
         }
 
         if (participant.status !== 'PENDING') {
@@ -150,11 +161,15 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             // ack, review-team notify above still fired.
             if (participant.person?.householdId) {
                 const recipients = await resolveScholarshipRecipients(participant.person.householdId, participantId);
-                const ackBody = warning
-                    ? `<p>${escapeHtml(warning)}</p>` // Shopify-failure branch: carry that branch's applicant-facing copy
-                    : `<p>Hi — we've received your scholarship / payment-plan request for <strong>${escapeHtml(programName)}</strong>. `
-                    + `The Scholarship Review Team will review it and follow up. Your spot is held while they do.</p>`;
-                await sendScholarshipAck(recipients, "We received your scholarship / payment-plan request", ackBody);
+                const ackSettings = await prisma.boardSettings.findUnique({
+                    where: { id: 1 },
+                    select: { scholarshipAckSubject: true, scholarshipAckProgramBody: true },
+                });
+                const ack = resolveAckCopy(ackSettings, "program", { programName });
+                // Shopify-failure branch: the operational-incident copy is deliberately
+                // hard-coded (not configurable) — the configured subject still applies.
+                const ackBody = warning ? `<p>${escapeHtml(warning)}</p>` : ack.body;
+                await sendScholarshipAck(recipients, ack.subject, ackBody);
             }
         }
 

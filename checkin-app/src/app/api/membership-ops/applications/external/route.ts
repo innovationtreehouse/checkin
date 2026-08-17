@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
+import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { markContractSigned, markBgConsent, setZohoEnvelope, ExternalError } from "@/lib/membership/external";
+import { applicantHousehold } from "@/lib/membership/review";
+import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { apiError } from "@/lib/api-response";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +34,23 @@ export const POST = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (
     const { processId, action, envelopeId } = body;
     if (!processId || !action) {
         return apiError("processId and action are required", 400);
+    }
+
+    // Conflict of interest, guarding EVERY action here — mirrors certifyPaymentPlan
+    // and overrideBlocked. Marking your own household's contract signed or its BG
+    // consent received advances the application to PENDING_PAYMENT with no Zoho
+    // envelope and no consent behind it. No role bypasses this.
+    //
+    // The guard belongs on the route, not in the service: markContractSigned is also
+    // the Zoho webhook's entry point (system actor), and markBgConsent is what
+    // selfRecordBgConsent calls, where the actor IS the applicant by design.
+    const process = await prisma.orgMembershipProcess.findUnique({
+        where: { id: processId },
+        select: { orgMembershipId: true, subjectPersonId: true },
+    });
+    if (!process) return apiError("Application not found", 404);
+    if (await hasHouseholdConflict(prisma, actorId, await applicantHousehold(prisma, process))) {
+        return apiError("You cannot act on your own household's application — someone outside your household must.", 403);
     }
 
     try {

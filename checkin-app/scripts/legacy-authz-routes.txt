@@ -36,7 +36,6 @@ GET /api/cron/trusted-adult-expiry
 POST /api/dev/bg-consent/complete
 POST /api/dev/shopify/orders-paid
 POST /api/dev/zoho-sign/complete
-POST /api/events/[id]/attendance
 PATCH /api/events/[id]
 PATCH /api/events/[id]/rsvp
 GET /api/events/mine

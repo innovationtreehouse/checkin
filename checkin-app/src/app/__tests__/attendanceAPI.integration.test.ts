@@ -10,6 +10,7 @@ import { GET, POST, DELETE } from '@/app/api/attendance/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import * as verifyKiosk from '@/lib/verify-kiosk';
+import { ORG_DOMAIN } from '@/lib/config';
 
 // Mock Kiosk util
 jest.mock('@/lib/verify-kiosk', () => ({
@@ -28,6 +29,7 @@ describe('General Attendance API Integration Tests', () => {
     let householdChildId: number;
     let boardMemberId: number;
     let keyholderId: number;
+    let tombstoneId: number;
 
     let activeVisitId: number;
     let childActiveVisitId: number;
@@ -119,6 +121,17 @@ describe('General Attendance API Integration Tests', () => {
             data: { personId: keyholderId, arrivedAt: new Date() }
         });
 
+        // A merge tombstone: the row survives with mergedIntoId set at the survivor.
+        const tombstone = await prisma.person.create({
+            data: {
+                email: 'tombstone-attend-api-test@example.com',
+                name: 'Merged Away',
+                mergedInto: { connect: { id: commonId } },
+                household: { create: { name: "Test HH" } }
+            }
+        });
+        tombstoneId = tombstone.id;
+
         // Create initial active visits
         const commonVisit = await prisma.visit.create({
             data: { personId: commonId, arrivedAt: new Date() }
@@ -132,7 +145,7 @@ describe('General Attendance API Integration Tests', () => {
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId, keyholderId].filter(id => id !== undefined);
+        const existingUserIds = [adminId, commonId, householdLeadId, householdChildId, boardMemberId, keyholderId, tombstoneId].filter(id => id !== undefined);
 
         if (existingUserIds.length > 0) {
             await prisma.visit.deleteMany({
@@ -212,6 +225,97 @@ describe('General Attendance API Integration Tests', () => {
         });
     });
 
+    // ── ops-stg ACCESS GATE regression (Finding 2, 2026-07-20) ──────────────────
+    // This route re-verifies kiosk auth DIRECTLY via verifyKioskSignature rather
+    // than through authenticateRequest — the one place that happens outside the
+    // chokepoint. Without the explicit gate check ahead of that branch, a caller
+    // presenting a VALID kiosk signature would still set isKiosk=true, reach
+    // isAdmin, and get the full roster + safety data even after the ops-stg gate
+    // rejected the caller's session.
+    describe('GET /api/attendance — ops-stg access gate', () => {
+        const CHECKIN_ENV_BEFORE = process.env.CHECKIN_ENV;
+
+        beforeEach(() => {
+            process.env.CHECKIN_ENV = 'stg';
+        });
+
+        afterAll(() => {
+            if (CHECKIN_ENV_BEFORE === undefined) delete process.env.CHECKIN_ENV;
+            else process.env.CHECKIN_ENV = CHECKIN_ENV_BEFORE;
+        });
+
+        it('DENIES a caller presenting a VALID kiosk signature — the regression case for Finding 2', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
+            (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, {
+                method: 'GET',
+                headers: new Headers({
+                    'x-kiosk-signature': 'sig',
+                    'x-kiosk-timestamp': Date.now().toString(),
+                }),
+            });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+            const data = await res.json();
+            expect(data.attendance).toBeUndefined();
+            expect(data.safety).toBeUndefined();
+        });
+
+        it('DENIES a plain anonymous caller (no session, no kiosk headers)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([]);
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+        });
+
+        it('ALLOWS an authenticated admin who is ALSO a verified org member', async () => {
+            // isSysadmin alone does NOT bypass the staging gate — only a verified
+            // innovationtreehouse.org member or canAccessStaging does (see
+            // isStagingAccessAllowed). Both claims must be on the mocked session.
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: adminId, isSysadmin: true, hd: ORG_DOMAIN, emailVerified: true },
+            });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(200);
+        });
+
+        it('DENIES an authenticated admin who is NOT a verified org member and has no canAccessStaging flag', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, { method: 'GET' });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(401);
+        });
+
+        it('is inert outside staging: the SAME valid-kiosk-signature request that was denied above succeeds once CHECKIN_ENV is not stg', async () => {
+            process.env.CHECKIN_ENV = 'prod';
+            (getServerSession as jest.Mock).mockResolvedValue(null);
+            (verifyKiosk.getKioskPublicKeys as jest.Mock).mockReturnValue([Buffer.from('mock-public-key')]);
+            (verifyKiosk.verifyKioskSignature as jest.Mock).mockReturnValue({ ok: true });
+
+            const req = new Request(`http://localhost:4000/api/attendance`, {
+                method: 'GET',
+                headers: new Headers({
+                    'x-kiosk-signature': 'sig',
+                    'x-kiosk-timestamp': Date.now().toString(),
+                }),
+            });
+            const res = await GET(req as unknown as import("next/server").NextRequest) as Response;
+
+            expect(res.status).toBe(200);
+        });
+    });
+
     describe('POST /api/attendance (MANUAL_CHECKIN)', () => {
         it('should block a common user from checking in another user', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
@@ -221,10 +325,27 @@ describe('General Attendance API Integration Tests', () => {
                  body: JSON.stringify({ type: 'MANUAL_CHECKIN', participantId: adminId })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest) as Response;
-             expect(res.status).toBe(403);
-             
+             // 404, not 403: an id the caller may not check in must be
+             // indistinguishable from one that does not exist.
+             expect(res.status).toBe(404);
+
              const data = await res.json();
-             expect(data.error).toMatch(/Forbidden/);
+             expect(data.error).toBe('Participant not found');
+        });
+
+        it('a blocked check-in is indistinguishable from a nonexistent participant', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+
+             const request = (participantId: number) => new Request(`http://localhost:4000/api/attendance`, {
+                 method: 'POST',
+                 body: JSON.stringify({ type: 'MANUAL_CHECKIN', participantId })
+             });
+
+             const blocked = await POST(request(adminId) as unknown as import("next/server").NextRequest) as Response;
+             const missing = await POST(request(99999999) as unknown as import("next/server").NextRequest) as Response;
+
+             expect(blocked.status).toBe(missing.status);
+             expect(await blocked.json()).toEqual(await missing.json());
         });
 
         it('should block checking in a user that is already checked in', async () => {
@@ -265,6 +386,23 @@ describe('General Attendance API Integration Tests', () => {
              const data = await res.json();
              expect(data.success).toBe(true);
              expect(data.visit.personId).toBe(householdChildId);
+        });
+
+        // A merged-away Person is a tombstone: nobody can walk through the door as
+        // one, so an admin must not be able to open a Visit for it either.
+        it('should refuse to check in a merged-away (tombstoned) person', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request(`http://localhost:4000/api/attendance`, {
+                 method: 'POST',
+                 body: JSON.stringify({ type: 'MANUAL_CHECKIN', participantId: tombstoneId })
+             });
+
+             const res = await POST(req as unknown as import("next/server").NextRequest) as Response;
+             expect(res.ok).toBe(false);
+
+             const visits = await prisma.visit.count({ where: { personId: tombstoneId } });
+             expect(visits).toBe(0);
         });
 
         it('should allow an admin to check in any user', async () => {
@@ -334,10 +472,12 @@ describe('General Attendance API Integration Tests', () => {
              });
 
              const res = await DELETE(req as unknown as import("next/server").NextRequest) as Response;
-             expect(res.status).toBe(403);
-             
+             // 404, not 403: a visit id the caller may not touch must be
+             // indistinguishable from one that does not exist.
+             expect(res.status).toBe(404);
+
              const data = await res.json();
-             expect(data.error).toMatch(/Forbidden/);
+             expect(data.error).toBe('Visit not found');
         });
 
         it('should allow a common user to check themselves out', async () => {

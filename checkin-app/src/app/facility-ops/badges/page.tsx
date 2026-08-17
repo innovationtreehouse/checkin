@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { Stack } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { useRequireRole } from '@/hooks/useRequireRole';
+import { FACILITY_RECORD_ROLES } from '@/lib/facilityNav';
 import { AlertBanner, type AlertTone } from '@/components/admin/AlertBanner';
 import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
-import { formatDateTime } from '@/lib/time';
+import { useOrgTime } from '@/components/TimezoneProvider';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type BadgeEvent = {
@@ -16,16 +17,18 @@ type BadgeEvent = {
   location?: string;
 };
 
-const COLUMNS: DataTableColumn<BadgeEvent>[] = [
-  { header: 'ID', render: (b) => b.id, sortBy: (b) => b.id },
-  { header: 'Time', render: (b) => formatDateTime(b.timestamp), sortBy: (b) => b.timestamp },
-  { header: 'Participant', render: (b) => b.person?.name || 'Unknown', sortBy: (b) => b.person?.name },
-  { header: 'Email', render: (b) => b.person?.email, sortBy: (b) => b.person?.email },
-  { header: 'Location', render: (b) => b.location || 'Front Door', sortBy: (b) => b.location },
-];
-
 export default function AdminBadgesPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin']);
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_RECORD_ROLES);
+  const { formatDateTime } = useOrgTime();
+
+  // Built here, not at module scope: the time column needs the org zone from context.
+  const COLUMNS: DataTableColumn<BadgeEvent>[] = [
+    { header: 'ID', render: (b) => b.id, sortBy: (b) => b.id },
+    { header: 'Time', render: (b) => formatDateTime(b.timestamp), sortBy: (b) => b.timestamp },
+    { header: 'Participant', render: (b) => b.person?.name || 'Unknown', sortBy: (b) => b.person?.name },
+    { header: 'Email', render: (b) => b.person?.email, sortBy: (b) => b.person?.email },
+    { header: 'Location', render: (b) => b.location || 'Front Door', sortBy: (b) => b.location },
+  ];
 
   const [loading, setLoading] = useState(true);
   const [badges, setBadges] = useState<BadgeEvent[]>([]);
