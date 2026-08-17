@@ -511,63 +511,26 @@ defineRoute({
     ],
 });
 
-// Server error log (latest 100) — admin surface, all internal tier. Registered
-// ahead of its handler() conversion (inert until then).
+// Standalone (one-time) events list — admin surface. Registered ahead of its
+// handler() conversion (inert until then; AGENTS.md boundary-isolation rule).
+// The handler selects only public-tier Event columns (id/name/startAt/endAt/
+// description). Declared public-only ON PURPOSE: the response is exact, not
+// aspirational. If the select later grows to an internal field
+// (attendanceConfirmedAt/ById, postEventEmailSent) the strip fails closed and
+// forces a boundary PR + CODEOWNERS review, instead of the field shipping
+// silently under a pre-granted band.
 defineRoute({
-    endpoint: 'GET /api/system-status/errors',
+    endpoint: 'GET /api/events',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
-    envelope: 'errors',
-    returns: ['ErrorLog'],
+    envelope: null,
+    // Bag: { Event } — bare-array response (envelope null + single-key bag).
+    returns: ['Event'],
     orderedView: [
-        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isSysadmin',    ['public']],
+        ['isBoardMember', ['public']],
     ],
 });
 
-// Integration error log (latest 200) — admin surface, all internal tier.
-// Registered ahead of its handler() conversion (inert until then). The response
-// key is `errors` for back-compat with the existing UI.
-defineRoute({
-    endpoint: 'GET /api/system-status/links',
-    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
-    envelope: 'errors',
-    returns: ['IntegrationErrorLog'],
-    orderedView: [
-        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-    ],
-});
-
-// Volunteer designations (dues-discount allowlist; email is pii) — admin
-// surface, registered ahead of its handler() conversion (inert until then). GET
-// is a pure findMany (create/delete live on other HTTP methods).
-defineRoute({
-    endpoint: 'GET /api/settings/membership/volunteer-designations',
-    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
-    envelope: 'designations',
-    returns: ['VolunteerDesignation'],
-    orderedView: [
-        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
-    ],
-});
-
-// The caller's own visit history (±7-day window). Registered ahead of its
-// handler() conversion (inert until then). their_own:personal delivers
-// arrivedAt/departedAt on the caller's rows — the Visit binding keys on
-// row.personId, so the conversion PR's select MUST include personId or the
-// scope fails closed and the timestamps strip (#1137 finding 1). Nested event
-// name is public.
-defineRoute({
-    endpoint: 'GET /api/profile/visits',
-    authorize: 'authenticated',
-    envelope: 'visits',
-    // Bag: { Visit } with event (Event).
-    returns: ['Visit', 'Event'],
-    orderedView: [
-        ['authenticated', ['their_own:personal', 'member', 'public']],
-    ],
-});
 // Server error log (latest 100) — admin surface, all internal tier. Registered
 // ahead of its handler() conversion (inert until then).
 defineRoute({
