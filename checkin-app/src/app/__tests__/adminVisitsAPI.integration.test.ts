@@ -439,14 +439,14 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(403);
         });
 
-        it('creates a closed WEB visit for another person and audits actor + subject', async () => {
+        it('creates a closed LEAD_MARKED visit for another person and audits actor + subject', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
             const res = await post({ personId: testUserId, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
 
             expect(res.status).toBe(201);
             const { visit } = await res.json();
             const stored = await prisma.visit.findUnique({ where: { id: visit.id } });
-            expect(stored).toMatchObject({ personId: testUserId, arrivedVia: 'WEB', departedVia: 'WEB' });
+            expect(stored).toMatchObject({ personId: testUserId, arrivedVia: 'LEAD_MARKED', departedVia: 'LEAD_MARKED' });
             expect(stored?.departedAt).toBeInstanceOf(Date);
 
             const audit = await prisma.auditLog.findFirst({
