@@ -10,7 +10,11 @@ while true; do
   echo "Pulling latest changes from git..."
   # Pull from the monorepo root: this script lives in client/ inside the
   # `checkin` monorepo, so .git is one level up. -C makes the target explicit.
-  git -C "$(git rev-parse --show-toplevel)" pull origin main || true
+  # A failed pull can't kill the kiosk under `set -e`, so log loudly instead
+  # of swallowing it -- client.py's loop guard needs this checkout fixed.
+  if ! git -C "$(git rev-parse --show-toplevel)" pull origin main; then
+    echo "WARNING: git pull failed -- kiosk will keep running the current checkout." >&2
+  fi
 
   # Start the client backend
   echo "Starting kiosk client..."
