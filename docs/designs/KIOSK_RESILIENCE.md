@@ -26,9 +26,9 @@ corruption-redundancy mechanism, Q21 enumeration of C).
 - **Phase 1 includes the Stage-2 substrate (Q22).** No Phase 1.5. #254 lands
   later, not as a Phase 1 gate.
 - **§5.1–22 rewritten as decided.** Working-answer / contested language
-  removed. §5.23–27 unchanged except §5.27's cache constraint (identity
-  cache may include users, roles, and badge numbers; youth/two-deep math
-  stays server-side).
+  removed. §5.23–27 unchanged except §5.26 (updated for Q14=C) and §5.27's
+  cache constraint (identity cache may include users, roles, and badge
+  numbers; youth/two-deep math stays server-side).
 
 ## What changed in v3
 
@@ -349,19 +349,20 @@ above is designed to make it the workflow. Minimization must key on the
 surface rather than on which credential authenticated (§5.25) before the count
 ships.
 
-**Resolution semantics (proposed, Tom).** The review
-surface is for **keyholders and ops**, superseding the
-`['isSysadmin','isBoardMember']` framing above (exact role-flag mapping open
-— "ops" is not a modeled role; §5, question 15). Resolving writes the Visit at
-`scannedAt`, never resolution time — resolution can be days later. Resolved
-visits are **normal visits**: volunteer-hour derivation and attendance
-reports consume them unchanged (infrastructure hiccup, not a different kind
-of visit). Next-day resolution with no matching scan-out applies the
-close-sweep-equivalent departure, and that synthesized departure itself
-enters the review queue for confirmation. Open (§5, question 13): retroactively
-correcting a sweep-closure that a late-arriving (parked/dead) checkout
-should have preempted — the sweep stamped `departedAt=closeTime` but the
-person actually left at `scannedAt`.
+**Resolution semantics — decided (2026-08-17).** The review surface is for
+**keyholders and ops**, superseding the `['isSysadmin','isBoardMember']`
+framing above (role-flag mapping is `isKeyholder || isOperations ||
+isBoardMember || isSysadmin` — §5, question 15). Resolving writes the Visit
+at `scannedAt`, never resolution time — resolution can be days later.
+Resolved visits are **normal visits**: volunteer-hour derivation and
+attendance reports consume them unchanged (infrastructure hiccup, not a
+different kind of visit). Next-day resolution with no matching scan-out
+applies the close-sweep-equivalent departure, and that synthesized departure
+itself enters the review queue for confirmation. Decided (§5, question 13):
+retroactively correcting a sweep-closure that a late-arriving (parked/dead)
+checkout should have preempted — the sweep stamped `departedAt=closeTime` but
+the person actually left at `scannedAt` — is **human always**; nothing
+rewrites a sweep departure to `scannedAt` automatically.
 
 **Open-visit staleness bound (from audit B4).** `attendance/manual` refuses an
 open backfill whose arrival is older than same-day-or-6h, and states the
@@ -599,10 +600,9 @@ it (no anonymous forgery); the per-IP rate limit already caps it. Overnight
 the value dies with the scaled-to-zero task and the panel correctly reads
 stale-during-curfew — expected, not an alert. Single-task assumption is the
 same one the nonce Map already makes; `ponytail:` multi-task needs the DB.
-Under advisory mode (§2), this passive
-stamp is also the candidate answer to "does the server need a client
-heartbeat to trust advisory scans" — no new traffic, no DB writes; whether
-advisory mode needs more than passive liveness is open (§5, question 12).
+Under advisory mode (§2), this passive stamp is also the answer to "does the
+server need a client heartbeat to trust advisory scans" — no new traffic, no
+DB writes; **a signed scan at delivery is enough liveness** (§5, question 12).
 
 **Clock trust (proposed, Tom — partial).** The kiosk clock is
 trusted: a scan is trusted for **when it occurred, not when it was
