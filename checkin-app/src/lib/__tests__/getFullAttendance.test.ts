@@ -10,10 +10,11 @@ jest.mock("@/lib/prisma", () => ({ __esModule: true, default: { visit: { findMan
 // Who counts as a supervising adult is lib/supervision's rule and is tested there
 // (#1436/#1550). Pinned at 1 — short of two-deep — so what this file asserts is its
 // OWN half: whether a youth is accompanied by an adult of their household.
+const supervisingAdultVisits = jest.fn().mockResolvedValue(new Map());
 jest.mock("@/lib/supervision", () => ({
     __esModule: true,
     MIN_SUPERVISING_ADULTS: 2,
-    supervisingAdultVisits: jest.fn().mockResolvedValue(new Map()),
+    supervisingAdultVisits: (...a: unknown[]) => supervisingAdultVisits(...a),
     supervisingAdultCount: () => 1,
 }));
 
@@ -52,6 +53,7 @@ const rows = [
 beforeEach(() => {
     findMany.mockReset();
     findMany.mockResolvedValue(rows);
+    supervisingAdultVisits.mockClear();
 });
 
 describe("getFullAttendance({ kiosk: true })", () => {
@@ -138,6 +140,7 @@ describe("two-deep calc fails closed on unknown DOB (#300)", () => {
         // counted as youth, not volunteer, and flagged as youth on the wire
         expect(counts).toEqual({ keyholders: 1, volunteers: 0, youth: 2, total: 3 });
         expect(attendance[2].participant.isYouth).toBe(true);
+        expect(supervisingAdultVisits).toHaveBeenCalled();
     });
 
     it("a DoB-stripped declared adult (#1165) still accompanies their own youth", async () => {
@@ -153,5 +156,8 @@ describe("two-deep calc fails closed on unknown DOB (#300)", () => {
         expect(safety.isTwoDeepViolation).toBe(false);
         expect(counts).toEqual({ keyholders: 1, volunteers: 1, youth: 1, total: 3 });
         expect(attendance[2].participant.isYouth).toBe(false);
+        // No unaccompanied youth, so the flag is false either way — the poll must
+        // not pay for the supervision queries to learn that.
+        expect(supervisingAdultVisits).not.toHaveBeenCalled();
     });
 });

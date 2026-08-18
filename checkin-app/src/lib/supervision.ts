@@ -36,7 +36,9 @@ export const MIN_SUPERVISING_ADULTS = 2;
 /**
  * A program is in session now: one of its events brackets this instant, or the
  * program's own dates cover today. An open-ended RUNNING program counts from its
- * start — an unset end date must not read as "not in session".
+ * start — an unset end date must not read as "not in session". A RUNNING program
+ * with no start date either: `lte` never matches null, so without the fourth arm
+ * its participants fail OPEN into the supervising count.
  */
 function programInSessionNow(now: Date, today: Date): Prisma.ProgramWhereInput {
     return {
@@ -44,6 +46,7 @@ function programInSessionNow(now: Date, today: Date): Prisma.ProgramWhereInput {
             { events: { some: { startAt: { lte: now }, endAt: { gte: now } } } },
             { startAt: { lte: today }, endAt: { gte: today } },
             { startAt: { lte: today }, endAt: null, phase: "RUNNING" },
+            { startAt: null, phase: "RUNNING" },
         ],
     };
 }

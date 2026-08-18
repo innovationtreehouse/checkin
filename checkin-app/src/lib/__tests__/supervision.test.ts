@@ -117,7 +117,7 @@ describe("supervisingAdultCount(excludeVisitId)", () => {
 });
 
 describe("the programme-in-session probe", () => {
-    it("asks for an event bracketing now, dates covering today, or an open-ended RUNNING programme", async () => {
+    it("asks for an event bracketing now, dates covering today, or a RUNNING programme with an open end or no start", async () => {
         const now = new Date("2026-08-18T15:00:00Z");
         findMany.mockResolvedValue([]);
         await supervisingAdultVisits(undefined, now);
@@ -128,6 +128,9 @@ describe("the programme-in-session probe", () => {
             { events: { some: { startAt: { lte: now }, endAt: { gte: now } } } },
             { startAt: { lte: expect.any(Date) }, endAt: { gte: expect.any(Date) } },
             { startAt: { lte: expect.any(Date) }, endAt: null, phase: "RUNNING" },
+            // A RUNNING programme with no start date: `lte` never matches null, so
+            // without this arm its participants fail OPEN into the count.
+            { startAt: null, phase: "RUNNING" },
         ]);
     });
 });
