@@ -33,8 +33,14 @@ class TestStateFileRoundTrip(unittest.TestCase):
     def test_write_then_read_round_trips(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "state")
-            _write_last_restart_target("deadbeef", path)
+            self.assertTrue(_write_last_restart_target("deadbeef", path))
             self.assertEqual(_read_last_restart_target(path), "deadbeef")
+
+    def test_unwritable_path_reports_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "missing-dir", "state")
+            with self.assertLogs("kiosk", level="WARNING"):
+                self.assertFalse(_write_last_restart_target("deadbeef", path))
 
 
 class _StopLoop(Exception):
@@ -46,7 +52,7 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
     mismatch -> one restart; non-advancing pull -> no second exit (logged);
     remote moves on -> restart allowed again. Matches issue #1616."""
 
-    def _run(self, head_sequence):
+    def _run(self, head_sequence, state_name="state"):
         backend = MagicMock()
         backend.get_server_version.return_value = ("v1", 200)
         state = MagicMock()
@@ -65,7 +71,7 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
         fake_sleep.n = 0
 
         with tempfile.TemporaryDirectory() as d:
-            state_path = os.path.join(d, "state")
+            state_path = os.path.join(d, state_name)
             with patch("client.subprocess.run"), \
                  patch("client.subprocess.check_output", side_effect=fake_check_output), \
                  patch("client.os._exit") as exit_mock, \
@@ -85,6 +91,16 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
 
         self.assertEqual(exit_mock.call_count, 2)
         self.assertTrue(any("did not advance" in m for m in logs.output))
+
+    def test_unwritable_state_file_does_not_exit(self):
+        """Write failure must keep the client up: exiting without the sha on
+        disk leaves the next boot unable to see the attempt (#1616 again)."""
+        heads = [("aaa", "bbb"), ("aaa", "bbb")]
+        with self.assertLogs("kiosk", level="WARNING") as logs:
+            exit_mock = self._run(heads, state_name="missing-dir/state")
+
+        exit_mock.assert_not_called()
+        self.assertTrue(any("Not restarting" in m for m in logs.output))
 
 
 if __name__ == "__main__":

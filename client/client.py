@@ -617,11 +617,15 @@ def _read_last_restart_target(path=SELF_UPDATE_STATE_FILE):
         return None
 
 def _write_last_restart_target(remote_head, path=SELF_UPDATE_STATE_FILE):
+    # True only once the sha reads back off disk; the caller must not exit
+    # on False or the next boot forgets this attempt and loops (#1616).
     try:
         with open(path, "w") as f:
             f.write(remote_head)
     except OSError as e:
-        log.error(f"Could not persist self-update state to {path}: {e}")
+        log.warning(f"Could not persist self-update state to {path}: {e}")
+        return False
+    return _read_last_restart_target(path) == remote_head
 
 def _should_restart_for_update(remote_head, last_restart_target):
     # False once we've already exited for this exact remote_head and the
@@ -663,10 +667,18 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
             
             if local_head and remote_head and local_head != remote_head:
                 if _should_restart_for_update(remote_head, last_restart_target):
-                    log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
-                    _write_last_restart_target(remote_head, state_path)
-                    last_restart_target = remote_head
-                    os._exit(0)
+                    if _write_last_restart_target(remote_head, state_path):
+                        log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
+                        last_restart_target = remote_head
+                        os._exit(0)
+                    else:
+                        # No target on disk means the next boot can't see this
+                        # attempt, so exiting risks the loop. Stay up instead.
+                        log.warning(
+                            f"Could not record self-update target {remote_head} "
+                            f"in {state_path}. Not restarting; staying on "
+                            f"{local_head}."
+                        )
                 else:
                     # Restarted for this target already and HEAD didn't move --
                     # git pull can't fast-forward. Stay up and keep serving
