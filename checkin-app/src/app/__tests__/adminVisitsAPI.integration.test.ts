@@ -416,10 +416,13 @@ describe('Admin Visits API Integration Tests', () => {
             // Resolved (#1630): the visit is still open, so its score is elapsed
             // time-on-site (~1h, no arrivedVia so weight 1) rather than the old
             // hardcoded 0 — deleting a live check-in no longer scores lowest.
+            // The admin (testAdminId) isn't the visit's own person (testUserId),
+            // so this delete is byProxy too — the route doubles the weight
+            // (significance.ts PROXY_MULTIPLIER), giving ~120, not ~60.
             const significance = (auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance;
             expect(significance?.flagged).toBe(true);
-            expect(significance?.score).toBeGreaterThanOrEqual(60);
-            expect(significance?.score).toBeLessThan(65);
+            expect(significance?.score).toBeGreaterThanOrEqual(120);
+            expect(significance?.score).toBeLessThan(130);
         });
     });
 
