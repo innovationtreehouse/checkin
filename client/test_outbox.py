@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
-from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso
+from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso, in_closed_window
 from client import handle_scan, _saved_banner_html
 
 
@@ -115,8 +115,29 @@ class TestClassifyResponse(unittest.TestCase):
             (500, {}),
             (502, {}),
             (400, {"type": "warming"}),
+            (200, {"type": "warming"}),  # F2: a captive portal's 200 HTML, normalized by post_scan
         ]:
             self.assertEqual(classify_response(status, body), "retry", (status, body))
+
+    def test_warming_sentinel_wins_regardless_of_status(self):
+        # F2: post_scan normalizes any non-JSON body (waker HTML, a captive
+        # portal's login page, ...) to {"type": "warming"} while preserving
+        # whatever status the intermediary sent -- often 200, not 400. A
+        # status-gated warming check would let a 200 non-JSON body ack a scan
+        # that was never actually recorded server-side.
+        for status in (200, 201, 502, 404):
+            self.assertEqual(
+                classify_response(status, {"type": "warming"}), "retry", status
+            )
+
+
+class TestInClosedWindow(unittest.TestCase):
+    def test_wraps_across_midnight(self):
+        from datetime import datetime
+        self.assertTrue(in_closed_window(datetime(2026, 8, 18, 23, 30)))
+        self.assertTrue(in_closed_window(datetime(2026, 8, 18, 2, 0)))
+        self.assertFalse(in_closed_window(datetime(2026, 8, 18, 6, 0)))  # end hour is exclusive
+        self.assertFalse(in_closed_window(datetime(2026, 8, 18, 12, 0)))
 
 
 class TestReplayDrain(unittest.TestCase):
@@ -166,6 +187,31 @@ class TestReplayDrain(unittest.TestCase):
         ])
         self.assertEqual(len(ob.pending_rows()), 1)
         self.assertEqual(ob.pending_rows()[0][3], 1)  # attempts bumped
+
+    def test_does_not_send_during_the_closed_window(self):
+        # F3 / D4: a queued POST is non-GET and would wake the curfewed
+        # service -- the drain must sleep through the closed window instead
+        # of sending.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+
+            send_fn = MagicMock()
+            sleeps = {"n": 0}
+
+            def fake_sleep(secs):
+                sleeps["n"] += 1
+                if sleeps["n"] >= 3:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(
+                    ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                    in_closed_window_fn=lambda: True,
+                )
+
+            send_fn.assert_not_called()
+            self.assertEqual(ob.pending_count(), 1)
 
     def test_same_client_event_id_reused_across_retries_until_acked(self):
         # The idempotency key must not change between attempts -- a retried

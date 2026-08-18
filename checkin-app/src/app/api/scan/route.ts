@@ -17,6 +17,13 @@ const MAX_MERGE_HOPS = 5;
 // kiosk was offline, and a bare toggle can't tell entering from leaving.
 const REPLAY_FRESHNESS_WINDOW_MS = 10 * 60 * 1000;
 
+// F7: the out-of-order guard needs the true latest activity across ALL of a
+// participant's visits, not just the most-recently-arrived one -- a
+// same-day/next-day resolution (D7) can write a departedAt newer than a
+// later visit's own arrival, and comparing arrivedAt alone would miss it.
+const maxDate = (a: Date | null, b: Date | null): Date | null =>
+    !a ? b : !b ? a : (a > b ? a : b);
+
 // High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
 // reads the raw body, authenticates it (kiosk signature OR session), rejects
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
@@ -166,11 +173,11 @@ export const POST = withKiosk(
                 if (stale) {
                     parkReason = "stale_replay";
                 } else {
-                    const latestVisit = await tx.visit.findFirst({
+                    const activity = await tx.visit.aggregate({
                         where: { personId: participant.id, deletedAt: null },
-                        orderBy: { arrivedAt: "desc" },
+                        _max: { arrivedAt: true, departedAt: true },
                     });
-                    const latestActivityAt = latestVisit ? (latestVisit.departedAt ?? latestVisit.arrivedAt) : null;
+                    const latestActivityAt = maxDate(activity._max.arrivedAt, activity._max.departedAt);
                     if (latestActivityAt && latestActivityAt > eventTime) {
                         parkReason = "out_of_order";
                     }
@@ -205,7 +212,7 @@ export const POST = withKiosk(
             });
 
             if (activeVisit) {
-                return await processCheckout(participant, activeVisit.id, authType, tx, eventTime);
+                return await processCheckout(participant, activeVisit.id, authType, tx, eventTime, clientEventId);
             } else {
                 return await processCheckin(participant, authType, tx, eventTime);
             }

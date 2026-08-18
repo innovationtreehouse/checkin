@@ -72,7 +72,8 @@ export async function processCheckout(
     activeVisitId: number,
     authType: string,
     db: DbClient = prisma,
-    visitTime: Date = new Date()
+    visitTime: Date = new Date(),
+    clientEventId: string | null = null
 ) {
     let facilityClosed = false;
 
@@ -97,6 +98,20 @@ export async function processCheckout(
             });
 
             if (remainingUsers.length > 0) {
+                if (clientEventId) {
+                    // KIOSK_RESILIENCE.md §4 phase gate: replay must not be able to
+                    // force-close. A queued double-badge can carry a warn+confirm
+                    // pair ~seconds apart that replays unattended; never read or
+                    // write forceCloseWarnedAt for a replay -- park for a human
+                    // instead (D4: a queued confirm's token is from before the
+                    // outage and must expire, not be honored).
+                    await db.rawBadgeLog.update({
+                        where: { clientEventId },
+                        data: { reviewReason: 'force_close_review' },
+                    });
+                    return apiJson({ type: 'parked', message: 'Recorded for review.' });
+                }
+
                 const ownVisit = await db.visit.findUnique({
                     where: { id: activeVisitId },
                     select: { forceCloseWarnedAt: true }

@@ -16,12 +16,27 @@ log = logging.getLogger("kiosk")
 # Start at the waker's Retry-After (~30s), exponential to a ~5 min cap.
 MIN_BACKOFF_SECONDS = 30
 MAX_BACKOFF_SECONDS = 300
-# Drain pace capped at ~1 event/sec so a backlog leaves the shared 300/min
-# scan rate limit mostly to live scans.
+# Also the idle-poll interval and the pace between processed events (ack/dead)
+# -- one knob, not two, since both cap the drain loop's cycle time. ~1
+# event/sec leaves the shared 300/min scan rate limit mostly to live scans.
 DRAIN_PACE_SECONDS = 1.0
 # Guard rail against a pathological stuck state. Un-acked rows are never
 # evicted to enforce this -- it is a log-only warning, not a hard cap.
 WARN_QUEUE_SIZE = 50_000
+
+# docs/designs/KIOSK_RESILIENCE.md D4: the drain must not send during the
+# closed window -- a queued POST is non-GET and wakes the curfewed service.
+# Exact hours are server-fetched per Q6, not wired to the client yet;
+# placeholder local-time window pending confirmation (flagged on the PR).
+CLOSED_WINDOW_START_HOUR = 23  # local time, inclusive
+CLOSED_WINDOW_END_HOUR = 6     # local time, exclusive
+
+
+def in_closed_window(now=None):
+    hour = (now or datetime.now()).hour
+    if CLOSED_WINDOW_START_HOUR <= CLOSED_WINDOW_END_HOUR:
+        return CLOSED_WINDOW_START_HOUR <= hour < CLOSED_WINDOW_END_HOUR
+    return hour >= CLOSED_WINDOW_START_HOUR or hour < CLOSED_WINDOW_END_HOUR
 
 
 def now_iso():
@@ -41,50 +56,41 @@ class Outbox:
         self._lock = threading.RLock()
         self._conn = self._open(path)
 
+    _SCHEMA_SQL = """CREATE TABLE IF NOT EXISTS outbox (
+        client_event_id TEXT PRIMARY KEY,
+        participant_id  TEXT NOT NULL,
+        scanned_at      TEXT NOT NULL,
+        attempts        INTEGER NOT NULL DEFAULT 0,
+        last_status     INTEGER,
+        state           TEXT NOT NULL DEFAULT 'pending',
+        created_at      TEXT NOT NULL
+    )"""
+
     def _open(self, path):
-        conn = sqlite3.connect(path, check_same_thread=False)
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=FULL")
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS outbox (
-                    client_event_id TEXT PRIMARY KEY,
-                    participant_id  TEXT NOT NULL,
-                    scanned_at      TEXT NOT NULL,
-                    attempts        INTEGER NOT NULL DEFAULT 0,
-                    last_status     INTEGER,
-                    state           TEXT NOT NULL DEFAULT 'pending',
-                    created_at      TEXT NOT NULL
-                )"""
-            )
-            conn.commit()
+        def connect_and_init():
+            conn = sqlite3.connect(path, check_same_thread=False)
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA synchronous=FULL")
+                conn.execute(self._SCHEMA_SQL)
+                conn.commit()
+            except sqlite3.DatabaseError:
+                conn.close()
+                raise
             return conn
+
+        try:
+            return connect_and_init()
         except sqlite3.DatabaseError as e:
             # Scanning must never block on a sick queue: move the corrupt
             # file aside and start fresh.
-            conn.close()
             corrupt_path = f"{path}.corrupt.{int(time.time())}"
             log.error(f"Outbox {path} unreadable ({e}); moving aside to {corrupt_path}")
             try:
                 os.replace(path, corrupt_path)
             except OSError:
                 pass
-            conn = sqlite3.connect(path, check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=FULL")
-            conn.execute(
-                """CREATE TABLE IF NOT EXISTS outbox (
-                    client_event_id TEXT PRIMARY KEY,
-                    participant_id  TEXT NOT NULL,
-                    scanned_at      TEXT NOT NULL,
-                    attempts        INTEGER NOT NULL DEFAULT 0,
-                    last_status     INTEGER,
-                    state           TEXT NOT NULL DEFAULT 'pending',
-                    created_at      TEXT NOT NULL
-                )"""
-            )
-            conn.commit()
-            return conn
+            return connect_and_init()
 
     def enqueue(self, client_event_id, participant_id, scanned_at):
         """Idempotent: a retried enqueue of the same event is a no-op."""
@@ -158,6 +164,13 @@ class Outbox:
 def classify_response(status, body):
     """Maps a scan response to one of three outcomes: ack (delete), retry
     (keep, backoff), dead (terminal, stop retrying)."""
+    # F2: check this FIRST, regardless of status. post_scan normalizes any
+    # non-JSON body (waker HTML, a captive portal's login page, ...) to this
+    # sentinel while preserving whatever status the intermediary sent -- often
+    # 200, not 400. Gating on status==400 let a 200 non-JSON body ack a scan
+    # that was never actually recorded server-side.
+    if isinstance(body, dict) and body.get("type") == "warming":
+        return "retry"
     if status == 0:
         return "retry"  # network error / timeout -- safe, idempotent retry
     if status in (200, 201):
@@ -169,8 +182,6 @@ def classify_response(status, body):
         return "retry"
     if status == 400 and isinstance(body, dict) and body.get("type") == "warning":
         return "ack"  # force-close caution; the touch WAS recorded server-side
-    if status == 400 and isinstance(body, dict) and body.get("type") == "warming":
-        return "retry"  # non-JSON/waker body normalized to this by post_scan
     if status in (400, 404, 409):
         return "dead"
     if status == 503:
@@ -191,16 +202,22 @@ def _backoff_seconds(retry_after_header, current_backoff):
     return max(1.0, base + jitter)
 
 
-def replay_drain(outbox, send_fn, push_fn=None, poll_interval=1.0, sleep_fn=time.sleep):
+def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window):
     """Single drain thread: pulls pending rows in scanned_at order,
     resubmits each one (send_fn re-signs per call), and applies the
     ack/retry/dead outcome. Runs forever; call in a background thread."""
     backoff = MIN_BACKOFF_SECONDS
     while True:
+        # D4: never send during the closed window -- a queued POST is
+        # non-GET and would wake the curfewed service.
+        if in_closed_window_fn():
+            sleep_fn(DRAIN_PACE_SECONDS)
+            continue
+
         rows = outbox.pending_rows()
         if not rows:
             backoff = MIN_BACKOFF_SECONDS
-            sleep_fn(poll_interval)
+            sleep_fn(DRAIN_PACE_SECONDS)
             continue
 
         client_event_id, participant_id, scanned_at, attempts = rows[0]

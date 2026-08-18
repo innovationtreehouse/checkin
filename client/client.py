@@ -39,6 +39,7 @@ log = logging.getLogger("kiosk")
 # The backend page serving the kiosk display; `mode=kiosk` selects its kiosk
 # layout. Overridable per-Pi via config.json.
 DEFAULT_KIOSK_PATH = "/attendance/current?mode=kiosk"
+DEFAULT_OUTBOX_PATH = "outbox.db"
 
 def load_config(path="config.json"):
     if not os.path.exists(path):
@@ -209,7 +210,7 @@ class KioskHandler(BaseHTTPRequestHandler):
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body, html {{ width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }}
   iframe {{ width: 100%; height: 100%; border: none; }}
-
+  
   #blackout {{
     position: absolute;
     top: 0;
@@ -264,6 +265,19 @@ class KioskHandler(BaseHTTPRequestHandler):
     border: 2px solid #60a5fa;
     color: #fff;
   }}
+  #queue-badge {{
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    z-index: 9998;
+    background: rgba(37,99,235,0.9);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    display: none;
+  }}
   @keyframes fadeout {{
     0% {{ opacity: 1; }}
     80% {{ opacity: 1; }}
@@ -307,6 +321,17 @@ class KioskHandler(BaseHTTPRequestHandler):
     }}
   }}
 
+  // D5: a live queued-count on the SSE stream so staff watch the backlog drain.
+  function updateQueueBadge(n) {{
+    const b = document.getElementById("queue-badge");
+    if (n > 0) {{
+      b.textContent = n + " queued";
+      b.style.display = "block";
+    }} else {{
+      b.style.display = "none";
+    }}
+  }}
+
   function connectSSE() {{
     const source = new EventSource("/events");
 
@@ -327,6 +352,7 @@ class KioskHandler(BaseHTTPRequestHandler):
         return;
       }}
       handleData(data, false);
+      if (typeof data.queued === "number") updateQueueBadge(data.queued);
       const html = data.html || "";
       if (html) {{
         const container = document.getElementById("flash-container");
@@ -359,6 +385,7 @@ class KioskHandler(BaseHTTPRequestHandler):
 <body onload="connectSSE()">
   <div id="blackout"></div>
   <div id="flash-container"></div>
+  <div id="queue-badge"></div>
   <iframe src="{self.kiosk_path}"></iframe>
 </body>
 </html>"""
@@ -407,17 +434,17 @@ class KioskHandler(BaseHTTPRequestHandler):
 
     def _proxy_request(self, method):
         url = self.backend.base_url + self.path
-
+        
         body_bytes = b""
         length = int(self.headers.get("Content-Length", 0))
         if length > 0:
             body_bytes = self.rfile.read(length)
-
+            
         req_headers = {}
         for k, v in self.headers.items():
             if k.lower() not in ['host', 'connection', 'accept-encoding']:
                 req_headers[k] = v
-
+                
         # Inject Key Signing Headers onto the API requests transparently!
         # Sign with pathname only (no query string) — backend verifies against pathname
         from urllib.parse import urlparse
@@ -429,10 +456,10 @@ class KioskHandler(BaseHTTPRequestHandler):
                 body_str = body_bytes.decode('utf-8')
             except UnicodeDecodeError:
                 pass
-
+                
         sig_headers = sign_request(self.backend.signing_key, method, sign_path, body_str)
         req_headers.update(sig_headers)
-
+        
         try:
             # Use requests.request (stateless) so cookies flow directly between browser and backend
             resp = requests.request(
@@ -444,7 +471,7 @@ class KioskHandler(BaseHTTPRequestHandler):
                 stream=True,
                 timeout=30
             )
-
+            
             try:
                 self.send_response(resp.status_code)
                 for k, v in resp.headers.items():
@@ -461,7 +488,7 @@ class KioskHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 # Browser closed the connection, normal for HMR or page reloads
                 pass
-
+                    
         except Exception as e:
             if not isinstance(e, (BrokenPipeError, ConnectionResetError)):
                 log.error(f"Proxy error for {self.path}: {e}")
@@ -613,7 +640,7 @@ def handle_scan(backend, state, outbox, participant_id):
         email = body.get("participant", {}).get("email", "?")
         log.info(f"Scan result: {ptype.upper()} — {email}")
     else:
-        log.warning(f"Scan error (dead-letter, not queued): {body.get('error', body)}")
+        log.warning(f"Scan rejected, not queued: {body.get('error', body)}")
 
     # Fetch fresh attendance and push update for the iframe
     if backend.attendance_path and outcome == "ack":
@@ -650,7 +677,7 @@ def attendance_poller(backend, state, interval=30):
 def version_poller(backend, state, interval=60):
     """Background thread that checks for client and server version updates."""
     import subprocess
-
+    
     # Get initial server version
     initial_server_version = None
     for _ in range(6):
@@ -660,10 +687,10 @@ def version_poller(backend, state, interval=60):
             log.info(f"Initial server version: {initial_server_version}")
             break
         time.sleep(5)
-
+    
     while True:
         time.sleep(interval)
-
+        
         # 1. Check Server Version Update
         if initial_server_version:
             sv, status = backend.get_server_version()
@@ -671,14 +698,14 @@ def version_poller(backend, state, interval=60):
                 log.info(f"Server version changed from {initial_server_version} to {sv}. Requesting reload.")
                 state.push_event({"reload": True})
                 initial_server_version = sv  # Update to prevent spam
-
+        
         # 2. Check Client Version Update
         try:
             subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
 
             local_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
             remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
-
+            
             if local_head and remote_head and local_head != remote_head:
                 log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
                 os._exit(0)
@@ -709,7 +736,7 @@ def main():
 
     backend = BackendClient(backend_url, signing_key, attendance_path or None)
     state = AttendanceState()
-    outbox = Outbox(config.get("outbox_path", "outbox.db"))
+    outbox = Outbox(config.get("outbox_path", DEFAULT_OUTBOX_PATH))
     log.info(f"Outbox:  {outbox.path} ({outbox.pending_count()} pending on start)")
 
     # Fetch initial attendance state (only if attendance_path is configured)

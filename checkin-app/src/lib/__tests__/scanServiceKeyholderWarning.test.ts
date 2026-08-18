@@ -36,6 +36,9 @@ function fakeDb(
             findUnique: jest.fn().mockResolvedValue({ forceCloseWarnedAt: warnedAt }),
             update: jest.fn().mockResolvedValue({}),
         },
+        rawBadgeLog: {
+            update: jest.fn().mockResolvedValue({}),
+        },
     } as unknown as DbClient;
 }
 
@@ -103,5 +106,37 @@ describe("force close is bound to the warning", () => {
 
         expect(res.status).toBe(400);
         expect((await res.json()).type).toBe("warning");
+    });
+});
+
+describe("F1: replay must not be able to force-close (§4 phase gate)", () => {
+    const present = [{ name: "Someone Inside", email: "inside@example.com" }];
+
+    it("a replayed checkout parks instead of warning/confirming, never touching forceCloseWarnedAt", async () => {
+        const db = fakeDb(present);
+        const res = await processCheckout(keyholder, 42, "kiosk", db, new Date(), "evt-replay-1");
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).type).toBe("parked");
+        expect(db.visit.findUnique).not.toHaveBeenCalled();
+        expect(db.visit.update).not.toHaveBeenCalled();
+        expect(db.rawBadgeLog.update).toHaveBeenCalledWith({
+            where: { clientEventId: "evt-replay-1" },
+            data: { reviewReason: "force_close_review" },
+        });
+    });
+
+    it("two replayed keyholder checkouts do NOT close all open visits -- the second also parks", async () => {
+        const db = fakeDb(present);
+
+        const first = await processCheckout(keyholder, 42, "kiosk", db, new Date(), "evt-replay-1");
+        expect((await first.json()).type).toBe("parked");
+
+        const second = await processCheckout(keyholder, 42, "kiosk", db, new Date(), "evt-replay-2");
+        expect((await second.json()).type).toBe("parked");
+
+        // Neither replay ever stamped or read forceCloseWarnedAt, so nothing
+        // was ever in a position to "confirm" and sweep the room.
+        expect(db.visit.update).not.toHaveBeenCalled();
     });
 });

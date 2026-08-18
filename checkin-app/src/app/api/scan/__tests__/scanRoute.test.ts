@@ -23,6 +23,7 @@ jest.mock('@/lib/prisma', () => {
         },
         visit: {
             findFirst: jest.fn(),
+            aggregate: jest.fn(),
         },
         systemMetricLog: {
             create: jest.fn().mockResolvedValue({}),
@@ -220,6 +221,7 @@ describe('POST /api/scan', () => {
         it('toggles a fresh replay using scannedAt as the visit time', async () => {
             (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
             (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
+            (prisma.visit.aggregate as jest.Mock).mockResolvedValue({ _max: { arrivedAt: null, departedAt: null } });
             (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
 
             const scannedAt = new Date(Date.now() - 60_000).toISOString();
@@ -252,9 +254,11 @@ describe('POST /api/scan', () => {
         it('parks a fresh replay whose scannedAt is older than newer visit activity (out-of-order guard)', async () => {
             (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
             const scannedAt = new Date(Date.now() - 5 * 60_000); // within W
-            (prisma.visit.findFirst as jest.Mock).mockResolvedValue({
-                arrivedAt: new Date(Date.now() - 2 * 60_000),
-                departedAt: new Date(Date.now() - 60_000), // newer than scannedAt
+            (prisma.visit.aggregate as jest.Mock).mockResolvedValue({
+                _max: {
+                    arrivedAt: new Date(Date.now() - 2 * 60_000),
+                    departedAt: new Date(Date.now() - 60_000), // newer than scannedAt
+                },
             });
 
             const res = await POST(replayReq({ scannedAt: scannedAt.toISOString() }));
