@@ -379,13 +379,17 @@ POST /api/scan                       Auth unchanged (withKiosk; re-sign every at
 Body (new fields optional):
   { participantId: number,
     clientEventId?: string,          // UUID, stable across retries of one scan
-    scannedAt?:     string }         // ISO8601, instant the badge was read
+    scannedAt?:     string,          // ISO8601, instant the badge was read
+    replay?:        boolean }        // true ONLY on an outbox-drain redelivery
 
 Server:
   legacy body {participantId}        → exactly today's behavior (timestamp=now, no dedup key)
   clientEventId present → in the advisory-lock tx, pre-read RawBadgeLog by clientEventId:
     found  → 200 {type:"duplicate_ignored"}                    (idempotent replay, no toggle)
-    absent → write RawBadgeLog{clientEventId, timestamp: scannedAt ?? now}:
+    absent, replay !== true (LIVE) → write RawBadgeLog{clientEventId, timestamp: now};
+                             today's live behavior unchanged, including the
+                             last-keyholder warn/confirm → 200 {type:"checkin"|"checkout"}
+    absent, replay === true → write RawBadgeLog{clientEventId, timestamp: scannedAt ?? now}:
       (now - scannedAt) <= W → normal toggle, event-assoc uses scannedAt
                                → 200 {type:"checkin"|"checkout"}
                                out-of-order guard (D3): participant has visit
@@ -393,7 +397,20 @@ Server:
       else                   → set reviewReason, DO NOT toggle → 200 {type:"parked"}
   unique-violation on the insert (cross-lock race, e.g. mid-replay merge)
                                      → 200 {type:"duplicate_ignored"}
+  malformed replay (non-boolean, or true without clientEventId) → 400
 ```
+
+**Amendment (2026-08-18) — replay-ness is explicit, not inferred.** D4's
+try-first rule puts `clientEventId` on the **live** attempt, so
+"`clientEventId` present" cannot mean "this is a replay": inferring it parks
+every live last-keyholder force-close and applies the replay-only guards to
+live scans. The body therefore carries `replay: true`, set **only** by
+`client/outbox.py`'s drain. Dedup (pre-read + the `@unique` backstop) stays
+keyed on `clientEventId` regardless of the flag — that is the try-first
+contract. Everything replay-only (freshness window W, out-of-order guard,
+`timestamp` backdated to `scannedAt`, force-close parking) gates on the flag.
+A live scan is happening now, so it stamps server-now and never inherits the
+kiosk's clock.
 
 ### Schema delta
 

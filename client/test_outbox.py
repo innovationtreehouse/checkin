@@ -150,7 +150,7 @@ class TestReplayDrain(unittest.TestCase):
 
             calls = {"n": 0}
 
-            def send_fn(participant_id, client_event_id, scanned_at):
+            def send_fn(participant_id, client_event_id, scanned_at, replay=False):
                 idx = calls["n"]
                 calls["n"] += 1
                 return responses[idx]
@@ -223,7 +223,7 @@ class TestReplayDrain(unittest.TestCase):
 
             seen_ids = []
 
-            def send_fn(participant_id, client_event_id, scanned_at):
+            def send_fn(participant_id, client_event_id, scanned_at, replay=False):
                 seen_ids.append(client_event_id)
                 if len(seen_ids) < 3:
                     return ({}, 503, None)
@@ -238,6 +238,30 @@ class TestReplayDrain(unittest.TestCase):
 
             self.assertEqual(seen_ids, ["evt-fixed", "evt-fixed", "evt-fixed"])
             self.assertEqual(ob.pending_rows(), [])
+
+
+    def test_drain_marks_every_send_as_a_replay(self):
+        # The server's replay-only guards (freshness, out-of-order, force-close
+        # parking) key on this flag, not on clientEventId -- the live attempt
+        # already sent that id.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+
+            seen = []
+
+            def send_fn(participant_id, client_event_id, scanned_at, replay=False):
+                seen.append(replay)
+                return ({"type": "checkin"}, 200, None)
+
+            def fake_sleep(secs):
+                if seen:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep)
+
+            self.assertEqual(seen, [True])
 
 
 class TestHandleScanQueuesOnFailure(unittest.TestCase):
@@ -273,6 +297,18 @@ class TestHandleScanQueuesOnFailure(unittest.TestCase):
 
             self.assertEqual(ob.pending_count(), 0)
             self.assertIn("banner-ok", state.events[-1]["html"])
+
+    def test_live_scan_is_not_sent_as_a_replay(self):
+        # A live kiosk scan must reach the server unflagged, or the server
+        # parks the force-close instead of warning at the door.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            backend = self._backend(({"type": "checkin", "participant": {}}, 200, None))
+
+            handle_scan(backend, FakeState(), ob, "9")
+
+            self.assertNotIn("replay", backend.post_scan.call_args.kwargs)
+            self.assertEqual(len(backend.post_scan.call_args.args), 3)
 
     def test_dead_letter_response_is_not_queued(self):
         with tempfile.TemporaryDirectory() as d:

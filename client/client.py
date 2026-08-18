@@ -90,7 +90,7 @@ class BackendClient:
         h["Content-Type"] = "application/json"
         return h
 
-    def post_scan(self, participant_id, client_event_id=None, scanned_at=None):
+    def post_scan(self, participant_id, client_event_id=None, scanned_at=None, replay=False):
         path = "/api/scan"
         payload = {"participantId": participant_id}
         try:
@@ -101,6 +101,11 @@ class BackendClient:
             payload["clientEventId"] = client_event_id
         if scanned_at:
             payload["scannedAt"] = scanned_at
+        if replay:
+            # Only the outbox drain sets this. The live attempt carries the same
+            # clientEventId (D4 try-first) but is NOT a replay, so the server
+            # cannot infer replay-ness from the id.
+            payload["replay"] = True
         body = json.dumps(payload)
 
         headers = self._headers("POST", path, body)

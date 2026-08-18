@@ -29,7 +29,7 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -45,8 +45,22 @@ export const POST = withKiosk(
         const clientEventId = (typeof body.clientEventId === 'string' && body.clientEventId) || null;
         const parsedScannedAt = typeof body.scannedAt === 'string' ? new Date(body.scannedAt) : null;
         const scannedAt = parsedScannedAt && !isNaN(parsedScannedAt.getTime()) ? parsedScannedAt : null;
-        const isReplay = clientEventId !== null;
-        const eventTime = scannedAt ?? new Date();
+
+        // Replay-ness is explicit: only the outbox drain sets it. It cannot be
+        // inferred from clientEventId, because D4's try-first rule puts that id
+        // on the LIVE attempt too so a later redelivery dedups.
+        if (body.replay !== undefined && typeof body.replay !== 'boolean') {
+            return apiError("replay must be a boolean.", 400);
+        }
+        const isReplay = body.replay === true;
+        if (isReplay && !clientEventId) {
+            return apiError("A replayed scan requires clientEventId.", 400);
+        }
+
+        // A replay carries its own event time; a live scan is happening now, so
+        // it never inherits the kiosk's clock (D3's window and the debounce both
+        // measure against server now).
+        const eventTime = isReplay && scannedAt ? scannedAt : new Date();
 
         // Web session: check if user can scan this participant
         let pendingHouseholdCheck = false;
@@ -212,7 +226,7 @@ export const POST = withKiosk(
             });
 
             if (activeVisit) {
-                return await processCheckout(participant, activeVisit.id, authType, tx, eventTime, clientEventId);
+                return await processCheckout(participant, activeVisit.id, authType, tx, eventTime, isReplay ? clientEventId : null);
             } else {
                 return await processCheckin(participant, authType, tx, eventTime);
             }

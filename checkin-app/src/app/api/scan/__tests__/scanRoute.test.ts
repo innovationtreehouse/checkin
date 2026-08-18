@@ -192,12 +192,14 @@ describe('POST /api/scan', () => {
         expect(json.message).toBe('Scan ignored due to debounce.');
     });
 
-    // §2 D2/D3 (docs/designs/KIOSK_RESILIENCE.md) — replayed-scan idempotency.
+    // §2 D2/D3/D4 (docs/designs/KIOSK_RESILIENCE.md) — replayed-scan idempotency.
+    // `replay: true` marks a redelivery; D4's try-first rule puts clientEventId
+    // on the live attempt too, so the id alone never implies a replay.
     describe('replayed scans (clientEventId/scannedAt)', () => {
         function replayReq(overrides: Record<string, unknown> = {}) {
             return new Request('http://localhost/api/scan', {
                 method: 'POST',
-                body: JSON.stringify({ participantId: 1, clientEventId: 'evt-1', scannedAt: new Date().toISOString(), ...overrides })
+                body: JSON.stringify({ participantId: 1, clientEventId: 'evt-1', scannedAt: new Date().toISOString(), replay: true, ...overrides })
             }) as unknown as import('next/server').NextRequest;
         }
 
@@ -216,6 +218,26 @@ describe('POST /api/scan', () => {
             expect(json.type).toBe('duplicate_ignored');
             expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
             expect(processCheckin).not.toHaveBeenCalled();
+        });
+
+        it('dedups on clientEventId regardless of the replay flag (try-first contract)', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue({ id: 5, clientEventId: 'evt-1' });
+
+            const res = await POST(replayReq({ replay: undefined }));
+            expect((await res.json()).type).toBe('duplicate_ignored');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
+        it('rejects a non-boolean replay flag rather than guessing its truthiness', async () => {
+            const res = await POST(replayReq({ replay: 'true' }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toContain('replay');
+        });
+
+        it('rejects replay:true without a clientEventId — it could neither dedup nor park', async () => {
+            const res = await POST(replayReq({ clientEventId: undefined }));
+            expect(res.status).toBe(400);
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
         });
 
         it('toggles a fresh replay using scannedAt as the visit time', async () => {
@@ -276,7 +298,7 @@ describe('POST /api/scan', () => {
             (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
             (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
 
-            const res = await POST(replayReq({ clientEventId: undefined, scannedAt: undefined }));
+            const res = await POST(replayReq({ clientEventId: undefined, scannedAt: undefined, replay: undefined }));
             expect(res.status).toBe(200);
 
             expect(prisma.rawBadgeLog.findUnique).not.toHaveBeenCalled();
@@ -287,11 +309,69 @@ describe('POST /api/scan', () => {
             (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
             (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
 
-            const res = await POST(replayReq({ clientEventId: '' }));
+            const res = await POST(replayReq({ clientEventId: '', replay: undefined }));
             expect(res.status).toBe(200);
 
             expect(prisma.rawBadgeLog.findUnique).not.toHaveBeenCalled();
             expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 1, location: 'Main Entrance' } });
+        });
+    });
+
+    // The live kiosk scan carries clientEventId (D4 try-first) but no replay
+    // flag: it must dedup, and otherwise behave exactly like a legacy live scan.
+    describe('live scans carrying a clientEventId (no replay flag)', () => {
+        function liveReq(overrides: Record<string, unknown> = {}) {
+            return new Request('http://localhost/api/scan', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: 1, clientEventId: 'evt-live', scannedAt: new Date().toISOString(), ...overrides })
+            }) as unknown as import('next/server').NextRequest;
+        }
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue(null);
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
+            (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
+        });
+
+        it('records the dedup key but stamps server-now, never the kiosk scannedAt', async () => {
+            const res = await POST(liveReq({ scannedAt: new Date(Date.now() - 60_000).toISOString() }));
+            expect(res.status).toBe(200);
+
+            // No `timestamp` override -> the column default (now).
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({
+                data: { personId: 1, location: 'Main Entrance', clientEventId: 'evt-live' },
+            });
+        });
+
+        it('is never parked by the freshness window, however old its scannedAt', async () => {
+            const res = await POST(liveReq({ scannedAt: new Date(Date.now() - 20 * 60_000).toISOString() }));
+            expect((await res.json()).type).toBe('checkin');
+            expect(prisma.visit.aggregate).not.toHaveBeenCalled();
+            expect(processCheckin).toHaveBeenCalled();
+        });
+
+        it('is never parked by the out-of-order guard, and checks out as live (no replay id)', async () => {
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
+            (prisma.visit.aggregate as jest.Mock).mockResolvedValue({
+                _max: { arrivedAt: new Date(), departedAt: new Date() },
+            });
+            (processCheckout as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkout' }), { status: 200 }));
+
+            const res = await POST(liveReq());
+            expect((await res.json()).type).toBe('checkout');
+            // Last arg null => processCheckout takes the live warn/confirm path.
+            expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'kiosk', expect.anything(), expect.any(Date), null);
+        });
+
+        it('still dedups a clientEventId already recorded server-side', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue({ id: 5, clientEventId: 'evt-live' });
+
+            const res = await POST(liveReq());
+            expect((await res.json()).type).toBe('duplicate_ignored');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
         });
     });
 });

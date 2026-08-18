@@ -2,6 +2,10 @@ import inspect
 import json
 import os
 import unittest
+from unittest.mock import MagicMock
+
+from nacl.signing import SigningKey
+
 from client import BackendClient, DEFAULT_KIOSK_PATH, main
 
 class TestBackendClient(unittest.TestCase):
@@ -14,6 +18,28 @@ class TestBackendClient(unittest.TestCase):
         self.assertTrue(hasattr(client, "post_scan"), "BackendClient is missing post_scan method")
         self.assertTrue(hasattr(client, "get_attendance"), "BackendClient is missing get_attendance method")
         self.assertTrue(hasattr(client, "_headers"), "BackendClient is missing _headers method")
+
+class TestPostScanReplayFlag(unittest.TestCase):
+    """The live attempt carries clientEventId (D4 try-first) but no replay
+    flag -- the server's replay-only guards must not fire on it."""
+
+    def _payload(self, **kwargs):
+        client = BackendClient("http://fake", SigningKey(b"\x00" * 32))
+        client.session = MagicMock()
+        client.session.post.return_value = MagicMock(
+            status_code=200, headers={}, json=lambda: {}
+        )
+        client.post_scan(7, "evt-1", "2026-08-18T10:00:00+00:00", **kwargs)
+        return json.loads(client.session.post.call_args.kwargs["data"])
+
+    def test_live_send_carries_the_event_id_but_no_replay_flag(self):
+        payload = self._payload()
+        self.assertEqual(payload["clientEventId"], "evt-1")
+        self.assertNotIn("replay", payload)
+
+    def test_replay_send_sets_the_flag(self):
+        self.assertIs(self._payload(replay=True)["replay"], True)
+
 
 class TestProxyBindsLocalhostOnly(unittest.TestCase):
     def test_server_binds_127_0_0_1_not_0_0_0_0(self):

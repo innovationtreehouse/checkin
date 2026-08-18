@@ -109,6 +109,33 @@ describe("force close is bound to the warning", () => {
     });
 });
 
+describe("a LIVE scan carrying a clientEventId still warns and confirms", () => {
+    // D4 try-first puts the idempotency key on the live attempt, so the park
+    // must key on the replay flag (null here), never on the id's presence.
+    const present = [{ name: "Someone Inside", email: "inside@example.com" }];
+
+    it("warns and stamps on the first live scan even though the scan has an event id", async () => {
+        const db = fakeDb(present);
+        const res = await processCheckout(keyholder, 42, "kiosk", db, new Date(), null);
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).type).toBe("warning");
+        expect(db.visit.update).toHaveBeenCalledWith({
+            where: { id: 42 },
+            data: { forceCloseWarnedAt: expect.any(Date) },
+        });
+        expect(db.rawBadgeLog.update).not.toHaveBeenCalled();
+    });
+
+    it("force-closes on the confirming live scan that follows the stamp", async () => {
+        const db = fakeDb(present, new Date(Date.now() - 8000));
+        const res = await processCheckout(keyholder, 42, "kiosk", db, new Date(), null);
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).facilityClosed).toBe(true);
+    });
+});
+
 describe("F1: replay must not be able to force-close (§4 phase gate)", () => {
     const present = [{ name: "Someone Inside", email: "inside@example.com" }];
 

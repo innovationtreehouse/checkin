@@ -73,7 +73,8 @@ export async function processCheckout(
     authType: string,
     db: DbClient = prisma,
     visitTime: Date = new Date(),
-    clientEventId: string | null = null
+    /** clientEventId of a REPLAYED event (drain-delivered), null for a live scan. */
+    replayEventId: string | null = null
 ) {
     let facilityClosed = false;
 
@@ -98,13 +99,13 @@ export async function processCheckout(
             });
 
             if (remainingUsers.length > 0) {
-                if (clientEventId) {
+                if (replayEventId) {
                     // KIOSK_RESILIENCE.md §4: a replay must not force-close -- a
                     // queued warn+confirm pair can replay unattended, so we never
                     // read/write forceCloseWarnedAt for a replay and park it for a
                     // human instead (its confirm token predates the outage).
                     await db.rawBadgeLog.update({
-                        where: { clientEventId },
+                        where: { clientEventId: replayEventId },
                         data: { reviewReason: 'force_close_review' },
                     });
                     return apiJson({ type: 'parked', message: 'Recorded for review.' });

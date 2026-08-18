@@ -219,7 +219,12 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
             continue
 
         client_event_id, participant_id, scanned_at, attempts = rows[0]
-        body, status, retry_after = send_fn(participant_id, client_event_id, scanned_at)
+        # replay=True is what tells the server this is a redelivery: the live
+        # attempt already sent this clientEventId (D4 try-first), so only the
+        # drain may trip the replay-only guards.
+        body, status, retry_after = send_fn(
+            participant_id, client_event_id, scanned_at, replay=True
+        )
         outcome = classify_response(status, body)
 
         if outcome == "ack":

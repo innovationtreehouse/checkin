@@ -3,9 +3,10 @@
  */
 /**
  * Kiosk replay idempotency against the real DB (docs/designs/KIOSK_RESILIENCE.md
- * §2): a queued scan carries clientEventId + scannedAt, and replay must dedup,
- * toggle with the original scan time, and park instead of toggling when stale
- * or out-of-order.
+ * §2): a queued scan carries clientEventId + scannedAt + `replay: true`, and
+ * replay must dedup, toggle with the original scan time, and park instead of
+ * toggling when stale or out-of-order. The live attempt carries the same
+ * clientEventId (D4 try-first) but no flag, so none of those guards apply to it.
  */
 import { POST } from '@/app/api/scan/route';
 import prisma from '@/lib/prisma';
@@ -65,11 +66,13 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
     });
 
     it('redelivering the same clientEventId dedups instead of toggling a second time', async () => {
+        // The real sequence: a live attempt whose ack was lost, then the drain's
+        // redelivery of the same event.
         const scannedAt = new Date().toISOString();
         const first = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-dedup', scannedAt }));
         expect((await first.json()).type).toBe('checkin');
 
-        const retry = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-dedup', scannedAt }));
+        const retry = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-dedup', scannedAt, replay: true }));
         expect(retry.status).toBe(200);
         expect((await retry.json()).type).toBe('duplicate_ignored');
 
@@ -79,16 +82,25 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
 
     it('a fresh replay toggles using scannedAt as the recorded arrival time', async () => {
         const scannedAt = new Date(Date.now() - 60_000); // 1 min ago, within W
-        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-fresh', scannedAt: scannedAt.toISOString() }));
+        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-fresh', scannedAt: scannedAt.toISOString(), replay: true }));
         expect((await res.json()).type).toBe('checkin');
 
         const visit = await prisma.visit.findFirst({ where: { personId: member.id } });
         expect(visit?.arrivedAt.getTime()).toBe(scannedAt.getTime());
     });
 
+    it('a LIVE scan is never parked by the freshness window and arrives at server-now', async () => {
+        const scannedAt = new Date(Date.now() - 20 * 60_000); // stale, but no replay flag
+        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-live-stale', scannedAt: scannedAt.toISOString() }));
+        expect((await res.json()).type).toBe('checkin');
+
+        const visit = await prisma.visit.findFirst({ where: { personId: member.id } });
+        expect(visit?.arrivedAt.getTime()).toBeGreaterThan(Date.now() - 60_000);
+    });
+
     it('a replay older than the freshness window parks instead of toggling', async () => {
         const scannedAt = new Date(Date.now() - 20 * 60_000); // 20 min ago > 10 min W
-        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-stale', scannedAt: scannedAt.toISOString() }));
+        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-stale', scannedAt: scannedAt.toISOString(), replay: true }));
         expect(res.status).toBe(200);
         expect((await res.json()).type).toBe('parked');
 
@@ -110,7 +122,7 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
         // A queued check-in from BEFORE that departure arrives late — state has
         // moved past it.
         const scannedAt = new Date(Date.now() - 4000);
-        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-out-of-order', scannedAt: scannedAt.toISOString() }));
+        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-out-of-order', scannedAt: scannedAt.toISOString(), replay: true }));
         expect(res.status).toBe(200);
         expect((await res.json()).type).toBe('parked');
 
@@ -137,7 +149,7 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
         // Replay dated between B's activity and A's departedAt -- state (via A)
         // has moved past it, even though B is the most-recently-arrived visit.
         const scannedAt = new Date(now - 3 * 60_000);
-        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-f7-max-departed', scannedAt: scannedAt.toISOString() }));
+        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-f7-max-departed', scannedAt: scannedAt.toISOString(), replay: true }));
         expect(res.status).toBe(200);
         expect((await res.json()).type).toBe('parked');
 
