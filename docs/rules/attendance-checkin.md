@@ -106,10 +106,14 @@ Things the app takes as true because they are handled outside it.
   people currently in the building.  [Decision]
 
 - Every departure that takes a supervising adult out of the building is
-  interrupted, whoever is leaving. Dropping to two is a warning and nothing more;
-  dropping below two stops the departure until the person badges again within
-  fifteen seconds. The keyholder close-guard is a separate interrupt and both can
-  be waiting on one person at once.  [Decision — *Policy: Event, Location and Keyholder Policy, §VIII.4*]
+  interrupted, whoever is leaving. Dropping to two is a warning and nothing more.
+  Dropping below two stops the departure until the person badges again within
+  fifteen seconds — but only while a youth is in the building. With no youth
+  there, that departure is warned about and goes through: two deep is owed
+  whenever a youth is present, so an adult-only room locking up has nothing to
+  confirm, and an interrupt raised where nothing is at stake teaches people to
+  badge through the one that matters. The keyholder close-guard is a separate
+  interrupt and both can be waiting on one person at once.  [Decision — *Policy: Event, Location and Keyholder Policy, §VIII.4*]
 
 - The interrupt is on the badge scanner. Checking someone out from the web does
   not raise it.  [Decision — deliberate limit]

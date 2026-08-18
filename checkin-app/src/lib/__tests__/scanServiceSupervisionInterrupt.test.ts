@@ -3,7 +3,8 @@
  * through processCheckout, so the two stay wired together:
  *
  *   third supervising adult leaves (two remain) → warning, checkout proceeds
- *   next one leaves (below two)                 → warning AND badge-again confirm
+ *   next one leaves, a youth is here            → warning AND badge-again confirm
+ *   next one leaves, no youth is here           → warning, checkout proceeds
  *
  * The keyholder close-guard is a separate interrupt with its own stamp; the
  * participant here is not a keyholder, so only the supervision rungs run.
@@ -41,13 +42,19 @@ function openVisits(householdIds: number[]) {
     }));
 }
 
-function fakeDb(householdIds: number[], warnedAt: Date | null = null) {
+/** The supervising-adult query and the youth probe both hit `visit.findMany`;
+ *  the probe is the one filtering on `isDeclaredAdult: false`. Youth present by
+ *  default — the confirm rung is gated on it. */
+function fakeDb(householdIds: number[], warnedAt: Date | null = null, youthPresent = true) {
     const update = jest.fn().mockResolvedValue({});
     const db = {
         boardSettings: { findUnique: jest.fn().mockResolvedValue({ orgMembershipYearBoundary: null, bgRecheckMonths: 0 }) },
         visit: {
             count: jest.fn().mockResolvedValue(1),
-            findMany: jest.fn().mockResolvedValue(openVisits(householdIds)),
+            findMany: jest.fn().mockImplementation(({ where }) =>
+                where.person?.isDeclaredAdult === false
+                    ? (youthPresent ? [{ person: { dateOfBirth: new Date("2015-01-01") } }] : [])
+                    : openVisits(householdIds)),
             findUnique: jest.fn().mockResolvedValue({ supervisionWarnedAt: warnedAt }),
             create: jest.fn().mockResolvedValue({ id: 500 }),
             update,
@@ -56,10 +63,10 @@ function fakeDb(householdIds: number[], warnedAt: Date | null = null) {
     return { db: db as unknown as DbClient, update };
 }
 
-async function checkout(householdIds: number[], warnedAt: Date | null = null) {
-    const { db, update } = fakeDb(householdIds, warnedAt);
+async function checkout(householdIds: number[], warnedAt: Date | null = null, youthPresent = true) {
+    const { db, update } = fakeDb(householdIds, warnedAt, youthPresent);
     const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db);
-    return { res, body: await res.json(), update };
+    return { res, body: await res.json(), update, db };
 }
 
 describe("rung 1 — the third supervising adult leaves", () => {
@@ -109,6 +116,29 @@ describe("rung 2 — the next supervising adult leaves", () => {
     it("says NO supervising adult when the last one leaves", async () => {
         const { body } = await checkout([10]);
         expect(body.error).toMatch(/NO supervising adult/);
+    });
+});
+
+describe("the confirm rung is youth-gated", () => {
+    it("warns and lets the checkout through when no youth is in the building", async () => {
+        const { res, body, update } = await checkout([10, 20], null, false);
+
+        expect(res.status).toBe(200);
+        expect(body.type).toBe("checkout");
+        expect(body.warning).toMatch(/leaves only 1 supervising adult/i);
+        expect(update).not.toHaveBeenCalled();
+    });
+
+    it("still warns when the last adult leaves an empty-of-youth room", async () => {
+        const { res, body } = await checkout([10], null, false);
+
+        expect(res.status).toBe(200);
+        expect(body.warning).toMatch(/NO supervising adult/);
+    });
+
+    it("does not probe for youth on the warn-only rung", async () => {
+        const { db } = await checkout([10, 20, 30]);
+        expect((db.visit.findMany as jest.Mock)).toHaveBeenCalledTimes(1);
     });
 });
 

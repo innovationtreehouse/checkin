@@ -205,8 +205,9 @@ describe('supervising adults (integration)', () => {
             expect(await prisma.visit.findUnique({ where: { id: cal.id } })).toMatchObject({ supervisionWarnedAt: null });
         });
 
-        it('warns AND requires a second badge when the next one leaves', async () => {
+        it('warns AND requires a second badge when the next one leaves a youth here', async () => {
             await checkIn('ann');
+            await checkIn('fay');
             const ben = await checkIn('ben');
 
             const first = await processCheckout(people.ben, ben.id, 'kiosk');
@@ -219,6 +220,19 @@ describe('supervising adults (integration)', () => {
             const second = await processCheckout(people.ben, ben.id, 'kiosk');
             expect(second.status).toBe(200);
             expect((await prisma.visit.findUnique({ where: { id: ben.id } }))?.departedAt).not.toBeNull();
+        });
+
+        it('warns without a confirm when the same departure leaves no youth behind', async () => {
+            await checkIn('ann');
+            const ben = await checkIn('ben');
+
+            const res = await processCheckout(people.ben, ben.id, 'kiosk');
+
+            expect(res.status).toBe(200);
+            expect((await res.json()).warning).toMatch(/leaves only 1 supervising adult/i);
+            const closed = await prisma.visit.findUnique({ where: { id: ben.id } });
+            expect(closed?.supervisionWarnedAt).toBeNull();
+            expect(closed?.departedAt).not.toBeNull();
         });
 
         it('stays quiet when the departing adult\'s household is still represented', async () => {

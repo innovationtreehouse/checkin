@@ -5,7 +5,7 @@ import { apiError, apiJson } from "@/lib/api-response";
 import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
 import { MAX_VISIT_MS } from "@/lib/visitTimes";
-import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits } from "@/lib/supervision";
+import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits, youthIsPresent } from "@/lib/supervision";
 import { isYouth } from "@/lib/time";
 
 /** How long a displayed force-close warning stays confirmable. The scan route's
@@ -198,7 +198,10 @@ export async function processCheckout(
  * the household is still represented; that is the same-household rule.
  *
  *   remaining === 2 (the third supervising adult leaves) → warn, do not confirm.
- *   remaining  <  2 (the next one leaves)                → warn AND confirm.
+ *   remaining  <  2 (the next one leaves), youth present → warn AND confirm.
+ *   remaining  <  2 with no youth in the building        → warn, do not confirm.
+ *
+ * Only the confirm rung is youth-gated; the warn rung over-warns deliberately.
  *
  * The confirm is bound to the warning having been SHOWN, not to badge adjacency:
  * only a scan following a fresh `supervisionWarnedAt` stamp goes through, exactly
@@ -221,6 +224,15 @@ async function supervisionInterrupt(
         };
     }
 
+    const left = remaining === 1 ? "only 1 supervising adult" : "NO supervising adult";
+
+    // The confirm rung is youth-gated (#1436, 2026-08-19): policy's floor is two
+    // adults whenever a youth is, so an adult-only room locking up warns and goes.
+    // Probed on this rung only — every quieter departure pays nothing for it.
+    if (!(await youthIsPresent(db))) {
+        return { confirmRequired: false, warning: `Warning: checking out leaves ${left} in the building.` };
+    }
+
     const ownVisit = await db.visit.findUnique({
         where: { id: activeVisitId },
         select: { supervisionWarnedAt: true },
@@ -234,7 +246,6 @@ async function supervisionInterrupt(
         where: { id: activeVisitId },
         data: { supervisionWarnedAt: new Date() },
     });
-    const left = remaining === 1 ? "only 1 supervising adult" : "NO supervising adult";
     return {
         confirmRequired: true,
         response: apiJson({

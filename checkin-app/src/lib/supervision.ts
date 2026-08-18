@@ -122,6 +122,20 @@ export async function supervisingAdultVisits(
 }
 
 /**
+ * Is a youth in the building? The adult prong inverted, over the same open
+ * visits: not declared adult, and not 18+ by date of birth — unknown age fails
+ * closed as youth (#300). Only the `isDeclaredAdult` half is a query filter; the
+ * age half stays with {@link isYouth} so the rule keeps one expression.
+ */
+export async function youthIsPresent(db: DbClient = prisma): Promise<boolean> {
+    const candidates = await db.visit.findMany({
+        where: { departedAt: null, deletedAt: null, person: { ...LIVE_PERSON, isDeclaredAdult: false } },
+        select: { person: { select: { dateOfBirth: true } } },
+    });
+    return candidates.some(v => isYouth(v.person.dateOfBirth, { unknownIs: "youth" }));
+}
+
+/**
  * How many supervising adults the room has: distinct households, so a couple
  * counts once. Pass `excludeVisitId` to ask the same question as if that visit
  * had already ended — what the departure interrupt compares against.
