@@ -1228,8 +1228,6 @@ model ErrorLog {
   /// @sensitivity:internal
   message   String
   /// @sensitivity:internal
-  stack     String?
-  /// @sensitivity:internal
   context   Json?
 }
 

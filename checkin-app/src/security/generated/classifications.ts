@@ -319,7 +319,6 @@ export const classifications = {
         timestamp: 'internal',
         route: 'internal',
         message: 'internal',
-        stack: 'internal',
         context: 'internal',
     },
     SystemMetricLog: {
