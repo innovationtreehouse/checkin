@@ -18,7 +18,7 @@ const FORCE_CLOSE_CONFIRM_MS = 60_000;
  * unit tests) `db` defaults to the global prisma client. Fire-and-forget side
  * effects (notifications) intentionally run off the global client either way.
  */
-export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma) {
+export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma, visitTime: Date = new Date()) {
     // Non-keyholders require an open facility (at least 1 isKeyholder present)
     if (!participant.isKeyholder) {
         const activeKeyholders = await db.visit.count({
@@ -34,7 +34,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
         }
     }
 
-    const arrivalTime = new Date();
+    const arrivalTime = visitTime;
     const eventId = await findAssociatedEventAt(participant.id, arrivalTime, db);
 
     const newVisit = await db.visit.create({
@@ -71,7 +71,8 @@ export async function processCheckout(
     participant: Person,
     activeVisitId: number,
     authType: string,
-    db: DbClient = prisma
+    db: DbClient = prisma,
+    visitTime: Date = new Date()
 ) {
     let facilityClosed = false;
 
@@ -144,7 +145,7 @@ export async function processCheckout(
         }
     }
 
-    const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db, "SCANNER");
+    const finalVisits = await processVisitCheckout(activeVisitId, visitTime, db, "SCANNER");
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
 
     // Fire-and-forget: send check-out notifications (mirrors processCheckin)

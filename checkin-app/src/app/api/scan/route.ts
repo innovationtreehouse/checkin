@@ -1,6 +1,7 @@
+import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import { apiError } from "@/lib/api-response";
+import { apiError, apiJson } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
@@ -11,12 +12,17 @@ import { withKiosk } from "@/lib/kioskAuth";
 // a corrupt/cyclic chain can't loop the lookup forever, and reissue instead.
 const MAX_MERGE_HOPS = 5;
 
+// docs/designs/KIOSK_RESILIENCE.md §2: a replayed scan older than this parks
+// for human review instead of toggling — state may have moved on while the
+// kiosk was offline, and a bare toggle can't tell entering from leaving.
+const REPLAY_FRESHNESS_WINDOW_MS = 10 * 60 * 1000;
+
 // High cap: kiosks burst and a whole facility may share one NAT IP. withKiosk
 // reads the raw body, authenticates it (kiosk signature OR session), rejects
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -25,6 +31,15 @@ export const POST = withKiosk(
         if (!participantId || typeof participantId !== 'number') {
             return apiError("A valid numeric participantId is required.", 400);
         }
+
+        // Optional replay fields from a queued kiosk scan. Absent → exactly
+        // today's behavior (legacy/web callers). A malformed scannedAt falls
+        // back to now rather than propagating an Invalid Date into the visit.
+        const clientEventId = typeof body.clientEventId === 'string' ? body.clientEventId : null;
+        const parsedScannedAt = typeof body.scannedAt === 'string' ? new Date(body.scannedAt) : null;
+        const scannedAt = parsedScannedAt && !isNaN(parsedScannedAt.getTime()) ? parsedScannedAt : null;
+        const isReplay = clientEventId !== null;
+        const eventTime = scannedAt ?? new Date();
 
         // Web session: check if user can scan this participant
         let pendingHouseholdCheck = false;
@@ -103,12 +118,24 @@ export const POST = withKiosk(
         // and branches correctly. The lock auto-releases on commit/rollback.
         const authType = auth.type;
 
-        const res = await prisma.$transaction(async (tx) => {
+        let res: Response;
+        try {
+        res = await prisma.$transaction(async (tx) => {
             // Per-participant lock. Serializes only same-participant scans;
             // different participants get different lock keys and never block.
             // $executeRaw (not $queryRaw): pg_advisory_xact_lock returns `void`,
             // which $queryRaw cannot deserialize. $executeRaw just runs it.
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${participant.id})`;
+
+            // A replayed event carries its own idempotency key. Pre-read before
+            // the debounce check — an ack lost after the original attempt
+            // committed must dedup even once the 3s debounce window has passed.
+            if (clientEventId) {
+                const seen = await tx.rawBadgeLog.findUnique({ where: { clientEventId } });
+                if (seen) {
+                    return apiJson({ type: 'duplicate_ignored', message: 'Event already recorded.' });
+                }
+            }
 
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
@@ -130,13 +157,42 @@ export const POST = withKiosk(
                 });
             }
 
-            // 5. Record raw badge event
+            // A replay older than the freshness window, or one that lands behind
+            // visit activity newer than its own scan time, can't be trusted to
+            // toggle — state has moved past it. Park it for a human instead.
+            let parkReason: string | null = null;
+            if (isReplay) {
+                const stale = Date.now() - eventTime.getTime() > REPLAY_FRESHNESS_WINDOW_MS;
+                if (stale) {
+                    parkReason = "stale_replay";
+                } else {
+                    const latestVisit = await tx.visit.findFirst({
+                        where: { personId: participant.id, deletedAt: null },
+                        orderBy: { arrivedAt: "desc" },
+                    });
+                    const latestActivityAt = latestVisit ? (latestVisit.departedAt ?? latestVisit.arrivedAt) : null;
+                    if (latestActivityAt && latestActivityAt > eventTime) {
+                        parkReason = "out_of_order";
+                    }
+                }
+            }
+
+            // 5. Record raw badge event — always, even when parking: the touch
+            // itself is never lost, only its Visit projection is deferred for
+            // review.
             await tx.rawBadgeLog.create({
                 data: {
                     personId: participant.id,
                     location: "Main Entrance",
+                    ...(clientEventId ? { clientEventId } : {}),
+                    ...(isReplay ? { timestamp: eventTime } : {}),
+                    ...(parkReason ? { reviewReason: parkReason } : {}),
                 },
             });
+
+            if (parkReason) {
+                return apiJson({ type: 'parked', message: 'Recorded for review.' });
+            }
 
             // 6. Check-in or check-out
             const activeVisit = await tx.visit.findFirst({
@@ -149,9 +205,9 @@ export const POST = withKiosk(
             });
 
             if (activeVisit) {
-                return await processCheckout(participant, activeVisit.id, authType, tx);
+                return await processCheckout(participant, activeVisit.id, authType, tx, eventTime);
             } else {
-                return await processCheckin(participant, authType, tx);
+                return await processCheckin(participant, authType, tx, eventTime);
             }
         }, {
             // maxWait: time a racing scan waits to acquire a connection / start.
@@ -160,6 +216,15 @@ export const POST = withKiosk(
             maxWait: 5000,
             timeout: 15000,
         });
+        } catch (err) {
+            // Cross-lock race on the same clientEventId (e.g. two replay attempts
+            // of one queued event racing different advisory-lock windows) — the
+            // unique constraint is the backstop the pre-read can't fully close.
+            if (clientEventId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+                return apiJson({ type: 'duplicate_ignored', message: 'Event already recorded.' });
+            }
+            throw err;
+        }
 
         // Facility-wide close runs here, AFTER the per-participant transaction
         // commits and the advisory lock is released. Keeping the sweep + email

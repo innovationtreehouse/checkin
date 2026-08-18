@@ -5,7 +5,7 @@ import { POST } from '../route';
 import { authenticateRequest } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
-import { processCheckin } from '@/lib/scan-service';
+import { processCheckin, processCheckout } from '@/lib/scan-service';
 
 jest.mock('@/lib/auth', () => ({
     authenticateRequest: jest.fn(),
@@ -19,6 +19,7 @@ jest.mock('@/lib/prisma', () => {
         rawBadgeLog: {
             create: jest.fn(),
             findFirst: jest.fn(),
+            findUnique: jest.fn(),
         },
         visit: {
             findFirst: jest.fn(),
@@ -114,7 +115,7 @@ describe('POST /api/scan', () => {
         expect(res.status).toBe(200);
 
         // Scanned, recorded, and checked in AS THE SURVIVOR (id 99), not the badge's own id (1).
-        expect(processCheckin).toHaveBeenCalledWith(survivor, 'session', expect.anything());
+        expect(processCheckin).toHaveBeenCalledWith(survivor, 'session', expect.anything(), expect.any(Date));
         expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 99, location: 'Main Entrance' } });
         expect(logger.info).toHaveBeenCalledWith('Scan forwarded from merged record', {
             badgeId: 1, tombstoneId: 99, survivorId: 99, hops: 1,
@@ -188,5 +189,94 @@ describe('POST /api/scan', () => {
         const json = await res.json();
         expect(json.type).toBe('ignored_debounce');
         expect(json.message).toBe('Scan ignored due to debounce.');
+    });
+
+    // §2 D2/D3 (docs/designs/KIOSK_RESILIENCE.md) — replayed-scan idempotency.
+    describe('replayed scans (clientEventId/scannedAt)', () => {
+        function replayReq(overrides: Record<string, unknown> = {}) {
+            return new Request('http://localhost/api/scan', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: 1, clientEventId: 'evt-1', scannedAt: new Date().toISOString(), ...overrides })
+            }) as unknown as import('next/server').NextRequest;
+        }
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue(null);
+        });
+
+        it('acks a redelivered clientEventId as duplicate_ignored without re-toggling', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue({ id: 5, clientEventId: 'evt-1' });
+
+            const res = await POST(replayReq());
+            expect(res.status).toBe(200);
+            const json = await res.json();
+            expect(json.type).toBe('duplicate_ignored');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+            expect(processCheckin).not.toHaveBeenCalled();
+        });
+
+        it('toggles a fresh replay using scannedAt as the visit time', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
+            (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
+
+            const scannedAt = new Date(Date.now() - 60_000).toISOString();
+            const res = await POST(replayReq({ scannedAt }));
+            expect(res.status).toBe(200);
+
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({
+                data: { personId: 1, location: 'Main Entrance', clientEventId: 'evt-1', timestamp: new Date(scannedAt) },
+            });
+            expect(processCheckin).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 'kiosk', expect.anything(), new Date(scannedAt));
+        });
+
+        it('parks a replay older than the freshness window instead of toggling', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+
+            const scannedAt = new Date(Date.now() - 20 * 60_000).toISOString(); // 20 min ago > 10 min W
+            const res = await POST(replayReq({ scannedAt }));
+            expect(res.status).toBe(200);
+            const json = await res.json();
+            expect(json.type).toBe('parked');
+
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({
+                data: { personId: 1, location: 'Main Entrance', clientEventId: 'evt-1', timestamp: new Date(scannedAt), reviewReason: 'stale_replay' },
+            });
+            expect(prisma.visit.findFirst).not.toHaveBeenCalled();
+            expect(processCheckin).not.toHaveBeenCalled();
+            expect(processCheckout).not.toHaveBeenCalled();
+        });
+
+        it('parks a fresh replay whose scannedAt is older than newer visit activity (out-of-order guard)', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+            const scannedAt = new Date(Date.now() - 5 * 60_000); // within W
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue({
+                arrivedAt: new Date(Date.now() - 2 * 60_000),
+                departedAt: new Date(Date.now() - 60_000), // newer than scannedAt
+            });
+
+            const res = await POST(replayReq({ scannedAt: scannedAt.toISOString() }));
+            expect(res.status).toBe(200);
+            const json = await res.json();
+            expect(json.type).toBe('parked');
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.objectContaining({ reviewReason: 'out_of_order' }) })
+            );
+            expect(processCheckin).not.toHaveBeenCalled();
+            expect(processCheckout).not.toHaveBeenCalled();
+        });
+
+        it('a same-body legacy scan (no clientEventId) is unaffected — no dedup pre-read, no park branch', async () => {
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
+            (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
+
+            const res = await POST(replayReq({ clientEventId: undefined, scannedAt: undefined }));
+            expect(res.status).toBe(200);
+
+            expect(prisma.rawBadgeLog.findUnique).not.toHaveBeenCalled();
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 1, location: 'Main Entrance' } });
+        });
     });
 });

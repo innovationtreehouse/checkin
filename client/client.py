@@ -22,6 +22,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from nacl.signing import SigningKey
 import requests
 
+from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -87,22 +89,35 @@ class BackendClient:
         h["Content-Type"] = "application/json"
         return h
 
-    def post_scan(self, participant_id):
+    def post_scan(self, participant_id, client_event_id=None, scanned_at=None):
         path = "/api/scan"
+        payload = {"participantId": participant_id}
         try:
-            body = json.dumps({"participantId": int(participant_id)})
+            payload["participantId"] = int(participant_id)
         except ValueError:
-            body = json.dumps({"participantId": participant_id})
-            
+            pass
+        if client_event_id:
+            payload["clientEventId"] = client_event_id
+        if scanned_at:
+            payload["scannedAt"] = scanned_at
+        body = json.dumps(payload)
+
         headers = self._headers("POST", path, body)
         try:
             r = self.session.post(
                 self.base_url + path, headers=headers, data=body, timeout=10
             )
-            return r.json(), r.status_code
         except Exception as e:
             log.error(f"Failed to post scan: {e}")
-            return {"error": str(e)}, 0
+            return {"error": str(e)}, 0, None
+
+        retry_after = r.headers.get("Retry-After")
+        try:
+            return r.json(), r.status_code, retry_after
+        except ValueError:
+            # Non-JSON body (e.g. the waker's 503 HTML on a cold-wake scan) --
+            # warming, not failure. Never lose the scan on a parse error.
+            return {"error": "non-JSON response", "type": "warming"}, r.status_code, retry_after
 
     def get_attendance(self):
         if not self.attendance_path:
@@ -194,7 +209,7 @@ class KioskHandler(BaseHTTPRequestHandler):
   * {{ margin: 0; padding: 0; box-sizing: border-box; }}
   body, html {{ width: 100%; height: 100%; overflow: hidden; background: #000; font-family: sans-serif; }}
   iframe {{ width: 100%; height: 100%; border: none; }}
-  
+
   #blackout {{
     position: absolute;
     top: 0;
@@ -243,6 +258,11 @@ class KioskHandler(BaseHTTPRequestHandler):
     color: #fff;
     white-space: pre-wrap;
     animation: fadeout 12s forwards;
+  }}
+  .banner-saved {{
+    background: rgba(37,99,235,0.95);
+    border: 2px solid #60a5fa;
+    color: #fff;
   }}
   @keyframes fadeout {{
     0% {{ opacity: 1; }}
@@ -387,17 +407,17 @@ class KioskHandler(BaseHTTPRequestHandler):
 
     def _proxy_request(self, method):
         url = self.backend.base_url + self.path
-        
+
         body_bytes = b""
         length = int(self.headers.get("Content-Length", 0))
         if length > 0:
             body_bytes = self.rfile.read(length)
-            
+
         req_headers = {}
         for k, v in self.headers.items():
             if k.lower() not in ['host', 'connection', 'accept-encoding']:
                 req_headers[k] = v
-                
+
         # Inject Key Signing Headers onto the API requests transparently!
         # Sign with pathname only (no query string) — backend verifies against pathname
         from urllib.parse import urlparse
@@ -409,10 +429,10 @@ class KioskHandler(BaseHTTPRequestHandler):
                 body_str = body_bytes.decode('utf-8')
             except UnicodeDecodeError:
                 pass
-                
+
         sig_headers = sign_request(self.backend.signing_key, method, sign_path, body_str)
         req_headers.update(sig_headers)
-        
+
         try:
             # Use requests.request (stateless) so cookies flow directly between browser and backend
             resp = requests.request(
@@ -424,7 +444,7 @@ class KioskHandler(BaseHTTPRequestHandler):
                 stream=True,
                 timeout=30
             )
-            
+
             try:
                 self.send_response(resp.status_code)
                 for k, v in resp.headers.items():
@@ -441,7 +461,7 @@ class KioskHandler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError):
                 # Browser closed the connection, normal for HMR or page reloads
                 pass
-                    
+
         except Exception as e:
             if not isinstance(e, (BrokenPipeError, ConnectionResetError)):
                 log.error(f"Proxy error for {self.path}: {e}")
@@ -458,7 +478,7 @@ class KioskHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # USB scanner listener
 # ---------------------------------------------------------------------------
-def usb_scanner_listener(backend, state, device_path):
+def usb_scanner_listener(backend, state, outbox, device_path):
     try:
         import evdev
     except ImportError:
@@ -496,7 +516,7 @@ def usb_scanner_listener(backend, state, device_path):
             else:
                 log.error(f"No device found matching: {device_path}")
                 return
-        
+
         dev.grab()
         log.info(f"Listening on: {dev.name} ({dev.path})")
     except Exception as e:
@@ -515,12 +535,12 @@ def usb_scanner_listener(backend, state, device_path):
             if buffer.strip():
                 participant_id = buffer.strip()
                 log.info(f"Scanned ID: {participant_id}")
-                handle_scan(backend, state, participant_id)
+                handle_scan(backend, state, outbox, participant_id)
             buffer = ""
         elif key_event.scancode in KEY_MAP:
             buffer += KEY_MAP[key_event.scancode]
 
-def stdin_scanner_listener(backend, state):
+def stdin_scanner_listener(backend, state, outbox):
     log.info("USB device not configured — reading scans from stdin")
     while True:
         try:
@@ -528,13 +548,11 @@ def stdin_scanner_listener(backend, state):
             participant_id = line.strip()
             if participant_id:
                 log.info(f"Stdin scan: {participant_id}")
-                handle_scan(backend, state, participant_id)
+                handle_scan(backend, state, outbox, participant_id)
         except EOFError:
             break
 
-def handle_scan(backend, state, participant_id):
-    body, status = backend.post_scan(participant_id)
-
+def _scan_result_banner_html(body, status):
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
     # emails, messages) and are ultimately assigned to the wrapper page via
@@ -543,36 +561,62 @@ def handle_scan(backend, state, participant_id):
     # the kiosk browser — which can issue signed, kiosk-authenticated requests
     # through the local proxy. Escape before the newline->`<br>` substitution so
     # injected markup cannot survive.
-    banner_html = ""
     if status >= 400 or "error" in body:
         if body.get("type") == "warning":
             warn = html.escape(body.get("error", "Warning")).replace("\n", "<br>")
-            banner_html = f'<div class="banner banner-warning">⚠️ {warn}</div>'
-        else:
-            err = html.escape(body.get("error", "Unknown error"))
-            banner_html = f'<div class="banner banner-error">✗ Scan failed: {err}</div>'
-    else:
-        stype = body.get("type", "")
-        email = html.escape(str(body.get("participant", {}).get("email", "?")))
-        msg = html.escape(body.get("message", ""))
-        label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
-        if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-            banner_html = f'<div class="banner banner-ok">✓ {email} — {msg}</div>'
-        else:
-            banner_html = f'<div class="banner banner-ok">✓ {email} — {label}</div>'
+            return f'<div class="banner banner-warning">⚠️ {warn}</div>'
+        err = html.escape(body.get("error", "Unknown error"))
+        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>'
 
-    # Phase 1: Push banner immediately (no attendance data yet)
-    state.push_event({"html": banner_html})
+    stype = body.get("type", "")
+    email = html.escape(str(body.get("participant", {}).get("email", "?")))
+    msg = html.escape(body.get("message", ""))
+    label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
+    if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
+        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>'
+    return f'<div class="banner banner-ok">✓ {email} — {label}</div>'
 
-    if status < 400 and "error" not in body:
+def _saved_banner_html(queued):
+    # A queued scan reads as done and safe to walk away from -- distinct
+    # from the red "not saved" state.
+    return f'<div class="banner banner-saved">✓ Saved — will sync ({queued} waiting)</div>'
+
+def handle_scan(backend, state, outbox, participant_id):
+    client_event_id = new_event_id()
+    scanned_at = now_iso()
+
+    # A fresh scan must not jump its own predecessor -- if this participant
+    # already has a pending queued event, enqueue behind it instead of
+    # attempting live delivery out of order.
+    if outbox.has_pending_for_participant(participant_id):
+        outbox.enqueue(client_event_id, participant_id, scanned_at)
+        state.push_event({"html": _saved_banner_html(outbox.pending_count())})
+        log.info(f"Queued (predecessor pending): participant {participant_id}")
+        return
+
+    body, status, retry_after = backend.post_scan(participant_id, client_event_id, scanned_at)
+    outcome = classify_response(status, body)
+
+    if outcome == "retry":
+        # Try live first; only persist to the outbox if it wasn't confirmed.
+        outbox.enqueue(client_event_id, participant_id, scanned_at)
+        state.push_event({"html": _saved_banner_html(outbox.pending_count())})
+        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id}")
+        return
+
+    # ack or dead: server responded definitively at scan time -- render the
+    # existing immediate banner, unchanged behavior for the online path.
+    state.push_event({"html": _scan_result_banner_html(body, status)})
+
+    if outcome == "ack":
         ptype = body.get("type", "?")
         email = body.get("participant", {}).get("email", "?")
         log.info(f"Scan result: {ptype.upper()} — {email}")
     else:
-        log.warning(f"Scan error: {body.get('error', body)}")
+        log.warning(f"Scan error (dead-letter, not queued): {body.get('error', body)}")
 
-    # Phase 2: Fetch fresh attendance and push update for the iframe
-    if backend.attendance_path and status < 400:
+    # Fetch fresh attendance and push update for the iframe
+    if backend.attendance_path and outcome == "ack":
         att_data, att_status = backend.get_attendance()
         if att_status == 200:
             event_payload = {"html": ""}
@@ -606,7 +650,7 @@ def attendance_poller(backend, state, interval=30):
 def version_poller(backend, state, interval=60):
     """Background thread that checks for client and server version updates."""
     import subprocess
-    
+
     # Get initial server version
     initial_server_version = None
     for _ in range(6):
@@ -616,10 +660,10 @@ def version_poller(backend, state, interval=60):
             log.info(f"Initial server version: {initial_server_version}")
             break
         time.sleep(5)
-    
+
     while True:
         time.sleep(interval)
-        
+
         # 1. Check Server Version Update
         if initial_server_version:
             sv, status = backend.get_server_version()
@@ -627,14 +671,14 @@ def version_poller(backend, state, interval=60):
                 log.info(f"Server version changed from {initial_server_version} to {sv}. Requesting reload.")
                 state.push_event({"reload": True})
                 initial_server_version = sv  # Update to prevent spam
-        
+
         # 2. Check Client Version Update
         try:
             subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
 
             local_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
             remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
-            
+
             if local_head and remote_head and local_head != remote_head:
                 log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
                 os._exit(0)
@@ -665,6 +709,8 @@ def main():
 
     backend = BackendClient(backend_url, signing_key, attendance_path or None)
     state = AttendanceState()
+    outbox = Outbox(config.get("outbox_path", "outbox.db"))
+    log.info(f"Outbox:  {outbox.path} ({outbox.pending_count()} pending on start)")
 
     # Fetch initial attendance state (only if attendance_path is configured)
     if attendance_path:
@@ -684,10 +730,17 @@ def main():
     vpoller = threading.Thread(target=version_poller, args=(backend, state), daemon=True)
     vpoller.start()
 
+    # Start the outbox replay thread: drains queued scans in order,
+    # re-signing and resubmitting each one, once the backend is reachable.
+    drain = threading.Thread(
+        target=replay_drain, args=(outbox, backend.post_scan, state.push_event), daemon=True
+    )
+    drain.start()
+
     if usb_device:
-        scanner = threading.Thread(target=usb_scanner_listener, args=(backend, state, usb_device), daemon=True)
+        scanner = threading.Thread(target=usb_scanner_listener, args=(backend, state, outbox, usb_device), daemon=True)
     else:
-        scanner = threading.Thread(target=stdin_scanner_listener, args=(backend, state), daemon=True)
+        scanner = threading.Thread(target=stdin_scanner_listener, args=(backend, state, outbox), daemon=True)
     scanner.start()
 
     KioskHandler.state = state
