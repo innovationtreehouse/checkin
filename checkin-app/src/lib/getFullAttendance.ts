@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { isYouth } from "@/lib/time";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits } from "@/lib/supervision";
 
 /**
  * Current-attendance feed.
@@ -98,9 +99,13 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
         if (!sv.person.householdId) return true;
         return !adultVisits.some(av => av.person.householdId === sv.person.householdId);
     });
+    // Two deep is two SUPERVISING adults, not two bodies over 18 (#1550) — the
+    // same test the departure interrupt uses. ponytail: its own query rather than
+    // widening the select above, so both surfaces run one shared rule.
+    const supervisingAdults = supervisingAdultCount(await supervisingAdultVisits());
     const safety = {
         isLastKeyholder: keyholderVisits.length === 1,
-        isTwoDeepViolation: unaccompaniedYouth.length > 0 && adultVisits.length < 2,
+        isTwoDeepViolation: unaccompaniedYouth.length > 0 && supervisingAdults < MIN_SUPERVISING_ADULTS,
     };
 
     // Drop email/googleId from the wire (M1): resolve the same name-or-email-prefix

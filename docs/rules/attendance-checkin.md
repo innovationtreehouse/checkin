@@ -79,23 +79,40 @@ Things the app takes as true because they are handled outside it.
 
 ### Supervision
 
-- The two-deep check counts adults present, and only where a youth is there
-  without an adult from their own household. It does not require the two to be
-  volunteers, to be non-students, or to be unrelated to one another, so a room
-  reads compliant while none of those holds.  [Short of policy — *Policy: Definitions Policy, Art. III, "Two Deep"*]
+- The two-deep check counts supervising adults, not adults present. A supervising
+  adult is an adult whose background clearance is still valid and who is not
+  themselves a participant on a program running at that moment. Two people of one
+  household count as one, so a couple is not two deep.  [Decision — *Policy: Definitions Policy, Art. III, "Two Deep"*]
+
+- Being a participant on a program in session is what disqualifies someone from
+  supervising it, not being at school: a member of eighteen or nineteen enrolled
+  in a program does not count while that program runs, and counts again as a
+  volunteer on another. School enrollment is not recorded at all, so the part of
+  policy that turns on it cannot be tested here.  [Short of policy — *Policy: Definitions Policy, Art. III, "Two Deep"*]
+
+- A clearance that is not recorded is not a clearance: someone with no background
+  check on file, or one older than the board's recheck interval, is not one of the
+  supervising adults.  [Decision — *Principle: fail closed*]
 
 - Someone whose age is unknown counts as a youth in the supervision check: not
   one of the supervising adults, and one of the people needing cover.  [Decision — *Principle: fail closed*]
 
 - Two deep is shown as a warning. It does not stop anyone entering or checking
   in — surfacing the shortfall to the people in the room is the whole of what the
-  app does about it.  [Decision — deliberate limit]
+  app does about it. A youth arriving into a room short of supervision is warned
+  about, never turned away: whether to open the door is the keyholder's call.  [Decision — deliberate limit]
 
 - Keyholders reach every household's emergency contacts, not only those of the
   people currently in the building.  [Decision]
 
-- Departure is interrupted on the keyholder count, not the adult-to-youth
-  composition: the last keyholder is stopped to confirm, any other adult is not.  [Decision — deliberate limit]
+- Every departure that takes a supervising adult out of the building is
+  interrupted, whoever is leaving. Dropping to two is a warning and nothing more;
+  dropping below two stops the departure until the person badges again within
+  fifteen seconds. The keyholder close-guard is a separate interrupt and both can
+  be waiting on one person at once.  [Decision — *Policy: Event, Location and Keyholder Policy, §VIII.4*]
+
+- The interrupt is on the badge scanner. Checking someone out from the web does
+  not raise it.  [Decision — deliberate limit]
 
 ### The kiosk
 
