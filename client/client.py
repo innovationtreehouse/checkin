@@ -87,13 +87,17 @@ class BackendClient:
         h["Content-Type"] = "application/json"
         return h
 
-    def post_scan(self, participant_id):
+    def post_scan(self, participant_id, force_close_token=None):
         path = "/api/scan"
+        payload = {}
         try:
-            body = json.dumps({"participantId": int(participant_id)})
+            payload["participantId"] = int(participant_id)
         except ValueError:
-            body = json.dumps({"participantId": participant_id})
-            
+            payload["participantId"] = participant_id
+        if force_close_token:
+            payload["forceCloseToken"] = force_close_token
+        body = json.dumps(payload)
+
         headers = self._headers("POST", path, body)
         try:
             r = self.session.post(
@@ -138,6 +142,24 @@ class AttendanceState:
         self.lock = threading.Lock()
         self.subscribers = []  # list of queue.Queue for SSE clients
         self.current_counts = {"total": 0, "keyholders": 0, "volunteers": 0, "students": 0}
+        self.confirm_token = None    # force-close confirm token, if a countdown is running
+        self.confirm_deadline = 0.0  # monotonic clock, end of that countdown
+
+    def arm_confirm(self, token, seconds):
+        """Hold the confirm token the server minted with a force-close warning."""
+        with self.lock:
+            self.confirm_token = token
+            self.confirm_deadline = time.monotonic() + seconds
+
+    def take_confirm(self):
+        """Pop the confirm token for the next scan. Single use, and only while
+        its countdown is still running — an expired countdown confirms nothing."""
+        with self.lock:
+            token = self.confirm_token
+            live = time.monotonic() < self.confirm_deadline
+            self.confirm_token = None
+            self.confirm_deadline = 0.0
+            return token if live else None
 
     def subscribe(self):
         """Register a new SSE client, returns a Queue to read events from."""
@@ -242,8 +264,11 @@ class KioskHandler(BaseHTTPRequestHandler):
     border: 2px solid #fbbf24;
     color: #fff;
     white-space: pre-wrap;
-    animation: fadeout 12s forwards;
+    /* No fade: the force-close warning stays fully legible for its whole
+       countdown, and the countdown itself removes it. */
+    animation: none;
   }}
+  #fc-countdown {{ font-size: 2.5rem; }}
   @keyframes fadeout {{
     0% {{ opacity: 1; }}
     80% {{ opacity: 1; }}
@@ -287,6 +312,27 @@ class KioskHandler(BaseHTTPRequestHandler):
     }}
   }}
 
+  // Visible force-close countdown. Ticks the <span> the banner carries, then
+  // clears the banner — the token expires on the proxy at the same moment.
+  let countdownTimer = null;
+  let bannerTimer = null;
+
+  function startCountdown(seconds) {{
+    clearInterval(countdownTimer);
+    const el = document.getElementById("fc-countdown");
+    if (!el) return;
+    let left = seconds;
+    countdownTimer = setInterval(() => {{
+      left -= 1;
+      if (left <= 0) {{
+        clearInterval(countdownTimer);
+        document.getElementById("flash-container").innerHTML = '';
+        return;
+      }}
+      el.textContent = left;
+    }}, 1000);
+  }}
+
   function connectSSE() {{
     const source = new EventSource("/events");
 
@@ -317,7 +363,11 @@ class KioskHandler(BaseHTTPRequestHandler):
           banner.offsetHeight;
           banner.style.animation = null;
         }}
-        setTimeout(() => {{ container.innerHTML = ''; }}, 12000);
+        const secs = data.countdown || 0;
+        clearInterval(countdownTimer);
+        clearTimeout(bannerTimer);
+        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, secs ? secs * 1000 : 12000);
+        if (secs) startCountdown(secs);
       }}
       // Tell iframe to refresh attendance display with inline data
       const iframe = document.querySelector("iframe");
@@ -533,7 +583,10 @@ def stdin_scanner_listener(backend, state):
             break
 
 def handle_scan(backend, state, participant_id):
-    body, status = backend.post_scan(participant_id)
+    # Any scan ends a running force-close countdown; carrying the token is what
+    # turns this one into the confirm.
+    body, status = backend.post_scan(participant_id, state.take_confirm())
+    countdown = 0
 
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
@@ -547,6 +600,13 @@ def handle_scan(backend, state, participant_id):
     if status >= 400 or "error" in body:
         if body.get("type") == "warning":
             warn = html.escape(body.get("error", "Warning")).replace("\n", "<br>")
+            token = body.get("forceCloseToken")
+            seconds = body.get("confirmSeconds")
+            seconds = seconds if isinstance(seconds, int) and 0 < seconds <= 120 else 15
+            if token:
+                state.arm_confirm(token, seconds)
+                countdown = seconds
+                warn += f'<br><span id="fc-countdown">{seconds}</span>s left to confirm'
             banner_html = f'<div class="banner banner-warning">⚠️ {warn}</div>'
         else:
             err = html.escape(body.get("error", "Unknown error"))
@@ -562,7 +622,7 @@ def handle_scan(backend, state, participant_id):
             banner_html = f'<div class="banner banner-ok">✓ {email} — {label}</div>'
 
     # Phase 1: Push banner immediately (no attendance data yet)
-    state.push_event({"html": banner_html})
+    state.push_event({"html": banner_html, "countdown": countdown})
 
     if status < 400 and "error" not in body:
         ptype = body.get("type", "?")
