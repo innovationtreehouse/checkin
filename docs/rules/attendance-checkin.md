@@ -173,6 +173,13 @@ Things the app takes as true because they are handled outside it.
   left. Putting someone on the list of who is in the building now follows from a
   badge at the kiosk, never from staff saying so.  [Decision — deliberate limit]
 
+- Staff-asserted presence is not facility hours: a visit recorded for somebody
+  else, or a roster mark, states the window it was asserted for rather than a
+  measured stay, so the trends leave it out. A walk-in that a roster mark adopts
+  keeps its badged times and still counts. The 2026-08 backfill brought
+  historical staff entries into line with this, so hours for past periods dropped
+  retroactively.  [Decision]
+
 - Facility hours split by program enrollment, not age: anyone present and not
   enrolled counts on the volunteer side.  [Decision]
 
