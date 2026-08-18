@@ -1,10 +1,34 @@
-# Kiosk resilience: offline scan queue + network health & auto-recovery — v3
+# Kiosk resilience: offline scan queue + network health & auto-recovery — v4
 
-**Status: PROPOSAL v3 (design review) — nothing here is built.** Companion to
-the kiosk client in `client/` and the scan path in `checkin-app`. Written after
-a verified recon of both repos (2026-07-22, origin/main); every claim about
-current behavior below was checked against the tree — symbols are greppable,
-no file:line links.
+**Status: §0 and §5.1–22 ratified (2026-08-17). Nothing here is built.**
+Companion to the kiosk client in `client/` and the scan path in `checkin-app`.
+Written after a verified recon of both repos (2026-07-22, origin/main); every
+claim about current behavior below was checked against the tree — symbols are
+greppable, no file:line links. §5.23–27 (v3 audit residuals) are still open.
+
+## What changed in v4
+
+Ratification of §0 and of §5 questions 1–22 (discussion #1598 / issue #1347).
+The five invariants are no longer proposed. Closed-facility authority is no
+longer contested. Remaining open work in §5 is the v3 audit set (23–27) plus
+implementation residuals named under a decided question (token lifetime,
+corruption-redundancy mechanism, Q21 enumeration of C).
+
+- **§0 is binding.** Dropped the "proposed (Tom) / not yet team-ratified"
+  banner. A design choice that violates an invariant is inconsistent with
+  this document.
+- **Closed is advisory (§2, Q2, Q14).** The kiosk may open locally and
+  propagate when the server is reachable. Server projection of
+  accepted-while-closed scans is **C**: hold until a keyholder Visit exists,
+  then auto-project in `scannedAt` order.
+- **Happened-at order.** Later-arriving transactions apply in the order they
+  occurred, not the order they were delivered.
+- **Phase 1 includes the Stage-2 substrate (Q22).** No Phase 1.5. #254 lands
+  later, not as a Phase 1 gate.
+- **§5.1–22 rewritten as decided.** Working-answer / contested language
+  removed. §5.23–27 unchanged except §5.26 (updated for Q14=C) and §5.27's
+  cache constraint (identity cache may include users, roles, and badge
+  numbers; youth/two-deep math stays server-side).
 
 ## What changed in v3
 
@@ -38,11 +62,10 @@ v2 is a refinement pass over the v1 proposal (offline queue + health/recovery).
 The queue (§2) and health machine (§3) are largely unchanged; the new material
 is the invariants that now govern everything and a full reconciliation model.
 
-- **§0 Invariants (new).** Five proposed invariants that bind the rest:
+- **§0 Invariants (new).** Five invariants that bind the rest:
   (1) never lose a scan, (2) infra failure is normal, (3) nothing "normal"
   requires a kiosk login, (4) always acknowledge the person's badge, (5) trust
-  the displayed direction. Several were flagged by the author as
-  team-review-worthy, not settled.
+  the displayed direction. Ratified in v4.
 - **§6 Reconciliation (new).** The whole "offline events → visits" model:
   the 4-stage pipeline, the **unified Stage-2 substrate** (every surface emits
   intent-carrying events; Visits *project* from one append-only log,
@@ -56,47 +79,38 @@ is the invariants that now govern everything and a full reconciliation model.
   the kiosk displayed; the server never re-toggles from live state at delivery
   (which silently flipped a replayed check-in into a check-out in v1's implicit
   model).
-- **A [CONTESTED] block (§2) and expanded open questions (§5).** Advisory- vs
-  authoritative facility state is unresolved and kept as two positions; §5 now
-  carries 22 questions incl. the new §5.22 (when the server-side substrate
-  lands — suggestion: Phase 1.5).
+- **Closed-facility authority (§2) and §5.** v2 left these contested. v4
+  settles them: advisory local-open (Q2), deferred projection C (Q14),
+  substrate with Phase 1 (Q22).
 
-## 0. Working invariants — proposed, not yet team-ratified (2026-07-23)
+## 0. Invariants — ratified 2026-08-17
 
-> **Status language in this doc.** This is a proposal under review. Items
-> marked *"proposed (Tom)"* are one editor's working position offered for the
-> team, **not** settled team decisions — please push back, amend, or ratify.
-> The invariants below are the author's assertions about what the design
-> *should* hold to; they bind the rest of *this proposal* for internal
-> consistency, but adopting them is a team call still to be made. Nothing
-> here is built.
+These bind the rest of the document. A design choice that violates one is
+inconsistent with this document. Nothing here is built.
 
-These are offered as the frame the rest of the proposal is built on; a design
-choice that violates one is inconsistent with the proposal as written.
-
-1. **Never lose a scan** *(proposed, Tom)*. A badge touch, once read, must survive to
+1. **Never lose a scan.** A badge touch, once read, must survive to
    a durable record — client outbox until the server acks a `RawBadgeLog`
    row — regardless of staleness, facility state, or any assumed safety
    violation. We may decline to *display* or *project* a scan (park, flag,
-   defer); none is ever lost. **Proposed exception (Tom):** a scan
-   falling inside the double-badge debounce window may be ignored outright,
-   live or replayed — it is a duplicate of a touch already durably recorded,
-   not a lost scan — *provided the window stays short*. It is **3 seconds**
-   today (`/api/scan` route); Tom's stated tolerance is ~1–2s — keep or
-   tighten is a residual open question (§5, question 16).
-2. **Infra failure is normal, not an incident** *(proposed, Tom)*. WiFi loss —
+   defer); none is ever lost. **Exception:** a scan falling inside the
+   double-badge debounce window may be ignored outright, live or replayed —
+   it is a duplicate of a touch already durably recorded, not a lost scan.
+   Force-close confirm is **not** inferred from that window (§5.16, §5.23):
+   it is an explicit state with a visible countdown; the next scan ends the
+   countdown and exits the state. Residual debounce width (noise only) is
+   an implementation default.
+2. **Infra failure is normal, not an incident.** WiFi loss —
    potentially for **hours at a time** — is an expected operating mode. The
    kiosk must keep accepting scans, keep its display honest, and recover
    unattended through it; nothing in the design may treat a long outage as
    an exceptional path that degrades into data loss or manual intervention.
-3. **Nothing "normal" requires logging into the kiosk** *(proposed, Tom —
-   flagged by the author as potentially controversial; for team review)*. A 24h WiFi outage is "normal" under invariant 2. Every
-   normal outcome — including events that land in the dead-letter queue —
-   must eventually be visible and resolvable **server-side**: DLQ'd events
-   get transmitted to a server-side DLQ by some means (mechanism and phase
-   open — §5, question 10). The kiosk's local corner count is a signal, never the only
-   copy ops can reach.
-4. **Always acknowledge the person's assertion** *(proposed, Tom)*. When
+3. **Nothing "normal" requires logging into the kiosk.** A 24h WiFi outage is
+   "normal" under invariant 2. Every normal outcome — including events that
+   land in the dead-letter queue — must eventually be visible and resolvable
+   **server-side**: DLQ'd events are transmitted on the same `POST /api/scan`
+   as live scans (`dead: true`; §5.10). The kiosk's local corner count is a
+   signal, never the only copy ops can reach.
+4. **Always acknowledge the person's assertion.** When
    someone badges, the kiosk must tell them "we got it — you're checked
    in/out", even when the server's math currently disagrees (e.g. it thinks
    the facility is closed) or the network is down. Refusing to acknowledge a
@@ -106,7 +120,7 @@ choice that violates one is inconsistent with the proposal as written.
    substitute for the acknowledgement. Every design choice below must
    preserve this: server-side projection timing may vary, the at-the-door
    acknowledgement may not.
-5. **Trust the displayed direction** *(proposed, Tom)*. The kiosk shows the
+5. **Trust the displayed direction.** The kiosk shows the
    human "checked **in**" / "checked **out**" and the human acts on it. That
    displayed direction is the intent of record — the server must not re-infer
    in/out from its own live state at delivery time (which, for anything not
@@ -335,19 +349,20 @@ above is designed to make it the workflow. Minimization must key on the
 surface rather than on which credential authenticated (§5.25) before the count
 ships.
 
-**Resolution semantics (proposed, Tom).** The review
-surface is for **keyholders and ops**, superseding the
-`['isSysadmin','isBoardMember']` framing above (exact role-flag mapping open
-— "ops" is not a modeled role; §5, question 15). Resolving writes the Visit at
-`scannedAt`, never resolution time — resolution can be days later. Resolved
-visits are **normal visits**: volunteer-hour derivation and attendance
-reports consume them unchanged (infrastructure hiccup, not a different kind
-of visit). Next-day resolution with no matching scan-out applies the
-close-sweep-equivalent departure, and that synthesized departure itself
-enters the review queue for confirmation. Open (§5, question 13): retroactively
-correcting a sweep-closure that a late-arriving (parked/dead) checkout
-should have preempted — the sweep stamped `departedAt=closeTime` but the
-person actually left at `scannedAt`.
+**Resolution semantics — decided (2026-08-17).** The review surface is for
+**keyholders and ops**, superseding the `['isSysadmin','isBoardMember']`
+framing above (role-flag mapping is `isKeyholder || isOperations ||
+isBoardMember || isSysadmin` — §5, question 15). Resolving writes the Visit
+at `scannedAt`, never resolution time — resolution can be days later.
+Resolved visits are **normal visits**: volunteer-hour derivation and
+attendance reports consume them unchanged (infrastructure hiccup, not a
+different kind of visit). Next-day resolution with no matching scan-out
+applies the close-sweep-equivalent departure, and that synthesized departure
+itself enters the review queue for confirmation. Decided (§5, question 13):
+retroactively correcting a sweep-closure that a late-arriving (parked/dead)
+checkout should have preempted — the sweep stamped `departedAt=closeTime` but
+the person actually left at `scannedAt` — is **human always**; nothing
+rewrites a sweep departure to `scannedAt` automatically.
 
 **Open-visit staleness bound (from audit B4).** `attendance/manual` refuses an
 open backfill whose arrival is older than same-day-or-6h, and states the
@@ -433,46 +448,38 @@ precedent set by `Visit_one_open_per_participant`.
   heartbeat, not a DLQ device; dead events travel as explicit known-dead
   submissions (§5, question 10).
 
-### [CONTESTED] Closed-facility authority (2026-07-23)
+### Closed-facility authority — decided (advisory, 2026-08-17)
 
-Two positions on what happens when scans meet a facility the server believes
-closed (`activeKeyholders===0` → today a live 403). Both kept for team
-resolution — neither is folded into the contract above yet.
+Facility-open is **advisory**. The kiosk may **open locally** when the
+requirements are met (a keyholder badge in the local cache), even without the
+server, and **propagate that state** when the connection returns. The live
+403 is off the table (invariant 4: the person was already acknowledged).
 
-- **Doc/design position (server-authoritative, minimal change):** the live
-  gate stays; *replayed* non-keyholder scans hitting a closed facility
-  **park** for review (`reviewReason:"facility_closed"`, never 403, never
-  toggle). The kiosk never claims authority over facility state.
-- **Tom's position (facility-open is advisory):** the kiosk should **open
-  the facility locally** when the requirements are met, even without the
-  server; the server should **always accept** scans while it believes the
-  facility closed, recording them with an accepted-while-closed flag rather
-  than rejecting. Implications, each an open question in §5:
-  the client needs local knowledge of keyholder status (new data on the Pi,
-  question 11); whether the accepted-while-closed scan toggles a Visit or only
-  records+flags (question 14); whether the server needs a client heartbeat to trust
-  advisory mode — or whether that stays off to keep the DB paused (§3.4's
-  passive in-memory stamp may already suffice, question 12); and a **restart-aware
-  server**: after a cold start, expect ~5 min of sync chaos while queues
-  drain, with user-facing messages worded for "syncing", not "broken" (question 12).
+Server-side projection of those events is **C** (§5.14): hold until a
+keyholder Visit exists, then auto-project in `scannedAt` order. No human on
+the happy path. No zero-keyholder roster.
 
-Note the blast radius difference: the doc position touches only the replay
-path; Tom's position changes the semantics of a live, validated gate
-(backlog CUJ A7.1) for all scans.
+The Pi caches **users, roles, and badge numbers** — not keyholder standing
+alone — so "can this badge open?" is a local lookup (§5.11). Youth and
+two-deep math stay server-side (§5.27).
 
-### Outage staleness & reconciliation (proposed, Tom)
+A signed scan at delivery is enough liveness; no extra heartbeat requirement
+to accept advisory events (§5.12). After a cold start, expect a short drain;
+the banner reads `syncing (N)…`, not "broken."
 
-Two statements proposed by Tom (for team ratification): **(a)** during an outage, server-side safety
-displays (two-deep, roster, counts) are stale by construction; the physical
-room and the kiosk-local screen are the source of truth until the queue
-drains — the design does not pretend otherwise. **(b)** A constraint on
-future two-deep *enforcement* (#300): a replayed departure is fait accompli —
-the person already physically left; enforcement may record and flag it for
-review, never reject it (rejecting would violate invariant 1). Open (§5,
-question 21): the full reconciliation state space — server-side events (web
-check-ins, manual visits, admin edits, force-close sweeps) occur during the
-same outage the kiosk queues through — has not been enumerated; analysis
-(possibly a small state-machine diagram) is owed before Phase 1 hardening.
+This changes the live gate (CUJ A7.1), not only the replay path.
+
+### Outage staleness & reconciliation — ratified
+
+**(a)** During an outage, server-side safety displays (two-deep, roster,
+counts) are stale by construction; the physical room and the kiosk-local
+screen are the source of truth until the queue drains — the design does not
+pretend otherwise. **(b)** A constraint on future two-deep *enforcement*
+(#300): a replayed departure is fait accompli — the person already physically
+left; enforcement may record and flag it for review, never reject it
+(rejecting would violate invariant 1). Residual (§5.21): enumerate C plus
+the server-side events (web check-ins, manual visits, admin edits,
+force-close sweeps) that occur during the same outage.
 
 ## 3. Health checking, recovery, and heartbeat
 
@@ -593,10 +600,9 @@ it (no anonymous forgery); the per-IP rate limit already caps it. Overnight
 the value dies with the scaled-to-zero task and the panel correctly reads
 stale-during-curfew — expected, not an alert. Single-task assumption is the
 same one the nonce Map already makes; `ponytail:` multi-task needs the DB.
-If the §2 advisory-mode position lands ([CONTESTED] block), this passive
-stamp is also the candidate answer to "does the server need a client
-heartbeat to trust advisory scans" — no new traffic, no DB writes; whether
-advisory mode needs more than passive liveness is open (§5, question 12).
+Under advisory mode (§2), this passive stamp is also the answer to "does the
+server need a client heartbeat to trust advisory scans" — no new traffic, no
+DB writes; **a signed scan at delivery is enough liveness** (§5, question 12).
 
 **Clock trust (proposed, Tom — partial).** The kiosk clock is
 trusted: a scan is trusted for **when it occurred, not when it was
@@ -677,12 +683,17 @@ persistent 401/403 on the proxied `/api/attendance` as its own health signal
 
 - **Phase 0 — the three dead-path fixes (§3.3).** Lines of config/paths;
   resurrects self-update and version-reload. Ship first, alone.
-- **Phase 1 — scan durability (kills the guaranteed-lost cold-wake scan).**
-  Schema delta + extended `/api/scan` (§2 contract); client: `clientEventId` +
-  `scannedAt`, status/content-type branching, SQLite outbox, single replay
-  thread with waker-aligned backoff + dead-letter states (D6), blue "Saved"
-  banner; waker-aware warming
-  banner + fast recovery probe (§3.5).
+- **Phase 1 — scan durability + Stage-2 substrate (kills the guaranteed-lost
+  cold-wake scan).** Schema delta + extended `/api/scan` (§2 contract);
+  client: `clientEventId` + `scannedAt`, status/content-type branching,
+  **persistent redundant outbox** (survives reboot — §5.7; local corruption
+  detected on the Pi, not login-only — §5.10), single replay thread with
+  waker-aligned backoff + dead-letter states (D6), blue "Saved" banner;
+  waker-aware warming banner + fast recovery probe (§3.5); **unified
+  Stage-2 substrate + re-runnable projection** (§6, §5.22) so deferred
+  projection C (§5.14) is born on the log, not on today's toggle. #254
+  (facility-level force-close lock) is **not** in this phase — it lands
+  later (§5.9).
 - **Phase 2 — health + visibility.** `health_monitor` state machine, recovery
   ladder (Chromium bounce, gated wifi bounce, nightly + escalation reboot),
   its two prerequisites — the kiosk-display idle-stop exemption (§3.2) and
@@ -710,272 +721,131 @@ phase that would otherwise ship on top of them:
   to sign in at the kiosk, so minimization must stop keying on the signature
   before the count ships.
 
-B4 (§5.26) and B5 (§5.27) are constraints on questions still open (14 and 11)
-rather than phase gates — but they must be answered *inside* those questions,
-not after them.
+B4 (§5.26) is still open (manual vs scan consistency now that Q14 is C).
+B5 (§5.27) constrains the Q11 cache: identity may be local; youth/two-deep
+math stays server-side.
 
-## 5. Open questions (design review — answer, comment, or mark unknown)
+## 5. Decisions (1–22 ratified 2026-08-17) and remaining questions
 
-*"Working answer (Tom)" below = the author's proposed resolution offered for
-the team, not a settled decision. Treat each as a starting point to confirm,
-amend, or reject.*
+Questions 1–22 are decided. A leftover named under a decided question is
+implementation, not a re-open. Questions 23–27 (v3 audit) are still open.
 
-1. **Freshness window W** — default 10 min. Is a same-day late-landing
-   check-in ever wanted past W, or is anything older always human review?
-   **Working answer (Tom):** 10 min confirmed. Follow-up open: where the
-   dead-letter queue lives — see question 10 (invariant 3 settles *whether*).
-2. **Queued keyholder scan** — if a keyholder's opening scan is stuck in the
-   outbox, the server thinks the facility is closed while it's physically
-   open (non-keyholder live scans rejected). Accept, or add a kiosk-local
-   "facility open" override during outages? (Policy call.)
-   **[CONTESTED] — see §2 "Closed-facility authority" block.** Tom: kiosk
-   opens locally when requirements are met; server treats "closed" as
-   advisory and always accepts + flags. Doc position: server-authoritative,
-   park. Both kept for review; sub-questions 11–14 below.
-3. **Parked-event resolution** — who resolves (sysadmin only, or any
-   keyholder)? Does resolving write the Visit at `scannedAt` or at resolution
-   time?
-   **Working answer (Tom):** visible to keyholders + ops;
-   Visit always at `scannedAt`; resolved visits are normal visits (feed
-   volunteer-hour/attendance reports unchanged); next-day resolution with no
-   scan-out applies the close-sweep-equivalent departure, which itself enters
-   the review queue. Open: role-flag mapping (question 15), sweep retro-undo
-   (question 13).
-4. **Multi-kiosk within-window conflicts** — recommendation: newest
-   `scannedAt` wins, older late arrivals park for review (the D3 out-of-order
-   guard). Acceptable for keyholder/safety counts?
-   **Working answer (Tom):** moot — fleet is one kiosk, one server.
-5. **Alerting** — passive panel only, or email someone when a kiosk goes
-   offline during open hours (needs write-on-change persistence)? Proposed
-   default: panel only.
-   **Working answer (Tom):** panel only.
-6. **Open-hours source** — is there a canonical one, or hard-code the closed
-   window (≈23:00–07:00 CT, mirroring the curfew) for reboot scheduling, the
-   drain's overnight sleep, health-poll silence, and heartbeat downshift?
-   **Working answer (Tom):** client carries its own configuration; baked in
-   code is acceptable (reapplied via nightly pull+reboot — wrong for at most
-   one night after a change). **[UNKNOWN — Tom]:** whether it should instead
-   be fetched from the server (code vs DB call) is explicitly open.
-7. **Escalation reboot during open hours** — acceptable to auto-reboot a
-   wedged kiosk mid-session (~2 min loss) once the ladder is exhausted?
-   **Working answer (Tom):** yes — rate-limited 1/hr as designed.
-   (Context: exhaustion is rare — WiFi-firmware/kernel-USB/display-driver
-   wedges only a reboot clears — and an exhausted-ladder kiosk is already
-   not scanning, so the ~2 min window costs almost nothing incremental; the
-   outbox rides through.)
-8. **Fleet size** — multi-key `KIOSK_PUBLIC_KEY` today is rotation, not
-   identity. If more than one kiosk exists (or will), the heartbeat needs a
-   `kiosk_id` and last-seen moves to the DB. How many kiosks?
-   **Working answer (Tom):** one kiosk, one server. No `kiosk_id`; in-memory
-   heartbeat stands.
-9. **Sequencing vs the force-close race (#254/AT9)** — flagged open
-   (2026-07-23): replay adds concurrent writers through
-   `processCheckout`/`closeAllOpenVisits`, the path with the known
-   check-in-survives-close race. Decide whether the #254 fix lands before
-   Phase 1 or ships independently. **Second instance (v3):** audit B2 sits on
-   the same path and is a live bug today (§5.23), and audit B12 (the 24h cap
-   unenforced on machine closers) sits on `closeAllOpenVisits`, which replay
-   newly drives as a concurrent writer. Sequence all three, not just #254.
-10. **Server-side DLQ mechanism + phase** (invariant 3 follow-through;
-    *whether* is settled).
-    **Working answer (Tom, partial):** dead events ARE transmitted as
-    explicitly **known-dead** submissions (`dead:true` + client
-    status/reason); the server **parks-not-processes** — writes the
-    `RawBadgeLog` row with `reviewReason:"client_dead:<status>"`, no
-    toggle — surfacing them on the D7 panel (a plain re-POST would just 404
-    again). Heartbeat piggyback **rejected**: a heartbeat is a heartbeat,
-    not a DLQ device.
-    **Open — and [UNKNOWN — Tom] on the full flow:** whether known-dead
-    submission rides `/api/scan` or drives a **separate endpoint**; Tom is
-    *really* unsure of the complete flow and the non-happy-path issues
-    embedded in it (double-dead, dead-then-badge-reissued, dead during
-    warming, dead for a merged person, …). Flow enumeration is owed as part
-    of the question-21 reconciliation analysis before this is spec'd.
-    Sub-point still open: is SQLite corruption (`outbox.corrupt.<ts>` aside
-    file, D1) classifiable as *abnormal* — login acceptable — or does it
-    need a transmit path too?
-11. **Kiosk-local facility-open: how does the client know keyholder
-    status?** (Advisory-mode prerequisite, [CONTESTED] block — this decision
-    activates only if advisory mode lands.)
-    **Working direction (Tom):** the kiosk stores a
-    **badge-id ↔ keyholder table**, transmitted/cached under the same
-    versioned zod communication standards as the scan contract. Stored by
-    ID only it carries essentially no PII beyond what standing in the
-    building already reveals. Residual build details — transport channel
-    (attendance-poll payload vs dedicated config fetch), refresh cadence,
-    staleness tolerance on revoked keyholders — left to implementation
-    review, not a policy question.
-12. **Post-restart "sync chaos" — by component.** Scenario: the server
-    cold-starts at 9:00; the kiosk drain bursts queued scans for ~5 min;
-    roster/counts jump as history lands. Split of responsibilities:
-    - **Server, grace-window mechanics (open):** each replayed event is
-      already handled deterministically (dedup, park, out-of-order guard) —
-      proposal: **no new server mechanism**. Only candidates otherwise:
-      suppress ops-panel anomaly alerts during drain; relaxing the
-      out-of-order guard is NOT proposed (risky).
-    - **Kiosk, user-facing messaging (proposal):** the blue banner's
-      existing count reads "syncing (N)…" during the drain — that is the
-      restart messaging; no new surface.
-    - **Kiosk→server, heartbeat time fields incl. clock skew (proposed,
-      Tom):** the kiosk should try to transmit its clock skew to the server
-      by *some* means so the server can observe it directly, not just infer
-      it. Concretely, `X-Kiosk-State` carries the kiosk's wall-clock reading
-      (the server compares against its own receive time → skew), plus the
-      largest recent NTP step it saw, last-scan age, and outbox depth. Two
-      honest caveats on "some means": (i) a heartbeat is silent through the
-      closed window and dies with the scaled-to-zero task, so skew is only
-      reported during open hours — acceptable, that is when scans happen;
-      (ii) skew observed at heartbeat time is transport-time skew, which the
-      signature window already bounds — the *valuable* signal is the
-      per-scan `clockSuspect` flag below, which reports skew that was
-      present at the moment a specific queued scan was stamped. The
-      heartbeat skew field is the coarse always-on health read; the
-      per-scan flag is the precise one. Both are informational (they park or
-      surface, never reject — invariant 1).
-    - **Server, advisory-mode trust (open):** proposal — the passive
-      `lastSeenByKiosk` stamp suffices (every signed scan proves liveness
-      at delivery); no affirmative heartbeat requirement.
-    - **Clock-jump edge (revised 2026-07-23):** small skew (tens of
-      seconds) is don't-care — the signature window already bounds it. The
-      real worry is a **large** correction: a Pi that boots with a bad RTC
-      and gets NTP-stepped by 2–3 hours can stamp `scannedAt` hours off.
-      This IS catchable client-side: the kiosk watches for a large wall-clock
-      step (NTP adjustment, or monotonic-vs-wall divergence) and, if any
-      queued scan was stamped before a step bigger than a threshold
-      (~a few minutes), marks those scans `clockSuspect` so the server parks
-      them for review instead of trusting `scannedAt`. Cheap, and it turns
-      the one genuinely-bad case into a review item rather than silent bad
-      data.
-13. **Retroactive sweep undo.** A late checkout arrives after the close
-    sweep stamped `departedAt=closeTime`, but the person actually left at
-    `scannedAt`.
-    **Working answer (Tom):** start with **human always** — the
-    resolution UI offers "correct departure to `scannedAt`" (audit-logged
-    edit); no automatic rewrite. Automate later only if the manual flow
-    proves clean.
-14. **Accepted-while-closed semantics** ([CONTESTED] block).
-    **Governing constraint (invariant 4):** whichever option wins, the
-    kiosk has *already* acknowledged the person at the door ("you're checked
-    in") and durably queued the scan — that is fixed and not in question
-    here. This question is only about **server-side roster projection**: how
-    and when a scan accepted while the server believes the facility closed
-    (`activeKeyholders===0`, because the keyholder's opening scan is
-    queued/parked/dead or was never badged) becomes a Visit on the roster.
-    The 403-reject of today is off the table — it would break invariant 4.
-    - **(A) Toggle + flag:** server creates the Visit immediately (person on
-      the roster), marked accepted-while-closed. Roster is truthful the
-      instant the scan lands, but it mints a state today's system makes
-      impossible — people present with zero keyholders — which two-deep
-      math, keyholder-count displays, and the close sweep must all learn to
-      handle.
-    - **(B) Record + park with flag:** `RawBadgeLog` + review reason, no
-      Visit. No new impossible states; the person was still acknowledged at
-      the door (invariant 4 satisfied by the kiosk). Cost: the server roster
-      omits physically-present people until a human resolves — a *staff*
-      visibility gap, not a person-facing one. It is the doc's park position
-      under another reason string.
-    - **(C) Defer projection:** hold accepted-while-closed scans until a
-      keyholder Visit exists (the opening scan lands or is resolved), then
-      auto-project them in `scannedAt` order. Roster catches up with no
-      human touch and no impossible state — but it is a small reconciliation
-      machine, exactly the state space question 21 must enumerate first.
-    All three honor invariant 4 (the door-ack is the kiosk's, not the
-    server's). They differ only in staff-facing roster fidelity vs added
-    server complexity. Working recommendation: **(B) for Phase 1**
-    (simplest, invariant-safe), **upgrade to (C)** once question 21's
-    reconciliation analysis is done; **(A)** only if a live-accurate roster
-    during outages is judged worth teaching every safety consumer the
-    zero-keyholder state.
-    **Display consequence, whichever wins (v3):** (B) and (C) both leave the
-    server roster knowingly incomplete for a while, and `isTwoDeepViolation`
-    is computed over that set — missing adults read as a false violation
-    (noisy, safe), missing youth as a false clear. Audit B4 supplies the
-    opposite skew on the same expression (a staff-asserted open visit counts
-    a child who is not in the building). Both have to reach the screen as a
-    state distinct from "compliant" (§5.24).
-15. **Resolver role mapping.**
-    **Working answer (Tom):** "ops" = the modeled **Operations** role
-    (`PersonRoleKind.OPERATIONS` → session flag `isOperations`). Gate:
-    `isKeyholder || isOperations || isBoardMember` — board is part of ops,
-    so board inclusion is legal and taken. **[UNKNOWN — Tom]:** whether
-    `isSysadmin` is included — note that excluding sysadmin would make this
-    the app's first admin surface without it (every existing
-    `system-status`/facility surface grants sysadmin), so the default on
-    build is include-unless-Tom-says-otherwise. The existing
-    board-vs-sysadmin API/UI mismatch on `facility/visits` remains a
-    separate cleanup — this gate should not silently mint a third variant.
-16. **Debounce width vs the force-close confirm gesture — ⚠ FLAGGED FOR
-    DISCUSSION (2026-07-23).** The window is 3s today; the stated tolerance
-    for the invariant-1 ignore exception is ~1–2s. Worse than a width
-    preference: the debounce and the last-keyholder confirm interact badly.
-    The confirm detector wants the second badge within 12s of the warning —
-    but the debounce silently ignores any second badge inside 3s (it returns
-    before the `RawBadgeLog` write, so the detector never sees it). The
-    working confirm window is therefore **[3s, 12s]**: a keyholder who
-    double-badges faster than 3s — the natural gesture — cannot close the
-    facility, with no feedback about why. Options to weigh: tighten debounce
-    to ~1s; exempt a scan that answers an outstanding force-close warning
-    from debounce; or make the confirm state explicit server-side instead of
-    inferred from raw-log spacing. Smaller window also = fewer swallowed
-    replays in the D3 interplay.
-    **Superseded in part (v3):** audit B2 decides it — the third option is the
-    only one that survives, because any window is guessable by an ordinary
-    double-tap. See §5.23; what remains here is the debounce width on its own
-    (the ~1–2s tolerance) and whether a confirm scan is exempt from it.
-17. **Idle-stop exemption keying** (§3.2 prerequisite). The page URL is
-    publicly routable but the poll is authenticated: anonymous gets 401
-    (the request still counts toward the ALB quiet-check), **any logged-in
-    member** polls successfully — with session cookies, which **wake** the
-    scaled-to-zero service, not just defer teardown. Keying the exemption
-    on `mode=kiosk` (a plain URL param) therefore makes any signed-in user's
-    forgotten overnight tab wake + hold prod up all night, and even an
-    anonymous tab's 401 traffic defers teardown — and the real kiosk's own
-    exempted poll would defer curfew nightly too. Proposal: key on the
-    `signedRequest` response flag (kiosk-proxied traffic only), and the
-    **proxy** absorbs the attendance poll during the closed window (the
-    proxy knows the window; the page doesn't); wedge detection valid open
-    hours only.
-    **Working direction (Tom) — NEEDS DEEP REVIEW**: the proposal
-    stands as the working plan; details (exemption keying, proxy absorption,
-    open-hours gating) explicitly flagged for careful team review before
-    build.
-18. **Late-replay notification timing.** The visit gets `scannedAt`
-    (settled); but the check-in notification to a parent fires at *delivery*
-    moment — a 2:14pm scan draining at 3:00pm notifies at 3:00pm, and a park
-    resolved next morning notifies a day late.
-    **Working answer (Tom):** the occurred-at time MUST appear in the
-    message. When delivery lags more than ~10–15 min, the message also
-    explains the delay — draft wording: "a connection issue at the facility
-    delayed this notification; the check-in itself happened at 2:14 PM"
-    (better words welcome). **⚠ Parent-facing copy — flagged for
-    customer-service review**, not just engineering.
+1. **Freshness window W.**
+   **Decided:** W = 10 minutes. A queued scan older than that parks for a
+   human. Same-day is not an exception.
+
+2. **Queued keyholder opening scan / closed-facility authority.**
+   **Decided:** closed is **advisory**. The kiosk may open locally when the
+   requirements are met, then **propagate state** when the server is
+   reachable. The live 403 is off the table. See §2.
+
+3. **Parked-event resolution.**
+   **Decided:** visible to keyholders + ops (roles in Q15). The Visit is
+   written at **`scannedAt`**, never at resolution time. Resolved visits are
+   normal visits. Next-day resolution with no checkout applies the
+   close-sweep-equivalent departure, and that synthetic departure itself
+   parks. **Ordering:** later-arriving transactions apply in the order they
+   *happened*, not the order they were delivered. Delivery order is not
+   projection order.
+
+4. **Multi-kiosk within-window conflicts.**
+   **Decided:** moot. **One kiosk, one server.** No `kiosk_id`. Single-kiosk
+   drain still obeys happened-at order (Q3).
+
+5. **Alerting.**
+   **Decided:** panel only. No email. No write-on-change persistence for this.
+
+6. **Open-hours source.**
+   **Decided:** the client **fetches hours from the server**. Server-side
+   checks verify against a **nominal open-time setting and the program
+   schedule** — a session on the calendar can keep the building open past
+   the nominal window.
+
+7. **Escalation reboot during open hours.**
+   **Decided:** yes, rate-limited **1/hour**. Because a mid-session reboot
+   is allowed, the **outbox must be durable across process death** (on-disk,
+   not in-memory). A reboot that empties the outbox violates invariant 1.
+
+8. **Fleet size.**
+   **Decided:** one kiosk, one server (Q4). In-memory heartbeat stands.
+
+9. **Sequencing vs #254.**
+   **Decided:** **#254 lands later**, not before or with Phase 1. Phase 1
+   (queue + replay + substrate) ships with the force-close race still open.
+   Audit B2 / §5.23 (explicit confirm) remains a Phase 1 gate — that is a
+   different bug on the same path.
+
+10. **Server-side DLQ.**
+    **Decided:** known-dead events transmit on the **same `POST /api/scan`**
+    (`dead: true` + status/reason). Server parks, does not toggle
+    (`reviewReason: "client_dead:<status>"`). Heartbeat is not a DLQ.
+    Disk corruption is **detected locally**. Local storage needs a
+    **redundancy mechanism** (not a single file we hope survives). Flow
+    edges (double-dead, dead-then-reissued, warming, merged person) are
+    enumerated with Q21; they do not reopen this.
+
+11. **Local keyholder knowledge.**
+    **Decided:** the Pi holds a **local cache of users, roles, and badge
+    numbers** — one table, not keyholder-standing alone. "Can this badge
+    open?" is a lookup. Youth / two-deep math stays **server-side** (§5.27).
+    Refresh cadence and revocation freshness are implementation.
+
+12. **Post-restart drain.**
+    **Decided:** no extra server grace-window. Dedup, park, and happened-at
+    order decide each event. Do not relax the out-of-order guard. Door
+    banner: `syncing (N)…`. A large clock step marks queued scans
+    `clockSuspect` (server parks them). Small skew is don't-care. A signed
+    scan at delivery is enough liveness.
+
+13. **Late checkout vs the close sweep.**
+    **Decided:** **human always** to rewrite a sweep departure to
+    `scannedAt`. A close-out **check** may run hours after close; the
+    **`departedAt` it writes is the closing time**, not the moment the
+    check ran.
+
+14. **Accepted-while-closed projection.**
+    **Decided:** **C — defer projection.** Hold until a keyholder Visit
+    exists, then auto-project in `scannedAt` order. No human on the happy
+    path. No zero-keyholder roster. Q21 enumerates this machine.
+
+15. **Resolver roles.**
+    **Decided:** `isKeyholder || isOperations || isBoardMember ||
+    isSysadmin`.
+
+16. **Debounce vs close-confirm.**
+    **Decided:** **explicit confirm state with a visible countdown.** The
+    next scan **ends the countdown and exits the state** — that is the
+    confirm. Debounce no longer infers close from log spacing. Leftover
+    debounce width (noise only) is an implementation default. Token
+    lifetime and queued-confirm expiry remain under §5.23.
+
+17. **Overnight poll / idle-stop exemption.**
+    **Decided:** exempt only **kiosk-proxied** traffic (`signedRequest`).
+    During the closed window the **proxy swallows** the attendance poll.
+    Wedge detection is valid in **open hours only**.
+
+18. **Late-replay parent notification.**
+    **Decided:** occurred-at time is **always** in the message. If delivery
+    lags more than **~10–15 minutes**, the message also explains the delay.
+
 19. **Stale safety state during an outage.**
-    **Working answer (Tom) — both statements proposed, folded into §2 for review:**
-    (a) during an outage, server-side safety displays (two-deep, roster) are
-    stale; the physical room and kiosk-local screen are the source of truth;
-    (b) constraint on future two-deep *enforcement* (#300/AT6): replayed
-    departures are fait accompli — record + flag for review, never reject
-    (rejecting would violate invariant 1).
-20. **Replay-outcome metrics.** "Phase 3 only if measured" needs a measure:
-    count replay outcomes into `SystemMetricLog` (`scan_replayed`,
-    `scan_parked`, `scan_dead`, outbox depth at drain start) — O(events),
-    Aurora still pauses.
-    **Deferred (2026-07-23):** Tom is too far from build to rank this;
-    the proposal stands as the build default, revisit at implementation
-    review.
-21. **Reconciliation state space** — worked out in **§6**; the residual open
-    is 22 below.
-22. **When does the server-side unified substrate land?** §6 assumes every
-    server surface emits Stage-2 events and Visits project from them; today
-    they write Visits directly. The server must stay in sync with the kiosk
-    for reconciliation to work at all — so this is a *when*, not *whether*.
-    **Suggestion (proposed):** land the unified substrate + re-runnable
-    projection as its own phase right after Phase 1 scan-durability (call it
-    Phase 1.5), before anything that depends on accurate offline
-    reconciliation (advisory mode, two-deep enforcement). Phase 1 alone would
-    replay through today's imperative toggle — the fragile path the substrate
-    replaces — so running replay without the substrate ships that path twice.
-    Exact phase boundary open.
+    **Decided:** both (a) and (b) in §2. Server displays are stale; the
+    room and kiosk screen are truth until drain. Future two-deep
+    enforcement never rejects a replayed departure.
+
+20. **Replay metrics.**
+    **Decided:** leave as a **build default**, revisit at implementation
+    review. Not a Phase 1 requirement.
+
+21. **Reconciliation state space.**
+    **Decided (as homework, not a fork):** enumerate **C** (Q14) plus
+    server-side events (web check-in, manual visit, admin edit, sweep)
+    that occur during the same outage. The write-up belongs with Phase 1
+    (substrate lands there). §6 is the sketch.
+
+22. **When the Stage-2 substrate lands.**
+    **Decided:** **with Phase 1.** Queue and substrate are one cut. C is
+    born on the log. No Phase 1.5.
 
 *Questions 23–27 arrive with v3, from the #1529 Class-B audit (§7).*
 
@@ -1042,9 +912,10 @@ amend, or reject.*
     `attendance/manual` already refuses to mint the zero-keyholder state: an
     open backfill for a non-keyholder subject with `activeKeyholders===0`
     returns facility-closed. That is precisely the 403 §5.14 puts "off the
-    table" for scans. Ship Phase 1 on (B) and the two paths answer one
-    question oppositely — a scan accepted while closed parks and later
-    projects, a lead's manual open backfill hard-refuses. Add the staleness
+    table" for scans. Q14 is now **C** (defer, then auto-project). Ship
+    Phase 1 on C and the two paths still answer one question oppositely — a
+    scan accepted while closed waits for a keyholder Visit, a lead's manual
+    open backfill hard-refuses. Add the staleness
     mismatch recorded in §2 D7 and there are two guards for one hazard, one
     of them absent.
     **Prerequisite:** audit B4 is undecided. The route's open-visit path and
@@ -1060,12 +931,12 @@ amend, or reject.*
     server-computed flag — but it is the only one: **1 of 12** non-test call
     sites passes `unknownIs` (counted 2026-08-06; the audit said 1 of 10).
     The invariant is carried by memory, not machinery.
-    §5.11 proposes caching a badge-id ↔ keyholder table on the Pi.
-    **Constraint (proposed):** cache keyholder standing only. A kiosk-local
-    youth or two-deep computation is a new `isYouth` call site with the unsafe
-    default, on the one device in the fleet that cannot take a hotfix. Same
-    applies to the review queue: resolving a parked scan writes a Visit and
-    must run the same fail-closed math the live path does.
+    §5.11 caches **users, roles, and badge numbers** on the Pi so local-open
+    is a lookup. **Constraint:** that cache is identity, not safety math.
+    A kiosk-local youth or two-deep computation is a new `isYouth` call site
+    with the unsafe default, on the one device in the fleet that cannot take
+    a hotfix. Same applies to the review queue: resolving a parked scan
+    writes a Visit and must run the same fail-closed math the live path does.
 
 ## 6. Reconciliation — offline events → visits
 
@@ -1090,7 +961,7 @@ gets wrong: *who* decides in/out, and *when*.
 - **Stage 4 — derivations.** Program/attendance matching, volunteer hours,
   trends. Consume Visits, not touches.
 
-### 6.2 Unified Stage-2 substrate + projection (proposed, Tom)
+### 6.2 Unified Stage-2 substrate + projection (lands with Phase 1)
 
 Stage 2 is the **unified substrate**: every presence-affecting surface emits
 intent-carrying events into one append-only stream, and Visits **project** from
@@ -1123,7 +994,7 @@ a later event lands. A park-hinted presence is a **guess**: the physical room
 stays the source of truth during reconciliation, and safety counts (two-deep)
 treat park-hinted rows as provisional, never confirmed.
 
-Which surfaces emit into the substrate and when is open — §5.22.
+Which surfaces emit into the substrate: **all of them, with Phase 1** (§5.22).
 
 ### 6.3 System partition states
 
@@ -1227,7 +1098,7 @@ stateDiagram-v2
     Classify --> ParkedStale: now - scannedAt > W
     Classify --> Project: fresh, resolvable
     Project --> Projected: intent applied (M3)
-    Project --> ParkedClosed: facility closed & non-keyholder (§5.14 [CONTESTED])
+    Project --> ParkedClosed: facility closed & non-keyholder (hold for C, §5.14)
     Project --> ConflictDoubleIn: IN but a visit is already open
     Project --> ConflictOutNoIn: OUT but no open visit
 ```
