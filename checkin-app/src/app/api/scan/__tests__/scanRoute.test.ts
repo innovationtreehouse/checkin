@@ -282,5 +282,16 @@ describe('POST /api/scan', () => {
             expect(prisma.rawBadgeLog.findUnique).not.toHaveBeenCalled();
             expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 1, location: 'Main Entrance' } });
         });
+
+        it('an empty-string clientEventId normalizes to null and is treated as a live scan, not a replay', async () => {
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
+            (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
+
+            const res = await POST(replayReq({ clientEventId: '' }));
+            expect(res.status).toBe(200);
+
+            expect(prisma.rawBadgeLog.findUnique).not.toHaveBeenCalled();
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 1, location: 'Main Entrance' } });
+        });
     });
 });

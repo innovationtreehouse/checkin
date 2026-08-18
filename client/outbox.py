@@ -164,11 +164,10 @@ class Outbox:
 def classify_response(status, body):
     """Maps a scan response to one of three outcomes: ack (delete), retry
     (keep, backoff), dead (terminal, stop retrying)."""
-    # F2: check this FIRST, regardless of status. post_scan normalizes any
-    # non-JSON body (waker HTML, a captive portal's login page, ...) to this
-    # sentinel while preserving whatever status the intermediary sent -- often
-    # 200, not 400. Gating on status==400 let a 200 non-JSON body ack a scan
-    # that was never actually recorded server-side.
+    # F2: check first, regardless of status -- post_scan normalizes a
+    # non-JSON body (waker HTML, captive portal login, ...) to this sentinel,
+    # preserving the intermediary's real status (often 200, not 400), so
+    # gating on status==400 alone would falsely ack an unrecorded scan.
     if isinstance(body, dict) and body.get("type") == "warming":
         return "retry"
     if status == 0:

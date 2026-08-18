@@ -42,7 +42,7 @@ export const POST = withKiosk(
         // Optional replay fields from a queued kiosk scan. Absent → exactly
         // today's behavior (legacy/web callers). A malformed scannedAt falls
         // back to now rather than propagating an Invalid Date into the visit.
-        const clientEventId = typeof body.clientEventId === 'string' ? body.clientEventId : null;
+        const clientEventId = (typeof body.clientEventId === 'string' && body.clientEventId) || null;
         const parsedScannedAt = typeof body.scannedAt === 'string' ? new Date(body.scannedAt) : null;
         const scannedAt = parsedScannedAt && !isNaN(parsedScannedAt.getTime()) ? parsedScannedAt : null;
         const isReplay = clientEventId !== null;

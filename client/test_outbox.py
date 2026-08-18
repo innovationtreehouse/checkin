@@ -297,6 +297,17 @@ class TestHandleScanQueuesOnFailure(unittest.TestCase):
             self.assertEqual(ob.pending_count(), 2)
             self.assertEqual(backend.post_scan.call_count, 1)
             self.assertIn("2 waiting", state.events[-1]["html"])
+            self.assertEqual(state.events[-1]["queued"], 2)
+
+    def test_enqueue_pushes_queued_count_for_the_badge_not_just_on_drain(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            backend = self._backend(({"error": "Connection refused"}, 0, None))
+            state = FakeState()
+
+            handle_scan(backend, state, ob, "9")
+
+            self.assertEqual(state.events[-1]["queued"], 1)
 
 
 class TestSavedBanner(unittest.TestCase):

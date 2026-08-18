@@ -617,7 +617,8 @@ def handle_scan(backend, state, outbox, participant_id):
     # attempting live delivery out of order.
     if outbox.has_pending_for_participant(participant_id):
         outbox.enqueue(client_event_id, participant_id, scanned_at)
-        state.push_event({"html": _saved_banner_html(outbox.pending_count())})
+        queued = outbox.pending_count()
+        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
         log.info(f"Queued (predecessor pending): participant {participant_id}")
         return
 
@@ -627,7 +628,8 @@ def handle_scan(backend, state, outbox, participant_id):
     if outcome == "retry":
         # Try live first; only persist to the outbox if it wasn't confirmed.
         outbox.enqueue(client_event_id, participant_id, scanned_at)
-        state.push_event({"html": _saved_banner_html(outbox.pending_count())})
+        queued = outbox.pending_count()
+        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
         log.warning(f"Scan queued (server unreachable/warming): participant {participant_id}")
         return
 

@@ -98,14 +98,10 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
     });
 
     it('a fresh replay whose scannedAt is older than a later departure parks (out-of-order guard)', async () => {
-        // Live check-in and check-out first, well past the 3s debounce. Each
-        // RawBadgeLog row is backdated after being written -- the debounce
-        // pre-read runs against real "now" (§2 D3: "the debounce read at
-        // delivery time"), not scannedAt, so an un-backdated row from either
-        // live scan would otherwise get swallowed as ignored_debounce by the
-        // replay POST below before the out-of-order guard ever sees it. That
-        // collision is real and accepted by the design when it happens live;
-        // this test wants to isolate the guard, not exercise the debounce.
+        // Live check-in/check-out first, well past the 3s debounce -- each
+        // RawBadgeLog row is backdated after being written since the debounce
+        // pre-read runs against real "now", not scannedAt (§2 D3). This
+        // isolates the out-of-order guard without tripping the debounce.
         await POST(scanReq({ participantId: member.id }));
         await prisma.rawBadgeLog.updateMany({ where: { personId: member.id }, data: { timestamp: new Date(Date.now() - 5000) } });
         await POST(scanReq({ participantId: member.id }));
