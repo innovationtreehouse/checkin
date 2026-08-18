@@ -106,6 +106,25 @@ describe("deleteSignificance", () => {
         );
         expect(r.score).toBe(360);
     });
+
+    // #1630: an open visit has no recorded duration to weigh, so it must not
+    // fall back to 0 — that made deleting the live roster the *lowest*-scoring
+    // delete. Score against time on site so far instead.
+    it("an open visit's delete scores elapsed time, not the floor", () => {
+        const r = deleteSignificance(
+            { arrivedAt: at(14), departedAt: null, arrivedVia: "SCANNER", departedVia: null },
+            { now: at(20) },
+        );
+        expect(r).toEqual({ score: 1080, flagged: true }); // 360 min × 3 (SCANNER)
+    });
+
+    it("a closed visit's delete score is unaffected by `now` — duration is already fixed", () => {
+        const r = deleteSignificance(
+            { arrivedAt: at(14), departedAt: at(16), arrivedVia: "SCANNER", departedVia: "SCANNER" },
+            { now: at(23) },
+        );
+        expect(r.score).toBe(360);
+    });
 });
 
 // An adult changing another person's record is itself a flag input (design §3),
