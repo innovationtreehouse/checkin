@@ -823,6 +823,8 @@ implementation, not a re-open. Questions 23–27 (v3 audit) are still open.
     **Decided:** exempt only **kiosk-proxied** traffic (`signedRequest`).
     During the closed window the **proxy swallows** the attendance poll.
     Wedge detection is valid in **open hours only**.
+    **Amended 2026-08-18 (jee7s):** the closed window is **23:00–06:00
+    local** — decided, not a placeholder.
 
 18. **Late-replay parent notification.**
     **Decided:** occurred-at time is **always** in the message. If delivery
@@ -846,6 +848,9 @@ implementation, not a re-open. Questions 23–27 (v3 audit) are still open.
 22. **When the Stage-2 substrate lands.**
     **Decided:** **with Phase 1.** Queue and substrate are one cut. C is
     born on the log. No Phase 1.5.
+    **Amended 2026-08-18 (jee7s):** the queue slice ships first (#1667); the
+    §6 substrate follows as its own slice, and parked/dead rows become
+    reviewable via D7 when it lands.
 
 *Questions 23–27 arrive with v3, from the #1529 Class-B audit (§7).*
 
