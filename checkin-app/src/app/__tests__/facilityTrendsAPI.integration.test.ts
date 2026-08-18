@@ -13,12 +13,13 @@
  * not swallow — an untagged arrival, and a real visit whose time staff corrected
  * (driven through the PATCH route, since a hand-built fixture cannot catch a wrong
  * stamp) — the `programId` filter, a real staff walk-in insert (#1632: the
- * route the LEAD_MARKED backfill's row-set is keyed on) staying excluded, and
- * the invalid-period 400.
+ * route the LEAD_MARKED backfill's row-set is keyed on) staying excluded and,
+ * when that same walk-in is deleted, scoring at the LEAD_MARKED source weight
+ * rather than the WEB weight it replaced — and the invalid-period 400.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
-import { PATCH } from '@/app/api/facility/visits/route';
+import { PATCH, DELETE as VISITS_DELETE } from '@/app/api/facility/visits/route';
 import { POST as INSERT_POST } from '@/app/api/facility/visits/insert/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
@@ -314,6 +315,25 @@ describe('Facility trends API', () => {
         expect(data.totals.uniqueVolunteers).toBe(0);
         expect(data.totals.totalVolunteerHours).toBe(0);
         expect(data.totals.structuredHours).toBe(0);
+
+        // F13 pin: deleting this walk-in through the real DELETE route must weigh
+        // it at the LEAD_MARKED source weight (2), not the WEB weight (1) it
+        // replaced — that source-weight bump is the backfill's whole premise.
+        // 120 minutes * weight 2 * byProxy(admin acting for volunteerId) 2 = 480,
+        // double the 240 a WEB-weighted score would give the same edit.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+        const deleteRes = await VISITS_DELETE(new Request('http://localhost:4000/api/facility/visits', {
+            method: 'DELETE',
+            body: JSON.stringify({ visitId: visit.id }),
+        }) as unknown as import('next/server').NextRequest);
+        expect(deleteRes.status).toBe(200);
+
+        const deleteAudit = await prisma.auditLog.findFirst({
+            where: { actorId: adminId, action: 'DELETE', tableName: 'Visit', affectedEntityId: visit.id },
+            orderBy: { id: 'desc' },
+        });
+        expect((deleteAudit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+            .toEqual({ score: 480, flagged: true });
 
         await prisma.programVolunteer.deleteMany({ where: { programId: program.id } });
         await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
