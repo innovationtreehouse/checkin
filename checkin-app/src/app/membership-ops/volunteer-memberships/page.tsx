@@ -8,7 +8,8 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { notifications } from "@mantine/notifications";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
-import { formatDate, formatDateOnly } from "@/lib/time";
+import { formatDateOnly } from "@/lib/time";
+import { useOrgTime } from "@/components/TimezoneProvider";
 import type { VolunteerRow, VolunteerRowStatus } from "@/app/api/membership-ops/volunteer-memberships/route";
 
 const STATUS_CHIPS: { value: VolunteerRowStatus; label: string; color: string }[] = [
@@ -27,12 +28,14 @@ const chipFor = (status: VolunteerRowStatus) => STATUS_CHIPS.find((c) => c.value
 // active volunteers → in-flight → not-yet-members.
 const STATUS_RANK = Object.fromEntries(STATUS_CHIPS.map((c, i) => [c.value, i]));
 
-// memberSince is a calendar date (UTC midnight by convention); a designation's
-// createdAt is a true instant. See docs/designs/1149_DATE_TIME_TZ_DESIGN.md.
+// memberSince is a @db.Date calendar day, so it is UTC-pinned; a designation's
+// createdAt is a true instant and takes the org's zone. See lib/time.ts.
 const memberSinceText = (iso: string | null) => (iso ? formatDateOnly(iso) : "—");
 
 export default function VolunteerMembershipsPage() {
   const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  // A designation's createdAt is an instant, so it renders in the org's display zone.
+  const { formatDate } = useOrgTime();
   const [rows, setRows] = useState<VolunteerRow[]>([]);
   const [newEmail, setNewEmail] = useState("");
   const [loading, setLoading] = useState(true);
@@ -195,8 +198,9 @@ export default function VolunteerMembershipsPage() {
       <Card withBorder radius="md" padding="lg">
         <Title order={3} mb="xs">Volunteers</Title>
         <Text c="dimmed" mb="md">
-          Households on volunteer-only dues, plus emails designated ahead of signup — when one of
-          those emails applies for membership, that whole household is treated as volunteer only.
+          Households on the volunteer membership fee, plus emails designated ahead of signup. If one
+          of those emails applies for membership, that whole household is treated as a volunteer
+          only family (lower membership fee).
         </Text>
 
         <Group gap="sm" wrap="wrap" mb="md" align="flex-end">

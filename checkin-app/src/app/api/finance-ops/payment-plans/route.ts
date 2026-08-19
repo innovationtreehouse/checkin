@@ -62,13 +62,13 @@ export const POST = withAuth(
                 return apiError("programId and participantId are required", 400);
             }
 
-            // Conflict of interest: a board member may not approve their OWN household's
-            // program payment plan (activate an enrollment without payment for their own
-            // family). Sysadmin bypasses.
+            // Conflict of interest: no actor may approve their OWN household's program
+            // payment plan (activate an enrollment without payment for their own
+            // family). No role bypasses this.
             if (auth.type === 'session') {
                 const target = await prisma.person.findUnique({ where: { id: participantId }, select: { householdId: true } });
-                if (await hasHouseholdConflict(prisma, auth.user.id, target?.householdId, { isSysadmin: auth.user.isSysadmin === true })) {
-                    return apiError("You cannot approve your own household's payment plan — a sysadmin must.", 403);
+                if (await hasHouseholdConflict(prisma, auth.user.id, target?.householdId)) {
+                    return apiError("You cannot approve your own household's payment plan — someone outside your household must.", 403);
                 }
             }
 

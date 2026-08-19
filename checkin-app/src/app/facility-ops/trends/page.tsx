@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Group, SegmentedControl, Select, SimpleGrid, Stack, Table, Text } from "@mantine/core";
 import { useRequireRole } from "@/hooks/useRequireRole";
+import { FACILITY_AGGREGATE_ROLES } from "@/lib/facilityNav";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 type PeriodType = "week" | "month" | "quarter" | "year";
@@ -24,7 +25,7 @@ interface ProgramOption {
 }
 
 export default function ParticipationTrendsPage() {
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_AGGREGATE_ROLES);
 
   const [period, setPeriod] = useState<PeriodType>("month");
   const [programId, setProgramId] = useState<string>("");

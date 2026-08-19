@@ -5,7 +5,7 @@
  * Unit tests for GET /api/membership-ops/volunteer-memberships — the roster's
  * row assembly: how a volunteer OrgMembership and a VolunteerDesignation each
  * map to a status, and how designations resolve to households through the same
- * canonicalized household-lead rule that grants the dues. The deny paths
+ * canonicalized household-lead rule that grants the fee. The deny paths
  * (401 anon / 403 plain member) are in authzRoleRejection.integration.test.ts.
  */
 import { GET } from '../route';
@@ -175,7 +175,7 @@ it('keeps every designation on a household that has more than one', async () => 
 });
 
 it('matches a designation to its lead under the shared email canonicalization', async () => {
-    // The dues engine (applyVolunteerStatus) canonicalizes, so the roster must too
+    // The membership-fee engine (applyVolunteerStatus) canonicalizes, so the roster must too
     // — otherwise this household would list twice and the Remove land on the wrong row.
     mockDb({
         memberships: [membership()],
@@ -190,7 +190,7 @@ it('matches a designation to its lead under the shared email canonicalization', 
 });
 
 it('does not resolve a designation through a non-lead person', async () => {
-    // Only household leads can confer volunteer dues, so the lookup filters to them;
+    // Only household leads can confer the volunteer fee, so the lookup filters to them;
     // an unmatched designation stands alone rather than implying a household.
     mockDb({ designations: [designation(7, 'kid@example.com')], people: [] });
 

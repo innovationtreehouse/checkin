@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { LIVE_PERSON } from "@/lib/person/filters";
-import { renewalSeasonWindow } from "@/lib/membership/renewal";
+import { renewalSeasonWindow, MAX_DATE } from "@/lib/membership/renewal";
 import { IN_FLIGHT_RENEWAL, IN_FLIGHT_INITIAL } from "@/lib/membership/lifecycle";
 import { personRecordIsActiveOrgMember } from "@/lib/orgMembership";
 import type { OrgMembershipProcessStatus } from "@/generated/prisma/client";
@@ -22,10 +22,6 @@ export interface RecipientSnapshot {
      * population — informational only, these leads get no item. */
     leadsWithoutEmail: number;
 }
-
-// Off-season / boundary-unset sentinel: `stageEnteredAt >= maxDate` matches nothing, so
-// "settled" is false for everyone (mirrors membershipValidThrough, orgMembership.ts:95).
-const MAX_DATE = new Date(8.64e15);
 
 const IN_FLIGHT_STATUSES = new Set<OrgMembershipProcessStatus>([...IN_FLIGHT_RENEWAL, ...IN_FLIGHT_INITIAL]);
 

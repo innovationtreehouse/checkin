@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 /**
  * One volunteer roster row. Rows are HOUSEHOLD-grained because `isVolunteer`
  * lives on OrgMembership (one per household) — volunteer status is a property of
- * the family's dues, not of a person.
+ * the family's membership fee, not of a person.
  */
 export type VolunteerRowStatus =
     /** Volunteer membership, ACTIVE. */
@@ -88,7 +88,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         prisma.volunteerDesignation.findMany({ orderBy: { createdAt: "desc" } }),
     ]);
 
-    // Resolve designated emails through the SAME rule that grants the dues —
+    // Resolve designated emails through the SAME rule that grants the fee —
     // canonicalizeEmail against HOUSEHOLD LEADS (review.ts applyVolunteerStatus).
     // Matching any looser (case-only, or any household member) would show a
     // standing the engine will never produce.

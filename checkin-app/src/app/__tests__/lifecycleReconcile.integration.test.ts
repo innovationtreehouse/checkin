@@ -3,10 +3,10 @@
  */
 /**
  * Integration tests for the invariant-driven lifecycle reconciler
- * (docs/designs/LIFECYCLE.md) against a real DB.
+ * against a real DB.
  *
- *  - I1 heal: an ACTIVE enrollment with a stranded `inventoryHeldAt` (the §7
- *    two-step crash window) is cleared, the missed `+1` is fired via
+ *  - I1 heal: an ACTIVE enrollment with a stranded `inventoryHeldAt` (the two-step
+ *    crash window) is cleared, the missed `+1` is fired via
  *    adjustProgramInventory, an AuditLog row records the heal, and the row then
  *    validates clean.
  *  - report-only: a non-I1 violation (membership `paidAt` on an INTAKE process)
@@ -132,6 +132,20 @@ describe('lifecycle reconciler — invariant-driven sweep over a real DB', () =>
         const after = await prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: proc.id } });
         expect(after.status).toBe('INTAKE');
         expect(after.paidAt).not.toBeNull();
+    });
+
+    it('a settled PERSON_AGREEMENT is not a violation — the signature alone completes it', async () => {
+        // markContractSigned flips an individual agreement straight to ACTIVE with no
+        // bgClearedAt: it has no membership, no payment and no background-check gate.
+        // Judging it by the membership convergence reports every adult child who signs.
+        const proc = await prisma.orgMembershipProcess.create({
+            data: { kind: 'PERSON_AGREEMENT', status: 'ACTIVE', subjectPersonId: selfId, contractSignedAt: new Date() },
+        });
+        processIds.push(proc.id);
+
+        const { violations } = await scanLifecycleViolations();
+
+        expect(violations.filter((v) => v.key === `process ${proc.id}`)).toEqual([]);
     });
 
     it('clean: a row that validates clean produces no violation', async () => {

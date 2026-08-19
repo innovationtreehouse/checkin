@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, Suspense } from "react";
-import { Alert, Button, Card, Center, Group, Loader, Modal, Stack, Switch, Text, Textarea } from "@mantine/core";
+import { Alert, Button, Card, Center, Group, Loader, Modal, Radio, Stack, Switch, Text, Textarea } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { AlertBanner } from "@/components/admin/AlertBanner";
 import { notifications } from "@mantine/notifications";
@@ -73,12 +73,12 @@ export default function AdminMembershipPage() {
 function ApplicationsBoard() {
   const { data: session } = useSession();
   const me = session?.user;
-  // Conflict of interest: a board member may not certify/override their OWN household's
-  // application (mirrors the server guards in certifyPaymentPlan/overrideBlocked). Sysadmin
-  // is the deliberate remedy and keeps the buttons. The disabled state is UX only — the
-  // server is the real enforcement.
+  // Conflict of interest: no actor may advance/certify/override their OWN household's
+  // application (mirrors the server guards in certifyPaymentPlan, overrideBlocked and
+  // the EXTERNAL-phase route).
+  // The disabled state is UX only — the server is the real enforcement.
   const ownHousehold = (r: ProcessRow) =>
-    me?.isSysadmin !== true && sharesHousehold(me?.householdId, r.orgMembership?.householdId);
+    sharesHousehold(me?.householdId, r.orgMembership?.householdId);
   const [rows, setRows] = useState<ProcessRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -89,6 +89,9 @@ function ApplicationsBoard() {
   const [pendingCertify, setPendingCertify] = useState<number | null>(null);
   const [certifyReason, setCertifyReason] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  // processId -> the lead a force-approve asserts was checked. The board asserts it
+  // because a blocked review has no second approval to count.
+  const [overrideSubjects, setOverrideSubjects] = useState<Record<number, number>>({});
 
   const load = useCallback(async (archived: boolean) => {
     setLoading(true);
@@ -138,7 +141,7 @@ function ApplicationsBoard() {
       const res = await fetch("/api/membership-ops/applications/review-override", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ processId, action }),
+        body: JSON.stringify({ processId, action, subjectPersonIds: overrideSubjects[processId] === undefined ? [] : [overrideSubjects[processId]] }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -181,6 +184,24 @@ function ApplicationsBoard() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  // An awaiting row only ever holds APPROVE attestations (any REJECT blocks it).
+  const approvals = (r: ProcessRow) => r.attestations.filter((a) => a.result === "APPROVE").length;
+
+  const confirmResetReview = (r: ProcessRow) => {
+    modals.openConfirmModal({
+      title: "Start this background-check review over?",
+      children: (
+        <Text size="sm">
+          This discards the {approvals(r)} approval(s) recorded for <strong>{householdLabel(r)}</strong>{" "}
+          and asks the reviewers to start again. Use it when an approval was recorded by
+          mistake — the check itself has not cleared yet, so nothing else changes.
+        </Text>
+      ),
+      labels: { confirm: "Discard approvals", cancel: "Cancel" },
+      onConfirm: () => override(r.id, "reset"),
+    });
   };
 
   // Disposing an abandoned application removes it from the board list. Confirm
@@ -269,6 +290,11 @@ function ApplicationsBoard() {
     setPendingCertify(null);
     await certify(processId, reason);
   };
+
+  const leads = (r: ProcessRow) => (r.orgMembership?.household?.householdMembers ?? []).filter((p) => p.isHouseholdLead);
+
+  const pickOverrideSubject = (processId: number, personId: number) =>
+    setOverrideSubjects((s) => ({ ...s, [processId]: personId }));
 
   const householdLabel = (r: ProcessRow) => {
     const hh = r.orgMembership?.household;
@@ -362,7 +388,7 @@ function ApplicationsBoard() {
                     {r.contractSignedAt ? (
                       <Text c="green" fw={600}>✓ Signed</Text>
                     ) : (
-                      <Button size="xs" fz={15} disabled={busyId === r.id} onClick={() => act(r.id, "mark-contract")}>
+                      <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => act(r.id, "mark-contract")}>
                         Confirm contract signed
                       </Button>
                     )}
@@ -372,18 +398,30 @@ function ApplicationsBoard() {
                     {r.bgConsentAt ? (
                       <Text c="green" fw={600}>✓ Received</Text>
                     ) : (
-                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id} onClick={() => act(r.id, "mark-bg-consent")}>
+                      <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => act(r.id, "mark-bg-consent")}>
                         Confirm BG consent
                       </Button>
                     )}
                   </div>
+                  {ownHousehold(r) && (
+                    <Text size="xs" c="dimmed">You can&apos;t confirm your own household&apos;s contract or consent — someone outside your household must.</Text>
+                  )}
                 </Group>
               )}
 
               {awaitingBg(r) && (
-                <Text size="sm" c="dimmed" mt="md">
-                  Background check (in parallel) — <Text component="span" fw={600}>{r.attestations.filter((a) => a.result === "APPROVE").length}/2</Text> approvals recorded.
-                </Text>
+                <Group mt="md" gap="md" wrap="wrap" align="center">
+                  <Text size="sm" c="dimmed">
+                    Background check (in parallel) — <Text component="span" fw={600}>{approvals(r)}/2</Text> approvals recorded.
+                  </Text>
+                  {/* The board's way back from a reviewer's misclick: the review is still
+                      open, so discarding the attestations undoes it with nothing to unwind. */}
+                  {approvals(r) > 0 && (
+                    <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => confirmResetReview(r)}>
+                      Discard approvals — start the review over
+                    </Button>
+                  )}
+                </Group>
               )}
 
               {r.status === "PENDING_PAYMENT" && (
@@ -393,7 +431,7 @@ function ApplicationsBoard() {
                     Certify payment plan → {r.bgClearedAt ? "activate" : "(holds for background check)"}
                   </Button>
                   {ownHousehold(r) && (
-                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                    <Text size="xs" c="dimmed">You can&apos;t certify your own household&apos;s application — someone outside your household must.</Text>
                   )}
                 </Group>
               )}
@@ -411,16 +449,41 @@ function ApplicationsBoard() {
                       💸 This household already paid — a refund is likely needed (membership was not activated).
                     </Text>
                   )}
+                  {/* A force-approve must say which adult it covers: a blocked review has
+                      no second approval to count, so an unnamed override would set
+                      bgClearedAt with nobody recorded as checked. */}
+                  <Stack gap={4} mb="sm">
+                    {leads(r).length === 0 ? (
+                      <Text size="sm" c="dimmed">No household leads on file — this application cannot be overridden.</Text>
+                    ) : (
+                      <Radio.Group
+                        label="Whose background check does an override cover?"
+                        value={String(overrideSubjects[r.id] ?? "")}
+                        onChange={(v) => pickOverrideSubject(r.id, Number(v))}
+                      >
+                        <Stack gap={4} mt={4}>
+                          {leads(r).map((p) => (
+                            <Radio key={p.id} size="xs" value={String(p.id)} label={p.name || p.email || `Person #${p.id}`} />
+                          ))}
+                        </Stack>
+                      </Radio.Group>
+                    )}
+                  </Stack>
                   <Group gap="sm" wrap="wrap">
                     <Button size="xs" fz={15} variant="default" disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "reset")}>
                       Reset for re-review
                     </Button>
-                    <Button size="xs" fz={15} disabled={busyId === r.id || ownHousehold(r)} onClick={() => override(r.id, "approve")}>
+                    <Button
+                      size="xs"
+                      fz={15}
+                      disabled={busyId === r.id || ownHousehold(r) || overrideSubjects[r.id] === undefined}
+                      onClick={() => override(r.id, "approve")}
+                    >
                       Override → {r.paidAt ? "activate" : "payment"}
                     </Button>
                   </Group>
                   {ownHousehold(r) && (
-                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — another board member (or a sysadmin) must.</Text>
+                    <Text size="xs" c="dimmed" mt="sm">You can&apos;t override your own household&apos;s application — someone outside your household must.</Text>
                   )}
                 </Alert>
               )}

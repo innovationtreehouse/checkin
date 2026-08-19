@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateByProcessId } from "@/lib/membership/payment";
 import { notifyBoardPaymentException } from "@/lib/membership/boardAlerts";
+import { unentitledMemberCodeUse } from "@/lib/programs/memberDiscountCode";
 import * as mirror from "@/lib/shopifyRead/client";
 import type { MirrorOrder } from "@/lib/shopifyRead/client";
 
@@ -39,6 +40,15 @@ import type { MirrorOrder } from "@/lib/shopifyRead/client";
  * than activating. One policy check rides on top of the variant gate: a
  * non-volunteer family redeeming the board's volunteer discount code raises
  * DISCOUNT_UNAUTHORIZED instead of activating (see usesVolunteerCodeUnentitled).
+ *
+ * The program side carries the parallel check, judged AT THE MONEY EVENT: a minted
+ * `PRG{programId}-XXXXXXXX` member-discount code redeemed by a household that isn't
+ * dues-settled through the program's coverage date raises the same
+ * DISCOUNT_UNAUTHORIZED instead of activating. The orders/paid webhook asks it for a
+ * live checkout; this forward pass asks it when recovering a missed webhook. The
+ * reversal pass deliberately does NOT re-ask it: entitlement is a fact about the
+ * moment money moved, so a household deactivated later never retro-flags orders that
+ * were honest when they were paid (see unentitledMemberCodeUse).
  */
 
 export type PaymentExceptionKind =
@@ -139,14 +149,10 @@ export function isPaid(o: Pick<MirrorOrder, "financialStatus" | "cancelledAt" | 
  */
 export function membershipVariantIdSet(settings: {
     orgMembershipVariantId: string | null;
-    shopifyNormalVariantId: string | null;
-    shopifyVolunteerVariantId: string | null;
 } | null): Set<string> {
     return new Set(
         [
             settings?.orgMembershipVariantId,
-            settings?.shopifyNormalVariantId,
-            settings?.shopifyVolunteerVariantId,
             config.shopifyMockActive() ? DEV_MOCK_MEMBERSHIP_VARIANT_ID : null,
         ].filter((v): v is string => !!v),
     );
@@ -260,7 +266,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
 
     // Membership-item gate, parity with the orders/paid webhook: recover only if the
     // order actually CONTAINS a membership product (its variant id), the same
-    // {orgMembership, normal, volunteer} variant set the webhook builds — mirrored
+    // membershipVariantIdSet the webhook builds — mirrored
     // onto order lines since #1048. A variant id is stable and can't drift; the old
     // total-price gate false-raised AMOUNT_MISMATCH on every couponed order (volunteer
     // rate, promo), whose sub-dues total is indistinguishable from an underpayment by
@@ -269,10 +275,8 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         where: { id: 1 },
         select: {
             orgMembershipVariantId: true,
-            shopifyNormalVariantId: true,
-            shopifyVolunteerVariantId: true,
-            normalDuesCents: true,
-            volunteerDuesCents: true,
+            standardMembershipFeeCents: true,
+            volunteerMembershipFeeCents: true,
             volunteerDiscountCode: true,
         },
     });
@@ -298,7 +302,7 @@ async function reconcileForwardMembership(order: MirrorOrder): Promise<boolean> 
         // impossible — fall back to the old dues amount gate, made discount-aware by
         // adding the coupon back so a couponed pre-backfill order compares its GROSS
         // figure to gross dues and no longer false-raises AMOUNT_MISMATCH.
-        const expected = membership?.isVolunteer ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
+        const expected = membership?.isVolunteer ? settings?.volunteerMembershipFeeCents ?? 0 : settings?.standardMembershipFeeCents ?? 0;
         if (expected > 0 && order.totalCents + order.discountCents + AMOUNT_TOLERANCE_CENTS < expected) {
             await raisePaymentException("AMOUNT_MISMATCH", { shopifyOrderId: order.legacyId, processId: proc.id });
             return true;
@@ -393,6 +397,17 @@ async function reconcileForwardProgram(order: MirrorOrder): Promise<boolean> {
 
 /** Shared tail for both program-matching paths: activate through the one choke point. */
 async function activateProgramFromOrder(order: MirrorOrder, programId: number, personIds: number[]): Promise<boolean> {
+    // Coupon entitlement, parity with the membership forward branch above: the order
+    // may well contain the program's product, but the member code on it is only honest
+    // if some enrollee's household is dues-settled through the program's coverage date.
+    // This IS the money event for a missed webhook — same judgement the webhook makes,
+    // asked once. None entitled → tell the board, do NOT activate.
+    if (await unentitledMemberCodeUse(programId, personIds, order.discountCodes, order.legacyId ?? null)) {
+        logger.warn(`[reconcile] program member discount code on non-member order ${order.legacyId} (program ${programId})`);
+        await raisePaymentException("DISCOUNT_UNAUTHORIZED", { shopifyOrderId: order.legacyId, programId, personId: personIds[0] ?? null });
+        return true;
+    }
+
     const { activateProgramEnrollment } = await import("@/lib/programs/activateEnrollment");
     const res = await activateProgramEnrollment({
         programId,
@@ -403,10 +418,8 @@ async function activateProgramFromOrder(order: MirrorOrder, programId: number, p
         // program recovery has no amount gate, so it never had the coupon false-positive
         // the membership path did, and widening it to a variant check is deferred (the
         // membership fix was the scoped concern). So hasProgramItem stays true here: the
-        // order is matched to THIS program's pending enrollments. Tier unknown → no
-        // legacy sibling-inventory mirror.
+        // order is matched to THIS program's pending enrollments.
         hasProgramItem: true,
-        purchasedOrgMember: null,
     });
     logger.info(`[reconcile] recovered program payment: program ${programId} ← order ${order.legacyId} (${res.activatedCount} activated)`);
     return true;
@@ -467,7 +480,7 @@ async function reconcileReversals(): Promise<number> {
     // Expected dues per membership (for the "order edited down below dues" case).
     const settings = await prisma.boardSettings.findUnique({
         where: { id: 1 },
-        select: { normalDuesCents: true, volunteerDuesCents: true, volunteerDiscountCode: true },
+        select: { standardMembershipFeeCents: true, volunteerMembershipFeeCents: true, volunteerDiscountCode: true },
     });
     const memberIds = procs.map((p) => p.orgMembershipId).filter((v): v is number => v != null);
     const members = memberIds.length
@@ -485,7 +498,7 @@ async function reconcileReversals(): Promise<number> {
             // Discount-aware: add the coupon back so an ordinary couponed order (volunteer
             // rate, promo) isn't mistaken for a post-activation edit-down — only a real
             // shortfall below GROSS dues counts. Keeps the "edited down" purpose intact.
-            const expected = isVolunteerById.get(proc.orgMembershipId ?? -1) ? settings?.volunteerDuesCents ?? 0 : settings?.normalDuesCents ?? 0;
+            const expected = isVolunteerById.get(proc.orgMembershipId ?? -1) ? settings?.volunteerMembershipFeeCents ?? 0 : settings?.standardMembershipFeeCents ?? 0;
             if (expected > 0 && o.totalCents + o.discountCents + AMOUNT_TOLERANCE_CENTS < expected) kind = "AMOUNT_MISMATCH";
         }
         if (!kind && usesVolunteerCodeUnentitled(o, settings?.volunteerDiscountCode, isVolunteerById.get(proc.orgMembershipId ?? -1) ?? false)) {
@@ -505,6 +518,10 @@ async function reconcileReversals(): Promise<number> {
     for (const e of enrolls) {
         const o = byLegacy.get(e.shopifyOrderId!);
         if (!o) continue;
+        // Money-out only. Member-code entitlement is NOT re-asked here: it was judged
+        // when the money moved (webhook / forward pass), and this loop has no bound on
+        // time — re-deriving it from live household state would raise a fresh flag on
+        // every past member-priced order the morning after an ordinary deactivation.
         const kind = classifyReversal(o, disputed.has(o.orderGid));
         if (kind) {
             await raisePaymentException(kind, { shopifyOrderId: e.shopifyOrderId, programId: e.programId, personId: e.personId });
@@ -520,6 +537,11 @@ export interface ReconcileResult {
     configured: boolean;
     ordersScanned: number;
     reversalsRaised: number;
+    /** Orders whose forward pass threw. The cron route surfaces it as the run's
+     *  health signal (lib/cronAuth.ts) — isolating a bad order keeps the sweep
+     *  going and the run still counts as having RUN, but it is not clean. Do not
+     *  reuse this key for anything else: withCron reads `failed` by name. */
+    failed: number;
 }
 
 /**
@@ -528,7 +550,7 @@ export interface ReconcileResult {
  * so the next run only re-scans changed orders.
  */
 export async function runReconcile(): Promise<ReconcileResult> {
-    if (!mirror.isConfigured()) return { configured: false, ordersScanned: 0, reversalsRaised: 0 };
+    if (!mirror.isConfigured()) return { configured: false, ordersScanned: 0, reversalsRaised: 0, failed: 0 };
 
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 }, select: { shopifyReconcileCursorAt: true } });
     const cursor = settings?.shopifyReconcileCursorAt ?? null;
@@ -540,12 +562,14 @@ export async function runReconcile(): Promise<ReconcileResult> {
     // orders in this batch still get processed (idempotent, so re-scanning them
     // tomorrow is harmless); only the watermark holds back until the bad order heals.
     let cursorFrozen = false;
+    let failed = 0;
     for (const order of orders) {
         try {
             const claimed = await reconcileForwardMembership(order);
             if (!claimed) await reconcileForwardProgram(order);
         } catch (e) {
             logger.error(`[reconcile] forward pass failed for order ${order.legacyId ?? order.orderGid}:`, e);
+            failed++;
             cursorFrozen = true;
             // The watermark may ALREADY sit at this order's updatedAt — an earlier
             // order in the batch with the same timestamp succeeded and advanced it.
@@ -566,5 +590,5 @@ export async function runReconcile(): Promise<ReconcileResult> {
         await prisma.boardSettings.update({ where: { id: 1 }, data: { shopifyReconcileCursorAt: newCursor } });
     }
 
-    return { configured: true, ordersScanned: orders.length, reversalsRaised };
+    return { configured: true, ordersScanned: orders.length, reversalsRaised, failed };
 }

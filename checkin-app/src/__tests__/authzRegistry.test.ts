@@ -66,10 +66,12 @@ const AUTHZ_TESTED = new Set<string>([
     // POST deny-path (401 anon / 403 non-board) in membershipPaymentPlansAPI.integration.test.ts.
     'finance-ops/membership-payment-plans/refuse',
     'admin/settings/localization',
-    'events',
-    'facility/badges',
+    // facility/badges dropped: its only verb (GET) is handler()-governed now,
+    // so the file carries no `roles:` gate and would fail the stale-entry test.
     'facility/trends',
+    // GET is handler()-governed; PATCH/DELETE still carry withAuth roles.
     'facility/visits',
+    'facility/visits/insert',
     'finance-ops/payments',
     'finance-ops/payments/[id]',
     // POST + GET deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,
@@ -130,9 +132,7 @@ const AUTHZ_TESTED = new Set<string>([
     'settings/shopify-webhook',
     'shop/tools/[id]',
     'system-status/audit-log',
-    'system-status/errors',
     'system-status/health',
-    'system-status/links',
     'system-status/links/[id]',
     // GET deny-path (401 anon / 403 non-board) in lifecycleReconcile.integration.test.ts.
     'system-status/lifecycle',
