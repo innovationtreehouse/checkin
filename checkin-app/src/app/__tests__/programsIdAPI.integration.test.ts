@@ -139,6 +139,13 @@ describe('Individual Program API Integration Tests', () => {
             data: { email: 'sibling-prog-id-api-test@example.com', name: SIBLING_NAME, householdId: enrolled.householdId }
         });
         siblingId = sibling.id;
+
+        // The parent also volunteers. This is the row that resolves
+        // their_program_households, so a widened volunteer select would put
+        // personal-tier fields on the wire here — see the narrowing pin below.
+        await prisma.programVolunteer.create({
+            data: { programId: publicProgramId, personId: parentId, isCore: true }
+        });
     });
 
     afterAll(async () => {
@@ -152,8 +159,12 @@ describe('Individual Program API Integration Tests', () => {
 
         const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
         if (validProgramIds.length > 0) {
-            // ProgramParticipant has no cascade — clear enrollments before the program.
+            // ProgramParticipant/ProgramVolunteer have no cascade — clear the
+            // roster rows before the program.
             await prisma.programParticipant.deleteMany({
+                where: { programId: { in: validProgramIds } }
+            });
+            await prisma.programVolunteer.deleteMany({
                 where: { programId: { in: validProgramIds } }
             });
             await prisma.program.deleteMany({
@@ -255,8 +266,11 @@ describe('Individual Program API Integration Tests', () => {
              // Roster rows are absent — no participant/volunteer arrays at all.
              expect(data.participants).toBeUndefined();
              expect(data.volunteers).toBeUndefined();
-             // The enrolled identity must not appear anywhere in the payload.
+             // The enrolled identity must not appear anywhere in the payload —
+             // nor the parent's, who rides the same roster rows since #1400.
              expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+             expect(JSON.stringify(data)).not.toContain(PARENT_NAME);
+             expect(JSON.stringify(data)).not.toContain(PARENT_PHONE);
              // Capacity is preserved via an aggregate count, not the rows.
              expect(data._count?.participants).toBe(1);
         });
@@ -273,6 +287,7 @@ describe('Individual Program API Integration Tests', () => {
              expect(data.name).toBe('Public Prog ID API Test');
              expect(data.participants).toBeUndefined();
              expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+             expect(JSON.stringify(data)).not.toContain(PARENT_NAME);
         });
 
         it('returns the roster to the program lead mentor (staff tier unchanged)', async () => {
@@ -323,6 +338,25 @@ describe('Individual Program API Integration Tests', () => {
              expect(parents[0].name).toBe(PARENT_NAME); // public tier survives
              expect(parents[0].phone).toBeUndefined();
              expect(parents[0].email).toBeUndefined();
+        });
+
+        // Regression pin for the narrowing #1425 landed. A parent-volunteer's Person
+        // row resolves their_program_households, and this view holds :pii + :personal
+        // on it — so only the select keeps dateOfBirth/allergies/googleId off the
+        // wire. Widening either select fails here with the offending keys named.
+        it('keeps the volunteer and leadMentor Person rows narrow for a parent-volunteer', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             const SELECTED = ['id', 'name', 'email'];
+             const vol = data.volunteers.find((v: { personId: number }) => v.personId === parentId);
+             expect(vol).toBeDefined();
+             expect(Object.keys(vol.person).filter(k => !SELECTED.includes(k))).toEqual([]);
+             expect(Object.keys(data.leadMentor).filter(k => !SELECTED.includes(k))).toEqual([]);
         });
 
         it('returns the roster to an enrolled participant (their own household)', async () => {

@@ -465,16 +465,17 @@ describe("ProgramDetailsPage", () => {
     await screen.findByRole("heading", { name: "Robotics Club", level: 1 });
     fireEvent.click(screen.getByRole("tab", { name: "Roster" }));
 
-    const parents = await screen.findByText("Parents:");
+    const labels = await screen.findAllByText("Parent/Guardian:");
     expect(screen.getByText(/Sam Smith - 512-555-1111, sam@example.com; Jamie Smith - 512-555-2222/)).toBeInTheDocument();
 
     // The point of the issue: parents come first, emergency contacts after.
     // Both cards render a singular "Emergency Contact:"; [0] is this card's.
     const contacts = screen.getAllByText("Emergency Contact:")[0];
-    expect(parents.compareDocumentPosition(contacts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(labels[0].compareDocumentPosition(contacts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    // An adult who leads their own household is not listed as their own parent.
-    expect(screen.getByText("Parent:")).toBeInTheDocument();
+    // An adult who leads their own household is not listed as their own parent:
+    // the second card's line reads N/A, not the adult's own name.
+    expect(labels[1].parentElement).toHaveTextContent("Parent/Guardian: N/A");
     expect(screen.queryByText(/Adult Lead - /)).not.toBeInTheDocument();
   });
 

@@ -264,7 +264,9 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
 
         {activeParticipants.length === 0 ? <Text c="dimmed">No active participants yet.</Text> : (
           <Stack gap="xs">
-            {activeParticipants.map(p => (
+            {activeParticipants.map(p => {
+              const parents = parentsOf(p);
+              return (
               <Card key={p.personId} withBorder radius="sm" padding="sm">
                 <Group justify="space-between">
                   <Text fw={700} c="blue">{p.person.name || 'Unnamed'}</Text>
@@ -276,8 +278,8 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
                   {p.person.household && (
                     <>
                       <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
-                        <strong>Parent{parentsOf(p).length > 1 ? 's' : ''}:</strong>{' '}
-                        {parentsOf(p).length > 0 ? parentsOf(p).map(formatParent).join('; ') : 'N/A'}
+                        <strong>Parent/Guardian:</strong>{' '}
+                        {parents.length > 0 ? parents.map(formatParent).join('; ') : 'N/A'}
                       </Text>
                       <Text size="sm" c="dimmed" style={{ gridColumn: '1 / -1' }}>
                         <strong>Emergency Contact{(p.person.household.emergencyContacts?.length ?? 0) > 1 ? 's' : ''}:</strong>{' '}
@@ -289,7 +291,8 @@ export function ProgramRosterTab({ programId, program, isSysAdminOrBoard, fetchP
                   )}
                 </SimpleGrid>
               </Card>
-            ))}
+              );
+            })}
           </Stack>
         )}
       </Card>
