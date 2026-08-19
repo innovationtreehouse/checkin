@@ -213,7 +213,10 @@ export default function VolunteerMembershipsPage() {
           />
           <Chip.Group multiple value={statuses} onChange={setStatuses}>
             <Group gap="xs">
-              {STATUS_CHIPS.filter((c) => showInactive || c.value !== "INACTIVE").map((c) => (
+              {/* Every status gets a chip, unconditionally. Gating INACTIVE on the
+                  switch left the designation-carrying inactive row (which the row
+                  filter keeps for its Remove) badged with no chip to filter on. */}
+              {STATUS_CHIPS.map((c) => (
                 <Chip key={c.value} value={c.value} color={c.color} size="sm" variant="outline">
                   {c.label}
                 </Chip>

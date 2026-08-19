@@ -4,6 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { canonicalizeEmail } from "@/lib/emailNormalize";
 import { IN_FLIGHT_INITIAL, IN_FLIGHT_RENEWAL, type ProcessStatus } from "@/lib/membership/lifecycle";
+import type { OrgMembershipStatus } from "@/generated/prisma/client";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +63,13 @@ const LIVE_PROCESS_SELECT = { where: { status: { in: LIVE_PROCESS } }, select: {
 /** A live application's contribution to the row status; null when there is none. */
 const processStatus = (processes: { status: ProcessStatus }[]) =>
     processes.some((p) => p.status === "BLOCKED") ? "BLOCKED" : processes.length > 0 ? "IN_PROGRESS" : null;
+
+/**
+ * Membership and designation rows share this: a board decision outranks anything
+ * a designation implies. DENIED blocks the household's login outright, so
+ * "Pre-designated" would tell the board a family is queued up that cannot sign in.
+ */
+const isRevoked = (status: OrgMembershipStatus | undefined) => status === "REVOKED" || status === "DENIED";
 
 /** GET — the volunteer roster: current volunteer households + pre-designated emails. */
 export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async () => {
@@ -134,7 +142,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
         status:
             m.status === "ACTIVE"
                 ? "VOLUNTEER"
-                : m.status === "REVOKED" || m.status === "DENIED"
+                : isRevoked(m.status)
                   ? "REVOKED"
                   : (processStatus(m.processes) ?? "INACTIVE"),
         householdId: m.household.id,
@@ -164,7 +172,9 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
             status:
                 membership?.status === "ACTIVE"
                     ? "NEXT_RENEWAL"
-                    : ((membership && processStatus(membership.processes)) ?? "DESIGNATED"),
+                    : isRevoked(membership?.status)
+                      ? "REVOKED"
+                      : ((membership && processStatus(membership.processes)) ?? "DESIGNATED"),
             householdId: household?.id ?? null,
             householdName: household?.name ?? null,
             leads: household?.householdMembers.map((p) => p.name ?? "Unnamed") ?? [],

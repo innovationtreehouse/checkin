@@ -219,6 +219,9 @@ describe("membership-ops/volunteer-memberships page", () => {
     // Hiding it would hide the only Remove action for designation 4.
     expect(await screen.findByText("Chen")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Remove cy@example.com" })).toBeInTheDocument();
+    // …and with the switch still off it renders a badge, so the chip must exist too.
+    expect(bodyRowText()[0]).toContain("No live application");
+    expect(screen.getByRole("checkbox", { name: "No live application" })).toBeInTheDocument();
   });
 
   it("renders nothing for a background-check reviewer who navigates directly", async () => {

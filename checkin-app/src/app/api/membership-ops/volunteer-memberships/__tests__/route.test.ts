@@ -135,6 +135,19 @@ it('flags a designation on an already-active full-price household as taking effe
     expect(row).toMatchObject({ status: 'NEXT_RENEWAL', householdName: 'Baker', leads: ['Bo Baker'] });
 });
 
+it.each(['REVOKED', 'DENIED'])('reports a designation on a %s household as revoked, not pre-designated', async (status) => {
+    // DENIED blocks login for the whole household, so "Pre-designated" would read
+    // as queued-up-and-waiting for a family that cannot sign in at all.
+    mockDb({
+        designations: [designation(9, 'cy@example.com')],
+        people: [leadPerson('cy@example.com', {
+            orgMembership: { status, memberSince: new Date(), processes: [] },
+        })],
+    });
+
+    expect((await rowsFor())[0].status).toBe('REVOKED');
+});
+
 it('carries a designated household through its live application status', async () => {
     mockDb({
         designations: [designation(9, 'cy@example.com')],
