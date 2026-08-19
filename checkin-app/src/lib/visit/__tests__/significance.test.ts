@@ -2,7 +2,8 @@ import { editSignificance, deleteSignificance } from "../significance";
 
 const at = (h: number, m = 0) => new Date(Date.UTC(2026, 6, 1, h, m));
 
-// The design doc's worked examples (1256_ATTENDANCE_CORRECTION_SURFACE.md §2).
+// The cases the design doc's significance rules call out
+// (1256_ATTENDANCE_CORRECTION_SURFACE.md §2).
 describe("editSignificance", () => {
     it("+5 min on own WEB arrival — noise, not flagged", () => {
         const r = editSignificance(

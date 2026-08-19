@@ -76,7 +76,9 @@ defineRoute({
 // back on and no scope resolver in play. Sysadmin and board only: the same set
 // the sibling GET/PATCH/DELETE on /api/facility/visits carry and the same set
 // facility-ops/visits gates the page on, which must stay equal (their drifting
-// apart was AT13/#1259). Widening to isOperations is an open decision, #1476.
+// apart was AT13/#1259). Widening to isOperations was answered NO: #1633 puts
+// operations' reach into attendance at aggregate only (the trends, printing ID
+// badges), so one person's visit record stays outside it. #1476, closed.
 //
 // Its own endpoint rather than a POST on /api/facility/visits: adding a verb to
 // an existing legacy route file cannot satisfy this registry's own lints in any
@@ -100,15 +102,64 @@ defineRoute({
     ],
 });
 
+// Board/sysadmin review of recent attendance-correction activity (AT12,
+// #1258). The handler does not query Visit directly — it reads AuditLog rows
+// where tableName === 'Visit' and SYNTHESIZES a Visit view per row from the
+// audit blob (arrivedAt/departedAt/arrivedVia/departedVia extracted from
+// newData). stripValue (stripper.ts) copies any field present on an object
+// without checking provenance, so a synthesized row strips exactly like a
+// real one — that is what makes this legal, not an exception to it.
+//
+// 'everyones:personal' is required: Visit.arrivedAt/departedAt are
+// personal-tier and this is a review-scope surface, not a self-scope one, so
+// no <scope>:<tier> row token applies. 'everyones:internal' is required for
+// AuditLog itself — every field on it (id, timestamp, actorId, action, …) is
+// internal-tier. 'pii' and 'member' are deliberately NOT granted: no field on
+// AuditLog, Person, or Visit needs either for this view.
+//
+// AuditLog.newData is REBUILT by the handler to { type, significance } before
+// it reaches this layer; raw oldData/newData (arbitrary blob shape) must never
+// leave the route. Neither obligation is enforceable HERE: 'everyones:internal'
+// permits both fields wholesale and a tier does not reach inside a JSON blob,
+// so a handler that passed oldData straight through would ship a whole-row
+// snapshot with every suite green. The route PR carries the assertion instead
+// (correctionsAPI.integration.test.ts). No pagination — nothing else here would
+// give total/page/pageSize a legal home under any envelope value (handler.ts
+// strips before the envelope wraps), so the handler caps rows and over-fetches
+// by one to signal "more" instead.
+//
+// This entry also settles the open question #1497 left to the route PR: how a
+// before/after pair crosses the boundary. A separate bag key is not expressible
+// — stripBag drops any top-level key that is not a model name, so there can be
+// exactly one Visit key — and a before row and its after row share a Visit.id,
+// so no field distinguishes them. Array position is the only discriminator, and
+// it survives because stripValue maps arrays element-wise and preserves order.
+//
+// Served by src/app/api/facility/corrections/route.ts. Its flagged-only default
+// view is complete only once every Visit audit write persists
+// newData.significance (#1523, PR #1558) — an unscored write never surfaces.
+defineRoute({
+    endpoint: 'GET /api/facility/corrections',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { AuditLog, Person, Visit } — Visit synthesized from AuditLog blobs,
+    // not queried. Handler always emits all three keys, even empty: handler.ts
+    // unwraps a single-key bag to a bare value.
+    returns: ['AuditLog', 'Person', 'Visit'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'public']],
+    ],
+});
+
 defineRoute({
     endpoint: 'GET /api/programs/[id]',
     authorize: 'public',
     envelope: null,
     // Bag: { Program } with volunteers (ProgramVolunteer → participant Person),
     // participants (ProgramParticipant → participant Person → household Household
-    // → emergencyContacts EmergencyContact), events (Event), fees (Fee), leadMentor
-    // (Person).
-    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Person', 'Household', 'EmergencyContact', 'Event', 'Fee'],
+    // → emergencyContacts EmergencyContact), events (Event), leadMentor (Person).
+    returns: ['Program', 'ProgramParticipant', 'ProgramVolunteer', 'Person', 'Household', 'EmergencyContact', 'Event'],
     orderedView: [
         ['isSysadmin',             ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember',          ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
@@ -275,6 +326,36 @@ defineRoute({
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Board's volunteer roster: households on volunteer dues + the emails designated
+// ahead of signup. Exposes household leads' addresses and the designated
+// addresses (Person.email and VolunteerDesignation.email are both 'pii'), so
+// only isSysadmin/board may see it.
+//
+// The grant deliberately stops short of 'personal'. The roster is standing +
+// contact data — household name, lead names, one lead email, memberSince, the
+// designated address — and no personal-tier field (dateOfBirth, allergies,
+// notificationSettings) belongs in it. 'internal' IS granted: a row's status
+// is derived from OrgMembershipProcess.status, so a blocked or in-flight
+// application is observable in the response even though the column itself
+// never reaches the wire.
+//
+// Landed registry-first, ahead of the route in #1387, per the AGENTS.md
+// boundary-isolation rule: an unused defineRoute is inert, so the grant is
+// reviewable on its own before anything serves it.
+defineRoute({
+    endpoint: 'GET /api/membership-ops/volunteer-memberships',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'rows',
+    // Bag: { OrgMembership } with household (Household → householdMembers Person,
+    // leads flagged isHouseholdLead) and processes (OrgMembershipProcess), plus
+    // { VolunteerDesignation } for the pre-designated emails.
+    returns: ['OrgMembership', 'Household', 'Person', 'OrgMembershipProcess', 'VolunteerDesignation'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:internal', 'member', 'public']],
     ],
 });
 
@@ -457,6 +538,159 @@ defineRoute({
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['authenticated', ['member', 'public']],
+    ],
+});
+
+// Standalone (one-time) events list — admin surface. Registered ahead of its
+// handler() conversion (inert until then; AGENTS.md boundary-isolation rule).
+// The handler selects only public-tier Event columns (id/name/startAt/endAt/
+// description). Declared public-only ON PURPOSE: the response is exact, not
+// aspirational. If the select later grows to an internal field
+// (attendanceConfirmedAt/ById, postEventEmailSent) the strip fails closed and
+// forces a boundary PR + CODEOWNERS review, instead of the field shipping
+// silently under a pre-granted band.
+defineRoute({
+    endpoint: 'GET /api/events',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    // Bag: { Event } — bare-array response (envelope null + single-key bag).
+    returns: ['Event'],
+    orderedView: [
+        ['isSysadmin',    ['public']],
+        ['isBoardMember', ['public']],
+    ],
+});
+
+// Facility visit log (latest 50, all people) — admin surface. Registered ahead
+// of its handler() conversion (inert until then). Nested person carries email
+// (pii) + role flags; the admin everyones band covers them, and the near-raw
+// response makes the declared view exact.
+defineRoute({
+    endpoint: 'GET /api/facility/visits',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'visits',
+    // Bag: { Visit } with person (Person).
+    returns: ['Visit', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Raw badge scan log (latest 200) — admin surface, registered ahead of its
+// handler() conversion (inert until then). RawBadgeLog rows are
+// internal/personal tier; nested person name/email for display. Near-raw
+// response, so the declared everyones band is exact.
+defineRoute({
+    endpoint: 'GET /api/facility/badges',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'badges',
+    // Bag: { RawBadgeLog } with person (Person).
+    returns: ['RawBadgeLog', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Server error log (latest 100) — admin surface, all internal tier. Registered
+// ahead of its handler() conversion (inert until then).
+defineRoute({
+    endpoint: 'GET /api/system-status/errors',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['ErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Integration error log (latest 200) — admin surface, all internal tier.
+// Registered ahead of its handler() conversion (inert until then). The response
+// key is `errors` for back-compat with the existing UI.
+defineRoute({
+    endpoint: 'GET /api/system-status/links',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'errors',
+    returns: ['IntegrationErrorLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Volunteer designations (dues-discount allowlist; email is pii) — admin
+// surface, registered ahead of its handler() conversion (inert until then). GET
+// is a pure findMany (create/delete live on other HTTP methods).
+defineRoute({
+    endpoint: 'GET /api/settings/membership/volunteer-designations',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'designations',
+    returns: ['VolunteerDesignation'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// The caller's own visit history (±7-day window). Registered ahead of its
+// handler() conversion (inert until then). their_own:personal delivers
+// arrivedAt/departedAt on the caller's rows — the Visit binding keys on
+// row.personId, so the conversion PR's select MUST include personId or the
+// scope fails closed and the timestamps strip (#1137 finding 1). Nested event
+// name is public.
+defineRoute({
+    endpoint: 'GET /api/profile/visits',
+    authorize: 'authenticated',
+    envelope: 'visits',
+    // Bag: { Visit } with event (Event).
+    returns: ['Visit', 'Event'],
+    orderedView: [
+        ['authenticated', ['their_own:personal', 'member', 'public']],
+    ],
+});
+
+// App-localization singleton (timezone/locale) — sysadmin-only surface,
+// wholly public-tier data; the gate is about who may see admin settings
+// screens, not the fields. Declared public-only ON PURPOSE: AppSettings is the
+// natural home for a future integration key / webhook secret, and a public-only
+// view makes that field fail closed (forcing a boundary PR) instead of shipping
+// to sysadmin through an entry nobody revisited.
+defineRoute({
+    endpoint: 'GET /api/admin/settings/localization',
+    authorize: { anyRole: ['isSysadmin'] },
+    envelope: 'settings',
+    // Bag: { AppSettings } (singleton row).
+    returns: ['AppSettings'],
+    orderedView: [
+        ['isSysadmin', ['public']],
+    ],
+});
+
+// Email identity settings (From/Reply-To/scholarship notify) — admin surface.
+// BoardSettings singleton, narrow select in the handler.
+defineRoute({
+    endpoint: 'GET /api/settings/email',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'settings',
+    returns: ['BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Membership settings singleton (dues, year boundary, Shopify variant ids —
+// internal tier) — admin surface, full row.
+defineRoute({
+    endpoint: 'GET /api/settings/membership',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'settings',
+    returns: ['BoardSettings'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
     ],
 });
 

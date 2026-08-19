@@ -177,7 +177,8 @@ export const authOptions: NextAuthOptions = {
                 }
             }
         }),
-        // Persona-mint — the unified impersonation flow for dev + local (DEV_INSTANCE_DESIGN.md §5).
+        // Persona-mint — the unified impersonation flow for dev + local
+        // (docs/ops/dev-instance.md, "Impersonation").
         // Dead in prod by construction. Mints a real session AS the chosen persona, stamping an
         // inert `impersonatedBy` claim (display/audit only — no authz path reads it). The policy
         // lives in evaluateMint(); this provider just supplies the caller's claims and the target.
@@ -265,7 +266,7 @@ export const authOptions: NextAuthOptions = {
                     }
                     if (!dbParticipant) return null;
 
-                    // Record the mint in the dev ledger (DEV_DASHBOARD_DESIGN.md §6), attributed to
+                    // Record the mint in the dev ledger (docs/ops/dev-instance.md, "The ledger"), attributed to
                     // the REAL human. impersonatedBy set → an impersonation (real human becomes a
                     // persona); null → a plain login (e.g. a local first-login as the persona).
                     const realActor = decision.impersonatedBy ?? dbParticipant.email ?? "unknown";
@@ -301,7 +302,8 @@ export const authOptions: NextAuthOptions = {
     callbacks: {
         async jwt({ token, user, account, profile }) {
             // Capture Google's hosted-domain + email_verified claims on sign-in so the dev-instance
-            // middleware can gate on verified org membership (see DEV_INSTANCE_DESIGN.md §4).
+            // middleware can gate on verified org membership (docs/ops/dev-instance.md,
+            // "Running the cloud dev instance").
             // Prefer the `hd` claim over string-matching the email suffix.
             if (account?.provider === "google" && profile) {
                 const googleProfile = profile as { hd?: string; email_verified?: boolean };
@@ -328,7 +330,7 @@ export const authOptions: NextAuthOptions = {
                 // (issue #292); Google's casing is otherwise passed through verbatim.
                 const email = normalizeEmail(user.email);
                 const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
-                    where: { email },
+                    where: { email, mergedIntoId: null },
                     include: {
                         toolStatuses: {
                             select: {
@@ -372,7 +374,11 @@ export const authOptions: NextAuthOptions = {
                 // privileges (including the /api/roles endpoint) until the JWT
                 // aged out — up to 30 days.
                 const dbParticipant = await withAuroraResumeRetry(() => prisma.person.findUnique({
-                    where: { id: token.id as number },
+                    // A merge tombstone keeps its row and its roles, so `mergedIntoId: null`
+                    // (LIVE_PERSON) is what makes this lookup miss and collapses the token
+                    // below — otherwise the re-sync re-grants authority from a record every
+                    // other surface refuses to show.
+                    where: { id: token.id as number, mergedIntoId: null },
                     include: {
                         toolStatuses: {
                             select: {

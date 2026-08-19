@@ -46,8 +46,8 @@ type GuardSite = {
     machine: 'enrollment' | 'membership';
     /** The from-state the guard's CAS names (a state in that machine). */
     from: string;
-    /** Forward transition the guard drives, as [from, to]; omit for a reverse/entry
-     *  guard whose from-state has no outgoing table edge (e.g. unarchive from ARCHIVED). */
+    /** Transition the guard drives, as [from, to]; omit for a guard that changes no
+     *  status at all (e.g. a flag-only deny). */
     edge?: [string, string];
     /** 'spread' = migrated onto fromWhere; 'literal' = intentionally kept literal. */
     mode: 'spread' | 'literal';
@@ -65,9 +65,15 @@ const GUARDS: GuardSite[] = [
     // ── membership (OrgMembershipProcess) ──
     { file: 'lib/membership/external.ts', machine: 'membership', from: 'PENDING_EXTERNAL_ACTION', edge: ['PENDING_EXTERNAL_ACTION', 'PENDING_PAYMENT'], mode: 'spread' },
     { file: 'lib/membership/renewal.ts', machine: 'membership', from: 'PENDING_RENEWAL', edge: ['PENDING_RENEWAL', 'PENDING_EXTERNAL_ACTION'], mode: 'spread' },
-    { file: 'lib/membership/archive.ts', machine: 'membership', from: 'ARCHIVED', mode: 'spread' }, // unarchive: reverse of #13, no ARCHIVED→ edge
+    { file: 'lib/membership/archive.ts', machine: 'membership', from: 'ARCHIVED', edge: ['ARCHIVED', 'PENDING_PAYMENT'], mode: 'spread' }, // unarchive: reverse of #13 (one representative target)
     { file: 'app/api/finance-ops/membership-payment-plans/route.ts', machine: 'membership', from: 'PENDING_PAYMENT', edge: ['PENDING_PAYMENT', 'ACTIVE'], mode: 'spread' },
     { file: 'app/api/finance-ops/membership-payment-plans/refuse/route.ts', machine: 'membership', from: 'PENDING_PAYMENT', mode: 'spread' }, // deny: flag-only, no status edge
+    // merge BG carryover — two flag-only stamps (advanceExternalIfComplete / activate own the
+    // edges those rows later take) and two real clearances on already-declared edges.
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_EXTERNAL_ACTION', mode: 'spread' },
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_PAYMENT', mode: 'spread' },
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_BG_REVIEW', edge: ['PENDING_BG_REVIEW', 'PENDING_PAYMENT'], mode: 'spread' },
+    { file: 'lib/membership/mergeBgAdvance.ts', machine: 'membership', from: 'PENDING_BG_CLEARANCE', edge: ['PENDING_BG_CLEARANCE', 'ACTIVE'], mode: 'spread' },
 
     // ── left literal on purpose (documented) ──
     // personBgTriggers is an idempotency EXISTENCE set (∅→PENDING_BG_REVIEW is the edge;

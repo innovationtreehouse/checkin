@@ -64,6 +64,17 @@ describe('membershipValidThrough', () => {
         expect(result).toEqual(new Date(Date.UTC(boundary.getUTCFullYear() + 1, boundary.getUTCMonth(), boundary.getUTCDate())));
     });
 
+    it('the settled probe is kind-agnostic — a new family joining in-window counts, not only a RENEWAL', async () => {
+        prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'ACTIVE' } });
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: BOUNDARY });
+        prisma.orgMembershipProcess.findFirst.mockResolvedValue({ id: 99 });
+
+        await membershipValidThrough(1, new Date(Date.UTC(2026, 0, 1)));
+        const where = prisma.orgMembershipProcess.findFirst.mock.calls[0][0].where;
+        expect(where).not.toHaveProperty('kind');
+        expect(where.status).toEqual('ACTIVE'); // ARCHIVED never paid — must not extend
+    });
+
     it('not ACTIVE → null', async () => {
         prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'REVOKED' } });
         const result = await membershipValidThrough(1, new Date());
@@ -182,6 +193,27 @@ describe('program access for a paid, not-yet-cleared household', () => {
         prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'NONE', processes: [] } });
         expect(await membershipValidThrough(1, new Date())).toBeNull();
         expect(prisma.boardSettings.findUnique).not.toHaveBeenCalled();
+    });
+});
+
+// coversThrough (private, exercised here via isDuesSettledThrough) deliberately
+// fails OPEN when a coverage horizon can't be computed: a dues-settled
+// household still gets member pricing even though the board hasn't configured
+// orgMembershipYearBoundary, rather than losing member pricing for a settings gap.
+describe('isDuesSettledThrough fail-open when no coverage horizon is configured', () => {
+    it('dues-settled household + no board-configured boundary → covers any through-date', async () => {
+        prisma.person.findFirst.mockResolvedValue({ id: 1 }); // dues settled
+        prisma.person.findUnique.mockResolvedValue({ householdId: 5 });
+        prisma.household.findUnique.mockResolvedValue({ orgMembership: { id: 7, status: 'ACTIVE' } });
+        prisma.boardSettings.findUnique.mockResolvedValue({ orgMembershipYearBoundary: null });
+
+        const farFuture = new Date(Date.UTC(2099, 0, 1));
+        expect(await isDuesSettledThrough(1, farFuture)).toBe(true);
+    });
+
+    it('a program with no coverage date (through === null) → status alone decides', async () => {
+        prisma.person.findFirst.mockResolvedValue({ id: 1 }); // dues settled
+        expect(await isDuesSettledThrough(1, null)).toBe(true);
     });
 });
 

@@ -103,7 +103,18 @@ Things the app takes as true because they are handled outside it.
 - A program leader is 23 or older, the floor belonging to the role rather than to
   adulthood. A program volunteer has no age floor at all — youth volunteer too.  [Decision — *Policy: Sponsored Program Policy, Art. IV*]
 
-- Nobody under 18 enrolls themselves. A youth is enrolled by their household lead.  [Decision]
+- Nothing checks either the age floor or the requirement that a leader be a
+  member who has passed a background check: the leader pickers admit anyone 18 or
+  over.  [Short of policy — *Policy: Sponsored Program Policy, Art. IV*]
+
+- Nobody under 18 enrolls themselves, and nobody whose age is unknown does
+  either; only a known adult may. The bar is the guardian-consent line and is
+  separate from the ages a program targets. A youth is enrolled, and withdrawn,
+  by their household lead.  [Decision — *Principle: fail closed*]
+
+- Being refused for an unknown age is not a dead end. Someone with no age on file
+  is asked to record one and may then enroll themselves; a brand-new adult is
+  their own household lead and has nobody else to ask.  [Decision]
 
 ### Enrollment
 
@@ -135,12 +146,40 @@ Things the app takes as true because they are handled outside it.
 
 - A request for a payment plan is never swept away for sitting too long.  [Decision]
 
+### What a youth sees of money
+
+- A youth is never shown a payment obligation, a payment action, or a payment
+  status, whether their own or their household's. It is not disabled and not
+  explained; it is absent. Their own enrollment awaiting payment reads as
+  awaiting confirmation, which names no money, stays true if the household never
+  pays, and puts the next action with somebody else.  [Decision]
+
+- A youth may not settle a payment their household lead started, on their own
+  enrollment or any other. There is no finish-the-checkout allowance for an
+  enrollment that already exists.  [Decision]
+
+- What a program costs stays public. A price is program information, not a
+  payment situation; it carries no obligation, no state and no action, so a youth
+  sees it like anyone else.  [Decision — deliberate limit]
+
+- Someone whose age is unknown is treated the opposite way from a youth here.
+  They may well be an adult, so nothing is hidden from them and they are asked
+  for their age instead. Known youth, hide; unknown, ask.  [Decision]
+
 ### Pricing
 
 - A failed discount degrades to undiscounted checkout, never an error.  [Decision — deliberate limit]
 
 - A program priced on a tier with nothing wired to sell it is broken and is
-  reported as such. A free tier has nothing to wire and is never reported.  [Decision]
+  reported as such. A free tier has nothing to wire and is never reported, and a
+  tier priced at zero is free — it is never sold, never reported, and never waits
+  on a payment.  [Decision]
+
+- Such a program takes no enrollment that would have to be paid for. The place is
+  refused outright rather than admitted and left waiting on a payment that can
+  never arrive. An administrator's comped place never reaches the store and is
+  seated as normal; nobody else's confirmation makes the program sellable, so
+  none is offered.  [Decision — *Principle: fail closed*]
 
 > **Candidate, not settled — for owner ratification.** Member pricing requires
 > the membership to cover the program's end date, not merely be active today; a
@@ -170,8 +209,13 @@ Things the app takes as true because they are handled outside it.
 
 - A held seat is returned exactly once — by withdrawal, payment, or grace expiry
   — or consumed permanently by approval, and an approved seat is never credited
-  back. This holds against a failed store call, not a crash between the two
-  writes; that drift is repaired by hand.  [Decision]
+  back. This holds against a failed store call, not a crash mid-transition.  [Decision]
+
+- A place granted while its seat is still held is the one drift repaired without
+  a person: a sweep releases the seat and leaves the place. Every other
+  off-diagram enrollment is reported and left alone, because repairing it would
+  mean guessing which of two states the family is actually in.  [Decision — deliberate limit;
+  *Principle: people decide about people*]
 
 - Denying a request does not release the seat; the family may still pay for it.  [Decision]
 
@@ -180,14 +224,24 @@ Things the app takes as true because they are handled outside it.
 
 - The grace period is a board setting. Unset means the feature is off.  [Decision — *Principle: fail closed*]
 
-- A request whose seat hold failed cannot be approved as though it held one.  [Decision]
+- A request whose seat hold failed waits for a board member to take the seat off
+  sale by hand. It can still be approved or denied without one, deliberately: the
+  queue offers each as a named override behind a confirmation that states the
+  oversell risk. A failed store call is the organisation's fault, and stranding
+  the family is the worse outcome.  [Decision — deliberate limit]
 
 ### Access to program information
 
 - A program's catalogue entry is public; its roster is visible only to the people
   running it — its leader, its core volunteers, the board and sysadmins — and to
-  people enrolled in it. The catalogue route is never gated: an anonymous caller
-  reaches it and the response is filtered instead.  [Decision — *Policy: Records Policy, Art. IV*]
+  people enrolled in it. The catalogue filters rather than gates: an anonymous
+  caller reaches it and sees less, and is never told that a members-only program
+  exists.  [Decision — *Policy: Records Policy, Art. IV*]
+
+- A members-only program's own page keeps that silence. An anonymous caller is
+  told there is no such program; a signed-in caller who is not a member is told it
+  exists and that it is members only. Signing in is what earns the reason for
+  being turned away.  [Decision — *Principle: no existence oracle*]
 
 - A program leader is defined by the program they lead, not by a role they hold.
   They reach the programs they lead and no others; the board and sysadmins reach
@@ -212,24 +266,3 @@ Things the app takes as true because they are handled outside it.
 
 - Cross-selling one program from another will not be built.  [Decision — deliberate limit]
 
----
-
-## Policy requirements not yet enforced here
-
-- **A program can be created with no dates at all.** Both start and end are
-  optional and nothing rejects either being absent. A start date should be
-  required, and an absent end should default to the end of the fiscal year
-  (30 June) rather than staying null.
-
-  Three rules quietly change meaning when they are missing. Age eligibility
-  falls back to the registration date, which is the thing that rule exists to
-  avoid. The catalogue reads a null end as running indefinitely. Member-pricing
-  coverage falls back to status alone.
-
-- **The program-leader minimum age of 23 is not checked**, nor is the
-  requirement that a leader be a member who has passed a check.
-
-- **The second-adult-volunteer requirement is not modelled** as a precondition of
-  scheduling a session.
-
-- **School enrollment for youth is not captured.**

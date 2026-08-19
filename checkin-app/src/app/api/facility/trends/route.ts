@@ -4,31 +4,12 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { getAppSettings } from "@/lib/appSettings";
 import { apiError } from "@/lib/api-response";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
-
-type PeriodType = "week" | "month" | "quarter" | "year";
+import { toZonedTime } from "date-fns-tz";
+import { getPeriodStart, type PeriodType } from "@/lib/timePeriods";
 
 function getHoursBetween(arrived: Date, departed: Date | null): number {
     if (!departed) return 0;
     return (departed.getTime() - arrived.getTime()) / (1000 * 60 * 60);
-}
-
-// Period boundaries and labels are the org's wall clock, not the server's:
-// toZonedTime shifts an instant so its local calendar fields read as the org
-// zone's, and fromZonedTime converts such a wall clock back to an instant.
-function getPeriodStart(date: Date, period: PeriodType, timeZone: string): Date {
-    const d = toZonedTime(date, timeZone);
-    if (period === "week") {
-        d.setDate(d.getDate() - d.getDay());
-    } else if (period === "month") {
-        d.setDate(1);
-    } else if (period === "quarter") {
-        d.setMonth(Math.floor(d.getMonth() / 3) * 3, 1);
-    } else {
-        d.setMonth(0, 1);
-    }
-    d.setHours(0, 0, 0, 0);
-    return fromZonedTime(d, timeZone);
 }
 
 function formatPeriodLabel(date: Date, period: PeriodType, locale: string, timeZone: string): string {
@@ -68,7 +49,7 @@ export interface TrendBucket {
 }
 
 export const GET = withAuth(
-    { roles: ['isSysadmin', 'isBoardMember'] },
+    { roles: ['isSysadmin', 'isBoardMember', 'isOperations'] },
     async (req) => {
         try {
             const url = new URL(req.url);
@@ -89,14 +70,16 @@ export const GET = withAuth(
                 arrivedAt: { gte: since },
                 departedAt: { not: null },
                 deletedAt: null,
-                // Exclude synthetic "marked present" visits (events attendance route): their
-                // arrivedAt/departedAt is the event window, not a measured duration.
-                // arrivedVia=LEAD_MARKED is the marker — real visits use SCANNER/WEB on
-                // arrival. Legacy SYSTEM is listed too: the previous release can still write
-                // it through a rolling deploy's drain window, and it meant the same thing on
-                // this field. The departure-side split (FACILITY_CLOSE / AUTO_CLOSE) does not
-                // reach here — this keys on arrival only.
-                arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] },
+                // Drop staff-asserted arrivals (LEAD_MARKED, and its legacy spelling
+                // SYSTEM): those times are an event window, not a measured duration.
+                // The events roster mark stamps LEAD_MARKED on the visits it creates;
+                // a walk-in it adopts keeps its measured SCANNER/WEB and still counts.
+                // An untagged (null) arrival is an ordinary visit and counts — it needs
+                // the explicit OR, because NULL never satisfies a SQL NOT IN.
+                OR: [
+                    { arrivedVia: null },
+                    { arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] } },
+                ],
             };
 
             if (programId) {

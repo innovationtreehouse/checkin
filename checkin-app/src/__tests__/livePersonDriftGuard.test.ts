@@ -43,7 +43,7 @@ import { join, relative, sep } from 'node:path';
  *      scope (see the boundary note below).
  *
  *   3. A list/count call on a JOIN delegate that has a `person` relation:
- *        prisma.programParticipant|programVolunteer|rSVP|toolStatus|feePayment
+ *        prisma.programParticipant|programVolunteer|rSVP|toolStatus
  *          .findMany(...) / .findFirst(...) / .count(...) / .aggregate(...) / .groupBy(...)
  *      excluding `findUnique` / `findUniqueOrThrow`, same as class 1.
  *      WHY THIS EXISTS: pattern 2's "a where-relation filter is not a data pull"
@@ -158,7 +158,7 @@ const ALLOWLIST: Record<string, string> = {
     // to-one include, so the only available decision is whether the PARENT row
     // should exist at all, which belongs to the parent query.
     'app/api/membership/reviews/route.ts': 'The household-lead pull now filters LIVE_PERSON. `subjectPerson` is a to-one pinned by OrgMembershipProcess.subjectPersonId. NEEDS REVIEW: whether a PERSON_BG process whose subject has since been merged away should still sit in the reviewer queue is a lifecycle question about the PROCESS (cancel/retarget it), not a filter on this read — left as-is rather than guessed at.',
-    'lib/membership/review.ts': 'The household-lead BG stamp (`tx.person.updateMany`) filters LIVE_PERSON. The remaining hits are to-one relations selected for eligibility math, not display: `subjectPerson` (the process\'s own subject, for the conflict-of-interest household compare) and `reviewer` on an existing attestation (the actor who already voted — a historical record that must still resolve, or the same-household guard silently stops applying to it).',
+    'lib/membership/review.ts': 'The BG stamp writes by explicit id (`where: { id: { in: cleared } }`), and every id reaches it through `liveHouseholdLeadIds`, which filters LIVE_PERSON — a tombstone can never be named as a check subject. The remaining hits are to-one relations selected for eligibility math, not display: `subjectPerson` (the process\'s own subject, for the conflict-of-interest household compare) and `reviewer` on an existing attestation (the actor who already voted — a historical record that must still resolve, or the same-household guard silently stops applying to it).',
 
     // ── person-scoped join reads (class 3, one already-identified person) ─────
     // A join-table list whose where pins `personId` to a single already-known id
@@ -168,8 +168,7 @@ const ALLOWLIST: Record<string, string> = {
     'lib/attendanceTransitions.ts': 'getRelevantProgramIds pins `personId: participantId` — the enrollment/volunteer rows of one already-identified person, used to pick their associated event on scan. Not a roster, not a count.',
 
     // ── authz target checks (class 3, never rendered or counted) ──────────────
-    'app/api/events/[id]/attendance/route.ts': 'Builds the enrolled/volunteering id set purely to REJECT attendance writes for targets outside this event\'s program (IDOR guard). The set is never rendered and never counted; a tombstone\'s leftover enrollment row only ever widens what the roster UI — which does filter — will never offer.',
-    'app/api/events/[id]/route.ts': 'Same IDOR guard as events/[id]/attendance, in single-target form: two findFirsts pinned to `personId: targetId` asking "is this one target enrolled or volunteering". One-row shape, no list, no count.',
+    'app/api/events/[id]/route.ts': 'IDOR guard on an attendance correction\'s target: two findFirsts pinned to `personId: targetId` asking "is this one target enrolled or volunteering in this event\'s program". One-row shape, no list, no count, never rendered.',
 
     // ── historical / audit trail (showing a since-merged identity is correct) ──
     'app/api/system-status/audit-log/route.ts': 'Resolves actor names for audit-log rows by their recorded actorId — a historical record must still name an actor who has since been merged away.',
@@ -291,7 +290,7 @@ const PERSON_RELATION_RE = new RegExp(String.raw`\b(?:${PERSON_RELATION_NAMES.jo
 // is checked with the same FILTERED_RE — see the class-3 note in the header for
 // why a count with no `person:` key at all still needs the filter.
 const JOIN_CALL_RE =
-    /\b(?:prisma|tx|db)\.(programParticipant|programVolunteer|rSVP|toolStatus|feePayment)\.(findMany|findFirst|count|aggregate|groupBy)\s*\(/g;
+    /\b(?:prisma|tx|db)\.(programParticipant|programVolunteer|rSVP|toolStatus)\.(findMany|findFirst|count|aggregate|groupBy)\s*\(/g;
 
 const FILTERED_RE = /LIVE_PERSON|mergedIntoId/;
 

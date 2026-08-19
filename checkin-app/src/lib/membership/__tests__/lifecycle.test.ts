@@ -9,7 +9,7 @@
  *   - grantableRenewalWhere / settledThisCycleWhere emit the exact fragments the
  *     route + guard + sweep consume (fix #3/#4);
  *   - isLegalTransition covers the machine’s edges; reachability flags the legacy
- *     RENEWAL_PENDING_BG as unreachable (docs/designs/LIFECYCLE.md);
+ *     RENEWAL_PENDING_BG as unreachable;
  *   - the local ProcessStatus/ProcessKind unions stay in lockstep with the Prisma
  *     enums (value-based assertEnumParity here; type-only Expect<Equal> in-module).
  */
@@ -20,7 +20,7 @@ import {
 import {
     awaitingBgReview,
     grantableRenewalWhere,
-    settledThisCycleWhere,
+    settledThisCycleWhere, handledThisCycleWhere,
     IN_FLIGHT_INITIAL,
     IN_FLIGHT_RENEWAL,
     LEGACY_STATUSES,
@@ -29,6 +29,9 @@ import {
     isLegalTransition,
     TRANSITIONS,
     ALL_STATUSES,
+    ALL_KINDS,
+    ARCHIVABLE_STATUSES,
+    RESTORABLE_STATUSES,
     INITIAL_STATES,
     type ProcessStatus,
 } from '@/lib/membership/lifecycle';
@@ -101,10 +104,20 @@ describe('grantableRenewalWhere / settledThisCycleWhere', () => {
         expect(grantableRenewalWhere).toEqual({ kind: 'RENEWAL', status: 'PENDING_PAYMENT' });
     });
 
-    test('settledThisCycleWhere adds kind=RENEWAL + ARCHIVED + window (fix #4)', () => {
+    test('settledThisCycleWhere (money) is kind-agnostic and ACTIVE-only', () => {
+        // A family that joins during the renewal window (INITIAL) buys the coming
+        // year exactly as a renewer does, so no kind clause. ARCHIVED never
+        // completed payment (archive refuses ACTIVE) and must not extend a horizon.
         const windowStart = new Date('2026-06-01T00:00:00.000Z');
         expect(settledThisCycleWhere(windowStart)).toEqual({
-            kind: 'RENEWAL',
+            status: 'ACTIVE',
+            stageEnteredAt: { gte: windowStart },
+        });
+    });
+
+    test('handledThisCycleWhere (sweep) additionally counts ARCHIVED — board already closed this cycle', () => {
+        const windowStart = new Date('2026-06-01T00:00:00.000Z');
+        expect(handledThisCycleWhere(windowStart)).toEqual({
             status: { in: ['ACTIVE', 'ARCHIVED'] },
             stageEnteredAt: { gte: windowStart },
         });
@@ -144,9 +157,9 @@ describe('IN_FLIGHT lists', () => {
 
 // ── classify / validate ────────────────────────────────────────────────────────
 
-describe('classify', () => {
-    const flags = { contractSignedAt: false, bgConsentAt: false, bgClearedAt: false, paidAt: false };
+const flags = { kind: 'INITIAL', contractSignedAt: false, bgConsentAt: false, bgClearedAt: false, paidAt: false } as const;
 
+describe('classify', () => {
     test('names on-diagram rows by status', () => {
         expect(classify({ ...flags, status: 'PENDING_PAYMENT' })).toBe('PENDING_PAYMENT');
         expect(classify({ ...flags, status: 'ACTIVE', bgClearedAt: true })).toBe('ACTIVE');
@@ -157,10 +170,13 @@ describe('classify', () => {
         expect(classify({ ...flags, status: 'INTAKE', paidAt: true })).toBeNull(); // paid before external
         expect(classify({ ...flags, status: 'ACTIVE', bgClearedAt: false })).toBeNull(); // active must be cleared
     });
+
+    test('an ACTIVE PERSON_AGREEMENT is on-diagram without a clearance', () => {
+        expect(classify({ ...flags, kind: 'PERSON_AGREEMENT', status: 'ACTIVE' })).toBe('ACTIVE');
+    });
 });
 
 describe('validate', () => {
-    const flags = { contractSignedAt: false, bgConsentAt: false, bgClearedAt: false, paidAt: false };
     test('clean rows validate null', () => {
         expect(validate({ ...flags, status: 'ACTIVE', bgClearedAt: true })).toBeNull();
         expect(validate({ ...flags, status: 'INTAKE' })).toBeNull();
@@ -169,16 +185,25 @@ describe('validate', () => {
         expect(validate({ ...flags, status: 'INTAKE', paidAt: true })).toEqual({ invariant: 'intake-is-unpaid' });
         expect(validate({ ...flags, status: 'ACTIVE', bgClearedAt: false })).toEqual({ invariant: 'active-is-bg-cleared' });
     });
+    test('active-is-bg-cleared is the MEMBERSHIP convergence, and holds for the other kinds', () => {
+        // The individual agreement completes on the signature alone (the machine's own
+        // PENDING_EXTERNAL_ACTION→ACTIVE edge, kind PERSON_AGREEMENT) — it has no
+        // payment and no check to converge, so no clearance stamp is owed.
+        expect(validate({ ...flags, kind: 'PERSON_AGREEMENT', status: 'ACTIVE' })).toBeNull();
+        // PERSON_BG does clear before it activates, so nothing is relaxed for it — it is
+        // NOT in SETTLES_ON_SIGNATURE, and this fails the moment someone puts it there.
+        expect(validate({ ...flags, kind: 'PERSON_BG', status: 'ACTIVE' })).toEqual({ invariant: 'active-is-bg-cleared' });
+        expect(validate({ ...flags, kind: 'RENEWAL', status: 'ACTIVE' })).toEqual({ invariant: 'active-is-bg-cleared' });
+    });
 });
 
-// ── transitions (docs/designs/LIFECYCLE.md) ───────────────────────────────────────────────────────
+// ── transitions ───────────────────────────────────────────────────────────────────────────────────
 
 describe('isLegalTransition covers §5', () => {
     test('accepts declared spine edges', () => {
         expect(isLegalTransition('INTAKE', 'PENDING_EXTERNAL_ACTION')).toBe(true);
         expect(isLegalTransition('PENDING_RENEWAL', 'PENDING_EXTERNAL_ACTION')).toBe(true);
         expect(isLegalTransition('PENDING_EXTERNAL_ACTION', 'PENDING_PAYMENT')).toBe(true);
-        expect(isLegalTransition('PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW')).toBe(true);
         expect(isLegalTransition('PENDING_PAYMENT', 'ACTIVE')).toBe(true);
         expect(isLegalTransition('PENDING_PAYMENT', 'PENDING_BG_CLEARANCE')).toBe(true);
         expect(isLegalTransition('PENDING_BG_REVIEW', 'PENDING_PAYMENT')).toBe(true);
@@ -201,7 +226,30 @@ describe('isLegalTransition covers §5', () => {
         expect(isLegalTransition('ACTIVE', 'ARCHIVED')).toBe(false);
     });
 
+    test('accepts unarchive back to every archivable status — ARCHIVED is not sealed', () => {
+        for (const to of ['INTAKE', 'PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW', 'PENDING_PAYMENT', 'PENDING_BG_CLEARANCE', 'PENDING_RENEWAL', 'BLOCKED'] as ProcessStatus[]) {
+            expect(isLegalTransition('ARCHIVED', to)).toBe(true);
+        }
+        expect(isLegalTransition('ARCHIVED', 'ARCHIVED')).toBe(false);
+    });
+
+    // GUARD (new): the restore set and the transition table are two lists, and the
+    // gap between them is deliberate. RENEWAL_PENDING_BG IS restorable at runtime —
+    // archive's gate is `status !== ACTIVE`, and migration 20260806160000 backfills
+    // that value — but declaring the edge would make an unreachable status reachable
+    // and delete the unreachable report machineSpecs.ts exists to surface. So the
+    // table stays silent and this records the divergence instead of denying it.
+    test('GUARD: the restore set is the archivable set plus the legacy status, and nothing else', () => {
+        expect([...RESTORABLE_STATUSES].sort()).toEqual(
+            [...ARCHIVABLE_STATUSES, ...LEGACY_STATUSES].sort(),
+        );
+        expect(RESTORABLE_STATUSES.has('RENEWAL_PENDING_BG')).toBe(true);
+        expect(isLegalTransition('ARCHIVED', 'RENEWAL_PENDING_BG')).toBe(false);
+    });
+
     test('rejects undeclared edges', () => {
+        // The external advance always opens payment — an intake note no longer holds it.
+        expect(isLegalTransition('PENDING_EXTERNAL_ACTION', 'PENDING_BG_REVIEW')).toBe(false);
         expect(isLegalTransition('INTAKE', 'ACTIVE')).toBe(false);
         expect(isLegalTransition('ACTIVE', 'PENDING_PAYMENT')).toBe(false);
         expect(isLegalTransition('ARCHIVED', 'ACTIVE')).toBe(false);
@@ -215,7 +263,7 @@ describe('isLegalTransition covers §5', () => {
     });
 });
 
-describe('reachability (docs/designs/LIFECYCLE.md)', () => {
+describe('reachability', () => {
     test('flags the legacy RENEWAL_PENDING_BG as unreachable', () => {
         const r = reachability(TRANSITIONS, ALL_STATUSES, INITIAL_STATES, ['ACTIVE', 'ARCHIVED']);
         expect(r.unreachable).toContain('RENEWAL_PENDING_BG');
@@ -227,13 +275,13 @@ describe('reachability (docs/designs/LIFECYCLE.md)', () => {
     });
 });
 
-// ── enum parity (docs/designs/LIFECYCLE.md) ──────────────────────────────────
+// ── enum parity ──────────────────────────────────────────────────────────────
 
 describe('enum parity with Prisma', () => {
     test('ProcessStatus union matches OrgMembershipProcessStatus keys', () => {
         expect(() => assertEnumParity(ALL_STATUSES, OrgMembershipProcessStatus, 'OrgMembershipProcessStatus')).not.toThrow();
     });
     test('ProcessKind union matches OrgMembershipProcessKind keys', () => {
-        expect(() => assertEnumParity(['INITIAL', 'RENEWAL', 'PERSON_BG'], OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
+        expect(() => assertEnumParity(ALL_KINDS, OrgMembershipProcessKind, 'OrgMembershipProcessKind')).not.toThrow();
     });
 });

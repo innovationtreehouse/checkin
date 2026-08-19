@@ -16,9 +16,9 @@ import { isPaid, raisePaymentException } from "@/lib/finance/reconcile";
  * so a track request only ever reaches here after a successful audit.
  *
  * The gap predicate is re-run server-side from the raw Prisma columns (status,
- * kind, shopifyOrderId, certifiedById, wasOrgMemberAtApproval, mirror presence)
+ * kind, shopifyOrderId, manualPaymentById, wasOrgMemberAtApproval, mirror presence)
  * — NEVER from a bucket enum value — so a stale panel (a row already
- * activated/certified/refunded/scholarship-approved since the audit ran)
+ * activated/manually-paid/refunded/scholarship-approved since the audit ran)
  * cannot mint an exception. This keeps the route independent of whatever
  * bucket set matchAudit.ts happens to have (see that file's P2 buckets):
  * the only gaps this route ever promotes are the ones that re-derive true
@@ -82,7 +82,7 @@ async function trackOrder(shopifyOrderId: string): Promise<NextResponse> {
 async function trackMembership(processId: number): Promise<NextResponse> {
     const p = await prisma.orgMembershipProcess.findUnique({
         where: { id: processId },
-        select: { status: true, kind: true, shopifyOrderId: true, certifiedById: true },
+        select: { status: true, kind: true, shopifyOrderId: true, manualPaymentById: true },
     });
     if (!p) return apiError("Membership process not found", 404);
     // Only the population the audit sweeps: ACTIVE/PENDING_BG_CLEARANCE, INITIAL/RENEWAL.
@@ -98,7 +98,7 @@ async function trackMembership(processId: number): Promise<NextResponse> {
         await raisePaymentException("PAYMENT_UNVERIFIABLE", { processId });
         return NextResponse.json({ tracked: true });
     }
-    if (p.certifiedById != null) return apiError("Membership is no longer a gap (certified since the audit)", 409);
+    if (p.manualPaymentById != null) return apiError("Membership is no longer a gap (payment recorded manually since the audit)", 409);
     // ponytail: for the null-order kinds the @@unique(kind, shopifyOrderId) index does
     // NOT dedup (NULLs are distinct — no NULLS NOT DISTINCT), so two *concurrent*
     // clicks on the same row could create two ACTIVE_WITHOUT_PAYMENT rows.

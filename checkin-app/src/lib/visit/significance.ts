@@ -60,8 +60,9 @@ function weightOf(source: VisitSource | null, field: "arrival" | "departure", vi
 }
 
 function minutesBetween(a: Date | null, b: Date | null): number {
-    // One side null only when CLOSING an open visit (reopening is rejected at
-    // the route) — the most routine correction there is; no delta to weigh.
+    // One side null only when CLOSING an open visit — the most routine
+    // correction there is; no delta to weigh. Reopening never reaches here:
+    // every write path refuses it, so a closed visit keeps its departure.
     if (!a || !b) return 0;
     return Math.abs(a.getTime() - b.getTime()) / 60000;
 }

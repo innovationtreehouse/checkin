@@ -8,7 +8,8 @@ import { PageContainer } from "@/components/ui/PageContainer";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { notifyNavRefresh } from "@/lib/nav-refresh";
-import { formatVisitRange, toDatetimeLocal } from "@/lib/time";
+import { toDatetimeLocal } from "@/lib/time";
+import { useOrgTime } from '@/components/TimezoneProvider';
 import { AttendanceTabs } from "../AttendanceTabs";
 
 type Visit = {
@@ -22,6 +23,7 @@ type Visit = {
 // deletable, no approval step — significant changes are flagged to the board
 // server-side (trust-first, design doc 1256_ATTENDANCE_CORRECTION_SURFACE.md).
 export default function MyVisits() {
+  const { formatVisitRange } = useOrgTime();
   const { ready, loading: authLoading } = useRequireRole([]);
   const [visits, setVisits] = useState<Visit[] | null>(null);
   const [error, setError] = useState("");

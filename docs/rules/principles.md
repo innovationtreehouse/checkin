@@ -78,8 +78,10 @@ before, not an approximation of it.
 
   What is still open is where those lines sit, and whether capturing a whole
   record into the audit trail counts as capturing it or merely defers the same
-  dependency. Only people are kept today; enrollments and visits are removed with
-  the row written to the audit trail.
+  dependency. People and visits are kept today, each marked rather than removed,
+  and each with a filter every listing surface must pass through and a guard that
+  fails the build when a new one forgets. Enrollments are removed, with the row
+  written to the audit trail.
 
 The tell is a status that swallows its predecessor — a row that goes to ARCHIVED
 or MERGED with no record of what it was before. That is the moment to capture,
@@ -98,9 +100,17 @@ not the moment someone asks to undo.
   than one capacity, the narrower one governs; seniority is not an argument for
   reaching further.
 
+- **A surface grants nothing its gate does not already grant.** Giving a role its
+  own section, list or notification makes work findable that it could already do
+  and shows information it could already read. It adds no capability and widens no
+  data. The test is per link and per field: a link to a screen the role's existing
+  gate would refuse, or a field that gate would strip, has widened the grant —
+  regardless of what the surface's own gate says.
+
 Adding a role to a gate is the change this principle catches, and it is almost
 never noticed in review, because it makes something work that did not work
-before. Removing one is visible; widening is not.
+before. Removing one is visible; widening is not. A new surface is the quiet
+version of the same change: nothing in its diff looks like a permission edit.
 
 ---
 
@@ -138,6 +148,45 @@ principle being decided, usually without anyone noticing they decided it.
 
 ---
 
+## A non-production capability is absent in production
+
+Distinct from *fail closed*, which decides what a check does when it lacks an
+answer. This decides whether the capability is there to be reached at all.
+It governs anything that only exists off production: a mock standing in for an
+external system, a tool that seeds or destroys data, a path that weakens or
+forges authentication.
+
+- **One server-side switch decides which environment this is, and anything
+  unset or unrecognised means production.** Not a build-time signal, not a
+  variable the browser can read, not the presence or absence of credentials. A
+  switch that fails safe in the other direction turns the whole class on
+  wherever it is misconfigured.
+
+- **A capability that must not exist in production derives from that switch
+  alone.** Pairing it with a second signal does not harden it. Every deployment
+  runs the same build, so a build-time signal cannot tell one from another — it
+  only kills the tool on the very non-production instance it exists for, while
+  defending against nothing the switch does not already cover.
+
+- **The check runs in the body of each entry point, never once at the edge and
+  never on the caller's word.** Being registered, mounted, wrapped, or rendered
+  only under a condition is not the check. Anything that can forge a session or
+  destroy data re-establishes on every call both that the environment permits it
+  and that the caller is entitled to it.
+
+- **Where such a capability could reach production data, the environment does
+  not hold the credential for it.** A non-production deployment carries no
+  connection to production data, so a forged session or a runaway script has
+  nothing to reach. The gates are the second line; not holding the key is the
+  first.
+
+The tell is a gate reading more than one signal, or reading its signal once.
+Both look like extra care and are the two ways this fails — the second signal
+turns the tool off where it is needed, and the single read moves the decision
+away from the moment it is acted on.
+
+---
+
 ## No existence oracle
 
 - **A response never reveals whether a person, account, or record exists to
@@ -168,13 +217,43 @@ to do anything in it.
   inferred from what is left behind.
 
 - **A record that is no longer a person here holds nothing.** Merged away,
-  tombstoned, denied, revoked — such a record appears in no roster, no headcount,
-  no capacity calculation, and passes no gate.
+  denied, revoked, or kept only as a record of what was — such a record appears in
+  no roster, no headcount, no capacity calculation, and passes no gate. The rule governs live standing, not
+  the past: a record of what happened still names them, and what it never does is
+  admit them anywhere.
+
+- **A record of who someone really is grants nothing and withholds nothing.**
+  Where a session carries provenance — that one person is acting as another —
+  no authorisation path reads it. Rights come from the identity being acted as
+  and from nothing else; a provenance claim consulted anywhere in that
+  computation lets the person behind the session reach past what they are acting
+  as. The claim exists to answer "who was this really", which is a question for
+  the audit trail, not for a gate.
 
 The failure looks like a gate that tests the wrong thing: authorising on the
 presence of an id rather than on a right the caller currently holds. It survives
 review easily, because the check is right there and does return true for the
 people it should.
+
+---
+
+## Reachability is not permission
+
+Distinct from *identity is not authorisation*, which asks what a surviving
+record grants. This asks about arrival: how someone reached a surface says
+nothing about whether they may use it.
+
+- **A listing grants nothing.** A directory, index, search result or navigation
+  menu shows only what the viewer's existing gates already admit them to; it
+  never widens one, and it is not where the decision is made.
+
+- **A destination never trusts its entry point.** Every surface enforces its own
+  gate on arrival, whatever linked to it. A link that should not have been shown
+  is a cosmetic defect; a page that admits whoever followed it is not.
+
+The failure is a gate deleted as redundant, because the menu already hides the
+page so the page stops checking. It tests clean, since in testing the only way
+anyone reaches the page is through the menu that filters it.
 
 ---
 

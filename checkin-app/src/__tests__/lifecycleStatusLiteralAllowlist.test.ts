@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /**
- * Status-literal allowlist drift guard (docs/designs/LIFECYCLE.md) — the lifecycle
+ * Status-literal allowlist drift guard — the lifecycle
  * analogue of EDGE_INCLUDE_ALLOWLIST / authzRegistry.test.ts.
  *
  * A hand-encoded state-SET in a `where` on the ProgramParticipant or
@@ -117,6 +117,15 @@ const ALLOWLIST: Record<string, string> = {
     // parity test (guardFromStateParity.test.ts) is what keeps them honest now. (renewal's
     // beginRenewalForUser read is a LONE single-status literal, which the sharpened scanner no
     // longer flags either, so it isn't listed.)
+
+    // Not a transition from-state: the PERSON_AGREEMENT edge is ∅→PENDING_EXTERNAL_ACTION
+    // (no from-row). This is the "already handled this cycle" existence set — in flight, OR
+    // terminal since the cycle floor — spanning an in-flight AND a terminal status, which no
+    // single StateSet expresses. Owned by personAgreementTriggers.handledThisCycleWhere; this
+    // board read is the same set, inline. (The trigger module itself carries no `where:` block
+    // for it — the set lives in a helper's return object — so it never reaches this scanner.)
+    'app/api/membership-audit/compliance/route.ts':
+        'PERSON_AGREEMENT handled-this-cycle set, read to list over-25 non-leads with no agreement yet: status=PENDING_EXTERNAL_ACTION, or status in {ACTIVE,ARCHIVED} since the cycle floor.',
 
     // ── invariant-driven reconciler (Phase 4) ──
     'lib/lifecycleDrift.ts':
@@ -255,7 +264,7 @@ describe('lifecycle status-literal allowlist drift guard', () => {
     it('no raw status where-literal outside the definition modules + allowlist', () => {
         const unexpected = flagged.filter((f) => !known.has(f)).sort();
         // A new one of these must consume a StateSet.where or be added to ALLOWLIST
-        // with a justification (see docs/designs/LIFECYCLE.md).
+        // with a justification.
         expect(unexpected).toEqual([]);
     });
 

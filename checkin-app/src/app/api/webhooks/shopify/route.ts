@@ -6,12 +6,16 @@ import { activateByProcessId } from "@/lib/membership/payment";
 import { withWebhook } from "@/lib/webhookAuth";
 import { config, DEV_MOCK_MEMBERSHIP_VARIANT_ID } from "@/lib/config";
 import { activateProgramEnrollment } from "@/lib/programs/activateEnrollment";
+import { unentitledMemberCodeUse } from "@/lib/programs/memberDiscountCode";
+import { raisePaymentException } from "@/lib/finance/reconcile";
 import { recordShopifyWebhookReceipt, tryParseJson } from "@/lib/shopifyWebhookReceipt";
 
 interface ShopifyOrder {
     id?: number | string;
     note_attributes?: { name: string; value: string }[];
     line_items?: { variant_id?: number | string }[];
+    /** Coupons applied at checkout — the program member-code entitlement check below. */
+    discount_codes?: { code?: string }[];
 }
 
 /**
@@ -169,17 +173,33 @@ export const POST = withWebhook({ provider: "shopify", verify: verifyShopifyHmac
                 const hasProgramItem = !!program?.shopifyVariantId &&
                     (order.line_items ?? []).some((li) => String(li.variant_id) === program.shopifyVariantId);
 
-                // Shared choke point — same path the reconciler uses to recover a
-                // MISSED webhook (lib/programs/activateEnrollment). Idempotent; the
-                // inventory side effects are non-fatal (Shopify retries on a non-2xx).
-                const { activatedCount } = await activateProgramEnrollment({
-                    programId,
-                    personIds: participantIds,
-                    shopifyOrderId: order.id ? String(order.id) : "",
-                    hasProgramItem,
-                });
+                // Member-code entitlement, judged HERE because this is the money event:
+                // the item gate proves the order is this program's, this proves the
+                // family was allowed the price it paid. Sits after the item gate, like
+                // the membership branch's volunteer-code check, and fails the same way
+                // as NO_ITEM — flag for the board, do NOT activate. Never re-asked later.
+                const codes = (order.discount_codes ?? []).map((d) => String(d.code ?? ""));
+                if (hasProgramItem && await unentitledMemberCodeUse(programId, participantIds, codes, order.id ? String(order.id) : null)) {
+                    logger.warn(`[SHOPIFY WEBHOOK] Program member discount code on a non-member order ${order.id ?? "?"} (program ${programId}) — flagged, NOT activated`);
+                    await raisePaymentException("DISCOUNT_UNAUTHORIZED", {
+                        shopifyOrderId: order.id ? String(order.id) : null,
+                        programId,
+                        personId: participantIds[0] ?? null,
+                    });
+                    outcome = `program ${programId}: unentitled member discount code — flagged, not activated`;
+                } else {
+                    // Shared choke point — same path the reconciler uses to recover a
+                    // MISSED webhook (lib/programs/activateEnrollment). Idempotent; the
+                    // inventory side effects are non-fatal (Shopify retries on a non-2xx).
+                    const { activatedCount } = await activateProgramEnrollment({
+                        programId,
+                        personIds: participantIds,
+                        shopifyOrderId: order.id ? String(order.id) : "",
+                        hasProgramItem,
+                    });
 
-                outcome = `program ${programId}: activated ${activatedCount} of ${participantIds.length} participant(s)`;
+                    outcome = `program ${programId}: activated ${activatedCount} of ${participantIds.length} participant(s)`;
+                }
             }
         } else {
              logger.info(`[SHOPIFY WEBHOOK] Payload received but missing CheckMeIn_Account_ID or Program_ID attributes. Ignoring.`);

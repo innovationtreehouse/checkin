@@ -79,6 +79,11 @@ Things the app takes as true because they are handled outside it.
 
 ### Supervision
 
+- The two-deep check counts adults present, and only where a youth is there
+  without an adult from their own household. It does not require the two to be
+  volunteers, to be non-students, or to be unrelated to one another, so a room
+  reads compliant while none of those holds.  [Short of policy — *Policy: Definitions Policy, Art. III, "Two Deep"*]
+
 - Someone whose age is unknown counts as a youth in the supervision check: not
   one of the supervising adults, and one of the people needing cover.  [Decision — *Principle: fail closed*]
 
@@ -102,8 +107,20 @@ Things the app takes as true because they are handled outside it.
 ### The visit record
 
 - A member inserts their own past visit, backdated as far as they need — there is
-  no limit on how far, and the audit trail stands in for one. They cannot edit it
-  once it is in.  [Decision]
+  no limit on how far, and the audit trail stands in for one.  [Decision]
+
+- A member corrects or removes a visit of their own once it is in. The correction
+  always applies: the only bars are validity — the times parse, departure follows
+  arrival, the visit runs no longer than 24 hours, and a closed one is never
+  reopened — and whose record it is. Integrity is after the fact rather than a
+  gate: every change is audited, and a significant one is flagged to the board.  [Decision — *Principle: self-scope and repair*]
+
+- An audited change to a visit records two people: who made the change, and whose
+  attendance it was. The second is always the person, never the event they
+  attended. Telling a correction of one's own record from one person editing
+  another's is the comparison of those two, so an audit that records anything
+  else as its subject makes every review of who changed whose record answer
+  wrongly, and silently.  [Decision]
 
 - A household lead corrects a recorded visit for anyone in their household —
   inserting a past one, changing its times, or removing it — on the same terms as
@@ -111,10 +128,46 @@ Things the app takes as true because they are handled outside it.
   responsible adult, and for someone too young to correct their own record it is
   the only way one gets fixed.  [Decision]
 
+- There are no separately recorded hours to correct. Hours are counted from
+  visits, so correcting somebody's hours is correcting the visit underneath them.  [Decision]
+
+- Correcting a time replaces where that time came from: a badge-measured arrival
+  a member edits is their own report afterwards, not a measurement. Correcting
+  the same time twice is weighed the second time as overwriting a self-report.  [Decision]
+
+- Removing a visit marks it removed rather than erasing it: it stops counting
+  wherever visits are listed, counted or totalled, and it can be put back.  [Decision — *Principle: decisions are reversible*]
+
+- Significance is the size of a change weighted by how authoritative the value it
+  overwrote was. A measured badge outweighs somebody else's observation of a
+  member, which outweighs the member's own earlier report. Every removal shows
+  on the review screen whatever it overwrote, because erasing a record is
+  notable at any size.  [Decision]
+
+- Every correction or removal is weighed on the same terms whoever made it — the
+  member, their household lead, a program's leader, the board — and stays on the
+  record to be reviewed. Showing on that screen and the board being emailed at
+  the time are separate: only a member's change to their own visit, or their
+  household lead's on their behalf, emails the board as it happens. Marking who
+  did not turn up and clearing duplicate visits are a leader's routine week, and
+  on the board's own corrections the board would be telling itself.  [Decision — deliberate limit]
+
+- A departure that the building closing or the overnight sweep stamped is a
+  placeholder the member is meant to fix, so correcting one adds nothing to the
+  score however large the correction. The suppression keys on where the value
+  came from, not on its size: the sweep stamps at its own run time, so the least
+  trustworthy guess is exactly the one producing the largest correction.  [Decision]
+
 - A visit cannot run longer than 24 hours.  [Decision]
 
 - The board and sysadmins edit or delete any visit, and record one for someone
   else at any past time — the walk-in nobody badged in.  [Decision]
+
+- Operations reach attendance in aggregate only — the trends, and printing the ID
+  badges. One person's record sits outside that reach: operations do not record,
+  correct or remove a visit, do not read the raw badge events behind one, and do
+  not review other people's corrections. Running the facility works off the shape
+  of attendance, not off who was there when.  [Decision — *Principle: least privilege*]
 
 - A visit recorded for someone else is always a closed one: it says they came and
   left. Putting someone on the list of who is in the building now follows from a
@@ -133,29 +186,13 @@ program. This is a record of who was at one session of one program.
   having been in the building at the time proves nothing — a walk-in who is not
   enrolled needs enrolling first.  [Decision — *Principle: identity is not authorisation*]
 
-- Who attended is for the people running it — the program's leader, keyholders,
-  the board and sysadmins. Anyone else is refused outright rather than handed a
-  trimmed version, because the names are the part that matters and they survive
-  any trimming.  [Decision — *Principle: least privilege*]
+- Who attended is for the people running it — the program's leader, its core
+  volunteers, the board and sysadmins. Anyone else is refused outright rather than
+  handed a trimmed version, because the names are the part that matters and they
+  survive any trimming.  [Decision — *Principle: least privilege*]
 
----
+- A finished session whose roster is unmarked chases someone by email: the
+  program's leader, or a core volunteer where the program has no leader. An in-app
+  list of the same sessions is additive and never a replacement — it reaches the
+  leader only, so a program with no leader has the email and nothing else.  [Decision]
 
-## Policy requirements not yet enforced here
-
-- **A member cannot correct their own visit.** Settled design rather than policy,
-  and not built. It was decided; the implementation is pending.
-
-- **The supervision check is weaker than the policy on three counts.** It counts
-  adults present. Policy requires two adults who are *volunteers*, who are *not
-  students*, and who are *unrelated and from different households*. Any of those
-  three can be false while the app reports the room compliant.
-
-- **Primary keyholder is not modelled.** There is no single designated primary,
-  no consent-based transfer, and no obligation on a departing primary to
-  transfer or close.
-
-- **The closing guard is keyed on keyholders, not on the last youth.** A last
-  keyholder is stopped and made to confirm, which covers the common case — but
-  policy's requirement is two adults on site with a last youth, and a
-  non-keyholder adult can leave a youth with a single remaining adult without
-  being interrupted.

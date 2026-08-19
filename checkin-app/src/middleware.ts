@@ -3,7 +3,8 @@ import { getToken } from 'next-auth/jwt';
 import { config as appConfig, isStagingAccessAllowed, ORG_DOMAIN } from '@/lib/config';
 
 /**
- * Site-wide org-login gate for the cloud dev instance (see DEV_INSTANCE_DESIGN.md §4)
+ * Site-wide org-login gate for the cloud dev instance (docs/ops/dev-instance.md, "Running the
+ * cloud dev instance")
  * — and the ops-stg ACCESS GATE (see docs on the staging access gate).
  *
  * When CHECKIN_ENV=dev, every page route requires a session whose Google hosted-domain (`hd`)

@@ -1,7 +1,7 @@
 name: Shopify live contract tests (dev store)
 
 # Runs the shopify-live suite (checkin-app/shopify-live/, see
-# docs/designs/SHOPIFY_LIVE_TESTS.md) against the REAL dev store — catches
+# docs/ops/shopify-live-tests.md) against the REAL dev store — catches
 # Admin-API contract drift the mocked suites structurally cannot. Nightly +
 # manual; NEVER part of PR CI or pre-commit.
 #

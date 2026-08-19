@@ -15,16 +15,9 @@
  *   - Visit:  field is `departedAt` (doc wrote `departed`).            [doc fixed]
  *   - ToolStatus: field is `personId` (renamed userId→participantId #564, then participantId→personId).
  *   - RawBadgeLog: model is `RawBadgeLog` (doc table wrote `RawBadgeEvent`).
- *   - Fee / RSVP: the live switch grouped ProgramParticipant, ProgramVolunteer,
- *     Fee and RSVP under one `case` body that read BOTH `row.programId` and
- *     `row.participantId`. `Fee` has no `participantId` column and `RSVP` has no
- *     `programId` column, so on a REAL row those reads were always `undefined`
- *     and granted nothing. #574 (Step 3 Blocker 1) dropped both dead reads:
- *     `Fee` is unbound (wholly @sensitivity:public, so it needs no binding) and
- *     `RSVP` was narrowed to `their_own`. THIS chip then RE-ADDS the RSVP
- *     program-lead grant correctly via eventId → Event.programId
- *     (ctx.eventIdsInScopePrograms) — a deliberate behavior change, diverging
- *     from the dead switch read. See the RSVP binding below + §7.5/§9 Step 3.
+ *   - RSVP: has no `programId` column of its own, so the program-lead grant
+ *     resolves via eventId → Event.programId (ctx.eventIdsInScopePrograms), not
+ *     a direct `row.programId` read. See the RSVP binding below + §7.5/§9 Step 3.
  *
  * IMPORTANT: This file is CODEOWNERS-gated.
  */
@@ -87,14 +80,9 @@ export const SCOPE_BINDINGS = {
         },
         their_own: { field: 'personId', eqCtx: 'selfId' },
     },
-    // Fee + RSVP shared the grouped switch case with ProgramParticipant/
-    // ProgramVolunteer, reading BOTH programId and participantId. `Fee` has no
-    // participantId column and `RSVP` has no programId column, so those reads
-    // were dead. #574 dropped both — Fee is unbound (wholly @sensitivity:public,
-    // needs no binding); RSVP was narrowed to `their_own`. THIS chip RE-ADDS the
-    // RSVP program-lead grant correctly via eventId → Event.programId
-    // (ctx.eventIdsInScopePrograms) — a deliberate behavior CHANGE, not the dead
-    // switch read. See docs/security/auth-consistency-analysis.md §7.5 + §9 Step 3.
+    // RSVP has no programId column of its own; the program-lead grant resolves
+    // via eventId → Event.programId (ctx.eventIdsInScopePrograms), not a direct
+    // row.programId read. See docs/security/auth-consistency-analysis.md §7.5.
     RSVP: {
         their_own: { field: 'personId', eqCtx: 'selfId' },
         their_program_participants: { field: 'eventId', inCtx: 'eventIdsInScopePrograms' },
@@ -105,10 +93,6 @@ export const SCOPE_BINDINGS = {
             inCtx: ['programsLed', 'programsCoreVolIn'],
         },
     },
-    FeePayment: {
-        their_own: { field: 'personId', eqCtx: 'selfId' },
-        their_program_participants: { field: 'personId', inCtx: 'participantIdsInScopePrograms' },
-    },
     // No householdId column: a Visit reaches a household only through its
     // person, so `led_households` matches personId against the caller's led
     // household roster rather than comparing a householdId field. It is the
@@ -117,8 +101,15 @@ export const SCOPE_BINDINGS = {
     Visit: {
         their_own: { field: 'personId', eqCtx: 'selfId' },
         led_households: { field: 'personId', inCtx: 'ledHouseholdMemberIds' },
+        // deletedAt is a conjunct, not a nicety: a tombstoned visit keeps
+        // departedAt null forever, so without it a deleted open visit reads as
+        // an active one for the rest of time.
         all_current_visitors: {
-            all: [{ flag: 'isKeyholder' }, { field: 'departedAt', isNull: true }],
+            all: [
+                { flag: 'isKeyholder' },
+                { field: 'departedAt', isNull: true },
+                { field: 'deletedAt', isNull: true },
+            ],
         },
     },
     RawBadgeLog: { their_own: { field: 'personId', eqCtx: 'selfId' } },

@@ -268,7 +268,7 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(new Date(data.visit.departedAt).toISOString()).toBe(now.toISOString());
-            expect(data.visit.departedVia).toBe('WEB');
+            expect(data.visit.departedVia).toBe('LEAD_MARKED');
 
             const updatedVisit = await prisma.visit.findUnique({ where: { id: testVisitId } });
             expect(updatedVisit?.departedAt?.toISOString()).toBe(now.toISOString());
@@ -277,6 +277,48 @@ describe('Admin Visits API Integration Tests', () => {
                 where: { actorId: testAdminId, action: 'EDIT', tableName: 'Visit' }
             });
             expect(currentAuditLogs).toBe(previousAuditLogs + 1);
+
+            // Only departedAt moved (from null, closing the visit) — no weighted
+            // shift on either field, so significance is the zero floor.
+            const auditLog = await prisma.auditLog.findFirst({
+                where: { actorId: testAdminId, action: 'EDIT', tableName: 'Visit', affectedEntityId: testVisitId },
+                orderBy: { id: 'desc' },
+            });
+            expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 0, flagged: false });
+        });
+
+        // `arrivedVia` records how the arrival was measured, not who last touched
+        // the row, so correcting the time must not restamp it: this person did
+        // badge in, and `facility/trends` drops LEAD_MARKED arrivals outright.
+        it('leaves arrivedVia alone when the board corrects a scanned arrival', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true }
+            });
+
+            const scanned = await prisma.visit.create({
+                data: {
+                    personId: testUserId,
+                    arrivedAt: new Date(Date.now() - 4 * 3600000),
+                    departedAt: new Date(Date.now() - 2 * 3600000),
+                    arrivedVia: 'SCANNER',
+                    departedVia: 'SCANNER',
+                }
+            });
+
+            const corrected = new Date(Date.now() - 3 * 3600000).toISOString();
+            const req = new Request('http://localhost:4000/api/facility/visits', {
+                method: 'PATCH',
+                body: JSON.stringify({ visitId: scanned.id, arrivedAt: corrected })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(200);
+
+            const stored = await prisma.visit.findUnique({ where: { id: scanned.id } });
+            expect(stored?.arrivedAt.toISOString()).toBe(corrected);
+            expect(stored?.arrivedVia).toBe('SCANNER');  // re-timed, still a badge reading
+            expect(stored?.departedVia).toBe('SCANNER'); // not sent — untouched
         });
     });
 
@@ -370,6 +412,13 @@ describe('Admin Visits API Integration Tests', () => {
             });
             expect(auditLog).not.toBeNull();
             expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
+
+            // UNRESOLVED (#1630) — 0 is what ships, not what is right. The visit is
+            // still open, so deleteSignificance weighs no duration: deleting a live 6h
+            // scanned visit scores 0, while deleting that same row after checkout
+            // scores 2160. The lowest score destroys the live in-building roster.
+            expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+                .toEqual({ score: 0, flagged: true });
         });
     });
 

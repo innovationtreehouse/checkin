@@ -177,13 +177,14 @@ model Person {
 
   toolStatuses        ToolStatus[]
   bgAttestations      BackgroundCheckAttestation[] @relation("BgAttestations")
+  bgAttestationsAsSubject BackgroundCheckAttestation[] @relation("BgAttestationSubject")
   personBgProcesses   OrgMembershipProcess[]       @relation("PersonBgSubject")
+  intakeNoteAcks      OrgMembershipProcess[]       @relation("IntakeNoteReads")
   corporationLeads    CorporationLead[]
   corporationMembers  CorporationMember[]
   programVolunteers   ProgramVolunteer[]
   programParticipants ProgramParticipant[]
   programsLed         Program[]                    @relation("ProgramLeadMentor")
-  feePayments         FeePayment[]
   rsvps               RSVP[]
   rawBadgeLogs        RawBadgeLog[]
   visits              Visit[]
@@ -366,6 +367,11 @@ enum OrgMembershipProcessKind {
   // membership: orgMembershipId is null and subjectPersonId points at the person
   // being checked. Runs through the same two-reviewer gate as household checks.
   PERSON_BG
+  // Per-person membership agreement for an adult child (#1224). Like PERSON_BG,
+  // orgMembershipId is null and subjectPersonId is the signer. An 18+ child of the
+  // signer is a legal adult and can't be bound by their parent's signature, so they
+  // sign their own. Opens at PENDING_EXTERNAL_ACTION; the signature flips it to ACTIVE.
+  PERSON_AGREEMENT
 }
 
 enum OrgMembershipProcessStatus {
@@ -466,6 +472,11 @@ model OrgMembershipProcess {
   kind                  OrgMembershipProcessKind
   /// @sensitivity:internal
   status                OrgMembershipProcessStatus
+  /// The status ARCHIVED collapsed — captured by the archive write itself, since
+  /// afterwards there is nothing left to read. Unarchive restores from this and
+  /// clears it; null on every process that is not (or never was) archived.
+  /// @sensitivity:internal
+  archivedFromStatus    OrgMembershipProcessStatus?
   /// @sensitivity:internal
   stageEnteredAt        DateTime?               @default(now())
   /// @sensitivity:public
@@ -492,8 +503,11 @@ model OrgMembershipProcess {
   shopifyOrderId        String?
   /// @sensitivity:internal
   paidAt                DateTime?
+  // The @map holds the physical column on its old name: most reads of this model
+  // carry no select, so the previous release reads it through a rolling deploy's
+  // drain window. Rename it in a later release (contract stage).
   /// @sensitivity:internal
-  certifiedById         Int?
+  manualPaymentById     Int?                    @map("certifiedById")
   /// @sensitivity:internal
   certificationNote     String?
   /// Write-never as of the outreach engine (PR-2): the renewal sweep and the go-live
@@ -504,6 +518,20 @@ model OrgMembershipProcess {
   renewalReminderSentAt DateTime?
   /// @sensitivity:internal
   isPaymentPlanRequested Boolean @default(false)
+  /// The household's intake note as submitted with this application. A snapshot, not
+  /// a live read: the household may edit or clear Household.intakeNotes afterwards,
+  /// and the audit question is what the applicant actually said. Disclosure-equivalent
+  /// to the note itself, so it carries the note's tier; deleted with the process.
+  /// @sensitivity:pii
+  intakeNoteSnapshot    String?
+  /// Who read the snapshot, and when. Staff-action audit metadata like every other
+  /// actor/stamp pair on this model (manualPaymentById, bgClearedAt) — internal, not
+  /// public: who has read a family's note is not a fact the row publishes.
+  /// @sensitivity:internal
+  noteAckById           Int?
+  noteAckBy             Person?                 @relation("IntakeNoteReads", fields: [noteAckById], references: [id])
+  /// @sensitivity:internal
+  noteAckAt             DateTime?
 
   attestations BackgroundCheckAttestation[]
 
@@ -520,6 +548,14 @@ model BackgroundCheckAttestation {
   /// @sensitivity:public
   reviewerId      Int
   reviewer        Person       @relation("BgAttestations", fields: [reviewerId], references: [id])
+  /// The adult whose Averity check this attestation covers, read off the PDF by the
+  /// reviewer. Null on PERSON_BG (the process already names its subject), on any
+  /// REJECT (a rejection is whole-process), and on legacy household rows attested
+  /// before per-adult subjects existed. Clearance stamps only named subjects, so a
+  /// null one stamps nobody.
+  /// @sensitivity:public
+  subjectPersonId Int?
+  subjectPerson   Person?      @relation("BgAttestationSubject", fields: [subjectPersonId], references: [id])
   /// @sensitivity:internal
   result          AttestationResult
   /// @sensitivity:internal
@@ -529,7 +565,13 @@ model BackgroundCheckAttestation {
   /// @sensitivity:public
   createdAt       DateTime          @default(now())
 
-  @@unique([processId, reviewerId])
+  /// Applied as raw SQL with `NULLS NOT DISTINCT` (see the migration): Postgres
+  /// otherwise treats every (process, reviewer, NULL) row as distinct, which would
+  /// let a PERSON_BG reviewer attest twice. Prisma cannot express that attribute, so
+  /// a regenerated migration would silently weaken it.
+  /// Named explicitly: the generated name would be 67 chars, past Postgres's 63-char
+  /// identifier limit.
+  @@unique([processId, reviewerId, subjectPersonId], map: "BgAttestation_processId_reviewerId_subjectPersonId_key")
 }
 
 model VolunteerDesignation {
@@ -546,10 +588,14 @@ model VolunteerDesignation {
 model BoardSettings {
   /// @sensitivity:public
   id                         Int       @id @default(1)
+  // The @maps hold the physical columns on their old names: a bare
+  // boardSettings.findUnique selects every column by name, so the previous release
+  // reads these through a rolling deploy's drain window. Rename them in a later
+  // release (contract stage).
   /// @sensitivity:public
-  normalDuesCents            Int       @default(0)
+  standardMembershipFeeCents Int       @default(0) @map("normalDuesCents")
   /// @sensitivity:public
-  volunteerDuesCents         Int       @default(0)
+  volunteerMembershipFeeCents Int      @default(0) @map("volunteerDuesCents")
   /// @sensitivity:public
   orgMembershipYearBoundary  DateTime? @db.Date
   /// Shopify variant ID of the membership product everyone checks out through.
@@ -584,9 +630,10 @@ model BoardSettings {
   /// prod and local never consult it.
   /// @sensitivity:internal
   devSigningTarget           String?
-  /// Overrides the EMAIL_FROM env default as the Resend sender on every outbound
+  /// Overrides the EMAIL_FROM env value as the Resend sender on every outbound
   /// email when set. Must be on a Resend-verified domain or all mail bounces —
-  /// hence the confirm-to-edit guard in the settings UI. Null = use the env default.
+  /// hence the confirm-to-edit guard in the settings UI. Null = fall back to
+  /// EMAIL_FROM; with that unset too, sendEmail refuses to send.
   /// @sensitivity:public
   emailFromAddress           String?
   /// Reply-To header set on every outbound email when set (the From address is a
@@ -737,7 +784,10 @@ model TrustedAdult {
   updatedAt                 DateTime           @updatedAt
   /// When the household chose to permanently hide a withdrawn trusted adult from
   /// their own view. The row is KEPT (board history / audit); the member-facing
-  /// /mine list filters it out. Board & sysadmin views still see it.
+  /// /mine list filters it out. No board view lists it either — the review queue
+  /// selects links carrying a pending or expired review and the operational list
+  /// selects approved ones, so a withdrawn link is outside both whatever this
+  /// column says.
   /// @sensitivity:internal
   hiddenAt                  DateTime?
 
@@ -916,7 +966,6 @@ model Program {
 
   volunteers   ProgramVolunteer[]
   participants ProgramParticipant[]
-  fees         Fee[]
   events       Event[]
 }
 
@@ -977,44 +1026,6 @@ model ProgramParticipant {
   person  Person @relation(fields: [personId], references: [id])
 
   @@id([programId, personId])
-}
-
-model Fee {
-  /// @sensitivity:public
-  id             Int    @id @default(autoincrement())
-  /// @sensitivity:public
-  programId      Int
-  /// @sensitivity:public
-  name           String
-  /// @sensitivity:public
-  /// Integer cents (e.g. 2599 = $25.99).
-  nonOrgMemberPriceCents Int
-  /// @sensitivity:public
-  /// Integer cents (e.g. 2599 = $25.99).
-  orgMemberPriceCents    Int
-
-  program  Program      @relation(fields: [programId], references: [id])
-  payments FeePayment[]
-}
-
-model FeePayment {
-  /// @sensitivity:public
-  feeId             Int
-  /// @sensitivity:public
-  personId          Int
-  /// @sensitivity:personal
-  paidAt            DateTime? @default(now())
-  /// @sensitivity:personal
-  shopifyLink       String?
-  /// @sensitivity:personal
-  quickBooksInvoice String?
-  /// @sensitivity:personal
-  customNote        String?
-
-  fee         Fee         @relation(fields: [feeId], references: [id])
-  person      Person @relation(fields: [personId], references: [id])
-
-  @@id([feeId, personId])
 }
 
 model Event {
@@ -1104,6 +1115,12 @@ model Visit {
   /// @sensitivity:internal
   deletedById       Int?
 
+  /// When the kiosk last showed this keyholder the "others are still here"
+  /// force-close warning. A force close only proceeds if the scan follows a
+  /// fresh stamp, so an ordinary double-tap cannot close the building.
+  /// @sensitivity:internal
+  forceCloseWarnedAt DateTime?
+
   person Person @relation(fields: [personId], references: [id])
   event  Event?      @relation(fields: [associatedEventId], references: [id])
 
@@ -1122,6 +1139,10 @@ model AuditLog {
   timestamp               DateTime    @default(now())
   /// @sensitivity:internal
   actorId                 Int
+  /// Which automated path wrote this row (`cron:nightly`, `webhook:shopify`, …)
+  /// when actorId is the system sentinel; null for a person's own action.
+  /// @sensitivity:internal
+  actorSystem             String?
   /// @sensitivity:internal
   action                  AuditAction
   /// @sensitivity:internal
@@ -1134,6 +1155,13 @@ model AuditLog {
   oldData                 Json?
   /// @sensitivity:internal
   newData                 Json?
+
+  @@index([actorId])
+  @@index([actorSystem])
+  // The corrections review reads one table over a time window, newest first.
+  // Neither actor index serves that; without this it is a full scan of every
+  // audit row the org has ever written.
+  @@index([tableName, timestamp])
 }
 
 model Account {
@@ -1236,7 +1264,37 @@ model IntegrationErrorLog {
   @@index([resolvedAt, timestamp])
 }
 
-/// Dev-instance activity ledger (DEV_DASHBOARD_DESIGN.md §6). Lives only in checkin_dev; records
+/// One completed run of a cron sweep, written by `withCron` (src/lib/cronAuth.ts) for every
+/// route under /api/cron. The schedule and the caller live in a separate infra repo, so the
+/// app cannot know when a job is *due* — it can only observe that a run happened. This table
+/// is that observation: it feeds the System Status cron panel and the stale-job nav badge,
+/// which is the only in-app signal that a sweep silently stopped firing. Rolling log: rows
+/// auto-purge after 90 days.
+model CronRunLog {
+  /// @sensitivity:internal
+  id         Int      @id @default(autoincrement())
+  /// Route slug — the last path segment of /api/cron/<job>.
+  /// @sensitivity:internal
+  job        String
+  /// @sensitivity:internal
+  startedAt  DateTime
+  /// @sensitivity:internal
+  finishedAt DateTime @default(now())
+  /// Whether the run COMPLETED — not whether it was clean. A sweep that isolates
+  /// per-row failures still completed, so it lands here as true with `error` set.
+  /// Drives "is this job still running" (lib/cronRuns.ts lastSuccessByJob).
+  /// @sensitivity:internal
+  success    Boolean
+  /// Why the run was not clean — the throw's message, the HTTP status, or the count
+  /// of rows the sweep could not process. Null means the run did all of its work.
+  /// Drives "is this job still working", independently of `success`.
+  /// @sensitivity:internal
+  error      String?
+
+  @@index([job, success, finishedAt])
+}
+
+/// Dev-instance activity ledger (docs/ops/dev-instance.md, "The ledger"). Lives only in checkin_dev; records
 /// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
 /// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;
 /// excluded from the reset truncation so the coordination history survives a reset.

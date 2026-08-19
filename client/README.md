@@ -5,7 +5,7 @@ A thin Python client for Raspberry Pi that runs at the facility entrance. It act
 ## What it does
 
 1. **Transparent signing proxy** — serves on `localhost:8083`, proxies all requests to the backend with Ed25519 signature headers injected automatically
-2. **Kiosk display wrapper** — serves an HTML wrapper at `/` that iframes `/kioskdisplay` from the backend, with a flash banner overlay for scan feedback
+2. **Kiosk display wrapper** — serves an HTML wrapper at `/` that iframes `kiosk_path` (default `/attendance/current?mode=kiosk`) from the backend, with a flash banner overlay for scan feedback
 3. **Listens for badge scans** — reads USB barcode/QR scanner input, sends signed POST to `/api/scan`
 4. **Scan feedback** — displays check-in/check-out confirmation banners via a polling mechanism
 
@@ -102,7 +102,7 @@ When `usb_device` is empty in `config.json`, the client reads participant IDs fr
 | `private_key_path` | Path to the Ed25519 private key file |
 | `usb_device` | Device name or path (e.g. `Newtologic` or `/dev/input/event0`), empty for stdin |
 | `listen_port` | Local HTTP server port (default `8083`) |
-| `kiosk_path` | Backend path for the kiosk display and initial data fetch (default `/kioskdisplay?mode=kiosk`) |
+| `kiosk_path` | Backend path for the kiosk display and initial data fetch (default `/attendance/current?mode=kiosk`) |
 
 ## Architecture
 
@@ -112,8 +112,8 @@ When `usb_device` is empty in `config.json`, the client reads participant IDs fr
 │  localhost:8083     │  ──────────────→   │  (Next.js)   │
 │                     │                    │              │
 │  GET /              │  serves wrapper    │              │
-│  GET /kioskdisplay  │  ← proxied ──────  │ /kioskdisplay│
-│  GET /poll          │  scan feedback     │              │
+│  GET kiosk_path     │  ← proxied ──────  │ kiosk_path   │
+│  GET /events        │  scan feedback SSE │              │
 │  POST /api/scan     │  ← from scanner   │ /api/scan    │
 │  * (all other)      │  ← proxied ──────  │              │
 │                     │                    │              │

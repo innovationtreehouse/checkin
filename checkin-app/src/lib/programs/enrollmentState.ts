@@ -1,8 +1,8 @@
 /**
  * ProgramParticipant enrollment lifecycle — ONE declarative definition.
  *
- * Instances the `@/lib/lifecycle` primitives; see docs/designs/LIFECYCLE.md.
- * This is the DEFINITION/VALIDATION layer only — it emits the
+ * Instances the `@/lib/lifecycle` primitives. This is the
+ * DEFINITION/VALIDATION layer only — it emits the
  * `where`/predicate the existing compare-and-set guards already hand-write; it
  * never executes a transition. Postgres stays the runtime authority.
  *

@@ -1,49 +1,42 @@
 /**
  * Seed default and offline fallback only — NOT the display zone. The organisation's
  * display zone is the editable `AppSettings.timezone` (lib/appSettings.ts), which the
- * server resolves per request and installs here via `setDisplayTimezone`.
+ * server resolves per request and passes to the formatters below.
  */
 export const APP_TIMEZONE = 'America/Chicago';
 
-let displayTimezone: string = APP_TIMEZONE;
+/** An instant, in any of the shapes the formatters accept. */
+export type DateInput = Date | string | number | null | undefined;
 
 /**
- * Install the organisation's configured display zone for the instant formatters below.
- * Client components get it from `<TimezoneProvider>` (fed by the root layout); server
- * callers, which run in a separate module instance, pass `{ timeZone }` per call instead.
- * An empty value falls back to APP_TIMEZONE.
+ * Options for the instant formatters. `timeZone` is required so the organisation's
+ * configured zone is always passed in rather than read from ambient state: client
+ * components get it from `useOrgTime()`, server callers from `resolveDisplayTimezone()`.
  */
-export function setDisplayTimezone(timezone: string | null | undefined): void {
-    displayTimezone = timezone || APP_TIMEZONE;
-}
-
-/** The zone the instant formatters are currently rendering in. */
-export function getDisplayTimezone(): string {
-    return displayTimezone;
-}
+export type ZonedOptions = Intl.DateTimeFormatOptions & { timeZone: string };
 
 /**
- * Returns a localized date string for an instant, in the organisation's display timezone
+ * Returns a localized date string for an instant, in the given timezone
  */
-export function formatDate(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+export function formatDate(date: DateInput, options: ZonedOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleDateString(undefined, { timeZone: displayTimezone, ...options });
+    return new Date(date).toLocaleDateString(undefined, options);
 }
 
 /**
- * Returns a localized time string in the organisation's display timezone
+ * Returns a localized time string in the given timezone
  */
-export function formatTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+export function formatTime(date: DateInput, options: ZonedOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleTimeString(undefined, { timeZone: displayTimezone, ...options });
+    return new Date(date).toLocaleTimeString(undefined, options);
 }
 
 /**
- * Returns a combined localized date and time string in the organisation's display timezone
+ * Returns a combined localized date and time string in the given timezone
  */
-export function formatDateTime(date: Date | string | number | null | undefined, options?: Intl.DateTimeFormatOptions): string {
+export function formatDateTime(date: DateInput, options: ZonedOptions): string {
     if (!date) return '';
-    return new Date(date).toLocaleString(undefined, { timeZone: displayTimezone, ...options });
+    return new Date(date).toLocaleString(undefined, options);
 }
 
 /**
@@ -68,11 +61,12 @@ export function relTime(when: string | Date, now: Date | number = Date.now()): s
  * Times are shown without seconds.
  */
 export function formatVisitRange(
-    arrived: Date | string | number | null | undefined,
-    departed?: Date | string | number | null | undefined,
+    arrived: DateInput,
+    departed: DateInput,
+    timeZone: string,
 ): string {
     if (!arrived) return '';
-    const hm: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+    const hm: ZonedOptions = { timeZone, hour: 'numeric', minute: '2-digit' };
     const start = formatTime(arrived, hm);
     if (!departed) return `${start}-`;
     const mins = Math.round((new Date(departed).getTime() - new Date(arrived).getTime()) / 60000);
@@ -126,23 +120,47 @@ export function parseDateOnly(value: string | null | undefined): Date | null {
     return value ? new Date(value) : null;
 }
 
+/** Numeric y/m/d parts of an instant in the organisation's zone. */
+const ORG_DAY_PARTS = new Intl.DateTimeFormat('en-US', {
+    timeZone: APP_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+});
+
+/**
+ * The calendar day an instant falls on in the organisation's zone, as a UTC-midnight
+ * Date — the storage shape of every `@db.Date` column. The sanctioned way to take a
+ * day from a moment: the zone is named rather than inherited from the process.
+ * See docs/conventions.md, "A day is not a moment".
+ *
+ * Pinned to APP_TIMEZONE, not the configured display zone, so a server age gate and
+ * the browser cannot disagree about who is 18. ponytail: a settings-aware variant has
+ * to be async (the zone comes from the database), so it waits until the org moves zones.
+ */
+export function orgCalendarDay(instant: Date | string | number = new Date()): Date {
+    const p = Object.fromEntries(
+        ORG_DAY_PARTS.formatToParts(new Date(instant)).map(({ type, value }) => [type, value]),
+    );
+    return new Date(`${p.year}-${p.month}-${p.day}T00:00:00.000Z`);
+}
+
 /**
  * Returns the calendar age in whole years for the given DOB, decremented if
  * the birthday hasn't happened yet as of `asOf`. Canonical implementation — use
  * this everywhere instead of inline epoch-diff age math.
  *
- * `asOf` defaults to now (the common case). Program age gates pass the program's
- * start date so the bound is judged as-of when the program begins, not when the
- * person happens to register.
+ * `asOf` defaults to today's calendar day in the organisation's zone, so a birthday
+ * rolls over at local midnight rather than at UTC midnight — 7 PM the evening before,
+ * which would grant adult status early. Program age gates pass the program's start
+ * date so the bound is judged as-of when the program begins, not when the person
+ * happens to register.
  *
- * Both sides are read via getUTC* because a DOB is a calendar date stored at UTC
- * midnight — local fields off that instant read a day early west of UTC.
- * ponytail: that pins the birthday rollover to UTC midnight (7 PM Chicago) for
- * the default `asOf = now`, so an evening lookup can register a birthday a few
- * hours early. The upgrade is a caller passing the org-zone calendar day as
- * `asOf` — a day comes from a day — not a local-field read here.
+ * Both sides are read via getUTC* because both are calendar dates stored at UTC
+ * midnight — local fields off those instants read a day early west of UTC. A caller
+ * passing `asOf` must therefore pass a day, not a moment.
  */
-export function calculateAge(dob: Date | string, asOf: Date | string = new Date()): number {
+export function calculateAge(dob: Date | string, asOf: Date | string = orgCalendarDay()): number {
     const birthDate = new Date(dob);
     const today = new Date(asOf);
     let age = today.getUTCFullYear() - birthDate.getUTCFullYear();

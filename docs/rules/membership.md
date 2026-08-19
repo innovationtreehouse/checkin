@@ -166,11 +166,20 @@ Procedure below is built on them.
   consent link and its result comes back by hand. That is the arrangement, not a
   stopgap waiting to be automated.
 
-- Declining a scholarship or payment-plan request is a conversation between two
-  people. The app has no deny route and needs none.
+- A check that comes back with a restriction on how someone may volunteer is
+  carried by the board, not the app. Reviewers record only approval or rejection,
+  so a restricted volunteer is approved here and the restriction lives in the
+  board's own arrangement with them. The assumption holds as long as the reviewers
+  who read the report are the people who set that arrangement.
 
-- Adult children in a member household are handled by hand. Nothing in the app
-  gates on their status.
+- Declining a scholarship or payment-plan request is a conversation between two
+  people. Telling the family is the board's own act and happens outside the app.
+
+- Both signing adults in a household are marked as household leads. The app
+  records no relationship between members, so lead status and age are together
+  what separate a spouse from an adult child. A household running with one lead
+  and an unmarked spouse is indistinguishable from one with an adult child, and
+  marking the spouse a lead is what restores the distinction.
 
 ---
 
@@ -178,13 +187,9 @@ Procedure below is built on them.
 
 ### Application and review
 
-- An intake note holds the application at review so reviewers read it before
-  dues are settled. A household already holding a still-valid clearance goes
-  straight to payment regardless.
+- An intake note does not hold the application. It is shown to the reviewers,
+  who read it while the family pays.
   (`checkin-app/src/lib/membership/external.ts`)  [Decision]
-
-- Applicants are told about the hold where they write the note, not after
-  submitting.  [Decision]
 
 - An application in background-check review is the reviewers' work, not the
   board's. Board queues count blocked applications only.  [Decision]
@@ -197,6 +202,21 @@ Procedure below is built on them.
 
 - A clearance is dated when the second reviewer clears it, and the validity
   window runs from that date.  [Decision]
+
+- A household review covers one adult. Whoever approves first names the person
+  whose report they read, and a later reviewer confirms that same person. A
+  reviewer who believes the named person is wrong rejects, rather than naming
+  someone else.  [Decision]
+
+- An approval that named nobody counts toward nobody, including toward the adult a
+  later reviewer names. Nothing records whose report it read, so counting it would
+  date a clearance on one reviewer's reading and leave a row no worklist can tell
+  from a real one. A review carrying one is reset by the board and re-reviewed by
+  two.  [Decision — *Principle: fail closed*]
+
+- A board override names the adult it covers. It cannot infer one: a blocked
+  application never holds the second approval that would identify a subject, so
+  an override naming nobody would date a clearance against no one.  [Decision]
 
 - Every background-check decision and every payment certification records a
   written reason — wider than the policy, which requires documentation only for a
@@ -237,8 +257,8 @@ Procedure below is built on them.
   — a former member keeps app access and loses facility privileges. Because the
   lockout reaches the whole household, denial is confirmed before it executes.  [Decision — *Principle: accountability*]
 
-- A household containing a board member cannot be denied. Removing the board role
-  first is a separate act, as it is outside the app.  [Decision — deliberate limit]
+- A household containing a board member cannot be denied. The board role is
+  removed in the app first, and that removal is a separate act from the denial.  [Decision — deliberate limit]
 
 - The denied landing page says only that access is denied. No reason, no contact,
   no mention of membership, no way to sign out.  [Decision — deliberate limit; *Principle: no existence oracle*]
@@ -256,6 +276,11 @@ Procedure below is built on them.
 
 - The board can activate a household with no payment by certifying a payment
   plan.  [Decision — *Policy: Membership Policy, Art. XIII*]
+
+- A board member declines a membership scholarship or payment-plan request in the
+  app, and the decline sends nothing: the request clears and the household returns
+  to owing its dues by the normal route. The decision is recorded; carrying it to
+  the family is not the app's job.  [Decision — deliberate limit; *Principle: people decide about people*]
 
 - A household that has settled its dues but is still waiting on its background
   check is a member for program pricing and for reaching members-only programs,
@@ -276,6 +301,12 @@ Procedure below is built on them.
 
 - A membership stays active while its renewal is in progress.  [Decision]
 
+- Settling inside the renewal window buys the coming membership year — for a
+  family joining (INITIAL) exactly as for one renewing. The derived valid-until,
+  program-pricing coverage, and the renewal sweep's skip-test all read this one
+  rule, so a family that joins in-window is covered through the following
+  boundary and is not asked to renew for the year it just bought.  [Decision]
+
 - A household is never told its background check has gone stale, because nothing
   acts on staleness between renewals. It is read inside a renewal, where it
   decides whether that renewal needs a fresh one.  [Decision — *Policy: Membership Policy, Art. VI §VI.1*]
@@ -294,15 +325,30 @@ Procedure below is built on them.
 - Nobody is removed for falling out of compliance. The view reports and sends
   nothing, so a violation waits until a person looks.  [Decision — deliberate limit; *Principle: people decide about people*]
 
-### Background checks for program-attached adults
+### Background checks for individual adults
 
 - Activating a membership opens a background-check obligation for that
-  household's program-attached adults. It is surfaced for follow-up and gates
-  nothing — chasing it is a conversation, not a refusal at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
+  household's program-attached adults and for its signing adults. It is surfaced
+  for follow-up and gates nothing — chasing it is a conversation, not a refusal
+  at the door.  [Decision — deliberate limit; *Policy: Volunteer Policy, Art. IV*]
 
-- Age is judged as of the membership-year boundary, which counts as inside it.
-  Turning 18 afterwards waits for the next boundary rather than firing on the
-  birthday.  [Decision — deliberate limit]
+- A signing adult whom the household's own review did not name is covered here
+  rather than by that review, because a clearance covers only the adult who took
+  the check. Otherwise the second parent on the application — often the one
+  holding a key — belongs to no track at all.  [Decision — *Policy: Membership Policy, Art. VI §VI.1*]
+
+- The obligation follows an active membership. Leads of households that only ever
+  started an application, were denied or revoked, or were created by an import owe
+  nothing: they never became members, and the annual sweep must not open a check on
+  someone who did not apply.  [Decision — deliberate limit]
+
+- The annual sweep judges age as of the membership-year boundary, which counts as
+  inside it: turning 18 afterwards waits for the next sweep rather than firing on
+  the birthday.  [Decision — deliberate limit]
+
+- Activating a new membership judges age as of the activation instead, so someone
+  who has just turned 18 is caught on joining rather than read as a minor until
+  the next boundary comes round.  [Decision]
 
 - Under 18 is never checked, a minor being ineligible for one. This covers the
   young adult mentors, who volunteer without one.  [Decision — *Policy: Volunteer Policy, Art. IV*]
@@ -314,42 +360,51 @@ Procedure below is built on them.
 - A check covers the adult who took it. One person's clearance never satisfies
   another's.  [Decision]
 
-- An adult child who needs a background check needs their own sign-in, and the
-  lead supplies an email address for them.  [Decision]
+- A background check for an adult child needs neither a sign-in of their own nor
+  an email address in the app. The board or a household lead records that an
+  external check exists and submits it for review, and consent is implicit in the
+  subject having gone and taken it. The applicant-facing consent attestation is a
+  household path and never this one.  [Decision]
 
----
+### Individual agreement for adult children
 
-## Policy requirements not yet enforced here
+- An adult child of a household lead signs their own membership agreement rather
+  than being covered by the household's. A spouse does not: a spouse stays on the
+  household agreement.  [Decision]
 
-- **A household clearance stamps every lead, not the person who was checked.**
-  The household path carries one consent and one clearance for the whole
-  application, then writes that date onto each of its leads, with nothing tying
-  it to whoever submitted. This answers the household question correctly — policy
-  wants one adult checked — but the date is a per-person fact, and the
-  program-attached surface reads it per person. A lead who never took a check
-  reads there as covered rather than needed.
+- Signing it needs a sign-in of their own, and the lead supplies an email address
+  for them.  [Decision]
 
-- **A household that loses its only checked adult mid-year keeps its membership.**
-  Removing or demoting that person leaves the household active with youth still
-  enrolled, and nothing responds. Whether the answer is a block, a grace period,
-  or a warning is undecided.
+- It is signed again every membership year, as the household agreement is.
+  [Decision — *Policy: Membership Policy, Art. III §III.1*]
 
-- **The sysadmin role decides membership matters policy reserves to the board,
-  and has no policy existence at all.** The policy corpus enumerates board
-  members, officers, Treehouse leaders, program leaders, tool certifiers,
-  keyholders, and shop stewards. There is no sysadmin. Yet someone holding only
-  that flag can override a blocked application, certify a payment plan, and
-  grant a membership outright — while policy requires reviewers to be board
-  members or authorised in writing by the board, and makes the remedy for a
-  contested check an independent three-person appeals committee.
+- Age for this obligation is judged as of the day it is opened, because it opens
+  when the person turns 18 — deliberately unlike the background-check rule above,
+  which judges age at the membership-year boundary. The two populations therefore
+  differ for anyone with a birthday between today and the next boundary, and
+  aligning them would either ask a minor to sign or leave a new adult uncovered
+  for up to a year.  [Decision]
 
-  Compounding it: a sysadmin who is not a board member can **grant board
-  membership**, including to themselves. They cannot remove a sitting board
-  member, board membership can never be revoked to zero, and every action is
-  audit-logged with a required reason — so the board keeps the power to revoke
-  the flag. But who sits on the board can be changed by someone the policy does
-  not recognise.
+- Opened automatically only for a household member who is not a lead, is aged 18
+  to 25 with a date of birth on file, and is in a member household and attached to
+  a program that is running or ended within the last year. A non-lead adult over 25
+  is left out: at that age, not being a lead reads as a spouse the household has not
+  marked, not as an adult child.  [Decision — deliberate limit]
 
-  **This needs a board decision, not a code change chosen by whoever touches it
-  next.** Narrowing which surfaces accept the flag, or making it easier to
-  obtain, belongs to the board.
+- The one-year window is what stops the request repeating. An attachment is never
+  cleared when a program ends, so without it someone who took a single class at 18
+  would be asked again every year until they aged out. The window only bounds
+  programs that carry an end date; one left undated reads as still running, and its
+  members stay in the population.  [Decision — deliberate limit]
+
+- Never opened for a household lead, who signs the household's agreement. An open
+  individual agreement on a lead would take the place of the household one in the
+  signing flow and stall the household's activation or renewal.  [Decision]
+
+- The board may open one by hand for someone the automatic rule leaves out — not
+  attached to a program, or over 25 — but never for a lead, and never for someone
+  whose age is unknown.  [Decision]
+
+- It gates nothing. An unsigned individual agreement never blocks participation,
+  check-in, or the household's own membership.  [Decision — deliberate limit;
+  *Principle: people decide about people*]
