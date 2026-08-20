@@ -133,8 +133,11 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
 
         expect(res.status).toBe(200);
+        // #1631: arrivedVia is never restamped on correction — trends' exclusion
+        // filter reads it, so overwriting a LEAD_MARKED source would promote the
+        // visit into counted hours.
         expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
-            data: { arrivedAt: new Date("2026-07-20T14:05:00Z"), arrivedVia: "WEB" },
+            data: { arrivedAt: new Date("2026-07-20T14:05:00Z") },
         }));
         const audit = auditCreate.mock.calls[0][0].data;
         expect(audit).toMatchObject({
@@ -144,6 +147,35 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         expect(audit.newData.type).toBe("self_correction");
         expect(audit.newData.significance.flagged).toBe(false);
         expect(emailBoardMembers).not.toHaveBeenCalled();
+    });
+
+    // #1631 pin: a LEAD_MARKED (staff-asserted) arrival must keep that source
+    // through a correction, or trends' `notIn ["LEAD_MARKED", "SYSTEM"]` filter
+    // starts counting it as measured hours.
+    it("keeps a LEAD_MARKED arrival's source on correction (does not restamp WEB)", async () => {
+        const leadMarked = { ...baseVisit, arrivedVia: "LEAD_MARKED", departedVia: "LEAD_MARKED" };
+        visitFindUnique.mockResolvedValue(leadMarked);
+        // A real update returns the row's untouched columns as-is, not a static
+        // fixture's default — the mock has to reflect that to catch this bug.
+        tx.visit.update.mockImplementation(async (args: { data: Record<string, unknown> }) => ({ ...leadMarked, ...args.data }));
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+
+        expect(res.status).toBe(200);
+        expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
+            data: { arrivedAt: new Date("2026-07-20T14:05:00Z") }, // no arrivedVia key at all
+        }));
+        const { visit } = await res.json();
+        expect(visit.arrivedVia).toBe("LEAD_MARKED");
+    });
+
+    it("still restamps departedVia to WEB on a departure correction (no trends reader for it)", async () => {
+        visitFindUnique.mockResolvedValue({ ...baseVisit, arrivedVia: "LEAD_MARKED", departedVia: "LEAD_MARKED" });
+        const res = await PATCH(req("PATCH", { departedAt: "2026-07-20T16:30:00Z" }), ctx as never);
+
+        expect(res.status).toBe(200);
+        expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
+            data: { departedAt: new Date("2026-07-20T16:30:00Z"), departedVia: "WEB" },
+        }));
     });
 
     it("flags a big move of a measured (SCANNER) arrival to the board", async () => {
