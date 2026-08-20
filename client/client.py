@@ -13,6 +13,7 @@ import html
 import json
 import os
 import secrets
+import subprocess
 import sys
 import time
 import threading
@@ -37,6 +38,10 @@ log = logging.getLogger("kiosk")
 # The backend page serving the kiosk display; `mode=kiosk` selects its kiosk
 # layout. Overridable per-Pi via config.json.
 DEFAULT_KIOSK_PATH = "/attendance/current?mode=kiosk"
+
+# Self-update loop guard (see version_poller): remote head we already exited
+# for. Relative path -- kiosk.sh cds into client/ before launching client.py.
+SELF_UPDATE_STATE_FILE = ".self_update_last_target"
 
 def load_config(path="config.json"):
     if not os.path.exists(path):
@@ -603,10 +608,35 @@ def attendance_poller(backend, state, interval=30):
                 log.info(f"Attendance poll: {new_counts.get('total', '?')} present")
                 state.push_event({"html": "", "counts": new_counts})
 
-def version_poller(backend, state, interval=60):
+def _read_last_restart_target(path=SELF_UPDATE_STATE_FILE):
+    # Missing/unreadable file means "never restarted" -- same as no target.
+    try:
+        with open(path) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+def _write_last_restart_target(remote_head, path=SELF_UPDATE_STATE_FILE):
+    # True only once the sha reads back off disk; the caller must not exit
+    # on False or the next boot forgets this attempt and loops (#1616).
+    try:
+        with open(path, "w") as f:
+            f.write(remote_head)
+    except OSError as e:
+        log.warning(f"Could not persist self-update state to {path}: {e}")
+        return False
+    return _read_last_restart_target(path) == remote_head
+
+def _should_restart_for_update(remote_head, last_restart_target):
+    # False once we've already exited for this exact remote_head and the
+    # restart didn't move HEAD past it (non-fast-forward pull); True for a
+    # never-tried or newly-advanced target.
+    return remote_head != last_restart_target
+
+def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE):
     """Background thread that checks for client and server version updates."""
-    import subprocess
-    
+    last_restart_target = _read_last_restart_target(state_path)
+
     # Get initial server version
     initial_server_version = None
     for _ in range(6):
@@ -636,8 +666,29 @@ def version_poller(backend, state, interval=60):
             remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
             
             if local_head and remote_head and local_head != remote_head:
-                log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
-                os._exit(0)
+                if _should_restart_for_update(remote_head, last_restart_target):
+                    if _write_last_restart_target(remote_head, state_path):
+                        log.info(f"Client version update available ({local_head} -> {remote_head}). Restarting client.")
+                        last_restart_target = remote_head
+                        os._exit(0)
+                    else:
+                        # No target on disk means the next boot can't see this
+                        # attempt, so exiting risks the loop. Stay up instead.
+                        log.warning(
+                            f"Could not record self-update target {remote_head} "
+                            f"in {state_path}. Not restarting; staying on "
+                            f"{local_head}."
+                        )
+                else:
+                    # Restarted for this target already and HEAD didn't move --
+                    # git pull can't fast-forward. Stay up and keep serving
+                    # scans on the current version instead of looping.
+                    log.warning(
+                        f"Still on {local_head}, git pull did not advance past "
+                        f"{remote_head} after a restart (dirty tree, local "
+                        "commits, or diverged history on the Pi). Not "
+                        "restarting again until the checkout is fixed."
+                    )
         except Exception as e:
             log.error(f"Error checking client version: {e}")
 
