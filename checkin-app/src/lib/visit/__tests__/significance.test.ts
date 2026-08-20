@@ -97,6 +97,7 @@ describe("deleteSignificance", () => {
         ).flagged).toBe(true);
         expect(deleteSignificance(
             { arrivedAt: at(14), departedAt: null, arrivedVia: "WEB", departedVia: null },
+            { now: at(15) },
         ).flagged).toBe(true);
     });
 
