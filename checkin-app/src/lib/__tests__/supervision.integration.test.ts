@@ -116,12 +116,15 @@ describe('supervising adults (integration)', () => {
         await enrol('gil', byDates.id);
     });
 
+    /** Only this suite's rows: a bare deleteMany({}) wipes every other suite's visits too. */
+    const ownIds = () => Object.values(people).map(p => p.id);
+
     beforeEach(async () => {
-        await prisma.visit.deleteMany({});
+        await prisma.visit.deleteMany({ where: { personId: { in: ownIds() } } });
     });
 
     afterAll(async () => {
-        const ids = Object.values(people).map(p => p.id);
+        const ids = ownIds();
         await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
         await prisma.programParticipant.deleteMany({ where: { programId: { in: programIds } } });
         await prisma.event.deleteMany({ where: { programId: { in: programIds } } });
