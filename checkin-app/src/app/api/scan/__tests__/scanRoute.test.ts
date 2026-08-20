@@ -240,6 +240,23 @@ describe('POST /api/scan', () => {
             expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
         });
 
+        // Without a usable scannedAt a replay would silently inherit server-now:
+        // the freshness check passes trivially and the out-of-order guard
+        // compares against now, so a stale replay toggles instead of parking.
+        it('rejects replay:true without a scannedAt', async () => {
+            const res = await POST(replayReq({ scannedAt: undefined }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toContain('scannedAt');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
+        it('rejects replay:true with an unparseable scannedAt', async () => {
+            const res = await POST(replayReq({ scannedAt: 'not-a-date' }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toContain('scannedAt');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
         it('toggles a fresh replay using scannedAt as the visit time', async () => {
             (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
             (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);

@@ -40,8 +40,8 @@ export const POST = withKiosk(
         }
 
         // Optional replay fields from a queued kiosk scan. Absent → exactly
-        // today's behavior (legacy/web callers). A malformed scannedAt falls
-        // back to now rather than propagating an Invalid Date into the visit.
+        // today's behavior (legacy/web callers). An unparseable scannedAt
+        // normalizes to null, which a replay then rejects below.
         const clientEventId = (typeof body.clientEventId === 'string' && body.clientEventId) || null;
         const parsedScannedAt = typeof body.scannedAt === 'string' ? new Date(body.scannedAt) : null;
         const scannedAt = parsedScannedAt && !isNaN(parsedScannedAt.getTime()) ? parsedScannedAt : null;
@@ -53,14 +53,21 @@ export const POST = withKiosk(
             return apiError("replay must be a boolean.", 400);
         }
         const isReplay = body.replay === true;
-        if (isReplay && !clientEventId) {
-            return apiError("A replayed scan requires clientEventId.", 400);
-        }
 
-        // A replay carries its own event time; a live scan is happening now, so
-        // it never inherits the kiosk's clock (D3's window and the debounce both
-        // measure against server now).
-        const eventTime = isReplay && scannedAt ? scannedAt : new Date();
+        // A live scan is happening now and never inherits the kiosk's clock (D3's
+        // window and the debounce both measure against server now). A replay must
+        // carry its own id and event time: falling back to now would make the
+        // freshness check pass trivially and toggle a scan that should park.
+        let eventTime = new Date();
+        if (isReplay) {
+            if (!clientEventId) {
+                return apiError("A replayed scan requires clientEventId.", 400);
+            }
+            if (!scannedAt) {
+                return apiError("A replayed scan requires a valid scannedAt.", 400);
+            }
+            eventTime = scannedAt;
+        }
 
         // Web session: check if user can scan this participant
         let pendingHouseholdCheck = false;
