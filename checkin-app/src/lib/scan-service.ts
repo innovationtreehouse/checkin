@@ -136,6 +136,15 @@ export async function processCheckout(
 
             facilityClosed = true;
 
+            // The token is spent. Clear it before the visit departs so no
+            // redeemable force-close state survives on a closed row — every
+            // lookup filters `departedAt: null` today, but one that forgets to
+            // shouldn't find a live-looking token.
+            await db.visit.update({
+                where: { id: activeVisitId },
+                data: { forceCloseWarnedAt: null, forceCloseToken: null }
+            });
+
             // The facility-wide sweep takes row locks on EVERY open visit, and
             // the email kick fires its own DB queries. Neither may run inside the
             // scan route's per-participant advisory-lock transaction: it would

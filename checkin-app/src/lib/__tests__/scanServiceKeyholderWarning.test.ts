@@ -99,6 +99,11 @@ describe("force close is bound to the confirm token", () => {
 
         expect(res.status).toBe(200);
         expect((await res.json()).facilityClosed).toBe(true);
+        // Spent, not left behind on the now-departed visit.
+        expect(db.visit.update).toHaveBeenCalledWith({
+            where: { id: 42 },
+            data: { forceCloseWarnedAt: null, forceCloseToken: null },
+        });
     });
 
     it("honors a token minted before an outage — no elapsed-time gate (§5.23a)", async () => {
