@@ -67,8 +67,10 @@ function minutesBetween(a: Date | null, b: Date | null): number {
     return Math.abs(a.getTime() - b.getTime()) / 60000;
 }
 
-/** `byProxy`: the actor is not the visit's person (a household lead acting for a member). */
-export type SignificanceOpts = { byProxy?: boolean };
+/** `byProxy`: the actor is not the visit's person (a household lead acting for
+ * a member). `now`: clock for scoring an open visit's delete — tests inject a
+ * fixed value; defaults to real time. */
+export type SignificanceOpts = { byProxy?: boolean; now?: Date };
 
 /** Significance of editing a visit's times, weighted by the OLD values' sources. */
 export function editSignificance(
@@ -83,11 +85,13 @@ export function editSignificance(
     return { score: Math.round(score), flagged: score >= FLAG_THRESHOLD };
 }
 
-/** A delete always flags — the floor. Score reflects how much recorded time vanished. */
+/**
+ * A delete always flags — the floor. Score reflects how much recorded time
+ * vanished; a still-open visit has no recorded end, so it scores against time
+ * on site so far — deleting the live roster is not "nothing happened yet".
+ */
 export function deleteSignificance(visit: VisitTimes, opts: SignificanceOpts = {}): Significance {
-    const duration = visit.departedAt
-        ? minutesBetween(visit.arrivedAt, visit.departedAt)
-        : 0;
+    const duration = minutesBetween(visit.arrivedAt, visit.departedAt ?? opts.now ?? new Date());
     const weight = Math.max(
         weightOf(visit.arrivedVia, "arrival", visit),
         weightOf(visit.departedVia, "departure", visit),
