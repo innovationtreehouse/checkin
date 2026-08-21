@@ -18,6 +18,7 @@ type ProgramSummary = {
   phase: string;
   enrollmentStatus: string;
   leadMentorId: number | null;
+  maxParticipants: number | null;
   _count?: {
     participants: number;
     volunteers: number;
@@ -137,7 +138,7 @@ export default function PublicProgramsDirectory() {
                   <Card withBorder radius="sm" padding="xs" mb="md">
                     <Group justify="space-around">
                       <Stack gap={0} align="center">
-                        <Text fw={700}>{program._count.participants}</Text>
+                        <Text fw={700}>{program._count.participants}{program.maxParticipants != null && `/${program.maxParticipants}`}</Text>
                         <Text size="xs" c="dimmed">Enrolled</Text>
                       </Stack>
                       <Divider orientation="vertical" />

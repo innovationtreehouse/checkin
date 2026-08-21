@@ -298,7 +298,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
                 <Card withBorder radius="md" padding="md">
                   <Group justify="space-around">
-                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.participants?.length || 0} {program.maxParticipants ? `/ ${program.maxParticipants}` : ''}</Text><Text size="sm" c="dimmed">Participants Enrolled</Text></Stack>
+                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.participants?.length || 0} {program.maxParticipants != null ? `/ ${program.maxParticipants}` : ''}</Text><Text size="sm" c="dimmed">Participants Enrolled</Text></Stack>
                     <Divider orientation="vertical" />
                     <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.volunteers?.length || 0}</Text><Text size="sm" c="dimmed">Assigned Volunteers</Text></Stack>
                     <Divider orientation="vertical" />
