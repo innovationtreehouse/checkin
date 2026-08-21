@@ -16,7 +16,7 @@ const MAX_MERGE_HOPS = 5;
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; forceCloseToken?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -25,6 +25,14 @@ export const POST = withKiosk(
         if (!participantId || typeof participantId !== 'number') {
             return apiError("A valid numeric participantId is required.", 400);
         }
+
+        // Optional force-close confirm token, echoed from the warning response.
+        // Anything that isn't a non-empty string is simply "no token" — it can
+        // only ever grant the confirm, never deny an ordinary scan.
+        const confirmToken =
+            typeof body.forceCloseToken === 'string' && body.forceCloseToken.length > 0
+                ? body.forceCloseToken
+                : null;
 
         // Web session: check if user can scan this participant
         let pendingHouseholdCheck = false;
@@ -110,10 +118,22 @@ export const POST = withKiosk(
             // which $queryRaw cannot deserialize. $executeRaw just runs it.
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${participant.id})`;
 
+            // A scan echoing a live confirm token IS the force-close confirm, so
+            // the debounce must not swallow it (§5.16). Single-use: the confirm
+            // spends the token, so a stray second read debounces as usual.
+            const isConfirm = confirmToken !== null && (await tx.visit.count({
+                where: {
+                    personId: participant.id,
+                    departedAt: null,
+                    deletedAt: null,
+                    forceCloseToken: confirmToken,
+                },
+            })) > 0;
+
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = await tx.rawBadgeLog.findFirst({
+            const recentScan = isConfirm ? null : await tx.rawBadgeLog.findFirst({
                 where: {
                     personId: participant.id,
                     timestamp: {
@@ -149,7 +169,7 @@ export const POST = withKiosk(
             });
 
             if (activeVisit) {
-                return await processCheckout(participant, activeVisit.id, authType, tx);
+                return await processCheckout(participant, activeVisit.id, authType, tx, confirmToken);
             } else {
                 return await processCheckin(participant, authType, tx);
             }

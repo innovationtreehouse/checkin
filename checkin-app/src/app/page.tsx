@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signIn } from "next-auth/react";
 import {
@@ -37,6 +37,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [isCheckedIn, setIsCheckedIn] = useState<boolean | null>(null);
+
+  // Force-close confirm token from the last "others are still here" warning.
+  // Echoed on the next click to confirm; dropped when its countdown lapses.
+  const forceCloseToken = useRef<string | null>(null);
 
   const [isLastKeyholder, setIsLastKeyholder] = useState(false);
   const [isTwoDeepViolation, setIsTwoDeepViolation] = useState(false);
@@ -111,16 +115,25 @@ export default function Home() {
     setMessage("");
     try {
       const participantId = session.user?.id;
+      const token = forceCloseToken.current;
+      forceCloseToken.current = null; // single use, whether or not it confirms
       const res = await fetch('/api/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId })
+        body: JSON.stringify({ participantId, ...(token ? { forceCloseToken: token } : {}) })
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessage(`${data.type === 'checkin' ? 'Successfully checked in!' : 'Successfully checked out!'}`);
         await checkAttendanceStatus(); // Re-fetch the status securely
       } else {
+        if (data.type === 'warning' && data.forceCloseToken) {
+          forceCloseToken.current = data.forceCloseToken;
+          const seconds = Number(data.confirmSeconds) || 15;
+          setTimeout(() => {
+            if (forceCloseToken.current === data.forceCloseToken) forceCloseToken.current = null;
+          }, seconds * 1000);
+        }
         setMessage(`Error: ${data.error || 'Failed to update attendance'}`);
       }
     } catch {
