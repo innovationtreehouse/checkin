@@ -290,7 +290,7 @@ describe('Admin Visits API Integration Tests', () => {
 
         // `arrivedVia` records how the arrival was measured, not who last touched
         // the row, so correcting the time must not restamp it: this person did
-        // badge in, and `facility/trends` drops LEAD_MARKED arrivals outright.
+        // badge in, and correction significance weights a scan above a roster mark.
         it('leaves arrivedVia alone when the board corrects a scanned arrival', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true }

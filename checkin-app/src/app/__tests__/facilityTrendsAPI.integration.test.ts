@@ -8,12 +8,14 @@
  * authzRoleRejection.integration.test.ts — this file focuses on the success
  * path: bucketing visits by period, the volunteer/participant split (by program
  * enrollment — ProgramParticipant, NOT age), structured (event-associated) vs
- * unstructured hours, the `arrivedVia=LEAD_MARKED` exclusion (synthetic "marked
- * present" visits, plus its pre-split `SYSTEM` spelling) and the cases it must
- * not swallow — an untagged arrival, a real visit whose time staff corrected via
- * the staff route, and a member's self-correction (#1631) — plus the `programId`
- * filter and the invalid-period 400. Corrections are driven through the real
- * PATCH routes, since a hand-built fixture cannot catch a wrong stamp.
+ * unstructured hours, and source-independence: every completed visit counts
+ * whatever recorded it — SCANNER, WEB, LEAD_MARKED, the legacy `SYSTEM`
+ * spelling, or nothing at all. The only exclusions left are structural — an
+ * open visit (no duration), a soft-deleted one, and anything outside the
+ * lookback window — plus the `programId` filter and the invalid-period 400.
+ * Corrections are driven through the real PATCH routes, since a hand-built
+ * fixture cannot catch a wrong `arrivedVia` stamp; the stamp still matters
+ * because correction significance is weighted by source.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
@@ -114,23 +116,20 @@ describe('Facility trends API', () => {
         const unstructured = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(1), departedAt: departure(1, 1), arrivedVia: 'WEB' },
         });
-        // Synthetic "marked present" visit (arrivedVia LEAD_MARKED) — the event
-        // window is a placeholder, not measured time, so it is excluded entirely.
+        // Staff-asserted "marked present" visit (arrivedVia LEAD_MARKED): a
+        // completed visit like any other, 3h that counts.
         const synthetic = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'LEAD_MARKED', associatedEventId: eventId },
         });
-        // The same thing in its pre-split spelling. A rolling deploy's drain
-        // window lets the previous release keep writing SYSTEM, so the exclusion
-        // must still catch it — 3h that must not reach structuredHours.
+        // The same thing in its pre-split spelling. A rolling deploy's drain window
+        // lets the previous release keep writing SYSTEM — 3h, counted the same.
         const legacySynthetic = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(3), departedAt: departure(3, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
-        // Still-open visit (no departedAt) — excluded (departedAt: { not: null } in the where).
-        const open = await prisma.visit.create({
-            data: { personId: youthId, arrivedAt: arrival(0), arrivedVia: 'WEB' },
-        });
-        // A program of its own, so the untagged-arrival assertions can scope by
-        // programId and be exact instead of leaning on the shared month bucket.
+        // A program of its own, so the source-independence and structural-exclusion
+        // assertions can scope by programId and be exact instead of leaning on the
+        // shared month bucket. Four visits hang off it, one per person so that any
+        // one of them leaking into the totals is individually visible.
         const untaggedProgram = await prisma.program.create({ data: { name: `Untagged ${TAG}` } });
         untaggedProgramId = untaggedProgram.id;
         const untaggedEvent = await prisma.event.create({
@@ -141,13 +140,24 @@ describe('Facility trends API', () => {
         const untagged = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(2), departedAt: departure(2, 2), arrivedVia: null, associatedEventId: untaggedEventId },
         });
-        // Staff-asserted arrival in the same program, 3h, still excluded.
+        // Staff-asserted arrival in the same program, 3h, counted the same.
         const untaggedProgramSynthetic = await prisma.visit.create({
             data: { personId: youthId, arrivedAt: arrival(2), departedAt: departure(2, 3), arrivedVia: 'LEAD_MARKED', associatedEventId: untaggedEventId },
         });
+        // Still-open visit (no departedAt) — excluded by `departedAt: { not: null }`.
+        // Its person appears nowhere else in this program, so admitting it would
+        // show up as an extra unique volunteer even though it adds 0 hours.
+        const open = await prisma.visit.create({
+            data: { personId: enrolledAdultId, arrivedAt: arrival(0), arrivedVia: 'WEB', associatedEventId: untaggedEventId },
+        });
+        // Soft-deleted visit — excluded by `deletedAt: null`. A conspicuous 7h so
+        // that admitting it is unmistakable in the totals.
+        const softDeleted = await prisma.visit.create({
+            data: { personId: adminId, arrivedAt: arrival(4), departedAt: departure(4, 7), arrivedVia: 'SCANNER', associatedEventId: untaggedEventId, deletedAt: new Date() },
+        });
 
         visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, legacySynthetic.id, open.id,
-            untagged.id, untaggedProgramSynthetic.id);
+            untagged.id, untaggedProgramSynthetic.id, softDeleted.id);
     });
 
     afterAll(async () => {
@@ -183,8 +193,9 @@ describe('Facility trends API', () => {
         const thisMonth = data.buckets.find((b: { periodStart: string }) => b.periodStart === BUCKET_START.toISOString());
         expect(thisMonth.uniqueVolunteers).toBeGreaterThanOrEqual(1);
         expect(thisMonth.uniqueParticipants).toBeGreaterThanOrEqual(1);
-        // Structured (event-associated) = the 3h enrolled-adult + 2h youth visits; unstructured =
-        // the 1h volunteer visit. SYSTEM-sourced and still-open visits are excluded.
+        // Structured (event-associated) = the 3h enrolled-adult + 2h youth visits, plus the
+        // staff-asserted and legacy-SYSTEM ones; unstructured = the 1h volunteer visit.
+        // Still-open and soft-deleted visits are excluded.
         expect(thisMonth.structuredHours).toBeGreaterThanOrEqual(5);
         expect(thisMonth.unstructuredHours).toBeGreaterThanOrEqual(1);
         expect(data.totals.label).toBe('Total');
@@ -192,8 +203,9 @@ describe('Facility trends API', () => {
 
     it('splits by program enrollment, not age', async () => {
         // Scope to `programId` so only this test's event-associated visits are counted
-        // (deterministic — otherProgramId/global data can't leak in). Two visits qualify:
-        // the enrolled adult (3h) and the non-enrolled youth (2h).
+        // (deterministic — otherProgramId/global data can't leak in). Four visits qualify:
+        // the enrolled adult (3h SCANNER), the non-enrolled youth (2h SCANNER), and the
+        // volunteer's staff-asserted (3h) and legacy-SYSTEM (3h) visits.
         const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${programId}`);
         expect(res.status).toBe(200);
         const data = await res.json();
@@ -202,33 +214,52 @@ describe('Facility trends API', () => {
         expect(data.totals.uniqueParticipants).toBe(1);
         expect(data.totals.totalParticipantHours).toBe(3);
         // Non-enrolled YOUTH counts as a volunteer — age (<18) does not make them a participant.
-        expect(data.totals.uniqueVolunteers).toBe(1);
-        expect(data.totals.totalVolunteerHours).toBe(2);
+        expect(data.totals.uniqueVolunteers).toBe(2);
+        expect(data.totals.totalVolunteerHours).toBe(8);
     });
 
-    // The source filter is written as a NOT IN, and in SQL a NULL never satisfies
-    // one — so an arrival with no source recorded drops out of the chart entirely
-    // unless it is admitted explicitly.
-    it('counts an untagged arrival and still drops the staff-marked one', async () => {
+    // Source records how an arrival was measured; it does not decide whether the
+    // visit is facility time. An untagged arrival, a scanned one, a staff roster
+    // mark and the legacy SYSTEM spelling all sum the same way.
+    it('counts every source alike — untagged, staff-marked and legacy SYSTEM', async () => {
         const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${untaggedProgramId}`);
         expect(res.status).toBe(200);
         const data = await res.json();
 
-        // The 2h untagged visit, and only it — the 3h LEAD_MARKED visit in the same
-        // program is excluded, so its person never appears either.
-        expect(data.totals.uniqueVolunteers).toBe(1);
-        expect(data.totals.totalVolunteerHours).toBe(2);
+        // The 2h untagged visit AND the 3h LEAD_MARKED one in the same program.
+        expect(data.totals.uniqueVolunteers).toBe(2);
+        expect(data.totals.totalVolunteerHours).toBe(5);
         expect(data.totals.uniqueParticipants).toBe(0);
-        expect(data.totals.structuredHours).toBe(2);
+        expect(data.totals.structuredHours).toBe(5);
+
+        // The legacy SYSTEM spelling hangs off `programId`'s event: 3h of the 8
+        // volunteer hours there, alongside the 3h LEAD_MARKED and 2h SCANNER ones.
+        const legacy = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${programId}`)).json();
+        expect(legacy.totals.totalVolunteerHours).toBe(8);
+    });
+
+    // What the route still excludes, now that source no longer gates anything:
+    // an open visit has no duration to sum, and a deleted visit did not happen.
+    it('still excludes open and soft-deleted visits', async () => {
+        const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${untaggedProgramId}`);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+
+        // Both hang off the same event as the two counted visits, each on a person
+        // who appears nowhere else in this program — so admitting the open one would
+        // read as a third unique volunteer, and the deleted one as 7 extra hours.
+        expect(data.totals.uniqueVolunteers).toBe(2);
+        expect(data.totals.totalVolunteerHours).toBe(5);
+        // The deleted row is still there: it is filtered out, not missing.
+        expect(await prisma.visit.count({ where: { associatedEventId: untaggedEventId, deletedAt: { not: null } } })).toBe(1);
     });
 
     // Driven through the PATCH route on purpose. Every other case here builds its
     // `arrivedVia` by hand, so both the correct behaviour and the broken one pass
     // them — only calling the real correction path can catch a wrong stamp.
     //
-    // A board member fixing a badge time must not delete the visit's hours. The
-    // exclusion is for visits only a third party asserts happened (LEAD_MARKED);
-    // this one was scanned, so correcting its arrival re-times it, never removes it.
+    // A board member fixing a badge time re-times the visit; it never removes it,
+    // and the corrected duration is what the hours show.
     it('keeps a corrected scanner visit in the hours after a staff PATCH', async () => {
         const program = await prisma.program.create({ data: { name: `Corrected ${TAG}` } });
         const event = await prisma.event.create({
@@ -260,9 +291,7 @@ describe('Facility trends API', () => {
         }) as unknown as import('next/server').NextRequest);
         expect(patch.status).toBe(200);
 
-        // Still counted, now at the corrected 1h. Restamping the arrival
-        // LEAD_MARKED would make these 0 — the visit would vanish from the trend
-        // for having been fixed.
+        // Still counted, now at the corrected 1h.
         const after = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
         expect(after.totals.uniqueVolunteers).toBe(1);
         expect(after.totals.totalVolunteerHours).toBe(1);
@@ -275,10 +304,11 @@ describe('Facility trends API', () => {
     });
 
     // #1631 pin: PATCH /api/attendance/manual/[id] (member self-correction) must
-    // not restamp arrivedVia WEB. Before the fix, correcting the arrival time of
-    // a LEAD_MARKED (staff-asserted) visit promoted it past the trends filter —
-    // it started counting as measured hours the moment its time was fixed.
-    it('keeps a self-corrected LEAD_MARKED visit excluded from trends hours', async () => {
+    // not restamp arrivedVia WEB. The source is the correction-significance
+    // weight — a staff observation overwritten by the member is a bigger deal
+    // than a self-report edited by its own author — so it has to survive the
+    // edit. The hours count either way; the stamp is what must not move.
+    it('keeps a self-corrected LEAD_MARKED visit counted, and its source intact', async () => {
         const program = await prisma.program.create({ data: { name: `SelfCorrectedLM ${TAG}` } });
         const event = await prisma.event.create({
             data: { programId: program.id, name: `SelfCorrectedLM event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
@@ -297,7 +327,7 @@ describe('Facility trends API', () => {
         visitIds.push(visit.id);
 
         const before = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
-        expect(before.totals.totalVolunteerHours).toBe(0);
+        expect(before.totals.totalVolunteerHours).toBe(2);
 
         // The member corrects their own arrival — a household lead is not needed here.
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: volunteerId } });
@@ -307,13 +337,13 @@ describe('Facility trends API', () => {
         }) as unknown as import('next/server').NextRequest, { params: Promise.resolve({ id: String(visit.id) }) } as never);
         expect(patch.status).toBe(200);
         const patched = await prisma.visit.findUnique({ where: { id: visit.id } });
-        expect(patched?.arrivedVia).toBe('LEAD_MARKED'); // not restamped WEB
+        expect(patched?.arrivedVia).toBe('LEAD_MARKED'); // not restamped WEB — the point of this test
 
-        // Still 0 — restamping WEB would have promoted this into 1h of counted hours.
+        // Counted before and after, at the corrected 1h.
         const after = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
-        expect(after.totals.uniqueVolunteers).toBe(0);
-        expect(after.totals.totalVolunteerHours).toBe(0);
-        expect(after.totals.structuredHours).toBe(0);
+        expect(after.totals.uniqueVolunteers).toBe(1);
+        expect(after.totals.totalVolunteerHours).toBe(1);
+        expect(after.totals.structuredHours).toBe(1);
 
         await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
         await prisma.visit.delete({ where: { id: visit.id } });

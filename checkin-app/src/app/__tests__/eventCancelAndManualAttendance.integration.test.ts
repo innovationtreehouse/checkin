@@ -359,9 +359,8 @@ describe('PATCH /api/events/[id] — cancel, manual attendance, past-event guard
 
     // arrivedVia is how the arrival was MEASURED, so only a visit this mark
     // creates is LEAD_MARKED. Stamping it unconditionally would relabel a real
-    // badge-in as staff-asserted and drop it out of facility/trends, which
-    // excludes LEAD_MARKED — trading an over-count for an under-count on
-    // exactly the people who did scan in.
+    // badge-in as staff-asserted, downgrading the trust weight that correction
+    // significance reads for exactly the people who did scan in.
     describe('manualEditAttendance — arrivedVia/departedVia', () => {
         it('stamps LEAD_MARKED on both fields of a visit it creates', async () => {
             const event = await makeEvent('source-create', -3 * HOUR);

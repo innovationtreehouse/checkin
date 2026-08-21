@@ -150,14 +150,15 @@ else is rejected — no cross-program fabrication.
 `/api/scan` ([route.ts](../../src/app/api/scan/route.ts)) is `withKiosk`,
 live-only, `personId` from the badge — not a staff-for-other path.
 
-### Hours — derived read, roster-marks excluded
+### Hours — derived read, source-independent
 `GET /api/facility/trends`
 ([route.ts](../../src/app/api/facility/trends/route.ts)), gate sysadmin/board.
-Hours = `Σ (departedAt − arrivedAt)` over visits, bucketed. Excludes
-`arrivedVia ∈ {LEAD_MARKED, SYSTEM}` — a roster mark is a placeholder window, not
-measured time, and the legacy spelling stays in the list for the drain-window
-reason in §3. No stored-hours column exists; the only thing to correct is the
-underlying visits. Keep the exclusion.
+Hours = `Σ (departedAt − arrivedAt)` over visits, bucketed. Every completed visit
+counts toward facility hours whatever recorded it — a roster mark is facility
+time the same as a badge scan. Source governs how a correction is weighed and
+reviewed, not whether the visit is counted. The exclusions are structural: an
+open visit has no duration to sum, and a deleted visit did not happen. No
+stored-hours column exists; the only thing to correct is the underlying visits.
 
 ### Audit substrate — already present
 `AuditLog` (schema line 1083): `actorId`, `action` (CREATE/EDIT/DELETE),
@@ -447,8 +448,9 @@ mistake as easy as making one. **No backdating time-cap** — the control is the
 audit trail plus the significance flag, not a time fence:
 - Every edit and delete is audited (`actorId`, `oldData`, `newData`).
 - Large or high-trust-overwriting changes flag to the board in real time.
-- `trends` excludes `LEAD_MARKED`; `WEB` self-reports are visibly `WEB` in the
-  visits table (source icon) — reconcilable.
+- Every visit carries its source: `WEB` self-reports are visibly `WEB` in the
+  visits table (source icon), so hours stay reconcilable against how they were
+  recorded even though all of them count.
 - AT12 aggregates the flags, so a member whose edits flag often is a standing
   signal, not a buried audit row.
 

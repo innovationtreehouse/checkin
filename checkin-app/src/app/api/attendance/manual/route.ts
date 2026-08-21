@@ -18,9 +18,9 @@ import { visitSubject } from "@/lib/visit/scope";
 // Every entry is audit-logged (see below). A member CAN backdate a closed visit
 // arbitrarily far; that is accepted on purpose (people remember a past visit
 // days later). The only downside is self-reported hours in facility/trends,
-// which the board reconciles against the audit trail — it is not a security or
-// integrity boundary. Recurring-audit note: this is not an IDOR and not a
-// fabrication vuln; do not re-flag the arbitrary backdate.
+// which the board reconciles against the audit trail and the visit's WEB source
+// — it is not a security or integrity boundary. Recurring-audit note: this is
+// not an IDOR and not a fabrication vuln; do not re-flag the arbitrary backdate.
 export const POST = withAuth({}, async (req, auth) => {
     if (auth.type !== 'session') return apiError("Unauthorized", 401);
     try {
