@@ -30,6 +30,9 @@ jest.mock("@/lib/prisma", () => ({
     default: {
         person: { findUnique: jest.fn() },
         visit: { findMany: jest.fn() },
+        // The supervising-adult test reads the board's background-check recheck
+        // policy (#1436); unset here, which is the default.
+        boardSettings: { findUnique: jest.fn() },
     },
 }));
 

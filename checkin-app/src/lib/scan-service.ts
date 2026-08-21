@@ -5,12 +5,18 @@ import { apiError, apiJson } from "@/lib/api-response";
 import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
 import { MAX_VISIT_MS } from "@/lib/visitTimes";
-import { randomUUID } from "node:crypto";
+import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits, youthIsPresent } from "@/lib/supervision";
+import { isYouth } from "@/lib/time";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 /** Seconds the kiosk counts down after showing the force-close warning. The
  *  countdown is display; the confirm is the token, which has no elapsed-time
  *  gate — see the confirm check in processCheckout. */
 export const FORCE_CLOSE_CONFIRM_SECONDS = 15;
+
+/** Countdown on the supervision confirm (#1436). Same 3s debounce eats the front,
+ *  so the kiosk copy says "3 to 15 seconds". */
+const SUPERVISION_CONFIRM_MS = 15_000;
 
 /**
  * Process a check-in for a participant who has no active visit.
@@ -53,9 +59,21 @@ export async function processCheckin(participant: Person, authType: string, db: 
         console.error('Checkin notification error:', err)
     );
 
+    // A youth arriving into a room short of supervision is WARNED, never blocked
+    // (#1436): opening the door before the second adult is the keyholder's call to
+    // make, and the app's job is to tell the room. Only asked for youth, so an
+    // ordinary adult check-in still costs no extra query.
+    const isYouthArrival = !participant.isDeclaredAdult
+        && isYouth(participant.dateOfBirth, { unknownIs: "youth" });
+    const supervisionWarning = isYouthArrival
+        && supervisingAdultCount(await supervisingAdultVisits(db)) < MIN_SUPERVISING_ADULTS
+        ? `Warning: fewer than ${MIN_SUPERVISING_ADULTS} supervising adults are in the building.`
+        : undefined;
+
     return apiJson({
         message: "Checked in successfully",
         type: "checkin" as const,
+        warning: supervisionWarning,
         participant,
         visit: newVisit,
         signedRequest: authType === "kiosk",
@@ -106,8 +124,16 @@ export async function processCheckout(
                 // The confirm is the token this scan echoes, not the gap between
                 // badges and not the wall clock: the countdown runs on the kiosk,
                 // so a confirm queued through an outage still closes on arrival.
+                // The token is a bearer credential, so compare it timing-safely:
+                // hash both sides to a fixed length first (same idiom as
+                // cronAuth.ts) so timingSafeEqual can't throw on a length
+                // mismatch and no length leaks.
+                const stored = ownVisit?.forceCloseToken;
                 const confirmForceClose =
-                    confirmToken != null && ownVisit?.forceCloseToken === confirmToken;
+                    confirmToken != null && stored != null && timingSafeEqual(
+                        createHash("sha256").update(stored).digest(),
+                        createHash("sha256").update(confirmToken).digest()
+                    );
 
                 if (!confirmForceClose) {
                     // Mint a fresh token with the warning; the old one dies here, so
@@ -160,6 +186,16 @@ export async function processCheckout(
         }
     }
 
+    // SUPERVISION INTERRUPT (#1436). Fires on EVERY departure, not just a
+    // keyholder's — the close-guard above is a separate interrupt with its own
+    // stamp. Skipped when the facility is closing: that sweep departs everyone.
+    let supervisionWarning: string | undefined;
+    if (!facilityClosed) {
+        const interrupt = await supervisionInterrupt(activeVisitId, db);
+        if (interrupt?.confirmRequired) return interrupt.response;
+        supervisionWarning = interrupt?.warning;
+    }
+
     const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db, "SCANNER");
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
 
@@ -171,11 +207,76 @@ export async function processCheckout(
     return apiJson({
         message: facilityClosed ? "Checked out and Facility closed" : "Checked out successfully",
         type: "checkout" as const,
+        warning: supervisionWarning,
         participant,
         visit: updatedVisit,
         facilityClosed,
         signedRequest: authType === "kiosk",
     });
+}
+
+/**
+ * The two-rung supervision ladder for a departure (#1436), keyed on how many
+ * supervising adults would REMAIN — and only when this departure is what removes
+ * one. A second adult from the same household leaving changes nothing, because
+ * the household is still represented; that is the same-household rule.
+ *
+ *   remaining === 2 (the third supervising adult leaves) → warn, do not confirm.
+ *   remaining  <  2 (the next one leaves), youth present → warn AND confirm.
+ *   remaining  <  2 with no youth in the building        → warn, do not confirm.
+ *
+ * Only the confirm rung is youth-gated; the warn rung over-warns deliberately.
+ *
+ * The confirm is bound to the warning having been SHOWN, not to badge adjacency:
+ * only a scan following a fresh `supervisionWarnedAt` stamp goes through, exactly
+ * as the force-close confirm works. Countdown window is
+ * {@link SUPERVISION_CONFIRM_MS}; #1347's explicit-confirm slice renders the tick.
+ */
+async function supervisionInterrupt(
+    activeVisitId: number,
+    db: DbClient,
+): Promise<{ confirmRequired: true; response: Response } | { confirmRequired: false; warning?: string } | null> {
+    const supervising = await supervisingAdultVisits(db);
+    const before = supervisingAdultCount(supervising);
+    const remaining = supervisingAdultCount(supervising, activeVisitId);
+    if (remaining >= before || remaining > MIN_SUPERVISING_ADULTS) return null;
+
+    if (remaining === MIN_SUPERVISING_ADULTS) {
+        return {
+            confirmRequired: false,
+            warning: `Warning: only ${MIN_SUPERVISING_ADULTS} supervising adults remain in the building.`,
+        };
+    }
+
+    const left = remaining === 1 ? "only 1 supervising adult" : "NO supervising adult";
+
+    // The confirm rung is youth-gated (#1436, 2026-08-19): policy's floor is two
+    // adults whenever a youth is, so an adult-only room locking up warns and goes.
+    // Probed on this rung only — every quieter departure pays nothing for it.
+    if (!(await youthIsPresent(db))) {
+        return { confirmRequired: false, warning: `Warning: checking out leaves ${left} in the building.` };
+    }
+
+    const ownVisit = await db.visit.findUnique({
+        where: { id: activeVisitId },
+        select: { supervisionWarnedAt: true },
+    });
+    const warnedAt = ownVisit?.supervisionWarnedAt;
+    if (warnedAt != null && Date.now() - warnedAt.getTime() <= SUPERVISION_CONFIRM_MS) {
+        return { confirmRequired: false };
+    }
+
+    await db.visit.update({
+        where: { id: activeVisitId },
+        data: { supervisionWarnedAt: new Date() },
+    });
+    return {
+        confirmRequired: true,
+        response: apiJson({
+            error: `Warning! Checking out leaves ${left} in the building.\n\nBadge again in 3 to ${SUPERVISION_CONFIRM_MS / 1000} seconds to confirm.`,
+            type: "warning" as const,
+        }, 400),
+    };
 }
 
 /** Mark every still-open visit as departed. Facility-wide, not participant-scoped:

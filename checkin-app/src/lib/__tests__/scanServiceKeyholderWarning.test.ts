@@ -125,6 +125,8 @@ describe("force close is bound to the confirm token", () => {
     });
 
     it("re-warns rather than closing when the token does not match", async () => {
+        // Deliberately a DIFFERENT length from the stored token: the compare is
+        // timing-safe, and an unguarded timingSafeEqual throws on unequal lengths.
         const db = fakeDb(present, "token-abc");
         const res = await processCheckout(keyholder, 42, "kiosk", db, "token-guessed");
 

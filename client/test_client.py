@@ -5,6 +5,72 @@ import unittest
 from unittest.mock import Mock, patch
 from client import AttendanceState, BackendClient, DEFAULT_KIOSK_PATH, handle_scan, main
 
+
+class FakeBackend:
+    attendance_path = ""
+
+    def __init__(self, body, status=200):
+        self._reply = (body, status)
+
+    def post_scan(self, participant_id, force_close_token=None):
+        return self._reply
+
+
+class FakeState:
+    def __init__(self):
+        self.events = []
+
+    def push_event(self, event):
+        self.events.append(event)
+
+    def take_confirm(self):
+        # No force-close countdown running in these banner tests (#1347).
+        return None
+
+
+def scan_banner(body, status=200):
+    state = FakeState()
+    handle_scan(FakeBackend(body, status), state, 1)
+    return state.events[0]["html"]
+
+
+class TestSupervisionWarningBanner(unittest.TestCase):
+    """A scan that succeeds but leaves the room short of supervising adults
+    (checkin#1436) still confirms the scan — in amber, which dwells longer."""
+
+    def test_warning_renders_amber_and_still_confirms_the_scan(self):
+        html_out = scan_banner({
+            "type": "checkout",
+            "message": "Checked out successfully",
+            "warning": "Warning: only 2 supervising adults remain in the building.",
+            "participant": {"email": "a@example.com"},
+        })
+
+        self.assertIn("banner-warning", html_out)
+        self.assertIn("CHECKED OUT", html_out)
+        self.assertIn("only 2 supervising adults remain", html_out)
+
+    def test_warning_is_escaped_like_every_other_backend_value(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "warning": "<img src=x onerror=alert(1)>",
+            "participant": {"email": "a@example.com"},
+        })
+
+        self.assertNotIn("<img", html_out)
+        self.assertIn("&lt;img", html_out)
+
+    def test_no_warning_leaves_the_ordinary_green_banner(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "message": "Checked in successfully",
+            "participant": {"email": "a@example.com"},
+        })
+
+        self.assertIn("banner-ok", html_out)
+        self.assertNotIn("banner-warning", html_out)
+
+
 class TestBackendClient(unittest.TestCase):
     def test_required_methods_exist(self):
         """Ensure BackendClient has the necessary structural methods."""
