@@ -53,7 +53,7 @@ describe("flow: program purchase with member pricing", () => {
 
         // POST /api/programs creates every program CLOSED (schema default) — open
         // enrollment before anyone can join.
-        const opened = await api(board, `/api/programs/${programId}/settings`, {
+        const opened = await api(board, `/api/programs/${programId}`, {
             method: "PATCH",
             body: JSON.stringify({ enrollmentStatus: "OPEN" }),
         });
