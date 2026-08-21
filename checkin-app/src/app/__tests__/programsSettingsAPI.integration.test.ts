@@ -2,11 +2,12 @@
  * @jest-environment node
  */
 /**
- * Integration Tests for Program Settings API
- * Tests PATCH /api/programs/[id]/settings for updating program configurations
+ * Integration Tests for program PATCH validation
+ * Tests PATCH /api/programs/[id] validation: age bounds, maxParticipants
+ * capacity floor, enum checks, announceOnOpen type, and announce trigger.
  */
 
-import { PATCH } from '@/app/api/programs/[id]/settings/route';
+import { PATCH } from '@/app/api/programs/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { notifyNewProgramAnnounced } from '@/lib/notifications';
@@ -120,11 +121,11 @@ describe('Program Settings API Integration Tests', () => {
 
     const createParams = (id: number) => ({ params: Promise.resolve({ id: id.toString() }) });
 
-    describe('PATCH /api/programs/[id]/settings', () => {
+    describe('PATCH /api/programs/[id]', () => {
         it('should return 401 Unauthorized without session', async () => {
              (getServerSession as jest.Mock).mockResolvedValue(null);
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ phase: 'RUNNING' })
              });
@@ -135,7 +136,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should block common users from updating settings', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ name: 'Hacked Settings Program' })
              });
@@ -149,7 +150,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should allow the assigned lead mentor to update general settings', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ maxParticipants: 30, minAge: 15 })
              });
@@ -167,7 +168,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should allow the lead mentor to flip announceOnOpen (persists round-trip)', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 
-             const onReq = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const onReq = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ announceOnOpen: true })
              });
@@ -179,7 +180,7 @@ describe('Program Settings API Integration Tests', () => {
              const persisted = await prisma.program.findUnique({ where: { id: targetProgramId } });
              expect(persisted?.announceOnOpen).toBe(true);
 
-             const offReq = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const offReq = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ announceOnOpen: false })
              });
@@ -192,7 +193,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should block the lead mentor from reassigning the leadMentorId', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ leadMentorId: newLeadId }) // lead attempting to hand off control
              });
@@ -206,7 +207,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should allow admins to reassign the leadMentorId', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ leadMentorId: newLeadId, phase: 'RUNNING' })
              });
@@ -222,7 +223,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should reject a negative maxParticipants with 400', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ maxParticipants: -5 })
              });
@@ -233,7 +234,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should reject a zero maxParticipants with 400', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ maxParticipants: 0 })
              });
@@ -254,7 +255,7 @@ describe('Program Settings API Integration Tests', () => {
 
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ maxParticipants: 1 }) // below enrollment of 2
              });
@@ -272,7 +273,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should allow editing maxAge after creation (regression: was non-updatable)', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ maxAge: 18 })
              });
@@ -289,7 +290,7 @@ describe('Program Settings API Integration Tests', () => {
         it('should reject minAge greater than maxAge with 400', async () => {
              (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
 
-             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+             const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                  method: 'PATCH',
                  body: JSON.stringify({ minAge: 30, maxAge: 10 })
              });
@@ -305,7 +306,7 @@ describe('Program Settings API Integration Tests', () => {
                  { phase: 'upcoming' },          // enum values are uppercase
                  { enrollmentStatus: 'ajar' },
              ]) {
-                 const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}/settings`, {
+                 const req = new Request(`http://localhost:4000/api/programs/${targetProgramId}`, {
                      method: 'PATCH',
                      body: JSON.stringify(body)
                  });
@@ -318,9 +319,9 @@ describe('Program Settings API Integration Tests', () => {
     // The settings PATCH is the lead-mentor edit surface and accepts phase /
     // enrollmentStatus / announceOnOpen, so it owns the same announce edge as
     // programs/[id] PATCH — see programAnnounceNotification.integration.test.ts.
-    describe('announce trigger on PATCH /api/programs/[id]/settings', () => {
+    describe('announce trigger on PATCH /api/programs/[id]', () => {
         const patchSettings = async (id: number, body: Record<string, unknown>) => {
-            const req = new Request(`http://localhost:4000/api/programs/${id}/settings`, {
+            const req = new Request(`http://localhost:4000/api/programs/${id}`, {
                 method: 'PATCH',
                 body: JSON.stringify(body)
             });
