@@ -6,6 +6,7 @@ import { ACTIVE_ORG_MEMBER_PERSON_WHERE, personRecordIsActiveOrgMember } from "@
 import { apiError } from "@/lib/api-response";
 import { rolesToFlags } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { leaderAgeCutoff } from "@/lib/programAge";
 import { badgeYearCycle, MAX_DATE } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
@@ -79,11 +80,9 @@ export const GET = withAuth(
             // Only `adults` is recognized; any other value (or none) filters by age not at all.
             const adultsOnly = url.searchParams.get('filter') === 'adults';
 
-            // DB-level 18-year boundary for the adults filter below. Mirrors the
-            // under-18 threshold in isYouth (lib/time.ts); kept inline because this
-            // is a Prisma `where` predicate, not an in-memory classification.
-            const eighteenYearsAgo = new Date();
-            eighteenYearsAgo.setFullYear(eighteenYearsAgo.getFullYear() - 18);
+            // The only callers are the lead-mentor pickers, so "adults" means
+            // leader-eligible: 23+ by DOB, or isDeclaredAdult (marked 25+).
+            const ageCutoff = leaderAgeCutoff();
 
             const people = await prisma.person.findMany({
                 // Both clauses below are ORs, so they go in an AND array rather than as
@@ -99,14 +98,9 @@ export const GET = withAuth(
                                 { email: { contains: q, mode: 'insensitive' as const } },
                             ]
                         }] : []),
-                        // Adult = 18+. The isDeclaredAdult leg keeps members a lead marked
-                        // 25+ without a DoB (schema.prisma) in the picker; a null-DoB person
-                        // who was never declared adult is excluded, which is what a strict
-                        // 18+ rule means — the "mark 25+" control in the Details modal is
-                        // the affordance to fix that.
                         ...(adultsOnly ? [{
                             OR: [
-                                { dateOfBirth: { lte: eighteenYearsAgo } },
+                                { dateOfBirth: { lte: ageCutoff } },
                                 { isDeclaredAdult: true },
                             ]
                         }] : []),
