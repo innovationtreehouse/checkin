@@ -276,6 +276,7 @@ export const classifications = {
         deletedAt: 'internal',
         deletedById: 'internal',
         forceCloseWarnedAt: 'internal',
+        supervisionWarnedAt: 'internal',
     },
     AuditLog: {
         id: 'internal',

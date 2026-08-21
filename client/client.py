@@ -561,7 +561,12 @@ def handle_scan(backend, state, participant_id):
         email = html.escape(str(body.get("participant", {}).get("email", "?")))
         msg = html.escape(body.get("message", ""))
         label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
-        if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
+        warning = html.escape(body.get("warning", "")).replace("\n", "<br>")
+        if warning:
+            # Scan succeeded but the room is short of supervising adults (#1436):
+            # amber, and it dwells 12s instead of 5s. Still confirms the scan.
+            banner_html = f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>'
+        elif msg and msg != "Checked in successfully" and msg != "Checked out successfully":
             banner_html = f'<div class="banner banner-ok">✓ {email} — {msg}</div>'
         else:
             banner_html = f'<div class="banner banner-ok">✓ {email} — {label}</div>'
