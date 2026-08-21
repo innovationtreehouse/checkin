@@ -109,6 +109,7 @@ export default function PrintBadgesPage() {
   // Every count, every checkbox and the PDF itself read `visible`/`selectedVisible`,
   // never `participants`/`selectedIds` — a hidden person can't leak into a print run.
   const visible = hideInactive ? participants.filter(p => p.isMember) : participants;
+  const hidden = participants.length - visible.length;
   const selectedVisible = visible.filter(p => selectedIds.has(p.id));
 
   const toggleAll = () => {
@@ -234,7 +235,7 @@ export default function PrintBadgesPage() {
           onChange={(e) => setSearchTerm(e.currentTarget.value)}
         />
         <Checkbox
-          label="Hide inactive"
+          label={hidden ? `Hide inactive (${hidden})` : "Hide inactive"}
           checked={hideInactive}
           onChange={(e) => setHideInactive(e.currentTarget.checked)}
         />
@@ -253,7 +254,9 @@ export default function PrintBadgesPage() {
         rows={visible}
         getRowKey={(p) => p.id}
         loading={loading}
-        emptyMessage="No participants found."
+        emptyMessage={hidden > 0
+          ? `No active people match — ${hidden} hidden by the filter.`
+          : "No participants found."}
         rowProps={(p) => ({ bg: selectedIds.has(p.id) ? 'var(--mantine-color-blue-light)' : undefined })}
       />
     </Stack>
