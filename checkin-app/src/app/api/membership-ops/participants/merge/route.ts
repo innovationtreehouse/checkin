@@ -199,16 +199,20 @@ export const POST = withAuth(
                 return apiError("Invalid participant IDs provided.", 400);
             }
 
+            const mergeIncludes = {
+                programParticipants: { include: { program: { select: { name: true } } } },
+                programVolunteers: true,
+                rsvps: { include: { event: { select: { name: true, startAt: true } } } },
+                toolStatuses: { include: { tool: { select: { name: true } } } },
+                bgAttestations: true,
+                corporationLeads: true,
+                corporationMembers: true,
+            } as const;
+
             const keepParticipant = await prisma.person.findUnique({
                 where: { id: keepId },
                 include: {
-                    programParticipants: true,
-                    programVolunteers: true,
-                    rsvps: true,
-                    toolStatuses: true,
-                    bgAttestations: true,
-                    corporationLeads: true,
-                    corporationMembers: true,
+                    ...mergeIncludes,
                     household: {
                         include: {
                             orgMembership: true
@@ -220,13 +224,7 @@ export const POST = withAuth(
             const mergeParticipant = await prisma.person.findUnique({
                 where: { id: mergeId },
                 include: {
-                    programParticipants: true,
-                    programVolunteers: true,
-                    rsvps: true,
-                    toolStatuses: true,
-                    bgAttestations: true,
-                    corporationLeads: true,
-                    corporationMembers: true,
+                    ...mergeIncludes,
                     household: {
                         include: {
                             // The lead guard below asks "would this leave live members
@@ -276,6 +274,73 @@ export const POST = withAuth(
             );
             if (membershipBlock) {
                 return apiError(membershipBlock, 400);
+            }
+
+            // ---- Collision detection: refuse decision-bearing collisions (#1456 Phase 1) ----
+            const collisions: Array<{ type: string; message: string }> = [];
+
+            // ProgramParticipant — seat, payment, downstream RSVPs
+            const ppCollisions = mergeParticipant.programParticipants.filter(pp =>
+                keepParticipant.programParticipants.some(k => k.programId === pp.programId)
+            );
+            for (const pp of ppCollisions) {
+                collisions.push({
+                    type: 'programParticipant',
+                    message: `Both enrolled in ${pp.program.name}. Unenroll one first.`,
+                });
+            }
+
+            // ToolStatus — certification levels
+            const tsCollisions = mergeParticipant.toolStatuses.filter(ts =>
+                keepParticipant.toolStatuses.some(k => k.toolId === ts.toolId)
+            );
+            for (const ts of tsCollisions) {
+                collisions.push({
+                    type: 'toolStatus',
+                    message: `Both hold a ${ts.tool.name} certification. Remove one first.`,
+                });
+            }
+
+            // BackgroundCheckAttestation — same human reviewed under two identities
+            const keepAttestProcesses = new Set(keepParticipant.bgAttestations.map(a => a.processId));
+            const bgCollisions = mergeParticipant.bgAttestations.filter(a => keepAttestProcesses.has(a.processId));
+            if (bgCollisions.length > 0) {
+                collisions.push({
+                    type: 'bgAttestation',
+                    message: `Both attested the same background check (${bgCollisions.length} shared review${bgCollisions.length > 1 ? 's' : ''}). This indicates review under two identities — investigate before merging.`,
+                });
+            }
+
+            // RSVP — future events only; past events auto-dedupe in the transaction
+            const now = new Date();
+            const futureRsvpCollisions = mergeParticipant.rsvps.filter(r =>
+                r.event.startAt > now && keepParticipant.rsvps.some(k => k.eventId === r.eventId)
+            );
+            for (const r of futureRsvpCollisions) {
+                collisions.push({
+                    type: 'rsvp',
+                    message: `Both RSVP'd to ${r.event.name}. Remove one RSVP first.`,
+                });
+            }
+
+            // Open visits — both have an unfinished building visit
+            const [keeperOpenVisit, mergeOpenVisit] = await Promise.all([
+                prisma.visit.findFirst({ where: { personId: keepId, departedAt: null, deletedAt: null }, select: { id: true } }),
+                prisma.visit.findFirst({ where: { personId: mergeId, departedAt: null, deletedAt: null }, select: { id: true } }),
+            ]);
+            if (keeperOpenVisit && mergeOpenVisit) {
+                collisions.push({
+                    type: 'openVisit',
+                    message: 'Both have an open building visit. Close one visit first.',
+                });
+            }
+
+            if (collisions.length > 0) {
+                const detail = collisions.map(c => c.message).join('; ');
+                return NextResponse.json({
+                    error: `Cannot merge: ${detail}`,
+                    collisions,
+                }, { status: 409 });
             }
 
             // ---- Server-side fieldChoices validation (recompute conflicts; never trust the client's) ----
@@ -354,29 +419,25 @@ export const POST = withAuth(
                     visits: 0,
                     personBgArchived: 0,
                     programParticipants: { migrated: 0, left: 0 },
-                    programVolunteers: { migrated: 0, left: 0 },
-                    rsvps: { migrated: 0, left: 0 },
+                    programVolunteers: { migrated: 0, deduped: 0 },
+                    rsvps: { migrated: 0, deduped: 0, left: 0 },
                     toolStatuses: { migrated: 0, left: 0 },
                     bgAttestations: { migrated: 0, left: 0 },
-                    corporationLeads: { migrated: 0, left: 0 },
-                    corporationMembers: { migrated: 0, left: 0 },
+                    corporationLeads: { migrated: 0, deduped: 0 },
+                    corporationMembers: { migrated: 0, deduped: 0 },
                 };
 
-                // 3. Move visits, but never create a second open visit on the keeper. If the
-                // keeper already has one open, the tombstone's own open visit (if any) is
-                // LEFT in place — no delete, no fabricated departedAt. finalizeFacilityClose
-                // closes open visits by scan-service regardless of person, so it can't leak.
-                // ponytail: leave-the-row over inventing a departedAt; revisit only if a real
-                // "two humans, one badge, both open" case appears — it can't, same human.
+                // 3. Move visits. Both-open was pre-refused (#1456); the guard below is
+                // defense-in-depth for a TOCTOU race (visit opened between check and CAS).
                 const keeperHasOpenVisit = await tx.visit.findFirst({ where: { personId: keepId, departedAt: null, deletedAt: null }, select: { id: true } });
                 moved.visits = (await tx.visit.updateMany({
                     where: { personId: mergeId, ...(keeperHasOpenVisit ? { departedAt: { not: null } } : {}) },
                     data: { personId: keepId }
                 })).count;
 
-                // 4. Move the 4 join tables — no deletes. Migrate the non-colliding row;
-                // leave the colliding row on the tombstone (both survive; §3's LIVE_PERSON
-                // filter excludes the tombstone's from every count/roster).
+                // 4. Move join tables. Decision-bearing collisions (ProgramParticipant,
+                // ToolStatus) were pre-refused; the `left` fallback is defense-in-depth
+                // for a race. Bare-join collisions (ProgramVolunteer) auto-dedupe.
                 for (const pp of mergeParticipant.programParticipants) {
                     if (!keepParticipant.programParticipants.find(k => k.programId === pp.programId)) {
                         await tx.programParticipant.update({
@@ -397,7 +458,10 @@ export const POST = withAuth(
                         });
                         moved.programVolunteers.migrated++;
                     } else {
-                        moved.programVolunteers.left++;
+                        await tx.programVolunteer.delete({
+                            where: { programId_personId: { programId: pv.programId, personId: mergeId } }
+                        });
+                        moved.programVolunteers.deduped++;
                     }
                 }
 
@@ -408,6 +472,11 @@ export const POST = withAuth(
                             data: { personId: keepId }
                         });
                         moved.rsvps.migrated++;
+                    } else if (rsvp.event.startAt <= new Date()) {
+                        await tx.rSVP.delete({
+                            where: { eventId_personId: { eventId: rsvp.eventId, personId: mergeId } }
+                        });
+                        moved.rsvps.deduped++;
                     } else {
                         moved.rsvps.left++;
                     }
@@ -440,9 +509,8 @@ export const POST = withAuth(
                 await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { disclosedById: mergeId }, data: { disclosedById: keepId } });
 
-                // bgAttestations/corporationLeads/corporationMembers carry a unique
-                // constraint on the FK, so a blind updateMany could collide — loop-or-skip
-                // like step 4.
+                // bgAttestations: pre-refused collisions; left is defense-in-depth.
+                // corporationLeads/corporationMembers: bare joins, auto-dedupe.
                 const keepAttestProcessIds = new Set(keepParticipant.bgAttestations.map(a => a.processId));
                 for (const att of mergeParticipant.bgAttestations) {
                     if (!keepAttestProcessIds.has(att.processId)) {
@@ -462,7 +530,10 @@ export const POST = withAuth(
                         });
                         moved.corporationLeads.migrated++;
                     } else {
-                        moved.corporationLeads.left++;
+                        await tx.corporationLead.delete({
+                            where: { corporationId_personId: { corporationId: cl.corporationId, personId: mergeId } }
+                        });
+                        moved.corporationLeads.deduped++;
                     }
                 }
 
@@ -475,7 +546,10 @@ export const POST = withAuth(
                         });
                         moved.corporationMembers.migrated++;
                     } else {
-                        moved.corporationMembers.left++;
+                        await tx.corporationMember.delete({
+                            where: { corporationId_personId: { corporationId: cm.corporationId, personId: mergeId } }
+                        });
+                        moved.corporationMembers.deduped++;
                     }
                 }
 
@@ -484,8 +558,8 @@ export const POST = withAuth(
                 // merged-away records are tombstoned rather than deleted. Leadership was
                 // cleared in step 1's CAS.
 
-                // 8. Audit — extends the existing oldData capture with fieldChoices + moved
-                // (tallies now migrated/left, not deleted).
+                // 8. Audit — tallies: migrated (repointed), deduped (bare-join duplicate
+                // deleted), left (decision-bearing collision, defense-in-depth fallback).
                 if (auth.type === 'session') {
                     await tx.auditLog.create({
                         data: {
