@@ -1,7 +1,7 @@
 # Dropping the legacy two-variant product shape
 
-**Status: code removal SHIPPED (PR #1464); the `DROP COLUMN` migration is
-outstanding.** Addresses #975 ("Do we need the legacy product shape with 2
+**Status: DONE — code removal shipped (PR #1464), `DROP COLUMN` migration
+shipped (PR #1508).** Addresses #975 ("Do we need the legacy product shape with 2
 variants in Shopify?"). Answer: **no.** Both legacy two-variant pairs are dead —
 nothing writes them, and (confirmed by the board) no live prod row still depends
 on them.

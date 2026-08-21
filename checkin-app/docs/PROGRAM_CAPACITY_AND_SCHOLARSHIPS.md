@@ -37,12 +37,10 @@ planned upgrade — segment-gated automatic discounts, once checkout identity (t
 
 ### Legacy two-variant shape (removed)
 
-An earlier design gave each program two variants
-(`shopifyOrgMemberVariantId` / `shopifyNonOrgMemberVariantId`) with separate inventory
-pools kept in step by a sibling-adjustment on every seat-consuming event. All of that
-code is gone: `shopifyVariantId` is the only variant any program has, and
-`adjustProgramInventory` adjusts exactly that one pool. The four dead columns are
-dropped in a follow-up release — see `docs/designs/975-LEGACY_VARIANT_CONTRACT.md`.
+An earlier design gave each program two variants with separate inventory pools kept in
+step by a sibling-adjustment on every seat-consuming event. All of that code and the
+four legacy columns are gone: `shopifyVariantId` is the only variant any program has,
+and `adjustProgramInventory` adjusts exactly that one pool.
 
 ## 3. Scholarship lifecycle — the hold ledger
 
