@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
 import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { useRequireRole } from "@/hooks/useRequireRole";
+import { FACILITY_AGGREGATE_ROLES } from "@/lib/facilityNav";
+import { PageLoader } from "@/components/ui/PageLoader";
 import { DataTable, type DataTableColumn } from "@/components/admin/DataTable";
 import BadgeDocument from "@/components/admin/BadgeDocument";
 import StickerDocument from "@/components/admin/StickerDocument";
@@ -22,8 +23,7 @@ type ParticipantRow = {
 };
 
 export default function PrintBadgesPage() {
-  const { status } = useSession();
-  const router = useRouter();
+  const { ready, loading: authLoading } = useRequireRole(FACILITY_AGGREGATE_ROLES);
 
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   // Every ACTIVE member org-wide — the population printed names disambiguate against.
@@ -35,12 +35,6 @@ export default function PrintBadgesPage() {
   const [hideInactive, setHideInactive] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push('/');
-    }
-  }, [status, router]);
 
   const fetchParticipants = useCallback(async () => {
     setLoading(true);
@@ -61,15 +55,15 @@ export default function PrintBadgesPage() {
   }, [searchTerm]);
 
   useEffect(() => {
-    if (status === "authenticated") {
+    if (ready) {
       fetchParticipants();
     }
-  }, [status, fetchParticipants]);
+  }, [ready, fetchParticipants]);
 
   // Once on mount — deliberately NOT keyed on searchTerm. The printed name must not
   // move when the operator types.
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (!ready) return;
     const url = new URL('/api/people/search', window.location.origin);
     url.searchParams.set('roster', 'active');
     fetch(url.toString())
@@ -85,7 +79,7 @@ export default function PrintBadgesPage() {
         setRoster(null);
         notifications.show({ color: 'red', message: 'Could not load the active member roster, so badge names cannot be resolved. Reload to retry.', autoClose: false });
       });
-  }, [status]);
+  }, [ready]);
 
   const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
   const printedYears = useMemo(() => new Map((roster ?? []).map(m => [m.id, m.year])), [roster]);
@@ -172,7 +166,8 @@ export default function PrintBadgesPage() {
     }
   };
 
-  if (status === "loading") return null;
+  if (authLoading) return <PageLoader />;
+  if (!ready) return null;
 
   const columns: DataTableColumn<ParticipantRow>[] = [
     {

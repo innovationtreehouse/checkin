@@ -221,6 +221,14 @@ describe("facility-ops/print-badges page", () => {
     expect(printedNameCell("John Smith")).toBe("John");
   }, 15000);
 
+  it("admits an operations user", async () => {
+    setSession({ id: 5, isOperations: true });
+    mockFetchJson({ "/api/people/search": { people: participants } });
+    renderWithProviders(<PrintBadgesPage />);
+
+    expect(await screen.findByText("Kim Keyholder")).toBeInTheDocument();
+  });
+
   it("holds badge generation when the member roster request fails", async () => {
     setSession({ id: 1, isSysadmin: true });
     const logged = jest.spyOn(console, "error").mockImplementation(() => {});
