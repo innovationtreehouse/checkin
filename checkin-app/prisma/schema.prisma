@@ -1125,6 +1125,13 @@ model Visit {
   /// @sensitivity:internal
   forceCloseWarnedAt DateTime?
 
+  /// When the kiosk last showed this person the "the room drops below two
+  /// supervising adults" warning (#1436). Its own stamp, not forceCloseWarnedAt:
+  /// the keyholder close-guard is a separate interrupt that can be pending at the
+  /// same time.
+  /// @sensitivity:internal
+  supervisionWarnedAt DateTime?
+
   person Person @relation(fields: [personId], references: [id])
   event  Event?      @relation(fields: [associatedEventId], references: [id])
 

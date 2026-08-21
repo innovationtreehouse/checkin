@@ -9,14 +9,16 @@
  * path: bucketing visits by period, the volunteer/participant split (by program
  * enrollment — ProgramParticipant, NOT age), structured (event-associated) vs
  * unstructured hours, the `arrivedVia=LEAD_MARKED` exclusion (synthetic "marked
- * present" visits, plus its pre-split `SYSTEM` spelling) and the two cases it must
- * not swallow — an untagged arrival, and a real visit whose time staff corrected
- * (driven through the PATCH route, since a hand-built fixture cannot catch a wrong
- * stamp) — the `programId` filter, and the invalid-period 400.
+ * present" visits, plus its pre-split `SYSTEM` spelling) and the cases it must
+ * not swallow — an untagged arrival, a real visit whose time staff corrected via
+ * the staff route, and a member's self-correction (#1631) — plus the `programId`
+ * filter and the invalid-period 400. Corrections are driven through the real
+ * PATCH routes, since a hand-built fixture cannot catch a wrong stamp.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
 import { PATCH } from '@/app/api/facility/visits/route';
+import { PATCH as MANUAL_PATCH } from '@/app/api/attendance/manual/[id]/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { getAppSettings } from '@/lib/appSettings';
@@ -261,6 +263,93 @@ describe('Facility trends API', () => {
         // Still counted, now at the corrected 1h. Restamping the arrival
         // LEAD_MARKED would make these 0 — the visit would vanish from the trend
         // for having been fixed.
+        const after = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
+        expect(after.totals.uniqueVolunteers).toBe(1);
+        expect(after.totals.totalVolunteerHours).toBe(1);
+        expect(after.totals.structuredHours).toBe(1);
+
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
+        await prisma.visit.delete({ where: { id: visit.id } });
+        await prisma.event.delete({ where: { id: event.id } });
+        await prisma.program.delete({ where: { id: program.id } });
+    });
+
+    // #1631 pin: PATCH /api/attendance/manual/[id] (member self-correction) must
+    // not restamp arrivedVia WEB. Before the fix, correcting the arrival time of
+    // a LEAD_MARKED (staff-asserted) visit promoted it past the trends filter —
+    // it started counting as measured hours the moment its time was fixed.
+    it('keeps a self-corrected LEAD_MARKED visit excluded from trends hours', async () => {
+        const program = await prisma.program.create({ data: { name: `SelfCorrectedLM ${TAG}` } });
+        const event = await prisma.event.create({
+            data: { programId: program.id, name: `SelfCorrectedLM event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
+        });
+        const now = Date.now();
+        const visit = await prisma.visit.create({
+            data: {
+                personId: volunteerId,
+                arrivedAt: new Date(now - 4 * 3600000),
+                departedAt: new Date(now - 2 * 3600000),
+                arrivedVia: 'LEAD_MARKED',
+                departedVia: 'LEAD_MARKED',
+                associatedEventId: event.id,
+            },
+        });
+        visitIds.push(visit.id);
+
+        const before = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
+        expect(before.totals.totalVolunteerHours).toBe(0);
+
+        // The member corrects their own arrival — a household lead is not needed here.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: volunteerId } });
+        const patch = await MANUAL_PATCH(new Request(`http://localhost:4000/api/attendance/manual/${visit.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ arrivedAt: new Date(now - 3 * 3600000).toISOString() }),
+        }) as unknown as import('next/server').NextRequest, { params: Promise.resolve({ id: String(visit.id) }) } as never);
+        expect(patch.status).toBe(200);
+        const patched = await prisma.visit.findUnique({ where: { id: visit.id } });
+        expect(patched?.arrivedVia).toBe('LEAD_MARKED'); // not restamped WEB
+
+        // Still 0 — restamping WEB would have promoted this into 1h of counted hours.
+        const after = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
+        expect(after.totals.uniqueVolunteers).toBe(0);
+        expect(after.totals.totalVolunteerHours).toBe(0);
+        expect(after.totals.structuredHours).toBe(0);
+
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
+        await prisma.visit.delete({ where: { id: visit.id } });
+        await prisma.event.delete({ where: { id: event.id } });
+        await prisma.program.delete({ where: { id: program.id } });
+    });
+
+    // Control for the same fix: a WEB/SCANNER visit's self-correction is
+    // otherwise unchanged — it still applies and still counts, same as before.
+    it('keeps a self-corrected SCANNER visit counted after the manual PATCH route', async () => {
+        const program = await prisma.program.create({ data: { name: `SelfCorrectedScanner ${TAG}` } });
+        const event = await prisma.event.create({
+            data: { programId: program.id, name: `SelfCorrectedScanner event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
+        });
+        const now = Date.now();
+        const visit = await prisma.visit.create({
+            data: {
+                personId: volunteerId,
+                arrivedAt: new Date(now - 4 * 3600000),
+                departedAt: new Date(now - 2 * 3600000),
+                arrivedVia: 'SCANNER',
+                departedVia: 'SCANNER',
+                associatedEventId: event.id,
+            },
+        });
+        visitIds.push(visit.id);
+
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: volunteerId } });
+        const patch = await MANUAL_PATCH(new Request(`http://localhost:4000/api/attendance/manual/${visit.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ arrivedAt: new Date(now - 3 * 3600000).toISOString() }),
+        }) as unknown as import('next/server').NextRequest, { params: Promise.resolve({ id: String(visit.id) }) } as never);
+        expect(patch.status).toBe(200);
+        const patched = await prisma.visit.findUnique({ where: { id: visit.id } });
+        expect(patched?.arrivedVia).toBe('SCANNER'); // not restamped WEB either — just no longer restamped at all
+
         const after = await (await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`)).json();
         expect(after.totals.uniqueVolunteers).toBe(1);
         expect(after.totals.totalVolunteerHours).toBe(1);

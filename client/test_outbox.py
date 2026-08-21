@@ -162,8 +162,13 @@ class TestReplayDrain(unittest.TestCase):
                 if calls["n"] >= len(responses):
                     raise _StopLoop()
 
+            # Pin the window open: these cases test send/classify, not F3, and
+            # the real clock would park the drain (and hang the test) whenever
+            # the suite runs between 23:00 and 06:00 local. The window has its
+            # own test.
             with self.assertRaises(_StopLoop):
-                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep)
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
             return ob
 
     def test_acked_events_are_removed_in_order(self):
@@ -234,7 +239,8 @@ class TestReplayDrain(unittest.TestCase):
                     raise _StopLoop()
 
             with self.assertRaises(_StopLoop):
-                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep)
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
 
             self.assertEqual(seen_ids, ["evt-fixed", "evt-fixed", "evt-fixed"])
             self.assertEqual(ob.pending_rows(), [])
@@ -259,7 +265,8 @@ class TestReplayDrain(unittest.TestCase):
                     raise _StopLoop()
 
             with self.assertRaises(_StopLoop):
-                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep)
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
 
             self.assertEqual(seen, [True])
 

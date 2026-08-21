@@ -1,6 +1,7 @@
 # Private key - NEVER commit
 client.key
 config.json
+.self_update_last_target
 
 # Python
 __pycache__/

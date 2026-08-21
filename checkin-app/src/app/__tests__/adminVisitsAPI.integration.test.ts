@@ -413,12 +413,16 @@ describe('Admin Visits API Integration Tests', () => {
             expect(auditLog).not.toBeNull();
             expect((auditLog?.oldData as { id?: number })?.id).toBe(doomed.id);
 
-            // UNRESOLVED (#1630) — 0 is what ships, not what is right. The visit is
-            // still open, so deleteSignificance weighs no duration: deleting a live 6h
-            // scanned visit scores 0, while deleting that same row after checkout
-            // scores 2160. The lowest score destroys the live in-building roster.
-            expect((auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
-                .toEqual({ score: 0, flagged: true });
+            // Resolved (#1630): the visit is still open, so its score is elapsed
+            // time-on-site (~1h, no arrivedVia so weight 1) rather than the old
+            // hardcoded 0 — deleting a live check-in no longer scores lowest.
+            // The admin (testAdminId) isn't the visit's own person (testUserId),
+            // so this delete is byProxy too — the route doubles the weight
+            // (significance.ts PROXY_MULTIPLIER), giving ~120, not ~60.
+            const significance = (auditLog?.newData as { significance?: { score: number; flagged: boolean } })?.significance;
+            expect(significance?.flagged).toBe(true);
+            expect(significance?.score).toBeGreaterThanOrEqual(120);
+            expect(significance?.score).toBeLessThan(130);
         });
     });
 

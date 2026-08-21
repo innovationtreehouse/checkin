@@ -6,7 +6,51 @@ from unittest.mock import MagicMock
 
 from nacl.signing import SigningKey
 
-from client import BackendClient, DEFAULT_KIOSK_PATH, main
+from client import BackendClient, DEFAULT_KIOSK_PATH, _scan_result_banner_html, main
+
+
+def scan_banner(body, status=200):
+    # handle_scan now takes an outbox and delegates the markup to this helper;
+    # calling it directly tests the same banner without faking a backend.
+    return _scan_result_banner_html(body, status)
+
+
+class TestSupervisionWarningBanner(unittest.TestCase):
+    """A scan that succeeds but leaves the room short of supervising adults
+    (checkin#1436) still confirms the scan — in amber, which dwells longer."""
+
+    def test_warning_renders_amber_and_still_confirms_the_scan(self):
+        html_out = scan_banner({
+            "type": "checkout",
+            "message": "Checked out successfully",
+            "warning": "Warning: only 2 supervising adults remain in the building.",
+            "participant": {"email": "a@example.com"},
+        })
+
+        self.assertIn("banner-warning", html_out)
+        self.assertIn("CHECKED OUT", html_out)
+        self.assertIn("only 2 supervising adults remain", html_out)
+
+    def test_warning_is_escaped_like_every_other_backend_value(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "warning": "<img src=x onerror=alert(1)>",
+            "participant": {"email": "a@example.com"},
+        })
+
+        self.assertNotIn("<img", html_out)
+        self.assertIn("&lt;img", html_out)
+
+    def test_no_warning_leaves_the_ordinary_green_banner(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "message": "Checked in successfully",
+            "participant": {"email": "a@example.com"},
+        })
+
+        self.assertIn("banner-ok", html_out)
+        self.assertNotIn("banner-warning", html_out)
+
 
 class TestBackendClient(unittest.TestCase):
     def test_required_methods_exist(self):
