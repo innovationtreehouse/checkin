@@ -19,6 +19,7 @@ type Program = {
   orgMemberPriceCents?: number | null;
   nonOrgMemberPriceCents?: number | null;
   shopifyVariantId?: string | null;
+  maxParticipants?: number | null;
   _count?: { participants?: number; events?: number };
 };
 
@@ -115,7 +116,7 @@ export default function AdminProgramsIndex() {
     {
       header: "Participants",
       align: "right",
-      render: (p) => p._count?.participants ?? 0,
+      render: (p) => `${p._count?.participants ?? 0}${p.maxParticipants != null ? `/${p.maxParticipants}` : ""}`,
       sortBy: (p) => p._count?.participants ?? 0,
     },
     {
