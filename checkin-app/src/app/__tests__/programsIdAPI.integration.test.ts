@@ -592,6 +592,224 @@ describe('Individual Program API Integration Tests', () => {
         });
     });
 
+    // ── Validation guards (consolidated from the former publish/ and settings/ routes) ──
+    describe('PATCH /api/programs/[id] — validation guards', () => {
+        let noLeadProgramId: number;
+        let noEventsProgramId: number;
+        let finishedProgramId: number;
+        let validPublishProgramId: number;
+        let newLeadId: number;
+
+        beforeAll(async () => {
+            const newLead = await prisma.person.create({
+                data: { email: 'newlead-prog-id-api-test@example.com', name: 'New Lead', household: { create: { name: "Test HH" } } }
+            });
+            newLeadId = newLead.id;
+
+            const noLeadProgram = await prisma.program.create({
+                data: {
+                    name: 'No Lead Prog ID API Test',
+                    phase: 'PLANNING',
+                    events: { create: { name: 'No Lead Event', startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) } }
+                }
+            });
+            noLeadProgramId = noLeadProgram.id;
+
+            const noEventsProgram = await prisma.program.create({
+                data: { name: 'No Events Prog ID API Test', phase: 'PLANNING', leadMentorId: leadId }
+            });
+            noEventsProgramId = noEventsProgram.id;
+
+            const finishedProgram = await prisma.program.create({
+                data: {
+                    name: 'Finished Prog ID API Test',
+                    phase: 'FINISHED',
+                    enrollmentStatus: 'CLOSED',
+                    leadMentorId: leadId,
+                    events: { create: { name: 'Finished Event', startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) } }
+                }
+            });
+            finishedProgramId = finishedProgram.id;
+
+            const validPublishProgram = await prisma.program.create({
+                data: {
+                    name: 'Valid Publish Prog ID API Test',
+                    phase: 'PLANNING',
+                    leadMentorId: leadId,
+                    events: { create: { name: 'Valid Publish Event', startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) } }
+                }
+            });
+            validPublishProgramId = validPublishProgram.id;
+        });
+
+        afterAll(async () => {
+            const ids = [noLeadProgramId, noEventsProgramId, finishedProgramId, validPublishProgramId].filter(Boolean);
+            await prisma.programParticipant.deleteMany({ where: { programId: { in: ids } } });
+            await prisma.event.deleteMany({ where: { programId: { in: ids } } });
+            await prisma.program.deleteMany({ where: { id: { in: ids } } });
+            await prisma.auditLog.deleteMany({ where: { actorId: newLeadId } });
+            await prisma.person.deleteMany({ where: { id: newLeadId } });
+        });
+
+        // ── Publish guards ──
+        it('rejects publishing without a lead mentor (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${noLeadProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ phase: 'UPCOMING', enrollmentStatus: 'OPEN' })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(noLeadProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Cannot publish a program without a Lead Mentor assigned');
+        });
+
+        it('rejects publishing without scheduled events (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${noEventsProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ phase: 'UPCOMING', enrollmentStatus: 'OPEN' })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(noEventsProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('Cannot publish a program without any scheduled events');
+        });
+
+        it('rejects re-publishing a FINISHED program (409) and leaves phase unchanged', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${finishedProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ phase: 'UPCOMING' })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(finishedProgramId) as unknown as never);
+            expect(res.status).toBe(409);
+            const data = await res.json();
+            expect(data.error).toMatch(/already finished/i);
+
+            const after = await prisma.program.findUnique({ where: { id: finishedProgramId } });
+            expect(after?.phase).toBe('FINISHED');
+        });
+
+        it('allows publishing a valid program (PLANNING → UPCOMING)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${validPublishProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ phase: 'UPCOMING', enrollmentStatus: 'OPEN' })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(validPublishProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.phase).toBe('UPCOMING');
+            expect(data.program.enrollmentStatus).toBe('OPEN');
+        });
+
+        // ── maxParticipants ──
+        it('rejects a negative maxParticipants (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ maxParticipants: -5 })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+        });
+
+        it('rejects a zero maxParticipants (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ maxParticipants: 0 })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+        });
+
+        it('rejects shrinking maxParticipants below current enrollment', async () => {
+            await prisma.programParticipant.createMany({
+                data: [
+                    { programId: validPublishProgramId, personId: commonId, status: 'ACTIVE' },
+                    { programId: validPublishProgramId, personId: adminId, status: 'PENDING' },
+                ]
+            });
+
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${validPublishProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ maxParticipants: 1 })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(validPublishProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toMatch(/current enrollment of 2/);
+        });
+
+        // ── Age range ──
+        it('rejects minAge > maxAge (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ minAge: 30, maxAge: 10 })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+        });
+
+        // ── Enum / type validation ──
+        it('rejects bad announceOnOpen / phase / enrollmentStatus with 400', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            for (const body of [
+                { announceOnOpen: 'yes' },
+                { phase: 'upcoming' },
+                { enrollmentStatus: 'ajar' },
+            ]) {
+                const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify(body)
+                });
+                const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+                expect(res.status).toBe(400);
+            }
+        });
+
+        // ── Lead mentor reassignment ──
+        it('blocks the lead mentor from reassigning leadMentorId (403)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ leadMentorId: newLeadId })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+            expect(res.status).toBe(403);
+            const data = await res.json();
+            expect(data.error).toBe('Forbidden: Only administrators can reassign lead mentors');
+        });
+
+        it('allows admins to reassign leadMentorId', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${validPublishProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ leadMentorId: newLeadId })
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(validPublishProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.program.leadMentorId).toBe(newLeadId);
+        });
+    });
+
     // Shopify is the source of truth for program capacity (product decision
     // 2026-07-06): a maxParticipants edit on a program with a Shopify variant
     // propagates as a relative inventory adjustment. Runs against the
