@@ -1116,10 +1116,15 @@ model Visit {
   deletedById       Int?
 
   /// When the kiosk last showed this keyholder the "others are still here"
-  /// force-close warning. A force close only proceeds if the scan follows a
-  /// fresh stamp, so an ordinary double-tap cannot close the building.
+  /// force-close warning. Audit stamp only — the confirm is the token below.
   /// @sensitivity:internal
   forceCloseWarnedAt DateTime?
+
+  /// Confirm token minted with that warning and returned to the kiosk. Only a
+  /// scan echoing it force-closes, so an ordinary double-tap cannot; validity
+  /// is by issuance, not elapsed time, so a confirm queued through an outage
+  /// still closes when it lands (§5.23a). @sensitivity:internal
+  forceCloseToken   String?
 
   /// When the kiosk last showed this person the "the room drops below two
   /// supervising adults" warning (#1436). Its own stamp, not forceCloseWarnedAt:

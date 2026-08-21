@@ -5,7 +5,7 @@ import { POST } from '../route';
 import { authenticateRequest } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { logger } from '@/lib/logger';
-import { processCheckin } from '@/lib/scan-service';
+import { processCheckin, processCheckout } from '@/lib/scan-service';
 
 jest.mock('@/lib/auth', () => ({
     authenticateRequest: jest.fn(),
@@ -22,6 +22,7 @@ jest.mock('@/lib/prisma', () => {
         },
         visit: {
             findFirst: jest.fn(),
+            count: jest.fn().mockResolvedValue(0),
         },
         systemMetricLog: {
             create: jest.fn().mockResolvedValue({}),
@@ -188,5 +189,47 @@ describe('POST /api/scan', () => {
         const json = await res.json();
         expect(json.type).toBe('ignored_debounce');
         expect(json.message).toBe('Scan ignored due to debounce.');
+    });
+
+    describe('force-close confirm token', () => {
+        const scanReq = (body: Record<string, unknown>) => new Request('http://localhost/api/scan', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
+            // Inside the 3s debounce window — only a live token gets past it.
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date() });
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
+            (processCheckout as jest.Mock).mockResolvedValue(
+                new Response(JSON.stringify({ type: 'checkout', facilityClosed: true }), { status: 200 }));
+        });
+
+        it('lets a scan matching a live token through the debounce and forwards it', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(1); // token matches an open visit
+
+            const res = await POST(scanReq({ participantId: 1, forceCloseToken: 'tok-1' }));
+
+            expect((await res.json()).facilityClosed).toBe(true);
+            expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'session', expect.anything(), 'tok-1');
+        });
+
+        it('debounces a spent or unknown token, so a stray second read cannot re-toggle', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(0); // nothing holds this token
+
+            const res = await POST(scanReq({ participantId: 1, forceCloseToken: 'tok-1' }));
+
+            expect((await res.json()).type).toBe('ignored_debounce');
+            expect(processCheckout).not.toHaveBeenCalled();
+        });
+
+        it('treats a non-string token as no token at all', async () => {
+            const res = await POST(scanReq({ participantId: 1, forceCloseToken: 42 }));
+
+            expect((await res.json()).type).toBe('ignored_debounce');
+            expect(prisma.visit.count).not.toHaveBeenCalled();
+        });
     });
 });
