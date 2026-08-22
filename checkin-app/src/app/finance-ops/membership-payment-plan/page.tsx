@@ -9,6 +9,7 @@ import { DataTable, type DataTableColumn } from '@/components/admin/DataTable';
 import { useRequireRole } from '@/hooks/useRequireRole';
 import { useOrgTime } from '@/components/TimezoneProvider';
 import { notifyNavRefresh } from '@/lib/nav-refresh';
+import { sharesHousehold } from '@/lib/conflictOfInterest';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 
@@ -26,7 +27,10 @@ type MembershipPaymentPlanRequest = {
 
 export default function MembershipPaymentPlansPage() {
   const { formatDateTime } = useOrgTime();
-  const { ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+  const { user: me, ready, loading: authLoading } = useRequireRole(['isSysadmin', 'isBoardMember']);
+
+  const ownHousehold = (req: MembershipPaymentPlanRequest) =>
+    sharesHousehold(me?.householdId, req.orgMembership.household.id);
 
   const [requests, setRequests] = useState<MembershipPaymentPlanRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -167,10 +171,10 @@ export default function MembershipPaymentPlansPage() {
       align: 'right',
       render: (req) => (
         <Group justify="flex-end" gap="xs" wrap="nowrap">
-          <Button size="xs" fz={15} color="red" variant="light" onClick={() => handleDeny(req.id)}>
+          <Button size="xs" fz={15} color="red" variant="light" disabled={ownHousehold(req)} title={ownHousehold(req) ? "You can't deny your own household's plan — someone outside your household must." : undefined} onClick={() => handleDeny(req.id)}>
             Deny
           </Button>
-          <Button size="xs" fz={15} variant="light" onClick={() => handleApprove(req.id)}>
+          <Button size="xs" fz={15} variant="light" disabled={ownHousehold(req)} title={ownHousehold(req) ? "You can't approve your own household's plan — someone outside your household must." : undefined} onClick={() => handleApprove(req.id)}>
             Approve &amp; Activate
           </Button>
         </Group>
