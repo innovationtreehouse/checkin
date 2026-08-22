@@ -49,6 +49,7 @@ jest.mock('@/lib/scan-service', () => ({
     processCheckout: jest.fn(),
     finalizeFacilityClose: jest.fn().mockResolvedValue(undefined),
     SUPERVISION_CONFIRM_MS: 15_000,
+    SUPERVISION_CONFIRM_DEADFRONT_MS: 1_000,
 }));
 
 describe('POST /api/scan', () => {
@@ -488,20 +489,59 @@ describe('POST /api/scan', () => {
         beforeEach(() => {
             (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
             (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
-            // Inside the 3s debounce window -- only a fresh supervision stamp gets past it.
+            // Inside the 3s debounce window -- only a stamp past the dead-front floor gets past it.
             (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date() });
             (prisma.visit.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
             (processCheckout as jest.Mock).mockResolvedValue(
                 new Response(JSON.stringify({ type: 'checkout' }), { status: 200 }));
         });
 
-        it('exempts a scan 1s after a supervision warning from the debounce, no token needed', async () => {
-            (prisma.visit.count as jest.Mock).mockResolvedValue(1); // a fresh supervisionWarnedAt stamp
+        // Simulates a REAL supervisionWarnedAt of the given age against
+        // whatever [gte, lte] range route.ts actually constructs, instead of
+        // a blanket mockResolvedValue -- a dropped or loosened filter fails
+        // this the same way it would fail against a real database.
+        function mockCountForWarnedAtAge(ageMs: number) {
+            const warnedAt = new Date(Date.now() - ageMs);
+            (prisma.visit.count as jest.Mock).mockImplementation(
+                ({ where }: { where: { supervisionWarnedAt?: { gte: Date; lte?: Date } } }) => {
+                    const range = where.supervisionWarnedAt;
+                    // No lte in the where clause means no upper bound, same as a
+                    // real Prisma query -- so a dropped floor doesn't false-fail
+                    // this helper, only the case it actually breaks (below).
+                    const pastFloor = !range?.lte || warnedAt <= range.lte;
+                    return Promise.resolve(range && warnedAt >= range.gte && pastFloor ? 1 : 0);
+                }
+            );
+        }
+
+        it('exempts a scan 2s after a supervision warning, past the dead-front floor', async () => {
+            mockCountForWarnedAtAge(2000);
 
             const res = await POST(scanReq({ participantId: 1 }));
 
             expect((await res.json()).type).toBe('checkout');
             expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'session', expect.anything(), null, expect.any(Date), null);
+            expect(prisma.visit.count).toHaveBeenCalledWith(expect.objectContaining({
+                where: expect.objectContaining({
+                    personId: 1,
+                    departedAt: null,
+                    deletedAt: null,
+                    supervisionWarnedAt: { gte: expect.any(Date), lte: expect.any(Date) },
+                }),
+            }));
+        });
+
+        // Fable review finding (2026-08-21): a USB hardware double-read of the
+        // WARNING scan itself (duplicate keystrokes ~300-800ms apart, no client
+        // dedup) must NOT read as a confirm -- pre-PR-0 it debounced, and the
+        // fix must not regress that into an unacknowledged auto-departure.
+        it('debounces a second badge 500ms after the warning -- a hardware double-read dead front', async () => {
+            mockCountForWarnedAtAge(500);
+
+            const res = await POST(scanReq({ participantId: 1 }));
+
+            expect((await res.json()).type).toBe('ignored_debounce');
+            expect(processCheckout).not.toHaveBeenCalled();
         });
 
         it('still debounces an ordinary double-tap with no fresh stamp and no token', async () => {

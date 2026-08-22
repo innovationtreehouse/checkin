@@ -19,6 +19,11 @@ export const FORCE_CLOSE_CONFIRM_SECONDS = 15;
  *  full window is usable -- kiosk copy says "within 15 seconds". */
 export const SUPERVISION_CONFIRM_MS = 15_000;
 
+/** Floor on the route's debounce exemption (Fable review, #1347 PR-0): a USB
+ *  hardware double-read of the warning scan lands ~300-800ms later with the
+ *  stamp already fresh. Below this age, treat it as the same physical badge. */
+export const SUPERVISION_CONFIRM_DEADFRONT_MS = 1_000;
+
 /**
  * Process a check-in for a participant who has no active visit.
  *

@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { apiError, apiJson } from "@/lib/api-response";
-import { processCheckin, processCheckout, finalizeFacilityClose, SUPERVISION_CONFIRM_MS } from "@/lib/scan-service";
+import { processCheckin, processCheckout, finalizeFacilityClose, SUPERVISION_CONFIRM_MS, SUPERVISION_CONFIRM_DEADFRONT_MS } from "@/lib/scan-service";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
 
@@ -179,7 +179,11 @@ export const POST = withKiosk(
             // scan following a fresh supervisionWarnedAt stamp IS the supervision
             // confirm (#1347 PR-0, decision 7) -- both must skip the debounce below.
             // Tied to the warning actually being shown, not badge adjacency; the
-            // token clause is unchanged and stays primary.
+            // token clause is unchanged and stays primary. The stamp side is
+            // floored at SUPERVISION_CONFIRM_DEADFRONT_MS: a USB double-read of
+            // the warning scan itself lands well under that age and must still
+            // debounce, or the room's warning would auto-confirm with no human
+            // acknowledgment at all.
             const isConfirm = (confirmToken !== null && (await tx.visit.count({
                 where: {
                     personId: participant.id,
@@ -192,7 +196,10 @@ export const POST = withKiosk(
                     personId: participant.id,
                     departedAt: null,
                     deletedAt: null,
-                    supervisionWarnedAt: { gte: new Date(Date.now() - SUPERVISION_CONFIRM_MS) },
+                    supervisionWarnedAt: {
+                        gte: new Date(Date.now() - SUPERVISION_CONFIRM_MS),
+                        lte: new Date(Date.now() - SUPERVISION_CONFIRM_DEADFRONT_MS),
+                    },
                 },
             })) > 0;
 
