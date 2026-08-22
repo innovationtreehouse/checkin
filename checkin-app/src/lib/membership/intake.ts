@@ -46,7 +46,7 @@ export class IntakeError extends Error {
  */
 export type IntakeRejection = {
     section: "secondaryParent";
-    code: "lead_limit";
+    code: "lead_limit" | "name_required";
     message: string;
 };
 
@@ -304,7 +304,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             await prisma.person.update({
                 where: { id: sp.id },
                 data: {
-                    ...(sp.name !== undefined && { name: sp.name }),
+                    ...(sp.name !== undefined && sp.name !== null && { name: sp.name }),
                     ...(sp.dob !== undefined && normalizeAdultDob(sp.dob)),
                     ...(sp.over25 !== undefined && !sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
@@ -312,11 +312,11 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             });
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
-        } else if (sp.name || sp.email) {
+        } else if (sp.name) {
             const created = await prisma.person.create({
                 data: {
                     householdId,
-                    name: sp.name ?? null,
+                    name: sp.name,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
                     ...normalizeAdultDob(sp.dob),
                     ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
@@ -324,6 +324,12 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 },
             });
             await addLeadOrRecord(created.id);
+        } else if (sp.email) {
+            rejections.push({
+                section: "secondaryParent",
+                code: "name_required",
+                message: "A name is required for the second parent / guardian.",
+            });
         }
     }
 

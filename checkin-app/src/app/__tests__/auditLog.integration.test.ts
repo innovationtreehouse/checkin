@@ -72,7 +72,7 @@ describe('AuditLog Integration Tests', () => {
 
         // Setup mock database records
         const admin = await prisma.person.create({
-            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, household: { create: { name: "Test HH" } } }
+            data: { email: 'admin-audit-test@example.com', name: 'Admin Test', isSysadmin: true, isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         testAdminId = admin.id;
 

@@ -48,6 +48,7 @@ describe("membership-ops/participants/new page", () => {
             name: "Jane Doe",
             email: "jane@example.com",
             parentEmail: null,
+            parentName: null,
             dob: null,
             householdId: null,
             alreadyMember: false,
@@ -175,7 +176,7 @@ describe("membership-ops/participants/new page", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
-            name: "", email: null, parentEmail: null, dob: null, householdId: 9, alreadyMember: false,
+            name: "", email: null, parentEmail: null, parentName: null, dob: null, householdId: 9, alreadyMember: false,
           }),
         }),
       ),
@@ -194,6 +195,7 @@ describe("membership-ops/participants/new page", () => {
     fireEvent.change(screen.getByLabelText("Date of Birth"), { target: { value: "2015-01-01" } });
     await screen.findByText("Student Detected");
     fireEvent.change(screen.getByLabelText(/Parent \/ Guardian Google Email/), { target: { value: "parent@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("e.g. John Doe"), { target: { value: "Parent Name" } });
     fireEvent.click(screen.getByLabelText("Confirm this household is already a paid member"));
 
     const submitBtn = screen.getByRole("button", { name: "Create Participant" });
@@ -206,7 +208,7 @@ describe("membership-ops/participants/new page", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
-            name: "", email: null, parentEmail: "parent@example.com", dob: "2015-01-01", householdId: null, alreadyMember: true,
+            name: "", email: null, parentEmail: "parent@example.com", parentName: "Parent Name", dob: "2015-01-01", householdId: null, alreadyMember: true,
           }),
         }),
       ),

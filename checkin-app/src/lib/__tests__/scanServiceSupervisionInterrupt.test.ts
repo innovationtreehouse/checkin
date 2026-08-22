@@ -93,7 +93,7 @@ describe("rung 2 — the next supervising adult leaves", () => {
         expect(res.status).toBe(400);
         expect(body.type).toBe("warning");
         expect(body.error).toMatch(/only 1 supervising adult/);
-        expect(body.error).toMatch(/3 to 15 seconds/);
+        expect(body.error).toMatch(/within 15 seconds/);
         expect(update).toHaveBeenCalledWith({
             where: { id: DEPARTING_VISIT },
             data: { supervisionWarnedAt: expect.any(Date) },
@@ -102,6 +102,16 @@ describe("rung 2 — the next supervising adult leaves", () => {
 
     it("lets the checkout through on a scan that follows a fresh stamp", async () => {
         const { res, body } = await checkout([10, 20], new Date(Date.now() - 8_000));
+
+        expect(res.status).toBe(200);
+        expect(body.type).toBe("checkout");
+    });
+
+    it("confirms and departs on a second badge just 1s after the warning (#1347 PR-0)", async () => {
+        // The route's debounce used to swallow exactly this scan; the ladder
+        // itself was never the problem -- it accepts any stamp inside the
+        // window, however close to the warning.
+        const { res, body } = await checkout([10, 20], new Date(Date.now() - 1_000));
 
         expect(res.status).toBe(200);
         expect(body.type).toBe("checkout");

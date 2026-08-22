@@ -51,7 +51,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
         adminId = admin.id;
 
         const lead = await prisma.person.create({
-            data: { email: 'lead-price-roundtrip-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } },
+            data: { email: 'lead-price-roundtrip-test@example.com', name: 'Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } },
         });
         leadId = lead.id;
     });

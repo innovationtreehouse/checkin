@@ -80,7 +80,7 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         });
         boardId = board.id;
         const lead = await prisma.person.create({
-            data: { email: `lead-${TAG}@example.com`, name: 'Lead', household: { create: { name: `Lead HH ${TAG}` } } },
+            data: { email: `lead-${TAG}@example.com`, name: 'Lead', isDeclaredAdult: true, household: { create: { name: `Lead HH ${TAG}` } } },
         });
         leadId = lead.id;
         const participant = await prisma.person.create({

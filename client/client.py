@@ -23,7 +23,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from nacl.signing import SigningKey
 import requests
 
-from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso
+from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso, in_closed_window
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -744,12 +744,16 @@ def handle_scan(backend, state, outbox, participant_id):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def attendance_poller(backend, state, interval=30):
+def attendance_poller(backend, state, interval=30, sleep_fn=time.sleep,
+                       in_closed_window_fn=in_closed_window):
     """Background thread that polls attendance counts periodically.
     Pushes SSE status events when counts change so the blackout
-    logic works on display-only kiosks without a scanner."""
+    logic works on display-only kiosks without a scanner. §3.1/Q17: a
+    24/7 kiosk must not defeat the overnight curfew with signed GETs."""
     while True:
-        time.sleep(interval)
+        sleep_fn(interval)
+        if in_closed_window_fn():
+            continue
         att_data, att_status = backend.get_attendance()
         if att_status == 200 and "counts" in att_data:
             new_counts = att_data["counts"]
@@ -785,7 +789,8 @@ def _should_restart_for_update(remote_head, last_restart_target):
     # never-tried or newly-advanced target.
     return remote_head != last_restart_target
 
-def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE):
+def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE,
+                    in_closed_window_fn=in_closed_window):
     """Background thread that checks for client and server version updates."""
     last_restart_target = _read_last_restart_target(state_path)
 
@@ -798,18 +803,21 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
             log.info(f"Initial server version: {initial_server_version}")
             break
         time.sleep(5)
-    
+
     while True:
         time.sleep(interval)
-        
-        # 1. Check Server Version Update
-        if initial_server_version:
+
+        # 1. Check Server Version Update -- skipped during the closed window
+        # (§3.1): this signed GET keep-alives the service same as
+        # attendance_poller's. Self-update below is NOT gated: git pull hits
+        # no server, and overnight is the safe window to restart in.
+        if initial_server_version and not in_closed_window_fn():
             sv, status = backend.get_server_version()
             if status == 200 and sv and sv != initial_server_version:
                 log.info(f"Server version changed from {initial_server_version} to {sv}. Requesting reload.")
                 state.push_event({"reload": True})
                 initial_server_version = sv  # Update to prevent spam
-        
+
         # 2. Check Client Version Update
         try:
             subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
