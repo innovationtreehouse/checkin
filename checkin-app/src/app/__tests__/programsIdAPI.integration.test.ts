@@ -21,12 +21,18 @@ describe('Individual Program API Integration Tests', () => {
     let memberId: number;
     let memberHouseholdId: number;
     let enrolledId: number;
+    let parentId: number;
+    let siblingId: number;
     let publicProgramId: number;
     let orgMemberOnlyProgramId: number;
 
     // Distinctive name we assert NEVER appears in an anonymous response — the
     // roster/association leak (#P0-5.1a) is closed iff this string is absent.
     const ENROLLED_NAME = 'Roster Leak Canary';
+    const PARENT_NAME = 'Roster Parent Canary';
+    const PARENT_EMAIL = 'parent-prog-id-api-test@example.com';
+    const PARENT_PHONE = '5125551234';
+    const SIBLING_NAME = 'Roster Sibling Canary';
 
     beforeAll(async () => {
         // Clean up any leaked state
@@ -107,16 +113,43 @@ describe('Individual Program API Integration Tests', () => {
         // Enroll a participant with a recognizable name into the public program so
         // the leak tests have a roster identity to look for.
         const enrolled = await prisma.person.create({
-            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: { name: "Test HH" } } }
+            data: { email: 'enrolled-prog-id-api-test@example.com', name: ENROLLED_NAME, household: { create: { name: "Test HH" } } },
+            select: { id: true, householdId: true }
         });
         enrolledId = enrolled.id;
         await prisma.programParticipant.create({
             data: { programId: publicProgramId, personId: enrolledId, status: 'ACTIVE' }
         });
+
+        // The enrolled kid's parent — a lead of the same household, so the roster's
+        // parent band has something to deliver.
+        const parent = await prisma.person.create({
+            data: {
+                email: PARENT_EMAIL,
+                name: PARENT_NAME,
+                phone: PARENT_PHONE,
+                isHouseholdLead: true,
+                householdId: enrolled.householdId,
+            }
+        });
+        parentId = parent.id;
+        // A second member of the same household who is NOT a lead — the roster must
+        // not list them as a parent.
+        const sibling = await prisma.person.create({
+            data: { email: 'sibling-prog-id-api-test@example.com', name: SIBLING_NAME, householdId: enrolled.householdId }
+        });
+        siblingId = sibling.id;
+
+        // The parent also volunteers. This is the row that resolves
+        // their_program_households, so a widened volunteer select would put
+        // personal-tier fields on the wire here — see the narrowing pin below.
+        await prisma.programVolunteer.create({
+            data: { programId: publicProgramId, personId: parentId, isCore: true }
+        });
     });
 
     afterAll(async () => {
-        const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId];
+        const existingUserIds = [adminId, leadId, commonId, memberId, enrolledId, parentId, siblingId];
 
         if (memberHouseholdId) {
             await prisma.orgMembership.deleteMany({
@@ -126,8 +159,12 @@ describe('Individual Program API Integration Tests', () => {
 
         const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
         if (validProgramIds.length > 0) {
-            // ProgramParticipant has no cascade — clear enrollments before the program.
+            // ProgramParticipant/ProgramVolunteer have no cascade — clear the
+            // roster rows before the program.
             await prisma.programParticipant.deleteMany({
+                where: { programId: { in: validProgramIds } }
+            });
+            await prisma.programVolunteer.deleteMany({
                 where: { programId: { in: validProgramIds } }
             });
             await prisma.program.deleteMany({
@@ -229,8 +266,11 @@ describe('Individual Program API Integration Tests', () => {
              // Roster rows are absent — no participant/volunteer arrays at all.
              expect(data.participants).toBeUndefined();
              expect(data.volunteers).toBeUndefined();
-             // The enrolled identity must not appear anywhere in the payload.
+             // The enrolled identity must not appear anywhere in the payload —
+             // nor the parent's, who rides the same roster rows since #1400.
              expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+             expect(JSON.stringify(data)).not.toContain(PARENT_NAME);
+             expect(JSON.stringify(data)).not.toContain(PARENT_PHONE);
              // Capacity is preserved via an aggregate count, not the rows.
              expect(data._count?.participants).toBe(1);
         });
@@ -247,6 +287,7 @@ describe('Individual Program API Integration Tests', () => {
              expect(data.name).toBe('Public Prog ID API Test');
              expect(data.participants).toBeUndefined();
              expect(JSON.stringify(data)).not.toContain(ENROLLED_NAME);
+             expect(JSON.stringify(data)).not.toContain(PARENT_NAME);
         });
 
         it('returns the roster to the program lead mentor (staff tier unchanged)', async () => {
@@ -260,6 +301,62 @@ describe('Individual Program API Integration Tests', () => {
              expect(Array.isArray(data.participants)).toBe(true);
              expect(data.participants.some((p: { personId: number }) => p.personId === enrolledId)).toBe(true);
              expect(JSON.stringify(data)).toContain(ENROLLED_NAME);
+        });
+
+        // ── Parent contact band (#1400) ────────────────────────────────────────────
+        // Runs the REAL stack (handler -> registry -> scopesHeld -> stripBag), so it
+        // proves the their_program_households:pii grant actually delivers, not just
+        // that the select asked for it.
+        it('delivers the parents (household leads only) to the program lead mentor', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             const row = data.participants.find((p: { personId: number }) => p.personId === enrolledId);
+             const parents = row.person.household.householdMembers;
+             // The non-lead sibling is filtered out by the select.
+             expect(parents.map((m: { id: number }) => m.id)).toEqual([parentId]);
+             expect(parents[0].name).toBe(PARENT_NAME);
+             expect(parents[0].phone).toBe(PARENT_PHONE);
+             expect(parents[0].email).toBe(PARENT_EMAIL);
+             expect(JSON.stringify(data)).not.toContain(SIBLING_NAME);
+        });
+
+        it('strips the parents contact details for an enrolled non-staff caller', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: enrolledId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             const row = data.participants.find((p: { personId: number }) => p.personId === enrolledId);
+             const parents = row.person.household.householdMembers;
+             expect(parents[0].name).toBe(PARENT_NAME); // public tier survives
+             expect(parents[0].phone).toBeUndefined();
+             expect(parents[0].email).toBeUndefined();
+        });
+
+        // Regression pin for the narrowing #1425 landed. A parent-volunteer's Person
+        // row resolves their_program_households, and this view holds :pii + :personal
+        // on it — so only the select keeps dateOfBirth/allergies/googleId off the
+        // wire. Widening either select fails here with the offending keys named.
+        it('keeps the volunteer and leadMentor Person rows narrow for a parent-volunteer', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             const SELECTED = ['id', 'name', 'email'];
+             const vol = data.volunteers.find((v: { personId: number }) => v.personId === parentId);
+             expect(vol).toBeDefined();
+             expect(Object.keys(vol.person).filter(k => !SELECTED.includes(k))).toEqual([]);
+             expect(Object.keys(data.leadMentor).filter(k => !SELECTED.includes(k))).toEqual([]);
         });
 
         it('returns the roster to an enrolled participant (their own household)', async () => {
