@@ -30,15 +30,13 @@ describe("flow: program purchase with member pricing", () => {
         const memberId = member.personaId;
 
         const tag = Date.now().toString(36);
-        // Dateless on purpose: programCoverageDate returns null, so member pricing
-        // here rests on dues STATUS alone. The duration half can't be exercised in
-        // flow anyway — the flow DB is built by `prisma db push` (no migrations,
-        // no BoardSettings row), so coverage fails open; see the integration test.
         const created = await api<ProgramCreate>(board, "/api/programs", {
             method: "POST",
             body: JSON.stringify({
                 name: `Member Pricing Program ${tag}`,
                 leadMentorId: boardId,
+                startAt: "2026-01-01",
+                endAt: "2026-12-31",
                 memberPrice: "40",
                 nonMemberPrice: "50",
                 maxParticipants: 10,
