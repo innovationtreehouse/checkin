@@ -53,7 +53,7 @@ describe('Programs API Integration Tests', () => {
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
+            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
@@ -197,15 +197,9 @@ describe('Programs API Integration Tests', () => {
              const programs = await res.json();
              const publicActive = programs.find((p: { name?: string }) => p.name === 'Public API Test Program');
 
-             // The legacy two-variant columns are still declared (and still
-             // classified 'public') but no route selects them any more — the
-             // schema fields and this exclusion both go away with the DROP COLUMN
-             // migration (docs/designs/975-LEGACY_VARIANT_CONTRACT.md, Release 2).
-             const DROPPED_SOON = ['shopifyOrgMemberVariantId', 'shopifyNonOrgMemberVariantId'];
              const publicColumns = Object.entries(classifications.Program)
                  .filter(([, tier]) => tier === 'public')
-                 .map(([field]) => field)
-                 .filter((field) => !DROPPED_SOON.includes(field));
+                 .map(([field]) => field);
 
              expect(publicActive).toBeDefined();
              expect(publicColumns).not.toHaveLength(0); // guard: a broken import would vacuously pass

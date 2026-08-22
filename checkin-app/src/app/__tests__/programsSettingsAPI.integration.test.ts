@@ -62,13 +62,13 @@ describe('Program Settings API Integration Tests', () => {
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-settings-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
+            data: { email: 'lead-settings-api-test@example.com', name: 'Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create New Lead Candidate
         const newLead = await prisma.person.create({
-            data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', household: { create: { name: "Test HH" } } }
+            data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         newLeadId = newLead.id;
 
@@ -93,8 +93,14 @@ describe('Program Settings API Integration Tests', () => {
         await prisma.programParticipant.deleteMany({
             where: { program: { name: { contains: 'Settings API Test' } } }
         });
+        await prisma.event.deleteMany({
+            where: { program: { name: { contains: 'Settings API Test' } } }
+        });
         if (targetProgramId) {
             await prisma.programParticipant.deleteMany({
+                where: { programId: targetProgramId }
+            });
+            await prisma.event.deleteMany({
                 where: { programId: targetProgramId }
             });
             // Id anchor: survives even if a test renames the program out of the
@@ -338,6 +344,7 @@ describe('Program Settings API Integration Tests', () => {
             const program = await prisma.program.create({
                 data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             const res = await patchSettings(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
             expect(res.status).toBe(200);
@@ -351,6 +358,7 @@ describe('Program Settings API Integration Tests', () => {
             const program = await prisma.program.create({
                 data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' }
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             const res = await patchSettings(program.id, { announceOnOpen: true, phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
             expect(res.status).toBe(200);
@@ -362,6 +370,7 @@ describe('Program Settings API Integration Tests', () => {
             const program = await prisma.program.create({
                 data: { name: 'Settings API Test announce default-off', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' }
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             const infoSpy = jest.spyOn(logger, 'info');
             try {
@@ -392,6 +401,7 @@ describe('Program Settings API Integration Tests', () => {
             const program = await prisma.program.create({
                 data: { name: 'Settings API Test announce phaseonly', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             const res = await patchSettings(program.id, { phase: 'UPCOMING' });
             expect(res.status).toBe(200);
@@ -415,6 +425,7 @@ describe('Program Settings API Integration Tests', () => {
             const program = await prisma.program.create({
                 data: { name: 'Settings API Test announce reopen', leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true }
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             expect((await patchSettings(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' })).status).toBe(200);
             expect(mockNotify).toHaveBeenCalledTimes(1);

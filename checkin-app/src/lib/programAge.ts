@@ -1,4 +1,4 @@
-import { calculateAge, isYouth } from "@/lib/time";
+import { calculateAge, isYouth, orgCalendarDay } from "@/lib/time";
 
 /**
  * Whether we KNOW this person is an adult: declared over 25, or 18+ by DOB.
@@ -67,6 +67,29 @@ export function checkProgramAge(
   if (minAge !== null && age < minAge) return { ok: false, reason: "age", label: "Too young" };
   if (maxAge !== null && age > maxAge) return { ok: false, reason: "age", label: "Too old" };
   return { ok: true };
+}
+
+// Policy: Sponsored Program Policy, Art. IV — a program leader is at least 23.
+export const LEADER_MIN_AGE = 23;
+
+/**
+ * Whether this person is eligible to be a program leader by age. Fails closed:
+ * unknown DOB without isDeclaredAdult is not old enough.
+ */
+export function isLeaderAgeEligible(person: { dateOfBirth: Date | string | null; isDeclaredAdult?: boolean | null }): boolean {
+  if (person.dateOfBirth) return calculateAge(person.dateOfBirth) >= LEADER_MIN_AGE;
+  return !!person.isDeclaredAdult;
+}
+
+/**
+ * DB-level date threshold for the leader-picker query: born on or before this
+ * date ⇒ 23 or older today. The isDeclaredAdult OR leg covers null-DOB adults
+ * (flag means "marked 25+" which clears 23).
+ */
+export function leaderAgeCutoff(): Date {
+  const d = new Date(orgCalendarDay());
+  d.setUTCFullYear(d.getUTCFullYear() - LEADER_MIN_AGE);
+  return d;
 }
 
 /**

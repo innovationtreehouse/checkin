@@ -18,7 +18,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const body = await req.json();
         // `alreadyMember` lets an admin confirm a newly-created household is already
         // a paid member (defaults false — new participants are visitors, not members).
-        const { name, email, parentEmail, dob, householdId, alreadyMember = false } = body;
+        const { name, email, parentEmail, parentName, dob, householdId, alreadyMember = false } = body;
 
         if (!email && !parentEmail && !householdId) {
             return apiError("Email, Parent Email, or Household assignment is required", 400);
@@ -53,6 +53,13 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             });
 
             if (!parent) {
+                // #1688: validate before the transaction opens — a 400 must not
+                // hold the counter row lock.
+                if (!parentName?.trim()) {
+                    return apiError("Parent name is required when creating a new parent", 400);
+                }
+                const trimmedParentName = parentName.trim();
+                const parentLastName = trimmedParentName.split(/\s+/).pop() || "";
                 // No transaction in this route, so the mint gets a minimal one
                 // paired with its create — an id minted outside would be burned
                 // if the create failed. The household is created as its own
@@ -60,11 +67,14 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 // accepted in Prisma's *unchecked* create input, which has no
                 // room for a nested relation create.
                 parent = await withTx(prisma, async (tx) => {
-                    const household = await tx.household.create({ data: { name: "Household" } });
+                    const household = await tx.household.create({
+                        data: { name: parentLastName ? `${parentLastName} Household` : "Household" }
+                    });
                     return tx.person.create({
                         data: {
                             id: await mintPersonId(tx),
                             email: parentEmail,
+                            name: trimmedParentName,
                             householdId: household.id,
                         }
                     });
