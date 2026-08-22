@@ -121,6 +121,27 @@ export function badgeYearCycle(configuredBoundary: Date, now: Date): { label: st
 }
 
 /**
+ * Compute the settled-since window for a specific year label (e.g. "2025-2026").
+ * Returns the same shape as badgeYearCycle but for an arbitrary cycle, plus an
+ * upper bound so historical queries don't leak into later cycles.
+ */
+export function badgeYearCycleForLabel(
+    configuredBoundary: Date,
+    label: string,
+): { label: string; settledSince: Date; settledBefore: Date } | null {
+    const match = label.match(/^(\d{4})-(\d{4})$/);
+    if (!match) return null;
+    const startYear = parseInt(match[1], 10);
+    const endYear = parseInt(match[2], 10);
+    if (endYear !== startYear + 1) return null;
+    const bMonth = configuredBoundary.getUTCMonth();
+    const bDay = configuredBoundary.getUTCDate();
+    const settledSince = monthsBefore(new Date(Date.UTC(endYear, bMonth, bDay)), RENEWAL_LEAD_MONTHS);
+    const settledBefore = monthsBefore(new Date(Date.UTC(endYear + 1, bMonth, bDay)), RENEWAL_LEAD_MONTHS);
+    return { label, settledSince, settledBefore };
+}
+
+/**
  * True when `now` sits inside the renewal lead window before the configured
  * boundary — the same window runRenewalSweep opens/reminds on. No boundary set
  * ⇒ not renewal season. Drives the admin "Grant for coming year" button.

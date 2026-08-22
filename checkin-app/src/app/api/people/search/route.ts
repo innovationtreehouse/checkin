@@ -7,7 +7,7 @@ import { apiError } from "@/lib/api-response";
 import { rolesToFlags } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { leaderAgeCutoff } from "@/lib/programAge";
-import { badgeYearCycle, MAX_DATE } from "@/lib/membership/renewal";
+import { badgeYearCycle, badgeYearCycleForLabel, MAX_DATE } from "@/lib/membership/renewal";
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +24,39 @@ export const GET = withAuth(
             // legacy-authz baseline, so no new method key and no registry change, and the
             // shape here is a strict subset of what the search below already returns.
             // ponytail: unbounded — ACTIVE members only (hundreds). Paginate if that changes.
+            // Roster years: the distinct membership years that have at least one
+            // settled process. Drives the badge page's year picklist.
+            if (url.searchParams.get('roster') === 'years') {
+                const settings = await prisma.boardSettings.findUnique({
+                    where: { id: 1 },
+                    select: { orgMembershipYearBoundary: true },
+                });
+                if (!settings?.orgMembershipYearBoundary) {
+                    return NextResponse.json({ years: [], current: null });
+                }
+                const boundary = settings.orgMembershipYearBoundary;
+                const current = badgeYearCycle(boundary, new Date());
+                // Look back 5 years from the current cycle.
+                const currentEndYear = parseInt(current.label.split('-')[1], 10);
+                const years: string[] = [];
+                for (let end = currentEndYear; end >= currentEndYear - 5; end--) {
+                    const label = `${end - 1}-${end}`;
+                    const cycle = badgeYearCycleForLabel(boundary, label);
+                    if (!cycle) continue;
+                    const count = await prisma.orgMembershipProcess.count({
+                        where: {
+                            status: 'ACTIVE',
+                            stageEnteredAt: { gte: cycle.settledSince, lt: cycle.settledBefore },
+                        },
+                    });
+                    if (count > 0) years.push(label);
+                }
+                // Always include the current label even with 0 settled, so
+                // the picklist has a sensible default for fresh orgs.
+                if (!years.includes(current.label)) years.unshift(current.label);
+                return NextResponse.json({ years, current: current.label });
+            }
+
             if (url.searchParams.get('roster') === 'active') {
                 const settings = await prisma.boardSettings.findUnique({
                     where: { id: 1 },
@@ -32,8 +65,11 @@ export const GET = withAuth(
                 if (!settings?.orgMembershipYearBoundary) {
                     logger.warn('No membership-year boundary configured — badges will print no year (#1628)');
                 }
+                const requestedYear = url.searchParams.get('year');
                 const cycle = settings?.orgMembershipYearBoundary
-                    ? badgeYearCycle(settings.orgMembershipYearBoundary, new Date())
+                    ? (requestedYear
+                        ? badgeYearCycleForLabel(settings.orgMembershipYearBoundary, requestedYear)
+                        : badgeYearCycle(settings.orgMembershipYearBoundary, new Date()))
                     : null;
                 // A household earns `year` by settling THIS cycle, not by being ACTIVE —
                 // nothing revokes a membership at the boundary, so ACTIVE outlives the
