@@ -103,7 +103,7 @@ export const GET = withAuth(
             const collisions: Array<{ type: string; message: string }> = [];
             const now = new Date();
 
-            const [sharedPrograms, sharedTools, sharedFutureEvents, sharedBgProcessCount, aOpen, bOpen] = await Promise.all([
+            const [sharedPrograms, sharedTools, sharedFutureEvents, sharedBgProcessCount, subjectAttestations, aOpen, bOpen] = await Promise.all([
                 prisma.program.findMany({
                     where: {
                         AND: [
@@ -140,6 +140,14 @@ export const GET = withAuth(
                         ],
                     },
                 }),
+                // Subject side of @@unique([processId, reviewerId, subjectPersonId]):
+                // a repoint collides only when ONE reviewer attested both records under
+                // the same process, so the pairs are intersected below rather than
+                // counted per process.
+                prisma.backgroundCheckAttestation.findMany({
+                    where: { subjectPersonId: { in: [aId, bId] } },
+                    select: { processId: true, reviewerId: true, subjectPersonId: true },
+                }),
                 prisma.visit.findFirst({ where: { personId: aId, departedAt: null, deletedAt: null }, select: { id: true } }),
                 prisma.visit.findFirst({ where: { personId: bId, departedAt: null, deletedAt: null }, select: { id: true } }),
             ]);
@@ -152,6 +160,14 @@ export const GET = withAuth(
             }
             if (sharedBgProcessCount > 0) {
                 collisions.push({ type: 'bgAttestation', message: `Both attested the same background check (${sharedBgProcessCount} shared review${sharedBgProcessCount > 1 ? 's' : ''}). Investigate before merging.` });
+            }
+            const aSubjectKeys = new Set(
+                subjectAttestations.filter(x => x.subjectPersonId === aId).map(x => `${x.processId}:${x.reviewerId}`)
+            );
+            const sharedSubjectCount = subjectAttestations
+                .filter(x => x.subjectPersonId === bId && aSubjectKeys.has(`${x.processId}:${x.reviewerId}`)).length;
+            if (sharedSubjectCount > 0) {
+                collisions.push({ type: 'bgAttestationSubject', message: `One reviewer attested both records as the subject of the same background check (${sharedSubjectCount} shared attestation${sharedSubjectCount > 1 ? 's' : ''}). Investigate before merging.` });
             }
             for (const e of sharedFutureEvents) {
                 collisions.push({ type: 'rsvp', message: `Both RSVP'd to ${e.name}. Remove one RSVP first.` });

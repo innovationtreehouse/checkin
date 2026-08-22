@@ -65,6 +65,15 @@ function personPreImage(p: Person) {
     };
 }
 
+/**
+ * The part of `@@unique([processId, reviewerId, subjectPersonId])` that a
+ * subjectPersonId repoint does not change — two rows sharing it cannot both
+ * name the same subject.
+ */
+function bgSubjectKey(a: { processId: number; reviewerId: number }): string {
+    return `${a.processId}:${a.reviewerId}`;
+}
+
 /** A login identity is present iff email OR googleId is non-empty. */
 function hasIdentity(p: { email: string | null; googleId: string | null }): boolean {
     return !isEmpty(p.email) || !isEmpty(p.googleId);
@@ -205,6 +214,7 @@ export const POST = withAuth(
                 rsvps: { include: { event: { select: { name: true, startAt: true } } } },
                 toolStatuses: { include: { tool: { select: { name: true } } } },
                 bgAttestations: true,
+                bgAttestationsAsSubject: true,
                 corporationLeads: true,
                 corporationMembers: true,
             } as const;
@@ -308,6 +318,21 @@ export const POST = withAuth(
                 collisions.push({
                     type: 'bgAttestation',
                     message: `Both attested the same background check (${bgCollisions.length} shared review${bgCollisions.length > 1 ? 's' : ''}). This indicates review under two identities — investigate before merging.`,
+                });
+            }
+
+            // Subject side of the same unique triple. Repointing subjectPersonId
+            // collides when ONE reviewer attested both identities under the same
+            // process — i.e. read the same human off a PDF twice. Two DIFFERENT
+            // reviewers naming the two identities is an ordinary 2-of-N review and
+            // merges cleanly. A tombstone that is the *reviewer* on a shared process
+            // is already refused above, whichever role it plays on the other row.
+            const keepSubjectKeys = new Set(keepParticipant.bgAttestationsAsSubject.map(bgSubjectKey));
+            const bgSubjectCollisions = mergeParticipant.bgAttestationsAsSubject.filter(a => keepSubjectKeys.has(bgSubjectKey(a)));
+            if (bgSubjectCollisions.length > 0) {
+                collisions.push({
+                    type: 'bgAttestationSubject',
+                    message: `One reviewer attested both records as the subject of the same background check (${bgSubjectCollisions.length} shared attestation${bgSubjectCollisions.length > 1 ? 's' : ''}). This indicates the same adult named under two identities — investigate before merging.`,
                 });
             }
 
@@ -418,6 +443,13 @@ export const POST = withAuth(
                 const moved = {
                     visits: 0,
                     personBgArchived: 0,
+                    rawBadgeLogs: 0,
+                    noteAcks: 0,
+                    attendanceConfirmations: 0,
+                    trustedAdultDecisions: 0,
+                    roleGrants: 0,
+                    roles: { migrated: 0, deduped: 0 },
+                    bgAttestationSubjects: { migrated: 0, left: 0 },
                     programParticipants: { migrated: 0, left: 0 },
                     programVolunteers: { migrated: 0, deduped: 0 },
                     rsvps: { migrated: 0, deduped: 0, left: 0 },
@@ -509,6 +541,34 @@ export const POST = withAuth(
                 await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { disclosedById: mergeId }, data: { disclosedById: keepId } });
 
+                // RawBadgeLog.personId is RESTRICT: a scan left on the tombstone pins
+                // that Person row in place forever.
+                moved.rawBadgeLogs = (await tx.rawBadgeLog.updateMany({ where: { personId: mergeId }, data: { personId: keepId } })).count;
+
+                // "Which staff member did this" facts, all SET NULL — left on the
+                // tombstone they read as nobody the moment the row goes.
+                moved.noteAcks = (await tx.orgMembershipProcess.updateMany({ where: { noteAckById: mergeId }, data: { noteAckById: keepId } })).count;
+                moved.attendanceConfirmations = (await tx.event.updateMany({ where: { attendanceConfirmedById: mergeId }, data: { attendanceConfirmedById: keepId } })).count;
+                moved.trustedAdultDecisions = (await tx.trustedAdultReview.updateMany({ where: { decidedById: mergeId }, data: { decidedById: keepId } })).count;
+
+                // PersonRole.personId is CASCADE — a role left on the tombstone is a
+                // security grant a later delete destroys with no audit row. PK is
+                // (personId, role), so move each role the survivor lacks and drop the
+                // duplicate: the survivor already holds that grant.
+                const keepRoles = new Set((await tx.personRole.findMany({ where: { personId: keepId }, select: { role: true } })).map(r => r.role));
+                for (const { role } of await tx.personRole.findMany({ where: { personId: mergeId }, select: { role: true } })) {
+                    const where = { personId_role: { personId: mergeId, role } };
+                    if (keepRoles.has(role)) {
+                        await tx.personRole.delete({ where });
+                        moved.roles.deduped++;
+                    } else {
+                        await tx.personRole.update({ where, data: { personId: keepId } });
+                        moved.roles.migrated++;
+                    }
+                }
+                // After the holder pass, so a granter stamp on a deduped row isn't counted.
+                moved.roleGrants = (await tx.personRole.updateMany({ where: { grantedById: mergeId }, data: { grantedById: keepId } })).count;
+
                 // bgAttestations: pre-refused collisions; left is defense-in-depth.
                 // corporationLeads/corporationMembers: bare joins, auto-dedupe.
                 const keepAttestProcessIds = new Set(keepParticipant.bgAttestations.map(a => a.processId));
@@ -518,6 +578,17 @@ export const POST = withAuth(
                         moved.bgAttestations.migrated++;
                     } else {
                         moved.bgAttestations.left++;
+                    }
+                }
+
+                // Subject side of the same rows: pre-refused collisions; left is
+                // defense-in-depth.
+                for (const att of mergeParticipant.bgAttestationsAsSubject) {
+                    if (!keepSubjectKeys.has(bgSubjectKey(att))) {
+                        await tx.backgroundCheckAttestation.update({ where: { id: att.id }, data: { subjectPersonId: keepId } });
+                        moved.bgAttestationSubjects.migrated++;
+                    } else {
+                        moved.bgAttestationSubjects.left++;
                     }
                 }
 

@@ -116,9 +116,11 @@ describe("Merge Participants API", () => {
         const personIds = [pKeepId, pMergeId, actorId, ...extraPersonIds];
 
         // RESTRICT-FK children must go before their Person rows.
-        await prisma.backgroundCheckAttestation.deleteMany({ where: { reviewerId: { in: personIds } } });
+        await prisma.backgroundCheckAttestation.deleteMany({ where: { OR: [{ reviewerId: { in: personIds } }, { subjectPersonId: { in: personIds } }] } });
+        await prisma.rawBadgeLog.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.corporationLead.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.corporationMember.deleteMany({ where: { personId: { in: personIds } } });
+        await prisma.trustedAdultReview.deleteMany({ where: { householdId } });
         await prisma.trustedAdult.deleteMany({ where: { householdId } });
         await prisma.toolStatus.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.rSVP.deleteMany({ where: { personId: { in: personIds } } });
@@ -978,6 +980,159 @@ describe("Merge Participants API", () => {
         // Sessions are the deliberate exception: deleted, not moved — no reason to
         // inherit a login session, and forcing re-login is smaller and safer.
         expect(await prisma.session.count({ where: { userId: { in: [pKeepId, pMergeId] } } })).toBe(0);
+    });
+
+    // #1456 slice 2b-0: relations the merge never repointed, so the fact stayed on a
+    // record the app treats as nonexistent — and, for the RESTRICT and CASCADE ones,
+    // made a later Person delete impossible or silently destructive.
+    describe("repoints every Person relation (2b-0)", () => {
+        /** Audit tallies for the merge just run. */
+        const movedTallies = async () => {
+            const log = await prisma.auditLog.findFirst({ where: { tableName: "Person", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId } });
+            return (log?.newData as { moved: Record<string, unknown> }).moved;
+        };
+
+        // RESTRICT: this row is what makes `DELETE FROM "Person"` fail for essentially
+        // every real tombstone.
+        it("moves RawBadgeLog scans to the survivor", async () => {
+            await prisma.rawBadgeLog.create({ data: { personId: pMergeId, location: "front-desk" } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect(await prisma.rawBadgeLog.count({ where: { personId: pMergeId } })).toBe(0);
+            expect((await prisma.rawBadgeLog.findFirst({ where: { personId: pKeepId } }))?.location).toBe("front-desk");
+            expect(await movedTallies()).toMatchObject({ rawBadgeLogs: 1 });
+        });
+
+        // SET NULL: left behind, the audit fact becomes "nobody read the note".
+        it("moves the intake-note acknowledgement (OrgMembershipProcess.noteAckById)", async () => {
+            const process = await prisma.orgMembershipProcess.create({
+                data: { kind: "PERSON_BG", status: "PENDING_BG_REVIEW", noteAckById: pMergeId, noteAckAt: new Date() },
+            });
+            createdProcessIds.push(process.id);
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.orgMembershipProcess.findUnique({ where: { id: process.id } }))?.noteAckById).toBe(pKeepId);
+            expect(await movedTallies()).toMatchObject({ noteAcks: 1 });
+        });
+
+        it("moves the attendance confirmation (Event.attendanceConfirmedById)", async () => {
+            const event = await prisma.event.create({
+                data: {
+                    name: "Confirmed Event", startAt: new Date(Date.now() - 86400000), endAt: new Date(Date.now() - 82800000),
+                    attendanceConfirmedById: pMergeId, attendanceConfirmedAt: new Date(),
+                },
+            });
+            createdEventId = event.id;
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.event.findUnique({ where: { id: event.id } }))?.attendanceConfirmedById).toBe(pKeepId);
+            expect(await movedTallies()).toMatchObject({ attendanceConfirmations: 1 });
+        });
+
+        it("moves the trusted-adult board decision (TrustedAdultReview.decidedById)", async () => {
+            const adult = await prisma.trustedAdult.create({
+                data: { householdId, trustedAdultName: "Grandma", trustedAdultPhone: "555-0199", disclosedById: actorId, familyContext: "context" },
+            });
+            const review = await prisma.trustedAdultReview.create({
+                data: { trustedAdultId: adult.id, householdId, kind: "INITIAL", decidedById: pMergeId },
+            });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.trustedAdultReview.findUnique({ where: { id: review.id } }))?.decidedById).toBe(pKeepId);
+            expect(await movedTallies()).toMatchObject({ trustedAdultDecisions: 1 });
+        });
+
+        // CASCADE: a role left on the tombstone is a security grant a later delete
+        // would take with it, with no audit row.
+        it("moves a PersonRole the survivor lacks, dedupes one it already holds, and loses none silently", async () => {
+            await prisma.personRole.create({ data: { personId: pKeepId, role: "BOARD" } });
+            await prisma.personRole.create({ data: { personId: pMergeId, role: "BOARD" } });
+            await prisma.personRole.create({ data: { personId: pMergeId, role: "KEYHOLDER" } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const surviving = await prisma.personRole.findMany({ where: { personId: { in: [pKeepId, pMergeId] } }, select: { personId: true, role: true } });
+            expect(surviving.map(r => `${r.personId}:${r.role}`).sort()).toEqual([`${pKeepId}:BOARD`, `${pKeepId}:KEYHOLDER`]);
+            // The dropped row is the duplicate grant, and the audit says so — the
+            // KEYHOLDER grant is not quietly gone.
+            expect(await movedTallies()).toMatchObject({ roles: { migrated: 1, deduped: 1 } });
+        });
+
+        it("moves the PersonRole granter stamp (grantedById)", async () => {
+            await prisma.personRole.create({ data: { personId: actorId, role: "KEYHOLDER", grantedById: pMergeId } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const granted = await prisma.personRole.findUnique({ where: { personId_role: { personId: actorId, role: "KEYHOLDER" } } });
+            expect(granted?.grantedById).toBe(pKeepId);
+            expect(await movedTallies()).toMatchObject({ roleGrants: 1 });
+        });
+
+        // The repoint AND the proof it isn't over-refused: two DIFFERENT reviewers each
+        // naming one of the duplicate identities is an ordinary 2-of-N review.
+        it("moves BackgroundCheckAttestation.subjectPersonId, even when another reviewer named the survivor", async () => {
+            const reviewer2 = await prisma.person.create({ data: { name: "Second Reviewer", householdId: await makeHousehold("Reviewer Two Household") } });
+            extraPersonIds.push(reviewer2.id);
+            const process = await prisma.orgMembershipProcess.create({ data: { kind: "PERSON_BG", status: "PENDING_BG_REVIEW" } });
+            createdProcessIds.push(process.id);
+
+            await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: reviewer2.id, subjectPersonId: pKeepId, result: "APPROVE" } });
+            const mergeSide = await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: actorId, subjectPersonId: pMergeId, result: "APPROVE" } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.backgroundCheckAttestation.findUnique({ where: { id: mergeSide.id } }))?.subjectPersonId).toBe(pKeepId);
+            expect(await prisma.backgroundCheckAttestation.count({ where: { processId: process.id, subjectPersonId: pKeepId } })).toBe(2);
+            expect(await movedTallies()).toMatchObject({ bgAttestationSubjects: { migrated: 1, left: 0 } });
+        });
+    });
+
+    // #1456 Decision 3: #1686's collision key was `processId` alone, so the subject
+    // half of @@unique([processId, reviewerId, subjectPersonId]) went undetected.
+    describe("subject-side attestation collision", () => {
+        /** One reviewer attested BOTH records as the subject of one process. */
+        const seedSubjectCollision = async () => {
+            const process = await prisma.orgMembershipProcess.create({ data: { kind: "PERSON_BG", status: "PENDING_BG_REVIEW" } });
+            createdProcessIds.push(process.id);
+            await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: actorId, subjectPersonId: pKeepId, result: "APPROVE" } });
+            await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: actorId, subjectPersonId: pMergeId, result: "APPROVE" } });
+            return process.id;
+        };
+
+        it("409s, naming the collision, and moves nothing", async () => {
+            await seedSubjectCollision();
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(409);
+            const data = await res.json();
+            // Neither record is the REVIEWER here — only the widened key sees this.
+            expect((data.collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationSubject']);
+            expect(data.error).toContain("subject of the same background check");
+
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+            expect(await prisma.backgroundCheckAttestation.count({ where: { subjectPersonId: pMergeId } })).toBe(1);
+        });
+
+        it("analyze reports it too, so the picker warns before the operator commits", async () => {
+            await seedSubjectCollision();
+
+            const res = await analyzeGET(analyzeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+            const { collisions } = await res.json();
+            expect((collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationSubject']);
+            expect(collisions[0].message).toContain("subject of the same background check");
+        });
     });
 
     // One human owes ONE background check: both sides can hold an open PERSON_BG, and
