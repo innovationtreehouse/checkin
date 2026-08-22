@@ -103,9 +103,8 @@ Things the app takes as true because they are handled outside it.
 - A program leader is 23 or older, the floor belonging to the role rather than to
   adulthood. A program volunteer has no age floor at all — youth volunteer too.  [Decision — *Policy: Sponsored Program Policy, Art. IV*]
 
-- Nothing checks either the age floor or the requirement that a leader be a
-  member who has passed a background check: the leader pickers admit anyone 18 or
-  over.  [Short of policy — *Policy: Sponsored Program Policy, Art. IV*]
+- Nothing checks that a program leader is a member who has passed a background
+  check.  [Short of policy — *Policy: Sponsored Program Policy, Art. IV*]
 
 - Nobody under 18 enrolls themselves, and nobody whose age is unknown does
   either; only a known adult may. The bar is the guardian-consent line and is

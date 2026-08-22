@@ -62,13 +62,13 @@ describe('Program Settings API Integration Tests', () => {
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-settings-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
+            data: { email: 'lead-settings-api-test@example.com', name: 'Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 
         // Create New Lead Candidate
         const newLead = await prisma.person.create({
-            data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', household: { create: { name: "Test HH" } } }
+            data: { email: 'newlead-settings-api-test@example.com', name: 'New Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         newLeadId = newLead.id;
 

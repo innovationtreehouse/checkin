@@ -33,6 +33,9 @@ const mockAuditLogCreate = jest.fn().mockResolvedValue({});
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
+        person: {
+            findUnique: jest.fn().mockResolvedValue({ dateOfBirth: null, isDeclaredAdult: true }),
+        },
         program: {
             create: (...args: unknown[]) => mockProgramCreate(...args),
         },

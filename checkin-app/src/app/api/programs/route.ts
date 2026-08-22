@@ -10,7 +10,7 @@ import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
-import { validateProgramAgeBounds } from "@/lib/programAge";
+import { validateProgramAgeBounds, isLeaderAgeEligible } from "@/lib/programAge";
 import { parseDateOnly } from "@/lib/time";
 
 // Public catalog projection: every Program column whose `/// @sensitivity:` tier
@@ -182,6 +182,17 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         if (!leadMentorId) {
             return apiError("Lead Mentor is required", 400);
+        }
+
+        const mentor = await prisma.person.findUnique({
+            where: { id: parseInt(leadMentorId, 10) },
+            select: { dateOfBirth: true, isDeclaredAdult: true },
+        });
+        if (!mentor) {
+            return apiError("Lead mentor not found", 400);
+        }
+        if (!isLeaderAgeEligible(mentor)) {
+            return apiError("Lead mentor must be at least 23 years old", 400);
         }
 
         const maxPart = maxParticipants != null ? parseInt(maxParticipants, 10) : null;

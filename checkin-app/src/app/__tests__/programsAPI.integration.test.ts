@@ -53,7 +53,7 @@ describe('Programs API Integration Tests', () => {
 
         // Create Lead
         const lead = await prisma.person.create({
-            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', household: { create: { name: "Test HH" } } }
+            data: { email: 'lead-programs-api-test@example.com', name: 'Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
         });
         leadId = lead.id;
 

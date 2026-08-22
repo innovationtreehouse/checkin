@@ -699,7 +699,7 @@ describe('Individual Program API Integration Tests', () => {
 
         beforeAll(async () => {
             const newLead = await prisma.person.create({
-                data: { email: 'newlead-prog-id-api-test@example.com', name: 'New Lead', household: { create: { name: "Test HH" } } }
+                data: { email: 'newlead-prog-id-api-test@example.com', name: 'New Lead', isDeclaredAdult: true, household: { create: { name: "Test HH" } } }
             });
             newLeadId = newLead.id;
 

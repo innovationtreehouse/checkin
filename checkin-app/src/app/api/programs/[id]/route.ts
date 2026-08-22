@@ -9,7 +9,7 @@ import { adjustProgramInventory } from "@/lib/shopify";
 import { dollarsToCentsOrNull } from "@inventory/money";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
-import { validateProgramAgeBounds } from "@/lib/programAge";
+import { validateProgramAgeBounds, isLeaderAgeEligible } from "@/lib/programAge";
 import { parseDateOnly } from "@/lib/time";
 import { ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
 
@@ -264,6 +264,16 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             }
             if (!isSysAdminOrBoard && leadMentorId !== currentProgram.leadMentorId) {
                 return apiError("Forbidden: Only administrators can reassign lead mentors", 403);
+            }
+            const mentor = await prisma.person.findUnique({
+                where: { id: leadMentorId },
+                select: { dateOfBirth: true, isDeclaredAdult: true },
+            });
+            if (!mentor) {
+                return apiError("Lead mentor not found", 400);
+            }
+            if (!isLeaderAgeEligible(mentor)) {
+                return apiError("Lead mentor must be at least 23 years old", 400);
             }
         }
 
