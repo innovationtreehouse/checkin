@@ -110,12 +110,12 @@ export const PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]'
                 select: { id: true },
             });
             if (!live) return null;
-            // arrivedVia is left as-is: trends' exclusion filter (facility/trends
-            // route) reads only arrivedVia, so restamping it WEB here promoted a
-            // LEAD_MARKED (staff-asserted, not measured) arrival into counted
-            // hours the moment its time was corrected (#1631). departedVia has no
-            // such reader, so it still becomes WEB — an edited departure is a
-            // self-report now, whatever captured it before.
+            // arrivedVia is left as-is: it records how the arrival was measured,
+            // and correction significance weights it (a member overwriting a staff
+            // observation scores higher than editing their own self-report), so
+            // restamping WEB here would erase the very signal review reads.
+            // departedVia still becomes WEB — an edited departure is a self-report
+            // now, whatever captured it before.
             return tx.visit.update({
                 where: { id: visitId },
                 data: {

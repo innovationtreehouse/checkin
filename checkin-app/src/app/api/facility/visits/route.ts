@@ -88,9 +88,8 @@ export const PATCH = withAuth(
                         data: {
                             // `arrivedVia` is left alone, as on the `events/[id]` update
                             // branch: a correction re-times a visit, it does not change
-                            // how the arrival was measured, and restamping LEAD_MARKED
-                            // drops a corrected SCANNER visit out of `facility/trends`.
-                            // A departure staff typed is theirs; trends keys on arrival.
+                            // how the arrival was measured, and correction significance
+                            // weights that source. A departure staff typed is theirs.
                             ...(parsedArrived ? { arrivedAt: nextArrived } : {}),
                             ...(parsedDeparted ? { departedAt: nextDeparted, departedVia: "LEAD_MARKED" } : {}),
                         },

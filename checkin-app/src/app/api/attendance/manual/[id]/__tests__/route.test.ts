@@ -133,9 +133,9 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
 
         expect(res.status).toBe(200);
-        // #1631: arrivedVia is never restamped on correction — trends' exclusion
-        // filter reads it, so overwriting a LEAD_MARKED source would promote the
-        // visit into counted hours.
+        // #1631: arrivedVia is never restamped on correction — correction
+        // significance weights it, so overwriting a LEAD_MARKED source would
+        // silently downgrade how the edit is scored and reviewed.
         expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
             data: { arrivedAt: new Date("2026-07-20T14:05:00Z") },
         }));
@@ -150,8 +150,8 @@ describe("PATCH /api/attendance/manual/[id]", () => {
     });
 
     // #1631 pin: a LEAD_MARKED (staff-asserted) arrival must keep that source
-    // through a correction, or trends' `notIn ["LEAD_MARKED", "SYSTEM"]` filter
-    // starts counting it as measured hours.
+    // through a correction, or the member's edit stops reading as an overwrite
+    // of someone else's observation and scores as an ordinary self-report.
     it("keeps a LEAD_MARKED arrival's source on correction (does not restamp WEB)", async () => {
         const leadMarked = { ...baseVisit, arrivedVia: "LEAD_MARKED", departedVia: "LEAD_MARKED" };
         visitFindUnique.mockResolvedValue(leadMarked);
@@ -168,7 +168,7 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         expect(visit.arrivedVia).toBe("LEAD_MARKED");
     });
 
-    it("still restamps departedVia to WEB on a departure correction (no trends reader for it)", async () => {
+    it("still restamps departedVia to WEB on a departure correction (an edited departure is a self-report)", async () => {
         visitFindUnique.mockResolvedValue({ ...baseVisit, arrivedVia: "LEAD_MARKED", departedVia: "LEAD_MARKED" });
         const res = await PATCH(req("PATCH", { departedAt: "2026-07-20T16:30:00Z" }), ctx as never);
 

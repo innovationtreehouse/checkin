@@ -70,16 +70,9 @@ export const GET = withAuth(
                 arrivedAt: { gte: since },
                 departedAt: { not: null },
                 deletedAt: null,
-                // Drop staff-asserted arrivals (LEAD_MARKED, and its legacy spelling
-                // SYSTEM): those times are an event window, not a measured duration.
-                // The events roster mark stamps LEAD_MARKED on the visits it creates;
-                // a walk-in it adopts keeps its measured SCANNER/WEB and still counts.
-                // An untagged (null) arrival is an ordinary visit and counts — it needs
-                // the explicit OR, because NULL never satisfies a SQL NOT IN.
-                OR: [
-                    { arrivedVia: null },
-                    { arrivedVia: { notIn: ["LEAD_MARKED", "SYSTEM"] } },
-                ],
+                // Every completed visit counts, whatever recorded it. The only
+                // exclusions: an open visit has no duration to sum, and a deleted
+                // visit did not happen.
             };
 
             if (programId) {
