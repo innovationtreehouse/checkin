@@ -8,7 +8,6 @@
 import { POST } from "../route";
 import { GET as analyzeGET } from "../analyze/route";
 import { GET as searchGET } from "@/app/api/people/search/route";
-import { PATCH as settingsPATCH } from "@/app/api/programs/[id]/route";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 
@@ -241,65 +240,97 @@ describe("Merge Participants API", () => {
         expect(merged?.email).toContain("@deleted.invalid");
     });
 
-    // Matrix 1: unique collision, both directions, across every loop-guarded relation.
-    it("keeps BOTH rows on every join-table/loop-guarded collision — zero deletes", async () => {
+    // Matrix 1a (#1456): decision-bearing collisions refuse the merge.
+    it("409s on decision-bearing collisions, naming every collision in the response", async () => {
         const program = await prisma.program.create({ data: { name: "Merge Conflict Program" } });
         createdProgramId = program.id;
         const tool = await prisma.tool.create({ data: { name: "Conflict Tool" } });
         createdToolId = tool.id;
-        const event = await prisma.event.create({
-            data: { programId: program.id, name: "Conflict Event", startAt: new Date(), endAt: new Date(Date.now() + 3600000) },
+        const futureEvent = await prisma.event.create({
+            data: { programId: program.id, name: "Future Event", startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) },
         });
-        createdEventId = event.id;
-        const corp = await prisma.corporation.create({ data: {} });
-        createdCorporationId = corp.id;
+        createdEventId = futureEvent.id;
         const process = await prisma.orgMembershipProcess.create({ data: { kind: "PERSON_BG", status: "PENDING_BG_REVIEW" } });
         createdProcessIds.push(process.id);
 
-        // Collide on every relation that carries a unique/composite-PK constraint.
         await prisma.programParticipant.create({ data: { programId: program.id, personId: pKeepId } });
         await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId } });
-        await prisma.programVolunteer.create({ data: { programId: program.id, personId: pKeepId } });
-        await prisma.programVolunteer.create({ data: { programId: program.id, personId: pMergeId } });
         await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pKeepId, level: "BASIC" } });
         await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pMergeId, level: "MAY_CERTIFY_OTHERS" } });
-        await prisma.rSVP.create({ data: { eventId: event.id, personId: pKeepId, status: "ATTENDING" } });
-        await prisma.rSVP.create({ data: { eventId: event.id, personId: pMergeId, status: "NOT_ATTENDING" } });
-        await prisma.corporationLead.create({ data: { corporationId: corp.id, personId: pKeepId } });
-        await prisma.corporationLead.create({ data: { corporationId: corp.id, personId: pMergeId } });
-        await prisma.corporationMember.create({ data: { corporationId: corp.id, personId: pKeepId } });
-        await prisma.corporationMember.create({ data: { corporationId: corp.id, personId: pMergeId } });
+        await prisma.rSVP.create({ data: { eventId: futureEvent.id, personId: pKeepId, status: "ATTENDING" } });
+        await prisma.rSVP.create({ data: { eventId: futureEvent.id, personId: pMergeId, status: "NOT_ATTENDING" } });
         await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: pKeepId, result: "APPROVE" } });
         await prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId: pMergeId, result: "REJECT" } });
 
         const res = await POST(mergeReq(pKeepId, pMergeId));
+        expect(res.status).toBe(409);
+        const data = await res.json();
+        const types = (data.collisions as { type: string }[]).map(c => c.type).sort();
+        expect(types).toEqual(['bgAttestation', 'programParticipant', 'rsvp', 'toolStatus']);
+        expect(data.error).toContain("Merge Conflict Program");
+        expect(data.error).toContain("Conflict Tool");
+        expect(data.error).toContain("Future Event");
+
+        // Nothing moved — pre-transaction refusal.
+        expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+    });
+
+    // Matrix 1b (#1456): bare-join collisions auto-dedupe — merge succeeds, duplicates deleted.
+    it("auto-dedupes bare-join collisions (ProgramVolunteer, CorporationLead, CorporationMember)", async () => {
+        const program = await prisma.program.create({ data: { name: "Dedupe Program" } });
+        createdProgramId = program.id;
+        const corp = await prisma.corporation.create({ data: {} });
+        createdCorporationId = corp.id;
+
+        await prisma.programVolunteer.create({ data: { programId: program.id, personId: pKeepId } });
+        await prisma.programVolunteer.create({ data: { programId: program.id, personId: pMergeId } });
+        await prisma.corporationLead.create({ data: { corporationId: corp.id, personId: pKeepId } });
+        await prisma.corporationLead.create({ data: { corporationId: corp.id, personId: pMergeId } });
+        await prisma.corporationMember.create({ data: { corporationId: corp.id, personId: pKeepId } });
+        await prisma.corporationMember.create({ data: { corporationId: corp.id, personId: pMergeId } });
+
+        const res = await POST(mergeReq(pKeepId, pMergeId));
         expect(res.status).toBe(200);
 
-        // Every collision retained BOTH rows — zero deletes.
-        expect(await prisma.programParticipant.count({ where: { programId: program.id } })).toBe(2);
-        expect(await prisma.programVolunteer.count({ where: { programId: program.id } })).toBe(2);
-        expect(await prisma.toolStatus.count({ where: { toolId: tool.id } })).toBe(2);
-        expect(await prisma.rSVP.count({ where: { eventId: event.id } })).toBe(2);
-        expect(await prisma.corporationLead.count({ where: { corporationId: corp.id } })).toBe(2);
-        expect(await prisma.corporationMember.count({ where: { corporationId: corp.id } })).toBe(2);
-        expect(await prisma.backgroundCheckAttestation.count({ where: { processId: process.id } })).toBe(2);
+        // Duplicates deleted — one row per entity, on the keeper.
+        expect(await prisma.programVolunteer.count({ where: { programId: program.id } })).toBe(1);
+        expect(await prisma.corporationLead.count({ where: { corporationId: corp.id } })).toBe(1);
+        expect(await prisma.corporationMember.count({ where: { corporationId: corp.id } })).toBe(1);
 
-        // The merge-side row is untouched (still personId === mergeId), not migrated.
-        const mergePP = await prisma.programParticipant.findUnique({ where: { programId_personId: { programId: program.id, personId: pMergeId } } });
-        expect(mergePP).not.toBeNull();
-        const mergeAttestation = await prisma.backgroundCheckAttestation.findFirst({ where: { processId: process.id, reviewerId: pMergeId } });
-        expect(mergeAttestation).not.toBeNull();
-
-        // The LIVE count (§3) excludes the tombstone's collision row.
-        const liveCount = await prisma.programParticipant.count({ where: { programId: program.id, person: { mergedIntoId: null } } });
-        expect(liveCount).toBe(1);
+        // Surviving row is on the keeper.
+        expect(await prisma.programVolunteer.findUnique({ where: { programId_personId: { programId: program.id, personId: pKeepId } } })).not.toBeNull();
+        expect(await prisma.programVolunteer.findUnique({ where: { programId_personId: { programId: program.id, personId: pMergeId } } })).toBeNull();
 
         const log = await prisma.auditLog.findFirst({ where: { tableName: "Person", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId } });
-        const newData = log?.newData as { moved: Record<string, { migrated: number; left: number }> };
-        expect(newData.moved.programParticipants).toEqual({ migrated: 0, left: 1 });
-        expect(newData.moved.bgAttestations).toEqual({ migrated: 0, left: 1 });
-        expect(newData.moved.corporationLeads).toEqual({ migrated: 0, left: 1 });
-        expect(newData.moved.corporationMembers).toEqual({ migrated: 0, left: 1 });
+        const newData = log?.newData as { moved: Record<string, { migrated: number; deduped: number }> };
+        expect(newData.moved.programVolunteers).toEqual({ migrated: 0, deduped: 1 });
+        expect(newData.moved.corporationLeads).toEqual({ migrated: 0, deduped: 1 });
+        expect(newData.moved.corporationMembers).toEqual({ migrated: 0, deduped: 1 });
+    });
+
+    // Matrix 1c (#1456): past RSVP collisions auto-dedupe; future RSVP collisions refuse.
+    it("auto-dedupes past RSVP collisions, refuses future RSVP collisions", async () => {
+        const program = await prisma.program.create({ data: { name: "RSVP Program" } });
+        createdProgramId = program.id;
+
+        const pastEvent = await prisma.event.create({
+            data: { programId: program.id, name: "Past Event", startAt: new Date(Date.now() - 86400000), endAt: new Date(Date.now() - 82800000) },
+        });
+        createdEventId = pastEvent.id;
+
+        await prisma.rSVP.create({ data: { eventId: pastEvent.id, personId: pKeepId, status: "ATTENDING" } });
+        await prisma.rSVP.create({ data: { eventId: pastEvent.id, personId: pMergeId, status: "NOT_ATTENDING" } });
+
+        const res = await POST(mergeReq(pKeepId, pMergeId));
+        expect(res.status).toBe(200);
+
+        // Past RSVP collision auto-deduped: keeper's row survives, merge-side deleted.
+        expect(await prisma.rSVP.count({ where: { eventId: pastEvent.id } })).toBe(1);
+        expect(await prisma.rSVP.findUnique({ where: { eventId_personId: { eventId: pastEvent.id, personId: pKeepId } } })).not.toBeNull();
+
+        const log = await prisma.auditLog.findFirst({ where: { tableName: "Person", affectedEntityId: pKeepId, secondaryAffectedEntity: pMergeId } });
+        const newData = log?.newData as { moved: Record<string, { migrated: number; deduped: number; left: number }> };
+        expect(newData.moved.rsvps).toEqual({ migrated: 0, deduped: 1, left: 0 });
     });
 
     // Matrix 2: non-collision move — the row relinks to the keeper, not duplicated.
@@ -643,6 +674,26 @@ describe("Merge Participants API", () => {
         expect(hit.household.name).toBe("Merge Test Household");
         expect(hit._count.visits).toBe(1);
         expect(hit._count.programParticipants).toBe(0);
+    });
+
+    // #1456: analyze reports collisions up front so the UI can warn before the operator commits.
+    it("analyze returns collisions for decision-bearing overlaps", async () => {
+        const program = await prisma.program.create({ data: { name: "Collision Analysis Program" } });
+        createdProgramId = program.id;
+        const tool = await prisma.tool.create({ data: { name: "Collision Analysis Tool" } });
+        createdToolId = tool.id;
+
+        await prisma.programParticipant.create({ data: { programId: program.id, personId: pKeepId } });
+        await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId } });
+        await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pKeepId, level: "BASIC" } });
+        await prisma.toolStatus.create({ data: { toolId: tool.id, personId: pMergeId, level: "CERTIFIED" } });
+
+        const res = await analyzeGET(analyzeReq(pKeepId, pMergeId));
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        const types = (data.collisions as { type: string }[]).map(c => c.type).sort();
+        expect(types).toEqual(['programParticipant', 'toolStatus']);
+        expect(data.collisions[0].message).toBeTruthy();
     });
 
     // Matrix 6
@@ -1236,22 +1287,31 @@ describe("Merge Participants API", () => {
         });
     });
 
-    // Matrix 13
-    it("moves closed visits; both-open leaves the tombstone's open visit in place", async () => {
-        await prisma.visit.create({ data: { personId: pKeepId, arrivedAt: new Date(Date.now() - 3600000) } }); // keeper's own open visit
-        await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 7200000) } }); // tombstone's open visit
-        await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 10800000), departedAt: new Date(Date.now() - 9800000) } }); // tombstone's closed visit
+    // Matrix 13 (#1456): both-open visits now refused.
+    it("409s when both persons have an open visit", async () => {
+        await prisma.visit.create({ data: { personId: pKeepId, arrivedAt: new Date(Date.now() - 3600000) } });
+        await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 7200000) } });
+        await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 10800000), departedAt: new Date(Date.now() - 9800000) } });
+
+        const res = await POST(mergeReq(pKeepId, pMergeId));
+        expect(res.status).toBe(409);
+        const data = await res.json();
+        expect((data.collisions as { type: string }[]).some(c => c.type === 'openVisit')).toBe(true);
+        expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+    });
+
+    // Matrix 13b: merge-side-only open visit migrates successfully.
+    it("moves a merge-side open visit when keeper has no open visit", async () => {
+        await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 7200000) } });
+        await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date(Date.now() - 10800000), departedAt: new Date(Date.now() - 9800000) } });
 
         const res = await POST(mergeReq(pKeepId, pMergeId));
         expect(res.status).toBe(200);
 
         const keeperVisits = await prisma.visit.findMany({ where: { personId: pKeepId } });
-        expect(keeperVisits.length).toBe(2); // its own open + the moved closed one
-        expect(keeperVisits.filter(v => v.departedAt === null).length).toBe(1); // still exactly one open
-
-        const tombstoneVisits = await prisma.visit.findMany({ where: { personId: pMergeId } });
-        expect(tombstoneVisits.length).toBe(1);
-        expect(tombstoneVisits[0].departedAt).toBeNull(); // its own open visit, untouched
+        expect(keeperVisits.length).toBe(2);
+        expect(keeperVisits.filter(v => v.departedAt === null).length).toBe(1);
+        expect(await prisma.visit.count({ where: { personId: pMergeId } })).toBe(0);
     });
 
     // Matrix 14
@@ -1286,34 +1346,24 @@ describe("Merge Participants API", () => {
             expect((data.people as { id: number }[]).some(p => p.id === pMergeId)).toBe(false);
         });
 
-        it("the enrollment cap gate ignores a tombstone's collision seat", async () => {
+        // #1456: ProgramParticipant collision now refuses the merge entirely.
+        it("enrollment collision refuses instead of leaving a tombstone seat", async () => {
             const program = await prisma.program.create({ data: { name: "Cap Gate Program", maxParticipants: 5 } });
             createdProgramId = program.id;
             await prisma.programParticipant.create({ data: { programId: program.id, personId: pKeepId } });
             await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId } });
 
             const res = await POST(mergeReq(pKeepId, pMergeId));
-            expect(res.status).toBe(200);
-            // Two rows physically remain (collision, no-delete), but only one is LIVE.
-            // Setting the cap to 1 must succeed — a count that still saw the tombstone's
-            // seat would reject this as "below current enrollment of 2".
-            const patchRes = await settingsPATCH(
-                new Request(`http://localhost/api/programs/${program.id}`, {
-                    method: "PATCH",
-                    body: JSON.stringify({ maxParticipants: 1 }),
-                }) as unknown as import("next/server").NextRequest,
-                { params: Promise.resolve({ id: String(program.id) }) },
-            );
-            expect(patchRes.status).toBe(200);
+            expect(res.status).toBe(409);
+            const data = await res.json();
+            expect(data.error).toContain("Cap Gate Program");
         });
     });
 
-    // Matrix 17
-    it("match-audit: an ACTIVE payment-bearing enrollment left on a tombstone is excluded from the sweep", async () => {
+    // Matrix 17 (#1456): collision-bearing merge refused, no tombstone residue to audit.
+    it("match-audit: a non-colliding enrollment migrates to the keeper normally", async () => {
         const program = await prisma.program.create({ data: { name: "Match Audit Program", shopifyVariantId: "variant-match-audit" } });
         createdProgramId = program.id;
-        // Collision so the merge-side row is LEFT on the tombstone (not moved).
-        await prisma.programParticipant.create({ data: { programId: program.id, personId: pKeepId, status: "ACTIVE" } });
         await prisma.programParticipant.create({ data: { programId: program.id, personId: pMergeId, status: "ACTIVE" } });
 
         const res = await POST(mergeReq(pKeepId, pMergeId));

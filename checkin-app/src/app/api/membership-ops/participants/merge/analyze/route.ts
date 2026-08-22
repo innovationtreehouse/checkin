@@ -99,12 +99,74 @@ export const GET = withAuth(
             const a = subject(pA);
             const b = subject(pB);
 
+            // Collision detection — direction-independent (collisions block either way).
+            const collisions: Array<{ type: string; message: string }> = [];
+            const now = new Date();
+
+            const [sharedPrograms, sharedTools, sharedFutureEvents, sharedBgProcessCount, aOpen, bOpen] = await Promise.all([
+                prisma.program.findMany({
+                    where: {
+                        AND: [
+                            { participants: { some: { personId: aId } } },
+                            { participants: { some: { personId: bId } } },
+                        ],
+                    },
+                    select: { name: true },
+                }),
+                prisma.tool.findMany({
+                    where: {
+                        AND: [
+                            { toolStatuses: { some: { personId: aId } } },
+                            { toolStatuses: { some: { personId: bId } } },
+                        ],
+                    },
+                    select: { name: true },
+                }),
+                prisma.event.findMany({
+                    where: {
+                        startAt: { gt: now },
+                        AND: [
+                            { rsvps: { some: { personId: aId } } },
+                            { rsvps: { some: { personId: bId } } },
+                        ],
+                    },
+                    select: { name: true },
+                }),
+                prisma.orgMembershipProcess.count({
+                    where: {
+                        AND: [
+                            { attestations: { some: { reviewerId: aId } } },
+                            { attestations: { some: { reviewerId: bId } } },
+                        ],
+                    },
+                }),
+                prisma.visit.findFirst({ where: { personId: aId, departedAt: null, deletedAt: null }, select: { id: true } }),
+                prisma.visit.findFirst({ where: { personId: bId, departedAt: null, deletedAt: null }, select: { id: true } }),
+            ]);
+
+            for (const p of sharedPrograms) {
+                collisions.push({ type: 'programParticipant', message: `Both enrolled in ${p.name}. Unenroll one first.` });
+            }
+            for (const t of sharedTools) {
+                collisions.push({ type: 'toolStatus', message: `Both hold a ${t.name} certification. Remove one first.` });
+            }
+            if (sharedBgProcessCount > 0) {
+                collisions.push({ type: 'bgAttestation', message: `Both attested the same background check (${sharedBgProcessCount} shared review${sharedBgProcessCount > 1 ? 's' : ''}). Investigate before merging.` });
+            }
+            for (const e of sharedFutureEvents) {
+                collisions.push({ type: 'rsvp', message: `Both RSVP'd to ${e.name}. Remove one RSVP first.` });
+            }
+            if (aOpen && bOpen) {
+                collisions.push({ type: 'openVisit', message: 'Both have an open building visit. Close one visit first.' });
+            }
+
             return NextResponse.json({
                 participants: [pA, pB],
                 membershipBlock: {
                     aAsKeeper: membershipMergeBlock(a, b),
                     bAsKeeper: membershipMergeBlock(b, a),
                 },
+                collisions,
             });
         } catch (error) {
             logger.error("Failed to analyze participants:", error);
