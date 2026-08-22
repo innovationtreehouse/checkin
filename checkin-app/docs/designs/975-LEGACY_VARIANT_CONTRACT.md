@@ -1,7 +1,8 @@
 # Dropping the legacy two-variant product shape
 
-**Status: DONE — code removal shipped (PR #1464), `DROP COLUMN` migration
-shipped (PR #1508).** Addresses #975 ("Do we need the legacy product shape with 2
+**Status: code removal SHIPPED (PR #1464); columns `@ignore`d (PR #1508,
+Release 2a); `DROP COLUMN` migration outstanding (Release 2b).**
+Addresses #975 ("Do we need the legacy product shape with 2
 variants in Shopify?"). Answer: **no.** Both legacy two-variant pairs are dead —
 nothing writes them, and (confirmed by the board) no live prod row still depends
 on them.
@@ -186,19 +187,20 @@ Standard expand/contract, in order:
    selects them.
    - Folding 0 into 1 is safe *because* Release 0 also replaces the only UI that
      could mint a legacy row; the window it guarded is closed by the same deploy.
-2. **Release 2 — schema + migration.** ⬜ *Outstanding.* Remove the four fields
-   from `schema.prisma`, add a `DROP COLUMN` migration, regenerate
-   `classifications.ts`. **Re-verify at cutover** (query below) that no `Program`
-   row has a legacy variant with a null `shopifyVariantId`. Deploys only after
-   Release 1 is fully rolled out in **prod** — note that merging to `main` only
-   deploys *dev*; prod cuts from a published release, so two PRs merged before one
-   release still land in prod together and re-open this hazard.
-   - **Must also delete the `DROPPED_SOON` array** in
-     `src/app/__tests__/programsAPI.integration.test.ts`. That test derives its
-     expected public-column set from the generated classifications, which still
-     tier the two dead `Program` fields `public` while the schema declares them;
-     Release 1 excluded them by name to keep the oracle honest. Leaving the array
-     in place after the regeneration makes the oracle silently under-check.
+2. **Release 2a — `@ignore` (client contract).** ⬜ *Outstanding.* Mark the four
+   fields `@ignore` in `schema.prisma` so the Prisma client stops selecting them.
+   No migration — columns stay in the DB. Also collapses the stale
+   `hasShopifyVariant` three-column check in `participants/route.ts` (a Release-1
+   survivor) and deletes the `DROPPED_SOON` array in
+   `programsAPI.integration.test.ts` (`@ignore` removes the fields from the
+   generated classifications, so the exclusion becomes an under-check). Deploys
+   only after Release 1 is fully rolled out in **prod**.
+3. **Release 2b — `DROP COLUMN` migration.** ⬜ *Outstanding.* Remove the four
+   `@ignore` fields from `schema.prisma`, add a `DROP COLUMN` migration.
+   **Re-verify at cutover** (query below) that no `Program` row has a legacy
+   variant with a null `shopifyVariantId`. Deploys only after Release 2a is fully
+   rolled out in **prod** — the old task's Prisma client must already exclude these
+   columns before the migration drops them.
 
 Cutover re-verify query:
 
