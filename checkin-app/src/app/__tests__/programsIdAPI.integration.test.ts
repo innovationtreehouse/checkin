@@ -707,13 +707,15 @@ describe('Individual Program API Integration Tests', () => {
                 data: {
                     name: 'No Lead Prog ID API Test',
                     phase: 'PLANNING',
+                    startAt: new Date('2026-01-01'),
+                    endAt: new Date('2026-12-31'),
                     events: { create: { name: 'No Lead Event', startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) } }
                 }
             });
             noLeadProgramId = noLeadProgram.id;
 
             const noEventsProgram = await prisma.program.create({
-                data: { name: 'No Events Prog ID API Test', phase: 'PLANNING', leadMentorId: leadId }
+                data: { name: 'No Events Prog ID API Test', phase: 'PLANNING', startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), leadMentorId: leadId }
             });
             noEventsProgramId = noEventsProgram.id;
 
@@ -722,6 +724,8 @@ describe('Individual Program API Integration Tests', () => {
                     name: 'Finished Prog ID API Test',
                     phase: 'FINISHED',
                     enrollmentStatus: 'CLOSED',
+                    startAt: new Date('2026-01-01'),
+                    endAt: new Date('2026-12-31'),
                     leadMentorId: leadId,
                     events: { create: { name: 'Finished Event', startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) } }
                 }
@@ -732,6 +736,8 @@ describe('Individual Program API Integration Tests', () => {
                 data: {
                     name: 'Valid Publish Prog ID API Test',
                     phase: 'PLANNING',
+                    startAt: new Date('2026-01-01'),
+                    endAt: new Date('2026-12-31'),
                     leadMentorId: leadId,
                     events: { create: { name: 'Valid Publish Event', startAt: new Date(Date.now() + 86400000), endAt: new Date(Date.now() + 90000000) } }
                 }
