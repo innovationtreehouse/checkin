@@ -8,7 +8,6 @@
 import { POST } from "../route";
 import { GET as analyzeGET } from "../analyze/route";
 import { GET as searchGET } from "@/app/api/people/search/route";
-import { PATCH as settingsPATCH } from "@/app/api/programs/[id]/settings/route";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 
