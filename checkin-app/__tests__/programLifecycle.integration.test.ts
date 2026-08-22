@@ -66,6 +66,8 @@ describe('Program Lifecycle Integration Tests', () => {
         // 4. Create a program
         const program = await prisma.program.create({
             data: {
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: "Integration Test Program",
                 leadMentorId,
                 orgMemberPriceCents: 50,

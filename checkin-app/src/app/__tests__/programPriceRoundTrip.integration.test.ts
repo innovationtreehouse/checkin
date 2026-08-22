@@ -119,7 +119,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
             const name = `${PROGRAM_NAME_TAG} patch`;
             const program = await prisma.program.create({
-                data: { name, leadMentorId: leadId, orgMemberPriceCents: 100, nonOrgMemberPriceCents: 200 },
+                data: { name, leadMentorId: leadId, startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), orgMemberPriceCents: 100, nonOrgMemberPriceCents: 200 },
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {
@@ -139,7 +139,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
             const name = `${PROGRAM_NAME_TAG} patch clear`;
             const program = await prisma.program.create({
-                data: { name, leadMentorId: leadId, orgMemberPriceCents: 5000 },
+                data: { name, leadMentorId: leadId, startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), orgMemberPriceCents: 5000 },
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {

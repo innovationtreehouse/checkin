@@ -92,9 +92,9 @@ describe('Facility trends API', () => {
         });
         youthId = youth.id;
 
-        const program = await prisma.program.create({ data: { name: `Prog ${TAG}` } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Prog ${TAG}` } });
         programId = program.id;
-        const otherProgram = await prisma.program.create({ data: { name: `Other ${TAG}` } });
+        const otherProgram = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Other ${TAG}` } });
         otherProgramId = otherProgram.id;
         const event = await prisma.event.create({
             data: { programId, name: `Event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
@@ -128,11 +128,15 @@ describe('Facility trends API', () => {
         const legacySynthetic = await prisma.visit.create({
             data: { personId: volunteerId, arrivedAt: arrival(3), departedAt: departure(3, 3), arrivedVia: 'SYSTEM', associatedEventId: eventId },
         });
+        // Still-open visit (no departedAt) — excluded (departedAt: { not: null } in the where).
+        const open = await prisma.visit.create({
+            data: { personId: youthId, arrivedAt: arrival(0), arrivedVia: 'WEB' },
+        });
         // A program of its own, so the source-independence and structural-exclusion
         // assertions can scope by programId and be exact instead of leaning on the
         // shared month bucket. Four visits hang off it, one per person so that any
         // one of them leaking into the totals is individually visible.
-        const untaggedProgram = await prisma.program.create({ data: { name: `Untagged ${TAG}` } });
+        const untaggedProgram = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Untagged ${TAG}` } });
         untaggedProgramId = untaggedProgram.id;
         const untaggedEvent = await prisma.event.create({
             data: { programId: untaggedProgramId, name: `Untagged event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
@@ -263,7 +267,7 @@ describe('Facility trends API', () => {
     // A board member fixing a badge time re-times the visit; it never removes it,
     // and the corrected duration is what the hours show.
     it('keeps a corrected scanner visit in the hours after a staff PATCH', async () => {
-        const program = await prisma.program.create({ data: { name: `Corrected ${TAG}` } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Corrected ${TAG}` } });
         const event = await prisma.event.create({
             data: { programId: program.id, name: `Corrected event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
         });
@@ -310,7 +314,7 @@ describe('Facility trends API', () => {
     // route (not a hand-built fixture) so a regression back to WEB fails here —
     // on the stamp and its correction weight, since the hours count either way.
     it('counts a real staff walk-in insert in trends hours', async () => {
-        const program = await prisma.program.create({ data: { name: `StaffEntry ${TAG}` } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `StaffEntry ${TAG}` } });
         const insertArrival = new Date(Date.now() - 4 * 3600000);
         const insertDeparture = new Date(Date.now() - 2 * 3600000);
         const event = await prisma.event.create({
@@ -376,7 +380,7 @@ describe('Facility trends API', () => {
     // than a self-report edited by its own author — so it has to survive the
     // edit. The hours count either way; the stamp is what must not move.
     it('keeps a self-corrected LEAD_MARKED visit counted, and its source intact', async () => {
-        const program = await prisma.program.create({ data: { name: `SelfCorrectedLM ${TAG}` } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `SelfCorrectedLM ${TAG}` } });
         const event = await prisma.event.create({
             data: { programId: program.id, name: `SelfCorrectedLM event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
         });
@@ -421,7 +425,7 @@ describe('Facility trends API', () => {
     // Control for the same fix: a WEB/SCANNER visit's self-correction is
     // otherwise unchanged — it still applies and still counts, same as before.
     it('keeps a self-corrected SCANNER visit counted after the manual PATCH route', async () => {
-        const program = await prisma.program.create({ data: { name: `SelfCorrectedScanner ${TAG}` } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `SelfCorrectedScanner ${TAG}` } });
         const event = await prisma.event.create({
             data: { programId: program.id, name: `SelfCorrectedScanner event ${TAG}`, startAt: arrival(2), endAt: departure(2, 3) },
         });

@@ -101,12 +101,12 @@ describe('Individual Program API Integration Tests', () => {
 
         // Create mock programs
         const publicProgram = await prisma.program.create({
-            data: { name: 'Public Prog ID API Test', phase: 'RUNNING', orgMemberOnly: false, leadMentorId: leadId }
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Public Prog ID API Test', phase: 'RUNNING', orgMemberOnly: false, leadMentorId: leadId }
         });
         publicProgramId = publicProgram.id;
 
         const orgMemberOnlyProgram = await prisma.program.create({
-            data: { name: 'Member Only Prog ID API Test', phase: 'RUNNING', orgMemberOnly: true, leadMentorId: leadId }
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Member Only Prog ID API Test', phase: 'RUNNING', orgMemberOnly: true, leadMentorId: leadId }
         });
         orgMemberOnlyProgramId = orgMemberOnlyProgram.id;
 
@@ -479,7 +479,7 @@ describe('Individual Program API Integration Tests', () => {
             });
 
             const pastBoundaryProgram = await prisma.program.create({
-                data: { name: 'Past Boundary Prog ID API Test', phase: 'UPCOMING', endAt: new Date(boundary.getTime() + 10 * DAY_MS) },
+                data: { startAt: new Date('2026-01-01'), name: 'Past Boundary Prog ID API Test', phase: 'UPCOMING', endAt: new Date(boundary.getTime() + 10 * DAY_MS) },
             });
             pastBoundaryProgramId = pastBoundaryProgram.id;
         });
@@ -923,6 +923,8 @@ describe('Individual Program API Integration Tests', () => {
 
             const capped = await prisma.program.create({
                 data: {
+                    startAt: new Date('2026-01-01'),
+                    endAt: new Date('2026-12-31'),
                     name: 'Prog ID API Test Shopify Capacity',
                     phase: 'RUNNING',
                     leadMentorId: leadId,
@@ -935,6 +937,8 @@ describe('Individual Program API Integration Tests', () => {
 
             const uncapped = await prisma.program.create({
                 data: {
+                    startAt: new Date('2026-01-01'),
+                    endAt: new Date('2026-12-31'),
                     name: 'Prog ID API Test Shopify Uncapped',
                     phase: 'RUNNING',
                     leadMentorId: leadId,

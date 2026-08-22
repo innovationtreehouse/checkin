@@ -169,8 +169,8 @@ function recentProgramWhere(now: Date) {
     since.setUTCMonth(since.getUTCMonth() - ATTACHMENT_LOOKBACK_MONTHS);
     return {
         AND: [
-            { OR: [{ endAt: null }, { endAt: { gte: since } }] },
-            { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+            { endAt: { gte: since } },
+            { startAt: { lte: now } },
         ],
     };
 }

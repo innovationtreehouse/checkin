@@ -71,7 +71,8 @@ export async function unentitledMemberCodeUse(
         select: { personId: true },
     });
     const program = await prisma.program.findUnique({ where: { id: programId }, select: { startAt: true, endAt: true } });
-    const through = programCoverageDate(program ?? { startAt: null, endAt: null });
+    if (!program) return true;
+    const through = programCoverageDate(program);
     // ponytail: per-person loop, not a batched query — one order enrols one household.
     for (const { personId } of enrolled) {
         if (await isDuesSettledThrough(personId, through)) return false;

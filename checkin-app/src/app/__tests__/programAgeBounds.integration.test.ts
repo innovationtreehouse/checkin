@@ -135,6 +135,7 @@ describe('Program Age Bounds Integration Tests', () => {
                 minAge: 14,
                 maxAge: 18,
                 startAt: NOW,
+                endAt: new Date(NOW.getTime() + 365 * 24 * 60 * 60 * 1000),
                 phase: 'UPCOMING',
                 enrollmentStatus: 'OPEN'
             }

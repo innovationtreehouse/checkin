@@ -218,18 +218,8 @@ describe('isDuesSettledThrough fail-open when no coverage horizon is configured'
 });
 
 describe('programCoverageDate', () => {
-    it('endAt wins when both are set', () => {
-        const startAt = new Date('2026-01-01');
+    it('returns endAt', () => {
         const endAt = new Date('2026-06-01');
-        expect(programCoverageDate({ startAt, endAt })).toBe(endAt);
-    });
-
-    it('falls back to startAt when endAt is null', () => {
-        const startAt = new Date('2026-01-01');
-        expect(programCoverageDate({ startAt, endAt: null })).toBe(startAt);
-    });
-
-    it('both null → null', () => {
-        expect(programCoverageDate({ startAt: null, endAt: null })).toBeNull();
+        expect(programCoverageDate({ endAt })).toBe(endAt);
     });
 });

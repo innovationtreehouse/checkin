@@ -64,6 +64,8 @@ describe('My Events API Integration Tests', () => {
 
         const program1 = await prisma.program.create({
             data: {
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: 'Mine Test Program 1',
                 maxParticipants: 10,
                 minAge: 5,
@@ -74,6 +76,8 @@ describe('My Events API Integration Tests', () => {
 
         const program2 = await prisma.program.create({
             data: {
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: 'Mine Test Program 2',
                 maxParticipants: 10,
                 minAge: 5,
@@ -85,6 +89,8 @@ describe('My Events API Integration Tests', () => {
         // Program 3 has a lead mentor and no enrollments/volunteers.
         const program3 = await prisma.program.create({
             data: {
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: 'Mine Test Program 3',
                 maxParticipants: 10,
                 minAge: 5,
