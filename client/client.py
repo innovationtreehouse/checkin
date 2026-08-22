@@ -23,7 +23,7 @@ from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from nacl.signing import SigningKey
 import requests
 
-from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso
+from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso, in_closed_window
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -744,12 +744,16 @@ def handle_scan(backend, state, outbox, participant_id):
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def attendance_poller(backend, state, interval=30):
+def attendance_poller(backend, state, interval=30, sleep_fn=time.sleep,
+                       in_closed_window_fn=in_closed_window):
     """Background thread that polls attendance counts periodically.
     Pushes SSE status events when counts change so the blackout
-    logic works on display-only kiosks without a scanner."""
+    logic works on display-only kiosks without a scanner. §3.1/Q17: a
+    24/7 kiosk must not defeat the overnight curfew with signed GETs."""
     while True:
-        time.sleep(interval)
+        sleep_fn(interval)
+        if in_closed_window_fn():
+            continue
         att_data, att_status = backend.get_attendance()
         if att_status == 200 and "counts" in att_data:
             new_counts = att_data["counts"]
