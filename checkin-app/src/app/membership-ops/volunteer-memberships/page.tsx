@@ -226,11 +226,7 @@ export default function VolunteerMembershipsPage() {
           <Switch
             label="Show inactive"
             checked={showInactive}
-            onChange={(e) => {
-              const on = e.currentTarget.checked;
-              setShowInactive(on);
-              if (!on) setStatuses((s) => s.filter((v) => v !== "INACTIVE"));
-            }}
+            onChange={(e) => setShowInactive(e.currentTarget.checked)}
           />
         </Group>
 

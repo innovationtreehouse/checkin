@@ -224,6 +224,34 @@ describe("membership-ops/volunteer-memberships page", () => {
     expect(screen.getByRole("checkbox", { name: "No live application" })).toBeInTheDocument();
   });
 
+  it("keeps an INACTIVE chip selection through a show-inactive toggle cycle", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const rows = [
+      roster.rows[0],
+      {
+        key: "hh:9", status: "INACTIVE", householdId: 9, householdName: "Chen",
+        leads: ["Cy Chen"], email: "cy@example.com", memberSince: null,
+        designations: [des(4, "cy@example.com", "2026-07-01T00:00:00.000Z")],
+      },
+    ];
+    mockFetchJson({ [ROSTER]: { rows } });
+    renderWithProviders(<VolunteerMembershipsPage />);
+    await screen.findByText("Alvarez");
+
+    // The designation-carrying row renders with the switch off, so its chip is a
+    // working filter in that state: select it, cycle the switch, selection holds.
+    fireEvent.click(screen.getByRole("checkbox", { name: "No live application" }));
+    expect(screen.queryByText("Alvarez")).not.toBeInTheDocument();
+    expect(screen.getByText("Chen")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Show inactive"));
+    fireEvent.click(screen.getByLabelText("Show inactive"));
+
+    expect(screen.getByRole("checkbox", { name: "No live application" })).toBeChecked();
+    expect(screen.queryByText("Alvarez")).not.toBeInTheDocument();
+    expect(screen.getByText("Chen")).toBeInTheDocument();
+  });
+
   it("renders nothing for a background-check reviewer who navigates directly", async () => {
     setSession({ id: 9, isBackgroundCheckReviewer: true });
     mockFetchJson({ [ROSTER]: roster });
