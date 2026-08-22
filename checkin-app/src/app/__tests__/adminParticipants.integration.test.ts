@@ -214,10 +214,11 @@ describe('Admin Participants API Integration Tests', () => {
 
             const req = new Request('http://localhost:4000/api/membership-ops/participants', {
                 method: 'POST',
-                body: JSON.stringify({ 
-                    name: 'Child User', 
+                body: JSON.stringify({
+                    name: 'Child User',
                     email: 'new-child-participants-test@example.com',
-                    parentEmail: 'new-parent-participants-test@example.com' 
+                    parentEmail: 'new-parent-participants-test@example.com',
+                    parentName: 'New Parent'
                 })
             });
 
@@ -229,12 +230,33 @@ describe('Admin Participants API Integration Tests', () => {
             expect(data.participant.email).toBe('new-child-participants-test@example.com');
             expect(data.participant.householdId).not.toBeNull();
 
-            // Verify the parent was created
+            // Verify the parent was created with the provided name
             const parent = await prisma.person.findUnique({
                 where: { email: 'new-parent-participants-test@example.com' }
             });
             expect(parent).toBeDefined();
+            expect(parent?.name).toBe('New Parent');
             expect(parent?.householdId).toBe(data.participant.householdId);
+        });
+
+        it('should reject creating a child with parentEmail but no parentName when parent does not exist', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
+                method: 'POST',
+                body: JSON.stringify({
+                    name: 'Child User',
+                    email: 'reject-child-participants-test@example.com',
+                    parentEmail: 'reject-parent-participants-test@example.com'
+                })
+            });
+
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toMatch(/parent name/i);
         });
     });
 

@@ -312,11 +312,11 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             });
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
-        } else if (sp.name || sp.email) {
+        } else if (sp.name) {
             const created = await prisma.person.create({
                 data: {
                     householdId,
-                    name: sp.name ?? null,
+                    name: sp.name,
                     ...(sp.email && { email: sp.email.toLowerCase() }),
                     ...normalizeAdultDob(sp.dob),
                     ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
