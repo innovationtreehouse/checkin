@@ -277,7 +277,7 @@ describe("Merge Participants API", () => {
 
     // Matrix 1b (#1456): bare-join collisions auto-dedupe — merge succeeds, duplicates deleted.
     it("auto-dedupes bare-join collisions (ProgramVolunteer, CorporationLead, CorporationMember)", async () => {
-        const program = await prisma.program.create({ data: { name: "Dedupe Program" } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: "Dedupe Program" } });
         createdProgramId = program.id;
         const corp = await prisma.corporation.create({ data: {} });
         createdCorporationId = corp.id;
@@ -310,7 +310,7 @@ describe("Merge Participants API", () => {
 
     // Matrix 1c (#1456): past RSVP collisions auto-dedupe; future RSVP collisions refuse.
     it("auto-dedupes past RSVP collisions, refuses future RSVP collisions", async () => {
-        const program = await prisma.program.create({ data: { name: "RSVP Program" } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: "RSVP Program" } });
         createdProgramId = program.id;
 
         const pastEvent = await prisma.event.create({
@@ -678,7 +678,7 @@ describe("Merge Participants API", () => {
 
     // #1456: analyze reports collisions up front so the UI can warn before the operator commits.
     it("analyze returns collisions for decision-bearing overlaps", async () => {
-        const program = await prisma.program.create({ data: { name: "Collision Analysis Program" } });
+        const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: "Collision Analysis Program" } });
         createdProgramId = program.id;
         const tool = await prisma.tool.create({ data: { name: "Collision Analysis Tool" } });
         createdToolId = tool.id;
