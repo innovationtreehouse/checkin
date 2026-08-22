@@ -223,6 +223,37 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
         let { leadMentorId } = body;
         const { name, startAt, endAt, orgMemberOnly, announceOnOpen, phase, enrollmentStatus, minAge, maxAge, maxParticipants, leadMentorNotificationSettings, memberPrice, nonMemberPrice, shopifyProductId, shopifyVariantId } = body;
 
+        if (announceOnOpen !== undefined && typeof announceOnOpen !== "boolean") {
+            return apiError("announceOnOpen must be a boolean", 400);
+        }
+        if (phase !== undefined && !Object.values(ProgramPhase).includes(phase)) {
+            return apiError("Invalid phase", 400);
+        }
+        if (enrollmentStatus !== undefined && !Object.values(EnrollmentStatus).includes(enrollmentStatus)) {
+            return apiError("Invalid enrollmentStatus", 400);
+        }
+
+        // Age range sanity — effective values (body overrides current) so a
+        // one-sided edit can't leave minAge > maxAge.
+        const effMinAge = minAge !== undefined ? minAge : currentProgram.minAge;
+        const effMaxAge = maxAge !== undefined ? maxAge : currentProgram.maxAge;
+        const ageErr = validateProgramAgeBounds(effMinAge, effMaxAge);
+        if (ageErr) {
+            return apiError(ageErr, 400);
+        }
+
+        // maxParticipants: null = uncapped (allowed). Otherwise must be a
+        // positive int and not below current enrollment.
+        if (maxParticipants !== undefined && maxParticipants !== null) {
+            if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
+                return apiError("maxParticipants must be a positive integer", 400);
+            }
+            const enrolled = await prisma.programParticipant.count({ where: { programId, person: LIVE_PERSON } });
+            if (maxParticipants < enrolled) {
+                return apiError(`maxParticipants cannot be set below the current enrollment of ${enrolled}`, 400);
+            }
+        }
+
         if (body.hasOwnProperty('leadMentorId')) {
             if (!leadMentorId) {
                 return apiError("Lead Mentor is required", 400);
@@ -236,32 +267,20 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             }
         }
 
-        if (announceOnOpen !== undefined && typeof announceOnOpen !== "boolean") {
-            return apiError("announceOnOpen must be a boolean", 400);
-        }
-        if (phase !== undefined && !Object.values(ProgramPhase).includes(phase)) {
-            return apiError("Invalid phase", 400);
-        }
-        if (enrollmentStatus !== undefined && !Object.values(EnrollmentStatus).includes(enrollmentStatus)) {
-            return apiError("Invalid enrollmentStatus", 400);
-        }
-
-        // Use effective values (body overrides current) so a one-sided edit
-        // can't leave minAge > maxAge or exceed the 25+ ceiling.
-        const effMinAge = minAge !== undefined ? minAge : currentProgram.minAge;
-        const effMaxAge = maxAge !== undefined ? maxAge : currentProgram.maxAge;
-        const ageErr = validateProgramAgeBounds(effMinAge, effMaxAge);
-        if (ageErr) {
-            return apiError(ageErr, 400);
-        }
-
-        if (maxParticipants !== undefined && maxParticipants !== null) {
-            if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
-                return apiError("maxParticipants must be a positive integer", 400);
+        // Publish guards: transitioning to UPCOMING requires a lead mentor and
+        // at least one scheduled event. Re-publishing a RUNNING or FINISHED
+        // program is rejected — prevents silently resurrecting a terminal program.
+        if (phase === 'UPCOMING' && currentProgram.phase !== 'UPCOMING') {
+            if (currentProgram.phase === 'RUNNING' || currentProgram.phase === 'FINISHED') {
+                return apiError(`Cannot publish a program that is already ${currentProgram.phase.toLowerCase()}.`, 409);
             }
-            const enrolled = await prisma.programParticipant.count({ where: { programId, person: LIVE_PERSON } });
-            if (maxParticipants < enrolled) {
-                return apiError(`maxParticipants cannot be set below the current enrollment of ${enrolled}`, 400);
+            const effLeadMentorId = leadMentorId !== undefined ? leadMentorId : currentProgram.leadMentorId;
+            if (!effLeadMentorId) {
+                return apiError("Cannot publish a program without a Lead Mentor assigned", 400);
+            }
+            const eventCount = await prisma.event.count({ where: { programId } });
+            if (eventCount === 0) {
+                return apiError("Cannot publish a program without any scheduled events", 400);
             }
         }
 

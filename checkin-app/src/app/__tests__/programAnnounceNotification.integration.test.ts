@@ -65,6 +65,7 @@ describe('New-program announce notification trigger', () => {
 
     afterAll(async () => {
         const ids = [adminId, leadId];
+        await prisma.event.deleteMany({ where: { program: { name: { contains: PROGRAM_NAME_TAG } } } });
         await prisma.program.deleteMany({ where: { name: { contains: PROGRAM_NAME_TAG } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
         await prisma.person.deleteMany({ where: { id: { in: ids } } });
@@ -80,6 +81,7 @@ describe('New-program announce notification trigger', () => {
         const program = await prisma.program.create({
             data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
         });
+        await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
         const res = await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
         expect(res.status).toBe(200);
@@ -92,6 +94,7 @@ describe('New-program announce notification trigger', () => {
         const program = await prisma.program.create({
             data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED' },
         });
+        await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
         const res = await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
         expect(res.status).toBe(200);
@@ -114,6 +117,7 @@ describe('New-program announce notification trigger', () => {
         const program = await prisma.program.create({
             data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
         });
+        await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
         const res = await patch(program.id, { phase: 'UPCOMING' });
         expect(res.status).toBe(200);
@@ -138,6 +142,7 @@ describe('New-program announce notification trigger', () => {
             const program = await prisma.program.create({
                 data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             expect((await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' })).status).toBe(200);
             expect(mockNotify).toHaveBeenCalledTimes(1);
@@ -178,6 +183,7 @@ describe('New-program announce notification trigger', () => {
             const program = await prisma.program.create({
                 data: { name, leadMentorId: leadId, phase: 'PLANNING', enrollmentStatus: 'CLOSED', announceOnOpen: true },
             });
+            await prisma.event.create({ data: { programId: program.id, name: 'E', startAt: new Date('2099-01-01'), endAt: new Date('2099-01-01') } });
 
             expect((await patch(program.id, { phase: 'UPCOMING', enrollmentStatus: 'OPEN' })).status).toBe(200);
 

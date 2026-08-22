@@ -26,8 +26,8 @@ separate release and is spelled out in §6.
 
 | Field | Type | Writers | Validation |
 |---|---|---|---|
-| `Program.startAt` | `DateTime?` | `POST /api/programs` ([route.ts:216](../../src/app/api/programs/route.ts)), `PATCH /api/programs/[id]` ([route.ts:234](../../src/app/api/programs/[id]/route.ts)), `PATCH .../settings` ([route.ts:92](../../src/app/api/programs/[id]/settings/route.ts)) | none |
-| `Program.endAt` | `DateTime?` | same three | client-side only: the create form disables submit when `endAt < startAt` ([program-ops/new/page.tsx:42](../../src/app/program-ops/new/page.tsx)) — no server check |
+| `Program.startAt` | `DateTime?` | `POST /api/programs` ([route.ts:216](../../src/app/api/programs/route.ts)), `PATCH /api/programs/[id]` ([route.ts:234](../../src/app/api/programs/[id]/route.ts)) | none |
+| `Program.endAt` | `DateTime?` | same two | client-side only: the create form disables submit when `endAt < startAt` ([program-ops/new/page.tsx:42](../../src/app/program-ops/new/page.tsx)) — no server check |
 
 Both are stored as UTC-midnight calendar dates through `parseDateOnly`
 ([time.ts:106](../../src/lib/time.ts)), the convention set by the #1149 date/time

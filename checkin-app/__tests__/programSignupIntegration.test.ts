@@ -1,6 +1,6 @@
 import { POST as CreateProgram } from '@/app/api/programs/route';
 import { POST as AddEvent } from '@/app/api/events/route';
-import { POST as PublishProgram } from '@/app/api/programs/[id]/publish/route';
+import { PATCH as PatchProgram } from '@/app/api/programs/[id]/route';
 import { PATCH as AddHouseholdMember } from '@/app/api/household/route';
 import { POST as EnrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { POST as ShopifyWebhook } from '@/app/api/webhooks/shopify/route';
@@ -45,6 +45,7 @@ jest.mock('@/lib/prisma', () => {
     event: {
       create: jest.fn(),
       createMany: jest.fn(),
+      count: jest.fn(),
       deleteMany: jest.fn(),
     },
     household: {
@@ -132,19 +133,20 @@ describe('Full Program Signup Integration Flow', () => {
         const addEventRes = await AddEvent(addEventReq as unknown as import("next/server").NextRequest);
         expect(addEventRes.status).toBe(200);
 
-        // 3. SysAdmin publishes the program
+        // 3. SysAdmin publishes the program via the base PATCH
         (prisma.program.findUnique as jest.Mock).mockResolvedValue({
             id: programId,
             leadMentorId: sysAdminId,
-            events: [{ id: 1 }]
+            phase: 'PLANNING',
         });
+        (prisma.event.count as jest.Mock).mockResolvedValue(1);
         (prisma.program.update as jest.Mock).mockResolvedValue({ id: programId, phase: 'UPCOMING', enrollmentStatus: 'OPEN' });
 
-        const publishReq = new Request(`http://localhost/api/programs/${programId}/publish`, {
-            method: 'POST',
-            body: JSON.stringify({ publish: true }),
+        const publishReq = new Request(`http://localhost/api/programs/${programId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ phase: 'UPCOMING', enrollmentStatus: 'OPEN' }),
         });
-        const publishRes = await PublishProgram(publishReq as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(programId) }) });
+        const publishRes = await PatchProgram(publishReq as unknown as import("next/server").NextRequest, { params: Promise.resolve({ id: String(programId) }) });
         expect(publishRes.status).toBe(200);
 
         // 4. Lead user (who already has a household from signup) adds a child member
