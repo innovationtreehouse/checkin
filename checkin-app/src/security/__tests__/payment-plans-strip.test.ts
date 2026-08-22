@@ -48,7 +48,13 @@ const row = {
     participantId: 2,
     status: 'PENDING',
     isPaymentPlanRequested: true,
-    person: { id: 2, name: 'Member Name', email: 'member@x.test', dateOfBirth: '2000-01-01' },
+    person: {
+        id: 2, name: 'Member Name', email: 'member@x.test', dateOfBirth: '2000-01-01',
+        household: {
+            id: 1, name: 'The Members',
+            householdMembers: [{ id: 3, name: 'Lead Parent', email: 'lead@x.test' }],
+        },
+    },
     program: { id: 1, name: 'Woodshop' },
 };
 
@@ -60,6 +66,28 @@ describe('payment-plans field-stripping', () => {
         expect(p.email).toBe('member@x.test');
         expect(p.dateOfBirth).toBe('2000-01-01');
         expect(p.name).toBe('Member Name');
+    });
+
+    it('board sees household lead email (pii) nested under person.household', () => {
+        const tokens = tokensFor(ENDPOINT, 'isBoardMember');
+        const out = stripValue('ProgramParticipant', row, tokens, ctx()) as Record<string, unknown>;
+        const p = out.person as Record<string, unknown>;
+        const h = p.household as Record<string, unknown>;
+        const leads = h.householdMembers as Array<Record<string, unknown>>;
+        expect(leads).toHaveLength(1);
+        expect(leads[0].email).toBe('lead@x.test');
+        expect(leads[0].name).toBe('Lead Parent');
+    });
+
+    it('a non-admin view strips lead email but keeps lead name', () => {
+        const tokens: readonly Token[] = ['member', 'public'];
+        const out = stripValue('ProgramParticipant', row, tokens, ctx()) as Record<string, unknown>;
+        const p = out.person as Record<string, unknown>;
+        const h = p.household as Record<string, unknown>;
+        const leads = h.householdMembers as Array<Record<string, unknown>>;
+        expect(leads).toHaveLength(1);
+        expect(leads[0].email).toBeUndefined();
+        expect(leads[0].name).toBe('Lead Parent');
     });
 
     it('a non-admin view (member+public) strips email/dob but keeps name', () => {
