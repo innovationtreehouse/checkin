@@ -89,6 +89,10 @@ export const PATCH = withAuth(
                 return apiError(PHONE_ERROR, 400);
             }
 
+            if (!memberName?.trim()) {
+                return apiError("Name is required", 400);
+            }
+
             if (!memberDob && !memberOver25) {
                 // A new member's age must be known: either a DoB, or an explicit
                 // "25+" declaration (mirrors the client form's requirement).
