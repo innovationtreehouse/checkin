@@ -2,6 +2,7 @@ import inspect
 import json
 import os
 import unittest
+from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
 
 from nacl.signing import SigningKey
@@ -11,10 +12,15 @@ from client import (
     BackendClient,
     DEFAULT_KIOSK_PATH,
     _scan_result_banner_html,
+    attendance_poller,
     handle_scan,
     main,
 )
-from outbox import Outbox
+from outbox import Outbox, in_closed_window
+
+
+class _StopLoop(Exception):
+    """Sentinel to escape attendance_poller's `while True` in tests."""
 
 
 def scan_banner(body, status=200):
@@ -192,6 +198,38 @@ class TestForceCloseConfirm(unittest.TestCase):
         backend.post_scan.assert_not_called()
         queued = [r for r in outbox.pending_rows() if r[0] != "evt-0"]
         self.assertEqual(queued[0][4], "tok-2")
+
+class TestAttendancePollerClosedWindow(unittest.TestCase):
+    """§3.1/Q17: unlike the outbox drain, the poller had no closed-window
+    gate -- a 24/7 kiosk pointed at prod defeats the overnight curfew with
+    signed GETs every 30s."""
+
+    def _run(self, in_closed_window_fn, iterations=2):
+        backend = Mock(attendance_path="/attendance/current")
+        backend.get_attendance.return_value = ({"counts": {"total": 1}}, 200)
+        state = AttendanceState()
+        state.push_event = lambda event: None
+
+        calls = {"n": 0}
+
+        def fake_sleep(secs):
+            calls["n"] += 1
+            if calls["n"] >= iterations:
+                raise _StopLoop()
+
+        with self.assertRaises(_StopLoop):
+            attendance_poller(backend, state, sleep_fn=fake_sleep,
+                               in_closed_window_fn=in_closed_window_fn)
+        return backend
+
+    def test_swallows_the_fetch_at_2330(self):
+        backend = self._run(lambda: in_closed_window(datetime(2026, 8, 18, 23, 30)))
+        backend.get_attendance.assert_not_called()
+
+    def test_polls_at_1200(self):
+        backend = self._run(lambda: in_closed_window(datetime(2026, 8, 18, 12, 0)))
+        backend.get_attendance.assert_called()
+
 
 if __name__ == "__main__":
     unittest.main()
