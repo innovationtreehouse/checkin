@@ -52,16 +52,16 @@ describe('Eligible Participants API Integration Tests', () => {
              where: { householdId: { in: existingHouseholdIds } }
         });
 
+        await prisma.person.deleteMany({
+            where: { id: { in: existingUserIds } }
+        });
+
         await prisma.household.deleteMany({
-             where: { householdMembers: { some: { id: { in: existingUserIds } } } }
+             where: { id: { in: existingHouseholdIds } }
         });
 
         await prisma.program.deleteMany({
             where: { name: { contains: 'Elig API Test' } }
-        });
-        
-        await prisma.person.deleteMany({
-            where: { id: { in: existingUserIds } }
         });
 
         // Create Admin
