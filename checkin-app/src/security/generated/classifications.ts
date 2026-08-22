@@ -139,8 +139,6 @@ export const classifications = {
         outreachReminderSubject: 'internal',
         outreachReminderBody: 'internal',
         shopifyOrgMembershipProductId: 'internal',
-        shopifyNormalVariantId: 'internal',
-        shopifyVolunteerVariantId: 'internal',
         shopifyPriceSyncedAt: 'internal',
         shopifyReconcileCursorAt: 'internal',
         scholarshipDenialGraceDays: 'public',
@@ -221,8 +219,6 @@ export const classifications = {
         orgMemberPriceCents: 'public',
         nonOrgMemberPriceCents: 'public',
         shopifyProductId: 'public',
-        shopifyOrgMemberVariantId: 'public',
-        shopifyNonOrgMemberVariantId: 'public',
         shopifyVariantId: 'public',
     },
     ProgramVolunteer: {
