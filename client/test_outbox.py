@@ -16,11 +16,16 @@ class _StopLoop(Exception):
 
 
 class FakeState:
-    def __init__(self):
+    def __init__(self, confirm_token=None):
         self.events = []
+        self.confirm_token = confirm_token
 
     def push_event(self, data):
         self.events.append(data)
+
+    def take_confirm(self):
+        token, self.confirm_token = self.confirm_token, None
+        return token
 
 
 class TestOutboxDurability(unittest.TestCase):
@@ -150,7 +155,8 @@ class TestReplayDrain(unittest.TestCase):
 
             calls = {"n": 0}
 
-            def send_fn(participant_id, client_event_id, scanned_at, replay=False):
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False):
                 idx = calls["n"]
                 calls["n"] += 1
                 return responses[idx]
@@ -228,7 +234,8 @@ class TestReplayDrain(unittest.TestCase):
 
             seen_ids = []
 
-            def send_fn(participant_id, client_event_id, scanned_at, replay=False):
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False):
                 seen_ids.append(client_event_id)
                 if len(seen_ids) < 3:
                     return ({}, 503, None)
@@ -256,7 +263,8 @@ class TestReplayDrain(unittest.TestCase):
 
             seen = []
 
-            def send_fn(participant_id, client_event_id, scanned_at, replay=False):
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False):
                 seen.append(replay)
                 return ({"type": "checkin"}, 200, None)
 
@@ -269,6 +277,55 @@ class TestReplayDrain(unittest.TestCase):
                              in_closed_window_fn=lambda: False)
 
             self.assertEqual(seen, [True])
+
+    def test_drain_replays_the_stored_force_close_token(self):
+        # #1347/§5.23a: a confirm the keyholder gave before the outage still
+        # closes when it lands, and that only works if the token queued with it
+        # is sent on the replay. Without it the server parks the close.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-tok", "1", now_iso(), "tok-1")
+            ob.enqueue("evt-none", "2", now_iso())
+
+            seen = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False):
+                seen.append((client_event_id, force_close_token))
+                return ({"type": "checkout"}, 200, None)
+
+            def fake_sleep(secs):
+                if len(seen) >= 2:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            self.assertEqual(seen, [("evt-tok", "tok-1"), ("evt-none", None)])
+
+    def test_dead_letter_refreshes_the_queue_badge(self):
+        # A queue that empties by dead-lettering must not leave a stale count
+        # on screen -- same push the ack branch does.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+
+            pushed = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False):
+                return ({"error": "unknown participant"}, 404, None)
+
+            def fake_sleep(secs):
+                if pushed:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=pushed.append, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            self.assertEqual(pushed[0]["queued"], 0)
 
 
 class TestHandleScanQueuesOnFailure(unittest.TestCase):
@@ -315,7 +372,6 @@ class TestHandleScanQueuesOnFailure(unittest.TestCase):
             handle_scan(backend, FakeState(), ob, "9")
 
             self.assertNotIn("replay", backend.post_scan.call_args.kwargs)
-            self.assertEqual(len(backend.post_scan.call_args.args), 3)
 
     def test_dead_letter_response_is_not_queued(self):
         with tempfile.TemporaryDirectory() as d:

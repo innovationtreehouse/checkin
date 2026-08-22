@@ -204,7 +204,7 @@ describe("a REPLAYED departure skips the ladder entirely (#1257)", () => {
     it("departs instead of demanding a confirm nobody can give", async () => {
         const { db, update } = fakeDb([10, 20]);
 
-        const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db, SCANNED_AT, "evt-1");
+        const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db, null, SCANNED_AT, "evt-1");
         const body = await res.json();
 
         expect(res.status).toBe(200);
@@ -218,7 +218,7 @@ describe("a REPLAYED departure skips the ladder entirely (#1257)", () => {
     it("still departs when the room is left with NO supervising adult", async () => {
         const { db } = fakeDb([10]);
 
-        const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db, SCANNED_AT, "evt-2");
+        const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db, null, SCANNED_AT, "evt-2");
 
         expect(res.status).toBe(200);
         expect((await res.json()).type).toBe("checkout");

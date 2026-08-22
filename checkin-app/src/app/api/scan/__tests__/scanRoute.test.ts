@@ -24,6 +24,7 @@ jest.mock('@/lib/prisma', () => {
         visit: {
             findFirst: jest.fn(),
             aggregate: jest.fn(),
+            count: jest.fn().mockResolvedValue(0),
         },
         systemMetricLog: {
             create: jest.fn().mockResolvedValue({}),
@@ -380,7 +381,7 @@ describe('POST /api/scan', () => {
             const res = await POST(liveReq());
             expect((await res.json()).type).toBe('checkout');
             // Last arg null => processCheckout takes the live warn/confirm path.
-            expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'kiosk', expect.anything(), expect.any(Date), null);
+            expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'kiosk', expect.anything(), null, expect.any(Date), null);
         });
 
         it('still dedups a clientEventId already recorded server-side', async () => {
@@ -389,6 +390,87 @@ describe('POST /api/scan', () => {
             const res = await POST(liveReq());
             expect((await res.json()).type).toBe('duplicate_ignored');
             expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('force-close confirm token', () => {
+        const scanReq = (body: Record<string, unknown>) => new Request('http://localhost/api/scan', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
+            // Inside the 3s debounce window — only a live token gets past it.
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date() });
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
+            (processCheckout as jest.Mock).mockResolvedValue(
+                new Response(JSON.stringify({ type: 'checkout', facilityClosed: true }), { status: 200 }));
+        });
+
+        it('lets a scan matching a live token through the debounce and forwards it', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(1); // token matches an open visit
+
+            const res = await POST(scanReq({ participantId: 1, forceCloseToken: 'tok-1' }));
+
+            expect((await res.json()).facilityClosed).toBe(true);
+            expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'session', expect.anything(), 'tok-1', expect.any(Date), null);
+        });
+
+        it('debounces a spent or unknown token, so a stray second read cannot re-toggle', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(0); // nothing holds this token
+
+            const res = await POST(scanReq({ participantId: 1, forceCloseToken: 'tok-1' }));
+
+            expect((await res.json()).type).toBe('ignored_debounce');
+            expect(processCheckout).not.toHaveBeenCalled();
+        });
+
+        it('treats a non-string token as no token at all', async () => {
+            const res = await POST(scanReq({ participantId: 1, forceCloseToken: 42 }));
+
+            expect((await res.json()).type).toBe('ignored_debounce');
+            expect(prisma.visit.count).not.toHaveBeenCalled();
+        });
+
+        // §5.23a: the outbox persists the token with the queued event, so a
+        // confirm given before the outage arrives on the replay and closes.
+        it('forwards a replayed scan\'s token so a pre-outage confirm still closes', async () => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue(null);
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+            (prisma.visit.aggregate as jest.Mock).mockResolvedValue({ _max: { arrivedAt: null, departedAt: null } });
+
+            const scannedAt = new Date(Date.now() - 60_000).toISOString();
+            const res = await POST(scanReq({
+                participantId: 1, clientEventId: 'evt-q', scannedAt, replay: true, forceCloseToken: 'tok-q',
+            }));
+
+            expect((await res.json()).facilityClosed).toBe(true);
+            expect(processCheckout).toHaveBeenCalledWith(
+                { id: 1, mergedIntoId: null }, 7, 'kiosk', expect.anything(), 'tok-q', new Date(scannedAt), 'evt-q');
+        });
+
+        // Precedence, pinned deliberately: §2's freshness window W runs BEFORE
+        // the token is ever looked at, so a confirm queued through an outage
+        // longer than W parks for review rather than closing hours late. The
+        // token exempts a replay from the park in processCheckout, not from W.
+        it('still parks a token-carrying replay that is older than the freshness window', async () => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue(null);
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+
+            const res = await POST(scanReq({
+                participantId: 1,
+                clientEventId: 'evt-old',
+                scannedAt: new Date(Date.now() - 20 * 60_000).toISOString(),
+                replay: true,
+                forceCloseToken: 'tok-q',
+            }));
+
+            expect((await res.json()).type).toBe('parked');
+            expect(processCheckout).not.toHaveBeenCalled();
         });
     });
 });

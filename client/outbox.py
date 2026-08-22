@@ -55,14 +55,18 @@ class Outbox:
         self._lock = threading.RLock()
         self._conn = self._open(path)
 
+    # force_close_token: the confirm token (#1347) the keyholder redeemed before
+    # the outage. It rides with the queued event and is sent on drain -- without
+    # it the replay lands token-less and parks for review instead of closing.
     _SCHEMA_SQL = """CREATE TABLE IF NOT EXISTS outbox (
-        client_event_id TEXT PRIMARY KEY,
-        participant_id  TEXT NOT NULL,
-        scanned_at      TEXT NOT NULL,
-        attempts        INTEGER NOT NULL DEFAULT 0,
-        last_status     INTEGER,
-        state           TEXT NOT NULL DEFAULT 'pending',
-        created_at      TEXT NOT NULL
+        client_event_id  TEXT PRIMARY KEY,
+        participant_id   TEXT NOT NULL,
+        scanned_at       TEXT NOT NULL,
+        attempts         INTEGER NOT NULL DEFAULT 0,
+        last_status      INTEGER,
+        state            TEXT NOT NULL DEFAULT 'pending',
+        created_at       TEXT NOT NULL,
+        force_close_token TEXT
     )"""
 
     def _open(self, path):
@@ -72,6 +76,11 @@ class Outbox:
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=FULL")
                 conn.execute(self._SCHEMA_SQL)
+                # Kiosks already carry an outbox.db from the pre-token schema.
+                try:
+                    conn.execute("ALTER TABLE outbox ADD COLUMN force_close_token TEXT")
+                except sqlite3.OperationalError:
+                    pass  # already there
                 conn.commit()
             except sqlite3.DatabaseError:
                 conn.close()
@@ -91,13 +100,14 @@ class Outbox:
                 pass
             return connect_and_init()
 
-    def enqueue(self, client_event_id, participant_id, scanned_at):
+    def enqueue(self, client_event_id, participant_id, scanned_at, force_close_token=None):
         """Idempotent: a retried enqueue of the same event is a no-op."""
         with self._lock:
             self._conn.execute(
                 "INSERT OR IGNORE INTO outbox "
-                "(client_event_id, participant_id, scanned_at, created_at) VALUES (?,?,?,?)",
-                (client_event_id, str(participant_id), scanned_at, now_iso()),
+                "(client_event_id, participant_id, scanned_at, created_at, force_close_token) "
+                "VALUES (?,?,?,?,?)",
+                (client_event_id, str(participant_id), scanned_at, now_iso(), force_close_token),
             )
             self._conn.commit()
             n = self.pending_count()
@@ -124,7 +134,7 @@ class Outbox:
         Survives restart: rows persist in the WAL file untouched."""
         with self._lock:
             return self._conn.execute(
-                "SELECT client_event_id, participant_id, scanned_at, attempts "
+                "SELECT client_event_id, participant_id, scanned_at, attempts, force_close_token "
                 "FROM outbox WHERE state='pending' ORDER BY scanned_at ASC"
             ).fetchall()
 
@@ -218,12 +228,18 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
 
-        client_event_id, participant_id, scanned_at, attempts = rows[0]
+        client_event_id, participant_id, scanned_at, attempts, force_close_token = rows[0]
         # replay=True is what tells the server this is a redelivery: the live
         # attempt already sent this clientEventId (D4 try-first), so only the
-        # drain may trip the replay-only guards.
+        # drain may trip the replay-only guards. The token rides along so a
+        # confirm given before the outage still closes (§5.23a); a replay
+        # without one parks for review.
         body, status, retry_after = send_fn(
-            participant_id, client_event_id, scanned_at, replay=True
+            participant_id,
+            force_close_token=force_close_token,
+            client_event_id=client_event_id,
+            scanned_at=scanned_at,
+            replay=True,
         )
         outcome = classify_response(status, body)
 
@@ -237,6 +253,10 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
             outbox.mark_dead(client_event_id, status)
             log.warning(f"Outbox event {client_event_id} dead-lettered (status={status})")
             backoff = MIN_BACKOFF_SECONDS
+            # Same badge refresh as the ack branch: a queue that empties by
+            # dead-lettering must not leave a stale count on screen.
+            if push_fn:
+                push_fn({"html": "", "queued": outbox.pending_count()})
             sleep_fn(DRAIN_PACE_SECONDS)
         else:
             outbox.bump_attempt(client_event_id, status)

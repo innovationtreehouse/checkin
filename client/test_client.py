@@ -2,17 +2,25 @@ import inspect
 import json
 import os
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 from nacl.signing import SigningKey
 
-from client import BackendClient, DEFAULT_KIOSK_PATH, _scan_result_banner_html, main
+from client import (
+    AttendanceState,
+    BackendClient,
+    DEFAULT_KIOSK_PATH,
+    _scan_result_banner_html,
+    handle_scan,
+    main,
+)
+from outbox import Outbox
 
 
 def scan_banner(body, status=200):
     # handle_scan now takes an outbox and delegates the markup to this helper;
     # calling it directly tests the same banner without faking a backend.
-    return _scan_result_banner_html(body, status)
+    return _scan_result_banner_html(body, status)[0]
 
 
 class TestSupervisionWarningBanner(unittest.TestCase):
@@ -73,7 +81,9 @@ class TestPostScanReplayFlag(unittest.TestCase):
         client.session.post.return_value = MagicMock(
             status_code=200, headers={}, json=lambda: {}
         )
-        client.post_scan(7, "evt-1", "2026-08-18T10:00:00+00:00", **kwargs)
+        client.post_scan(
+            7, client_event_id="evt-1", scanned_at="2026-08-18T10:00:00+00:00", **kwargs
+        )
         return json.loads(client.session.post.call_args.kwargs["data"])
 
     def test_live_send_carries_the_event_id_but_no_replay_flag(self):
@@ -100,6 +110,88 @@ class TestExampleConfigMatchesDefaults(unittest.TestCase):
         with open(example) as f:
             cfg = json.load(f)
         self.assertEqual(cfg["kiosk_path"], DEFAULT_KIOSK_PATH)
+
+class TestForceCloseConfirm(unittest.TestCase):
+    """§5.23 explicit confirm: the warning arms a token, the next scan spends it."""
+
+    def test_post_scan_sends_the_token_only_when_one_is_held(self):
+        client = BackendClient("http://fake", "fake_key")
+        with patch.object(BackendClient, "_headers", return_value={}), \
+             patch.object(client.session, "post") as post:
+            post.return_value = Mock(status_code=200, json=Mock(return_value={}))
+
+            client.post_scan(7)
+            self.assertEqual(json.loads(post.call_args.kwargs["data"]), {"participantId": 7})
+
+            client.post_scan(7, "tok-1")
+            self.assertEqual(json.loads(post.call_args.kwargs["data"]),
+                             {"participantId": 7, "forceCloseToken": "tok-1"})
+
+    def test_token_is_single_use_and_dies_with_the_countdown(self):
+        state = AttendanceState()
+        self.assertIsNone(state.take_confirm())
+
+        state.arm_confirm("tok", 15)
+        self.assertEqual(state.take_confirm(), "tok")
+        self.assertIsNone(state.take_confirm(), "a spent token must not confirm twice")
+
+        state.arm_confirm("tok", 0)  # countdown already over
+        self.assertIsNone(state.take_confirm(), "an expired countdown confirms nothing")
+
+    def test_warning_arms_the_countdown_and_the_next_scan_confirms(self):
+        state = AttendanceState()
+        events = []
+        state.push_event = events.append
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = ({
+            "type": "warning", "error": "others are here",
+            "forceCloseToken": "tok-1", "confirmSeconds": 15,
+        }, 400, None)
+
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+
+        self.assertIsNone(backend.post_scan.call_args.kwargs["force_close_token"])
+        self.assertEqual(events[0]["countdown"], 15)
+        self.assertIn('id="fc-countdown"', events[0]["html"])
+
+        backend.post_scan.return_value = ({
+            "type": "checkout", "message": "Checked out and Facility closed",
+            "participant": {"email": "k@example.com"},
+        }, 200, None)
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+
+        self.assertEqual(backend.post_scan.call_args.kwargs["force_close_token"], "tok-1")
+        self.assertEqual(events[1]["countdown"], 0)
+
+    def test_a_queued_confirm_carries_its_token_into_the_outbox(self):
+        """Without this the drain replays token-less and the server parks the
+        close for review -- silently undoing the confirm the keyholder gave."""
+        state = AttendanceState()
+        state.push_event = lambda event: None
+        state.arm_confirm("tok-1", 15)
+        outbox = Outbox(":memory:")
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = ({"error": "unreachable"}, 0, None)
+
+        handle_scan(backend, state, outbox, 7)
+
+        rows = outbox.pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][4], "tok-1")
+
+    def test_a_queued_scan_behind_a_predecessor_keeps_its_token_too(self):
+        state = AttendanceState()
+        state.push_event = lambda event: None
+        outbox = Outbox(":memory:")
+        outbox.enqueue("evt-0", 7, "2026-08-21T10:00:00+00:00")
+        state.arm_confirm("tok-2", 15)
+        backend = Mock(attendance_path=None)
+
+        handle_scan(backend, state, outbox, 7)
+
+        backend.post_scan.assert_not_called()
+        queued = [r for r in outbox.pending_rows() if r[0] != "evt-0"]
+        self.assertEqual(queued[0][4], "tok-2")
 
 if __name__ == "__main__":
     unittest.main()

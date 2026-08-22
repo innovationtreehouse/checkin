@@ -280,7 +280,7 @@ window and free (the key lives on the Pi). The client stops calling
 | `2xx` JSON `{type: checkin\|checkout\|duplicate_ignored\|ignored_debounce\|parked}` | **ack** — DELETE from outbox |
 | `503` / non-JSON body / `Retry-After` present | **warming, not failure** — keep; sleep `max(Retry-After≈30s, backoff)`; §3.5's ~10-min cap reclassifies a stuck "warming" |
 | `429` | backoff, respect `Retry-After` |
-| `400` JSON `{type:"warning"}` | **ack** — the last-keyholder force-close caution; the touch row WAS recorded server-side. "The confirm badge is its own queued event" holds only while the confirm is inferred from spacing; under §5.23's explicit confirm state a queued confirm carries a token minted before the outage and must be treated as expired, not honored |
+| `400` JSON `{type:"warning"}` | **ack** — the last-keyholder force-close caution; the touch row WAS recorded server-side. Carries `forceCloseToken` + `confirmSeconds`; the next scan echoes the token and closes whenever it lands (§5.23a, decided 2026-08-18 — a pre-outage token is honored, not expired) |
 | other `400` / `404` / `409` | **terminal** — `state='dead'`, escalate (D6/D7) |
 | `401` | retry + escalate to the warning banner — clock skew (NTP) or key mismatch; **never** dead-letter, re-signing succeeds once the clock/key recovers |
 | other `5xx` | retry with backoff — handler threw, transaction rolled back, idempotent |
@@ -380,7 +380,8 @@ Body (new fields optional):
   { participantId: number,
     clientEventId?: string,          // UUID, stable across retries of one scan
     scannedAt?:     string,          // ISO8601, instant the badge was read
-    replay?:        boolean }        // true ONLY on an outbox-drain redelivery
+    replay?:        boolean,         // true ONLY on an outbox-drain redelivery
+    forceCloseToken?: string }       // SHIPPED: echoes the warning's token (§5.23)
 
 Server:
   legacy body {participantId}        → exactly today's behavior (timestamp=now, no dedup key)
@@ -411,6 +412,28 @@ contract. Everything replay-only (freshness window W, out-of-order guard,
 `timestamp` backdated to `scannedAt`, force-close parking) gates on the flag.
 A live scan is happening now, so it stamps server-now and never inherits the
 kiosk's clock.
+
+**Amendment (2026-08-21) — the force-close park narrows to token-less replays.**
+Now that §5.23's confirm is a `forceCloseToken` minted with the warning and
+valid **by issuance, not by elapsed time** (§5.23a), a replayed last-keyholder
+checkout that echoes the visit's live token *is* an explicit confirm someone
+gave before the outage, and it closes — that is the #1347 ruling. The park
+therefore fires only on a replay whose token does not match: absent, stale
+(superseded by a later warning's mint), or wrong. A replay never mints or
+stamps, so an unattended countdown can never become a confirm. The outbox
+persists the token with the queued event (`outbox.forceCloseToken`) and sends
+it on drain; without that column every queued confirm would replay token-less
+and the ruling would be decorative.
+
+**Precedence, unchanged and flagged.** The token exempts a replay from the
+force-close park, *not* from §2's freshness window W. W is evaluated in the
+route before `processCheckout` ever reads the token, so a confirm queued
+through an outage longer than W (10 min) still parks as `stale_replay`. That
+covers the common case — a drain retry lands within seconds to minutes — but a
+confirm queued across the 23:00–06:00 curfew, or any outage longer than W,
+lands as a review item rather than a close. Whether a live token should also
+buy an exemption from W is a design call on §5.23a, not a merge decision;
+pinned by a test so it cannot drift silently either way.
 
 ### Schema delta
 
@@ -834,7 +857,9 @@ implementation, not a re-open. Questions 23–27 (v3 audit) are still open.
     next scan **ends the countdown and exits the state** — that is the
     confirm. Debounce no longer infers close from log spacing. Leftover
     debounce width (noise only) is an implementation default. Token
-    lifetime and queued-confirm expiry remain under §5.23.
+    lifetime and queued-confirm expiry: settled on §5.23 (2026-08-18) —
+    15s countdown at the edge, pre-outage tokens honored, confirm exempt
+    from the debounce.
 
 17. **Overnight poll / idle-stop exemption.**
     **Decided:** exempt only **kiosk-proxied** traffic (`signedRequest`).
@@ -885,14 +910,24 @@ implementation, not a re-open. Questions 23–27 (v3 audit) are still open.
     first two options.
     **Forced choice:** the warning issues a short-lived confirm token, or
     stamps the pending close on the keyholder's visit, and the second scan
-    must reference it. Residual open: **(a)** does a *queued* confirm honor a
-    token minted before the outage — recommended **no, expire it**, which
-    makes D4's "the confirm badge is its own queued event" wrong as written;
-    **(b)** token lifetime, and whether a confirm scan is exempt from the
-    debounce (the remainder of §5.16); **(c)** whether the fix ships
-    standalone ahead of Phase 1 — recommended yes, it is a live bug and
-    Phase 1 would otherwise freeze the adjacency rule into the replay
-    contract.
+    must reference it.
+    **Decided 2026-08-18 — and built.** The warning mints a token on the
+    keyholder's open Visit (`forceCloseToken`, beside `forceCloseWarnedAt`)
+    and returns it with the countdown length; only a scan echoing it
+    force-closes.
+    **(a) Honor a pre-outage token.** Validity is by issuance, not delivery:
+    there is no elapsed-time gate server-side, so a confirm queued through an
+    outage still closes when it lands. The recommendation above is overruled;
+    D4's "the confirm badge is its own queued event" stands as written, and
+    the §2 contract row calling a queued confirm expired is superseded.
+    **(b) Lifetime = the countdown, enforced at the edge.** 15 visible
+    seconds on the kiosk; the client drops the token when the countdown
+    lapses, and any next scan spends it either way (§5.16's "the next scan
+    ends the countdown"). A scan carrying a live token **is** exempt from the
+    3s debounce — otherwise the debounce swallows the confirm and Q16's
+    dead [0s,3s) front of the window survives. Single-use: the confirm spends
+    the token, so a stray second read finds nothing to match and debounces.
+    **(c) Ships standalone, ahead of the queue slice.**
 24. **The safety display owes a third state: *roster known incomplete*.**
     Two independent sources of a knowingly-wrong roster now exist: §5.14's
     (B)/(C) leave physically-present people off it, and audit B4 puts
@@ -940,6 +975,11 @@ implementation, not a re-open. Questions 23–27 (v3 audit) are still open.
     open backfill hard-refuses. Add the staleness
     mismatch recorded in §2 D7 and there are two guards for one hazard, one
     of them absent.
+    **Decided 2026-08-18: one rule — the manual open follows C too** (hold,
+    then project when a keyholder Visit exists), same as a scan. Not built
+    here: on `main` both paths still hard-refuse with the same 403, so they
+    agree today; C needs the deferred-projection substrate (§6, §5.22) and
+    lands with it, on both paths together.
     **Prerequisite:** audit B4 is undecided. The route's open-visit path and
     the register rule it contradicts (`docs/rules/attendance-checkin.md` — a
     visit recorded for someone else is always a closed one) shipped in the

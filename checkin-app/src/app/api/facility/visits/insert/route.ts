@@ -64,8 +64,12 @@ export const POST = withAuth(
                         personId: subjectId,
                         arrivedAt: ar.value,
                         departedAt: dr.value,
-                        arrivedVia: "WEB",
-                        departedVia: "WEB",
+                        // Staff-asserted, not measured — LEAD_MARKED, matching the
+                        // events-roster mark and the #1632 backfill of prior rows
+                        // that were wrongly stamped WEB. Excluded from
+                        // facility/trends (see that route's filter).
+                        arrivedVia: "LEAD_MARKED",
+                        departedVia: "LEAD_MARKED",
                         associatedEventId: eventId,
                     },
                 });
