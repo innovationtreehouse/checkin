@@ -241,7 +241,9 @@ export default function VolunteerMembershipsPage() {
               ? "Roster unavailable."
               : rows.length === 0
                 ? "No volunteers or designations yet."
-                : "No volunteers match this filter."
+                : rows.every((r) => r.status === "INACTIVE" && r.designations.length === 0)
+                  ? "No active volunteers. Turn on Show inactive to see archived households."
+                  : "No volunteers match this filter."
           }
         />
       </Card>

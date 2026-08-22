@@ -206,6 +206,19 @@ describe("membership-ops/volunteer-memberships page", () => {
     expect(bodyRowText()[1]).toContain("No live application");
   });
 
+  it("shows a Show-inactive hint when every row is hidden by the default filter", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const rows = [{
+      key: "hh:9", status: "INACTIVE" as const, householdId: 9, householdName: "Chen",
+      leads: ["Cy Chen"], email: "cy@example.com", memberSince: null, designations: [],
+    }];
+    mockFetchJson({ [ROSTER]: { rows } });
+    renderWithProviders(<VolunteerMembershipsPage />);
+
+    expect(await screen.findByText(/No active volunteers.*Show inactive/)).toBeInTheDocument();
+    expect(screen.queryByText("No volunteers match this filter.")).not.toBeInTheDocument();
+  });
+
   it("keeps an inactive household visible when a designation hangs off it", async () => {
     setSession({ id: 1, isSysadmin: true });
     const rows = [{
