@@ -10,6 +10,8 @@ import { upsertPrimaryContact, reconcileHouseholdConflicts } from "@/lib/emergen
 import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/lib/address";
 import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
+import { mintPersonId } from "@/lib/person/mintId";
+import { withTx } from "@/lib/db-client";
 
 /**
  * Membership intake service — the write/read model behind the "Join the
@@ -313,16 +315,22 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
         } else if (sp.name || sp.email) {
-            const created = await prisma.person.create({
-                data: {
-                    householdId,
-                    name: sp.name ?? null,
-                    ...(sp.email && { email: sp.email.toLowerCase() }),
-                    ...normalizeAdultDob(sp.dob),
-                    ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
-                    allergies: sp.allergies ?? null,
-                },
-            });
+            // saveIntake is a bare sequence of autocommit statements, so the mint
+            // gets its own two-statement transaction — an id minted outside one
+            // would be burned if the create failed.
+            const created = await withTx(prisma, async (tx) =>
+                tx.person.create({
+                    data: {
+                        id: await mintPersonId(tx),
+                        householdId,
+                        name: sp.name ?? null,
+                        ...(sp.email && { email: sp.email.toLowerCase() }),
+                        ...normalizeAdultDob(sp.dob),
+                        ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
+                        allergies: sp.allergies ?? null,
+                    },
+                }),
+            );
             await addLeadOrRecord(created.id);
         }
     }
@@ -340,15 +348,18 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                 },
             });
         } else if (child.name) {
-            await prisma.person.create({
-                data: {
-                    householdId,
-                    name: child.name,
-                    ...(child.email && { email: child.email.toLowerCase() }),
-                    ...normalizeAdultDob(child.dob),
-                    allergies: child.allergies ?? null,
-                },
-            });
+            await withTx(prisma, async (tx) =>
+                tx.person.create({
+                    data: {
+                        id: await mintPersonId(tx),
+                        householdId,
+                        name: child.name,
+                        ...(child.email && { email: child.email.toLowerCase() }),
+                        ...normalizeAdultDob(child.dob),
+                        allergies: child.allergies ?? null,
+                    },
+                }),
+            );
         }
     }
 

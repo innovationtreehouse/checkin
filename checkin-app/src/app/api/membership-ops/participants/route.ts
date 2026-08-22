@@ -5,6 +5,8 @@ import { logBackendError } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads";
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
+import { mintPersonId } from "@/lib/person/mintId";
+import { withTx } from "@/lib/db-client";
 import { apiError } from "@/lib/api-response";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req, auth) => {
@@ -51,13 +53,21 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             });
 
             if (!parent) {
-                parent = await prisma.person.create({
-                    data: {
-                        email: parentEmail,
-                        household: {
-                            create: { name: "Household" }
+                // No transaction in this route, so the mint gets a minimal one
+                // paired with its create — an id minted outside would be burned
+                // if the create failed. The household is created as its own
+                // statement rather than nested: an explicit `id` is only
+                // accepted in Prisma's *unchecked* create input, which has no
+                // room for a nested relation create.
+                parent = await withTx(prisma, async (tx) => {
+                    const household = await tx.household.create({ data: { name: "Household" } });
+                    return tx.person.create({
+                        data: {
+                            id: await mintPersonId(tx),
+                            email: parentEmail,
+                            householdId: household.id,
                         }
-                    }
+                    });
                 });
                 await addHouseholdLead(prisma, parent.householdId, parent.id);
                 if (alreadyMember) {
@@ -77,27 +87,32 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         let newParticipant;
         if (householdIdToAssign) {
-            newParticipant = await prisma.person.create({
+            newParticipant = await withTx(prisma, async (tx) => tx.person.create({
                 data: {
+                    id: await mintPersonId(tx),
                     name,
                     ...(email && { email }),
                     // #1165: 26+ participants are stored declared-adult with no DoB.
                     ...normalizeAdultDob(dob),
                     householdId: householdIdToAssign
                 }
-            });
+            }));
         } else {
             const lastName = (name || "").trim().split(/\s+/).pop() || "";
-            newParticipant = await prisma.person.create({
-                data: {
-                    name,
-                    ...(email && { email }),
-                    // #1165: 26+ participants are stored declared-adult with no DoB.
-                    ...normalizeAdultDob(dob),
-                    household: {
-                        create: { name: lastName ? `${lastName} Household` : "Household" }
+            newParticipant = await withTx(prisma, async (tx) => {
+                const household = await tx.household.create({
+                    data: { name: lastName ? `${lastName} Household` : "Household" }
+                });
+                return tx.person.create({
+                    data: {
+                        id: await mintPersonId(tx),
+                        name,
+                        ...(email && { email }),
+                        // #1165: 26+ participants are stored declared-adult with no DoB.
+                        ...normalizeAdultDob(dob),
+                        householdId: household.id,
                     }
-                }
+                });
             });
 
             await addHouseholdLead(prisma, newParticipant.householdId, newParticipant.id);

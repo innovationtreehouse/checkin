@@ -15,12 +15,20 @@ import { Prisma } from '@/generated/prisma/client';
 const txMembershipProcess = { findFirst: jest.fn(), create: jest.fn() };
 const txAuditLog = { create: jest.fn() };
 const txQueryRaw = jest.fn();
-const tx = { $queryRaw: txQueryRaw, orgMembershipProcess: txMembershipProcess, auditLog: txAuditLog };
+// saveIntake's two person.creates now run on a tx client (they pair the create
+// with mintPersonId(tx) — #1693). Same delegate object as the root mock below,
+// so the assertions in this file stay pointed at one place.
+const mockPerson = { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() };
+const tx = { $queryRaw: txQueryRaw, person: mockPerson, orgMembershipProcess: txMembershipProcess, auditLog: txAuditLog };
+/** The id txQueryRaw hands back for mintPersonId. */
+const MINTED_ID = 2503;
 
 jest.mock('@/lib/prisma', () => ({
     __esModule: true,
     default: {
-        person: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+        // A getter, not a direct reference: jest hoists this factory above the
+        // `const mockPerson` above, so reading it eagerly is a TDZ error.
+        get person() { return mockPerson; },
         household: { update: jest.fn() },
         orgMembership: { upsert: jest.fn() },
         orgMembershipProcess: { findFirst: jest.fn(), update: jest.fn() },
@@ -70,6 +78,7 @@ const user = {
 
 beforeEach(() => {
     jest.clearAllMocks();
+    txQueryRaw.mockResolvedValue([{ value: MINTED_ID }]);
     prisma.person.findUnique.mockResolvedValue(user);
     prisma.orgMembership.upsert.mockResolvedValue({ id: 42, householdId: 7, status: 'NONE' });
 });
@@ -333,7 +342,7 @@ describe('saveIntake', () => {
             data: { dateOfBirth: null, isDeclaredAdult: true },
         });
         expect(prisma.person.create).toHaveBeenCalledWith({
-            data: { householdId: 7, name: 'New Parent', dateOfBirth: null, isDeclaredAdult: true, allergies: null },
+            data: { id: MINTED_ID, householdId: 7, name: 'New Parent', dateOfBirth: null, isDeclaredAdult: true, allergies: null },
         });
     });
 
@@ -366,7 +375,7 @@ describe('saveIntake', () => {
         await saveIntake(1, { secondaryParent: { name: 'New Parent', email: 'NEW@X.com' } });
 
         expect(prisma.person.create).toHaveBeenCalledWith({
-            data: { householdId: 7, name: 'New Parent', email: 'new@x.com', dateOfBirth: null, isDeclaredAdult: false, allergies: null },
+            data: { id: MINTED_ID, householdId: 7, name: 'New Parent', email: 'new@x.com', dateOfBirth: null, isDeclaredAdult: false, allergies: null },
         });
         expect(addHouseholdLead).toHaveBeenCalledWith(prisma, 7, 55);
     });
@@ -400,7 +409,7 @@ describe('saveIntake', () => {
             data: { name: 'Existing Kid' },
         });
         expect(prisma.person.create).toHaveBeenCalledWith({
-            data: { householdId: 7, name: 'New Kid', dateOfBirth: null, allergies: null },
+            data: { id: MINTED_ID, householdId: 7, name: 'New Kid', dateOfBirth: null, allergies: null },
         });
     });
 });

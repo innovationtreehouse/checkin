@@ -348,6 +348,10 @@ export const classifications = {
         success: 'internal',
         error: 'internal',
     },
+    IdCounter: {
+        name: 'internal',
+        value: 'internal',
+    },
     DevLedger: {
         id: 'internal',
         action: 'internal',
@@ -535,6 +539,8 @@ export const relations = {
     IntegrationErrorLog: {
     },
     CronRunLog: {
+    },
+    IdCounter: {
     },
     DevLedger: {
     },

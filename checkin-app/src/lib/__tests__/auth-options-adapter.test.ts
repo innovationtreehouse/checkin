@@ -66,9 +66,13 @@ jest.unmock('@/lib/auth-options');
 
 import { authOptions } from '@/lib/auth-options';
 
+// $queryRaw is here for the same reason every model name is: createParticipantWithHousehold
+// mints the person id through mintPersonId(tx), which is one $queryRaw. Named
+// explicitly, NOT via a fallback proxy — see the note above.
 const prismaMockTx = {
     household: { create: jest.fn() },
     person: { create: jest.fn() },
+    $queryRaw: jest.fn().mockResolvedValue([{ value: 2503 }]),
 };
 
 const mockPersonFindUnique = (prisma as unknown as { person: { findUnique: jest.Mock } })
@@ -134,12 +138,27 @@ describe('PrismaAdapter user-model shim (auth-options.ts)', () => {
     test('createUser creates a Person inside a household transaction', async () => {
         prismaMockTx.household.create.mockResolvedValue({ id: 9 });
         prismaMockTx.person.create.mockResolvedValue({ id: 7, email: 'new@example.com' });
+        prismaMockTx.$queryRaw.mockResolvedValue([{ value: 2503 }]);
         const created = await adapter.createUser({ email: 'new@example.com', name: 'New Person' });
         expect(prismaMockTx.person.create).toHaveBeenCalledWith(
             expect.objectContaining({ data: expect.objectContaining({ householdId: 9 }) }),
         );
         expect(addHouseholdLead).toHaveBeenCalled();
         expect(created).toEqual(expect.objectContaining({ id: '7', email: 'new@example.com' }));
+    });
+
+    // #1693: the OAuth path is one of the nine sites that must pass an explicit
+    // minted id. A sequence-minted id here is a silent gap on every first sign-in
+    // — nothing else in this tree would notice.
+    test('createUser passes the minted id through to person.create', async () => {
+        prismaMockTx.household.create.mockResolvedValue({ id: 9 });
+        prismaMockTx.person.create.mockResolvedValue({ id: 2503, email: 'minted@example.com' });
+        prismaMockTx.$queryRaw.mockResolvedValue([{ value: 2503 }]);
+        await adapter.createUser({ email: 'minted@example.com', name: 'Minted' });
+        expect(prismaMockTx.$queryRaw).toHaveBeenCalledTimes(1);
+        expect(prismaMockTx.person.create).toHaveBeenCalledWith(
+            expect.objectContaining({ data: expect.objectContaining({ id: 2503 }) }),
+        );
     });
 
     test('getUserByEmail returns a string id (Int→string on the way out)', async () => {

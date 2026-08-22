@@ -6,9 +6,10 @@ import { logBackendError, logger } from "@/lib/logger";
 import { addHouseholdLead, HouseholdLeadLimitError, MAX_HOUSEHOLD_LEADS } from "@/lib/household/leads";
 import { parseImportDob } from "@/lib/importDob";
 import { calculateAge } from "@/lib/time";
-import type { DbClient } from "@/lib/db-client";
+import { withTx, type DbClient } from "@/lib/db-client";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { mintPersonId } from "@/lib/person/mintId";
 
 export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (req: NextRequest, auth) => {
     try {
@@ -70,18 +71,28 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             address?: string;
         }, db: DbClient = prisma) => {
             const isAdult = !data.dob || calculateAge(data.dob) >= 18;
-            const participant = await db.person.create({
-                data: {
-                    ...(data.email && { email: data.email }),
-                    name: data.name,
-                    dateOfBirth: data.dob,
-                    household: {
-                        create: {
-                            name: `${data.name}'s Household`,
-                            ...(data.address && { address: data.address }),
-                        }
+            // withTx joins the caller's transaction when `db` is one (pass 1) and
+            // opens its own when it's the root client, so the mint and the create
+            // are always in the same transaction either way. The household is its
+            // own statement rather than a nested create: an explicit `id` is only
+            // accepted in Prisma's *unchecked* create input, which has no room
+            // for a nested relation create.
+            const participant = await withTx(db, async (tx) => {
+                const household = await tx.household.create({
+                    data: {
+                        name: `${data.name}'s Household`,
+                        ...(data.address && { address: data.address }),
                     }
-                }
+                });
+                return tx.person.create({
+                    data: {
+                        id: await mintPersonId(tx),
+                        ...(data.email && { email: data.email }),
+                        name: data.name,
+                        dateOfBirth: data.dob,
+                        householdId: household.id,
+                    }
+                });
             });
             if (isAdult) {
                 await addHouseholdLead(db, participant.householdId, participant.id);
@@ -226,6 +237,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                         } else {
                             participant = await tx.person.create({
                                 data: {
+                                    id: await mintPersonId(tx),
                                     name: pr.fullName,
                                     dateOfBirth: pr.parsedDob,
                                     householdId: parentHouseholdId

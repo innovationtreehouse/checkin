@@ -15,6 +15,7 @@ import { ROLE_FLAGS, setRoleFlag } from "@/lib/roles";
 import { addHouseholdLead } from "@/lib/household/leads";
 import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
 import { normalizeEmail } from "@/lib/prismaEmailNormalize";
+import { mintPersonId } from "@/lib/person/mintId";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -67,7 +68,7 @@ export async function createParticipantWithHousehold(data: {
             data: { name: data.name?.trim() || data.email?.trim() || "Household" },
         });
         const participant = await tx.person.create({
-            data: { ...data, householdId: household.id },
+            data: { ...data, id: await mintPersonId(tx), householdId: household.id },
         });
         await addHouseholdLead(tx, household.id, participant.id);
         return participant;
