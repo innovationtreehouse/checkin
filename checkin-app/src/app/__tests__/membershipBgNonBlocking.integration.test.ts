@@ -56,7 +56,7 @@ async function makeFreshRenewal() {
     await prisma.person.update({ where: { id: lead.id }, data: { isHouseholdLead: true } });
     const m = await prisma.orgMembership.create({ data: { householdId: hh.id, status: 'ACTIVE' } });
     const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.id, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
-    return { orgMembershipId: m.id, processId: proc.id, leadEmail: lead.email! };
+    return { orgMembershipId: m.id, processId: proc.id, leadId: lead.id, leadEmail: lead.email! };
 }
 
 /** Applicant household + a lead + membership + a process at the given status. */
@@ -262,10 +262,10 @@ describe('background check is non-blocking', () => {
 
     it('renewal with a still-valid background check matches a designation added since the last cycle (#874)', async () => {
         await setBgPolicy();
-        const { orgMembershipId, processId, leadEmail } = await makeFreshRenewal();
+        const { orgMembershipId, processId, leadId, leadEmail } = await makeFreshRenewal();
         await prisma.volunteerDesignation.create({ data: { email: leadEmail } });
 
-        await beginRenewal(processId);
+        await beginRenewal(processId, leadId);
         expect(await statusOf(processId)).toBe('PENDING_EXTERNAL_ACTION');
 
         // The advance's PENDING_PAYMENT transition applies the allowlist — dues
@@ -308,11 +308,11 @@ describe('background check is non-blocking', () => {
 
     it('fresh-check renewal with a household note opens payment on signature alone', async () => {
         await setBgPolicy();
-        const { orgMembershipId, processId } = await makeFreshRenewal();
+        const { orgMembershipId, processId, leadId } = await makeFreshRenewal();
         const m = await prisma.orgMembership.findUnique({ where: { id: orgMembershipId } });
         await prisma.household.update({ where: { id: m!.householdId }, data: { intakeNotes: 'note for the reviewer' } });
 
-        await beginRenewal(processId);
+        await beginRenewal(processId, leadId);
 
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
@@ -387,8 +387,8 @@ describe('background check is non-blocking', () => {
 
     it('renewal with a still-valid background check: bgClearedAt stamped, signature opens payment, paying activates (not stuck)', async () => {
         await setBgPolicy();
-        const { orgMembershipId, processId } = await makeFreshRenewal();
-        await beginRenewal(processId);
+        const { orgMembershipId, processId, leadId } = await makeFreshRenewal();
+        await beginRenewal(processId, leadId);
         const proc = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
         expect(proc?.status).toBe('PENDING_EXTERNAL_ACTION');
         expect(proc?.bgClearedAt).not.toBeNull(); // the bug: was null → paid renewal stuck forever

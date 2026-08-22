@@ -150,7 +150,7 @@ describe('Membership renewal', () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1)));
         const m = await makeActiveMembership('Fresh', new Date()); // recent background check
         const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
-        const out = await beginRenewal(proc.id);
+        const out = await beginRenewal(proc.id, m.leadId);
         // A fresh agreement is signed every cycle; the still-valid background check is
         // pre-cleared, so the signature alone opens payment.
         expect(out.status).toBe('PENDING_EXTERNAL_ACTION');
@@ -164,7 +164,7 @@ describe('Membership renewal', () => {
         await setBoundary(new Date(Date.UTC(2000, 7, 1)));
         const m = await makeActiveMembership('Stale', null); // no background check on record
         const proc = await prisma.orgMembershipProcess.create({ data: { orgMembershipId: m.orgMembershipId, kind: 'RENEWAL', status: 'PENDING_RENEWAL' } });
-        const out = await beginRenewal(proc.id);
+        const out = await beginRenewal(proc.id, m.leadId);
         // Same external step as a new applicant — the member must sign a fresh
         // agreement AND consent on Averity; nothing sits in the review queue yet.
         expect(out.status).toBe('PENDING_EXTERNAL_ACTION');
