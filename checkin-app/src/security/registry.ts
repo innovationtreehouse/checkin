@@ -359,6 +359,26 @@ defineRoute({
     ],
 });
 
+// Sysadmin-only cleanup path for a BackgroundCheckAttestation the participant-
+// merge route refuses to carry forward: its collision check ("Both attested
+// the same background check", merge/route.ts) means the same human reviewed
+// under two Person identities, and nothing removes the duplicate row today.
+// Sysadmin-only, NOT board — attestations are review artifacts, not a
+// membership decision (#1456 Decision 3). No bag: the response is
+// { success: true }, no model data.
+//
+// Landed registry-first, ahead of the route, per the AGENTS.md boundary-
+// isolation rule: an unused defineRoute is inert, so the grant is reviewable
+// on its own before anything serves it.
+defineRoute({
+    endpoint: 'DELETE /api/membership-ops/bg-attestations/[id]',
+    authorize: { anyRole: ['isSysadmin'] },
+    envelope: null,
+    orderedView: [
+        ['isSysadmin', ['public']],
+    ],
+});
+
 // Background-check reviewers' queue. Reviewers must see applicant parents' names
 // + emails (to look them up on Averity) but NOT internal/personal fields — so the
 // grant is deliberately limited to pii + public. Board members are implicit
