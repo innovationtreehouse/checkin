@@ -16,7 +16,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
         const body = await req.json();
         // `alreadyMember` lets an admin confirm a newly-created household is already
         // a paid member (defaults false — new participants are visitors, not members).
-        const { name, email, parentEmail, dob, householdId, alreadyMember = false } = body;
+        const { name, email, parentEmail, parentName, dob, householdId, alreadyMember = false } = body;
 
         if (!email && !parentEmail && !householdId) {
             return apiError("Email, Parent Email, or Household assignment is required", 400);
@@ -51,11 +51,17 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             });
 
             if (!parent) {
+                if (!parentName?.trim()) {
+                    return apiError("Parent name is required when creating a new parent", 400);
+                }
+                const trimmedParentName = parentName.trim();
+                const parentLastName = trimmedParentName.split(/\s+/).pop() || "";
                 parent = await prisma.person.create({
                     data: {
                         email: parentEmail,
+                        name: trimmedParentName,
                         household: {
-                            create: { name: "Household" }
+                            create: { name: parentLastName ? `${parentLastName} Household` : "Household" }
                         }
                     }
                 });
