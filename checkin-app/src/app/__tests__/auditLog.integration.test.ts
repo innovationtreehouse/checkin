@@ -141,7 +141,8 @@ describe('AuditLog Integration Tests', () => {
             body: JSON.stringify({
                 name: 'Audit Test Program',
                 enrollmentStatus: 'OPEN',
-                startAt: new Date(),
+                startAt: '2026-01-01',
+                endAt: '2026-12-31',
                 leadMentorId: testAdminId,
                 maxParticipants: 50
             })
