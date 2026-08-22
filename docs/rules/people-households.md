@@ -149,6 +149,14 @@ Things the app takes as true because they are handled outside it.
 - Where someone signs in with Google, the address they sign in with is the
   address they are contacted at. There is no second one to diverge from it.  [Decision]
 
+- A person's identifier is opaque, and its only job is to be unique and to stay
+  unique. It is sparse, never dense and never reissued: a save that was rolled
+  back or a database pause leaves gaps in the numbering, and those gaps are
+  expected rather than a fault to close. It is never worked out from the people
+  already on file either — issuing the highest number in use plus one hands a
+  deleted person's number to a new one, and every badge printed for the first
+  would then scan as the second at the kiosk.  [Decision]
+
 - A person is never lost. A merged record is kept and marked as merged rather
   than removed, and drops out of every live list, count and roster. A record of
   what happened still names them, because hiding a since-merged identity there
