@@ -103,5 +103,49 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
         self.assertTrue(any("Not restarting" in m for m in logs.output))
 
 
+class TestVersionPollerClosedWindow(unittest.TestCase):
+    """§3.1: the server-version GET is a keep-alive same as attendance_poller's
+    -- it must not fire during the closed window. Self-update (git, no
+    network to the server) is unaffected: it's meant to run overnight."""
+
+    def _run(self, in_closed_window_fn, iterations=2):
+        backend = MagicMock()
+        backend.get_server_version.return_value = ("v1", 200)
+        state = MagicMock()
+
+        calls = {"n": 0}
+
+        def fake_sleep(_):
+            calls["n"] += 1
+            if calls["n"] >= iterations:
+                raise _StopLoop()
+
+        with tempfile.TemporaryDirectory() as d:
+            state_path = os.path.join(d, "state")
+            with patch("client.subprocess.run") as run_mock, \
+                 patch("client.subprocess.check_output", return_value="same\n"), \
+                 patch("client.time.sleep", side_effect=fake_sleep):
+                with self.assertRaises(_StopLoop):
+                    version_poller(backend, state, interval=0, state_path=state_path,
+                                   in_closed_window_fn=in_closed_window_fn)
+        return backend, run_mock
+
+    def test_swallows_the_version_get_at_2330(self):
+        from datetime import datetime
+        from outbox import in_closed_window
+        backend, run_mock = self._run(lambda: in_closed_window(datetime(2026, 8, 18, 23, 30)))
+        # One call during the initial-version bootstrap loop, none from the
+        # gated recurring check.
+        self.assertEqual(backend.get_server_version.call_count, 1)
+        # Self-update (git fetch) is NOT gated -- overnight is its safe window.
+        run_mock.assert_called()
+
+    def test_polls_the_version_get_at_1200(self):
+        from datetime import datetime
+        from outbox import in_closed_window
+        backend, _ = self._run(lambda: in_closed_window(datetime(2026, 8, 18, 12, 0)))
+        self.assertGreater(backend.get_server_version.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

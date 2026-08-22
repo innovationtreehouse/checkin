@@ -789,7 +789,8 @@ def _should_restart_for_update(remote_head, last_restart_target):
     # never-tried or newly-advanced target.
     return remote_head != last_restart_target
 
-def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE):
+def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE,
+                    in_closed_window_fn=in_closed_window):
     """Background thread that checks for client and server version updates."""
     last_restart_target = _read_last_restart_target(state_path)
 
@@ -802,18 +803,21 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
             log.info(f"Initial server version: {initial_server_version}")
             break
         time.sleep(5)
-    
+
     while True:
         time.sleep(interval)
-        
-        # 1. Check Server Version Update
-        if initial_server_version:
+
+        # 1. Check Server Version Update -- skipped during the closed window
+        # (§3.1): this signed GET keep-alives the service same as
+        # attendance_poller's. Self-update below is NOT gated: git pull hits
+        # no server, and overnight is the safe window to restart in.
+        if initial_server_version and not in_closed_window_fn():
             sv, status = backend.get_server_version()
             if status == 200 and sv and sv != initial_server_version:
                 log.info(f"Server version changed from {initial_server_version} to {sv}. Requesting reload.")
                 state.push_event({"reload": True})
                 initial_server_version = sv  # Update to prevent spam
-        
+
         # 2. Check Client Version Update
         try:
             subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
