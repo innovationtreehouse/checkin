@@ -11,6 +11,7 @@ import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { validateProgramAgeBounds } from "@/lib/programAge";
 import { parseDateOnly } from "@/lib/time";
+import { ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
 
 // ORDER MATTERS: this export sits ABOVE getProgram so the routeAuthDrift
 // guard attributes getProgram's edge-model reads to the nearest preceding
@@ -221,11 +222,38 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             if (isNaN(leadMentorId)) {
                 return apiError("Invalid lead mentor", 400);
             }
+            if (!isSysAdminOrBoard && leadMentorId !== currentProgram.leadMentorId) {
+                return apiError("Forbidden: Only administrators can reassign lead mentors", 403);
+            }
         }
 
-        const ageErr = validateProgramAgeBounds(minAge, maxAge);
+        if (announceOnOpen !== undefined && typeof announceOnOpen !== "boolean") {
+            return apiError("announceOnOpen must be a boolean", 400);
+        }
+        if (phase !== undefined && !Object.values(ProgramPhase).includes(phase)) {
+            return apiError("Invalid phase", 400);
+        }
+        if (enrollmentStatus !== undefined && !Object.values(EnrollmentStatus).includes(enrollmentStatus)) {
+            return apiError("Invalid enrollmentStatus", 400);
+        }
+
+        // Use effective values (body overrides current) so a one-sided edit
+        // can't leave minAge > maxAge or exceed the 25+ ceiling.
+        const effMinAge = minAge !== undefined ? minAge : currentProgram.minAge;
+        const effMaxAge = maxAge !== undefined ? maxAge : currentProgram.maxAge;
+        const ageErr = validateProgramAgeBounds(effMinAge, effMaxAge);
         if (ageErr) {
             return apiError(ageErr, 400);
+        }
+
+        if (maxParticipants !== undefined && maxParticipants !== null) {
+            if (typeof maxParticipants !== "number" || !Number.isInteger(maxParticipants) || maxParticipants <= 0) {
+                return apiError("maxParticipants must be a positive integer", 400);
+            }
+            const enrolled = await prisma.programParticipant.count({ where: { programId, person: LIVE_PERSON } });
+            if (maxParticipants < enrolled) {
+                return apiError(`maxParticipants cannot be set below the current enrollment of ${enrolled}`, 400);
+            }
         }
 
         const updateData: Record<string, unknown> = {

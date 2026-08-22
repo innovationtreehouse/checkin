@@ -8,7 +8,7 @@
 import { POST } from "../route";
 import { GET as analyzeGET } from "../analyze/route";
 import { GET as searchGET } from "@/app/api/people/search/route";
-import { PATCH as settingsPATCH } from "@/app/api/programs/[id]/settings/route";
+import { PATCH as settingsPATCH } from "@/app/api/programs/[id]/route";
 import prisma from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 
@@ -1298,7 +1298,7 @@ describe("Merge Participants API", () => {
             // Setting the cap to 1 must succeed — a count that still saw the tombstone's
             // seat would reject this as "below current enrollment of 2".
             const patchRes = await settingsPATCH(
-                new Request(`http://localhost/api/programs/${program.id}/settings`, {
+                new Request(`http://localhost/api/programs/${program.id}`, {
                     method: "PATCH",
                     body: JSON.stringify({ maxParticipants: 1 }),
                 }) as unknown as import("next/server").NextRequest,

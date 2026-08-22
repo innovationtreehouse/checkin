@@ -12,7 +12,7 @@
 
 import { POST as createProgram } from '@/app/api/programs/route';
 import { normalizeAuditData } from '@/lib/auditPayload';
-import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/settings/route';
+import { PATCH as updateProgramSettings } from '@/app/api/programs/[id]/route';
 import { POST as enrollParticipant } from '@/app/api/programs/[id]/participants/route';
 import { PATCH as editAttendance } from '@/app/api/events/[id]/route';
 import { PUT as editParticipant } from '@/app/api/membership-ops/participants/[id]/route';
@@ -169,7 +169,7 @@ describe('AuditLog Integration Tests', () => {
     });
 
     it('should generate an AuditLog when Program Settings are updated', async () => {
-        const req = new Request(`http://localhost:4000/api/programs/${testProgramId}/settings`, {
+        const req = new Request(`http://localhost:4000/api/programs/${testProgramId}`, {
             method: 'PATCH',
             body: JSON.stringify({ leadMentorNotificationSettings: { notifyRsvp: true } })
         });
