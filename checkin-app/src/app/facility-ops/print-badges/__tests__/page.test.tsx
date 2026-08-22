@@ -229,6 +229,23 @@ describe("facility-ops/print-badges page", () => {
     expect(await screen.findByText("Kim Keyholder")).toBeInTheDocument();
   });
 
+  it("shows filter-aware empty state when search matches only inactive people", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const inactiveOnly = [
+      { id: 5, name: "Inactive Ian", email: "ian@example.com", isMember: false },
+      { id: 6, name: "Expired Eve", email: "eve@example.com", isMember: false },
+    ];
+    mockFetchJson({ "/api/people/search": { people: inactiveOnly } });
+    renderWithProviders(<PrintBadgesPage />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/hidden by the filter/)).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/2 hidden by the filter/)).toBeInTheDocument();
+    expect(screen.queryByText("No participants found.")).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /hide inactive \(2\)/i })).toBeChecked();
+  });
+
   it("holds badge generation when the member roster request fails", async () => {
     setSession({ id: 1, isSysadmin: true });
     const logged = jest.spyOn(console, "error").mockImplementation(() => {});
