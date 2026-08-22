@@ -1067,6 +1067,19 @@ describe("Merge Participants API", () => {
             expect(await movedTallies()).toMatchObject({ roles: { migrated: 1, deduped: 1 } });
         });
 
+        // Ordering pin: the granter sweep runs AFTER the holder pass, so the stamp on
+        // the row the dedupe just deleted is not counted as moved. Sweep-first would
+        // report roleGrants: 1 for a row that no longer exists.
+        it("does not count a granter stamp on a role row the dedupe deleted", async () => {
+            await prisma.personRole.create({ data: { personId: pKeepId, role: "BOARD" } });
+            await prisma.personRole.create({ data: { personId: pMergeId, role: "BOARD", grantedById: pMergeId } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect(await movedTallies()).toMatchObject({ roles: { migrated: 0, deduped: 1 }, roleGrants: 0 });
+        });
+
         it("moves the PersonRole granter stamp (grantedById)", async () => {
             await prisma.personRole.create({ data: { personId: actorId, role: "KEYHOLDER", grantedById: pMergeId } });
 
@@ -1132,6 +1145,56 @@ describe("Merge Participants API", () => {
             const { collisions } = await res.json();
             expect((collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationSubject']);
             expect(collisions[0].message).toContain("subject of the same background check");
+        });
+    });
+
+    // One record REVIEWED an attestation naming the other as SUBJECT. Only one row
+    // exists, so no unique constraint fires: the subjectPersonId repoint silently
+    // makes reviewerId === subjectPersonId, and approvalsForSubject counts that
+    // self-approval toward REQUIRED_APPROVALS.
+    describe("cross-role attestation collision (reviewer of the other's own check)", () => {
+        const seedCrossRole = async (reviewerId: number, subjectPersonId: number) => {
+            const process = await prisma.orgMembershipProcess.create({ data: { kind: "PERSON_BG", status: "PENDING_BG_REVIEW" } });
+            createdProcessIds.push(process.id);
+            return prisma.backgroundCheckAttestation.create({ data: { processId: process.id, reviewerId, subjectPersonId, result: "APPROVE" } });
+        };
+
+        it("409s when the KEEPER reviewed an attestation naming the merged-away record", async () => {
+            const att = await seedCrossRole(pKeepId, pMergeId);
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(409);
+            const data = await res.json();
+            expect((data.collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationCrossRole']);
+            expect(data.error).toContain("reviewer of their own background check");
+
+            // The row is untouched — no self-review was created.
+            const after = await prisma.backgroundCheckAttestation.findUnique({ where: { id: att.id } });
+            expect(after?.subjectPersonId).toBe(pMergeId);
+            expect(after?.reviewerId).not.toBe(after?.subjectPersonId);
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.mergedIntoId).toBeNull();
+        });
+
+        it("409s in the other direction too — merged-away record as reviewer, keeper as subject", async () => {
+            await seedCrossRole(pMergeId, pKeepId);
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(409);
+            expect(((await res.json()).collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationCrossRole']);
+        });
+
+        it("analyze reports it, both directions", async () => {
+            await seedCrossRole(pKeepId, pMergeId);
+
+            const res = await analyzeGET(analyzeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+            const { collisions } = await res.json();
+            expect((collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationCrossRole']);
+            expect(collisions[0].message).toContain("reviewer of their own background check");
+
+            // Direction-independent: the same pair swapped reports the same collision.
+            const swapped = await analyzeGET(analyzeReq(pMergeId, pKeepId));
+            expect(((await swapped.json()).collisions as { type: string }[]).map(c => c.type)).toEqual(['bgAttestationCrossRole']);
         });
     });
 

@@ -161,6 +161,15 @@ export const GET = withAuth(
             if (sharedBgProcessCount > 0) {
                 collisions.push({ type: 'bgAttestation', message: `Both attested the same background check (${sharedBgProcessCount} shared review${sharedBgProcessCount > 1 ? 's' : ''}). Investigate before merging.` });
             }
+            // Cross-role: one record reviewed an attestation naming the other as
+            // subject. Only one row exists, so no unique fires — the repoint would
+            // quietly turn it into a self-review that still counts toward clearance.
+            const crossRoleCount = subjectAttestations.filter(x =>
+                (x.subjectPersonId === aId && x.reviewerId === bId) || (x.subjectPersonId === bId && x.reviewerId === aId)
+            ).length;
+            if (crossRoleCount > 0) {
+                collisions.push({ type: 'bgAttestationCrossRole', message: `One record reviewed a background check naming the other as its subject (${crossRoleCount} attestation${crossRoleCount > 1 ? 's' : ''}). Merging would make the survivor the reviewer of their own background check — investigate before merging.` });
+            }
             const aSubjectKeys = new Set(
                 subjectAttestations.filter(x => x.subjectPersonId === aId).map(x => `${x.processId}:${x.reviewerId}`)
             );

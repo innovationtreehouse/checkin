@@ -321,12 +321,28 @@ export const POST = withAuth(
                 });
             }
 
+            // Cross-role: one record REVIEWED an attestation naming the other as its
+            // SUBJECT. No unique constraint fires — there is only one row — so the
+            // repoint silently collapses it into reviewerId === subjectPersonId, and
+            // approvalsForSubject (lib/membership/review.ts) has no self-exclusion, so
+            // that self-approval counts toward REQUIRED_APPROVALS. attest()'s
+            // same-household gate is create-time only and never sees this.
+            const bgCrossRoleCollisions = [
+                ...keepParticipant.bgAttestations.filter(a => a.subjectPersonId === mergeId),
+                ...mergeParticipant.bgAttestations.filter(a => a.subjectPersonId === keepId),
+            ];
+            if (bgCrossRoleCollisions.length > 0) {
+                collisions.push({
+                    type: 'bgAttestationCrossRole',
+                    message: `One record reviewed a background check naming the other as its subject (${bgCrossRoleCollisions.length} attestation${bgCrossRoleCollisions.length > 1 ? 's' : ''}). Merging would make the survivor the reviewer of their own background check — investigate before merging.`,
+                });
+            }
+
             // Subject side of the same unique triple. Repointing subjectPersonId
             // collides when ONE reviewer attested both identities under the same
             // process — i.e. read the same human off a PDF twice. Two DIFFERENT
             // reviewers naming the two identities is an ordinary 2-of-N review and
-            // merges cleanly. A tombstone that is the *reviewer* on a shared process
-            // is already refused above, whichever role it plays on the other row.
+            // merges cleanly.
             const keepSubjectKeys = new Set(keepParticipant.bgAttestationsAsSubject.map(bgSubjectKey));
             const bgSubjectCollisions = mergeParticipant.bgAttestationsAsSubject.filter(a => keepSubjectKeys.has(bgSubjectKey(a)));
             if (bgSubjectCollisions.length > 0) {
