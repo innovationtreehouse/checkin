@@ -65,7 +65,7 @@ const HOUSEHOLD_ID = 2;
 const baseVisit = {
     id: 42, personId: OWN_ID, deletedAt: null, deletedById: null, associatedEventId: null,
     arrivedAt: new Date("2026-07-20T14:00:00Z"), departedAt: new Date("2026-07-20T16:00:00Z"),
-    arrivedVia: "WEB", departedVia: "WEB", forceCloseWarnedAt: null,
+    arrivedVia: "WEB", departedVia: "WEB", forceCloseWarnedAt: null, forceCloseToken: null,
 };
 
 function req(method: string, body?: unknown): NextRequest {
@@ -354,7 +354,7 @@ describe("household-lead correction of a member's visit", () => {
 
         expect(visit.arrivedAt).toBe("2026-07-20T14:05:00.000Z");
         expect(visit.departedAt).toBe(baseVisit.departedAt.toISOString());
-        for (const internal of ["deletedAt", "deletedById", "forceCloseWarnedAt"]) {
+        for (const internal of ["deletedAt", "deletedById", "forceCloseWarnedAt", "forceCloseToken"]) {
             expect(visit).not.toHaveProperty(internal);
         }
     });

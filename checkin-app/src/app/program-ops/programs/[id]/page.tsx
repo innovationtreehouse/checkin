@@ -56,6 +56,11 @@ const PHASE_BADGE: Record<string, { label: string; color: string }> = {
   FINISHED: { label: 'Finished', color: 'teal' },
 };
 
+function mentorLabel(name: string | null, email: string): string {
+  const label = name || 'Unnamed';
+  return email ? `${label} (${email})` : label;
+}
+
 export default function ProgramDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { user: sessionUser, loading: authLoading, ready } = useRequireRole([]);
@@ -111,7 +116,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
         setLeadMentorIdInput(data.leadMentorId !== null ? String(data.leadMentorId) : "");
         setMemberPrice(data.orgMemberPriceCents !== null ? String(data.orgMemberPriceCents / 100) : "");
         setNonMemberPrice(data.nonOrgMemberPriceCents !== null ? String(data.nonOrgMemberPriceCents / 100) : "");
-        setMentorSearch(data.leadMentor ? `${data.leadMentor.name || 'Unnamed'} (${data.leadMentor.email})` : "");
+        setMentorSearch(data.leadMentor ? mentorLabel(data.leadMentor.name, data.leadMentor.email) : "");
         setShopifyProductIdInput(data.shopifyProductId ?? "");
         setVariantInput(data.shopifyVariantId ?? "");
         setIsEditingMentor(false);
@@ -298,7 +303,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
 
                 <Card withBorder radius="md" padding="md">
                   <Group justify="space-around">
-                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.participants?.length || 0} {program.maxParticipants ? `/ ${program.maxParticipants}` : ''}</Text><Text size="sm" c="dimmed">Participants Enrolled</Text></Stack>
+                    <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.participants?.length || 0} {program.maxParticipants != null ? `/ ${program.maxParticipants}` : ''}</Text><Text size="sm" c="dimmed">Participants Enrolled</Text></Stack>
                     <Divider orientation="vertical" />
                     <Stack gap={0} align="center"><Text fz="xl" fw={700}>{program.volunteers?.length || 0}</Text><Text size="sm" c="dimmed">Assigned Volunteers</Text></Stack>
                     <Divider orientation="vertical" />
@@ -352,7 +357,7 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                   {isSysAdminOrBoard ? (
                     program.leadMentor && !isEditingMentor ? (
                       <Group>
-                        <Text c="green">{program.leadMentor.name || 'Unnamed'} ({program.leadMentor.email})</Text>
+                        <Text c="green">{mentorLabel(program.leadMentor.name, program.leadMentor.email)}</Text>
                         <Button size="xs" fz={15} variant="default" type="button" onClick={() => { setIsEditingMentor(true); setMentorSearch(""); setLeadMentorIdInput(""); }}>Change</Button>
                       </Group>
                     ) : (
@@ -365,17 +370,17 @@ export default function ProgramDetailsPage({ params }: { params: Promise<{ id: s
                             search={searchAdults}
                             getOptionLabel={(p) => p.name || 'Unnamed'}
                             getOptionDescription={(p) => p.email}
-                            onSelect={(p) => { setLeadMentorIdInput(p.id.toString()); setMentorSearch(`${p.name || 'Unnamed'} (${p.email})`); }}
+                            onSelect={(p) => { setLeadMentorIdInput(p.id.toString()); setMentorSearch(mentorLabel(p.name, p.email)); }}
                             onClear={() => { setLeadMentorIdInput(""); setMentorSearch(""); }}
                           />
                         </Box>
                         {program.leadMentor && (
-                          <Button size="xs" fz={15} variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(`${program.leadMentor?.name || 'Unnamed'} (${program.leadMentor?.email})`); }}>Cancel</Button>
+                          <Button size="xs" fz={15} variant="subtle" color="red" type="button" onClick={() => { setIsEditingMentor(false); setLeadMentorIdInput(String(program.leadMentorId)); setMentorSearch(program.leadMentor ? mentorLabel(program.leadMentor.name, program.leadMentor.email) : ''); }}>Cancel</Button>
                         )}
                       </Group>
                     )
                   ) : (
-                    program.leadMentor ? <Text c="green">{program.leadMentor.name || 'Unnamed'} ({program.leadMentor.email})</Text> : <Text c="dimmed">No Lead Mentor Assigned</Text>
+                    program.leadMentor ? <Text c="green">{mentorLabel(program.leadMentor.name, program.leadMentor.email)}</Text> : <Text c="dimmed">No Lead Mentor Assigned</Text>
                   )}
                   <Text size="xs" c={isSysAdminOrBoard ? 'yellow' : 'dimmed'} mt="xs">
                     {isSysAdminOrBoard ? '*You have permission to reassign this program.' : '*Only Administrators/Board Members can change the Lead Mentor.'}

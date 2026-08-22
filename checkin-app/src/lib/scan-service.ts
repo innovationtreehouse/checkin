@@ -7,10 +7,12 @@ import { type DbClient, isRootClient } from "@/lib/db-client";
 import { MAX_VISIT_MS } from "@/lib/visitTimes";
 import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits, youthIsPresent } from "@/lib/supervision";
 import { isYouth } from "@/lib/time";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
-/** How long a displayed force-close warning stays confirmable. The scan route's
- *  3s debounce eats the front of it, so the kiosk copy says "3 to 60 seconds". */
-const FORCE_CLOSE_CONFIRM_MS = 60_000;
+/** Seconds the kiosk counts down after showing the force-close warning. The
+ *  countdown is display; the confirm is the token, which has no elapsed-time
+ *  gate — see the confirm check in processCheckout. */
+export const FORCE_CLOSE_CONFIRM_SECONDS = 15;
 
 /** Countdown on the supervision confirm (#1436). Same 3s debounce eats the front,
  *  so the kiosk copy says "3 to 15 seconds". */
@@ -24,7 +26,7 @@ const SUPERVISION_CONFIRM_MS = 15_000;
  * unit tests) `db` defaults to the global prisma client. Fire-and-forget side
  * effects (notifications) intentionally run off the global client either way.
  */
-export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma) {
+export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma, visitTime: Date = new Date()) {
     // Non-keyholders require an open facility (at least 1 isKeyholder present)
     if (!participant.isKeyholder) {
         const activeKeyholders = await db.visit.count({
@@ -40,7 +42,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
         }
     }
 
-    const arrivalTime = new Date();
+    const arrivalTime = visitTime;
     const eventId = await findAssociatedEventAt(participant.id, arrivalTime, db);
 
     const newVisit = await db.visit.create({
@@ -89,7 +91,12 @@ export async function processCheckout(
     participant: Person,
     activeVisitId: number,
     authType: string,
-    db: DbClient = prisma
+    db: DbClient = prisma,
+    /** Force-close confirm token echoed by this scan, live or replayed. */
+    confirmToken: string | null = null,
+    visitTime: Date = new Date(),
+    /** clientEventId of a REPLAYED event (drain-delivered), null for a live scan. */
+    replayEventId: string | null = null
 ) {
     let facilityClosed = false;
 
@@ -116,19 +123,43 @@ export async function processCheckout(
             if (remainingUsers.length > 0) {
                 const ownVisit = await db.visit.findUnique({
                     where: { id: activeVisitId },
-                    select: { forceCloseWarnedAt: true }
+                    select: { forceCloseToken: true }
                 });
-                const warnedAt = ownVisit?.forceCloseWarnedAt;
+                // The confirm is the token this scan echoes, not the gap between
+                // badges and not the wall clock: the countdown runs on the kiosk,
+                // so a confirm queued through an outage still closes on arrival.
+                // The token is a bearer credential, so compare it timing-safely:
+                // hash both sides to a fixed length first (same idiom as
+                // cronAuth.ts) so timingSafeEqual can't throw on a length
+                // mismatch and no length leaks.
+                const stored = ownVisit?.forceCloseToken;
                 const confirmForceClose =
-                    warnedAt != null && Date.now() - warnedAt.getTime() <= FORCE_CLOSE_CONFIRM_MS;
+                    confirmToken != null && stored != null && timingSafeEqual(
+                        createHash("sha256").update(stored).digest(),
+                        createHash("sha256").update(confirmToken).digest()
+                    );
+
+                if (!confirmForceClose && replayEventId) {
+                    // KIOSK_RESILIENCE.md §4 + §5.23a: validity is by issuance, so a
+                    // confirm queued through an outage still closes -- but only if it
+                    // carries the token (checked above). A replay WITHOUT one was
+                    // never confirmed by anyone, and nobody is at the reader hours
+                    // later to answer a warning, so park it for a human. Never mint
+                    // or stamp on a replay: an unattended countdown is not a confirm.
+                    await db.rawBadgeLog.update({
+                        where: { clientEventId: replayEventId },
+                        data: { reviewReason: 'force_close_review' },
+                    });
+                    return apiJson({ type: 'parked', message: 'Recorded for review.' });
+                }
 
                 if (!confirmForceClose) {
-                    // Stamp the warning on this visit; only a scan that follows the
-                    // stamp may force-close, so the confirmation is bound to the
-                    // warning having been shown rather than to badge adjacency.
+                    // Mint a fresh token with the warning; the old one dies here, so
+                    // an unconfirmed countdown cannot be redeemed later.
+                    const token = randomUUID();
                     await db.visit.update({
                         where: { id: activeVisitId },
-                        data: { forceCloseWarnedAt: new Date() }
+                        data: { forceCloseWarnedAt: new Date(), forceCloseToken: token }
                     });
 
                     // Never render the raw address (tier `pii`) on the kiosk screen (#329):
@@ -139,13 +170,24 @@ export async function processCheckout(
                         .filter(Boolean)
                         .join(", ");
                     return apiJson({
-                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again in 3 to 60 seconds to confirm you've checked them and close the facility.`,
-                        type: "warning" as const
+                        error: `Warning! You are the last isKeyholder, but others are here:\n${names}\n\nBadge again within ${FORCE_CLOSE_CONFIRM_SECONDS} seconds to confirm you've checked them and close the facility.`,
+                        type: "warning" as const,
+                        forceCloseToken: token,
+                        confirmSeconds: FORCE_CLOSE_CONFIRM_SECONDS
                     }, 400);
                 }
             }
 
             facilityClosed = true;
+
+            // The token is spent. Clear it before the visit departs so no
+            // redeemable force-close state survives on a closed row — every
+            // lookup filters `departedAt: null` today, but one that forgets to
+            // shouldn't find a live-looking token.
+            await db.visit.update({
+                where: { id: activeVisitId },
+                data: { forceCloseWarnedAt: null, forceCloseToken: null }
+            });
 
             // The facility-wide sweep takes row locks on EVERY open visit, and
             // the email kick fires its own DB queries. Neither may run inside the
@@ -165,14 +207,17 @@ export async function processCheckout(
     // SUPERVISION INTERRUPT (#1436). Fires on EVERY departure, not just a
     // keyholder's — the close-guard above is a separate interrupt with its own
     // stamp. Skipped when the facility is closing: that sweep departs everyone.
+    // Skipped for a REPLAY too: its 400 records nothing but the drain acks that
+    // shape, so the queued departure would be dropped and the visit left open.
+    // Hours-old bookkeeping has no room to warn about and nobody to re-badge.
     let supervisionWarning: string | undefined;
-    if (!facilityClosed) {
+    if (!facilityClosed && !replayEventId) {
         const interrupt = await supervisionInterrupt(activeVisitId, db);
         if (interrupt?.confirmRequired) return interrupt.response;
         supervisionWarning = interrupt?.warning;
     }
 
-    const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db, "SCANNER");
+    const finalVisits = await processVisitCheckout(activeVisitId, visitTime, db, "SCANNER");
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
 
     // Fire-and-forget: send check-out notifications (mirrors processCheckin)

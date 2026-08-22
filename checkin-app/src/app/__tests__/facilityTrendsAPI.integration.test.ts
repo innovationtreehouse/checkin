@@ -11,14 +11,19 @@
  * unstructured hours, the `arrivedVia=LEAD_MARKED` exclusion (synthetic "marked
  * present" visits, plus its pre-split `SYSTEM` spelling) and the cases it must
  * not swallow — an untagged arrival, a real visit whose time staff corrected via
- * the staff route, and a member's self-correction (#1631) — plus the `programId`
- * filter and the invalid-period 400. Corrections are driven through the real
- * PATCH routes, since a hand-built fixture cannot catch a wrong stamp.
+ * the staff route, and a member's self-correction (#1631) — plus a real staff
+ * walk-in insert (#1632: the route the LEAD_MARKED backfill's row-set is keyed
+ * on) staying excluded and, when that same walk-in is deleted, scoring at the
+ * LEAD_MARKED source weight rather than the WEB weight it replaced, the
+ * `programId` filter and the invalid-period 400. Corrections and inserts are
+ * driven through the real routes, since a hand-built fixture cannot catch a
+ * wrong stamp.
  */
 
 import { GET } from '@/app/api/facility/trends/route';
-import { PATCH } from '@/app/api/facility/visits/route';
+import { PATCH, DELETE as VISITS_DELETE } from '@/app/api/facility/visits/route';
 import { PATCH as MANUAL_PATCH } from '@/app/api/attendance/manual/[id]/route';
+import { POST as INSERT_POST } from '@/app/api/facility/visits/insert/route';
 import prisma from '@/lib/prisma';
 import { getServerSession } from 'next-auth/next';
 import { getAppSettings } from '@/lib/appSettings';
@@ -270,6 +275,71 @@ describe('Facility trends API', () => {
 
         await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
         await prisma.visit.delete({ where: { id: visit.id } });
+        await prisma.event.delete({ where: { id: event.id } });
+        await prisma.program.delete({ where: { id: program.id } });
+    });
+
+    // #1632: the staff walk-in insert route now stamps LEAD_MARKED, which is
+    // exactly what the historical backfill rewrites old WEB rows to. Driven
+    // through the real route (not a hand-built fixture) so a regression that
+    // reverts the route back to WEB fails this, not just a unit test on the
+    // route in isolation.
+    it('excludes a real staff walk-in insert from trends hours', async () => {
+        const program = await prisma.program.create({ data: { name: `StaffEntry ${TAG}` } });
+        const insertArrival = new Date(Date.now() - 4 * 3600000);
+        const insertDeparture = new Date(Date.now() - 2 * 3600000);
+        const event = await prisma.event.create({
+            data: {
+                programId: program.id,
+                name: `StaffEntry event ${TAG}`,
+                startAt: new Date(insertArrival.getTime() - 3600000),
+                endAt: new Date(insertDeparture.getTime() + 3600000),
+            },
+        });
+        await prisma.programVolunteer.create({ data: { programId: program.id, personId: volunteerId } });
+
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+        const insertRes = await INSERT_POST(new Request('http://localhost:4000/api/facility/visits/insert', {
+            method: 'POST',
+            body: JSON.stringify({
+                personId: volunteerId,
+                arrivedAt: insertArrival.toISOString(),
+                departedAt: insertDeparture.toISOString(),
+            }),
+        }) as unknown as import('next/server').NextRequest);
+        expect(insertRes.status).toBe(201);
+        const { visit } = await insertRes.json();
+        visitIds.push(visit.id);
+        expect(visit.arrivedVia).toBe('LEAD_MARKED');
+
+        const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`);
+        const data = await res.json();
+        // Excluded entirely — not just demoted out of structured hours.
+        expect(data.totals.uniqueVolunteers).toBe(0);
+        expect(data.totals.totalVolunteerHours).toBe(0);
+        expect(data.totals.structuredHours).toBe(0);
+
+        // F13 pin: deleting this walk-in through the real DELETE route must weigh
+        // it at the LEAD_MARKED source weight (2), not the WEB weight (1) it
+        // replaced — that source-weight bump is the backfill's whole premise.
+        // 120 minutes * weight 2 * byProxy(admin acting for volunteerId) 2 = 480,
+        // double the 240 a WEB-weighted score would give the same edit.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+        const deleteRes = await VISITS_DELETE(new Request('http://localhost:4000/api/facility/visits', {
+            method: 'DELETE',
+            body: JSON.stringify({ visitId: visit.id }),
+        }) as unknown as import('next/server').NextRequest);
+        expect(deleteRes.status).toBe(200);
+
+        const deleteAudit = await prisma.auditLog.findFirst({
+            where: { actorId: adminId, action: 'DELETE', tableName: 'Visit', affectedEntityId: visit.id },
+            orderBy: { id: 'desc' },
+        });
+        expect((deleteAudit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
+            .toEqual({ score: 480, flagged: true });
+
+        await prisma.programVolunteer.deleteMany({ where: { programId: program.id } });
+        await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });
         await prisma.event.delete({ where: { id: event.id } });
         await prisma.program.delete({ where: { id: program.id } });
     });

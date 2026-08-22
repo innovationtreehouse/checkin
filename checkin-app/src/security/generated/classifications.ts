@@ -264,6 +264,8 @@ export const classifications = {
         personId: 'internal',
         timestamp: 'personal',
         location: 'personal',
+        clientEventId: 'internal',
+        reviewReason: 'internal',
     },
     Visit: {
         id: 'public',
@@ -276,6 +278,7 @@ export const classifications = {
         deletedAt: 'internal',
         deletedById: 'internal',
         forceCloseWarnedAt: 'internal',
+        forceCloseToken: 'internal',
         supervisionWarnedAt: 'internal',
     },
     AuditLog: {

@@ -97,6 +97,14 @@ describe("ProgramDetailsPage", () => {
     expect(screen.getByText("Mandy Mentor (mandy@example.com)")).toBeInTheDocument();
   });
 
+  it("renders a zero max participants as a real cap, not as uncapped", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/programs/1": { ...programData, maxParticipants: 0 } });
+    renderPage();
+
+    expect(await screen.findByText("2 / 0")).toBeInTheDocument();
+  });
+
   it("switches to the roster tab and shows volunteers/participants", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({ "/api/programs/1": programData });
