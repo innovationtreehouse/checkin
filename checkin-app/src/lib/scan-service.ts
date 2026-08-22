@@ -14,9 +14,10 @@ import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
  *  gate — see the confirm check in processCheckout. */
 export const FORCE_CLOSE_CONFIRM_SECONDS = 15;
 
-/** Countdown on the supervision confirm (#1436). Same 3s debounce eats the front,
- *  so the kiosk copy says "3 to 15 seconds". */
-const SUPERVISION_CONFIRM_MS = 15_000;
+/** Countdown on the supervision confirm (#1436). #1347 PR-0 extended the
+ *  route's debounce exemption to a fresh `supervisionWarnedAt` stamp, so the
+ *  full window is usable -- kiosk copy says "within 15 seconds". */
+export const SUPERVISION_CONFIRM_MS = 15_000;
 
 /**
  * Process a check-in for a participant who has no active visit.
@@ -294,7 +295,7 @@ async function supervisionInterrupt(
     return {
         confirmRequired: true,
         response: apiJson({
-            error: `Warning! Checking out leaves ${left} in the building.\n\nBadge again in 3 to ${SUPERVISION_CONFIRM_MS / 1000} seconds to confirm.`,
+            error: `Warning! Checking out leaves ${left} in the building.\n\nBadge again within ${SUPERVISION_CONFIRM_MS / 1000} seconds to confirm.`,
             type: "warning" as const,
         }, 400),
     };

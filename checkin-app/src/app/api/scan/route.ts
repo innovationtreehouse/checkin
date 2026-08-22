@@ -2,7 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { apiError, apiJson } from "@/lib/api-response";
-import { processCheckin, processCheckout, finalizeFacilityClose } from "@/lib/scan-service";
+import { processCheckin, processCheckout, finalizeFacilityClose, SUPERVISION_CONFIRM_MS } from "@/lib/scan-service";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
 
@@ -175,15 +175,24 @@ export const POST = withKiosk(
                 }
             }
 
-            // A scan echoing a live confirm token IS the force-close confirm, so
-            // the debounce must not swallow it (§5.16). Single-use: the confirm
-            // spends the token, so a stray second read debounces as usual.
-            const isConfirm = confirmToken !== null && (await tx.visit.count({
+            // A scan echoing a live confirm token IS the force-close confirm, and a
+            // scan following a fresh supervisionWarnedAt stamp IS the supervision
+            // confirm (#1347 PR-0, decision 7) -- both must skip the debounce below.
+            // Tied to the warning actually being shown, not badge adjacency; the
+            // token clause is unchanged and stays primary.
+            const isConfirm = (confirmToken !== null && (await tx.visit.count({
                 where: {
                     personId: participant.id,
                     departedAt: null,
                     deletedAt: null,
                     forceCloseToken: confirmToken,
+                },
+            })) > 0) || (await tx.visit.count({
+                where: {
+                    personId: participant.id,
+                    departedAt: null,
+                    deletedAt: null,
+                    supervisionWarnedAt: { gte: new Date(Date.now() - SUPERVISION_CONFIRM_MS) },
                 },
             })) > 0;
 

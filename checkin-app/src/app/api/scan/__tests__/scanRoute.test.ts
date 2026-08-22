@@ -48,6 +48,7 @@ jest.mock('@/lib/scan-service', () => ({
     processCheckin: jest.fn(),
     processCheckout: jest.fn(),
     finalizeFacilityClose: jest.fn().mockResolvedValue(undefined),
+    SUPERVISION_CONFIRM_MS: 15_000,
 }));
 
 describe('POST /api/scan', () => {
@@ -428,10 +429,11 @@ describe('POST /api/scan', () => {
         });
 
         it('treats a non-string token as no token at all', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(0); // no live token, no fresh supervision stamp either
             const res = await POST(scanReq({ participantId: 1, forceCloseToken: 42 }));
 
             expect((await res.json()).type).toBe('ignored_debounce');
-            expect(prisma.visit.count).not.toHaveBeenCalled();
+            expect(processCheckout).not.toHaveBeenCalled();
         });
 
         // §5.23a: the outbox persists the token with the queued event, so a
@@ -470,6 +472,44 @@ describe('POST /api/scan', () => {
             }));
 
             expect((await res.json()).type).toBe('parked');
+            expect(processCheckout).not.toHaveBeenCalled();
+        });
+    });
+
+    // #1347 PR-0 / Q16 remainder: the supervision confirm inherited the same
+    // debounce swallow the force-close confirm has a token for. The exemption
+    // is tied to a fresh supervisionWarnedAt stamp, no second token minted.
+    describe('supervision confirm exemption from the debounce', () => {
+        const scanReq = (body: Record<string, unknown>) => new Request('http://localhost/api/scan', {
+            method: 'POST',
+            body: JSON.stringify(body),
+        }) as unknown as import('next/server').NextRequest;
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
+            // Inside the 3s debounce window -- only a fresh supervision stamp gets past it.
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date() });
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue({ id: 7 });
+            (processCheckout as jest.Mock).mockResolvedValue(
+                new Response(JSON.stringify({ type: 'checkout' }), { status: 200 }));
+        });
+
+        it('exempts a scan 1s after a supervision warning from the debounce, no token needed', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(1); // a fresh supervisionWarnedAt stamp
+
+            const res = await POST(scanReq({ participantId: 1 }));
+
+            expect((await res.json()).type).toBe('checkout');
+            expect(processCheckout).toHaveBeenCalledWith({ id: 1, mergedIntoId: null }, 7, 'session', expect.anything(), null, expect.any(Date), null);
+        });
+
+        it('still debounces an ordinary double-tap with no fresh stamp and no token', async () => {
+            (prisma.visit.count as jest.Mock).mockResolvedValue(0);
+
+            const res = await POST(scanReq({ participantId: 1 }));
+
+            expect((await res.json()).type).toBe('ignored_debounce');
             expect(processCheckout).not.toHaveBeenCalled();
         });
     });
