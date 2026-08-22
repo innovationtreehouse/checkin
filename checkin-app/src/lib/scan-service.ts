@@ -339,6 +339,16 @@ function kickPostEventEmails() {
 }
 
 /**
+ * Close every open visit and kick post-event emails. Called after the
+ * last-keyholder checkout is committed — both from the scan route (via
+ * finalizeFacilityClose) and from the web DELETE handler.
+ */
+export async function runFacilityClose(): Promise<void> {
+    await closeAllOpenVisits(prisma);
+    kickPostEventEmails();
+}
+
+/**
  * Run the facility-wide visit close + post-event email kick AFTER the scan
  * route's per-participant transaction has committed — off the advisory lock.
  *
@@ -357,9 +367,8 @@ export async function finalizeFacilityClose(res: Response): Promise<void> {
     if (!body?.facilityClosed) return;
 
     try {
-        await closeAllOpenVisits(prisma);
+        await runFacilityClose();
     } catch (err) {
         console.error("Failed to close facility-wide visits after scan:", err);
     }
-    kickPostEventEmails();
 }
