@@ -11,6 +11,7 @@
  */
 import type { Person } from "@/generated/prisma/client";
 import type { DbClient } from "@/lib/db-client";
+import { processVisitCheckout } from "@/lib/attendanceTransitions";
 import { processCheckin, processCheckout } from "@/lib/scan-service";
 
 jest.mock("@/lib/prisma", () => ({ __esModule: true, default: {} }));
@@ -190,5 +191,42 @@ describe("youth check-in below two supervising adults", () => {
         const { db } = fakeDb([10]);
         await processCheckin(adult, "kiosk", db);
         expect(db.visit.findMany).not.toHaveBeenCalled();
+    });
+});
+
+describe("a REPLAYED departure skips the ladder entirely (#1257)", () => {
+    // The confirm rung answers 400 {type:"warning"} and records nothing, but the
+    // outbox's classify_response acks that shape — a replayed departure hitting
+    // it would be deleted from the queue with the visit still open, and no one
+    // is at the reader to re-badge hours later.
+    const SCANNED_AT = new Date("2026-08-19T14:00:00Z");
+
+    it("departs instead of demanding a confirm nobody can give", async () => {
+        const { db, update } = fakeDb([10, 20]);
+
+        const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db, null, SCANNED_AT, "evt-1");
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(body.type).toBe("checkout");
+        expect(body.warning).toBeUndefined();
+        expect(update).not.toHaveBeenCalled();
+        expect(db.visit.findMany).not.toHaveBeenCalled();
+        expect(processVisitCheckout).toHaveBeenCalledWith(DEPARTING_VISIT, SCANNED_AT, db, "SCANNER");
+    });
+
+    it("still departs when the room is left with NO supervising adult", async () => {
+        const { db } = fakeDb([10]);
+
+        const res = await processCheckout(adult, DEPARTING_VISIT, "kiosk", db, null, SCANNED_AT, "evt-2");
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).type).toBe("checkout");
+    });
+
+    it("leaves the live path on the ladder", async () => {
+        const { res, body } = await checkout([10, 20]);
+        expect(res.status).toBe(400);
+        expect(body.type).toBe("warning");
     });
 });

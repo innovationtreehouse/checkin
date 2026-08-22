@@ -10,6 +10,7 @@
 import type { Person } from "@/generated/prisma/client";
 import type { DbClient } from "@/lib/db-client";
 import { processCheckout, FORCE_CLOSE_CONFIRM_SECONDS } from "@/lib/scan-service";
+import { processVisitCheckout } from "@/lib/attendanceTransitions";
 
 jest.mock("@/lib/prisma", () => ({ __esModule: true, default: {} }));
 jest.mock("@/lib/notifications", () => ({
@@ -34,6 +35,9 @@ function fakeDb(
                 remaining.map((person, i) => ({ id: 100 + i, person }))
             ),
             findUnique: jest.fn().mockResolvedValue({ forceCloseToken: storedToken }),
+            update: jest.fn().mockResolvedValue({}),
+        },
+        rawBadgeLog: {
             update: jest.fn().mockResolvedValue({}),
         },
     } as unknown as DbClient;
@@ -132,5 +136,95 @@ describe("force close is bound to the confirm token", () => {
 
         expect(res.status).toBe(400);
         expect((await res.json()).type).toBe("warning");
+    });
+});
+
+describe("a LIVE scan carrying a clientEventId still warns and confirms", () => {
+    // D4 try-first puts the idempotency key on the live attempt, so the park
+    // must key on the replay flag (null here), never on the id's presence.
+    const present = [{ name: "Someone Inside", email: "inside@example.com" }];
+
+    it("warns and mints on the first live scan even though the scan has an event id", async () => {
+        const db = fakeDb(present);
+        const res = await processCheckout(keyholder, 42, "kiosk", db, null, new Date(), null);
+
+        expect(res.status).toBe(400);
+        expect((await res.json()).type).toBe("warning");
+        expect(db.visit.update).toHaveBeenCalledWith({
+            where: { id: 42 },
+            data: { forceCloseWarnedAt: expect.any(Date), forceCloseToken: expect.any(String) },
+        });
+        expect(db.rawBadgeLog.update).not.toHaveBeenCalled();
+    });
+
+    it("force-closes on the confirming live scan that echoes the token", async () => {
+        const db = fakeDb(present, "token-live");
+        const res = await processCheckout(keyholder, 42, "kiosk", db, "token-live", new Date(), null);
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).facilityClosed).toBe(true);
+    });
+});
+
+describe("F1 (narrowed by #1669): a replay force-closes only with a valid token", () => {
+    const present = [{ name: "Someone Inside", email: "inside@example.com" }];
+    const parked = (id: string) => ({
+        where: { clientEventId: id },
+        data: { reviewReason: "force_close_review" },
+    });
+
+    it("parks a token-less replay -- nobody ever confirmed it", async () => {
+        const db = fakeDb(present, "token-abc");
+        const res = await processCheckout(keyholder, 42, "kiosk", db, null, new Date(), "evt-replay-1");
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).type).toBe("parked");
+        // Never mints or stamps on a replay: an unattended countdown is not a confirm.
+        expect(db.visit.update).not.toHaveBeenCalled();
+        expect(db.rawBadgeLog.update).toHaveBeenCalledWith(parked("evt-replay-1"));
+    });
+
+    it("parks a replay whose token does not match the visit's live one", async () => {
+        const db = fakeDb(present, "token-abc");
+        const res = await processCheckout(keyholder, 42, "kiosk", db, "token-guessed", new Date(), "evt-replay-2");
+
+        expect((await res.json()).type).toBe("parked");
+        expect(db.visit.update).not.toHaveBeenCalled();
+        expect(db.rawBadgeLog.update).toHaveBeenCalledWith(parked("evt-replay-2"));
+    });
+
+    it("parks a replay when the visit holds no token at all", async () => {
+        const db = fakeDb(present, null);
+        const res = await processCheckout(keyholder, 42, "kiosk", db, "token-stale", new Date(), "evt-replay-3");
+
+        expect((await res.json()).type).toBe("parked");
+        expect(db.visit.update).not.toHaveBeenCalled();
+    });
+
+    it("closes on a replay echoing the visit's token -- the pre-outage confirm (§5.23a)", async () => {
+        const departedAt = new Date(Date.now() - 3 * 60_000);
+        const db = fakeDb(present, "token-abc");
+        const res = await processCheckout(keyholder, 42, "kiosk", db, "token-abc", departedAt, "evt-replay-4");
+
+        expect(res.status).toBe(200);
+        expect((await res.json()).facilityClosed).toBe(true);
+        expect(db.rawBadgeLog.update).not.toHaveBeenCalled();
+        expect(db.visit.update).toHaveBeenCalledWith({
+            where: { id: 42 },
+            data: { forceCloseWarnedAt: null, forceCloseToken: null },
+        });
+        expect(processVisitCheckout).toHaveBeenCalledWith(42, departedAt, db, "SCANNER");
+    });
+
+    it("two token-less replayed keyholder checkouts both park -- neither sweeps the room", async () => {
+        const db = fakeDb(present, null);
+
+        const first = await processCheckout(keyholder, 42, "kiosk", db, null, new Date(), "evt-replay-1");
+        expect((await first.json()).type).toBe("parked");
+
+        const second = await processCheckout(keyholder, 42, "kiosk", db, null, new Date(), "evt-replay-2");
+        expect((await second.json()).type).toBe("parked");
+
+        expect(db.visit.update).not.toHaveBeenCalled();
     });
 });

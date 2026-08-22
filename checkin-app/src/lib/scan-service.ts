@@ -26,7 +26,7 @@ const SUPERVISION_CONFIRM_MS = 15_000;
  * unit tests) `db` defaults to the global prisma client. Fire-and-forget side
  * effects (notifications) intentionally run off the global client either way.
  */
-export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma) {
+export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma, visitTime: Date = new Date()) {
     // Non-keyholders require an open facility (at least 1 isKeyholder present)
     if (!participant.isKeyholder) {
         const activeKeyholders = await db.visit.count({
@@ -42,7 +42,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
         }
     }
 
-    const arrivalTime = new Date();
+    const arrivalTime = visitTime;
     const eventId = await findAssociatedEventAt(participant.id, arrivalTime, db);
 
     const newVisit = await db.visit.create({
@@ -92,7 +92,11 @@ export async function processCheckout(
     activeVisitId: number,
     authType: string,
     db: DbClient = prisma,
-    confirmToken: string | null = null
+    /** Force-close confirm token echoed by this scan, live or replayed. */
+    confirmToken: string | null = null,
+    visitTime: Date = new Date(),
+    /** clientEventId of a REPLAYED event (drain-delivered), null for a live scan. */
+    replayEventId: string | null = null
 ) {
     let facilityClosed = false;
 
@@ -134,6 +138,20 @@ export async function processCheckout(
                         createHash("sha256").update(stored).digest(),
                         createHash("sha256").update(confirmToken).digest()
                     );
+
+                if (!confirmForceClose && replayEventId) {
+                    // KIOSK_RESILIENCE.md §4 + §5.23a: validity is by issuance, so a
+                    // confirm queued through an outage still closes -- but only if it
+                    // carries the token (checked above). A replay WITHOUT one was
+                    // never confirmed by anyone, and nobody is at the reader hours
+                    // later to answer a warning, so park it for a human. Never mint
+                    // or stamp on a replay: an unattended countdown is not a confirm.
+                    await db.rawBadgeLog.update({
+                        where: { clientEventId: replayEventId },
+                        data: { reviewReason: 'force_close_review' },
+                    });
+                    return apiJson({ type: 'parked', message: 'Recorded for review.' });
+                }
 
                 if (!confirmForceClose) {
                     // Mint a fresh token with the warning; the old one dies here, so
@@ -189,14 +207,17 @@ export async function processCheckout(
     // SUPERVISION INTERRUPT (#1436). Fires on EVERY departure, not just a
     // keyholder's — the close-guard above is a separate interrupt with its own
     // stamp. Skipped when the facility is closing: that sweep departs everyone.
+    // Skipped for a REPLAY too: its 400 records nothing but the drain acks that
+    // shape, so the queued departure would be dropped and the visit left open.
+    // Hours-old bookkeeping has no room to warn about and nobody to re-badge.
     let supervisionWarning: string | undefined;
-    if (!facilityClosed) {
+    if (!facilityClosed && !replayEventId) {
         const interrupt = await supervisionInterrupt(activeVisitId, db);
         if (interrupt?.confirmRequired) return interrupt.response;
         supervisionWarning = interrupt?.warning;
     }
 
-    const finalVisits = await processVisitCheckout(activeVisitId, new Date(), db, "SCANNER");
+    const finalVisits = await processVisitCheckout(activeVisitId, visitTime, db, "SCANNER");
     const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : null;
 
     // Fire-and-forget: send check-out notifications (mirrors processCheckin)

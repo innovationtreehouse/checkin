@@ -23,6 +23,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from nacl.signing import SigningKey
 import requests
 
+from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -38,6 +40,7 @@ log = logging.getLogger("kiosk")
 # The backend page serving the kiosk display; `mode=kiosk` selects its kiosk
 # layout. Overridable per-Pi via config.json.
 DEFAULT_KIOSK_PATH = "/attendance/current?mode=kiosk"
+DEFAULT_OUTBOX_PATH = "outbox.db"
 
 # Self-update loop guard (see version_poller): remote head we already exited
 # for. Relative path -- kiosk.sh cds into client/ before launching client.py.
@@ -92,7 +95,8 @@ class BackendClient:
         h["Content-Type"] = "application/json"
         return h
 
-    def post_scan(self, participant_id, force_close_token=None):
+    def post_scan(self, participant_id, force_close_token=None,
+                  client_event_id=None, scanned_at=None, replay=False):
         path = "/api/scan"
         payload = {}
         try:
@@ -101,6 +105,15 @@ class BackendClient:
             payload["participantId"] = participant_id
         if force_close_token:
             payload["forceCloseToken"] = force_close_token
+        if client_event_id:
+            payload["clientEventId"] = client_event_id
+        if scanned_at:
+            payload["scannedAt"] = scanned_at
+        if replay:
+            # Only the outbox drain sets this. The live attempt carries the same
+            # clientEventId (D4 try-first) but is NOT a replay, so the server
+            # cannot infer replay-ness from the id.
+            payload["replay"] = True
         body = json.dumps(payload)
 
         headers = self._headers("POST", path, body)
@@ -108,10 +121,17 @@ class BackendClient:
             r = self.session.post(
                 self.base_url + path, headers=headers, data=body, timeout=10
             )
-            return r.json(), r.status_code
         except Exception as e:
             log.error(f"Failed to post scan: {e}")
-            return {"error": str(e)}, 0
+            return {"error": str(e)}, 0, None
+
+        retry_after = r.headers.get("Retry-After")
+        try:
+            return r.json(), r.status_code, retry_after
+        except ValueError:
+            # Non-JSON body (e.g. the waker's 503 HTML on a cold-wake scan) --
+            # warming, not failure. Never lose the scan on a parse error.
+            return {"error": "non-JSON response", "type": "warming"}, r.status_code, retry_after
 
     def get_attendance(self):
         if not self.attendance_path:
@@ -273,6 +293,24 @@ class KioskHandler(BaseHTTPRequestHandler):
        countdown, and the countdown itself removes it. */
     animation: none;
   }}
+  .banner-saved {{
+    background: rgba(37,99,235,0.95);
+    border: 2px solid #60a5fa;
+    color: #fff;
+  }}
+  #queue-badge {{
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    z-index: 9998;
+    background: rgba(37,99,235,0.9);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: bold;
+    display: none;
+  }}
   #fc-countdown {{ font-size: 2.5rem; }}
   @keyframes fadeout {{
     0% {{ opacity: 1; }}
@@ -317,6 +355,17 @@ class KioskHandler(BaseHTTPRequestHandler):
     }}
   }}
 
+  // D5: a live queued-count on the SSE stream so staff watch the backlog drain.
+  function updateQueueBadge(n) {{
+    const b = document.getElementById("queue-badge");
+    if (n > 0) {{
+      b.textContent = n + " queued";
+      b.style.display = "block";
+    }} else {{
+      b.style.display = "none";
+    }}
+  }}
+
   // Visible force-close countdown. Ticks the <span> the banner carries, then
   // clears the banner — the token expires on the proxy at the same moment.
   let countdownTimer = null;
@@ -358,6 +407,7 @@ class KioskHandler(BaseHTTPRequestHandler):
         return;
       }}
       handleData(data, false);
+      if (typeof data.queued === "number") updateQueueBadge(data.queued);
       const html = data.html || "";
       if (html) {{
         const container = document.getElementById("flash-container");
@@ -394,6 +444,7 @@ class KioskHandler(BaseHTTPRequestHandler):
 <body onload="connectSSE()">
   <div id="blackout"></div>
   <div id="flash-container"></div>
+  <div id="queue-badge"></div>
   <iframe src="{self.kiosk_path}"></iframe>
 </body>
 </html>"""
@@ -513,7 +564,7 @@ class KioskHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 # USB scanner listener
 # ---------------------------------------------------------------------------
-def usb_scanner_listener(backend, state, device_path):
+def usb_scanner_listener(backend, state, outbox, device_path):
     try:
         import evdev
     except ImportError:
@@ -551,7 +602,7 @@ def usb_scanner_listener(backend, state, device_path):
             else:
                 log.error(f"No device found matching: {device_path}")
                 return
-        
+
         dev.grab()
         log.info(f"Listening on: {dev.name} ({dev.path})")
     except Exception as e:
@@ -570,12 +621,12 @@ def usb_scanner_listener(backend, state, device_path):
             if buffer.strip():
                 participant_id = buffer.strip()
                 log.info(f"Scanned ID: {participant_id}")
-                handle_scan(backend, state, participant_id)
+                handle_scan(backend, state, outbox, participant_id)
             buffer = ""
         elif key_event.scancode in KEY_MAP:
             buffer += KEY_MAP[key_event.scancode]
 
-def stdin_scanner_listener(backend, state):
+def stdin_scanner_listener(backend, state, outbox):
     log.info("USB device not configured — reading scans from stdin")
     while True:
         try:
@@ -583,16 +634,13 @@ def stdin_scanner_listener(backend, state):
             participant_id = line.strip()
             if participant_id:
                 log.info(f"Stdin scan: {participant_id}")
-                handle_scan(backend, state, participant_id)
+                handle_scan(backend, state, outbox, participant_id)
         except EOFError:
             break
 
-def handle_scan(backend, state, participant_id):
-    # Any scan ends a running force-close countdown; carrying the token is what
-    # turns this one into the confirm.
-    body, status = backend.post_scan(participant_id, state.take_confirm())
-    countdown = 0
-
+def _scan_result_banner_html(body, status):
+    """Returns (html, countdown_seconds). Pure -- arming the confirm token is
+    the caller's job, so the drain can render a response without arming one."""
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
     # emails, messages) and are ultimately assigned to the wrapper page via
@@ -601,48 +649,87 @@ def handle_scan(backend, state, participant_id):
     # the kiosk browser — which can issue signed, kiosk-authenticated requests
     # through the local proxy. Escape before the newline->`<br>` substitution so
     # injected markup cannot survive.
-    banner_html = ""
     if status >= 400 or "error" in body:
         if body.get("type") == "warning":
             warn = html.escape(body.get("error", "Warning")).replace("\n", "<br>")
-            token = body.get("forceCloseToken")
-            seconds = body.get("confirmSeconds")
-            seconds = seconds if isinstance(seconds, int) and 0 < seconds <= 120 else 15
-            if token:
-                state.arm_confirm(token, seconds)
-                countdown = seconds
-                warn += f'<br><span id="fc-countdown">{seconds}</span>s left to confirm'
-            banner_html = f'<div class="banner banner-warning">⚠️ {warn}</div>'
-        else:
-            err = html.escape(body.get("error", "Unknown error"))
-            banner_html = f'<div class="banner banner-error">✗ Scan failed: {err}</div>'
-    else:
-        stype = body.get("type", "")
-        email = html.escape(str(body.get("participant", {}).get("email", "?")))
-        msg = html.escape(body.get("message", ""))
-        label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
-        warning = html.escape(body.get("warning", "")).replace("\n", "<br>")
-        if warning:
-            # Scan succeeded but the room is short of supervising adults (#1436):
-            # amber, and it dwells 12s instead of 5s. Still confirms the scan.
-            banner_html = f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>'
-        elif msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-            banner_html = f'<div class="banner banner-ok">✓ {email} — {msg}</div>'
-        else:
-            banner_html = f'<div class="banner banner-ok">✓ {email} — {label}</div>'
+            countdown = 0
+            if body.get("forceCloseToken"):
+                seconds = body.get("confirmSeconds")
+                countdown = seconds if isinstance(seconds, int) and 0 < seconds <= 120 else 15
+                warn += f'<br><span id="fc-countdown">{countdown}</span>s left to confirm'
+            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown
+        err = html.escape(body.get("error", "Unknown error"))
+        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0
 
-    # Phase 1: Push banner immediately (no attendance data yet)
+    stype = body.get("type", "")
+    email = html.escape(str(body.get("participant", {}).get("email", "?")))
+    msg = html.escape(body.get("message", ""))
+    label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
+    warning = html.escape(body.get("warning", "")).replace("\n", "<br>")
+    if warning:
+        # Scan succeeded but the room is short of supervising adults (#1436):
+        # amber, and it dwells 12s instead of 5s. Still confirms the scan.
+        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0
+    if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
+        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0
+    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0
+
+def _saved_banner_html(queued):
+    # A queued scan reads as done and safe to walk away from -- distinct
+    # from the red "not saved" state.
+    return f'<div class="banner banner-saved">✓ Saved — will sync ({queued} waiting)</div>'
+
+def handle_scan(backend, state, outbox, participant_id):
+    client_event_id = new_event_id()
+    scanned_at = now_iso()
+    # Any scan ends a running force-close countdown; carrying the token is what
+    # turns this one into the confirm. Taken once, and stored with the event if
+    # this scan ends up queued -- a confirm given before the outage must still
+    # close when it drains, rather than parking for review.
+    confirm_token = state.take_confirm()
+
+    # A fresh scan must not jump its own predecessor -- if this participant
+    # already has a pending queued event, enqueue behind it instead of
+    # attempting live delivery out of order.
+    if outbox.has_pending_for_participant(participant_id):
+        outbox.enqueue(client_event_id, participant_id, scanned_at, confirm_token)
+        queued = outbox.pending_count()
+        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
+        log.info(f"Queued (predecessor pending): participant {participant_id}")
+        return
+
+    body, status, retry_after = backend.post_scan(
+        participant_id,
+        force_close_token=confirm_token,
+        client_event_id=client_event_id,
+        scanned_at=scanned_at,
+    )
+    outcome = classify_response(status, body)
+
+    if outcome == "retry":
+        # Try live first; only persist to the outbox if it wasn't confirmed.
+        outbox.enqueue(client_event_id, participant_id, scanned_at, confirm_token)
+        queued = outbox.pending_count()
+        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
+        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id}")
+        return
+
+    # ack or dead: server responded definitively at scan time -- render the
+    # existing immediate banner, unchanged behavior for the online path.
+    banner_html, countdown = _scan_result_banner_html(body, status)
+    if countdown:
+        state.arm_confirm(body["forceCloseToken"], countdown)
     state.push_event({"html": banner_html, "countdown": countdown})
 
-    if status < 400 and "error" not in body:
+    if outcome == "ack":
         ptype = body.get("type", "?")
         email = body.get("participant", {}).get("email", "?")
         log.info(f"Scan result: {ptype.upper()} — {email}")
     else:
-        log.warning(f"Scan error: {body.get('error', body)}")
+        log.warning(f"Scan rejected, not queued: {body.get('error', body)}")
 
-    # Phase 2: Fetch fresh attendance and push update for the iframe
-    if backend.attendance_path and status < 400:
+    # Fetch fresh attendance and push update for the iframe
+    if backend.attendance_path and outcome == "ack":
         att_data, att_status = backend.get_attendance()
         if att_status == 200:
             event_payload = {"html": ""}
@@ -781,6 +868,8 @@ def main():
 
     backend = BackendClient(backend_url, signing_key, attendance_path or None)
     state = AttendanceState()
+    outbox = Outbox(config.get("outbox_path", DEFAULT_OUTBOX_PATH))
+    log.info(f"Outbox:  {outbox.path} ({outbox.pending_count()} pending on start)")
 
     # Fetch initial attendance state (only if attendance_path is configured)
     if attendance_path:
@@ -800,10 +889,17 @@ def main():
     vpoller = threading.Thread(target=version_poller, args=(backend, state), daemon=True)
     vpoller.start()
 
+    # Start the outbox replay thread: drains queued scans in order,
+    # re-signing and resubmitting each one, once the backend is reachable.
+    drain = threading.Thread(
+        target=replay_drain, args=(outbox, backend.post_scan, state.push_event), daemon=True
+    )
+    drain.start()
+
     if usb_device:
-        scanner = threading.Thread(target=usb_scanner_listener, args=(backend, state, usb_device), daemon=True)
+        scanner = threading.Thread(target=usb_scanner_listener, args=(backend, state, outbox, usb_device), daemon=True)
     else:
-        scanner = threading.Thread(target=stdin_scanner_listener, args=(backend, state), daemon=True)
+        scanner = threading.Thread(target=stdin_scanner_listener, args=(backend, state, outbox), daemon=True)
     scanner.start()
 
     KioskHandler.state = state

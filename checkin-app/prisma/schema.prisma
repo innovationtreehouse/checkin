@@ -1085,6 +1085,10 @@ model RawBadgeLog {
   timestamp     DateTime @default(now())
   /// @sensitivity:personal
   location      String?
+  /// @sensitivity:internal
+  clientEventId String?  @unique // kiosk replay idempotency key; NULL for legacy/web writers
+  /// @sensitivity:internal
+  reviewReason  String?          // set when a stale/out-of-order replay is parked instead of toggled
 
   person Person @relation(fields: [personId], references: [id])
 
