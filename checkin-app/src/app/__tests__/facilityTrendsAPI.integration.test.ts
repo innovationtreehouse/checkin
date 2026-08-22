@@ -153,7 +153,7 @@ describe('Facility trends API', () => {
         // Still-open visit (no departedAt) — excluded by `departedAt: { not: null }`.
         // Its person appears nowhere else in this program, so admitting it would
         // show up as an extra unique volunteer even though it adds 0 hours.
-        const open = await prisma.visit.create({
+        const openUntagged = await prisma.visit.create({
             data: { personId: enrolledAdultId, arrivedAt: arrival(0), arrivedVia: 'WEB', associatedEventId: untaggedEventId },
         });
         // Soft-deleted visit — excluded by `deletedAt: null`. A conspicuous 7h so
@@ -163,7 +163,7 @@ describe('Facility trends API', () => {
         });
 
         visitIds.push(structured.id, youthStructured.id, unstructured.id, synthetic.id, legacySynthetic.id, open.id,
-            untagged.id, untaggedProgramSynthetic.id, softDeleted.id);
+            untagged.id, untaggedProgramSynthetic.id, openUntagged.id, softDeleted.id);
     });
 
     afterAll(async () => {
