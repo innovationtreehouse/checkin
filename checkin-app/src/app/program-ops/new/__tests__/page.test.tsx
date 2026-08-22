@@ -60,8 +60,8 @@ describe("CreateProgramPage", () => {
     renderWithProviders(<CreateProgramPage />);
     await screen.findByLabelText("Program Name", { exact: false });
 
-    fireEvent.change(screen.getByLabelText("Start Date"), { target: { value: "2026-06-10" } });
-    fireEvent.change(screen.getByLabelText("End Date"), { target: { value: "2026-06-01" } });
+    fireEvent.change(screen.getByLabelText("Start Date", { exact: false }), { target: { value: "2026-06-10" } });
+    fireEvent.change(screen.getByLabelText("End Date", { exact: false }), { target: { value: "2026-06-01" } });
 
     expect(screen.getByText("End date must be on or after start date.")).toBeInTheDocument();
   });
@@ -90,6 +90,8 @@ describe("CreateProgramPage", () => {
 
     fireEvent.change(nameInput, { target: { value: "FRC Robotics 2026" } });
     await pickMentor();
+    fireEvent.change(screen.getByLabelText("Start Date", { exact: false }), { target: { value: "2026-01-01" } });
+    fireEvent.change(screen.getByLabelText("End Date", { exact: false }), { target: { value: "2026-12-31" } });
     expect(screen.getByRole("button", { name: "Create Program" })).toBeEnabled();
 
     fireEvent.change(maxInput, { target: { value: "" } });
@@ -132,6 +134,8 @@ describe("CreateProgramPage", () => {
     fireEvent.change(nameInput, { target: { value: "FRC Robotics 2026" } });
     await pickMentor();
 
+    fireEvent.change(screen.getByLabelText("Start Date", { exact: false }), { target: { value: "2026-01-15" } });
+    fireEvent.change(screen.getByLabelText("End Date", { exact: false }), { target: { value: "2026-06-15" } });
     fireEvent.change(screen.getByLabelText("Min Age (Optional)"), { target: { value: "10" } });
     fireEvent.change(screen.getByLabelText("Max Age (Optional)"), { target: { value: "18" } });
     fireEvent.click(screen.getByLabelText("Treehouse Members-Only Program"));
@@ -147,8 +151,8 @@ describe("CreateProgramPage", () => {
           method: "POST",
           body: JSON.stringify({
             name: "FRC Robotics 2026",
-            startAt: null,
-            endAt: null,
+            startAt: "2026-01-15",
+            endAt: "2026-06-15",
             orgMemberOnly: true,
             minAge: 10,
             maxAge: 18,
@@ -181,6 +185,8 @@ describe("CreateProgramPage", () => {
     const nameInput = await screen.findByLabelText("Program Name", { exact: false });
     fireEvent.change(nameInput, { target: { value: "FRC Robotics 2026" } });
     await pickMentor();
+    fireEvent.change(screen.getByLabelText("Start Date", { exact: false }), { target: { value: "2026-01-01" } });
+    fireEvent.change(screen.getByLabelText("End Date", { exact: false }), { target: { value: "2026-12-31" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Create Program" }));
 
@@ -195,6 +201,8 @@ describe("CreateProgramPage", () => {
     const nameInput = await screen.findByLabelText("Program Name", { exact: false });
     fireEvent.change(nameInput, { target: { value: "FRC Robotics 2026" } });
     await pickMentor();
+    fireEvent.change(screen.getByLabelText("Start Date", { exact: false }), { target: { value: "2026-01-01" } });
+    fireEvent.change(screen.getByLabelText("End Date", { exact: false }), { target: { value: "2026-12-31" } });
 
     global.fetch = jest.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();

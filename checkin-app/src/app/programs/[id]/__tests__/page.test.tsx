@@ -52,7 +52,7 @@ function baseProgram(overrides: Record<string, unknown> = {}) {
         id: 10,
         name: "Robotics Club",
         startAt: "2026-06-01T00:00:00.000Z",
-        endAt: null,
+        endAt: "2026-12-31T00:00:00.000Z",
         leadMentorId: 5,
         leadMentor: { name: "Coach K", email: "coach@example.com" },
         participants: [{ personId: 100, status: "ACTIVE" }],
@@ -712,7 +712,7 @@ describe("ProgramEnrollmentPage", () => {
         mockFetchJson({
             "/api/programs/10": baseProgram({
                 leadMentor: null,
-                startAt: null,
+                startAt: "2026-07-01T00:00:00.000Z",
                 endAt: "2026-08-01T00:00:00.000Z",
                 enrollmentStatus: "WHITELIST",
                 orgMemberPriceCents: 0,
@@ -723,8 +723,6 @@ describe("ProgramEnrollmentPage", () => {
 
         await screen.findByText("Robotics Club");
         expect(screen.queryByText("Coach K")).not.toBeInTheDocument();
-        expect(screen.getByText("TBD")).toBeInTheDocument();
-        expect(screen.queryByText("Ongoing")).not.toBeInTheDocument();
         expect(screen.getByText("Invite Only")).toBeInTheDocument();
         expect(screen.getByText("Free")).toBeInTheDocument();
     });
