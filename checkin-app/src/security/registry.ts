@@ -61,11 +61,9 @@ defineRoute({
 defineRoute({
     endpoint: 'DELETE /api/attendance/manual/[id]',
     authorize: 'authenticated',
-    // No bag — the response is { success, flagged }, no model data.
+    // No bag — response is {}, no model data. Tokens are inert over an empty bag.
     envelope: null,
-    orderedView: [
-        ['authenticated', ['their_own:personal', 'led_households:personal', 'member', 'public']],
-    ],
+    orderedView: [],
 });
 
 // Staff insert of a past visit for ANOTHER person (AT3, #1254) — the walk-in

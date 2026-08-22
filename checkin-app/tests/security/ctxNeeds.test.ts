@@ -296,22 +296,24 @@ describe('deriveCtxNeeds — spot checks against the live registry', () => {
         });
     });
 
-    it('the self-correction routes need only the led-household roster', () => {
-        for (const ep of [
-            'PATCH /api/attendance/manual/[id]',
-            'DELETE /api/attendance/manual/[id]',
-        ]) {
-            expect({ ep, needs: byEndpoint.get(ep)?.ctxNeeds }).toEqual({
-                ep,
-                needs: {
-                    programs: false,
-                    programHouseholds: false,
-                    programEvents: false,
-                    activeVisitors: false,
-                    ledHouseholdMembers: true,
-                },
-            });
-        }
+    it('the self-correction PATCH needs the led-household roster', () => {
+        expect(byEndpoint.get('PATCH /api/attendance/manual/[id]')?.ctxNeeds).toEqual({
+            programs: false,
+            programHouseholds: false,
+            programEvents: false,
+            activeVisitors: false,
+            ledHouseholdMembers: true,
+        });
+    });
+
+    it('the self-correction DELETE needs no prefetches (empty bag)', () => {
+        expect(byEndpoint.get('DELETE /api/attendance/manual/[id]')?.ctxNeeds).toEqual({
+            programs: false,
+            programHouseholds: false,
+            programEvents: false,
+            activeVisitors: false,
+            ledHouseholdMembers: false,
+        });
     });
 
     it('the program roster route needs the program prefetches', () => {
