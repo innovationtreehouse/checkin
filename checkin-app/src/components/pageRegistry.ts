@@ -123,6 +123,7 @@ export const PAGES: PageEntry[] = [
   { href: '/membership-audit/unclaimed', label: 'Unclaimed Accounts', section: 'Membership Audit', visible: BOARD },
   { href: '/membership-audit/broken', label: 'Broken Households', section: 'Membership Audit', keywords: 'lead leadless no lead unclaimed', visible: BOARD },
   { href: '/membership-audit/compliance', label: 'Membership Compliance', section: 'Membership Audit', keywords: 'violations background check revoked denied stale follow-up', visible: BOARD },
+  { href: '/membership-audit/bg-attestations', label: 'BG Attestations', section: 'Membership Audit', keywords: 'background check attestation reviewer signed off who approved', visible: BOARD },
   { href: '/membership-audit/turning-18', label: 'Students 18+', section: 'Membership Audit', keywords: 'age 18 adult turning eighteen agreement member year sept 1 september', visible: BOARD },
 
   // Program Ops — board
