@@ -275,7 +275,7 @@ async function withCloseGuard(
             confirmSeconds: guard.confirmSeconds,
         }, { status: 400 });
     }
-    if (guard.facilityClosed) {
+    if (guard.facilityClosed && result.ok) {
         try { await runFacilityClose(); }
         catch (err) { logger.error("Facility close after manual correction failed:", err); }
     }

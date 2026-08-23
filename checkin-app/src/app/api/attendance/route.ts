@@ -132,10 +132,6 @@ export const DELETE = withAuth({}, async (req, auth) => {
             return apiError("Visit not found", 404);
         }
 
-        if (visit.departedAt) {
-            return apiError("Visit already checked out", 400);
-        }
-
         // Check permissions:
         // 1. User checking out themselves
         // 2. User is the household lead checking out a family member
@@ -149,6 +145,10 @@ export const DELETE = withAuth({}, async (req, auth) => {
         // exists. docs/rules/principles.md — no existence oracle.
         if (!isSelf && !isHouseholdCheckOut && !isAdmin) {
             return apiError("Visit not found", 404);
+        }
+
+        if (visit.departedAt) {
+            return apiError("Visit already checked out", 400);
         }
 
         // Last-keyholder close guard (shared with PATCH/DELETE manual/[id]).
