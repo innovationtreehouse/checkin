@@ -24,7 +24,13 @@ import { join, relative, sep } from 'node:path';
  *      `create:`) object does not mention `mintPersonId`. Asserting on the
  *      HELPER NAME rather than on the presence of an `id:` key is the same cost
  *      and also catches `id: someOtherNumber`.
- *   2. `householdMembers: { create` — the one relation through which a Person
+ *   2. `prisma|tx|db . person . createMany|createManyAndReturn (` — ALWAYS a
+ *      violation, payload unexamined. One `data:` array, one statement, no
+ *      per-row hook: there is no way to give each row its own minted id in
+ *      place, so the call shape itself is the finding and the fix is to convert
+ *      it to a loop that mints per row. Zero sites today; the guard exists for
+ *      the day someone reaches for the bulk API.
+ *   3. `householdMembers: { create` — the one relation through which a Person
  *      could be created nested, bypassing `person.create` entirely. Zero hits
  *      today; the clause costs one regex and closes the only route a future one
  *      could take.
@@ -138,32 +144,41 @@ function captureObject(s: string, from: number): { text: string; end: number } |
     return null;
 }
 
-const CREATE_RE = /\b(?:prisma|tx|db)\.person\.(create|upsert)\s*\(/g;
+const CREATE_RE = /\b(?:prisma|tx|db)\.person\.(create|createMany|createManyAndReturn|upsert)\s*\(/g;
 // The one nesting through which a Person could be created without person.create.
 const NESTED_RE = /\bhouseholdMembers\s*:\s*\{\s*create\b/g;
 const MINTED_RE = /mintPersonId/;
 
+export function scanSource(src: string): boolean {
+    const masked = maskComments(src);
+
+    CREATE_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = CREATE_RE.exec(masked))) {
+        // createMany takes an ARRAY of rows and one `data:`, so there is nowhere
+        // to thread a per-row mint — the payload is not worth inspecting, the
+        // call shape itself is the violation. Always a hit; the fix is a loop.
+        if (m[1] !== 'create' && m[1] !== 'upsert') return true;
+        const args = captureObject(masked, m.index + m[0].length - 1);
+        if (!args) continue;
+        // `data:` for a create, `create:` for an upsert — the branch that
+        // actually inserts a row is the one that has to carry the mint.
+        const key = m[1] === 'upsert' ? /\bcreate\s*:/ : /\bdata\s*:/;
+        const at = args.text.search(key);
+        const payload = at < 0 ? null : captureObject(args.text, at);
+        if (!payload || !MINTED_RE.test(payload.text)) return true;
+    }
+
+    NESTED_RE.lastIndex = 0;
+    return NESTED_RE.test(masked);
+}
+
 function scan(): Set<string> {
     const hits = new Set<string>();
     for (const file of walk(SRC)) {
-        const src = maskComments(readFileSync(file, 'utf8'));
-        const rel = relative(SRC, file).split(sep).join('/');
-
-        CREATE_RE.lastIndex = 0;
-        let m: RegExpExecArray | null;
-        while ((m = CREATE_RE.exec(src))) {
-            const args = captureObject(src, m.index + m[0].length - 1);
-            if (!args) continue;
-            // `data:` for a create, `create:` for an upsert — the branch that
-            // actually inserts a row is the one that has to carry the mint.
-            const key = m[1] === 'upsert' ? /\bcreate\s*:/ : /\bdata\s*:/;
-            const at = args.text.search(key);
-            const payload = at < 0 ? null : captureObject(args.text, at);
-            if (!payload || !MINTED_RE.test(payload.text)) hits.add(rel);
+        if (scanSource(readFileSync(file, 'utf8'))) {
+            hits.add(relative(SRC, file).split(sep).join('/'));
         }
-
-        NESTED_RE.lastIndex = 0;
-        if (NESTED_RE.test(src)) hits.add(rel);
     }
     return hits;
 }
@@ -180,6 +195,12 @@ describe('Person id mint guard', () => {
         // the file to ALLOWLIST above with a reviewed justification. Letting it
         // fall through to the sequence puts an Aurora-sized gap in the badge
         // numbers, silently.
+        //
+        // If the site is a createMany/createManyAndReturn: it cannot be fixed in
+        // place. One statement over an array of rows has no per-row hook for a
+        // mint, so convert it to a loop that mints per row inside one
+        // transaction (`withTx(prisma, async (tx) => { for (…) await
+        // tx.person.create({ data: { id: await mintPersonId(tx), … } }) })`).
         expect(unexpected).toEqual([]);
     });
 
@@ -187,6 +208,28 @@ describe('Person id mint guard', () => {
     // shapes; a run that flags nothing at all would pass the assertion above.
     it('actually finds the sites it scans', () => {
         expect(flagged.length).toBeGreaterThan(0);
+    });
+
+    // Pins the call shapes the regex recognises, against fixtures rather than
+    // the tree — every shape below has zero production sites today, so nothing
+    // else would notice the day the alternation stops matching one.
+    describe('recognised call shapes', () => {
+        const cases: [string, string, boolean][] = [
+            ['createMany is a violation whatever it carries', 'await tx.person.createMany({ data: rows });', true],
+            ['createManyAndReturn too', 'await tx.person.createManyAndReturn({ data: rows });', true],
+            // The point of flagging the shape and not the payload: a per-row
+            // `id` in a createMany array still can't be a per-row MINT.
+            ['createMany naming mintPersonId is still a violation', 'await tx.person.createMany({ data: [{ id: await mintPersonId(tx) }] });', true],
+            ['an unminted create is a violation', 'await tx.person.create({ data: { name } });', true],
+            ['an unminted upsert create-branch is a violation', 'await tx.person.upsert({ where: { email }, update: {}, create: { name } });', true],
+            ['a nested householdMembers create is a violation', 'await tx.household.create({ data: { householdMembers: { create: { name } } } });', true],
+            ['a minted create is clean', 'await tx.person.create({ data: { id: await mintPersonId(tx), name } });', false],
+            ['a minted upsert is clean', 'await tx.person.upsert({ where: { email }, update: {}, create: { id: await mintPersonId(tx) } });', false],
+            ['a createMany in a COMMENT is not a site', '// await tx.person.createMany({ data: rows });', false],
+        ];
+        it.each(cases)('%s', (_label, source, expected) => {
+            expect(scanSource(source)).toBe(expected);
+        });
     });
 
     it('has no stale allowlist entry', () => {
