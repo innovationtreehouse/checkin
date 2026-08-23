@@ -25,7 +25,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async ()
                     kind: true,
                     status: true,
                     bgClearedAt: true,
-                    subjectPerson: { select: { id: true, name: true, householdId: true, household: { select: { name: true } } } },
+                    subjectPerson: { select: { id: true, name: true, householdId: true, household: { select: { id: true, name: true } } } },
                     orgMembership: { select: { household: { select: { id: true, name: true } } } },
                 },
             },
