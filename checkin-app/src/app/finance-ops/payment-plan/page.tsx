@@ -14,6 +14,8 @@ import { formatCents } from '@inventory/money';
 import { landsNextYear } from '@/lib/programYear';
 
 import { PageLoader } from "@/components/ui/PageLoader";
+type HouseholdLead = { id: number; name: string | null; email: string | null };
+
 type PaymentPlanRequest = {
   programId: number;
   personId: number;
@@ -22,9 +24,10 @@ type PaymentPlanRequest = {
     id: number;
     name: string | null;
     email: string;
-    // Current (live) membership, not the point-in-time snapshot — nothing is
-    // stamped until the request is approved, so this is derived on render.
-    household?: { orgMembership?: { status: string } | null } | null;
+    household?: {
+      orgMembership?: { status: string } | null;
+      householdMembers?: HouseholdLead[];
+    } | null;
     householdId: number | null;
   };
   program: {
@@ -158,6 +161,11 @@ export default function PendingParticipantsPage() {
 
   if (!ready) return null;
 
+  const leadEmails = (req: PaymentPlanRequest): string[] =>
+    (req.person.household?.householdMembers ?? [])
+      .map(l => l.email)
+      .filter((e): e is string => !!e);
+
   const columns: DataTableColumn<PaymentPlanRequest>[] = [
     {
       header: 'Participant',
@@ -168,6 +176,15 @@ export default function PendingParticipantsPage() {
           <Text size="sm" c="dimmed">{req.person.email}</Text>
         </>
       ),
+    },
+    {
+      header: 'Family Email',
+      render: (req) => {
+        const emails = leadEmails(req);
+        return emails.length
+          ? emails.map(e => <Text key={e} size="sm">{e}</Text>)
+          : <Text size="sm" c="dimmed">—</Text>;
+      },
     },
     {
       header: 'Program',

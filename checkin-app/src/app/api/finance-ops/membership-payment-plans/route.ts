@@ -6,6 +6,7 @@ import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
 import { certifyPaymentPlan, PaymentError } from "@/lib/membership/payment";
 import { fromWhere } from "@/lib/membership/lifecycle";
+import { LIVE_PERSON } from "@/lib/person/filters";
 
 export const GET = handler('GET /api/finance-ops/membership-payment-plans', async () => {
     const requests = await prisma.orgMembershipProcess.findMany({
@@ -15,7 +16,18 @@ export const GET = handler('GET /api/finance-ops/membership-payment-plans', asyn
             ...fromWhere('PENDING_PAYMENT'),
         },
         include: {
-            orgMembership: { include: { household: true } },
+            orgMembership: {
+                include: {
+                    household: {
+                        include: {
+                            householdMembers: {
+                                where: { isHouseholdLead: true, ...LIVE_PERSON },
+                                select: { id: true, name: true, email: true },
+                            },
+                        },
+                    },
+                },
+            },
         },
         orderBy: {
             stageEnteredAt: 'asc',
