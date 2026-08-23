@@ -136,8 +136,8 @@ export function badgeYearCycleForLabel(
     if (endYear !== startYear + 1) return null;
     const bMonth = configuredBoundary.getUTCMonth();
     const bDay = configuredBoundary.getUTCDate();
-    const settledSince = monthsBefore(new Date(Date.UTC(endYear, bMonth, bDay)), RENEWAL_LEAD_MONTHS);
-    const settledBefore = monthsBefore(new Date(Date.UTC(endYear + 1, bMonth, bDay)), RENEWAL_LEAD_MONTHS);
+    const settledSince = monthsBefore(new Date(Date.UTC(startYear, bMonth, bDay)), RENEWAL_LEAD_MONTHS);
+    const settledBefore = monthsBefore(new Date(Date.UTC(endYear, bMonth, bDay)), RENEWAL_LEAD_MONTHS);
     return { label, settledSince, settledBefore };
 }
 
