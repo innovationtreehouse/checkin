@@ -77,6 +77,8 @@ describe("membership page", () => {
     renderWithProviders(<MembershipPage />);
     await screen.findByText("Your household");
 
+    expect(screen.getAllByText(/Printed on name badges exactly as typed/).length).toBeGreaterThan(0);
+
     fireEvent.change(screen.getByPlaceholderText("123 Main St"), { target: { value: "1 Treehouse Ln" } });
     fireEvent.change(screen.getByLabelText("City", { exact: false }), { target: { value: "Austin" } });
     fireEvent.change(screen.getByLabelText("State", { exact: false }), { target: { value: "TX" } });

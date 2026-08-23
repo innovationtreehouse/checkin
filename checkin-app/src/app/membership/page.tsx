@@ -786,7 +786,7 @@ export default function MembershipPage() {
 
                   <section>
                     <Title order={2} mb="sm">Primary parent / guardian</Title>
-                    <TextInput label="Full name" value={primaryName} error={fieldErrors.primaryName} onChange={(e) => { setPrimaryName(e.currentTarget.value); clearErr("primaryName"); }} />
+                    <TextInput label="Full name" description="Printed on name badges exactly as typed — please double-check the spelling." value={primaryName} error={fieldErrors.primaryName} onChange={(e) => { setPrimaryName(e.currentTarget.value); clearErr("primaryName"); }} />
                     <Checkbox
                       mt="md"
                       label="Individual is over 25"
@@ -809,7 +809,7 @@ export default function MembershipPage() {
                     />
                     {hasSecondary && (
                       <Stack mt="sm">
-                        <TextInput label="Full name" value={secondaryName} onChange={(e) => setSecondaryName(e.currentTarget.value)} />
+                        <TextInput label="Full name" description="Printed on name badges exactly as typed — please double-check the spelling." value={secondaryName} onChange={(e) => setSecondaryName(e.currentTarget.value)} />
                         <Checkbox
                           label="Individual is over 25"
                           checked={secondaryOver25}

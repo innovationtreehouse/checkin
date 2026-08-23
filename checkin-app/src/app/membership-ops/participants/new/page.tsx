@@ -146,6 +146,7 @@ function NewParticipantForm() {
           <Stack>
             <TextInput
               label="Full Name"
+              description="Printed on name badges exactly as typed — please double-check the spelling."
               value={name}
               onChange={(e) => setName(e.currentTarget.value)}
               placeholder="e.g. Jane Doe"
@@ -184,7 +185,7 @@ function NewParticipantForm() {
                 {parentEmail && (
                   <TextInput
                     label="Parent / Guardian Name"
-                    description="Required in case this parent is not already in the system."
+                    description="Required in case this parent is not already in the system. Printed on name badges exactly as typed — please double-check the spelling."
                     required
                     value={parentName}
                     onChange={(e) => setParentName(e.currentTarget.value)}

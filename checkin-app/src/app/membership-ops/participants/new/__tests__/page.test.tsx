@@ -22,6 +22,7 @@ describe("membership-ops/participants/new page", () => {
 
     expect(await screen.findByText("Register New User")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Participant" })).toBeDisabled();
+    expect(screen.getByText(/Printed on name badges exactly as typed/)).toBeInTheDocument();
   });
 
   it("submits a new adult participant", async () => {
