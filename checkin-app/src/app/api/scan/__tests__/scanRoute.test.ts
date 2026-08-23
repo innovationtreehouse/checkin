@@ -337,6 +337,98 @@ describe('POST /api/scan', () => {
         });
     });
 
+    // #1347 PR-2 / Q10 — server-side DLQ ingest. A terminally-failed outbox
+    // row rides the same endpoint with `dead: true` instead of `replay: true`;
+    // it only ever parks, sharing replay's clientEventId/scannedAt identity so
+    // a re-sent dead row dedups on the same pre-read/P2002 path.
+    describe('dead-lettered scan ingest (Q10)', () => {
+        function deadReq(overrides: Record<string, unknown> = {}) {
+            return new Request('http://localhost/api/scan', {
+                method: 'POST',
+                body: JSON.stringify({ participantId: 1, clientEventId: 'evt-dead', scannedAt: new Date().toISOString(), dead: true, deadStatus: 404, ...overrides })
+            }) as unknown as import('next/server').NextRequest;
+        }
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'kiosk' });
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue({ id: 1, mergedIntoId: null });
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue(null);
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue(null);
+        });
+
+        it('parks a dead-lettered event with a client_dead:<status> reviewReason and never toggles a visit', async () => {
+            const scannedAt = new Date(Date.now() - 60_000).toISOString();
+            const res = await POST(deadReq({ scannedAt }));
+            expect(res.status).toBe(200);
+            expect((await res.json()).type).toBe('parked');
+
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({
+                data: { personId: 1, location: 'Main Entrance', clientEventId: 'evt-dead', timestamp: new Date(scannedAt), reviewReason: 'client_dead:404' },
+            });
+            expect(prisma.visit.findFirst).not.toHaveBeenCalled();
+            expect(processCheckin).not.toHaveBeenCalled();
+            expect(processCheckout).not.toHaveBeenCalled();
+        });
+
+        it('falls back to client_dead:unknown when deadStatus is missing or non-numeric', async () => {
+            const res = await POST(deadReq({ deadStatus: undefined }));
+            expect((await res.json()).type).toBe('parked');
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith(
+                expect.objectContaining({ data: expect.objectContaining({ reviewReason: 'client_dead:unknown' }) })
+            );
+        });
+
+        it('rejects dead:true together with replay:true', async () => {
+            const res = await POST(deadReq({ replay: true }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toContain('exclusive');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
+        it('rejects a non-boolean dead flag', async () => {
+            const res = await POST(deadReq({ dead: 'yes' }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toContain('dead');
+        });
+
+        it('rejects dead:true without a clientEventId', async () => {
+            const res = await POST(deadReq({ clientEventId: undefined }));
+            expect(res.status).toBe(400);
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
+        it('rejects dead:true without a scannedAt', async () => {
+            const res = await POST(deadReq({ scannedAt: undefined }));
+            expect(res.status).toBe(400);
+            expect((await res.json()).error).toContain('scannedAt');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
+        it('is not swallowed by the 3s debounce -- the touch must never be silently dropped', async () => {
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue({ timestamp: new Date() }); // would otherwise debounce
+            const res = await POST(deadReq());
+            expect((await res.json()).type).toBe('parked');
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalled();
+        });
+
+        it('re-sending an already-recorded dead row dedups instead of double-parking', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue({ id: 9, clientEventId: 'evt-dead' });
+            const res = await POST(deadReq());
+            expect((await res.json()).type).toBe('duplicate_ignored');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+
+        // The pre-read keys only on clientEventId, not on which flag sent it --
+        // a dead-lettered resend of an id already recorded via a normal replay
+        // (or a live scan) dedups exactly the same way.
+        it('dedups a dead row whose clientEventId already exists from a normal replay', async () => {
+            (prisma.rawBadgeLog.findUnique as jest.Mock).mockResolvedValue({ id: 9, clientEventId: 'evt-dead', reviewReason: null });
+            const res = await POST(deadReq());
+            expect((await res.json()).type).toBe('duplicate_ignored');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+        });
+    });
+
     // The live kiosk scan carries clientEventId (D4 try-first) but no replay
     // flag: it must dedup, and otherwise behave exactly like a legacy live scan.
     describe('live scans carrying a clientEventId (no replay flag)', () => {

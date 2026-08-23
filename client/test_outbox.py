@@ -328,6 +328,105 @@ class TestReplayDrain(unittest.TestCase):
             self.assertEqual(pushed[0]["queued"], 0)
 
 
+class TestDeadLetterDrainPass(unittest.TestCase):
+    """#1347 PR-2 / Q10: once the pending FIFO empties, a second pass
+    retires dead-lettered rows to the server-side DLQ."""
+
+    def test_dead_pass_sends_after_pending_drains_and_deletes_on_2xx(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            seen = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                seen.append((client_event_id, dead, dead_status))
+                return ({"type": "parked"}, 200, None)
+
+            def fake_sleep(secs):
+                if seen:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            self.assertEqual(seen, [("evt-1", True, 404)])
+            self.assertEqual(ob.dead_count(), 0)  # deleted, not merely re-marked
+
+    def test_dead_pass_keeps_the_row_on_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            calls = {"n": 0}
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                calls["n"] += 1
+                return ({"error": "still down"}, 500, None)
+
+            def fake_sleep(secs):
+                if calls["n"] >= 2:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            self.assertEqual(ob.dead_count(), 1)  # still there for next cycle
+
+    def test_dead_pass_never_jumps_the_pending_fifo(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-pending", "1", "2026-08-18T10:00:00+00:00")
+            ob.enqueue("evt-to-die", "2", "2026-08-18T10:01:00+00:00")
+            ob.mark_dead("evt-to-die", 404)
+
+            seen = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                seen.append((client_event_id, dead))
+                return ({"type": "checkin"}, 200, None)
+
+            def fake_sleep(secs):
+                if seen:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            # Only the pending row goes out this cycle -- the dead pass never
+            # competes with it for the one-send-per-cycle pace.
+            self.assertEqual(seen, [("evt-pending", False)])
+
+    def test_dead_pass_is_silent_in_the_closed_window(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            send_fn = MagicMock()
+            sleeps = {"n": 0}
+
+            def fake_sleep(secs):
+                sleeps["n"] += 1
+                if sleeps["n"] >= 3:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: True)
+
+            send_fn.assert_not_called()
+            self.assertEqual(ob.dead_count(), 1)
+
+
 class TestHandleScanQueuesOnFailure(unittest.TestCase):
     def _backend(self, post_scan_return, attendance_path=None):
         backend = MagicMock()

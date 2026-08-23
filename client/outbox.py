@@ -154,8 +154,8 @@ class Outbox:
 
     def mark_dead(self, client_event_id, status):
         """Terminal failure: stop retrying so it stops burning rate limit
-        and blocking FIFO. ponytail: dead rows stay local only --
-        transmitting them to a server-side DLQ is a later epic slice."""
+        and blocking FIFO. Transmitted to the server-side DLQ by the dead
+        pass in replay_drain (#1347 PR-2, Q10) once the pending FIFO empties."""
         with self._lock:
             self._conn.execute(
                 "UPDATE outbox SET state='dead', last_status=? WHERE client_event_id=?",
@@ -168,6 +168,15 @@ class Outbox:
             return self._conn.execute(
                 "SELECT COUNT(*) FROM outbox WHERE state='dead'"
             ).fetchone()[0]
+
+    def dead_rows(self):
+        """Dead-lettered rows awaiting the server-side DLQ, oldest first.
+        Only read once the pending FIFO is empty -- never competes with it."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT client_event_id, participant_id, scanned_at, last_status "
+                "FROM outbox WHERE state='dead' ORDER BY scanned_at ASC"
+            ).fetchall()
 
 
 def classify_response(status, body):
@@ -210,6 +219,28 @@ def _backoff_seconds(retry_after_header, current_backoff):
     return max(1.0, base + jitter)
 
 
+def _send_dead_row(outbox, send_fn, push_fn=None):
+    """Second pass, only once the pending FIFO is empty: retire one
+    dead-lettered row to the server-side DLQ (#1347 PR-2, Q10). 2xx deletes
+    it; any other outcome just leaves it for the next cycle -- a dead row
+    is never re-queued as pending, so it can't jump the live FIFO."""
+    rows = outbox.dead_rows()
+    if not rows:
+        return
+    client_event_id, participant_id, scanned_at, last_status = rows[0]
+    _body, status, _retry_after = send_fn(
+        participant_id,
+        client_event_id=client_event_id,
+        scanned_at=scanned_at,
+        dead=True,
+        dead_status=last_status,
+    )
+    if 200 <= status < 300:
+        outbox.ack(client_event_id)
+        if push_fn:
+            push_fn({"html": "", "queued": outbox.pending_count()})
+
+
 def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window):
     """Single drain thread: pulls pending rows in scanned_at order,
     resubmits each one (send_fn re-signs per call), and applies the
@@ -217,7 +248,8 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
     backoff = MIN_BACKOFF_SECONDS
     while True:
         # D4: never send during the closed window -- a queued POST is
-        # non-GET and would wake the curfewed service.
+        # non-GET and would wake the curfewed service. Covers the dead
+        # pass too, since it's gated behind this same check.
         if in_closed_window_fn():
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
@@ -225,6 +257,7 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
         rows = outbox.pending_rows()
         if not rows:
             backoff = MIN_BACKOFF_SECONDS
+            _send_dead_row(outbox, send_fn, push_fn)
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
 

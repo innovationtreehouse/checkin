@@ -29,7 +29,7 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -54,6 +54,21 @@ export const POST = withKiosk(
         }
         const isReplay = body.replay === true;
 
+        // Q10: a terminally-failed outbox row rides this same endpoint to reach
+        // the server-side DLQ instead of being lost on the kiosk. It shares
+        // replay's identity requirements (clientEventId + scannedAt) but is a
+        // distinct signal -- never a redelivery attempt, so the two are exclusive.
+        if (body.dead !== undefined && typeof body.dead !== 'boolean') {
+            return apiError("dead must be a boolean.", 400);
+        }
+        const isDead = body.dead === true;
+        if (isDead && isReplay) {
+            return apiError("dead and replay are mutually exclusive.", 400);
+        }
+        const deadStatus = typeof body.deadStatus === 'number' && Number.isFinite(body.deadStatus)
+            ? body.deadStatus
+            : 'unknown';
+
         // A live scan is happening now and never inherits the kiosk's clock (D3's
         // window and the debounce both measure against server now). A replay must
         // carry its own id and event time: falling back to now would make the
@@ -65,6 +80,15 @@ export const POST = withKiosk(
             }
             if (!scannedAt) {
                 return apiError("A replayed scan requires a valid scannedAt.", 400);
+            }
+            eventTime = scannedAt;
+        }
+        if (isDead) {
+            if (!clientEventId) {
+                return apiError("A dead-lettered scan requires clientEventId.", 400);
+            }
+            if (!scannedAt) {
+                return apiError("A dead-lettered scan requires a valid scannedAt.", 400);
             }
             eventTime = scannedAt;
         }
@@ -205,8 +229,10 @@ export const POST = withKiosk(
 
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
+            // A dead-lettered event always skips it too: it only ever parks, and
+            // the touch must never be silently dropped by a debounce window.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = isConfirm ? null : await tx.rawBadgeLog.findFirst({
+            const recentScan = (isConfirm || isDead) ? null : await tx.rawBadgeLog.findFirst({
                 where: {
                     personId: participant.id,
                     timestamp: {
@@ -226,8 +252,12 @@ export const POST = withKiosk(
             // A replay older than the freshness window, or one that lands behind
             // visit activity newer than its own scan time, can't be trusted to
             // toggle — state has moved past it. Park it for a human instead.
+            // A dead-lettered event always parks: it never reaches the server
+            // live, so there is nothing here for it to safely toggle against.
             let parkReason: string | null = null;
-            if (isReplay) {
+            if (isDead) {
+                parkReason = `client_dead:${deadStatus}`;
+            } else if (isReplay) {
                 const stale = Date.now() - eventTime.getTime() > REPLAY_FRESHNESS_WINDOW_MS;
                 if (stale) {
                     parkReason = "stale_replay";
@@ -251,7 +281,7 @@ export const POST = withKiosk(
                     personId: participant.id,
                     location: "Main Entrance",
                     ...(clientEventId ? { clientEventId } : {}),
-                    ...(isReplay ? { timestamp: eventTime } : {}),
+                    ...((isReplay || isDead) ? { timestamp: eventTime } : {}),
                     ...(parkReason ? { reviewReason: parkReason } : {}),
                 },
             });
