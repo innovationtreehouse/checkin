@@ -22,7 +22,6 @@ describe("SYSTEM_STATUS_NAV_LINKS", () => {
       "Link Status",
       "Lifecycle",
       "Errors",
-      "Unsynced Scans",
       "Audit Log",
     ]);
   });

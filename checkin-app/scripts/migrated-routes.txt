@@ -19,5 +19,3 @@ PATCH /api/attendance/manual/[id]
 DELETE /api/attendance/manual/[id]
 GET /api/system-status/errors
 GET /api/system-status/links
-GET /api/system-status/unsynced-scans
-POST /api/system-status/unsynced-scans/[id]

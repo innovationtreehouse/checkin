@@ -145,7 +145,6 @@ export const PAGES: PageEntry[] = [
   { href: '/system-status', label: 'System Status', section: 'System Status', visible: BOARD },
   { href: '/system-status/health', label: 'Health', section: 'System Status', visible: BOARD },
   { href: '/system-status/errors', label: 'Errors', section: 'System Status', visible: BOARD },
-  { href: '/system-status/unsynced-scans', label: 'Unsynced Scans', section: 'System Status', keywords: 'kiosk parked replay badge scan review stale out of order offline queue', visible: BOARD },
   { href: '/system-status/audit-log', label: 'Audit Log', section: 'System Status', visible: BOARD },
   { href: '/system-status/links', label: 'Links', section: 'System Status', visible: BOARD },
   { href: '/system-status/lifecycle', label: 'Lifecycle', section: 'System Status', keywords: 'invariant validate off-diagram drift reconcile enrollment membership state machine', visible: BOARD },
