@@ -378,7 +378,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     data: {
                         id: await mintPersonId(tx),
                         householdId,
-                        name: child.name,
+                        name: nameWrite(child.name),
                         ...(child.email && { email: child.email.toLowerCase() }),
                         ...normalizeAdultDob(child.dob),
                         allergies: child.allergies ?? null,

@@ -460,6 +460,16 @@ describe('saveIntake', () => {
         expect(prisma.person.update).not.toHaveBeenCalled();
     });
 
+    // A padded name passes the trimmed gate but must store trimmed — the
+    // create write goes through nameWrite like every other write path.
+    it('stores a padded new-child name trimmed', async () => {
+        prisma.person.create.mockResolvedValue({ id: 56 });
+        await saveIntake(1, { children: [{ name: '  John  ' }] });
+        expect(prisma.person.create).toHaveBeenCalledWith({
+            data: { id: MINTED_ID, householdId: 7, name: 'John', dateOfBirth: null, allergies: null },
+        });
+    });
+
     // #1432 site 4: "   " is truthy, so the old `else if (child.name)` gate
     // would have created a child with a whitespace-only stored name.
     it('does not create a child from a whitespace-only name', async () => {
