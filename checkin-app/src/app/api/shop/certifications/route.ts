@@ -6,6 +6,7 @@ import prisma from "@/lib/prisma";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { isActiveOrgMember } from "@/lib/orgMembership";
 
 // Cert status is PUBLIC BY DESIGN — certifications are physically posted in the
 // shop. This route runs on the @/security handler() runtime so that intent is
@@ -117,6 +118,15 @@ export const POST = withAuth({}, async (req, auth) => {
 
         const tId = parseInt(toolId, 10);
         const pId = parseInt(personId, 10);
+
+        // Both actor and target must belong to an active member family.
+        // Sysadmin/board are exempt from the actor check (system-level role).
+        if (!isSysAdminOrBoard && !(await isActiveOrgMember(currentUserId))) {
+            return apiError("Forbidden: certifier must belong to an active member family", 403);
+        }
+        if (!(await isActiveOrgMember(pId))) {
+            return apiError("Forbidden: target must belong to an active member family", 403);
+        }
 
         const currentStatus = await prisma.toolStatus.findUnique({
             where: { personId_toolId: { personId: pId, toolId: tId } }
