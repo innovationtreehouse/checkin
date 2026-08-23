@@ -196,6 +196,10 @@ export const householdArchiveExtension = Prisma.defineExtension({
                 args.where = injectArchiveFilter(args.where)
                 return query(args)
             },
+            findFirstOrThrow({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
             findUnique({ args, query }) {
                 args.where = injectArchiveFilter(args.where)
                 return query(args)
@@ -212,16 +216,44 @@ export const householdArchiveExtension = Prisma.defineExtension({
                 args.where = injectArchiveFilter(args.where)
                 return query(args)
             },
+            groupBy({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
+            update({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
+            updateMany({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
+            delete({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
+            deleteMany({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
+            upsert({ args, query }) {
+                args.where = injectArchiveFilter(args.where)
+                return query(args)
+            },
         },
     },
 })
 ```
 
+The extension covers **every** `household.*` operation — reads (`findMany`,
+`findFirst`, `findFirstOrThrow`, `findUnique`, `findUniqueOrThrow`, `count`,
+`aggregate`, `groupBy`) and writes (`update`, `updateMany`, `delete`,
+`deleteMany`, `upsert`). Write coverage prevents an accidental bulk update or
+delete from touching archived rows — e.g. a `household.updateMany` that sets a
+field on "all households" silently including departed ones.
+
 `injectArchiveFilter` checks for the opt-out sentinel, and otherwise AND-merges
-`{ archivedAt: null }` into the existing `where`. The sentinel is a specific
-`archivedAt` value (e.g. `{ archivedAt: undefined }` replaced by a symbol or a
-named constant like `INCLUDE_ARCHIVED`) that a caller passes to suppress the
-auto-filter.
+`{ archivedAt: null }` into the existing `where`.
 
 The extension is added to the client chain in `lib/prisma.ts`, alongside the
 existing `emailNormalizeExtension` and `auroraResumeRetryExtension`.
@@ -229,19 +261,28 @@ existing `emailNormalizeExtension` and `auroraResumeRetryExtension`.
 ### The opt-in sentinel
 
 ```typescript
-/** Pass in a where clause to suppress the archive filter on that query. */
-export const INCLUDE_ARCHIVED: Prisma.HouseholdWhereInput = {
-    archivedAt: { not: { equals: undefined } },
-}
-// — or more practically, a recognizable shape the extension checks for:
-export const INCLUDE_ARCHIVED_MARKER = Symbol('includeArchived')
+/** Pass as `where` (or spread into it) to suppress the archive filter. */
+export const INCLUDE_ARCHIVED = Symbol('includeArchived')
 ```
 
-The exact mechanism depends on what Prisma's `where` merging allows. The
-simplest approach: the extension checks whether the caller's `where` already
-contains an explicit `archivedAt` clause. If it does, the extension does not
-inject its own — the caller is taking responsibility. If it does not, the
-extension adds `archivedAt: null`.
+A named, greppable symbol — not an `archivedAt` clause for the extension to
+detect. The extension checks for the symbol's presence on the `where` object
+(e.g. as a non-enumerable property set by a helper); if present, it passes the
+query through unmodified. If absent, it injects `{ archivedAt: null }`.
+
+A helper wraps the ergonomics:
+
+```typescript
+export function includingArchived<T extends object>(where: T): T {
+    Object.defineProperty(where, INCLUDE_ARCHIVED, { value: true })
+    return where
+}
+// Usage: prisma.household.findMany({ where: includingArchived({ id: { in: ids } }) })
+```
+
+This avoids the implicit-opt-out problem where any `where` that happens to
+mention `archivedAt` for an unrelated reason accidentally suppresses the filter.
+The sentinel is explicit, named, and impossible to trigger by accident.
 
 This is the inverse of `LIVE_PERSON`: instead of a filter you must remember to
 add, it is a filter you must explicitly remove. Forgetting is safe.
@@ -253,28 +294,39 @@ Prisma query extensions intercept top-level `prisma.household.*` calls but
 { household: true } })` fetches the related Household without passing through the
 extension.
 
+**The relation traversals are the larger surface.** Of the ~88 total production
+query sites, ~14–19 are direct `household.*` calls (covered by the extension) and
+~66 are relation traversals (not covered). This is the honest arithmetic, and
+it matters: the `LIVE_PERSON` defects that shipped concentrated in exactly this
+shape — relation-named Person references (`householdMembers`, `leadMentor`) that
+the original drift guard could not see.
+
+The extension does not make the relation problem go away. What it does is
+**partition the surface**: the direct-query half is structurally closed (no new
+code can forget it), so the relation half is what remains to be swept and
+guarded. That is still conventional — but it is half the original problem, and
+the half that the extension removes is the half most likely to grow (new
+Household queries), while the relation paths are more stable (they are defined
+by the schema, not by new features).
+
 This matters for two shapes:
 
 1. **`include: { household: true }`** — pulls the Household as a nested object.
-   The Household data is present, but the caller's Person query already decided
-   which people to return. If the Person is active, their Household is their
-   Household — archived or not, the relation is a fact. In most cases, this is
-   fine: the caller is looking up a specific person's household, not listing
-   households.
+   The caller's Person query already decided which people to return. If the
+   Person is active, their Household is their Household — archived or not, the
+   relation is a fact. Where the caller is looking up a specific person's
+   household (the common case), the archived state is visible on the included
+   object and the caller can act on it.
 
 2. **`where: { household: { ... } }`** — filters Person rows by a Household
    condition. An archived household's members would still match. This is the
    shape that needs attention: a Person search that should exclude archived
    households must add `{ household: { archivedAt: null } }` to the Person where.
 
-The bounded set of relation traversals is the #1232 sweep — ~74 sites, each
-audited once. The extension handles the direct Household queries structurally;
-the relation paths are a one-time sweep with a smaller, enumerable surface.
-
-A drift guard for the relation paths alone (not the direct queries) is a
-reasonable complement: it is much smaller than a guard covering everything, and
-the direct-query half — the larger, more forgettable surface — is already
-structural.
+The bounded set of relation traversals is the #1232 sweep — ~66 sites, each
+audited once. A drift guard scoped to relation paths alone (not the direct
+queries the extension already covers) is the complement: smaller than a guard
+covering everything, and scoped to the surface the extension cannot reach.
 
 ## What archival blocks
 
@@ -283,7 +335,7 @@ An archived household is excluded from every active surface:
 | Surface | Blocked | Why |
 |---|---|---|
 | Membership-ops household list | yes | Board should not see departed families as active work |
-| People search / dropdowns | yes | Archived members should not appear as candidates |
+| Household dropdowns (e.g. "move to household") | yes | Cannot move someone into a departed household |
 | Program enrollment | yes | Cannot enroll from a departed household |
 | Membership processes | yes | No new intake, renewal, or payment for a departed family |
 | Check-in / kiosk scan | yes (redirect) | Badge scan resolves to "household archived" message |
@@ -342,21 +394,13 @@ detail view.
 
 ## Interaction with #1456 (TOMBSTONE_REMOVAL)
 
+No dependency in either direction. #1228 does not need #1456 to land first,
+and #1456 does not need this.
+
 If tombstones go away first (#1456 lands), `LIVE_PERSON` is deleted and the
 Household archive filter is the only remaining exclusion dimension. The
 extension approach means it is structural from day one — no convention, no drift
 guard to maintain.
-
-If the extension approach proves sound here, it could retroactively apply to
-`LIVE_PERSON` as an interim measure while #1456 is in progress: a
-`personTombstoneExtension` injecting `{ mergedIntoId: null }` into every
-`person.*` read, replacing the manual `LIVE_PERSON` filter and its 31-entry
-allowlist. That would make both exclusions structural, and #1456 would then
-delete the Person extension along with the column.
-
-This is not a dependency in either direction. #1228 does not need #1456 to land
-first, and #1456 does not need this. But the extension pattern, once proven,
-is available to both.
 
 ## Decisions needed
 
@@ -364,10 +408,15 @@ is available to both.
    a family cannot archive itself. Confirm or adjust.
 
 2. **What about the household's members?** When a household is archived, its
-   Person rows remain. They are still searchable by name, still hold audit
-   history. The archive is on the Household, not on its members — a person who
-   moves to a different household is still a person. Confirm this is the right
-   model, or whether archival should cascade to some person-level state.
+   Person rows remain — they still hold audit history, and the archive is on the
+   Household, not on its members. A person who moves to a different household is
+   still a person. But **should they still appear in people search?** Proposed:
+   no — people search and person dropdowns should exclude members of archived
+   households (via a relation-path filter `{ household: { archivedAt: null } }`),
+   since surfacing a departed family's members as active candidates is the same
+   problem as surfacing the household itself. They remain visible in historical
+   and audit contexts. Confirm, or decide that Person rows stay fully searchable
+   and only the Household-level surfaces are filtered.
 
 3. **Check-in behavior.** A badge scan for a person in an archived household
    today would succeed (the person exists, the household exists). After
@@ -381,12 +430,12 @@ is available to both.
    its membership is ACTIVE, REVOKED, NONE, or anything else. Archival is "this
    family is gone"; membership status is "what terms they left on." Confirm.
 
-5. **The opt-in sentinel design.** The simplest implementation: the extension
-   checks whether the caller's `where` already mentions `archivedAt`. If it
-   does, the extension does not inject. This makes the opt-in visible (`where:
-   { archivedAt: { not: null } }` or any explicit `archivedAt` clause) without
-   a separate symbol. Confirm this is acceptable, or whether a more explicit
-   sentinel is preferred.
+5. **The opt-in sentinel design.** Proposed: a named `Symbol('includeArchived')`
+   set on the `where` object via an `includingArchived()` helper. Greppable,
+   impossible to trigger by accident, and avoids the implicit-opt-out problem
+   where any `where` that happens to mention `archivedAt` for an unrelated
+   reason accidentally suppresses the filter. Confirm, or suggest an
+   alternative mechanism.
 
 ## Test plan
 
