@@ -7,7 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock
 
-from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso, in_closed_window
+from outbox import (Outbox, classify_response, replay_drain, new_event_id, now_iso,
+                    in_closed_window, MIN_BACKOFF_SECONDS, DRAIN_PACE_SECONDS)
 from client import handle_scan, _saved_banner_html
 
 
@@ -326,6 +327,170 @@ class TestReplayDrain(unittest.TestCase):
                              in_closed_window_fn=lambda: False)
 
             self.assertEqual(pushed[0]["queued"], 0)
+
+
+class TestDeadLetterDrainPass(unittest.TestCase):
+    """#1347 PR-2 / Q10: once the pending FIFO empties, a second pass
+    retires dead-lettered rows to the server-side DLQ."""
+
+    def test_dead_pass_sends_after_pending_drains_and_deletes_on_2xx(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            seen = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                seen.append((client_event_id, dead, dead_status))
+                return ({"type": "parked"}, 200, None)
+
+            def fake_sleep(secs):
+                if seen:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            self.assertEqual(seen, [("evt-1", True, 404)])
+            self.assertEqual(ob.dead_count(), 0)  # deleted, not merely re-marked
+
+    def test_dead_pass_keeps_the_row_on_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            calls = {"n": 0}
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                calls["n"] += 1
+                return ({"error": "still down"}, 500, None)
+
+            def fake_sleep(secs):
+                if calls["n"] >= 2:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            self.assertEqual(ob.dead_count(), 1)  # still there for next cycle
+
+    def test_dead_pass_failure_logs_and_backs_off(self):
+        # A permanently-failing dead row (participant deleted -> DLQ ingest
+        # 404s) must not silently retry at the 1s drain pace forever: each
+        # failure logs a warning and the wait grows exponentially from
+        # MIN_BACKOFF_SECONDS, mirroring the pending path.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            waits = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                return ({"error": "person gone"}, 404, None)
+
+            def fake_sleep(secs):
+                waits.append(secs)
+                if len(waits) >= 2:
+                    raise _StopLoop()
+
+            with self.assertLogs("kiosk", level="WARNING") as captured:
+                with self.assertRaises(_StopLoop):
+                    replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                                 in_closed_window_fn=lambda: False)
+
+            self.assertTrue(any("evt-1" in m and "404" in m for m in captured.output))
+            # Both waits are backoff-scale, not the 1s pace; the second grew.
+            # _backoff_seconds jitters +/-10%, so compare against 0.9x floors.
+            self.assertGreaterEqual(waits[0], MIN_BACKOFF_SECONDS * 0.9)
+            self.assertGreaterEqual(waits[1], MIN_BACKOFF_SECONDS * 2 * 0.9)
+            self.assertEqual(ob.dead_count(), 1)  # kept, never evicted
+
+    def test_dead_pass_backoff_resets_after_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", "2026-08-18T10:00:00+00:00")
+            ob.enqueue("evt-2", "2", "2026-08-18T10:01:00+00:00")
+            ob.mark_dead("evt-1", 404)
+            ob.mark_dead("evt-2", 409)
+
+            outcomes = iter([500, 200, 200])
+            waits = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                return ({}, next(outcomes), None)
+
+            def fake_sleep(secs):
+                waits.append(secs)
+                if len(waits) >= 3:
+                    raise _StopLoop()
+
+            with self.assertLogs("kiosk", level="WARNING"):
+                with self.assertRaises(_StopLoop):
+                    replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                                 in_closed_window_fn=lambda: False)
+
+            # fail (backoff wait), success (pace), success (pace) -- and both
+            # rows retired despite the first attempt failing.
+            self.assertGreaterEqual(waits[0], MIN_BACKOFF_SECONDS * 0.9)
+            self.assertEqual(waits[1], DRAIN_PACE_SECONDS)
+            self.assertEqual(waits[2], DRAIN_PACE_SECONDS)
+            self.assertEqual(ob.dead_count(), 0)
+
+    def test_dead_pass_never_jumps_the_pending_fifo(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-pending", "1", "2026-08-18T10:00:00+00:00")
+            ob.enqueue("evt-to-die", "2", "2026-08-18T10:01:00+00:00")
+            ob.mark_dead("evt-to-die", 404)
+
+            seen = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                seen.append((client_event_id, dead))
+                return ({"type": "checkin"}, 200, None)
+
+            def fake_sleep(secs):
+                if seen:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False)
+
+            # Only the pending row goes out this cycle -- the dead pass never
+            # competes with it for the one-send-per-cycle pace.
+            self.assertEqual(seen, [("evt-pending", False)])
+
+    def test_dead_pass_is_silent_in_the_closed_window(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "1", now_iso())
+            ob.mark_dead("evt-1", 404)
+
+            send_fn = MagicMock()
+            sleeps = {"n": 0}
+
+            def fake_sleep(secs):
+                sleeps["n"] += 1
+                if sleeps["n"] >= 3:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: True)
+
+            send_fn.assert_not_called()
+            self.assertEqual(ob.dead_count(), 1)
 
 
 class TestHandleScanQueuesOnFailure(unittest.TestCase):

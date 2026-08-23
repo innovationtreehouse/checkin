@@ -96,7 +96,8 @@ class BackendClient:
         return h
 
     def post_scan(self, participant_id, force_close_token=None,
-                  client_event_id=None, scanned_at=None, replay=False):
+                  client_event_id=None, scanned_at=None, replay=False,
+                  dead=False, dead_status=None):
         path = "/api/scan"
         payload = {}
         try:
@@ -114,6 +115,13 @@ class BackendClient:
             # clientEventId (D4 try-first) but is NOT a replay, so the server
             # cannot infer replay-ness from the id.
             payload["replay"] = True
+        if dead:
+            # #1347 PR-2 / Q10: the dead-letter drain pass, mutually exclusive
+            # with replay. dead_status is the terminal status that got this row
+            # dead-lettered locally -- it lands in the server's reviewReason.
+            payload["dead"] = True
+            if dead_status is not None:
+                payload["deadStatus"] = dead_status
         body = json.dumps(payload)
 
         headers = self._headers("POST", path, body)

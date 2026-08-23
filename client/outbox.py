@@ -154,8 +154,8 @@ class Outbox:
 
     def mark_dead(self, client_event_id, status):
         """Terminal failure: stop retrying so it stops burning rate limit
-        and blocking FIFO. ponytail: dead rows stay local only --
-        transmitting them to a server-side DLQ is a later epic slice."""
+        and blocking FIFO. Transmitted to the server-side DLQ by the dead
+        pass in replay_drain (#1347 PR-2, Q10) once the pending FIFO empties."""
         with self._lock:
             self._conn.execute(
                 "UPDATE outbox SET state='dead', last_status=? WHERE client_event_id=?",
@@ -168,6 +168,17 @@ class Outbox:
             return self._conn.execute(
                 "SELECT COUNT(*) FROM outbox WHERE state='dead'"
             ).fetchone()[0]
+
+    def dead_rows(self):
+        """The oldest dead-lettered row awaiting the server-side DLQ (LIMIT 1:
+        the dead pass sends one per cycle, so materializing the whole backlog
+        each cycle is pure churn on a constrained kiosk).
+        Only read once the pending FIFO is empty -- never competes with it."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT client_event_id, participant_id, scanned_at, last_status "
+                "FROM outbox WHERE state='dead' ORDER BY scanned_at ASC LIMIT 1"
+            ).fetchall()
 
 
 def classify_response(status, body):
@@ -210,14 +221,50 @@ def _backoff_seconds(retry_after_header, current_backoff):
     return max(1.0, base + jitter)
 
 
+def _send_dead_row(outbox, send_fn, push_fn=None, backoff=MIN_BACKOFF_SECONDS):
+    """Second pass, only once the pending FIFO is empty: retire one
+    dead-lettered row to the server-side DLQ (#1347 PR-2, Q10). 2xx deletes
+    it; any other outcome leaves it for a later cycle -- a dead row is never
+    re-queued as pending, so it can't jump the live FIFO.
+
+    Returns (wait, next_backoff): wait is how long the caller should sleep
+    before the next drain iteration (None = nothing sent or success -- use
+    the normal pace), mirroring the pending path's exponential backoff. A
+    permanently-failing row (e.g. its participant was deleted, so the DLQ
+    ingest 404s before the park path) must not burn ~1 req/s forever."""
+    rows = outbox.dead_rows()
+    if not rows:
+        return None, MIN_BACKOFF_SECONDS
+    client_event_id, participant_id, scanned_at, last_status = rows[0]
+    _body, status, retry_after = send_fn(
+        participant_id,
+        client_event_id=client_event_id,
+        scanned_at=scanned_at,
+        dead=True,
+        dead_status=last_status,
+    )
+    if 200 <= status < 300:
+        outbox.ack(client_event_id)
+        if push_fn:
+            push_fn({"html": "", "queued": outbox.pending_count()})
+        return None, MIN_BACKOFF_SECONDS
+    log.warning(
+        f"Dead-letter DLQ delivery failed for {client_event_id} "
+        f"(status={status}, originally dead-lettered with {last_status}); backing off"
+    )
+    return _backoff_seconds(retry_after, backoff), min(backoff * 2, MAX_BACKOFF_SECONDS)
+
+
 def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window):
     """Single drain thread: pulls pending rows in scanned_at order,
     resubmits each one (send_fn re-signs per call), and applies the
     ack/retry/dead outcome. Runs forever; call in a background thread."""
     backoff = MIN_BACKOFF_SECONDS
+    dead_backoff = MIN_BACKOFF_SECONDS
     while True:
         # D4: never send during the closed window -- a queued POST is
-        # non-GET and would wake the curfewed service.
+        # non-GET and would wake the curfewed service. Covers the dead
+        # pass too, since it's gated behind this same check.
         if in_closed_window_fn():
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
@@ -225,7 +272,8 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
         rows = outbox.pending_rows()
         if not rows:
             backoff = MIN_BACKOFF_SECONDS
-            sleep_fn(DRAIN_PACE_SECONDS)
+            dead_wait, dead_backoff = _send_dead_row(outbox, send_fn, push_fn, dead_backoff)
+            sleep_fn(dead_wait if dead_wait is not None else DRAIN_PACE_SECONDS)
             continue
 
         client_event_id, participant_id, scanned_at, attempts, force_close_token = rows[0]
