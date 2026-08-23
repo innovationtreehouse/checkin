@@ -11,7 +11,9 @@ type UnsyncedScan = {
   timestamp: string;
   location: string | null;
   reviewReason: string | null;
-  person: { id: number; name: string | null } | null;
+  // Never null: RawBadgeLog.personId is required, and id/name are public-tier
+  // so the response stripper cannot drop them out from under the fallback.
+  person: { id: number; name: string | null };
 };
 
 // D7's "40 min late" off lib/time's coarse relTime — the same thresholds every
@@ -95,7 +97,7 @@ export function UnsyncedScansPanel() {
                   <Stack gap={2}>
                     {/* D7 row copy: "Person X, scanned 2:14pm, 40 min late". */}
                     <Text>
-                      {s.person?.name ?? `Person #${s.id}`}, scanned{" "}
+                      {s.person.name ?? `Person #${s.person.id}`}, scanned{" "}
                       {formatTime(s.timestamp, { hour: "numeric", minute: "2-digit" })},{" "}
                       {lateness(s.timestamp)}
                     </Text>
