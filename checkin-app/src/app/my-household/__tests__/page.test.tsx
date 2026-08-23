@@ -100,6 +100,7 @@ describe("HouseholdPage", () => {
     await screen.findByRole("heading", { name: "Smith Household", level: 1 });
 
     fireEvent.click(screen.getByRole("button", { name: "+ Add Household Member" }));
+    expect(screen.getByText(/Printed on name badges exactly as typed/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Full Name"), { target: { value: "Robin Smith" } });
     fireEvent.click(screen.getByLabelText("Individual is over 25"));
     // Phone must be capturable on ADD, not only on a later edit.

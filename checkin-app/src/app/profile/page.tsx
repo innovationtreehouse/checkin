@@ -106,7 +106,7 @@ export default function ProfilePage() {
           <form onSubmit={handleSubmit}>
             <Stack>
               <TextInput label="Email Address" value={form.email} disabled title="Email cannot be changed here." />
-              <TextInput label="Full Name" required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" disabled={readOnly} />
+              <TextInput label="Full Name" description="Printed on name badges exactly as typed — please double-check the spelling." required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" disabled={readOnly} />
               <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" disabled={readOnly} />
               <Checkbox
                 label="I am over 25"

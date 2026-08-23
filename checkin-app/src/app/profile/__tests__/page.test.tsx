@@ -21,6 +21,7 @@ describe("ProfilePage", () => {
         const nameInput = await screen.findByLabelText(/Full Name/);
         expect(nameInput).toHaveValue("Jamie Adult");
         expect(nameInput).not.toBeDisabled();
+        expect(screen.getByText(/Printed on name badges exactly as typed/)).toBeInTheDocument();
 
         fireEvent.change(nameInput, { target: { value: "Jamie Updated" } });
         fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
