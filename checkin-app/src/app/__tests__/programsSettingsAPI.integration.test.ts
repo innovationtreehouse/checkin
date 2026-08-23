@@ -42,6 +42,13 @@ describe('Program Settings API Integration Tests', () => {
         });
         const existingUserIds = existingUsers.map(u => u.id);
 
+        await prisma.programParticipant.deleteMany({
+            where: { personId: { in: existingUserIds } }
+        });
+        await prisma.programVolunteer.deleteMany({
+            where: { personId: { in: existingUserIds } }
+        });
+
         await prisma.program.deleteMany({
             where: { name: { contains: 'Settings API Test' } }
         });

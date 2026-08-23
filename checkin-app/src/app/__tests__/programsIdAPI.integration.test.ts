@@ -47,6 +47,13 @@ describe('Individual Program API Integration Tests', () => {
             where: { householdId: { in: existingHouseholdIds } }
         });
 
+        await prisma.programParticipant.deleteMany({
+            where: { personId: { in: existingUserIds } }
+        });
+        await prisma.programVolunteer.deleteMany({
+            where: { personId: { in: existingUserIds } }
+        });
+
         await prisma.program.deleteMany({
             where: { name: { contains: 'Prog ID API Test' } }
         });

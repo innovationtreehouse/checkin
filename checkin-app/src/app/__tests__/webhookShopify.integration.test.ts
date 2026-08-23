@@ -299,9 +299,9 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         const outsider = await prisma.person.create({
             data: { name: 'Settled Outsider', email: `outsider-${TAG}@example.com`, household: { create: { name: 'Settled HH' } } },
         });
-        const membership = await prisma.orgMembership.create({ data: { householdId: outsider.householdId, status: 'ACTIVE' } });
-        const body = programPayload(`${p1},${outsider.id}`, PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
         try {
+            await prisma.orgMembership.create({ data: { householdId: outsider.householdId, status: 'ACTIVE' } });
+            const body = programPayload(`${p1},${outsider.id}`, PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
             const res = await POST(webhookReq(body, sign(body)));
             expect(res.status).toBe(200);
 
@@ -312,7 +312,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
             expect(await prisma.paymentException.count({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } })).toBe(1);
         } finally {
             await prisma.paymentException.deleteMany({ where: { kind: 'DISCOUNT_UNAUTHORIZED', shopifyOrderId: '555' } });
-            await prisma.orgMembership.delete({ where: { id: membership.id } });
+            await prisma.orgMembership.deleteMany({ where: { householdId: outsider.householdId } });
             await prisma.person.delete({ where: { id: outsider.id } });
             await prisma.household.delete({ where: { id: outsider.householdId } });
         }
