@@ -165,9 +165,9 @@ describe('Facility trends API', () => {
     afterAll(async () => {
         await prisma.visit.deleteMany({ where: { id: { in: visitIds } } });
         await prisma.programParticipant.deleteMany({ where: { programId } });
+        await prisma.programVolunteer.deleteMany({ where: { personId: { in: [adminId, volunteerId, enrolledAdultId, youthId] } } });
         await prisma.event.deleteMany({ where: { id: { in: [eventId, untaggedEventId] } } });
         await prisma.program.deleteMany({ where: { id: { in: [programId, otherProgramId, untaggedProgramId] } } });
-        await prisma.programVolunteer.deleteMany({ where: { personId: { in: [adminId, volunteerId, enrolledAdultId, youthId] } } });
         await prisma.person.deleteMany({ where: { id: { in: [adminId, volunteerId, enrolledAdultId, youthId] } } });
         await prisma.household.deleteMany({ where: { id: householdId } });
     });

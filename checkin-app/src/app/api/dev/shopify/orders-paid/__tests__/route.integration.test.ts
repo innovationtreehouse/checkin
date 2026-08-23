@@ -52,6 +52,7 @@ describe('POST /api/dev/shopify/orders-paid (dev mock)', () => {
         if (ids.length) {
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
             await prisma.orgMembership.deleteMany({ where: { householdId: { in: ids } } });
+            await prisma.programParticipant.deleteMany({ where: { person: { householdId: { in: ids } } } });
             await prisma.person.deleteMany({ where: { householdId: { in: ids } } });
             await prisma.household.deleteMany({ where: { id: { in: ids } } });
         }
