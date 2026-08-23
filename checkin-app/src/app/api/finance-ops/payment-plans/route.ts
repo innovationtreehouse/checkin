@@ -28,6 +28,11 @@ export const GET = handler('GET /api/finance-ops/payment-plans', async ({ req })
             // can't drift from the state table.
             where: { ...(holdsQueue ? STATES.PENDING_HOLD_FAILED.where : STATES.PENDING_HELD.where), person: LIVE_PERSON },
             include: {
+                // Nests household→orgMembership so the board can see CURRENT
+                // membership while a request is still pending —
+                // wasOrgMemberAtApproval is null until approved, so it can't
+                // answer this. Derive live client-side; nothing new to stamp.
+                // householdMembers (leads) carry the family contact email.
                 person: {
                     include: {
                         household: {
@@ -41,7 +46,7 @@ export const GET = handler('GET /api/finance-ops/payment-plans', async ({ req })
                         },
                     },
                 },
-                program: true,
+                program: true, // carries startAt (public) — half of the next-year flag
             },
             orderBy: {
                 pendingSince: 'asc'
