@@ -309,10 +309,16 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (input.secondaryParent) {
         const sp = input.secondaryParent;
         if (sp.id && householdMemberIds.has(sp.id)) {
+            // A submitted (non-null) but blank name is rejected, not silently
+            // dropped (Decision 5) — same rule as the primary parent/children
+            // updates. `null` stays a no-op (#1688's existing carve-out).
+            if (sp.name !== undefined && sp.name !== null && !nameWrite(sp.name)) {
+                throw new IntakeError("name_required", "A name is required for the second parent / guardian.", ["secondaryParent"]);
+            }
             await prisma.person.update({
                 where: { id: sp.id },
                 data: {
-                    ...(sp.name !== undefined && sp.name !== null && { name: sp.name }),
+                    ...(sp.name !== undefined && sp.name !== null && { name: nameWrite(sp.name) }),
                     ...(sp.dob !== undefined && normalizeAdultDob(sp.dob)),
                     ...(sp.over25 !== undefined && !sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
@@ -320,18 +326,18 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             });
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
-        } else if (sp.name) {
+        } else if (nameWrite(sp.name)) {
             // saveIntake is a bare sequence of autocommit statements, so the mint
             // gets its own two-statement transaction — an id minted outside one
             // would be burned if the create failed. #1688's name_required
-            // rejection is the sibling branch below, so a nameless second parent
-            // never opens a transaction at all.
+            // rejection is the sibling branch below, so a nameless (or
+            // whitespace-only) second parent never opens a transaction at all.
             const created = await withTx(prisma, async (tx) =>
                 tx.person.create({
                     data: {
                         id: await mintPersonId(tx),
                         householdId,
-                        name: sp.name,
+                        name: nameWrite(sp.name),
                         ...(sp.email && { email: sp.email.toLowerCase() }),
                         ...normalizeAdultDob(sp.dob),
                         ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
