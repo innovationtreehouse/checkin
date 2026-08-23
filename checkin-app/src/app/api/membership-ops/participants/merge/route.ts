@@ -77,19 +77,14 @@ function personPreImage(p: Person) {
 }
 
 /**
- * The `PersonMerge.snapshot` payload: identity as it stood at merge time, for
- * the readers that outlive the tombstone Person row (#1456 phase 2b).
+ * The `PersonMerge.snapshot` payload: identity as it stood at merge time, for the
+ * readers that outlive the tombstone Person row (#1456 2b). Narrower than
+ * `personPreImage`, which is forensic and lands in AuditLog; this is a live data
+ * source — compliance §6 reads name/lastBackgroundCheck, audit names read email.
  *
- * Narrower than `personPreImage` on purpose. That one is forensic — every field
- * the merge rewrites, for an un-merge — and lands in an AuditLog row. This one
- * is a live data source with named consumers: compliance §6 reads `name` and
- * `lastBackgroundCheck`, the audit-name fallback reads `name`/`email`.
- *
- * NO dateOfBirth (#1456 Decision 1): a Json blob is classified as one field, so
- * including it would re-tier the column from `pii` to `personal` for no reader.
- *
- * Dates are ISO strings, not Date objects — Prisma's Json input does not accept
- * a Date, and a reader parses this back out of JSONB either way.
+ * NO dateOfBirth (Decision 1): a Json blob is classified as one field, so it would
+ * re-tier the column from `pii` to `personal` for no reader. Dates are ISO strings
+ * because Prisma's Json input rejects a Date.
  */
 function mergeSnapshot(p: Person) {
     return {

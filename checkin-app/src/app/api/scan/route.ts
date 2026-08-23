@@ -107,31 +107,19 @@ export const POST = withKiosk(
         });
 
         // A badge still encoding a merged-away id must not reject its owner at the
-        // door — resolve it to the live survivor and scan as them. There are two
-        // ways such an id presents, because #1456 phase 2b archives a merge before
-        // it deletes the tombstone:
-        //
+        // door. Two ways such an id presents, since 2b archives before it deletes:
         //   row is GONE      -> PersonMerge.fromId -> toId   (2b-3 onward)
         //   tombstone exists -> mergedIntoId                 (today, and legacy)
+        // One loop, not two: an archive row's survivor may itself be a tombstone.
         //
-        // One loop rather than two, because a walk can cross from one to the other:
-        // an archive row's survivor may itself be a tombstone. Both arms share
-        // MAX_MERGE_HOPS; a chain that deep can't be resolved with confidence, so
-        // fall back to the reissue message instead of chasing it further.
+        // Order is the trap. The archive lookup must run BEFORE the not-found 404 —
+        // once tombstones are deleted the findUnique above simply misses and the
+        // badge is rejected at the door, the exact failure this exists to prevent.
+        // Dormant till then; pinned by an integration test that deletes a row by hand.
         //
-        // The archive arm should never take more than one hop — `toId` is a RESTRICT
-        // FK and the merge repoints it, so an archive row cannot name a deleted
-        // person. The cap covers it anyway rather than trusting that invariant: the
-        // cost of being wrong here is a member refused at the door, and a bad 2a
-        // backfill or a hand-written fix is all it would take.
-        //
-        // The ORDER is the trap here. The archive lookup has to run before the
-        // not-found 404, not after a row loads — once tombstones are deleted the
-        // `findUnique` above simply misses, the 404 fires, and the badge is rejected
-        // at the door, which is the exact failure this resolution exists to prevent.
-        // The archive arm is dormant while tombstone rows still exist; it is pinned
-        // by an integration test that deletes one by hand, so it is exercised code
-        // rather than code whose first real execution is in prod the day 2b-3 ships.
+        // The archive arm cannot exceed one hop (toId is a RESTRICT FK the merge
+        // repoints), but shares MAX_MERGE_HOPS anyway: being wrong costs a member
+        // refused at the door, and a bad 2a backfill is all it would take.
         let participant = badgeRecord;
         let lookupId = participantId;
         let mergeHops = 0;

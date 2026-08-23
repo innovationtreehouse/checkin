@@ -141,10 +141,10 @@ model Person {
   /// Person.id. Null == a live record. Set once by the merge route; the row is
   /// tombstoned, never deleted. Drives the double-merge CAS guard and the
   /// live-person filter (lib/person/filters.ts). @sensitivity:internal
-  /// Renamed from "PersonMerge" so the label does not collide with `model
-  /// PersonMerge`. A named self-relation produces no SQL artifact (the
-  /// constraint is Person_mergedIntoId_fkey), so this is a code-only rename.
   mergedIntoId Int?
+  // Label is "PersonTombstone" because "PersonMerge" would collide with the model
+  // of that name. Code-only: a named self-relation emits no SQL artifact — the
+  // constraint is Person_mergedIntoId_fkey either way.
   mergedInto   Person?  @relation("PersonTombstone", fields: [mergedIntoId], references: [id])
   mergedFrom   Person[] @relation("PersonTombstone")
 
