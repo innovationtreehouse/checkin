@@ -11,14 +11,16 @@ type Attestation = {
   note: string | null;
   isMarkedVolunteer: boolean;
   createdAt: string;
-  reviewerName: string;
-  subjectName: string | null;
-  householdId: number | null;
-  householdName: string | null;
-  processId: number;
-  processKind: string;
-  processStatus: string;
-  cleared: boolean;
+  reviewer: { id: number; name: string | null };
+  subjectPerson: { id: number; name: string | null } | null;
+  process: {
+    id: number;
+    kind: string;
+    status: string;
+    bgClearedAt: string | null;
+    subjectPerson: { id: number; name: string | null; householdId: number; household: { id: number; name: string | null } | null } | null;
+    orgMembership: { household: { id: number; name: string | null } | null } | null;
+  };
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -26,6 +28,22 @@ const KIND_LABEL: Record<string, string> = {
   RENEWAL: "Renewal",
   PERSON_BG: "Individual",
 };
+
+function subjectLabel(a: Attestation): string | null {
+  const subject = a.process.kind === "PERSON_BG"
+    ? a.process.subjectPerson
+    : a.subjectPerson;
+  if (!subject) return null;
+  return subject.name || `Person #${subject.id}`;
+}
+
+function householdLabel(a: Attestation): string | null {
+  const household = a.process.kind === "PERSON_BG"
+    ? a.process.subjectPerson?.household ?? null
+    : a.process.orgMembership?.household ?? null;
+  if (!household) return null;
+  return household.name || `Household #${household.id}`;
+}
 
 export default function BgAttestationsPage() {
   const [attestations, setAttestations] = useState<Attestation[]>([]);
@@ -38,7 +56,7 @@ export default function BgAttestationsPage() {
       const res = await fetch("/api/membership-audit/bg-attestations");
       if (res.ok) {
         const data = await res.json();
-        setAttestations(data.attestations ?? []);
+        setAttestations(Array.isArray(data) ? data : []);
       } else {
         setError("Failed to load attestation data.");
       }
@@ -85,10 +103,10 @@ export default function BgAttestationsPage() {
               {attestations.map((a) => (
                 <Table.Tr key={a.id}>
                   <Table.Td style={{ whiteSpace: "nowrap" }}>{formatDateOnly(a.createdAt)}</Table.Td>
-                  <Table.Td>{a.reviewerName}</Table.Td>
-                  <Table.Td>{a.subjectName || <Text span c="dimmed">—</Text>}</Table.Td>
-                  <Table.Td>{a.householdName || <Text span c="dimmed">—</Text>}</Table.Td>
-                  <Table.Td>{KIND_LABEL[a.processKind] ?? a.processKind}</Table.Td>
+                  <Table.Td>{a.reviewer.name || `Person #${a.reviewer.id}`}</Table.Td>
+                  <Table.Td>{subjectLabel(a) || <Text span c="dimmed">—</Text>}</Table.Td>
+                  <Table.Td>{householdLabel(a) || <Text span c="dimmed">—</Text>}</Table.Td>
+                  <Table.Td>{KIND_LABEL[a.process.kind] ?? a.process.kind}</Table.Td>
                   <Table.Td>
                     <Badge
                       color={a.result === "APPROVE" ? "green" : "red"}
@@ -99,9 +117,9 @@ export default function BgAttestationsPage() {
                     </Badge>
                   </Table.Td>
                   <Table.Td>
-                    {a.cleared ? (
+                    {a.process.bgClearedAt ? (
                       <Badge color="green" variant="light" size="sm">Cleared</Badge>
-                    ) : a.processStatus === "BLOCKED" ? (
+                    ) : a.process.status === "BLOCKED" ? (
                       <Badge color="red" variant="light" size="sm">Blocked</Badge>
                     ) : (
                       <Badge color="gray" variant="light" size="sm">Pending</Badge>
