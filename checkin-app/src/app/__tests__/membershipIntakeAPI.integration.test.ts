@@ -212,7 +212,7 @@ describe('Membership Intake API', () => {
         expect(auditJson(editLog.newData).status).toBe('PENDING_EXTERNAL_ACTION');
     });
 
-    it('createRenewalProcess writes a SYSTEM_ACTOR CREATE; beginRenewal a SYSTEM_ACTOR EDIT', async () => {
+    it('createRenewalProcess writes a SYSTEM_ACTOR CREATE; beginRenewal a person-actor EDIT', async () => {
         const owner = await prisma.person.create({
             data: {
                 email: `renew-lead-${TAG}@example.com`, name: 'Renew Lead',
@@ -229,10 +229,10 @@ describe('Membership Intake API', () => {
         expect(createLog.actorId).toBe(0); // SYSTEM_ACTOR — cron, not a person
         expect(auditJson(createLog.newData).status).toBe('PENDING_RENEWAL');
 
-        const begun = await beginRenewal(proc!.id);
+        const begun = await beginRenewal(proc!.id, owner.id);
         expect(begun.status).not.toBe('PENDING_RENEWAL');
         const editLog = await expectAuditRow(prisma, { action: 'EDIT', tableName: 'OrgMembershipProcess', affectedEntityId: proc!.id });
-        expect(editLog.actorId).toBe(0); // SYSTEM_ACTOR
+        expect(editLog.actorId).toBe(owner.id);
         expect(auditJson(editLog.oldData).status).toBe('PENDING_RENEWAL');
     });
 });

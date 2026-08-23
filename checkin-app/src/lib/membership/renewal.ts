@@ -4,7 +4,7 @@ import { logger } from "@/lib/logger";
 import { certifyPaymentPlan, PaymentError } from "./payment";
 import { IN_FLIGHT_RENEWAL, grantableRenewalWhere, handledThisCycleWhere, fromWhere } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
-import { systemActor } from "@/lib/auditActor";
+import { personActor, systemActor } from "@/lib/auditActor";
 
 /**
  * Annual renewal. A common membership-year boundary (BoardSettings) drives every
@@ -201,7 +201,7 @@ export async function runRenewalSweep(now: Date) {
  * requests a new background check, same flow as INITIAL. Idempotent-ish: only
  * acts from PENDING_RENEWAL.
  */
-export async function beginRenewal(processId: number) {
+export async function beginRenewal(processId: number, actorId: number) {
     const process = await prisma.orgMembershipProcess.findUnique({ where: { id: processId } });
     if (!process) throw new RenewalError("not_found", "Renewal not found.");
     if (process.status !== "PENDING_RENEWAL") throw new RenewalError("wrong_phase", "This renewal is not awaiting your confirmation.");
@@ -232,7 +232,7 @@ export async function beginRenewal(processId: number) {
     });
     if (count === 1) {
         await prisma.auditLog.create({
-            data: { ...systemActor("system:membership-renewal-advance"), action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: "PENDING_EXTERNAL_ACTION", ...(clearNow ? { bgClearedAt: true } : {}) } },
+            data: { ...personActor(actorId), action: "EDIT", tableName: "OrgMembershipProcess", affectedEntityId: processId, oldData: { status: "PENDING_RENEWAL" }, newData: { status: "PENDING_EXTERNAL_ACTION", ...(clearNow ? { bgClearedAt: true } : {}) } },
         });
     }
     return prisma.orgMembershipProcess.findUniqueOrThrow({ where: { id: processId } });
@@ -329,7 +329,7 @@ export async function beginRenewalForUser(userId: number) {
         orderBy: { id: "desc" },
     });
     if (!process) throw new RenewalError("wrong_phase", "No renewal is awaiting your confirmation.");
-    return beginRenewal(process.id);
+    return beginRenewal(process.id, userId);
 }
 
 /**

@@ -175,16 +175,16 @@ describe('beginRenewal', () => {
     it('throws RenewalError wrong_phase when the process is not PENDING_RENEWAL', async () => {
         prisma.orgMembershipProcess.findUnique.mockResolvedValue({ id: 5, status: 'PENDING_PAYMENT', orgMembershipId: 9 });
 
-        await expect(beginRenewal(5)).rejects.toMatchObject({
+        await expect(beginRenewal(5, 42)).rejects.toMatchObject({
             name: 'RenewalError',
             code: 'wrong_phase',
         });
-        await expect(beginRenewal(5)).rejects.toBeInstanceOf(RenewalError);
+        await expect(beginRenewal(5, 42)).rejects.toBeInstanceOf(RenewalError);
     });
 
     it('throws RenewalError not_found when the process does not exist', async () => {
         prisma.orgMembershipProcess.findUnique.mockResolvedValue(null);
-        await expect(beginRenewal(5)).rejects.toMatchObject({ code: 'not_found' });
+        await expect(beginRenewal(5, 42)).rejects.toMatchObject({ code: 'not_found' });
     });
 
     describe('from PENDING_RENEWAL', () => {
@@ -201,7 +201,7 @@ describe('beginRenewal', () => {
         it('valid background check → PENDING_EXTERNAL_ACTION with bgClearedAt stamped: only the signature is left', async () => {
             prisma.person.findFirst.mockResolvedValue({ id: 1 }); // a lead with a valid background check
 
-            await beginRenewal(5);
+            await beginRenewal(5, 42);
 
             expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
                 where: { id: 5, status: 'PENDING_RENEWAL' },
@@ -217,7 +217,7 @@ describe('beginRenewal', () => {
             prisma.person.findFirst.mockResolvedValue(null); // no valid background check on file
             prisma.orgMembershipProcess.findUniqueOrThrow.mockResolvedValue({ ...pending, status: 'PENDING_EXTERNAL_ACTION' });
 
-            await beginRenewal(5);
+            await beginRenewal(5, 42);
 
             expect(prisma.orgMembershipProcess.updateMany).toHaveBeenCalledWith({
                 where: { id: 5, status: 'PENDING_RENEWAL' },
@@ -237,7 +237,7 @@ describe('beginRenewal', () => {
             prisma.person.findFirst.mockResolvedValue({ id: 1 });
             prisma.orgMembershipProcess.updateMany.mockResolvedValue({ count: 0 });
 
-            await beginRenewal(5);
+            await beginRenewal(5, 42);
 
             expect(prisma.auditLog.create).not.toHaveBeenCalled();
             expect(applyVolunteerStatus).not.toHaveBeenCalled();
