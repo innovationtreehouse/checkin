@@ -505,6 +505,23 @@ defineRoute({
     ],
 });
 
+// Board-only attestation history: who reviewed whose background check, when, and
+// the outcome. The bag is BackgroundCheckAttestation rows with the reviewer
+// (Person), the subject (Person, nullable), and the process
+// (OrgMembershipProcess) carrying its own subjectPerson and household context.
+// `note` and `result` on the attestation are internal-tier; `reviewer.name` is
+// public. Board/sysadmin hold everyones:internal, so they see everything.
+defineRoute({
+    endpoint: 'GET /api/membership-audit/bg-attestations',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    returns: ['BackgroundCheckAttestation', 'OrgMembershipProcess', 'Person', 'Household'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:internal', 'everyones:personal', 'member', 'public']],
+        ['isBoardMember', ['everyones:internal', 'everyones:personal', 'member', 'public']],
+    ],
+});
+
 // Board's membership payment-plan approval queue. Returns PENDING_PAYMENT
 // OrgMembershipProcess rows the household asked to pay by plan, with the
 // membership + household nested. Board/sysadmin only, and they hold everyones:*
