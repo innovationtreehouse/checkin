@@ -58,7 +58,15 @@ export default function MyVisits() {
       const res = await fetch(`/api/attendance/manual/${id}`, init);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "Correction failed.");
+        if (data.type === "warning" && data.forceCloseToken) {
+          if (window.confirm(data.error + "\n\nConfirm facility close?")) {
+            const body = JSON.parse(typeof init.body === "string" ? init.body : "{}");
+            body.forceCloseToken = data.forceCloseToken;
+            await submit(id, { ...init, body: JSON.stringify(body) }, okMessage);
+          }
+        } else {
+          setError(data.error || "Correction failed.");
+        }
       } else {
         notifications.show({ message: okMessage });
         setEditing(null);

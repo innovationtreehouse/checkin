@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
-import { FORCE_CLOSE_CONFIRM_SECONDS, runFacilityClose } from "@/lib/scan-service";
+import { lastKeyholderGuard, runFacilityClose } from "@/lib/scan-service";
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
@@ -12,7 +12,6 @@ import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
 import { systemActor } from "@/lib/auditActor";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 // GET is kiosk-first with distinct signature-failure semantics (403 on bad signature,
 // not 401), so it keeps its own kiosk plumbing rather than moving to withAuth. The one
@@ -133,6 +132,10 @@ export const DELETE = withAuth({}, async (req, auth) => {
             return apiError("Visit not found", 404);
         }
 
+        if (visit.departedAt) {
+            return apiError("Visit already checked out", 400);
+        }
+
         // Check permissions:
         // 1. User checking out themselves
         // 2. User is the household lead checking out a family member
@@ -148,67 +151,17 @@ export const DELETE = withAuth({}, async (req, auth) => {
             return apiError("Visit not found", 404);
         }
 
-        // Last-keyholder close guard — same invariant as the badge path
-        // (scan-service.ts processCheckout): the last keyholder leaving with
-        // others still present must confirm before the facility closes.
-        let facilityClosed = false;
-
-        if (visit.person.isKeyholder) {
-            const remainingKeyholders = await prisma.visit.count({
-                where: {
-                    departedAt: null,
-                    ...LIVE_VISIT,
-                    person: { isKeyholder: true },
-                    id: { not: visitId }
-                }
-            });
-
-            if (remainingKeyholders === 0) {
-                const remainingUsers = await prisma.visit.findMany({
-                    where: {
-                        departedAt: null,
-                        ...LIVE_VISIT,
-                        id: { not: visitId }
-                    },
-                    include: { person: true }
-                });
-
-                if (remainingUsers.length > 0) {
-                    const stored = visit.forceCloseToken;
-                    const confirmed =
-                        clientToken != null && stored != null && timingSafeEqual(
-                            createHash("sha256").update(stored).digest(),
-                            createHash("sha256").update(String(clientToken)).digest()
-                        );
-
-                    if (!confirmed) {
-                        const token = randomUUID();
-                        await prisma.visit.update({
-                            where: { id: visitId },
-                            data: { forceCloseWarnedAt: new Date(), forceCloseToken: token }
-                        });
-
-                        const names = remainingUsers
-                            .map(u => u.person.name?.trim() || u.person.email?.split("@")[0] || "")
-                            .filter(Boolean)
-                            .join(", ");
-
-                        return NextResponse.json({
-                            error: `Warning: you are checking out the last keyholder, but others are still here: ${names}. Confirm to close the facility and check everyone out.`,
-                            type: "warning",
-                            forceCloseToken: token,
-                            confirmSeconds: FORCE_CLOSE_CONFIRM_SECONDS,
-                        }, { status: 400 });
-                    }
-                }
-
-                facilityClosed = true;
-                await prisma.visit.update({
-                    where: { id: visitId },
-                    data: { forceCloseWarnedAt: null, forceCloseToken: null }
-                });
-            }
+        // Last-keyholder close guard (shared with PATCH/DELETE manual/[id]).
+        const guard = await lastKeyholderGuard(visitId, visit.person, clientToken);
+        if (guard.action === 'warn') {
+            return NextResponse.json({
+                error: guard.message,
+                type: "warning",
+                forceCloseToken: guard.token,
+                confirmSeconds: guard.confirmSeconds,
+            }, { status: 400 });
         }
+        const { facilityClosed } = guard;
 
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
