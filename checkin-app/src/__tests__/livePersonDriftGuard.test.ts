@@ -171,6 +171,7 @@ const ALLOWLIST: Record<string, string> = {
     'app/api/events/[id]/route.ts': 'IDOR guard on an attendance correction\'s target: two findFirsts pinned to `personId: targetId` asking "is this one target enrolled or volunteering in this event\'s program". One-row shape, no list, no count, never rendered.',
 
     // ── historical / audit trail (showing a since-merged identity is correct) ──
+    'app/api/membership-audit/bg-attestations/route.ts': 'BG attestation history: three FK-pinned to-one Person relations (reviewer, attestation.subjectPerson, process.subjectPerson) resolve names for historical attestation records. A reviewer or subject who has since been merged must still appear in the audit trail.',
     'app/api/system-status/audit-log/route.ts': 'Resolves actor names for audit-log rows by their recorded actorId — a historical record must still name an actor who has since been merged away.',
     'lib/finance/matchAudit.ts': 'Mixed file: the reconciliation match itself filters LIVE_PERSON (line ~280). Separately, resolving certifier/comper NAMES for the audit report needs any historical actor, including one since merged — a report-only id→name lookup, not a live roster.',
     'app/api/finance-ops/payments/route.ts': 'Resolves names/emails for a fixed set of person ids already attached to processed payment records — historical financial records must still name a payer who has since been merged. (The queue\'s household-lead contact pull is the opposite case — a live address to chase — and does filter LIVE_PERSON.)',
