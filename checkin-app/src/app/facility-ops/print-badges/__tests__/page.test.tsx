@@ -192,13 +192,10 @@ describe("facility-ops/print-badges page", () => {
     expect(printedNameCell("John Smith")).toBe("John S.");
   }, 15000);
 
-  // #1625/#1638. The roster load fails while the plain search succeeds, so rows render
-  // and can be selected. A 500 from apiError is valid JSON, so `.catch` alone never sees
-  // it — only the `res.ok` check does. The guard must hold either way: releasing it here
-  // would print bare, un-disambiguated first names onto physical badges.
-  // Off-roster people take no name from the ACTIVE roster, so without a fallback cohort
-  // two non-member Johns in one run both print "John" onto physical badges.
-  it("disambiguates off-roster people among themselves, without moving a member's name", async () => {
+  // #1651. Off-roster people get a bare first name — no disambiguation among themselves.
+  // This is stable across search-box changes (the old behaviour ran computeDisplayNames
+  // over the search results, so names shifted when the query changed).
+  it("gives off-roster people a bare first name, without moving a member's name", async () => {
     setSession({ id: 1, isSysadmin: true });
     mockFetchJson({
       "/api/people/search?roster=active": { people: [{ id: 1, name: "John Smith", year: null }] },
@@ -214,11 +211,42 @@ describe("facility-ops/print-badges page", () => {
     await screen.findByText("John Smith");
     fireEvent.click(screen.getByRole("checkbox", { name: /hide inactive/i }));
 
-    await waitFor(() => expect(printedNameCell("John Nonmember")).toBe("John N."));
-    expect(printedNameCell("John Guest")).toBe("John G.");
+    // Both off-roster Johns get bare "John" — no disambiguation, but stable across queries.
+    await waitFor(() => expect(printedNameCell("John Nonmember")).toBe("John"));
+    expect(printedNameCell("John Guest")).toBe("John");
     // The only John on the ACTIVE roster, so his name is unqualified — the two off-roster
     // Johns are not in that population and must not pull him to "John S.".
     expect(printedNameCell("John Smith")).toBe("John");
+  }, 15000);
+
+  // #1651. The old code ran computeDisplayNames over the search results for off-roster
+  // people, so narrowing the search could change an off-roster person's badge name.
+  it("keeps off-roster badge names stable when the search box narrows", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const offRosterPeople = [
+      { id: 8, name: "John Nonmember", email: "jn@example.com", isMember: false },
+      { id: 9, name: "John Guest", email: "jg@example.com", isMember: false },
+    ];
+    const searchResults = { current: offRosterPeople };
+    mockFetchJson({
+      "/api/people/search?roster=active": { people: [] },
+      "/api/people/search": () => ({ people: searchResults.current }),
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: /hide inactive/i }));
+    await screen.findByText("John Nonmember");
+
+    const nameBefore = printedNameCell("John Nonmember");
+
+    // Narrow to just one off-roster John.
+    searchResults.current = [offRosterPeople[0]];
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Nonmember" } });
+    await waitFor(() => {
+      expect(screen.getByText("John Nonmember")).toBeInTheDocument();
+      expect(screen.queryByText("John Guest")).not.toBeInTheDocument();
+    });
+
+    expect(printedNameCell("John Nonmember")).toBe(nameBefore);
   }, 15000);
 
   it("admits an operations user", async () => {
