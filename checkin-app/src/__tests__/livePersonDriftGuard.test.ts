@@ -178,6 +178,7 @@ const ALLOWLIST: Record<string, string> = {
     'app/api/facility/trends/route.ts': 'Visit-history report: shows who was physically present at the time, including the rare merge-orphaned open visit (see lib/scan-service.ts) — historical accuracy, not a live roster.',
     'app/api/facility/visits/route.ts': 'Recent-visits log: same historical-accuracy rationale as facility/trends.',
     'app/api/facility/badges/route.ts': 'Raw badge-scan log: same historical-accuracy rationale as facility/trends.',
+    'app/api/system-status/unsynced-scans/route.ts': 'Parked-scan review queue over the same RawBadgeLog rows as facility/badges, so the historical-accuracy rationale carries — but filtering here would be worse than a ghost: a parked row is WORK, and hiding it because its person was later merged would strand the scan unreviewed forever, which is the invariant-3 hole this surface exists to close. The name shown is the one recorded at scan time, which is what the reviewer needs to match against the manual-visit tool.',
     'app/api/household/visits/route.ts': 'Household visit-history view: same historical-accuracy rationale as facility/trends.',
     'lib/attendanceConflicts.ts': 'Attendance-conflict report over past visits: same historical-accuracy rationale as facility/trends.',
 
