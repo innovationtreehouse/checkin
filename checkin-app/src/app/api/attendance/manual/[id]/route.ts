@@ -1,15 +1,24 @@
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import { handler, ApiResponseError, badRequest, notFound, unauthorized } from "@/security/handler";
 import prisma from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { parseVisitTime, departureAfterArrival, withinMaxDuration } from "@/lib/visitTimes";
 import { processVisitCheckout } from "@/lib/attendanceTransitions";
+import { lastKeyholderGuard, runFacilityClose } from "@/lib/scan-service";
+import type { CloseGuardResult } from "@/lib/scan-service";
 import { editSignificance, deleteSignificance } from "@/lib/visit/significance";
 import { visitSubject } from "@/lib/visit/scope";
 import { emailBoardMembers } from "@/lib/emailRecipients";
 import { escapeHtml } from "@/lib/email-templates/base";
-import { logBackendError } from "@/lib/logger";
+import { logBackendError, logger } from "@/lib/logger";
 import { formatDateTime } from "@/lib/time";
 import { resolveDisplayTimezone } from "@/lib/appSettings";
+
+// Side channel: handler() returns through stripBag, so the guard result
+// can't ride the bag. A WeakMap keyed on the request lets the wrapper
+// intercept a warning or run the facility close after the handler commits.
+const guardResults = new WeakMap<Request, CloseGuardResult>();
 
 // Self-correction of a member's own visits, and a household lead's correction
 // of their household members' (trust-first, see
@@ -45,7 +54,7 @@ function flagBoard(kind: "edit" | "delete", visitId: number, actorName: string, 
     );
 }
 
-export const PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]', async ({ req, auth, params }) => {
+const _PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]', async ({ req, auth, params }) => {
     if (auth.type !== 'session') throw unauthorized();
     try {
         const userId = auth.user.id;
@@ -91,6 +100,18 @@ export const PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]'
         const significance = editSignificance(visit, { arrivedAt: nextArrived, departedAt: nextDeparted }, { byProxy });
 
         const closingOpenVisit = !visit.departedAt && !!nextDeparted;
+
+        if (closingOpenVisit) {
+            const person = await prisma.person.findUnique({
+                where: { id: visit.personId },
+                select: { isKeyholder: true },
+            });
+            if (person) {
+                const guard = await lastKeyholderGuard(visitId, person, body.forceCloseToken ?? null);
+                guardResults.set(req, guard);
+                if (guard.action === 'warn') return {};
+            }
+        }
 
         // Same per-person advisory lock as every other visit write: an edit
         // must not race the kiosk, the sweep, or a concurrent submit. The lock
@@ -167,16 +188,30 @@ export const PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]'
     }
 });
 
-export const DELETE = handler<{ id: string }>('DELETE /api/attendance/manual/[id]', async ({ auth, params }) => {
+const _DELETE = handler<{ id: string }>('DELETE /api/attendance/manual/[id]', async ({ req, auth, params }) => {
     if (auth.type !== 'session') throw unauthorized();
     try {
         const userId = auth.user.id;
         const visitId = Number(params.id);
         if (!Number.isInteger(visitId)) throw badRequest("Invalid visit id");
 
+        const body = await req.json().catch(() => null);
+
         const visit = await loadEditableVisit(visitId, userId);
         if (!visit) throw notFound("Visit not found.");
         const byProxy = visit.personId !== userId;
+
+        if (!visit.departedAt) {
+            const person = await prisma.person.findUnique({
+                where: { id: visit.personId },
+                select: { isKeyholder: true },
+            });
+            if (person) {
+                const guard = await lastKeyholderGuard(visitId, person, body?.forceCloseToken ?? null);
+                guardResults.set(req, guard);
+                if (guard.action === 'warn') return {};
+            }
+        }
 
         const significance = deleteSignificance(visit, { byProxy });
 
@@ -219,3 +254,36 @@ export const DELETE = handler<{ id: string }>('DELETE /api/attendance/manual/[id
         throw error;
     }
 });
+
+// Wrappers: intercept the close-guard side channel without changing
+// handler.ts (boundary file — must ship alone per the isolation rule).
+async function withCloseGuard(
+    req: NextRequest,
+    ctx: { params?: Promise<{ id: string }> } | undefined,
+    inner: (req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) => Promise<NextResponse>,
+): Promise<NextResponse> {
+    const result = await inner(req, ctx);
+    const guard = guardResults.get(req);
+    guardResults.delete(req);
+    if (!guard) return result;
+
+    if (guard.action === 'warn') {
+        return NextResponse.json({
+            error: guard.message,
+            type: "warning",
+            forceCloseToken: guard.token,
+            confirmSeconds: guard.confirmSeconds,
+        }, { status: 400 });
+    }
+    if (guard.facilityClosed && result.ok) {
+        try { await runFacilityClose(); }
+        catch (err) { logger.error("Facility close after manual correction failed:", err); }
+    }
+    return result;
+}
+
+const _guardedPATCH = (req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) =>
+    withCloseGuard(req, ctx, _PATCH);
+const _guardedDELETE = (req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) =>
+    withCloseGuard(req, ctx, _DELETE);
+export { _guardedPATCH as PATCH, _guardedDELETE as DELETE };

@@ -345,6 +345,89 @@ function kickPostEventEmails() {
 }
 
 /**
+ * Close every open visit and kick post-event emails. Called after the
+ * last-keyholder checkout is committed — both from the scan route (via
+ * finalizeFacilityClose) and from web close paths.
+ */
+export async function runFacilityClose(): Promise<void> {
+    await closeAllOpenVisits(prisma);
+    kickPostEventEmails();
+}
+
+export type CloseGuardResult =
+    | { action: 'proceed'; facilityClosed: boolean }
+    | { action: 'warn'; token: string; names: string; message: string; confirmSeconds: number };
+
+/**
+ * Last-keyholder close guard for web close paths. Checks whether closing
+ * (or tombstoning) this visit would leave the facility without a keyholder.
+ *
+ * - Not a keyholder, or other keyholders remain → proceed, no close.
+ * - Last keyholder, nobody else present → proceed, facility closes.
+ * - Last keyholder, others present, no valid token → warn (mint a token).
+ * - Last keyholder, others present, valid token → proceed, facility closes.
+ *
+ * Callers run `runFacilityClose()` when `facilityClosed` is true, AFTER
+ * the visit is departed/tombstoned.
+ */
+export async function lastKeyholderGuard(
+    visitId: number,
+    person: { isKeyholder: boolean },
+    clientToken: string | null | undefined,
+    db: DbClient = prisma,
+): Promise<CloseGuardResult> {
+    if (!person.isKeyholder) return { action: 'proceed', facilityClosed: false };
+
+    const remainingKeyholders = await db.visit.count({
+        where: { departedAt: null, deletedAt: null, person: { isKeyholder: true }, id: { not: visitId } }
+    });
+    if (remainingKeyholders > 0) return { action: 'proceed', facilityClosed: false };
+
+    const remainingUsers = await db.visit.findMany({
+        where: { departedAt: null, deletedAt: null, id: { not: visitId } },
+        include: { person: true }
+    });
+
+    if (remainingUsers.length > 0) {
+        const visit = await db.visit.findUnique({
+            where: { id: visitId },
+            select: { forceCloseToken: true }
+        });
+        const stored = visit?.forceCloseToken;
+        const confirmed =
+            clientToken != null && stored != null && timingSafeEqual(
+                createHash("sha256").update(stored).digest(),
+                createHash("sha256").update(String(clientToken)).digest()
+            );
+
+        if (!confirmed) {
+            const token = randomUUID();
+            await db.visit.update({
+                where: { id: visitId },
+                data: { forceCloseWarnedAt: new Date(), forceCloseToken: token }
+            });
+            const names = remainingUsers
+                .map(u => u.person.name?.trim() || u.person.email?.split("@")[0] || "")
+                .filter(Boolean)
+                .join(", ");
+            return {
+                action: 'warn',
+                token,
+                names,
+                message: `Warning: you are checking out the last keyholder, but others are still here: ${names}. Confirm to close the facility and check everyone out.`,
+                confirmSeconds: FORCE_CLOSE_CONFIRM_SECONDS,
+            };
+        }
+    }
+
+    await db.visit.update({
+        where: { id: visitId },
+        data: { forceCloseWarnedAt: null, forceCloseToken: null }
+    });
+    return { action: 'proceed', facilityClosed: true };
+}
+
+/**
  * Run the facility-wide visit close + post-event email kick AFTER the scan
  * route's per-participant transaction has committed — off the advisory lock.
  *
@@ -363,9 +446,8 @@ export async function finalizeFacilityClose(res: Response): Promise<void> {
     if (!body?.facilityClosed) return;
 
     try {
-        await closeAllOpenVisits(prisma);
+        await runFacilityClose();
     } catch (err) {
         console.error("Failed to close facility-wide visits after scan:", err);
     }
-    kickPostEventEmails();
 }

@@ -63,6 +63,10 @@ function KioskDisplayInner() {
   const [selectedParticipant, setSelectedParticipant] = useState<Person | null>(null);
   const [confirmCheckoutOpened, { open: openConfirmCheckout, close: closeConfirmCheckout }] = useDisclosure(false);
   const [pendingCheckoutVisitId, setPendingCheckoutVisitId] = useState<number | null>(null);
+  const [forceCloseOpened, { open: openForceClose, close: closeForceClose }] = useDisclosure(false);
+  const [forceCloseVisitId, setForceCloseVisitId] = useState<number | null>(null);
+  const [forceCloseToken, setForceCloseToken] = useState<string | null>(null);
+  const [forceCloseMessage, setForceCloseMessage] = useState("");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Person[]>([]);
@@ -224,16 +228,28 @@ function KioskDisplayInner() {
     await doForceCheckout(visitId, true);
   };
 
-  const doForceCheckout = async (visitId: number, isSelf: boolean = false) => {
+  const doForceCheckout = async (visitId: number, isSelf: boolean = false, token?: string) => {
     setCheckingOut(visitId);
     try {
       const res = await fetch("/api/attendance", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visitId }),
+        body: JSON.stringify({ visitId, ...(token ? { forceCloseToken: token } : {}) }),
       });
-      if (res.ok) refreshAttendance();
-      else notifications.show({ color: "red", message: isSelf ? "Failed to check out." : "Failed to force checkout.", autoClose: false });
+      const resData = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (resData.facilityClosed) {
+          notifications.show({ color: "yellow", message: "Facility closed — all remaining visits ended.", autoClose: 5000 });
+        }
+        refreshAttendance();
+      } else if (resData.type === "warning" && resData.forceCloseToken) {
+        setForceCloseVisitId(visitId);
+        setForceCloseToken(resData.forceCloseToken);
+        setForceCloseMessage(resData.error);
+        openForceClose();
+      } else {
+        notifications.show({ color: "red", message: isSelf ? "Failed to check out." : "Failed to force checkout.", autoClose: false });
+      }
     } catch (e) {
       console.error("Attendance action failed:", e);
       notifications.show({ color: "red", message: "Network error.", autoClose: false });
@@ -248,6 +264,17 @@ function KioskDisplayInner() {
     const visitId = pendingCheckoutVisitId;
     setPendingCheckoutVisitId(null);
     await doForceCheckout(visitId);
+  };
+
+  const confirmFacilityClose = async () => {
+    if (forceCloseVisitId === null || forceCloseToken === null) return;
+    closeForceClose();
+    const visitId = forceCloseVisitId;
+    const token = forceCloseToken;
+    setForceCloseVisitId(null);
+    setForceCloseToken(null);
+    setForceCloseMessage("");
+    await doForceCheckout(visitId, false, token);
   };
 
   const handleManualCheckIn = async (participantId: number) => {
@@ -565,6 +592,20 @@ function KioskDisplayInner() {
         <Group justify="flex-end">
           <Button variant="default" onClick={closeConfirmCheckout}>Cancel</Button>
           <Button color="red" onClick={confirmForceCheckout}>Force Checkout</Button>
+        </Group>
+      </Modal>
+
+      {/* Last-keyholder facility-close confirmation */}
+      <Modal
+        opened={forceCloseOpened}
+        onClose={() => { closeForceClose(); setForceCloseToken(null); }}
+        title={<Text span fw={700} fz="lg" c="red">Close Facility?</Text>}
+        centered
+      >
+        <Alert color="yellow" mb="md">{forceCloseMessage}</Alert>
+        <Group justify="flex-end">
+          <Button variant="default" onClick={() => { closeForceClose(); setForceCloseToken(null); }}>Cancel</Button>
+          <Button color="red" onClick={confirmFacilityClose}>Confirm &amp; Close Facility</Button>
         </Group>
       </Modal>
     </>

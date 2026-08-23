@@ -115,8 +115,14 @@ Things the app takes as true because they are handled outside it.
   badge through the one that matters. The keyholder close-guard is a separate
   interrupt and both can be waiting on one person at once.  [Decision — *Policy: Event, Location and Keyholder Policy, §VIII.4*]
 
-- The interrupt is on the badge scanner. Checking someone out from the web does
-  not raise it.  [Decision — deliberate limit]
+- The supervision interrupt is on the badge scanner only. Checking someone out
+  from the web does not raise it — the person doing the checking out is not at the
+  reader and cannot re-badge to confirm.  [Decision — deliberate limit]
+
+- The keyholder close-guard fires on every close path — badge, dashboard checkout,
+  self-correction edit that closes an open visit, and tombstone of an open visit.
+  On the badge path the confirm is a second badge within the countdown; on web
+  paths it is a server-minted token echoed back through a confirm dialog.  [Decision]
 
 ### The kiosk
 
