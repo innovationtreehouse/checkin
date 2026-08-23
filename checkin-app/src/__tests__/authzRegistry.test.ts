@@ -71,7 +71,8 @@ const AUTHZ_TESTED = new Set<string>([
     'facility/trends',
     // GET is handler()-governed; PATCH/DELETE still carry withAuth roles.
     'facility/visits',
-    'facility/visits/insert',
+    // facility/visits/insert dropped: handler()-governed now (POST), so the
+    // file carries no `roles:` gate and would fail the stale-entry test.
     'finance-ops/payments',
     'finance-ops/payments/[id]',
     // POST + GET deny-paths (401 anon / 403 non-board) in s-read/sync/__tests__/route.test.ts,

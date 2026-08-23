@@ -447,7 +447,7 @@ describe('Admin Visits API Integration Tests', () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
             const res = await post({ personId: testUserId, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
 
-            expect(res.status).toBe(201);
+            expect(res.status).toBe(200);
             const { visit } = await res.json();
             const stored = await prisma.visit.findUnique({ where: { id: visit.id } });
             expect(stored).toMatchObject({ personId: testUserId, arrivedVia: 'LEAD_MARKED', departedVia: 'LEAD_MARKED' });
