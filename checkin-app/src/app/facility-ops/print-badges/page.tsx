@@ -93,7 +93,7 @@ export default function PrintBadgesPage() {
   // The badge name and this column read the same maps, so the column is proof of what
   // will print.
   const printedName = (p: ParticipantRow) =>
-    printedNames.get(p.id) ?? offRosterName(p);
+    printedNames.get(p.id) ?? (roster ? offRosterName(p) : `User #${p.id}`);
 
   const toggleSelection = (id: number) => {
     const newSet = new Set(selectedIds);
