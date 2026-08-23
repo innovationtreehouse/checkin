@@ -37,14 +37,14 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
         householdId = user.householdId;
 
         // Setup Programs
-        const progA = await prisma.program.create({ data: { name: 'Program A' } });
+        const progA = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Program A' } });
         programAId = progA.id;
-        const progB = await prisma.program.create({ data: { name: 'Program B' } });
+        const progB = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Program B' } });
         programBId = progB.id;
-        const progC = await prisma.program.create({ data: { name: 'Program C' } });
+        const progC = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Program C' } });
         programCId = progC.id;
         const progD = await prisma.program.create({
-            data: { name: 'Program D', leadMentorId: participantId }
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Program D', leadMentorId: participantId }
         });
         programDId = progD.id;
 

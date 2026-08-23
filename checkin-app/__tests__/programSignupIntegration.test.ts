@@ -106,6 +106,8 @@ describe('Full Program Signup Integration Flow', () => {
             method: 'POST',
             body: JSON.stringify({
                 name: 'Integration Test Program',
+                startAt: '2026-01-01',
+                endAt: '2026-12-31',
                 memberPrice: 50,
                 nonMemberPrice: 100,
                 leadMentorId: sysAdminId,

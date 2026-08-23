@@ -11,7 +11,7 @@ import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { staleWhileRevalidate } from "@/lib/staleCache";
 import { validateProgramAgeBounds, isLeaderAgeEligible } from "@/lib/programAge";
-import { parseDateOnly } from "@/lib/time";
+
 
 // Public catalog projection: every Program column whose `/// @sensitivity:` tier
 // is `public` per src/security/generated/classifications.ts, in schema order.
@@ -81,12 +81,7 @@ export async function GET(req: Request) {
         const andClauses: Record<string, unknown>[] = [];
 
         if (activeOnly) {
-            andClauses.push({
-                OR: [
-                    { endAt: null },
-                    { endAt: { gte: new Date() } }
-                ]
-            });
+            andClauses.push({ endAt: { gte: new Date() } });
         }
 
         if (!canSeeOrgMemberOnly) {
@@ -195,6 +190,13 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             return apiError("Lead mentor must be at least 23 years old", 400);
         }
 
+        if (!startAt) {
+            return apiError("Start date is required", 400);
+        }
+        if (!endAt) {
+            return apiError("End date is required", 400);
+        }
+
         const maxPart = maxParticipants != null ? parseInt(maxParticipants, 10) : null;
         if (maxPart == null || isNaN(maxPart) || maxPart < 1) {
             return apiError("Max participants is required and must be at least 1", 400);
@@ -224,8 +226,8 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             data: {
                 name,
                 leadMentorId: parseInt(leadMentorId, 10),
-                startAt: parseDateOnly(startAt),
-                endAt: parseDateOnly(endAt),
+                startAt: new Date(startAt),
+                endAt: new Date(endAt),
                 orgMemberOnly: orgMemberOnly || false,
                 minAge: minAge || null,
                 maxAge: maxAge || null,

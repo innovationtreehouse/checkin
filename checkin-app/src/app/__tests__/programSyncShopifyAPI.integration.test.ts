@@ -75,6 +75,8 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
     const makeBrokenProgram = () =>
         prisma.program.create({
             data: {
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: `Broken Prog ${TAG} ${Math.round(performance.now())}`,
                 phase: 'RUNNING',
                 orgMemberPriceCents: 5000,
@@ -130,6 +132,8 @@ describe('POST /api/programs/[id]/sync-shopify', () => {
         // Priced AND has its variant -> not broken.
         const program = await prisma.program.create({
             data: {
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: `Configured Prog ${TAG}`,
                 phase: 'RUNNING',
                 orgMemberPriceCents: 5000,

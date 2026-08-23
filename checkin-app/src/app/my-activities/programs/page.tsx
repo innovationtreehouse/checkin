@@ -112,8 +112,7 @@ export default function MyProgramsDashboard() {
               </Group>
               <Title order={4} mb="sm">{program.name}</Title>
               <Text c="dimmed" style={{ flex: 1 }}>
-                {program.startAt ? formatDateOnly(program.startAt) : 'Start Date TBD'}
-                {program.endAt ? ` - ${formatDateOnly(program.endAt)}` : ' (Ongoing)'}
+                {formatDateOnly(program.startAt)} - {formatDateOnly(program.endAt)}
               </Text>
               <Button component={Link} href={`/programs/${program.id}`} variant="light" fullWidth mt="md">
                 View Details

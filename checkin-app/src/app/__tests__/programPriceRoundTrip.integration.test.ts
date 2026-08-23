@@ -70,7 +70,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             const name = `${PROGRAM_NAME_TAG} decimal`;
             const req = new Request('http://localhost:4000/api/programs', {
                 method: 'POST',
-                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '25.99', nonMemberPrice: '100', maxParticipants: 50 }),
+                body: JSON.stringify({ name, leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31', memberPrice: '25.99', nonMemberPrice: '100', maxParticipants: 50 }),
             });
             const res = await POST(req as unknown as import('next/server').NextRequest);
             expect(res.status).toBe(200);
@@ -86,7 +86,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             const name = `${PROGRAM_NAME_TAG} wholedollar`;
             const req = new Request('http://localhost:4000/api/programs', {
                 method: 'POST',
-                body: JSON.stringify({ name, leadMentorId: leadId, memberPrice: '30', nonMemberPrice: '', maxParticipants: 50 }),
+                body: JSON.stringify({ name, leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31', memberPrice: '30', nonMemberPrice: '', maxParticipants: 50 }),
             });
             const res = await POST(req as unknown as import('next/server').NextRequest);
             expect(res.status).toBe(200);
@@ -102,7 +102,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
             const name = `${PROGRAM_NAME_TAG} null`;
             const req = new Request('http://localhost:4000/api/programs', {
                 method: 'POST',
-                body: JSON.stringify({ name, leadMentorId: leadId, maxParticipants: 50 }),
+                body: JSON.stringify({ name, leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31', maxParticipants: 50 }),
             });
             const res = await POST(req as unknown as import('next/server').NextRequest);
             expect(res.status).toBe(200);
@@ -119,7 +119,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
             const name = `${PROGRAM_NAME_TAG} patch`;
             const program = await prisma.program.create({
-                data: { name, leadMentorId: leadId, orgMemberPriceCents: 100, nonOrgMemberPriceCents: 200 },
+                data: { name, leadMentorId: leadId, startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), orgMemberPriceCents: 100, nonOrgMemberPriceCents: 200 },
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {
@@ -139,7 +139,7 @@ describe('Program price round-trip (dollars -> cents) Integration Tests', () => 
 
             const name = `${PROGRAM_NAME_TAG} patch clear`;
             const program = await prisma.program.create({
-                data: { name, leadMentorId: leadId, orgMemberPriceCents: 5000 },
+                data: { name, leadMentorId: leadId, startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), orgMemberPriceCents: 5000 },
             });
 
             const req = new Request(`http://localhost:4000/api/programs/${program.id}`, {

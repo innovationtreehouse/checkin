@@ -48,6 +48,7 @@ describe('Program Age Start-Date Basis (authenticated route)', () => {
                 name: 'Age StartDate Test Program',
                 minAge: 14,
                 startAt: new Date('2026-09-01T00:00:00.000Z'),
+                endAt: new Date('2027-06-01T00:00:00.000Z'),
                 phase: 'UPCOMING',
                 enrollmentStatus: 'OPEN'
             }

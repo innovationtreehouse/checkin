@@ -443,8 +443,8 @@ export default function ProgramEnrollmentPage({ params }: { params: Promise<{ id
             {program.leadMentor && (
               <Text><strong>Lead Mentor:</strong> {program.leadMentor.name || 'Unnamed'}</Text>
             )}
-            <Text><strong>Starts:</strong> {program.startAt ? formatDateOnly(program.startAt) : 'TBD'}</Text>
-            <Text><strong>Ends:</strong> {program.endAt ? formatDateOnly(program.endAt) : 'Ongoing'}</Text>
+            <Text><strong>Starts:</strong> {formatDateOnly(program.startAt)}</Text>
+            <Text><strong>Ends:</strong> {formatDateOnly(program.endAt)}</Text>
             <Text>
               <strong>Enrollment:</strong>{' '}
               {program.enrollmentStatus === 'OPEN' ? <Text component="span" c="green">Open</Text> :

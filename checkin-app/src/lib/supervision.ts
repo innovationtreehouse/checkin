@@ -45,8 +45,7 @@ function programInSessionNow(now: Date, today: Date): Prisma.ProgramWhereInput {
         OR: [
             { events: { some: { startAt: { lte: now }, endAt: { gte: now } } } },
             { startAt: { lte: today }, endAt: { gte: today } },
-            { startAt: { lte: today }, endAt: null, phase: "RUNNING" },
-            { startAt: null, phase: "RUNNING" },
+            { startAt: { lte: today }, phase: "RUNNING" },
         ],
     };
 }

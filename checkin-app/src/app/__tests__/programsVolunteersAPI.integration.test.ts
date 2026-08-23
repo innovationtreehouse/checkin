@@ -76,6 +76,8 @@ describe('Program Volunteers API Integration Tests', () => {
         // Create mock program
         const program = await prisma.program.create({
             data: { 
+                startAt: new Date('2026-01-01'),
+                endAt: new Date('2026-12-31'),
                 name: 'Volun API Test Program', 
                 phase: 'RUNNING', 
                 leadMentorId: leadId,

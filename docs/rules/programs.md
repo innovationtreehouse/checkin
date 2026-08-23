@@ -91,7 +91,7 @@ Things the app takes as true because they are handled outside it.
 ### Eligibility
 
 - Age eligibility is measured at the program's start date, not at registration.
-  A program with no start date falls back to the moment of the request.  [Decision]
+  Both start and end dates are required.  [Decision]
 
 - No program targets anyone over 25, and an age limit above that is refused.  [Decision]
 
@@ -181,12 +181,8 @@ Things the app takes as true because they are handled outside it.
   none is offered.  [Decision — *Principle: fail closed*]
 
 > **Candidate, not settled — for owner ratification.** Member pricing requires
-> the membership to cover the program's end date, not merely be active today; a
-> program with no end date requires coverage only through its start. Two cases
-> fall back to status alone: a program carrying no dates, and any program while
-> the membership-year boundary is unset. The source tags the ongoing-program
-> carve-out as a policy call awaiting a veto, so it is recorded as a candidate
-> rather than written into the register.
+> the membership to cover the program's end date, not merely be active today.
+> Falls back to status alone when the membership-year boundary is unset.
 > (`checkin-app/src/lib/orgMembership.ts`)
 
 ### Capacity and scholarship holds

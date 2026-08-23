@@ -39,13 +39,8 @@ const PHASE_COLORS: Record<string, string> = {
 const fmtDate = (d?: string | null) =>
   d ? formatDateOnly(d, { month: "short", day: "numeric", year: "numeric" }) : null;
 
-const dateRange = (p: Program) => {
-  const b = fmtDate(p.startAt);
-  const e = fmtDate(p.endAt);
-  if (!b && !e) return "—";
-  if (b && e) return `${b} – ${e}`;
-  return b ?? e;
-};
+const dateRange = (p: Program) =>
+  `${fmtDate(p.startAt)} – ${fmtDate(p.endAt)}`;
 
 export default function AdminProgramsIndex() {
   const [programs, setPrograms] = useState<Program[]>([]);

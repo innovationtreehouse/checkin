@@ -54,8 +54,8 @@ export default function CreateProgramPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          startAt: startAt || null,
-          endAt: endAt || null,
+          startAt,
+          endAt,
           orgMemberOnly,
           minAge: minAge ? parseInt(minAge) : null,
           maxAge: maxAge ? parseInt(maxAge) : null,
@@ -144,6 +144,7 @@ export default function CreateProgramPage() {
               <TextInput
                 type="date"
                 label="Start Date"
+                required
                 value={startAt}
                 onChange={(e) => setStartAt(e.currentTarget.value)}
                 error={datesInvalid}
@@ -152,6 +153,7 @@ export default function CreateProgramPage() {
               <TextInput
                 type="date"
                 label="End Date"
+                required
                 value={endAt}
                 onChange={(e) => setEndAt(e.currentTarget.value)}
                 error={datesInvalid ? 'End date must be on or after start date.' : false}
@@ -209,7 +211,7 @@ export default function CreateProgramPage() {
             )}
 
             <Group justify="flex-end">
-              <Button type="submit" disabled={saving || !name.trim() || !leadMentorId || !maxParticipants || datesInvalid} loading={saving}>
+              <Button type="submit" disabled={saving || !name.trim() || !leadMentorId || !startAt || !endAt || !maxParticipants || datesInvalid} loading={saving}>
                 Create Program
               </Button>
             </Group>

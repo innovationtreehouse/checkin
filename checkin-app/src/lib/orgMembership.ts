@@ -193,12 +193,9 @@ export async function isDuesSettledThrough(personId: number, through: Date | nul
 }
 
 /**
- * The date a program's member pricing must be valid through: its end date, or
- * (an ongoing program with no end) its start date. Shared by the discount-code
- * route and the program detail route so both apply the same coverage rule.
- * POLICY (flag for veto): an ongoing program (endAt null) requires validity
- * only through its START, not indefinitely.
+ * The date a program's member pricing must be valid through: its end date.
+ * Both startAt and endAt are required on programs.
  */
-export function programCoverageDate(p: { startAt: Date | null; endAt: Date | null }): Date | null {
-    return p.endAt ?? p.startAt ?? null;
+export function programCoverageDate(p: { endAt: Date }): Date {
+    return p.endAt;
 }

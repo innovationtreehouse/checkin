@@ -121,7 +121,7 @@ export const POST = withAuth({}, async (req, auth, { params }: { params: Promise
             // a youth minimum like "16 and up".
             const ageCheck = checkProgramAge(
                 { dateOfBirth: participantData?.dateOfBirth ?? null, isDeclaredAdult: participantData?.isDeclaredAdult },
-                { minAge: currentProgram.minAge, maxAge: currentProgram.maxAge, asOf: currentProgram.startAt ?? undefined },
+                { minAge: currentProgram.minAge, maxAge: currentProgram.maxAge, asOf: currentProgram.startAt },
             );
             if (!ageCheck.ok) {
                 const error = ageCheck.reason === "dob"

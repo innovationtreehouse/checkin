@@ -34,10 +34,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     const auth = await authenticateRequest(req);
     if (auth.type !== 'session') return res;
 
-    const body = (await res.json()) as { startAt: string | null; endAt: string | null };
+    const body = (await res.json()) as { startAt: string; endAt: string };
     const coverageDate = programCoverageDate({
-        startAt: body.startAt ? new Date(body.startAt) : null,
-        endAt: body.endAt ? new Date(body.endAt) : null,
+        endAt: new Date(body.endAt),
     });
     // viewerIsMember answers "is this household a Treehouse Member" (ACTIVE only);
     // viewerMemberPricingEligible answers the pricing question, which also covers a
@@ -292,6 +291,13 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             if (eventCount === 0) {
                 return apiError("Cannot publish a program without any scheduled events", 400);
             }
+        }
+
+        if (startAt !== undefined && !startAt) {
+            return apiError("Start date is required", 400);
+        }
+        if (endAt !== undefined && !endAt) {
+            return apiError("End date is required", 400);
         }
 
         const updateData: Record<string, unknown> = {

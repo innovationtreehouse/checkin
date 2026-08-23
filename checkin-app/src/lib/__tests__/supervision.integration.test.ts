@@ -91,7 +91,7 @@ describe('supervising adults (integration)', () => {
         householdIds.push(people.fay.householdId);
 
         // In session by EVENT: no programme dates at all, one event bracketing now.
-        const byEvent = await prisma.program.create({ data: { name: `Event Prog ${TAG}` } });
+        const byEvent = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Event Prog ${TAG}` } });
         programIds.push(byEvent.id);
         await prisma.event.create({
             data: {

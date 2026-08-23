@@ -915,9 +915,9 @@ model Program {
   leadMentorId                   Int?
   leadMentor                     Person?     @relation("ProgramLeadMentor", fields: [leadMentorId], references: [id])
   /// @sensitivity:public
-  startAt                        DateTime? @db.Date
+  startAt                        DateTime @db.Date
   /// @sensitivity:public
-  endAt                          DateTime? @db.Date
+  endAt                          DateTime @db.Date
   /// @sensitivity:public
   phase                          ProgramPhase     @default(PLANNING)
   /// @sensitivity:public

@@ -59,7 +59,7 @@ async function makePerson(slug: string, householdId: number, data: Partial<{ dat
     });
 }
 async function attachToProgram(slug: string, personId: number) {
-    const program = await prisma.program.create({ data: { name: `${TAG} ${slug} program` } });
+    const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `${TAG} ${slug} program` } });
     await prisma.programParticipant.create({ data: { programId: program.id, personId } });
     return program.id;
 }

@@ -140,25 +140,7 @@ describe('POST /api/programs — startAt/endAt date preservation', () => {
         },
     );
 
-    it('stores null for startAt/endAt when omitted from the request body', async () => {
-        const createdProgram = {
-            id: 43,
-            name: 'No-Date Program',
-            leadMentorId: 7,
-            startAt: null,
-            endAt: null,
-            orgMemberOnly: false,
-            minAge: null,
-            maxAge: null,
-            orgMemberPriceCents: null,
-            nonOrgMemberPriceCents: null,
-            maxParticipants: null,
-            phase: 'PLANNING',
-            enrollmentStatus: 'CLOSED',
-            shopifyProductId: null,
-        };
-        mockProgramCreate.mockResolvedValue(createdProgram);
-
+    it('rejects when startAt is omitted', async () => {
         const req = new Request('http://localhost/api/programs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -166,15 +148,29 @@ describe('POST /api/programs — startAt/endAt date preservation', () => {
                 name: 'No-Date Program',
                 leadMentorId: 7,
                 maxParticipants: 50,
-                // startAt and endAt intentionally absent — simulates form left blank
+                endAt: '2026-12-31',
             }),
         }) as unknown as import('next/server').NextRequest;
 
         const res = await POST(req);
-        expect(res.status).toBe(200);
+        expect(res.status).toBe(400);
+        expect(mockProgramCreate).not.toHaveBeenCalled();
+    });
 
-        const createArgs = mockProgramCreate.mock.calls[0][0] as { data: Record<string, unknown> };
-        expect(createArgs.data.startAt).toBeNull();
-        expect(createArgs.data.endAt).toBeNull();
+    it('rejects when endAt is omitted', async () => {
+        const req = new Request('http://localhost/api/programs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name: 'No-Date Program',
+                leadMentorId: 7,
+                maxParticipants: 50,
+                startAt: '2026-01-01',
+            }),
+        }) as unknown as import('next/server').NextRequest;
+
+        const res = await POST(req);
+        expect(res.status).toBe(400);
+        expect(mockProgramCreate).not.toHaveBeenCalled();
     });
 });

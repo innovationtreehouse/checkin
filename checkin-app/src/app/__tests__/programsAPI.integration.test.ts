@@ -66,9 +66,9 @@ describe('Programs API Integration Tests', () => {
         // Create mock programs
         await prisma.program.createMany({
             data: [
-                { name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18, leadMentorNotificationSettings: { notifyRsvp: true } },
-                { name: 'Draft API Test Program', phase: 'PLANNING', orgMemberOnly: false, leadMentorId: leadId },
-                { name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true }
+                { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18, leadMentorNotificationSettings: { notifyRsvp: true } },
+                { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Draft API Test Program', phase: 'PLANNING', orgMemberOnly: false, leadMentorId: leadId },
+                { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true }
             ]
         });
     });
@@ -292,7 +292,7 @@ describe('Programs API Integration Tests', () => {
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
-                 body: JSON.stringify({ leadMentorId: leadId })
+                 body: JSON.stringify({ leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31' })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(400);
@@ -303,7 +303,7 @@ describe('Programs API Integration Tests', () => {
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
-                 body: JSON.stringify({ name: 'New API Test Program', leadMentorId: leadId })
+                 body: JSON.stringify({ name: 'New API Test Program', leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31' })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(400);
@@ -316,7 +316,7 @@ describe('Programs API Integration Tests', () => {
 
              const req = new Request('http://localhost:4000/api/programs', {
                  method: 'POST',
-                 body: JSON.stringify({ name: 'Created API Test Program', leadMentorId: leadId, minAge: 12, maxAge: 17, maxParticipants: 50 })
+                 body: JSON.stringify({ name: 'Created API Test Program', leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31', minAge: 12, maxAge: 17, maxParticipants: 50 })
              });
              const res = await POST(req as unknown as import("next/server").NextRequest);
              expect(res.status).toBe(200);

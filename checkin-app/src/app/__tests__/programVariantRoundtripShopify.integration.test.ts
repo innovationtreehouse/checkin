@@ -112,6 +112,8 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
         const res = await programsPOST(programsReq({
             name: `Roundtrip Program ${TAG}`,
             leadMentorId: leadId,
+            startAt: '2026-01-01',
+            endAt: '2026-12-31',
             memberPrice: '25.00',
             nonMemberPrice: '35.00',
             maxParticipants: 50,
@@ -164,6 +166,8 @@ describe('Shopify variant round-trip: create -> persist -> webhook match', () =>
             const res = await programsPOST(programsReq({
                 name: `Warning Path Program ${TAG}`,
                 leadMentorId: leadId,
+                startAt: '2026-01-01',
+                endAt: '2026-12-31',
                 memberPrice: '25.00',
                 nonMemberPrice: '35.00',
                 maxParticipants: 50,

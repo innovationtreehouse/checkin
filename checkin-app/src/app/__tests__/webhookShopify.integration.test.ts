@@ -65,7 +65,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         // built from — seed it so the guard under test has something to match
         // line_items against.
         const program = await prisma.program.create({
-            data: { name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: PROGRAM_VARIANT_ID },
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: PROGRAM_VARIANT_ID },
         });
         programId = program.id;
 
@@ -341,7 +341,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
     it('fails closed when the Program has no Shopify variant configured at all', async () => {
         // "Cannot verify" must mean "don't activate", not "trust the payload".
         const noVariantProgram = await prisma.program.create({
-            data: { name: `Webhook Test No-Variant Program ${TAG}`, enrollmentStatus: 'OPEN' },
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Webhook Test No-Variant Program ${TAG}`, enrollmentStatus: 'OPEN' },
         });
         try {
             await prisma.programParticipant.create({
@@ -431,7 +431,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
 
         beforeAll(async () => {
             const program = await prisma.program.create({
-                data: { name: `Webhook Single-Pool Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: SINGLE_VARIANT_ID },
+                data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Webhook Single-Pool Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: SINGLE_VARIANT_ID },
             });
             singlePoolProgramId = program.id;
 

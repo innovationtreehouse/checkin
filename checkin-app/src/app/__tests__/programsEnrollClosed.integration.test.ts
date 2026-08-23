@@ -38,7 +38,7 @@ describe('Enroll into a CLOSED program is rejected', () => {
         const user = await prisma.person.create({ data: { email: `user-${TAG}@example.com`, name: 'Self Enroller', household: { create: { name: "Test HH" } } } });
         userId = user.id;
         const program = await prisma.program.create({
-            data: { name: `Closed ${TAG}`, phase: 'RUNNING', enrollmentStatus: 'CLOSED', orgMemberPriceCents: null, nonOrgMemberPriceCents: null },
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Closed ${TAG}`, phase: 'RUNNING', enrollmentStatus: 'CLOSED', orgMemberPriceCents: null, nonOrgMemberPriceCents: null },
         });
         closedProgramId = program.id;
     });

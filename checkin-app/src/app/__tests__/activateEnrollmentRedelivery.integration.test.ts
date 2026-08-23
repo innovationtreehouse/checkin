@@ -41,7 +41,7 @@ describe('activateProgramEnrollment — atomic collapse + redelivery no-op', () 
         personId = person.id;
         // Single-pool (shopifyVariantId present) → the legacy two-pool sibling mirror is skipped.
         const program = await prisma.program.create({
-            data: { name: `Redelivery Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-redeliv' },
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Redelivery Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: 'dev-mock-variant-redeliv' },
         });
         programId = program.id;
     });
