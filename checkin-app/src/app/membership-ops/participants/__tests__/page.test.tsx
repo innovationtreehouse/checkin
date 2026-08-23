@@ -59,6 +59,7 @@ describe("AdminParticipantsIndex", () => {
         fireEvent.click(within(aliceRow).getByRole("button", { name: "Details" }));
 
         expect(await screen.findByText("Edit Person")).toBeInTheDocument();
+        expect(screen.getByText(/Printed on name badges exactly as typed/)).toBeInTheDocument();
         const emailInput = screen.getByLabelText("Email Address");
         fireEvent.change(emailInput, { target: { value: "alice@new.com" } });
         fireEvent.click(screen.getByRole("button", { name: "Save Details" }));

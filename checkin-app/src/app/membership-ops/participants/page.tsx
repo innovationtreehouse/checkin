@@ -348,6 +348,7 @@ export default function AdminParticipantsIndex() {
           <Stack>
             <TextInput
               label="Name"
+              description="Printed on name badges exactly as typed — please double-check the spelling."
               required
               value={addContactName}
               onChange={(e) => { const value = e.currentTarget.value; setAddContactName(value); }}
@@ -436,7 +437,7 @@ export default function AdminParticipantsIndex() {
                 cycle ends, and the updater callback runs later (next render phase), not at
                 call time. Reading it lazily inside the updater intermittently crashed with
                 "Cannot read properties of null (reading 'value')". */}
-            <TextInput label="Name" required value={editForm.name} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, name: value })); }} />
+            <TextInput label="Name" description="Printed on name badges exactly as typed — please double-check the spelling." required value={editForm.name} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, name: value })); }} />
             <TextInput type="email" label="Email Address" value={editForm.email} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, email: value })); }} />
             <TextInput type="tel" label="Phone Number" value={editForm.phone} onChange={(e) => { const value = e.currentTarget.value; setEditForm(f => ({ ...f, phone: value })); }} placeholder="(555) 123-4567" />
             {editingParticipant?.dateOfBirth ? (
