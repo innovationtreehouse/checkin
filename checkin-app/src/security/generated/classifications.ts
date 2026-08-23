@@ -262,6 +262,8 @@ export const classifications = {
         location: 'personal',
         clientEventId: 'internal',
         reviewReason: 'internal',
+        reviewedAt: 'internal',
+        reviewedBy: 'internal',
     },
     Visit: {
         id: 'public',
