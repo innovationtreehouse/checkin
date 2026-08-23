@@ -13,8 +13,6 @@ export const GET = handler('GET /api/membership-audit/bg-attestations', async ()
         select: {
             id: true,
             result: true,
-            note: true,
-            isMarkedVolunteer: true,
             createdAt: true,
             reviewer: { select: { id: true, name: true } },
             subjectPerson: { select: { id: true, name: true } },

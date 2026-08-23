@@ -8,8 +8,6 @@ import { PageLoader } from "@/components/ui/PageLoader";
 type Attestation = {
   id: number;
   result: "APPROVE" | "REJECT";
-  note: string | null;
-  isMarkedVolunteer: boolean;
   createdAt: string;
   reviewer: { id: number; name: string | null };
   subjectPerson: { id: number; name: string | null } | null;
