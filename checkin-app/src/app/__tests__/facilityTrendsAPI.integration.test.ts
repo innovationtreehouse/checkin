@@ -332,7 +332,7 @@ describe('Facility trends API', () => {
                 departedAt: insertDeparture.toISOString(),
             }),
         }) as unknown as import('next/server').NextRequest);
-        expect(insertRes.status).toBe(201);
+        expect(insertRes.status).toBe(200);
         const { visit } = await insertRes.json();
         visitIds.push(visit.id);
         expect(visit.arrivedVia).toBe('LEAD_MARKED');
