@@ -33,6 +33,7 @@ jest.mock("@/lib/shopifyRead/client", () => ({
 }));
 import { runMatchAudit } from "@/lib/finance/matchAudit";
 import { orgMembershipStatusBlocksLogin } from "@/lib/orgMembership";
+import { canReviewBackgroundChecks } from "@/lib/membership/review";
 import type { OrgMembershipProcessStatus, OrgMembershipStatus } from "@/generated/prisma/client";
 
 // Base fixture participants differ on name+email by design (realistic collision
@@ -1078,6 +1079,53 @@ describe("Merge Participants API", () => {
             expect(res.status).toBe(200);
 
             expect(await movedTallies()).toMatchObject({ roles: { migrated: 0, deduped: 1 }, roleGrants: 0 });
+        });
+
+        // Moving PersonRole rows directly bypasses applyRoleFlag (lib/roles.ts),
+        // which is what normally dual-writes Person's legacy boolean mirrors. A
+        // migrated BG_REVIEWER whose mirror stayed false could not attest
+        // (canReviewBackgroundChecks reads the mirror) and dropped out of the
+        // reviewer notification list.
+        it("syncs Person's role mirrors on a migrated role, and clears the tombstone's", async () => {
+            await prisma.personRole.create({ data: { personId: pMergeId, role: "BG_REVIEWER" } });
+            await prisma.person.update({ where: { id: pMergeId }, data: { isBackgroundCheckReviewer: true } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const kept = await prisma.person.findUnique({ where: { id: pKeepId } });
+            const tombstone = await prisma.person.findUnique({ where: { id: pMergeId } });
+            expect(kept?.isBackgroundCheckReviewer).toBe(true);
+            expect(tombstone?.isBackgroundCheckReviewer).toBe(false);
+            // End-to-end: the single predicate the API gate, the review service and
+            // the UI all read (review.ts) — false here is ReviewError('not_reviewer').
+            expect(canReviewBackgroundChecks(kept!)).toBe(true);
+            expect(canReviewBackgroundChecks(tombstone!)).toBe(false);
+        });
+
+        it("leaves the survivor's mirror set when the role is deduped, and still clears the tombstone's", async () => {
+            for (const personId of [pKeepId, pMergeId]) {
+                await prisma.personRole.create({ data: { personId, role: "KEYHOLDER" } });
+                await prisma.person.update({ where: { id: personId }, data: { isKeyholder: true } });
+            }
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.person.findUnique({ where: { id: pKeepId } }))?.isKeyholder).toBe(true);
+            expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.isKeyholder).toBe(false);
+        });
+
+        // Written from the survivor's FINAL role set rather than patched per
+        // migrated row, so a mirror an earlier merge already left stale is repaired.
+        it("heals a survivor mirror that had already drifted from its PersonRole rows", async () => {
+            await prisma.personRole.create({ data: { personId: pKeepId, role: "BOARD" } });
+            await prisma.person.update({ where: { id: pKeepId }, data: { isBoardMember: false } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.person.findUnique({ where: { id: pKeepId } }))?.isBoardMember).toBe(true);
         });
 
         it("moves the PersonRole granter stamp (grantedById)", async () => {

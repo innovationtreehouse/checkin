@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { apiError } from "@/lib/api-response";
 import { LIVE_PERSON } from "@/lib/person/filters";
-import { householdMembershipStatus, membershipMergeBlock } from "../membershipGuard";
+import { bgSubjectKey, householdMembershipStatus, membershipMergeBlock } from "../membershipGuard";
 
 export const dynamic = 'force-dynamic';
 
@@ -170,11 +170,9 @@ export const GET = withAuth(
             if (crossRoleCount > 0) {
                 collisions.push({ type: 'bgAttestationCrossRole', message: `One record reviewed a background check naming the other as its subject (${crossRoleCount} attestation${crossRoleCount > 1 ? 's' : ''}). Merging would make the survivor the reviewer of their own background check — investigate before merging.` });
             }
-            const aSubjectKeys = new Set(
-                subjectAttestations.filter(x => x.subjectPersonId === aId).map(x => `${x.processId}:${x.reviewerId}`)
-            );
+            const aSubjectKeys = new Set(subjectAttestations.filter(x => x.subjectPersonId === aId).map(bgSubjectKey));
             const sharedSubjectCount = subjectAttestations
-                .filter(x => x.subjectPersonId === bId && aSubjectKeys.has(`${x.processId}:${x.reviewerId}`)).length;
+                .filter(x => x.subjectPersonId === bId && aSubjectKeys.has(bgSubjectKey(x))).length;
             if (sharedSubjectCount > 0) {
                 collisions.push({ type: 'bgAttestationSubject', message: `One reviewer attested both records as the subject of the same background check (${sharedSubjectCount} shared attestation${sharedSubjectCount > 1 ? 's' : ''}). Investigate before merging.` });
             }

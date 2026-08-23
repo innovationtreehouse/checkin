@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import type { Person } from "@/generated/prisma/client";
+import type { Person, PersonRoleKind } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
@@ -9,7 +9,8 @@ import { personBgOpen } from "@/lib/membership/lifecycle";
 import { advanceHouseholdBgAfterMerge, householdBgFresh } from "@/lib/membership/mergeBgAdvance";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
-import { householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
+import { KIND_TO_MIRROR } from "@/lib/roles";
+import { bgSubjectKey, householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
 
 export const dynamic = 'force-dynamic';
 
@@ -66,12 +67,15 @@ function personPreImage(p: Person) {
 }
 
 /**
- * The part of `@@unique([processId, reviewerId, subjectPersonId])` that a
- * subjectPersonId repoint does not change — two rows sharing it cannot both
- * name the same subject.
+ * Person's legacy boolean role mirrors for a set of held roles. `applyRoleFlag`
+ * (lib/roles.ts) dual-writes these alongside every PersonRole write; the merge
+ * moves PersonRole rows directly, so it owes the same mirror write. Derived
+ * from KIND_TO_MIRROR so a new mirrored role is covered the day it exists.
  */
-function bgSubjectKey(a: { processId: number; reviewerId: number }): string {
-    return `${a.processId}:${a.reviewerId}`;
+function roleMirrors(held: Set<PersonRoleKind>): Record<string, boolean> {
+    return Object.fromEntries(
+        Object.entries(KIND_TO_MIRROR).map(([kind, flag]) => [flag, held.has(kind as PersonRoleKind)]),
+    );
 }
 
 /** A login identity is present iff email OR googleId is non-empty. */
@@ -217,6 +221,7 @@ export const POST = withAuth(
                 bgAttestationsAsSubject: true,
                 corporationLeads: true,
                 corporationMembers: true,
+                roles: true,
             } as const;
 
             const keepParticipant = await prisma.person.findUnique({
@@ -442,6 +447,12 @@ export const POST = withAuth(
                         emailVerified: null,
                         phone: null,
                         isHouseholdLead: false,
+                        // Every PersonRole row moves off the tombstone below, so its
+                        // legacy role mirrors must go with them. Zeroed here rather
+                        // than derived after the loop for the same reason
+                        // isHouseholdLead is: a merged-away record holds no authority,
+                        // so `false` is the right value even if a row raced in.
+                        ...roleMirrors(new Set()),
                         // NOTE: name is NOT mangled — mergedIntoId carries the semantics;
                         // the UI shows a "merged" badge wherever tombstones surface.
                     },
@@ -571,8 +582,8 @@ export const POST = withAuth(
                 // security grant a later delete destroys with no audit row. PK is
                 // (personId, role), so move each role the survivor lacks and drop the
                 // duplicate: the survivor already holds that grant.
-                const keepRoles = new Set((await tx.personRole.findMany({ where: { personId: keepId }, select: { role: true } })).map(r => r.role));
-                for (const { role } of await tx.personRole.findMany({ where: { personId: mergeId }, select: { role: true } })) {
+                const keepRoles = new Set(keepParticipant.roles.map(r => r.role));
+                for (const { role } of mergeParticipant.roles) {
                     const where = { personId_role: { personId: mergeId, role } };
                     if (keepRoles.has(role)) {
                         await tx.personRole.delete({ where });
@@ -584,6 +595,16 @@ export const POST = withAuth(
                 }
                 // After the holder pass, so a granter stamp on a deduped row isn't counted.
                 moved.roleGrants = (await tx.personRole.updateMany({ where: { grantedById: mergeId }, data: { grantedById: keepId } })).count;
+                // The rows above moved without applyRoleFlag, which is what normally
+                // dual-writes Person's legacy mirrors — leaving e.g. a migrated
+                // BG_REVIEWER unable to attest (canReviewBackgroundChecks reads the
+                // mirror) and dropped from reviewer notifications. Written from the
+                // keeper's FINAL role set, not patched per migrated row, so it also
+                // heals drift a pre-2b-0 merge already left behind.
+                await tx.person.update({
+                    where: { id: keepId },
+                    data: roleMirrors(new Set([...keepRoles, ...mergeParticipant.roles.map(r => r.role)])),
+                });
 
                 // bgAttestations: pre-refused collisions; left is defense-in-depth.
                 // corporationLeads/corporationMembers: bare joins, auto-dedupe.
