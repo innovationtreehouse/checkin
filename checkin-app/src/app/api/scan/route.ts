@@ -106,33 +106,61 @@ export const POST = withKiosk(
             where: { id: participantId },
         });
 
-        if (!badgeRecord) {
-            return apiError(`Participant ${participantId} not found.`, 404);
-        }
-
-        // A badge still encoding a tombstone's id must not reject its owner at the
-        // door — walk mergedIntoId to the live survivor and scan as them. Capped
-        // at MAX_MERGE_HOPS; a chain that deep can't be resolved with confidence,
-        // so fall back to the reissue message instead of chasing it further.
+        // A badge still encoding a merged-away id must not reject its owner at the
+        // door. Two ways such an id presents, since 2b archives before it deletes:
+        //   row is GONE      -> PersonMerge.fromId -> toId   (2b-3 onward)
+        //   tombstone exists -> mergedIntoId                 (today, and legacy)
+        // One loop, not two: an archive row's survivor may itself be a tombstone.
+        //
+        // Order is the trap. The archive lookup must run BEFORE the not-found 404 —
+        // once tombstones are deleted the findUnique above simply misses and the
+        // badge is rejected at the door, the exact failure this exists to prevent.
+        // Dormant till then; pinned by an integration test that deletes a row by hand.
+        //
+        // The archive arm cannot exceed one hop (toId is a RESTRICT FK the merge
+        // repoints), but shares MAX_MERGE_HOPS anyway: being wrong costs a member
+        // refused at the door, and a bad 2a backfill is all it would take.
         let participant = badgeRecord;
+        let lookupId = participantId;
         let mergeHops = 0;
-        while (participant.mergedIntoId != null) {
+        while (participant == null || participant.mergedIntoId != null) {
+            const tombstonePointer = participant === null ? null : participant.mergedIntoId;
+            if (tombstonePointer === null) {
+                const archived = await prisma.personMerge.findUnique({
+                    where: { fromId: lookupId },
+                    select: { toId: true },
+                });
+                if (!archived) {
+                    // Before any hop the scanned id is simply unknown. After one, we got
+                    // here by following a merge pointer into a gap — a different fault,
+                    // and one the operator can act on by reissuing the badge.
+                    return mergeHops > 0
+                        ? apiError(`This badge belongs to a merged record; reissue it for participant ${lookupId}.`, 409)
+                        : apiError(`Participant ${participantId} not found.`, 404);
+                }
+                lookupId = archived.toId;
+            } else {
+                lookupId = tombstonePointer;
+            }
+            // Counted once the next id is known, so the cap message can name the
+            // record to reissue for — and so that id is never fetched.
             mergeHops++;
             if (mergeHops > MAX_MERGE_HOPS) {
-                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+                return apiError(`This badge belongs to a merged record; reissue it for participant ${lookupId}.`, 409);
             }
-            const next: typeof participant | null = await prisma.person.findUnique({ where: { id: participant.mergedIntoId } });
-            if (!next) {
-                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
-            }
-            participant = next;
+            participant = await prisma.person.findUnique({ where: { id: lookupId } });
         }
         if (mergeHops > 0) {
             logger.info("Scan forwarded from merged record", {
-                badgeId: badgeRecord.id,
-                tombstoneId: badgeRecord.mergedIntoId,
+                badgeId: participantId,
+                tombstoneId: badgeRecord?.mergedIntoId ?? null,
                 survivorId: participant.id,
                 hops: mergeHops,
+                // The scanned id had no Person row at all — the archive resolved it.
+                // Watch this during the 2b-3 rollout: it going true is the delete
+                // path working, and staying false while tombstones are being removed
+                // means badges are resolving some other way than expected.
+                viaArchive: badgeRecord == null,
             });
         }
 

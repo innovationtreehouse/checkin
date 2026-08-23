@@ -69,6 +69,9 @@ describe('DELETE /api/membership-ops/bg-attestations/[id]', () => {
         await prisma.backgroundCheckAttestation.deleteMany({ where: { OR: [{ processId }, { reviewerId: { in: personIds } }] } });
         await prisma.auditLog.deleteMany({ where: { OR: [{ affectedEntityId: attestationId, tableName: 'BackgroundCheckAttestation' }, { actorId: { in: personIds } }] } });
         await prisma.orgMembershipProcess.deleteMany({ where: { id: processId } });
+        // A case here runs a real merge, which now archives it. PersonMerge.toId is
+        // RESTRICT, so the archive row outranks its survivor (#1456 2b).
+        await prisma.personMerge.deleteMany({ where: { OR: [{ toId: { in: personIds } }, { fromId: { in: personIds } }] } });
         await prisma.person.deleteMany({ where: { id: { in: personIds } } });
         await prisma.orgMembership.deleteMany({ where: { householdId: { in: [householdId, ...extraHouseholdIds] } } });
         await prisma.household.deleteMany({ where: { id: { in: [householdId, ...extraHouseholdIds] } } });

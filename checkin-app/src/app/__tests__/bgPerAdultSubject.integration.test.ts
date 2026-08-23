@@ -61,6 +61,9 @@ describe('Per-adult background-check subjects', () => {
         const hhs = await prisma.household.findMany({ where: { OR: [{ name: { contains: TAG } }, { householdMembers: { some: { email: { contains: TAG } } } }] }, select: { id: true } });
         const ids = hhs.map((h) => h.id);
         if (ids.length) {
+            // PersonMerge.toId is RESTRICT — the archive outranks its survivor, so it
+            // has to go before the Person rows below.
+            await prisma.personMerge.deleteMany({ where: { to: { householdId: { in: ids } } } });
             await prisma.backgroundCheckAttestation.deleteMany({ where: { process: { orgMembership: { householdId: { in: ids } } } } });
             await prisma.programVolunteer.deleteMany({ where: { person: { householdId: { in: ids } } } });
             await prisma.orgMembershipProcess.deleteMany({ where: { orgMembership: { householdId: { in: ids } } } });
@@ -403,5 +406,55 @@ describe('Per-adult background-check subjects', () => {
         as(board, { isBoardMember: true });
         const data = await (await COMPLIANCE(get('http://localhost:4000/api/membership-audit/compliance') as never)).json();
         expect(data.mergeInheritedBgChecks.map((r: { personId: number }) => r.personId)).toContain(hh.alex);
+    });
+
+    // #1456 phase 2b. §6's own comment says this list is permanent, not a cleanup
+    // queue — but both its predicate and its `fromName` came from the tombstone
+    // Person row, which 2b-3 deletes. The PersonMerge snapshot is what keeps the
+    // answer: without it the board stops being told whose check a survivor holds.
+    it('still names the source after the merged-away Person row is gone', async () => {
+        const hh = await twoLeadHousehold('MergeArchived');
+        const checkedAt = new Date('2026-06-01T00:00:00.000Z');
+        await prisma.person.update({ where: { id: hh.alex }, data: { lastBackgroundCheck: checkedAt } });
+        await prisma.personMerge.create({
+            data: {
+                fromId: hh.sam,
+                toId: hh.alex,
+                snapshot: { name: 'Sam Archived', email: null, lastBackgroundCheck: checkedAt.toISOString() },
+            },
+        });
+        // Sam's Person row never existed as a tombstone here: this is the 2b-3 state,
+        // where the archive is the only record of the merge.
+        await prisma.person.delete({ where: { id: hh.sam } });
+
+        as(board, { isBoardMember: true });
+        const data = await (await COMPLIANCE(get('http://localhost:4000/api/membership-audit/compliance') as never)).json();
+
+        const row = data.mergeInheritedBgChecks.find((r: { personId: number }) => r.personId === hh.alex);
+        expect(row).toBeDefined();
+        expect(row.fromName).toBe('Sam Archived');
+    });
+
+    // Both records exist during 2b, and they say the same thing — so the survivor
+    // must appear once, from the archive, not twice.
+    it('prefers the archive over the tombstone without double-counting', async () => {
+        const hh = await twoLeadHousehold('MergeBoth');
+        const checkedAt = new Date('2026-06-01T00:00:00.000Z');
+        await prisma.person.update({ where: { id: hh.sam }, data: { lastBackgroundCheck: checkedAt, mergedIntoId: hh.alex, name: 'Stale Tombstone Name' } });
+        await prisma.person.update({ where: { id: hh.alex }, data: { lastBackgroundCheck: checkedAt } });
+        await prisma.personMerge.create({
+            data: {
+                fromId: hh.sam,
+                toId: hh.alex,
+                snapshot: { name: 'Snapshot Name', email: null, lastBackgroundCheck: checkedAt.toISOString() },
+            },
+        });
+
+        as(board, { isBoardMember: true });
+        const data = await (await COMPLIANCE(get('http://localhost:4000/api/membership-audit/compliance') as never)).json();
+
+        const rows = data.mergeInheritedBgChecks.filter((r: { personId: number }) => r.personId === hh.alex);
+        expect(rows).toHaveLength(1);
+        expect(rows[0].fromName).toBe('Snapshot Name');
     });
 });
