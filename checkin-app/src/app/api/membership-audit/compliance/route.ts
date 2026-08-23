@@ -12,6 +12,31 @@ export const dynamic = "force-dynamic";
 const utcDay = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
+ * The people merged INTO this survivor, from whichever record still holds them
+ * (§6, #1456 phase 2b).
+ *
+ * The PersonMerge archive wins over the tombstone `Person` row: the archive is
+ * the record that survives 2b-3's delete, and while both exist they say the same
+ * thing. `mergedFrom` then covers only merges that predate the archive, keyed by
+ * id so the same merge is never counted twice.
+ */
+function mergeSourceIdentities(s: {
+    mergedFrom: { id: number; name: string | null; lastBackgroundCheck: Date | null }[];
+    mergedArchive: { fromId: number; snapshot: unknown }[];
+}) {
+    const archived = s.mergedArchive.map((a) => {
+        const snap = (a.snapshot ?? {}) as { name?: string | null; lastBackgroundCheck?: string | null };
+        return {
+            id: a.fromId,
+            name: snap.name ?? null,
+            lastBackgroundCheck: snap.lastBackgroundCheck ? new Date(snap.lastBackgroundCheck) : null,
+        };
+    });
+    const covered = new Set(archived.map((a) => a.id));
+    return [...archived, ...s.mergedFrom.filter((m) => !covered.has(m.id))];
+}
+
+/**
  * Board-only, PULL-ONLY membership compliance dashboard: households that have
  * fallen out of compliance but were NOT auto-terminated (the system deliberately
  * never auto-revokes — a human must follow up). Surfaces only what's knowable
@@ -234,10 +259,22 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     //    check it was, so a survivor can hold a date that traces to nobody. Unlike the
     //    blanket stamps this list never empties on its own — every future merge can mint
     //    another — so it stays after the one-time cleanup is done.
+    //
+    //    Both the predicate and `fromName` used to come from the tombstone Person
+    //    row, which #1456 phase 2b-3 deletes — taking this list's answer with it.
+    //    So the PersonMerge archive is the preferred source and the tombstone is
+    //    the fallback, for as long as both exist: merges from before the archive
+    //    shipped have only a tombstone, merges after 2b-3 have only an archive, and
+    //    right now a merge writes both. `mergedArchive: { some: {} }` is unfiltered
+    //    because the date lives inside a Json blob — the match happens below, over
+    //    a handful of rows.
     const survivors = await prisma.person.findMany({
         where: {
             lastBackgroundCheck: { not: null },
-            mergedFrom: { some: { lastBackgroundCheck: { not: null } } },
+            OR: [
+                { mergedFrom: { some: { lastBackgroundCheck: { not: null } } } },
+                { mergedArchive: { some: {} } },
+            ],
             ...LIVE_PERSON,
         },
         select: {
@@ -247,13 +284,14 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
             householdId: true,
             lastBackgroundCheck: true,
             mergedFrom: { select: { id: true, name: true, lastBackgroundCheck: true } },
+            mergedArchive: { select: { fromId: true, snapshot: true } },
         },
         orderBy: { name: "asc" },
     });
     const mergeInheritedBgChecks = survivors
         .map((s) => ({
             survivor: s,
-            source: s.mergedFrom.find((m) => m.lastBackgroundCheck?.getTime() === s.lastBackgroundCheck!.getTime()),
+            source: mergeSourceIdentities(s).find((m) => m.lastBackgroundCheck?.getTime() === s.lastBackgroundCheck!.getTime()),
         }))
         .filter((r) => r.source !== undefined)
         .map(({ survivor, source }) => ({

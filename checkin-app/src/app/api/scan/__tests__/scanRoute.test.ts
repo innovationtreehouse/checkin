@@ -16,6 +16,9 @@ jest.mock('@/lib/prisma', () => {
         person: {
             findUnique: jest.fn(),
         },
+        personMerge: {
+            findUnique: jest.fn().mockResolvedValue(null),
+        },
         rawBadgeLog: {
             create: jest.fn(),
             findFirst: jest.fn(),
@@ -122,7 +125,101 @@ describe('POST /api/scan', () => {
         expect(processCheckin).toHaveBeenCalledWith(survivor, 'session', expect.anything(), expect.any(Date));
         expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 99, location: 'Main Entrance' } });
         expect(logger.info).toHaveBeenCalledWith('Scan forwarded from merged record', {
-            badgeId: 1, tombstoneId: 99, survivorId: 99, hops: 1,
+            badgeId: 1, tombstoneId: 99, survivorId: 99, hops: 1, viaArchive: false,
+        });
+    });
+
+    // #1456 phase 2b. The tombstone walk above only runs because the merged-away
+    // Person row still loads. Once 2b-3 deletes it, `findUnique` misses and the
+    // 404 fires first — the badge is rejected at the door, which is the failure
+    // the walk exists to prevent. These cover the archive branch that replaces it.
+    describe('resolving a badge whose Person row no longer exists', () => {
+        const scanReq = (participantId: number) => new Request('http://localhost/api/scan', {
+            method: 'POST',
+            body: JSON.stringify({ participantId }),
+        }) as unknown as import('next/server').NextRequest;
+
+        beforeEach(() => {
+            (authenticateRequest as jest.Mock).mockResolvedValue({ type: 'session', user: { id: '1' } });
+            (prisma.rawBadgeLog.findFirst as jest.Mock).mockResolvedValue(null);
+            (prisma.visit.findFirst as jest.Mock).mockResolvedValue(null);
+            (processCheckin as jest.Mock).mockResolvedValue(new Response(JSON.stringify({ type: 'checkin' }), { status: 200 }));
+        });
+
+        it('follows the PersonMerge archive to the survivor and scans as them', async () => {
+            const survivor = { id: 99, mergedIntoId: null };
+            (prisma.person.findUnique as jest.Mock).mockImplementation(({ where }: { where: { id: number } }) =>
+                Promise.resolve(where.id === 99 ? survivor : null));
+            (prisma.personMerge.findUnique as jest.Mock).mockImplementation(({ where }: { where: { fromId: number } }) =>
+                Promise.resolve(where.fromId === 1 ? { toId: 99 } : null));
+
+            const res = await POST(scanReq(1));
+            expect(res.status).toBe(200);
+
+            expect(processCheckin).toHaveBeenCalledWith(survivor, 'session', expect.anything(), expect.any(Date));
+            expect(prisma.rawBadgeLog.create).toHaveBeenCalledWith({ data: { personId: 99, location: 'Main Entrance' } });
+            expect(logger.info).toHaveBeenCalledWith('Scan forwarded from merged record', {
+                badgeId: 1, tombstoneId: null, survivorId: 99, hops: 1, viaArchive: true,
+            });
+        });
+
+        // The two records coexist during 2b: an old tombstone Person row can point
+        // at a survivor that was itself merged away and deleted later, so one chain
+        // alternates between the two lookups.
+        it('walks a chain that alternates between a tombstone row and the archive', async () => {
+            const survivor = { id: 3, mergedIntoId: null };
+            (prisma.person.findUnique as jest.Mock).mockImplementation(({ where }: { where: { id: number } }) => {
+                if (where.id === 1) return Promise.resolve({ id: 1, mergedIntoId: 2 });  // tombstone kept
+                if (where.id === 3) return Promise.resolve(survivor);
+                return Promise.resolve(null);                                            // id 2 was deleted
+            });
+            (prisma.personMerge.findUnique as jest.Mock).mockImplementation(({ where }: { where: { fromId: number } }) =>
+                Promise.resolve(where.fromId === 2 ? { toId: 3 } : null));
+
+            const res = await POST(scanReq(1));
+            expect(res.status).toBe(200);
+            expect(processCheckin).toHaveBeenCalledWith(survivor, 'session', expect.anything(), expect.any(Date));
+            expect(logger.info).toHaveBeenCalledWith('Scan forwarded from merged record', {
+                badgeId: 1, tombstoneId: 2, survivorId: 3, hops: 2, viaArchive: false,
+            });
+        });
+
+        it('caps an archive chain at 5 hops too', async () => {
+            // 1->2->3->4->5->6->7, every Person row deleted, so it is archive-only.
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue(null);
+            (prisma.personMerge.findUnique as jest.Mock).mockImplementation(({ where }: { where: { fromId: number } }) =>
+                Promise.resolve(where.fromId < 7 ? { toId: where.fromId + 1 } : null));
+
+            const res = await POST(scanReq(1));
+            expect(res.status).toBe(409);
+
+            const json = await res.json();
+            expect(json.error).toContain('merged record');
+            expect(json.error).toContain('7');
+            expect(prisma.rawBadgeLog.create).not.toHaveBeenCalled();
+            // Never fetches past the cap — same guarantee as the tombstone walk.
+            expect(prisma.person.findUnique).not.toHaveBeenCalledWith({ where: { id: 7 } });
+        });
+
+        it('404s an id that is in neither table', async () => {
+            (prisma.person.findUnique as jest.Mock).mockResolvedValue(null);
+            (prisma.personMerge.findUnique as jest.Mock).mockResolvedValue(null);
+
+            const res = await POST(scanReq(1));
+            expect(res.status).toBe(404);
+            expect((await res.json()).error).toContain('not found');
+        });
+
+        // A merge pointer that leads nowhere is a different fault from an unknown
+        // badge: the record existed, so reissuing is the action, not "who is this".
+        it('409s when a hop lands on an id in neither table', async () => {
+            (prisma.person.findUnique as jest.Mock).mockImplementation(({ where }: { where: { id: number } }) =>
+                Promise.resolve(where.id === 1 ? { id: 1, mergedIntoId: 42 } : null));
+            (prisma.personMerge.findUnique as jest.Mock).mockResolvedValue(null);
+
+            const res = await POST(scanReq(1));
+            expect(res.status).toBe(409);
+            expect((await res.json()).error).toContain('42');
         });
     });
 

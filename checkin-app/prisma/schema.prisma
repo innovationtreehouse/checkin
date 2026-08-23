@@ -141,9 +141,15 @@ model Person {
   /// Person.id. Null == a live record. Set once by the merge route; the row is
   /// tombstoned, never deleted. Drives the double-merge CAS guard and the
   /// live-person filter (lib/person/filters.ts). @sensitivity:internal
+  /// Renamed from "PersonMerge" so the label does not collide with `model
+  /// PersonMerge`. A named self-relation produces no SQL artifact (the
+  /// constraint is Person_mergedIntoId_fkey), so this is a code-only rename.
   mergedIntoId Int?
-  mergedInto   Person?  @relation("PersonMerge", fields: [mergedIntoId], references: [id])
-  mergedFrom   Person[] @relation("PersonMerge")
+  mergedInto   Person?  @relation("PersonTombstone", fields: [mergedIntoId], references: [id])
+  mergedFrom   Person[] @relation("PersonTombstone")
+
+  /// Archive rows naming this person as the merge survivor (see PersonMerge).
+  mergedArchive PersonMerge[] @relation("PersonMergeArchive")
 
   /// @sensitivity:personal
   allergies String?
@@ -1301,6 +1307,47 @@ model CronRunLog {
   error      String?
 
   @@index([job, success, finishedAt])
+}
+
+/// Permanent record of a participant merge (#1456 phase 2b), written by
+/// membership-ops/participants/merge in the merge transaction.
+///
+/// It exists because the tombstone `Person` row is going away: today the merge
+/// still writes `mergedIntoId` and keeps the row, so both records agree; in 2b-3
+/// the row is deleted and this becomes the only survivor of it. Two readers
+/// depend on that — the kiosk scan path, which must still resolve a badge that
+/// encodes a merged-away id, and membership-audit/compliance §6, which reports
+/// whose background check a survivor inherited.
+///
+/// No SCOPE_BINDINGS entry, matching the IdCounter precedent (#1456 Decision 5).
+model PersonMerge {
+  /// @sensitivity:internal
+  id       Int      @id @default(autoincrement())
+  /// The merged-away person's original id. Deliberately no FK: the point of the
+  /// row is to outlive that Person. @unique because the merge CAS lets a person
+  /// be merged away exactly once, which is what makes the scan-path lookup a
+  /// findUnique. @sensitivity:internal
+  fromId   Int      @unique
+  /// @sensitivity:internal
+  toId     Int
+  to       Person   @relation("PersonMergeArchive", fields: [toId], references: [id])
+  /// @sensitivity:internal
+  mergedAt DateTime @default(now())
+  /// Identity as it stood at merge time: { name, email, lastBackgroundCheck,
+  /// isSysadmin, isBoardMember, isKeyholder, isBackgroundCheckReviewer }.
+  ///
+  /// Tiered at the strictest thing inside it — a Json blob is one field, so
+  /// adding dateOfBirth would re-tier the whole column to `personal`. It is
+  /// deliberately absent: nothing reads it (#1456 Decision 1).
+  ///
+  /// The four role mirrors ride along for the same reason personPreImage carries
+  /// them — they record what authority the merged-away record held — and because
+  /// the AuditLog pre-image that would otherwise hold them is written only for a
+  /// session actor, so a token-auth merge has no other record.
+  /// @sensitivity:pii
+  snapshot Json
+
+  @@index([toId])
 }
 
 /// Monotonic ID sources that must not skip. `Person` is issued from here rather

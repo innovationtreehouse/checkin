@@ -89,6 +89,9 @@ describe('AuditLog Integration Tests', () => {
             await prisma.visit.deleteMany({ where: { id: { in: createdVisitIds } } });
         }
         if (createdParticipantIds.length > 0) {
+            // A merge case here archives to PersonMerge, whose toId is RESTRICT — the
+            // archive row has to go before the survivor it names (#1456 2b).
+            await prisma.personMerge.deleteMany({ where: { OR: [{ toId: { in: createdParticipantIds } }, { fromId: { in: createdParticipantIds } }] } });
             await prisma.person.deleteMany({ where: { id: { in: createdParticipantIds } } });
         }
         if (createdHouseholdIds.length > 0) {

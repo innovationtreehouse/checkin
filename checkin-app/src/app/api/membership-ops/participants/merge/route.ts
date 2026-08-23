@@ -77,6 +77,33 @@ function personPreImage(p: Person) {
 }
 
 /**
+ * The `PersonMerge.snapshot` payload: identity as it stood at merge time, for
+ * the readers that outlive the tombstone Person row (#1456 phase 2b).
+ *
+ * Narrower than `personPreImage` on purpose. That one is forensic — every field
+ * the merge rewrites, for an un-merge — and lands in an AuditLog row. This one
+ * is a live data source with named consumers: compliance §6 reads `name` and
+ * `lastBackgroundCheck`, the audit-name fallback reads `name`/`email`.
+ *
+ * NO dateOfBirth (#1456 Decision 1): a Json blob is classified as one field, so
+ * including it would re-tier the column from `pii` to `personal` for no reader.
+ *
+ * Dates are ISO strings, not Date objects — Prisma's Json input does not accept
+ * a Date, and a reader parses this back out of JSONB either way.
+ */
+function mergeSnapshot(p: Person) {
+    return {
+        name: p.name,
+        email: p.email,
+        lastBackgroundCheck: p.lastBackgroundCheck?.toISOString() ?? null,
+        isSysadmin: p.isSysadmin,
+        isBoardMember: p.isBoardMember,
+        isKeyholder: p.isKeyholder,
+        isBackgroundCheckReviewer: p.isBackgroundCheckReviewer,
+    };
+}
+
+/**
  * Person's legacy boolean role mirrors for a set of held roles. `applyRoleFlag`
  * (lib/roles.ts) dual-writes these alongside every PersonRole write; the merge
  * moves PersonRole rows directly, so it owes the same mirror write. Derived
@@ -484,6 +511,7 @@ export const POST = withAuth(
                     noteAcks: 0,
                     attendanceConfirmations: 0,
                     trustedAdultDecisions: 0,
+                    archivedMerges: 0,
                     roleGrants: 0,
                     roles: { migrated: 0, deduped: 0 },
                     bgAttestationSubjects: { migrated: 0, left: 0 },
@@ -588,6 +616,14 @@ export const POST = withAuth(
                 moved.attendanceConfirmations = (await tx.event.updateMany({ where: { attendanceConfirmedById: mergeId }, data: { attendanceConfirmedById: keepId } })).count;
                 moved.trustedAdultDecisions = (await tx.trustedAdultReview.updateMany({ where: { decidedById: mergeId }, data: { decidedById: keepId } })).count;
 
+                // Earlier merges that named THIS record as their survivor. Repointed
+                // rather than chained, unlike Person.mergedIntoId: the archive answers
+                // "where is this person now", and its toId is RESTRICT, so leaving it
+                // would pin the very row #1456 2b-3 exists to delete. Collapsing the
+                // chain here is also why compliance §6 attributes a date inherited two
+                // merges back. No unique constraint on toId, so a plain updateMany.
+                moved.archivedMerges = (await tx.personMerge.updateMany({ where: { toId: mergeId }, data: { toId: keepId } })).count;
+
                 // PersonRole.personId is CASCADE — a role left on the tombstone is a
                 // security grant a later delete destroys with no audit row. PK is
                 // (personId, role), so move each role the survivor lacks and drop the
@@ -684,6 +720,19 @@ export const POST = withAuth(
                 // pointing at the old household: every participant must belong to one, and
                 // merged-away records are tombstoned rather than deleted. Leadership was
                 // cleared in step 1's CAS.
+
+                // 7. Archive the merge (#1456 phase 2b). Same transaction as the
+                // tombstone write, so the two can never disagree: fromId is @unique and
+                // the step-1 CAS already serialises concurrent merges of the same id, so
+                // a create here cannot collide without the CAS having failed first.
+                //
+                // Archive-first, delete-later. The tombstone Person row is still written
+                // and still kept in this release; deleting it is 2b-3, after the 2a
+                // census settles the existing residue. Until then this table backfills
+                // forward from now and its readers prefer it with a tombstone fallback.
+                await tx.personMerge.create({
+                    data: { fromId: mergeId, toId: keepId, snapshot: mergeSnapshot(mergeParticipant) },
+                });
 
                 // 8. Audit — tallies: migrated (repointed), deduped (bare-join duplicate
                 // deleted), left (decision-bearing collision, defense-in-depth fallback).

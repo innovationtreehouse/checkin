@@ -130,6 +130,9 @@ describe("Merge Participants API", () => {
         await prisma.programVolunteer.deleteMany({ where: { personId: { in: personIds } } });
         await prisma.orgMembershipProcess.deleteMany({ where: { OR: [{ id: { in: createdProcessIds } }, { subjectPersonId: { in: personIds } }] } });
         await prisma.auditLog.deleteMany({ where: { actorId } });
+        // PersonMerge.toId is RESTRICT, so the archive row outranks its survivor here
+        // exactly as it will in prod — teardown has to clear it first.
+        await prisma.personMerge.deleteMany({ where: { OR: [{ toId: { in: personIds } }, { fromId: { in: personIds } }] } });
         // Account/Session cascade-delete with their Person; no manual step needed.
         await prisma.person.deleteMany({ where: { id: { in: personIds } } });
 
@@ -163,6 +166,93 @@ describe("Merge Participants API", () => {
         // decision 5: tombstone identity keeps its ORIGINAL name — no mangling.
         expect(merged?.name).toBe("Merge User");
         expect(merged?.mergedIntoId).toBe(pKeepId);
+    });
+
+    // #1456 phase 2b — the PersonMerge archive. The tombstone Person row is still
+    // written here; 2b-3 deletes it and this table becomes the only record.
+    describe("PersonMerge archive", () => {
+        it("writes exactly one archive row, snapshotting identity as it stood", async () => {
+            // UTC midnight: lastBackgroundCheck is @db.Date, so that is what the
+            // column round-trips and what the snapshot must carry (1149 design).
+            const bgDate = new Date("2026-03-04T00:00:00.000Z");
+            await prisma.person.update({
+                where: { id: pMergeId },
+                data: { lastBackgroundCheck: bgDate, dateOfBirth: new Date("1990-01-01"), isKeyholder: true },
+            });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            const rows = await prisma.personMerge.findMany({ where: { fromId: pMergeId } });
+            expect(rows).toHaveLength(1);
+            expect(rows[0].toId).toBe(pKeepId);
+            expect(rows[0].mergedAt).toBeInstanceOf(Date);
+
+            // Exact shape, not a subset: Decision 1 is that dateOfBirth stays OUT, and
+            // only an exhaustive key assertion catches it being added back — that is
+            // what would silently re-tier the whole Json column from pii to personal.
+            expect(rows[0].snapshot).toEqual({
+                name: "Merge User",
+                email: "merge@example.com",
+                lastBackgroundCheck: bgDate.toISOString(),
+                isSysadmin: false,
+                isBoardMember: false,
+                isKeyholder: true,
+                isBackgroundCheckReviewer: false,
+            });
+        });
+
+        // The snapshot is taken BEFORE step 1's CAS, which mangles the email to
+        // merged-*@deleted.invalid and zeroes the role mirrors. Archiving the
+        // post-CAS row would record the sentinel address as the person's identity.
+        it("snapshots the pre-merge identity, not the mangled tombstone", async () => {
+            await POST(mergeReq(pKeepId, pMergeId));
+
+            const row = await prisma.personMerge.findUnique({ where: { fromId: pMergeId } });
+            const snap = row?.snapshot as { email: string };
+            expect(snap.email).toBe("merge@example.com");
+            expect(snap.email).not.toContain("deleted.invalid");
+        });
+
+        it("carries a null lastBackgroundCheck through rather than dropping the key", async () => {
+            await POST(mergeReq(pKeepId, pMergeId));
+
+            const row = await prisma.personMerge.findUnique({ where: { fromId: pMergeId } });
+            expect(row?.snapshot).toMatchObject({ lastBackgroundCheck: null });
+        });
+
+        // The 2b-3 rehearsal: 2b-0 repointed every RESTRICT relation off the loser,
+        // so the tombstone row is finally deletable — including for someone who had
+        // scanned a badge, which is what RawBadgeLog used to make impossible. If this
+        // starts failing, a new Person FK arrived without a merge disposition.
+        it("leaves the tombstone Person row deletable, badge history and all", async () => {
+            await prisma.rawBadgeLog.create({ data: { personId: pMergeId, location: "Main Entrance" } });
+            await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date() } });
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+
+            await expect(prisma.person.delete({ where: { id: pMergeId } })).resolves.toMatchObject({ id: pMergeId });
+            // ...and the archive outlives it, which is the whole point.
+            expect(await prisma.personMerge.findUnique({ where: { fromId: pMergeId } })).not.toBeNull();
+        });
+
+        // A→B then B→C. The archive answers "where is this person now", so A's row
+        // follows B to C; leaving it on B would also pin B's Person row via the
+        // RESTRICT on toId, blocking the very delete 2b-3 exists to do.
+        it("repoints an earlier merge's archive row when its survivor is itself merged away", async () => {
+            const pFinal = await prisma.person.create({
+                data: { name: "Final User", email: "final@example.com", householdId },
+            });
+            extraPersonIds.push(pFinal.id);
+
+            expect((await POST(mergeReq(pKeepId, pMergeId))).status).toBe(200);
+            expect((await POST(mergeReq(pFinal.id, pKeepId))).status).toBe(200);
+
+            expect((await prisma.personMerge.findUnique({ where: { fromId: pMergeId } }))?.toId).toBe(pFinal.id);
+            expect((await prisma.personMerge.findUnique({ where: { fromId: pKeepId } }))?.toId).toBe(pFinal.id);
+            // fromId is @unique: two merges, two rows, no double-archive.
+            expect(await prisma.personMerge.count({ where: { toId: pFinal.id } })).toBe(2);
+        });
     });
 
     it("should write an AuditLog row capturing the merge (matrix 15)", async () => {
