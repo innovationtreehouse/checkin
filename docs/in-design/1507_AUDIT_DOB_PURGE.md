@@ -23,7 +23,7 @@ a durable invariant (no new DOB enters audit going forward).
 
 - **Durable fix (option A):** strip `dateOfBirth` from the object before it
   enters `newData`/`oldData` at every `tableName: "Person"` audit site that
-  currently includes it. Three sites need changes; three are already safe.
+  currently includes it. Three sites need changes; ten are already safe.
 - **One-time migration:** a data migration removes `dateOfBirth` from historical
   audit JSON for any person whose `Person.dateOfBirth` is currently null.
 - **What does not change:** audit rows themselves are never deleted; only the
@@ -39,42 +39,59 @@ between a write and a scrub in which the data exists.
 
 **Option B — extend the nightly purge** to scrub audit JSON alongside the
 `Person` column. Preserves audit fidelity (the blob records what the form
-actually saved at the time) but introduces a window: between the edit and the
-next nightly run, the DOB sits in audit JSON accessible to anyone who can read
-audit logs.
+actually saved at the time).
+
+**Option B-hybrid — keep the pre-image, scrub at purge time.** A variant of B
+that writes the full pre-image (including DOB) into audit at edit time, then
+strips it when the nightly cron purges `Person.dateOfBirth`. While a person is
+under 26, DOB is live on `Person` anyway — readable more widely than audit
+readers — so the pre-purge window adds no exposure the Person row doesn't
+already carry. This satisfies both the "no record" requirement (post-purge,
+audit holds nothing) and the principles register's "capture the pre-image
+before acting."
 
 **Recommendation: A.** The requirement was "no record of it." A structural
 invariant (never written) is stronger than a runtime scrub (written, then
-erased). Option B's audit-fidelity argument is real — an auditor loses the
-ability to see that a DOB was part of an edit — but the privacy posture
-outweighs it here. The nightly cron already logs `{ field: 'dateOfBirth',
-reason: 'aged_out_over_25' }` as a record that a purge happened, without
-recording the value itself.
+erased). The B-hybrid variant has a real argument — it preserves audit fidelity
+for the period when the DOB is live anyway, and aligns with the pre-image
+capture principle. **That tension is Principle-tier; escalate to the owner
+rather than settling it here.** If the owner prefers B-hybrid, the migration
+and inventory work below are unchanged; only the write-time stripping reverses,
+and a nightly-cron scrub step is added instead.
+
+The nightly cron already logs `{ field: 'dateOfBirth', reason:
+'aged_out_over_25' }` as a record that a purge happened, without recording the
+value itself.
 
 ---
 
 ## Affected audit sites
 
-All `auditLog.create` calls with `tableName: "Person"` were audited. Three
-write DOB; three are already safe.
+All `auditLog.create` calls with `tableName: "Person"` were audited — 13
+sites across 9 files. Three write DOB; ten are already safe.
 
 ### Needs fix
 
-| File | Line | What goes into audit | Fix |
-|------|------|---------------------|-----|
-| `src/app/api/household/member/route.ts` | 117 | `newData: updatedHouseholdMember` — selected via `HOUSEHOLD_PEER_SELECT`, which includes `dateOfBirth` | Destructure out `dateOfBirth` before writing |
-| `src/app/api/profile/route.ts` | 75 | `newData: updatedProfile` — select includes `dateOfBirth` | Destructure out `dateOfBirth` before writing |
-| `src/app/api/membership-ops/participants/merge/route.ts` | 564 | `oldData` embeds `personPreImage()` which captures `dateOfBirth` | Strip from `personPreImage` return |
+| File | What goes into audit | Fix |
+|------|---------------------|-----|
+| `src/app/api/household/member/route.ts` (EDIT) | `newData: updatedHouseholdMember` — selected via `HOUSEHOLD_PEER_SELECT`, which includes `dateOfBirth` | Destructure out `dateOfBirth` before writing |
+| `src/app/api/profile/route.ts` (EDIT) | `newData: updatedProfile` — select includes `dateOfBirth` | Destructure out `dateOfBirth` before writing |
+| `src/app/api/membership-ops/participants/merge/route.ts` (DELETE) | `oldData` embeds `personPreImage()` which captures `dateOfBirth` | Strip from `personPreImage` return |
 
 ### Already safe
 
-| File | Line | Why safe |
-|------|------|---------|
-| `src/app/api/household/route.ts` | 124 | Writes `{ householdId, email, name }` — no DOB |
-| `src/app/api/household/lead/route.ts` | 49, 126 | Writes `{ householdId, participantId, isHouseholdLead }` — no DOB |
-| `src/app/api/membership-ops/participants/[id]/route.ts` | 76 | Already destructures out DOB: `const { dateOfBirth: priorDob, ...prior }` |
-| `src/app/api/membership-ops/participants/[id]/household/route.ts` | 84 | Writes `{ householdId }` only |
-| `src/app/api/cron/nightly/route.ts` | 99 | Writes `{ field: 'dateOfBirth', reason: 'aged_out_over_25' }` — the event, never the value |
+| File | Why safe |
+|------|---------|
+| `src/app/api/household/route.ts` (EDIT) | Writes `{ householdId, email, name }` — no DOB |
+| `src/app/api/household/member/route.ts` (CREATE) | Lead promote within edit tx — writes `{ participantId }` only |
+| `src/app/api/household/member/route.ts` (DELETE) | Lead demote within edit tx — writes `{ participantId, secondaryAffectedEntity }` only |
+| `src/app/api/household/lead/route.ts` (CREATE) | Writes `{ householdId, participantId, isHouseholdLead }` — no DOB |
+| `src/app/api/household/lead/route.ts` (DELETE) | Writes `{ householdId, personId, isHouseholdLead }` — no DOB |
+| `src/app/api/roles/route.ts` (EDIT) | Writes `{ canAccessStaging }` — staging-access toggle, no person fields |
+| `src/app/api/membership-ops/participants/[id]/route.ts` (EDIT) | Already destructures out DOB: `const { dateOfBirth: priorDob, ...prior }` |
+| `src/app/api/membership-ops/participants/[id]/household/route.ts` (EDIT) | Writes `{ householdId }` only |
+| `src/app/api/membership-ops/contacts/route.ts` (CREATE) | Writes `{ name, email }` — no DOB |
+| `src/app/api/cron/nightly/route.ts` (DELETE) | Writes `{ field: 'dateOfBirth', reason: 'aged_out_over_25' }` — the event, never the value |
 
 ---
 
@@ -127,17 +144,19 @@ UPDATE "AuditLog" a
    AND a."newData" ? 'dateOfBirth'
    AND a."newData"->>'dateOfBirth' IS NOT NULL;
 
--- Strip dateOfBirth from oldData (merge pre-images).
--- oldData may be nested (merge stores keeper under a `keeper` key), so handle
--- both top-level and nested.
+-- Strip dateOfBirth from oldData.
+-- For merge-audit rows, affectedEntityId is the KEEPER while top-level
+-- oldData is the LOSER's pre-image. Join on the embedded id (which
+-- personPreImage always writes) to match the correct Person row.
 UPDATE "AuditLog" a
    SET "oldData" = a."oldData" - 'dateOfBirth'
   FROM "Person" p
  WHERE a."tableName" = 'Person'
-   AND a."affectedEntityId" = p.id
-   AND p."dateOfBirth" IS NULL
    AND a."oldData" ? 'dateOfBirth'
-   AND a."oldData"->>'dateOfBirth' IS NOT NULL;
+   AND a."oldData"->>'dateOfBirth' IS NOT NULL
+   AND a."oldData"->>'id' IS NOT NULL
+   AND p.id = (a."oldData"->>'id')::int
+   AND p."dateOfBirth" IS NULL;
 
 -- Merge route nests a `keeper` object inside oldData that also carries DOB.
 -- Strip it from the nested object for rows where the keeper's DOB is purged.
@@ -163,6 +182,13 @@ UPDATE "AuditLog" a
 - A youth whose DOB is legitimately still on their `Person` row is untouched —
   the `p."dateOfBirth" IS NULL` join ensures only purged people are affected.
 
+**Sequencing constraint:** this migration joins on `"Person" p` to check
+whether a person's DOB has been purged. Once the tombstone-removal work
+(`TOMBSTONE_REMOVAL.md`) deletes Person rows, those joins match nothing and
+orphaned audit residue becomes unreachable. **This migration must run before
+the tombstone delete phase**, or be rewritten to key off the archive snapshot
+instead of the live Person table.
+
 **Precedent:** `20260724120000_purge_adult_dob` was itself a one-time data fix
 shipped as a migration.
 
@@ -170,18 +196,19 @@ shipped as a migration.
 
 ## Open questions
 
-1. **`oldData` in the merge route's nested structure.** The merge route stores
-   `{ ...personPreImage(merged), keeper: personPreImage(keeper) }`. The third
-   SQL statement handles the nested `keeper` key. Are there other nesting
-   patterns in historical data (from earlier versions of the merge code) that
-   this misses? A count query before running would verify:
+1. **Option A vs B-hybrid — Principle-tier escalation.** The pre-image capture
+   principle applies here: option A discards information the audit trail is
+   designed to preserve. The exposure argument (DOB is already live on Person
+   while under 26) makes B-hybrid defensible. This is a Principle-tier tension
+   that the owner should decide before implementation proceeds.
+
+2. **Historical merge nesting patterns.** The merge route currently stores
+   `{ ...personPreImage(merged), keeper: personPreImage(keeper) }`. If earlier
+   versions of the merge code used a different nesting shape, the migration's
+   statement 3 would miss those rows. A pre-run verification query:
    ```sql
    SELECT count(*) FROM "AuditLog"
     WHERE "tableName" = 'Person'
       AND "oldData"::text LIKE '%dateOfBirth%'
       AND "oldData" ? 'keeper';
    ```
-
-2. **Import route.** `membership-ops/participants/import/route.ts` writes
-   `tableName: "Household"` (not "Person") for its audit log. Confirmed safe,
-   but worth a second look if the import path ever gains a per-person audit row.
