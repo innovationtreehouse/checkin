@@ -167,6 +167,10 @@ describe("Merge Participants API", () => {
 
     it("should write an AuditLog row capturing the merge (matrix 15)", async () => {
         await prisma.visit.create({ data: { personId: pMergeId, arrivedAt: new Date() } });
+        // Authority the tombstone held: the merge zeroes it, so the audit row is the
+        // only place it survives.
+        await prisma.personRole.create({ data: { personId: pMergeId, role: "KEYHOLDER" } });
+        await prisma.person.update({ where: { id: pMergeId }, data: { isKeyholder: true } });
 
         const res = await POST(mergeReq(pKeepId, pMergeId));
         expect(res.status).toBe(200);
@@ -186,16 +190,23 @@ describe("Merge Participants API", () => {
 
         // Full pre-image of the merged-away Person: every field the merge
         // rewrites (tombstone) or moves (backfill), captured before either update.
+        // The four role mirrors are in here because the merge rewrites them on both
+        // sides — nothing is deleted, so this row is the only record of what
+        // authority the merged-away record held.
         const PRE_IMAGE_KEYS = [
             "dateOfBirth", "email", "emailSuppressed", "emailVerified", "googleId",
             "householdId", "id", "image", "isHouseholdLead", "lastBackgroundCheck",
             "lastWaiverSign", "name", "phone",
+            "isSysadmin", "isBoardMember", "isKeyholder", "isBackgroundCheckReviewer",
         ].sort();
         const oldData = log?.oldData as Record<string, unknown>;
         expect(Object.keys(oldData).sort()).toEqual([...PRE_IMAGE_KEYS, "keeper"].sort());
         expect(oldData.id).toBe(pMergeId);
         expect(oldData.email).toBe("merge@example.com");
         expect(oldData.phone).toBe("123-456-7890");
+        // Recoverable authority: true in the pre-image, false on the row itself.
+        expect(oldData.isKeyholder).toBe(true);
+        expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.isKeyholder).toBe(false);
 
         // …and the keeper's own pre-image, since a field choice can overwrite it.
         const keeper = oldData.keeper as Record<string, unknown>;
@@ -1116,9 +1127,11 @@ describe("Merge Participants API", () => {
             expect((await prisma.person.findUnique({ where: { id: pMergeId } }))?.isKeyholder).toBe(false);
         });
 
-        // Written from the survivor's FINAL role set rather than patched per
-        // migrated row, so a mirror an earlier merge already left stale is repaired.
-        it("heals a survivor mirror that had already drifted from its PersonRole rows", async () => {
+        // Written from the survivor's whole FINAL role set rather than patched per
+        // migrated row, so a mirror an earlier merge already left stale is repaired —
+        // in BOTH directions. The demote case is the one that matters for security: a
+        // mirror reading true with no row behind it is retained privilege.
+        it("heals a survivor mirror that had already drifted from its PersonRole rows (promote)", async () => {
             await prisma.personRole.create({ data: { personId: pKeepId, role: "BOARD" } });
             await prisma.person.update({ where: { id: pKeepId }, data: { isBoardMember: false } });
 
@@ -1126,6 +1139,44 @@ describe("Merge Participants API", () => {
             expect(res.status).toBe(200);
 
             expect((await prisma.person.findUnique({ where: { id: pKeepId } }))?.isBoardMember).toBe(true);
+        });
+
+        // The lost-update race the in-transaction re-read exists to close: the
+        // mirror write asserts all four flags at once, so sourcing it from the
+        // pre-tx snapshot would re-assert a role revoked in the window as `true`
+        // with no row behind it. Simulated by patching the snapshot itself — a
+        // role the pre-tx read saw and the transaction cannot find is exactly what
+        // a concurrent revoke leaves behind.
+        it("does not re-assert a role revoked between the pre-tx read and the transaction", async () => {
+            const realFindUnique = prisma.person.findUnique.bind(prisma.person) as unknown as (args: unknown) => Promise<Record<string, unknown> | null>;
+            const spy = jest.spyOn(prisma.person, "findUnique").mockImplementation((async (args: unknown) => {
+                const row = await realFindUnique(args);
+                // Only the keeper's snapshot, and only when roles were requested.
+                if (row && row.id === pKeepId && Array.isArray(row.roles)) {
+                    (row.roles as { personId: number; role: string }[]).push({ personId: pKeepId, role: "SYSADMIN" });
+                }
+                return row;
+            }) as unknown as typeof prisma.person.findUnique);
+
+            try {
+                const res = await POST(mergeReq(pKeepId, pMergeId));
+                expect(res.status).toBe(200);
+            } finally {
+                spy.mockRestore();
+            }
+
+            // No SYSADMIN row was ever created, so the mirror must not claim one.
+            expect(await prisma.personRole.count({ where: { personId: pKeepId, role: "SYSADMIN" } })).toBe(0);
+            expect((await prisma.person.findUnique({ where: { id: pKeepId } }))?.isSysadmin).toBe(false);
+        });
+
+        it("heals a survivor mirror left true with no PersonRole row behind it (demote)", async () => {
+            await prisma.person.update({ where: { id: pKeepId }, data: { isKeyholder: true } });
+
+            const res = await POST(mergeReq(pKeepId, pMergeId));
+            expect(res.status).toBe(200);
+
+            expect((await prisma.person.findUnique({ where: { id: pKeepId } }))?.isKeyholder).toBe(false);
         });
 
         it("moves the PersonRole granter stamp (grantedById)", async () => {

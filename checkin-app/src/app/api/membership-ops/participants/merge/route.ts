@@ -47,6 +47,12 @@ function valuesConflict(a: unknown, b: unknown): boolean {
  * Pre-image of every field a merge can rewrite on EITHER side — the tombstone's
  * mangled identity and the keeper's overwritten name/email/DOB alike. Captured
  * before the transaction, because afterwards neither is readable.
+ *
+ * The four legacy role mirrors are in here because the merge rewrites them on
+ * both sides too (zeroed on the tombstone, re-derived on the keeper). Nothing is
+ * deleted by a merge, so this audit row is the only forensic record of what
+ * authority the merged-away record held — an un-merge that could not restore it
+ * would be restoring a different person.
  */
 function personPreImage(p: Person) {
     return {
@@ -63,6 +69,10 @@ function personPreImage(p: Person) {
         lastBackgroundCheck: p.lastBackgroundCheck,
         isHouseholdLead: p.isHouseholdLead,
         householdId: p.householdId,
+        isSysadmin: p.isSysadmin,
+        isBoardMember: p.isBoardMember,
+        isKeyholder: p.isKeyholder,
+        isBackgroundCheckReviewer: p.isBackgroundCheckReviewer,
     };
 }
 
@@ -599,11 +609,20 @@ export const POST = withAuth(
                 // dual-writes Person's legacy mirrors — leaving e.g. a migrated
                 // BG_REVIEWER unable to attest (canReviewBackgroundChecks reads the
                 // mirror) and dropped from reviewer notifications. Written from the
-                // keeper's FINAL role set, not patched per migrated row, so it also
-                // heals drift a pre-2b-0 merge already left behind.
+                // keeper's whole final role set, not patched per migrated row, so it
+                // also heals drift a pre-2b-0 merge already left behind.
+                //
+                // Re-read IN the transaction rather than reusing the pre-tx snapshot:
+                // this write asserts all four flags at once, so a role revoked from the
+                // keeper between the pre-tx read and here would be re-asserted true with
+                // no row behind it (privilege retention), and one granted in that window
+                // zeroed with a row present. The snapshot is fine for deciding what to
+                // MOVE (a missed row stays put, which is safe); it is not fine as the
+                // source of an unconditional overwrite.
+                const keeperFinalRoles = await tx.personRole.findMany({ where: { personId: keepId }, select: { role: true } });
                 await tx.person.update({
                     where: { id: keepId },
-                    data: roleMirrors(new Set([...keepRoles, ...mergeParticipant.roles.map(r => r.role)])),
+                    data: roleMirrors(new Set(keeperFinalRoles.map(r => r.role))),
                 });
 
                 // bgAttestations: pre-refused collisions; left is defense-in-depth.
