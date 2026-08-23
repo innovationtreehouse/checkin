@@ -8,6 +8,7 @@ import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
+import { nameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
@@ -27,6 +28,11 @@ export const PATCH = withAuth(
             // Phone is optional for a member, but if supplied it must be valid.
             if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
                 return apiError(PHONE_ERROR, 400);
+            }
+
+            // A submitted-but-blank name is rejected, not silently dropped (Decision 5).
+            if (name !== undefined && !nameWrite(name)) {
+                return apiError("Name cannot be blank", 400);
             }
 
             const hh = await householdLeadship(userId);
@@ -50,7 +56,7 @@ export const PATCH = withAuth(
                 const updatedHouseholdMember = await tx.person.update({
                     where: { id: participantId },
                     data: {
-                        name: name !== undefined ? name : undefined,
+                        name: nameWrite(name),
                         email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
                         phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                         // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a

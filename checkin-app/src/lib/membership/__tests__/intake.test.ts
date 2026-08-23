@@ -326,6 +326,21 @@ describe('saveIntake', () => {
         });
     });
 
+    // #1432 site 9 / Decision 5: a submitted-but-blank name is rejected, not
+    // silently dropped — this is the caller's own name, always required.
+    it('rejects blanking the primary parent (caller) name', async () => {
+        await expect(saveIntake(1, { primaryParent: { name: '   ' } })).rejects.toMatchObject({ code: 'name_required' });
+        expect(prisma.person.update).not.toHaveBeenCalled();
+    });
+
+    it('trims the primary parent name on write', async () => {
+        await saveIntake(1, { primaryParent: { name: '  Trimmed  ' } });
+        expect(prisma.person.update).toHaveBeenCalledWith({
+            where: { id: 1 },
+            data: { name: 'Trimmed' },
+        });
+    });
+
     // Intake used to write DoB with a bare `new Date`, bypassing the #1165 guard
     // that every other interactive path funnels through: signup could persist an
     // exact DoB for a 26+ person, with only the nightly cron as the net.
@@ -411,6 +426,21 @@ describe('saveIntake', () => {
         expect(prisma.person.create).toHaveBeenCalledWith({
             data: { id: MINTED_ID, householdId: 7, name: 'New Kid', dateOfBirth: null, allergies: null },
         });
+    });
+
+    // #1432 site 10 / Decision 5: same rejection as the primary parent — an
+    // existing child's name can't be blanked through an update.
+    it('rejects blanking an existing child name on update', async () => {
+        await expect(saveIntake(1, { children: [{ id: 4, name: '   ' }] })).rejects.toMatchObject({ code: 'name_required' });
+        expect(prisma.person.update).not.toHaveBeenCalled();
+    });
+
+    // #1432 site 4: "   " is truthy, so the old `else if (child.name)` gate
+    // would have created a child with a whitespace-only stored name.
+    it('does not create a child from a whitespace-only name', async () => {
+        const result = await saveIntake(1, { children: [{ name: '   ' }] });
+        expect(prisma.person.create).not.toHaveBeenCalled();
+        expect(result.rejections).toEqual([]);
     });
 });
 
