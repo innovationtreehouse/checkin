@@ -190,9 +190,11 @@ Things the app takes as true because they are handled outside it.
   not review other people's corrections. Running the facility works off the shape
   of attendance, not off who was there when.  [Decision — *Principle: least privilege*]
 
-- A visit recorded for someone else is always a closed one: it says they came and
-  left. Putting someone on the list of who is in the building now follows from a
-  badge at the kiosk, never from staff saying so.  [Decision — deliberate limit]
+- A household lead records a visit for a household member the same way they
+  record their own — open (still here) or closed (came and left). Board and
+  sysadmins always record a closed visit for someone outside their household.
+  An open visit for a non-keyholder still requires a keyholder already present
+  (the facility-open guard).  [Decision]
 
 - Every completed visit counts toward facility hours, whatever recorded it — a
   badge at the kiosk, a visit staff entered for somebody else, a roster mark. Where
