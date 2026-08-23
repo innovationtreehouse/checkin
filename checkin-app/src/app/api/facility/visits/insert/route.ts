@@ -57,6 +57,10 @@ export const POST = handler('POST /api/facility/visits/insert', async ({ req, au
                 personId: subjectId,
                 arrivedAt: ar.value,
                 departedAt: dr.value,
+                // Staff-asserted, not measured — LEAD_MARKED, matching the
+                // events-roster mark and the #1632 backfill of prior rows
+                // wrongly stamped WEB. Source records how presence was
+                // asserted; correction significance weights it.
                 arrivedVia: "LEAD_MARKED",
                 departedVia: "LEAD_MARKED",
                 associatedEventId: eventId,
