@@ -282,9 +282,8 @@ async function withCloseGuard(
     return result;
 }
 
-export async function PATCH(req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) {
-    return withCloseGuard(req, ctx, _PATCH);
-}
-export async function DELETE(req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) {
-    return withCloseGuard(req, ctx, _DELETE);
-}
+const _guardedPATCH = (req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) =>
+    withCloseGuard(req, ctx, _PATCH);
+const _guardedDELETE = (req: NextRequest, ctx?: { params?: Promise<{ id: string }> }) =>
+    withCloseGuard(req, ctx, _DELETE);
+export { _guardedPATCH as PATCH, _guardedDELETE as DELETE };
