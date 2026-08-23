@@ -9,6 +9,14 @@ export const dynamic = "force-dynamic";
 /** Thrown inside the transaction when the id no longer resolves — caught below and mapped to a 404. */
 class NotFoundError extends Error {}
 
+// Prisma known-request errors carry a string `code`. Duck-typed so we don't
+// pull in the generated Prisma namespace just for one check (mirrors
+// programs/[id]/participants/route.ts).
+function isPrismaError(error: unknown, code: string): boolean {
+    return typeof error === "object" && error !== null && "code" in error
+        && (error as { code: unknown }).code === code;
+}
+
 /**
  * DELETE /api/membership-ops/bg-attestations/[id] — sysadmin-only cleanup for a
  * BackgroundCheckAttestation the participant-merge route refuses to carry
@@ -41,6 +49,12 @@ export const DELETE = withAuth<{ params: Promise<{ id: string }> }>(
                 const attestation = await tx.backgroundCheckAttestation.findUnique({ where: { id } });
                 if (!attestation) throw new NotFoundError();
 
+                // FOR UPDATE per review.ts:513's contract: without it a concurrent
+                // attest()/overrideBlocked() attestation-set mutation on the same
+                // process could interleave with this delete (e.g. a second APPROVE
+                // clearing the check off a row we're mid-removing).
+                await tx.$queryRaw`SELECT id FROM "OrgMembershipProcess" WHERE id = ${attestation.processId} FOR UPDATE`;
+
                 await tx.backgroundCheckAttestation.delete({ where: { id } });
                 await tx.auditLog.create({
                     data: {
@@ -65,6 +79,9 @@ export const DELETE = withAuth<{ params: Promise<{ id: string }> }>(
             return NextResponse.json({ success: true });
         } catch (error) {
             if (error instanceof NotFoundError) return apiError("Attestation not found.", 404);
+            // Concurrent double-delete of the same row: the loser's delete throws
+            // P2025 (record to delete not found) — 404, not a 500.
+            if (isPrismaError(error, "P2025")) return apiError("Attestation not found.", 404);
             await logBackendError(error, "DELETE /api/membership-ops/bg-attestations/[id]");
             return apiError("Internal Server Error", 500);
         }
