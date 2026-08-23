@@ -1,5 +1,17 @@
 import type { OrgMembershipStatus } from "@/generated/prisma/client";
 
+/**
+ * The part of `BackgroundCheckAttestation`'s
+ * `@@unique([processId, reviewerId, subjectPersonId])` that a `subjectPersonId`
+ * repoint does NOT change — two rows sharing it cannot both name the same
+ * subject. Lives here rather than in either route because #1686's original
+ * collision key drifted between the POST and its analyze GET; one definition
+ * is what stops that recurring.
+ */
+export function bgSubjectKey(a: { processId: number; reviewerId: number }): string {
+    return `${a.processId}:${a.reviewerId}`;
+}
+
 /** A household with no OrgMembership row has never been a Treehouse Member. */
 export function householdMembershipStatus(
     household: { orgMembership?: { status: OrgMembershipStatus } | null } | null | undefined,

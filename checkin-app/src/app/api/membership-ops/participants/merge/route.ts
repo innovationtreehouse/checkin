@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import type { Person } from "@/generated/prisma/client";
+import type { Person, PersonRoleKind } from "@/generated/prisma/client";
 import { withAuth } from "@/lib/auth";
 import { logBackendError } from "@/lib/logger";
 import { apiError } from "@/lib/api-response";
@@ -9,7 +9,8 @@ import { personBgOpen } from "@/lib/membership/lifecycle";
 import { advanceHouseholdBgAfterMerge, householdBgFresh } from "@/lib/membership/mergeBgAdvance";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import type { TxClient } from "@/lib/db-client";
-import { householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
+import { KIND_TO_MIRROR } from "@/lib/roles";
+import { bgSubjectKey, householdMembershipStatus, membershipMergeBlock } from "./membershipGuard";
 
 export const dynamic = 'force-dynamic';
 
@@ -63,6 +64,18 @@ function personPreImage(p: Person) {
         isHouseholdLead: p.isHouseholdLead,
         householdId: p.householdId,
     };
+}
+
+/**
+ * Person's legacy boolean role mirrors for a set of held roles. `applyRoleFlag`
+ * (lib/roles.ts) dual-writes these alongside every PersonRole write; the merge
+ * moves PersonRole rows directly, so it owes the same mirror write. Derived
+ * from KIND_TO_MIRROR so a new mirrored role is covered the day it exists.
+ */
+function roleMirrors(held: Set<PersonRoleKind>): Record<string, boolean> {
+    return Object.fromEntries(
+        Object.entries(KIND_TO_MIRROR).map(([kind, flag]) => [flag, held.has(kind as PersonRoleKind)]),
+    );
 }
 
 /** A login identity is present iff email OR googleId is non-empty. */
@@ -205,8 +218,10 @@ export const POST = withAuth(
                 rsvps: { include: { event: { select: { name: true, startAt: true } } } },
                 toolStatuses: { include: { tool: { select: { name: true } } } },
                 bgAttestations: true,
+                bgAttestationsAsSubject: true,
                 corporationLeads: true,
                 corporationMembers: true,
+                roles: true,
             } as const;
 
             const keepParticipant = await prisma.person.findUnique({
@@ -311,6 +326,37 @@ export const POST = withAuth(
                 });
             }
 
+            // Cross-role: one record REVIEWED an attestation naming the other as its
+            // SUBJECT. No unique constraint fires — there is only one row — so the
+            // repoint silently collapses it into reviewerId === subjectPersonId, and
+            // approvalsForSubject (lib/membership/review.ts) has no self-exclusion, so
+            // that self-approval counts toward REQUIRED_APPROVALS. attest()'s
+            // same-household gate is create-time only and never sees this.
+            const bgCrossRoleCollisions = [
+                ...keepParticipant.bgAttestations.filter(a => a.subjectPersonId === mergeId),
+                ...mergeParticipant.bgAttestations.filter(a => a.subjectPersonId === keepId),
+            ];
+            if (bgCrossRoleCollisions.length > 0) {
+                collisions.push({
+                    type: 'bgAttestationCrossRole',
+                    message: `One record reviewed a background check naming the other as its subject (${bgCrossRoleCollisions.length} attestation${bgCrossRoleCollisions.length > 1 ? 's' : ''}). Merging would make the survivor the reviewer of their own background check — investigate before merging.`,
+                });
+            }
+
+            // Subject side of the same unique triple. Repointing subjectPersonId
+            // collides when ONE reviewer attested both identities under the same
+            // process — i.e. read the same human off a PDF twice. Two DIFFERENT
+            // reviewers naming the two identities is an ordinary 2-of-N review and
+            // merges cleanly.
+            const keepSubjectKeys = new Set(keepParticipant.bgAttestationsAsSubject.map(bgSubjectKey));
+            const bgSubjectCollisions = mergeParticipant.bgAttestationsAsSubject.filter(a => keepSubjectKeys.has(bgSubjectKey(a)));
+            if (bgSubjectCollisions.length > 0) {
+                collisions.push({
+                    type: 'bgAttestationSubject',
+                    message: `One reviewer attested both records as the subject of the same background check (${bgSubjectCollisions.length} shared attestation${bgSubjectCollisions.length > 1 ? 's' : ''}). This indicates the same adult named under two identities — investigate before merging.`,
+                });
+            }
+
             // RSVP — future events only; past events auto-dedupe in the transaction
             const now = new Date();
             const futureRsvpCollisions = mergeParticipant.rsvps.filter(r =>
@@ -401,6 +447,12 @@ export const POST = withAuth(
                         emailVerified: null,
                         phone: null,
                         isHouseholdLead: false,
+                        // Every PersonRole row moves off the tombstone below, so its
+                        // legacy role mirrors must go with them. Zeroed here rather
+                        // than derived after the loop for the same reason
+                        // isHouseholdLead is: a merged-away record holds no authority,
+                        // so `false` is the right value even if a row raced in.
+                        ...roleMirrors(new Set()),
                         // NOTE: name is NOT mangled — mergedIntoId carries the semantics;
                         // the UI shows a "merged" badge wherever tombstones surface.
                     },
@@ -418,6 +470,13 @@ export const POST = withAuth(
                 const moved = {
                     visits: 0,
                     personBgArchived: 0,
+                    rawBadgeLogs: 0,
+                    noteAcks: 0,
+                    attendanceConfirmations: 0,
+                    trustedAdultDecisions: 0,
+                    roleGrants: 0,
+                    roles: { migrated: 0, deduped: 0 },
+                    bgAttestationSubjects: { migrated: 0, left: 0 },
                     programParticipants: { migrated: 0, left: 0 },
                     programVolunteers: { migrated: 0, deduped: 0 },
                     rsvps: { migrated: 0, deduped: 0, left: 0 },
@@ -509,6 +568,44 @@ export const POST = withAuth(
                 await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { disclosedById: mergeId }, data: { disclosedById: keepId } });
 
+                // RawBadgeLog.personId is RESTRICT: a scan left on the tombstone pins
+                // that Person row in place forever.
+                moved.rawBadgeLogs = (await tx.rawBadgeLog.updateMany({ where: { personId: mergeId }, data: { personId: keepId } })).count;
+
+                // "Which staff member did this" facts, all SET NULL — left on the
+                // tombstone they read as nobody the moment the row goes.
+                moved.noteAcks = (await tx.orgMembershipProcess.updateMany({ where: { noteAckById: mergeId }, data: { noteAckById: keepId } })).count;
+                moved.attendanceConfirmations = (await tx.event.updateMany({ where: { attendanceConfirmedById: mergeId }, data: { attendanceConfirmedById: keepId } })).count;
+                moved.trustedAdultDecisions = (await tx.trustedAdultReview.updateMany({ where: { decidedById: mergeId }, data: { decidedById: keepId } })).count;
+
+                // PersonRole.personId is CASCADE — a role left on the tombstone is a
+                // security grant a later delete destroys with no audit row. PK is
+                // (personId, role), so move each role the survivor lacks and drop the
+                // duplicate: the survivor already holds that grant.
+                const keepRoles = new Set(keepParticipant.roles.map(r => r.role));
+                for (const { role } of mergeParticipant.roles) {
+                    const where = { personId_role: { personId: mergeId, role } };
+                    if (keepRoles.has(role)) {
+                        await tx.personRole.delete({ where });
+                        moved.roles.deduped++;
+                    } else {
+                        await tx.personRole.update({ where, data: { personId: keepId } });
+                        moved.roles.migrated++;
+                    }
+                }
+                // After the holder pass, so a granter stamp on a deduped row isn't counted.
+                moved.roleGrants = (await tx.personRole.updateMany({ where: { grantedById: mergeId }, data: { grantedById: keepId } })).count;
+                // The rows above moved without applyRoleFlag, which is what normally
+                // dual-writes Person's legacy mirrors — leaving e.g. a migrated
+                // BG_REVIEWER unable to attest (canReviewBackgroundChecks reads the
+                // mirror) and dropped from reviewer notifications. Written from the
+                // keeper's FINAL role set, not patched per migrated row, so it also
+                // heals drift a pre-2b-0 merge already left behind.
+                await tx.person.update({
+                    where: { id: keepId },
+                    data: roleMirrors(new Set([...keepRoles, ...mergeParticipant.roles.map(r => r.role)])),
+                });
+
                 // bgAttestations: pre-refused collisions; left is defense-in-depth.
                 // corporationLeads/corporationMembers: bare joins, auto-dedupe.
                 const keepAttestProcessIds = new Set(keepParticipant.bgAttestations.map(a => a.processId));
@@ -518,6 +615,17 @@ export const POST = withAuth(
                         moved.bgAttestations.migrated++;
                     } else {
                         moved.bgAttestations.left++;
+                    }
+                }
+
+                // Subject side of the same rows: pre-refused collisions; left is
+                // defense-in-depth.
+                for (const att of mergeParticipant.bgAttestationsAsSubject) {
+                    if (!keepSubjectKeys.has(bgSubjectKey(att))) {
+                        await tx.backgroundCheckAttestation.update({ where: { id: att.id }, data: { subjectPersonId: keepId } });
+                        moved.bgAttestationSubjects.migrated++;
+                    } else {
+                        moved.bgAttestationSubjects.left++;
                     }
                 }
 
