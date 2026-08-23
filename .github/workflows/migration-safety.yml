@@ -246,11 +246,8 @@ jobs:
   #    coalesce flow operates on the UNRELEASED tail only (scoped reconcile).
   #    Even reconcile.sql edits inside a released directory count — history is
   #    history.
-  # 2. ACCUMULATION WARNING (non-blocking): more than 5 unreleased migrations
-  #    in a chain annotates the PR as a cue to coalesce the tail before the
-  #    next release. Migration count per release is a manual team judgment
-  #    now (no CI gate enforces it); this is just the early nudge that keeps
-  #    PRs moving.
+  #    (Job name keeps its historical "(+ accumulation warning)" suffix only
+  #    because branch protection pins required checks by name.)
   history:
     name: Released migrations immutable (+ accumulation warning)
     runs-on: ubuntu-latest
@@ -283,11 +280,6 @@ jobs:
                 FAILED=1
               fi
             done <<< "$BASE_DIRS"
-            NEW_COUNT=$(comm -13 <(printf '%s\n' "$BASE_DIRS") <(printf '%s\n' "$HEAD_DIRS") | grep -c . || true)
-            if [ "$NEW_COUNT" -gt 5 ]; then
-              echo "::warning::$DIR carries $NEW_COUNT unreleased migrations since $LAST_RELEASE — consider coalescing the unreleased tail before the next release (checkin-app/docs/MIGRATION_COALESCE_FLOW.md). Non-blocking."
-            fi
-            echo "[$DIR] unreleased migrations: $NEW_COUNT"
           done
           [ "$FAILED" -eq 0 ]
           echo "Released history intact."
