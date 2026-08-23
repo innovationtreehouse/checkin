@@ -1,6 +1,8 @@
 import type { PrismaClient } from "@/generated/prisma/client";
 import { addHouseholdLead } from "@/lib/household/leads";
 import { setRoleFlag, type RoleFlag } from "@/lib/roles";
+import { mintPersonId } from "@/lib/person/mintId";
+import { withTx } from "@/lib/db-client";
 
 /**
  * Dev seed + macro helpers (docs/ops/dev-instance.md, "Macros") — the ONE source of truth for creating
@@ -301,27 +303,38 @@ export async function createFamily(prisma: Db): Promise<string> {
     await prisma.orgMembership.create({
         data: { householdId: household.id, status: "ACTIVE" },
     });
-    const lead = await prisma.person.create({
-        data: {
-            name: `Lead ${tag}`,
-            email: `lead.${tag}@example.com`,
-            phone: "555-100-0000",
-            dateOfBirth: yearsAgo(38),
-            householdId: household.id,
-        },
-    });
+    // The + Family macro is click-repeatable, so it is the unbounded seed site —
+    // it mints like production. (The fixed persona upserts below stay on the
+    // sequence; see personIdMintGuard.test.ts.)
+    const lead = await withTx(prisma, async (tx) =>
+        tx.person.create({
+            data: {
+                id: await mintPersonId(tx),
+                name: `Lead ${tag}`,
+                email: `lead.${tag}@example.com`,
+                phone: "555-100-0000",
+                dateOfBirth: yearsAgo(38),
+                householdId: household.id,
+            },
+        }),
+    );
     await addHouseholdLead(prisma, household.id, lead.id);
-    await prisma.person.create({
-        data: {
-            name: `Partner ${tag}`,
-            email: `partner.${tag}@example.com`,
-            dateOfBirth: yearsAgo(36),
-            householdId: household.id,
-        },
-    });
-    await prisma.person.create({
-        data: { name: `Kid ${tag}`, dateOfBirth: yearsAgo(9), householdId: household.id },
-    });
+    await withTx(prisma, async (tx) =>
+        tx.person.create({
+            data: {
+                id: await mintPersonId(tx),
+                name: `Partner ${tag}`,
+                email: `partner.${tag}@example.com`,
+                dateOfBirth: yearsAgo(36),
+                householdId: household.id,
+            },
+        }),
+    );
+    await withTx(prisma, async (tx) =>
+        tx.person.create({
+            data: { id: await mintPersonId(tx), name: `Kid ${tag}`, dateOfBirth: yearsAgo(9), householdId: household.id },
+        }),
+    );
     return `Created household "Test Family ${tag}" (lead + partner + 1 youth)`;
 }
 

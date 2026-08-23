@@ -10,6 +10,7 @@ import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { mintPersonId } from "@/lib/person/mintId";
 import { apiError } from "@/lib/api-response";
 
 export const GET = withAuth(
@@ -108,6 +109,7 @@ export const PATCH = withAuth(
                 // here would let any lead absorb a known/guessed email into their household.
                 const member = await tx.person.create({
                     data: {
+                        id: await mintPersonId(tx),
                         name: memberName,
                         ...(memberEmail && { email: memberEmail.toLowerCase() }),
                         // #1165: strip DoB + declare adult when the entered date is 26+.

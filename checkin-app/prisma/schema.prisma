@@ -1303,6 +1303,16 @@ model CronRunLog {
   @@index([job, success, finishedAt])
 }
 
+/// Monotonic ID sources that must not skip. `Person` is issued from here rather
+/// than from its sequence because Aurora's storage layer prefetches sequence
+/// values that a pause discards, and the person ID is printed on a badge.
+model IdCounter {
+  /// @sensitivity:internal
+  name  String @id
+  /// @sensitivity:internal
+  value Int
+}
+
 /// Dev-instance activity ledger (docs/ops/dev-instance.md, "The ledger"). Lives only in checkin_dev; records
 /// the last login / impersonate / macro / reset by REAL human identity so a shared dev instance
 /// shows who tested/reset last (no accidental clobbering). Never written in prod by construction;

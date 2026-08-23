@@ -43,6 +43,9 @@ jest.mock('@/lib/prisma', () => ({
     default: {
         person: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
         household: { create: jest.fn() },
+        // createParticipantWithHousehold mints the person id through
+        // mintPersonId(tx), which is one $queryRaw on the tx client (#1693).
+        $queryRaw: jest.fn().mockResolvedValue([{ value: 2503 }]),
         $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(prismaMockTx)),
     },
 }));
@@ -440,7 +443,7 @@ describe('adapter — createUser / getUser (Participant.id is an Int, NextAuth I
 
         expect(prismaMockTx.household.create).toHaveBeenCalledWith({ data: { name: 'New Person' } });
         expect(prismaMockTx.person.create).toHaveBeenCalledWith({
-            data: { name: 'New Person', email: 'new@x.org', householdId: 55 },
+            data: { name: 'New Person', email: 'new@x.org', id: 2503, householdId: 55 },
         });
         expect(addHouseholdLead).toHaveBeenCalledWith(expect.anything(), 55, 9);
         expect(created).toEqual({ id: '9', email: 'new@x.org', name: 'New Person' });

@@ -72,7 +72,9 @@ jest.mock('@/lib/prisma', () => {
     },
     // Enroll route now wraps the insert in $transaction + a FOR UPDATE
     // capacity check; run the callback against this same mock as the tx client.
-    $queryRaw: jest.fn(),
+    // The household PATCH route also mints the new member's id through
+    // mintPersonId(tx), which is one $queryRaw — hence the resolved row.
+    $queryRaw: jest.fn().mockResolvedValue([{ value: 100000 }]),
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (mock as any).$transaction = jest.fn((cb: (tx: typeof mock) => unknown) => cb(mock));

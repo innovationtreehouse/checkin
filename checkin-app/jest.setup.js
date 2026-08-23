@@ -46,7 +46,9 @@ process.env.CHECKIN_ENV = 'dev';
   // pool of >= 2 so their two enroll transactions run on separate connections,
   // making the program-row FOR UPDATE lock (not pool-1 serialization) the thing
   // that serializes them — matching production.
-  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|visitWriteLockConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency)\.integration\.test\.[jt]sx?$/.test(testPath)) {
+  // mintId is the same shape again: its two mints must run on separate
+  // connections so the IdCounter row lock is what serializes them.
+  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|visitWriteLockConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency|mintId)\.integration\.test\.[jt]sx?$/.test(testPath)) {
     process.env.TEST_DB_POOL_MAX = '2';
   }
 }
@@ -121,9 +123,22 @@ jest.mock('@/lib/prisma', () => {
     "Either jest.mock('@/lib/prisma', ...) in this test, " +
     'or rename the file to *.integration.test.ts and run `npm run test:integration`.'
   ));
+  // The ONE raw query a unit-tier route can legitimately reach: mintPersonId
+  // (lib/person/mintId.ts) runs inside the same transaction as every
+  // person.create, so any suite driving a person-creating route hits it. Match
+  // the statement, hand back an id well above any fixture's, and increment so a
+  // multi-create flow gets distinct ones. Every OTHER raw query still rejects —
+  // "unit tests must not call the real client" is the point of this mock.
+  let nextMintedId = 100000;
+  const queryRaw = (strings, ...values) => {
+    const sql = Array.isArray(strings) ? strings.join('') : String(strings);
+    if (sql.includes('IdCounter')) return Promise.resolve([{ value: nextMintedId++ }]);
+    return rejectFn()(strings, ...values);
+  };
   const models = new Map();
   const handler = {
     get(_target, prop) {
+      if (prop === '$queryRaw') return queryRaw;
       if (!models.has(prop)) {
         // Each method access on an unset key returns a rejecting function so
         // accidental calls fail loudly; explicit assignment overrides it.
