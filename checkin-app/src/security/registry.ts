@@ -655,6 +655,45 @@ defineRoute({
     ],
 });
 
+// Parked kiosk scans awaiting review (KIOSK_RESILIENCE §2 D7, #1347) — the
+// RawBadgeLog rows a replay parked instead of toggling (reviewReason set,
+// reviewedAt still null). Landed registry-first, ahead of the route.
+//
+// Same admin pair and same everyones band as the sibling GET
+// /api/facility/badges, MINUS pii: the panel names the person and nothing
+// more, so the route selects person { id, name } only (both public-tier) and
+// there is no email/phone in the bag for a pii grant to cover. Narrower than
+// the sibling ON PURPOSE — widening it later is a boundary PR, which is the
+// point. 'personal' is required for RawBadgeLog.timestamp (the "scanned
+// 2:14pm" the row copy is built on) and location; 'internal' for the row's
+// own bookkeeping — reviewReason, clientEventId, personId, and the two new
+// reviewedAt/reviewedBy columns.
+defineRoute({
+    endpoint: 'GET /api/system-status/unsynced-scans',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'scans',
+    // Bag: { RawBadgeLog } with person (Person).
+    returns: ['RawBadgeLog', 'Person'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:personal', 'everyones:internal', 'member', 'public']],
+    ],
+});
+
+// Dismiss one parked scan — stamps reviewedAt/reviewedBy and nothing else. No
+// bag: the response is `{}`, so the grant is inert by construction and the
+// entry is an admission gate only (same shape as DELETE
+// /api/attendance/manual/[id]). `[id]` is a RawBadgeLog id. Deliberately NOT a
+// resolver: minting a Visit from a parked scan inherits the open §5.26/B4
+// staleness question, so the panel's other action is a deep link to the manual-
+// visit tool, which carries its own registered grant. Landed registry-first.
+defineRoute({
+    endpoint: 'POST /api/system-status/unsynced-scans/[id]',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: null,
+    orderedView: [],
+});
+
 // Volunteer designations (dues-discount allowlist; email is pii) — admin
 // surface, registered ahead of its handler() conversion (inert until then). GET
 // is a pure findMany (create/delete live on other HTTP methods).
