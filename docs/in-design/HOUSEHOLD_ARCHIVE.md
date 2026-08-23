@@ -15,13 +15,14 @@ The obvious fix — add the column, filter it on every read — is the same patt
 silent defects across a single widened sweep, including an authorization check a
 merged-away identity could satisfy.
 
-Household queries are a comparable surface: **14 direct read calls
-(`findMany`/`findUnique`/`findFirst`/`count`) across 12 production files, plus
-~74 relation traversals** (`household: { ... }`) that reach Household through
-Person or other models. An opt-out `{ archivedAt: null }` filter on each of them
-is the same bug class — forgettable, no compiler error on omission, leaks
-silently — and would mint a second convention alongside `LIVE_PERSON`, doubling
-the surface a drift guard has to cover.
+Household queries are a comparable surface: **14 direct read calls** across 12
+production files, **72 relation-`where` traversals** (`household: { ... }` inside
+another model's query), **24 relation includes** (`household: true`), **3 raw SQL
+`SELECT ... FOR UPDATE`** sites, and **3 direct writes**. An opt-out
+`{ archivedAt: null }` filter on each relevant site is the same bug class —
+forgettable, no compiler error on omission, leaks silently — and would mint a
+second convention alongside `LIVE_PERSON`, doubling the surface a drift guard has
+to cover.
 
 `TOMBSTONE_REMOVAL.md`'s out-of-scope section calls this out explicitly: "a
 second exclusion dimension … would mint a second forgettable convention and a
@@ -79,9 +80,10 @@ Add `archivedAt` and rely on every query site to include `{ archivedAt: null }`.
 This is what `LIVE_PERSON` does for Person.
 
 **Why not:** the failure evidence is already in. 113 Person query sites, 13
-silent defects. 88 Household query sites would produce the same class. The drift
-guard `TOMBSTONE_REMOVAL.md` argues against exists precisely because the
-convention-plus-guard arrangement does not work.
+silent defects. Over 100 Household query sites (direct + relation + raw SQL)
+would produce the same class. The drift guard `TOMBSTONE_REMOVAL.md` argues
+against exists precisely because the convention-plus-guard arrangement does not
+work.
 
 ### Option B: Postgres view (`active_household`) (considered, not recommended)
 
@@ -116,7 +118,11 @@ need archived rows pass a sentinel value to opt out.
 
 **Cons:**
 - Does not reach relation traversals (see below).
-- Does not reach raw SQL (no raw SQL reads Household today).
+- Does not reach raw SQL. Three `$queryRaw` sites issue
+  `SELECT id FROM "Household" WHERE id = $1 FOR UPDATE` today
+  (`leads.ts` ×2, `import/route.ts` ×1) — row-locking by known id, so the
+  archive filter is not needed there, but any future raw-SQL Household reads
+  would also be uncovered.
 - The sentinel is a runtime convention — but it is opt-**in** (safe by default),
   not opt-**out** (unsafe by default), which inverts the failure mode.
 
@@ -220,40 +226,35 @@ export const householdArchiveExtension = Prisma.defineExtension({
                 args.where = injectArchiveFilter(args.where)
                 return query(args)
             },
-            update({ args, query }) {
-                args.where = injectArchiveFilter(args.where)
-                return query(args)
-            },
-            updateMany({ args, query }) {
-                args.where = injectArchiveFilter(args.where)
-                return query(args)
-            },
-            delete({ args, query }) {
-                args.where = injectArchiveFilter(args.where)
-                return query(args)
-            },
-            deleteMany({ args, query }) {
-                args.where = injectArchiveFilter(args.where)
-                return query(args)
-            },
-            upsert({ args, query }) {
-                args.where = injectArchiveFilter(args.where)
-                return query(args)
-            },
         },
     },
 })
 ```
 
-The extension covers **every** `household.*` operation — reads (`findMany`,
-`findFirst`, `findFirstOrThrow`, `findUnique`, `findUniqueOrThrow`, `count`,
-`aggregate`, `groupBy`) and writes (`update`, `updateMany`, `delete`,
-`deleteMany`, `upsert`). Write coverage prevents an accidental bulk update or
-delete from touching archived rows — e.g. a `household.updateMany` that sets a
-field on "all households" silently including departed ones.
+The extension covers **reads only**: `findMany`, `findFirst`, `findFirstOrThrow`,
+`findUnique`, `findUniqueOrThrow`, `count`, `aggregate`, `groupBy`.
 
 `injectArchiveFilter` checks for the opt-out sentinel, and otherwise AND-merges
 `{ archivedAt: null }` into the existing `where`.
+
+### Why writes are excluded
+
+Intercepting write operations (`update`, `upsert`, `delete`) with the archive
+filter creates worse problems than it solves:
+
+- **`upsert` silently mints duplicates.** The filtered `where` never matches an
+  archived row, so `upsert` falls through to `create` — the exact data-integrity
+  failure archiving exists to prevent.
+- **`update` makes unarchive impossible.** Clearing `archivedAt` requires
+  updating an archived row; the filter turns that into a P2025 "record not found",
+  contradicting the doc's own reversibility guarantee.
+- **`delete` on an archived row is a legitimate admin action** (if data-retention
+  rules later require it) that a blanket filter would silently skip.
+
+Write paths that should not touch archived rows (3 `household.update` sites
+today) are a conventional guard — but they are a small, stable set (writes are
+rarer than reads and more deliberate), and the failure mode is visible (a write
+to a wrong row is caught by its effects, unlike a silent count inflation).
 
 The extension is added to the client chain in `lib/prisma.ts`, alongside the
 existing `emailNormalizeExtension` and `auroraResumeRetryExtension`.
@@ -294,20 +295,32 @@ Prisma query extensions intercept top-level `prisma.household.*` calls but
 { household: true } })` fetches the related Household without passing through the
 extension.
 
-**The relation traversals are the larger surface.** Of the ~88 total production
-query sites, ~14–19 are direct `household.*` calls (covered by the extension) and
-~66 are relation traversals (not covered). This is the honest arithmetic, and
-it matters: the `LIVE_PERSON` defects that shipped concentrated in exactly this
-shape — relation-named Person references (`householdMembers`, `leadMentor`) that
-the original drift guard could not see.
+**The relation traversals are the larger surface.** Of the ~116 total production
+query sites, 14 are direct reads (covered structurally by the extension). The
+remaining ~99 — 72 relation-`where` traversals, 24 relation includes, 3 raw SQL,
+and 3 direct writes — are not covered. This is the honest arithmetic, and it
+matters: the `LIVE_PERSON` defects that shipped concentrated in exactly the
+relation-traversal shape — relation-named Person references (`householdMembers`,
+`leadMentor`) that the original drift guard could not see.
 
 The extension does not make the relation problem go away. What it does is
-**partition the surface**: the direct-query half is structurally closed (no new
-code can forget it), so the relation half is what remains to be swept and
-guarded. That is still conventional — but it is half the original problem, and
-the half that the extension removes is the half most likely to grow (new
-Household queries), while the relation paths are more stable (they are defined
-by the schema, not by new features).
+**close the direct-read surface structurally** — no new `household.findMany()`
+can forget the filter — so the conventional sweep and guard are scoped to the
+remaining shapes. Those shapes break down differently:
+
+- **Relation includes** (24 sites, `household: true`): pull a specific person's
+  household as a nested object. The archived state is visible on the included
+  row and the caller can act on it. Most do not need filtering — the caller
+  already selected a specific person.
+- **Relation-`where` traversals** (72 sites): filter another model's rows by a
+  household condition. These are where archive leaks would concentrate — a
+  person search, a compliance query, a count. The #1232 sweep.
+- **Raw SQL** (3 sites): row-locks by known id (`SELECT ... FOR UPDATE`). No
+  filter needed today.
+- **Direct writes** (3 sites): `household.update`. Small, stable, deliberate.
+
+The relation-`where` traversals are the real exposure. They need a one-time
+audit (#1232) and a narrowly scoped drift guard covering that shape only.
 
 This matters for two shapes:
 
@@ -323,8 +336,8 @@ This matters for two shapes:
    shape that needs attention: a Person search that should exclude archived
    households must add `{ household: { archivedAt: null } }` to the Person where.
 
-The bounded set of relation traversals is the #1232 sweep — ~66 sites, each
-audited once. A drift guard scoped to relation paths alone (not the direct
+The bounded set of relation-`where` traversals is the #1232 sweep — 72 sites,
+each audited once. A drift guard scoped to relation paths alone (not the direct
 queries the extension already covers) is the complement: smaller than a guard
 covering everything, and scoped to the surface the extension cannot reach.
 
@@ -446,8 +459,9 @@ guard to maintain.
 - **Archive action:** PATCH sets `archivedAt`, household disappears from the
   standard list. PATCH nulling it restores.
 - **Permission:** only board/sysadmin can archive. A household lead gets 403.
-- **Relation traversal audit:** each of the ~74 relation sites is categorized as
-  "needs filter" or "legitimately reads all" and tested accordingly (#1232).
+- **Relation traversal audit:** each of the 72 relation-`where` sites is
+  categorized as "needs filter" or "legitimately reads all" and tested
+  accordingly (#1232).
 - **Integration:** an archived household's members do not appear in people
   search, program enrollment dropdowns, compliance worklists, or nav counts.
 - **Check-in:** badge scan for an archived household's member behaves per the
