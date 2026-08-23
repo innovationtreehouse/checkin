@@ -529,7 +529,7 @@ defineRoute({
     endpoint: 'GET /api/finance-ops/membership-payment-plans',
     authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
     envelope: null,
-    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household'],
+    returns: ['OrgMembershipProcess', 'OrgMembership', 'Household', 'Person'],
     orderedView: [
         ['isSysadmin',    ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:pii', 'everyones:personal', 'everyones:internal', 'member', 'public']],
