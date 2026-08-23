@@ -56,7 +56,7 @@ export default function RolesPage() {
         <Text c="dimmed">Grant or revoke roles. Every change is logged with who granted it and when.</Text>
       </div>
 
-      <Card withBorder radius="md" padding="lg">
+      <Card withBorder radius="md" padding="lg" style={{ overflow: 'visible' }}>
         <EntityPicker<PersonRow>
           label="Add or edit a person's roles"
           placeholder="Search people by name or email..."
