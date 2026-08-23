@@ -94,7 +94,7 @@ describe('Shop API Integration Tests', () => {
             data: {
                 email: 'certifier-shop-api-test@example.com',
                 name: 'Certifier',
-                household: { create: { name: "Test HH" } },
+                household: { create: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } } },
                 toolStatuses: {
                     create: { toolId: mockToolId, level: 'MAY_CERTIFY_OTHERS' }
                 }
@@ -332,6 +332,80 @@ describe('Shop API Integration Tests', () => {
              expect((normalizeAuditData(auditRows[0].oldData) as Record<string, unknown>).level).toBe('BASIC');
         });
 
+        it('blocks a non-member certifier from granting a certification', async () => {
+            const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool NonMemberCert' } });
+            const nonMemberCertifier = await prisma.person.create({
+                data: {
+                    email: 'nonmember-certifier-shop-api-test@example.com',
+                    name: 'Non-Member Certifier',
+                    household: { create: { name: "Test HH" } },
+                    toolStatuses: { create: { toolId: tool.id, level: 'MAY_CERTIFY_OTHERS' } },
+                },
+            });
+
+            try {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: nonMemberCertifier.id } });
+
+                const req = createReq('POST', { body: { personId: commonId, toolId: tool.id, level: 'BASIC' } });
+                const res = await postCerts(req) as Response;
+                expect(res.status).toBe(403);
+
+                const written = await prisma.toolStatus.findUnique({
+                    where: { personId_toolId: { personId: commonId, toolId: tool.id } }
+                });
+                expect(written).toBeNull();
+            } finally {
+                await prisma.toolStatus.deleteMany({ where: { toolId: tool.id } });
+                await prisma.tool.deleteMany({ where: { id: tool.id } });
+                const hhIds = [nonMemberCertifier.householdId].filter((id): id is number => id !== null);
+                await prisma.person.deleteMany({ where: { id: nonMemberCertifier.id } });
+                await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
+            }
+        });
+
+        it('blocks certifying a non-member target', async () => {
+            const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool NonMemberTarget' } });
+            const nonMemberTarget = await prisma.person.create({
+                data: { email: 'nonmember-target-shop-api-test@example.com', name: 'Non-Member Target', household: { create: { name: "Test HH" } } },
+            });
+            const memberCertifier = await prisma.person.create({
+                data: {
+                    email: 'member-certifier-shop-api-test@example.com',
+                    name: 'Member Certifier',
+                    household: { create: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } } },
+                    toolStatuses: { create: { toolId: tool.id, level: 'MAY_CERTIFY_OTHERS' } },
+                },
+            });
+
+            try {
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: memberCertifier.id } });
+
+                const req = createReq('POST', { body: { personId: nonMemberTarget.id, toolId: tool.id, level: 'BASIC' } });
+                const res = await postCerts(req) as Response;
+                expect(res.status).toBe(403);
+
+                const written = await prisma.toolStatus.findUnique({
+                    where: { personId_toolId: { personId: nonMemberTarget.id, toolId: tool.id } }
+                });
+                expect(written).toBeNull();
+            } finally {
+                await prisma.toolStatus.deleteMany({ where: { toolId: tool.id } });
+                await prisma.tool.deleteMany({ where: { id: tool.id } });
+                const hhIds = [nonMemberTarget.householdId, memberCertifier.householdId].filter((id): id is number => id !== null);
+                await prisma.person.deleteMany({ where: { id: { in: [nonMemberTarget.id, memberCertifier.id] } } });
+                await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
+                await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
+            }
+        });
+
+        it('allows sysadmin to certify even without own membership', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = createReq('POST', { body: { personId: commonId, toolId: mockToolId, level: 'CERTIFIED' } });
+            const res = await postCerts(req) as Response;
+            expect(res.status).toBe(200);
+        });
+
         it('re-cert by a certifier writes an EDIT audit row with the prior level in oldData and the acting certifier as actor', async () => {
             // Self-contained: a fresh tool the certifier may certify on, a fresh target.
             const tool = await prisma.tool.create({ data: { name: 'Shop Test Tool Recert' } });
@@ -339,12 +413,12 @@ describe('Shop API Integration Tests', () => {
                 data: {
                     email: 'recert-certifier-shop-api-test@example.com',
                     name: 'Recert Certifier',
-                    household: { create: { name: "Test HH" } },
+                    household: { create: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } } },
                     toolStatuses: { create: { toolId: tool.id, level: 'MAY_CERTIFY_OTHERS' } },
                 },
             });
             const target = await prisma.person.create({
-                data: { email: 'recert-target-shop-api-test@example.com', name: 'Recert Target', household: { create: { name: "Test HH" } } },
+                data: { email: 'recert-target-shop-api-test@example.com', name: 'Recert Target', household: { create: { name: "Test HH", orgMembership: { create: { status: 'ACTIVE' } } } } },
             });
 
             try {
@@ -381,6 +455,7 @@ describe('Shop API Integration Tests', () => {
                 await prisma.tool.deleteMany({ where: { id: tool.id } });
                 const hhIds = [reCertifier.householdId, target.householdId].filter((id): id is number => id !== null);
                 await prisma.person.deleteMany({ where: { id: { in: [reCertifier.id, target.id] } } });
+                await prisma.orgMembership.deleteMany({ where: { householdId: { in: hhIds } } });
                 await prisma.household.deleteMany({ where: { id: { in: hhIds } } });
             }
         });

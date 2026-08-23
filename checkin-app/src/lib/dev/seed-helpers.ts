@@ -188,9 +188,10 @@ export async function seedBaseline(prisma: Db): Promise<void> {
             email: "tool.certifier@example.com",
             name: "Tool Certifier",
             phone: "555-555-0008",
-            household: { create: { name: "Tool Certifier Household" } },
+            household: { create: { name: "Tool Certifier Household", orgMembership: { create: { status: "ACTIVE" } } } },
         },
     });
+    await addHouseholdLead(prisma, toolCertifier.householdId, toolCertifier.id);
 
     const bgReviewer = await prisma.person.upsert({
         where: { email: "bg.reviewer@example.com" },
