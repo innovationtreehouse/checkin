@@ -111,9 +111,13 @@ describe('orgCalendarDay', () => {
 });
 
 describe('isYouth', () => {
+  const yearsAgo = (n: number) => {
+    const d = new Date(); d.setFullYear(d.getFullYear() - n); d.setDate(d.getDate() - 1); return d;
+  };
+
   it('classifies by age when DOB is known', () => {
-    expect(isYouth(new Date('2020-01-01'))).toBe(true);
-    expect(isYouth(new Date('1980-01-01'))).toBe(false);
+    expect(isYouth(yearsAgo(5))).toBe(true);
+    expect(isYouth(yearsAgo(40))).toBe(false);
   });
 
   it('unknown DOB defaults to adult (UI/household-lead contract)', () => {
