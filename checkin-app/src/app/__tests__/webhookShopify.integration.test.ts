@@ -300,7 +300,7 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
             data: { name: 'Settled Outsider', email: `outsider-${TAG}@example.com`, household: { create: { name: 'Settled HH' } } },
         });
         try {
-            const membership = await prisma.orgMembership.create({ data: { householdId: outsider.householdId, status: 'ACTIVE' } });
+            await prisma.orgMembership.create({ data: { householdId: outsider.householdId, status: 'ACTIVE' } });
             const body = programPayload(`${p1},${outsider.id}`, PROGRAM_VARIANT_ID, [`PRG${programId}-ABCD1234`]);
             const res = await POST(webhookReq(body, sign(body)));
             expect(res.status).toBe(200);
