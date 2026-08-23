@@ -177,23 +177,53 @@ the program. Publicly listed programs do not change this — the announcement
 targets members, not the general public. The public catalog is the discovery
 channel for non-members.
 
-### Rules-doc updates
+### Rules-doc amendments — requires board ruling
 
-Two entries in `docs/rules/programs.md` need amendment:
+Two entries in `docs/rules/programs.md` are affected. Both carry tiers that
+cannot be amended in a PR alone (per `docs/DOCUMENTATION_STANDARD.md` §3.2).
 
-**Line 234-238** (catalog filtering):
+**1. Catalog filtering (line 234-238)** — tier: **[Decision — *Policy: Records
+Policy, Art. IV*]**
+
 > "The catalogue filters rather than gates: an anonymous caller reaches it and
 > sees less, and is never told that a members-only program exists."
 
-Becomes: "...and is never told that a members-only program exists **unless the
-program is publicly listed**."
+This is a Policy-tier rule. The proposed amendment — "unless the program is
+publicly listed" — relaxes a Records Policy guarantee. **Board action required**
+before this rule can change. The implementation PR must not land until the board
+has ruled on whether publicly listing a members-only program is consistent with
+the Records Policy, or has amended Art. IV to allow it.
 
-**Lines 240-242** (detail page silence):
+**2. Detail-page silence (lines 240-242)** — tier: **[Decision — *Principle: no
+existence oracle*]**
+
 > "A members-only program's own page keeps that silence. An anonymous caller is
-> told there is no such program..."
+> told there is no such program; a signed-in caller who is not a member is told it
+> exists and that it is members only."
 
-Becomes: "A members-only program that is not publicly listed keeps that
-silence..." with the new behavior for publicly listed programs described.
+This is Principle-tier. The proposed change — a publicly listed program lets
+everyone reach its detail page — is a deliberate, scoped exception to the
+no-existence-oracle principle: the program leader has explicitly opted into
+public visibility. **Owner escalation required** to confirm this exception is
+acceptable.
+
+Proposed amended text (pending both rulings):
+
+> The catalogue filters rather than gates: an anonymous caller reaches it and
+> sees less, and is never told that a members-only program exists unless the
+> program's leader has marked it as publicly listed. A publicly listed
+> members-only program appears in the public catalogue and its detail page is
+> reachable by anyone; enrollment remains gated on membership. A members-only
+> program that is not publicly listed keeps the existing silence — an anonymous
+> caller is told there is no such program; a signed-in caller who is not a member
+> is told it exists and that it is members only.
+
+### Anonymous catalog cache
+
+The public catalog response is cached for 60 seconds (`stale-while-revalidate`).
+When an admin toggles `publicListing`, the program may take up to 60 seconds to
+appear in (or disappear from) the anonymous catalog. This is acceptable — the
+same lag already applies when `orgMemberOnly` or `phase` is changed.
 
 ## Migration
 
@@ -216,7 +246,8 @@ behavior.
 | `src/app/program-ops/new/page.tsx` | Sub-toggle on admin form |
 | `src/app/program-ops/programs/[id]/page.tsx` | Sub-toggle on admin form |
 | `docs/rules/programs.md` | Two rule amendments |
-| `src/security/routeRegistry.ts` | Include `publicListing` in select |
+| `src/app/api/programs/[id]/eligible-participants/route.ts` | Unaffected (gates on `orgMemberOnly`, not visibility) — confirm in sweep |
+| `PUBLIC_PROGRAM_SELECT` in `api/programs/route.ts` | Add `publicListing` to select; `@sensitivity` annotation is additive (no boundary-isolation concern) |
 | Tests for the above routes | Assert the three-state matrix |
 
 ## What's not built
