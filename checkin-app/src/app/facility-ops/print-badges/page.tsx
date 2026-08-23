@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
-import { Badge, Button, Checkbox, Group, Stack, Text, TextInput } from "@mantine/core";
+import { Badge, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { FACILITY_AGGREGATE_ROLES } from "@/lib/facilityNav";
@@ -35,6 +35,8 @@ export default function PrintBadgesPage() {
   const [hideInactive, setHideInactive] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [availableYears, setAvailableYears] = useState<string[]>([]);
+  const [selectedYear, setSelectedYear] = useState<string | null>(null);
 
   const fetchParticipants = useCallback(async () => {
     setLoading(true);
@@ -60,15 +62,29 @@ export default function PrintBadgesPage() {
     }
   }, [ready, fetchParticipants]);
 
-  // Once on mount — deliberately NOT keyed on searchTerm. The printed name must not
-  // move when the operator types.
+  // Load available membership years on mount.
   useEffect(() => {
     if (!ready) return;
     const url = new URL('/api/people/search', window.location.origin);
-    url.searchParams.set('roster', 'active');
+    url.searchParams.set('roster', 'years');
     fetch(url.toString())
-      // apiError returns valid JSON, so a 500 would resolve to `[]` and release the
-      // Generate guard — the roster must stay null on any failure.
+      .then(res => res.ok ? res.json() : Promise.reject(new Error(`years request failed: ${res.status}`)))
+      .then(data => {
+        setAvailableYears(data.years ?? []);
+        if (!selectedYear && data.current) setSelectedYear(data.current);
+      })
+      .catch(e => console.error("Failed to load membership years:", e));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // Reload the roster when the selected year changes.
+  useEffect(() => {
+    if (!ready) return;
+    setRoster(null);
+    const url = new URL('/api/people/search', window.location.origin);
+    url.searchParams.set('roster', 'active');
+    if (selectedYear) url.searchParams.set('year', selectedYear);
+    fetch(url.toString())
       .then(res => {
         if (!res.ok) throw new Error(`roster request failed: ${res.status}`);
         return res.json();
@@ -79,7 +95,7 @@ export default function PrintBadgesPage() {
         setRoster(null);
         notifications.show({ color: 'red', message: 'Could not load the active member roster, so badge names cannot be resolved. Reload to retry.', autoClose: false });
       });
-  }, [ready]);
+  }, [ready, selectedYear]);
 
   const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
   const printedYears = useMemo(() => new Map((roster ?? []).map(m => [m.id, m.year])), [roster]);
@@ -233,6 +249,14 @@ export default function PrintBadgesPage() {
           style={{ flex: 1, minWidth: 200 }}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.currentTarget.value)}
+        />
+        <Select
+          label="Membership year"
+          data={availableYears}
+          value={selectedYear}
+          onChange={setSelectedYear}
+          style={{ minWidth: 140 }}
+          allowDeselect={false}
         />
         <Checkbox
           label={hidden ? `Hide inactive (${hidden})` : "Hide inactive"}

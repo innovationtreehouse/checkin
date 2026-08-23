@@ -11,7 +11,7 @@
  *     each cycle) and only a still-valid background check with no household
  *     note pre-stamps bgClearedAt.
  */
-import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary, badgeYearCycle, runRenewalSweep } from '@/lib/membership/renewal';
+import { householdBgIsFresh, beginRenewal, isRenewalSeason, RenewalError, bgValidUntilBoundary, badgeYearCycle, badgeYearCycleForLabel, runRenewalSweep } from '@/lib/membership/renewal';
 import { IN_FLIGHT_RENEWAL, handledThisCycleWhere } from '@/lib/membership/lifecycle';
 
 jest.mock('@/lib/prisma', () => ({
@@ -146,6 +146,45 @@ describe('badgeYearCycle', () => {
     it('flips on the day the window opens, not the day before', () => {
         expect(badgeYearCycle(boundary, new Date(Date.UTC(2027, 5, 30))).label).toBe('2026-2027');
         expect(badgeYearCycle(boundary, new Date(Date.UTC(2027, 6, 1))).label).toBe('2027-2028');
+    });
+});
+
+describe('badgeYearCycleForLabel', () => {
+    // Sep 1 boundary — settledSince = boundary - 2 months = Jul 1 of the start year.
+    const boundary = new Date(Date.UTC(2000, 8, 1));
+
+    it.each([
+        ['in-season label', '2026-2027', Date.UTC(2026, 6, 1), Date.UTC(2027, 6, 1)],
+        ['off-season label', '2025-2026', Date.UTC(2025, 6, 1), Date.UTC(2026, 6, 1)],
+        ['early label', '2023-2024', Date.UTC(2023, 6, 1), Date.UTC(2024, 6, 1)],
+        ['future label', '2028-2029', Date.UTC(2028, 6, 1), Date.UTC(2029, 6, 1)],
+    ])('%s', (_desc, label, expectedSince, expectedBefore) => {
+        const result = badgeYearCycleForLabel(boundary, label);
+        expect(result).toEqual({
+            label,
+            settledSince: new Date(expectedSince),
+            settledBefore: new Date(expectedBefore),
+        });
+    });
+
+    it('agrees with badgeYearCycle for the current cycle (in-season)', () => {
+        const now = new Date(Date.UTC(2026, 7, 10));
+        const live = badgeYearCycle(boundary, now);
+        const fromLabel = badgeYearCycleForLabel(boundary, live.label)!;
+        expect(fromLabel.settledSince).toEqual(live.settledSince);
+    });
+
+    it('agrees with badgeYearCycle for the current cycle (off-season)', () => {
+        const now = new Date(Date.UTC(2027, 3, 15));
+        const live = badgeYearCycle(boundary, now);
+        const fromLabel = badgeYearCycleForLabel(boundary, live.label)!;
+        expect(fromLabel.settledSince).toEqual(live.settledSince);
+    });
+
+    it('rejects malformed labels', () => {
+        expect(badgeYearCycleForLabel(boundary, 'abc')).toBeNull();
+        expect(badgeYearCycleForLabel(boundary, '2026')).toBeNull();
+        expect(badgeYearCycleForLabel(boundary, '2026-2028')).toBeNull();
     });
 });
 
