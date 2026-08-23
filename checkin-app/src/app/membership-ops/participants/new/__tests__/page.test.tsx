@@ -158,6 +158,22 @@ describe("membership-ops/participants/new page", () => {
     expect(screen.getByLabelText("Confirm this household is already a paid member")).toBeInTheDocument();
   });
 
+  it("requires a name before allowing submit", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({});
+    renderWithProviders(<NewParticipantPage />);
+    await screen.findByText("Register New User");
+
+    fireEvent.change(screen.getByPlaceholderText("jane.doe@example.com"), { target: { value: "jane@example.com" } });
+    expect(screen.getByRole("button", { name: "Create Participant" })).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Jane Doe"), { target: { value: "  " } });
+    expect(screen.getByRole("button", { name: "Create Participant" })).toBeDisabled();
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Jane Doe"), { target: { value: "Jane Doe" } });
+    expect(screen.getByRole("button", { name: "Create Participant" })).toBeEnabled();
+  });
+
   it("submits an adult assigned to a household, with alreadyMember forced false", async () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
@@ -167,6 +183,7 @@ describe("membership-ops/participants/new page", () => {
     renderWithProviders(<NewParticipantPage />);
     await screen.findByText("Register New User");
 
+    fireEvent.change(screen.getByPlaceholderText("e.g. Jane Doe"), { target: { value: "Household Member" } });
     fireEvent.change(screen.getByPlaceholderText("Search households..."), { target: { value: "Does" } });
     fireEvent.click(await screen.findByText("The Does", { exact: false }));
 
@@ -177,12 +194,12 @@ describe("membership-ops/participants/new page", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
-            name: "", email: null, parentEmail: null, parentName: null, dob: null, householdId: 9, alreadyMember: false,
+            name: "Household Member", email: null, parentEmail: null, parentName: null, dob: null, householdId: 9, alreadyMember: false,
           }),
         }),
       ),
     );
-    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Participant member@example.com successfully!" })));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Participant Household Member successfully!" })));
   });
 
   it("submits a student with a parent email and no household", async () => {
@@ -193,6 +210,7 @@ describe("membership-ops/participants/new page", () => {
     renderWithProviders(<NewParticipantPage />);
     await screen.findByText("Register New User");
 
+    fireEvent.change(screen.getByPlaceholderText("e.g. Jane Doe"), { target: { value: "Kid Name" } });
     fireEvent.change(screen.getByLabelText("Date of Birth"), { target: { value: "2015-01-01" } });
     await screen.findByText("Student Detected");
     fireEvent.change(screen.getByLabelText(/Parent \/ Guardian Google Email/), { target: { value: "parent@example.com" } });
@@ -209,7 +227,7 @@ describe("membership-ops/participants/new page", () => {
         expect.objectContaining({
           method: "POST",
           body: JSON.stringify({
-            name: "", email: null, parentEmail: "parent@example.com", parentName: "Parent Name", dob: "2015-01-01", householdId: null, alreadyMember: true,
+            name: "Kid Name", email: null, parentEmail: "parent@example.com", parentName: "Parent Name", dob: "2015-01-01", householdId: null, alreadyMember: true,
           }),
         }),
       ),
@@ -220,6 +238,7 @@ describe("membership-ops/participants/new page", () => {
     setSession({ id: 1, isSysadmin: true });
     renderWithProviders(<NewParticipantPage />);
     await screen.findByText("Register New User");
+    fireEvent.change(screen.getByPlaceholderText("e.g. Jane Doe"), { target: { value: "Jane Doe" } });
     fireEvent.change(screen.getByPlaceholderText("jane.doe@example.com"), { target: { value: "jane@example.com" } });
 
     global.fetch = jest.fn(async () => ({ ok: false, status: 400, json: async () => ({ error: "Email taken." }) })) as unknown as typeof fetch;

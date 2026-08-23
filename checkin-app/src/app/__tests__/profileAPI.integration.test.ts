@@ -155,6 +155,21 @@ describe('Profile API Integration Tests', () => {
             expect(auditLogs.length).toBeGreaterThan(0);
         });
 
+        it('should reject a blank name and leave the stored name unchanged', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
+
+            const req = new Request('http://localhost:4000/api/profile', {
+                method: 'PATCH',
+                body: JSON.stringify({ name: '   ' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+
+            const row = await prisma.person.findUnique({ where: { id: testUserId }, select: { name: true } });
+            expect(row?.name).toBe('Updated Profile Tester');
+        });
+
         it('sets isDeclaredAdult and clears DoB when over25 is checked with no dob', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testUserId } });
 

@@ -10,6 +10,7 @@ const STATUS_FOR: Record<IntakeError["code"], number> = {
     no_process: 400,
     incomplete: 400,
     lead_limit: 400,
+    name_required: 400,
 };
 
 /**

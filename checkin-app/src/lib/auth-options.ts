@@ -16,6 +16,7 @@ import { addHouseholdLead } from "@/lib/household/leads";
 import { withAuroraResumeRetry } from "@/lib/auroraResumeRetry";
 import { normalizeEmail } from "@/lib/prismaEmailNormalize";
 import { mintPersonId } from "@/lib/person/mintId";
+import { nameWrite } from "@/lib/person/name";
 
 // Stable id for the dev/local persona-mint credential flow.
 export const PERSONA_MINT_PROVIDER_ID = "persona-mint";
@@ -68,7 +69,15 @@ export async function createParticipantWithHousehold(data: {
             data: { name: data.name?.trim() || data.email?.trim() || "Household" },
         });
         const participant = await tx.person.create({
-            data: { ...data, id: await mintPersonId(tx), householdId: household.id },
+            data: {
+                ...data,
+                id: await mintPersonId(tx),
+                householdId: household.id,
+                // ponytail: last manufactured name in the tree (Decision 4) — a
+                // provider/flow that supplies no name must not block sign-in; the
+                // member can fix it later in their profile.
+                name: nameWrite(data.name) ?? nameWrite(data.email?.split("@")[0]) ?? "Member",
+            },
         });
         await addHouseholdLead(tx, household.id, participant.id);
         return participant;
@@ -113,7 +122,8 @@ const patchedAdapter = {
     updateUser: async ({ id, ...data }: { id: string; name?: string | null; email?: string | null; image?: string | null; emailVerified?: Date | null }) => {
         const user = await prisma.person.update({
             where: { id: toDbId(id) },
-            data: { name: data.name, email: data.email ?? undefined, image: data.image, emailVerified: data.emailVerified },
+            // A provider that stops sending a name must not erase one already on file.
+            data: { name: nameWrite(data.name), email: data.email ?? undefined, image: data.image, emailVerified: data.emailVerified },
         });
         return toAdapterUser(user);
     },
