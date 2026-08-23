@@ -76,8 +76,9 @@ export const GET = withAuth(
                 // year it paid for. No `kind` filter (an INITIAL settled this cycle has
                 // paid for it too) and no ARCHIVED, matching lib/outreach/recipients.
                 // No boundary ⇒ the sentinel matches nothing, so nobody gets a year.
+                const settledBefore = cycle && 'settledBefore' in cycle ? cycle.settledBefore as Date : undefined;
                 const stageFilter: { gte: Date; lt?: Date } = { gte: cycle?.settledSince ?? MAX_DATE };
-                if (cycle && 'settledBefore' in cycle) stageFilter.lt = cycle.settledBefore;
+                if (settledBefore) stageFilter.lt = settledBefore;
                 const members = await prisma.person.findMany({
                     where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
                     select: {
