@@ -13,6 +13,19 @@ describe("editSignificance", () => {
         expect(r.flagged).toBe(false);
     });
 
+    it("TYPED weighs the same as WEB — how is typed, who is byProxy", () => {
+        const web = editSignificance(
+            { arrivedAt: at(14), departedAt: at(16), arrivedVia: "WEB", departedVia: "WEB" },
+            { arrivedAt: at(16), departedAt: at(18) },
+        );
+        const typed = editSignificance(
+            { arrivedAt: at(14), departedAt: at(16), arrivedVia: "TYPED", departedVia: "TYPED" },
+            { arrivedAt: at(16), departedAt: at(18) },
+        );
+        expect(typed.score).toBe(web.score);
+        expect(typed.score).toBe(240); // 120 min × 1 × two ends
+    });
+
     // The nightly sweep stamps departedAt at CRON-RUN time, so the routine
     // "forgot to check out" fix is a 10h+ correction. Suppression is by source,
     // so no magnitude can push it over the threshold.

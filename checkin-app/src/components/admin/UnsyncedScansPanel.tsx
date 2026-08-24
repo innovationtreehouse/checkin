@@ -28,11 +28,18 @@ const REASON_COPY: Record<string, string> = {
   facility_closed: "badge scanned while no keyholder was present",
 };
 
+// client_dead:<status> is a dynamic family, not a fixed key.
+const reasonCopy = (reason: string) => {
+  const dead = reason.match(/^client_dead:(\d+)$/);
+  if (dead) return `kiosk client failed (HTTP ${dead[1]})`;
+  return REASON_COPY[reason] ?? reason;
+};
+
 export function UnsyncedScansPanel() {
   const [scans, setScans] = useState<UnsyncedScan[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [dismissing, setDismissing] = useState<number | null>(null);
+  const [dismissing, setDismissing] = useState<Set<number>>(new Set());
   const { formatTime } = useOrgTime();
 
   useEffect(() => {
@@ -46,7 +53,7 @@ export function UnsyncedScansPanel() {
   }, []);
 
   async function dismiss(id: number) {
-    setDismissing(id);
+    setDismissing((prev) => new Set(prev).add(id));
     setActionError(null);
     try {
       const res = await fetch(`/api/system-status/unsynced-scans/${id}`, { method: "POST" });
@@ -55,7 +62,11 @@ export function UnsyncedScansPanel() {
     } catch {
       setActionError("Could not dismiss that scan. Reload and try again.");
     } finally {
-      setDismissing(null);
+      setDismissing((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
     }
   }
 
@@ -91,6 +102,12 @@ export function UnsyncedScansPanel() {
       {actionError && <Text c="red" size="sm" mb="sm">{actionError}</Text>}
       <Table.ScrollContainer minWidth={600}>
         <Table striped verticalSpacing="sm">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Scan</Table.Th>
+              <Table.Th>Actions</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
           <Table.Tbody>
             {scans.map((s) => (
               <Table.Tr key={s.id}>
@@ -104,7 +121,7 @@ export function UnsyncedScansPanel() {
                     </Text>
                     <Text size="xs" c="dimmed">
                       {s.reviewReason
-                        ? (REASON_COPY[s.reviewReason] ?? s.reviewReason)
+                        ? reasonCopy(s.reviewReason)
                         : "parked"}
                       {s.location ? ` · ${s.location}` : ""}
                     </Text>
@@ -122,7 +139,7 @@ export function UnsyncedScansPanel() {
                     <Button
                       size="xs"
                       variant="subtle"
-                      loading={dismissing === s.id}
+                      loading={dismissing.has(s.id)}
                       onClick={() => dismiss(s.id)}
                     >
                       Dismiss
