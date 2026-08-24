@@ -326,6 +326,21 @@ describe('saveIntake', () => {
         });
     });
 
+    // #1432 site 9 / Decision 5: a submitted-but-blank name is rejected, not
+    // silently dropped — this is the caller's own name, always required.
+    it('rejects blanking the primary parent (caller) name', async () => {
+        await expect(saveIntake(1, { primaryParent: { name: '   ' } })).rejects.toMatchObject({ code: 'name_required' });
+        expect(prisma.person.update).not.toHaveBeenCalled();
+    });
+
+    it('trims the primary parent name on write', async () => {
+        await saveIntake(1, { primaryParent: { name: '  Trimmed  ' } });
+        expect(prisma.person.update).toHaveBeenCalledWith({
+            where: { id: 1 },
+            data: { name: 'Trimmed' },
+        });
+    });
+
     // Intake used to write DoB with a bare `new Date`, bypassing the #1165 guard
     // that every other interactive path funnels through: signup could persist an
     // exact DoB for a 26+ person, with only the nightly cron as the net.
@@ -380,6 +395,31 @@ describe('saveIntake', () => {
         expect(addHouseholdLead).toHaveBeenCalledWith(prisma, 7, 55);
     });
 
+    // #1432 follow-up: the plan's table wrongly marked this row closed by
+    // #1688, which closed explicit `null` only — a blank/whitespace name still
+    // wrote through. Same rejection as sites 9/10 (Decision 5): a submitted
+    // name is required to be non-blank.
+    it('rejects blanking an existing secondary parent name on update', async () => {
+        await expect(saveIntake(1, { secondaryParent: { id: 4, name: '   ' } })).rejects.toMatchObject({ code: 'name_required' });
+        expect(prisma.person.update).not.toHaveBeenCalled();
+    });
+
+    // The create-path sibling: a whitespace-only name must be treated like no
+    // name at all — falling through to the existing name-required rejection
+    // (soft, not thrown) rather than creating a blank-named person.
+    it('a whitespace-only new secondary parent name falls through to the name-required rejection', async () => {
+        const result = await saveIntake(1, { secondaryParent: { name: '   ', email: 'new@x.com' } });
+
+        expect(prisma.person.create).not.toHaveBeenCalled();
+        expect(result.rejections).toEqual([
+            {
+                section: 'secondaryParent',
+                code: 'name_required',
+                message: expect.stringContaining('name is required'),
+            },
+        ]);
+    });
+
     it('addHouseholdLead hitting the per-household cap is recorded as a rejection, not thrown', async () => {
         addHouseholdLead.mockRejectedValue(new HouseholdLeadLimitError(7));
 
@@ -411,6 +451,31 @@ describe('saveIntake', () => {
         expect(prisma.person.create).toHaveBeenCalledWith({
             data: { id: MINTED_ID, householdId: 7, name: 'New Kid', dateOfBirth: null, allergies: null },
         });
+    });
+
+    // #1432 site 10 / Decision 5: same rejection as the primary parent — an
+    // existing child's name can't be blanked through an update.
+    it('rejects blanking an existing child name on update', async () => {
+        await expect(saveIntake(1, { children: [{ id: 4, name: '   ' }] })).rejects.toMatchObject({ code: 'name_required' });
+        expect(prisma.person.update).not.toHaveBeenCalled();
+    });
+
+    // A padded name passes the trimmed gate but must store trimmed — the
+    // create write goes through nameWrite like every other write path.
+    it('stores a padded new-child name trimmed', async () => {
+        prisma.person.create.mockResolvedValue({ id: 56 });
+        await saveIntake(1, { children: [{ name: '  John  ' }] });
+        expect(prisma.person.create).toHaveBeenCalledWith({
+            data: { id: MINTED_ID, householdId: 7, name: 'John', dateOfBirth: null, allergies: null },
+        });
+    });
+
+    // #1432 site 4: "   " is truthy, so the old `else if (child.name)` gate
+    // would have created a child with a whitespace-only stored name.
+    it('does not create a child from a whitespace-only name', async () => {
+        const result = await saveIntake(1, { children: [{ name: '   ' }] });
+        expect(prisma.person.create).not.toHaveBeenCalled();
+        expect(result.rejections).toEqual([]);
     });
 });
 

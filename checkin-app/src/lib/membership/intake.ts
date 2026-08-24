@@ -11,6 +11,7 @@ import { normalizeAddressInput, pickAddress, type StructuredAddress } from "@/li
 import { INTAKE_PROFILES, missingRequiredFields } from "@/lib/intake/profiles";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { mintPersonId } from "@/lib/person/mintId";
+import { nameWrite } from "@/lib/person/name";
 import { withTx } from "@/lib/db-client";
 
 /**
@@ -32,7 +33,7 @@ export class IntakeError extends Error {
      *                "primaryName".
      */
     constructor(
-        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit",
+        public readonly code: "no_household" | "not_lead" | "already_member" | "no_process" | "incomplete" | "lead_limit" | "name_required",
         message: string,
         public readonly fields?: string[],
     ) {
@@ -284,11 +285,16 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
 
     // Primary parent is always the caller.
     if (input.primaryParent) {
+        // A submitted-but-blank name is rejected rather than silently dropped
+        // (Decision 5) — this is the caller's own name, always required.
+        if (input.primaryParent.name !== undefined && !nameWrite(input.primaryParent.name)) {
+            throw new IntakeError("name_required", "Your name is required.", ["primaryName"]);
+        }
         // The primary applicant is already a household lead (set at startIntake).
         await prisma.person.update({
             where: { id: userId },
             data: {
-                ...(input.primaryParent.name !== undefined && { name: input.primaryParent.name }),
+                ...(input.primaryParent.name !== undefined && { name: nameWrite(input.primaryParent.name) }),
                 // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a
                 // 26+ DoB is stripped and forces the flag on; an empty DoB honors
                 // the checkbox.
@@ -303,10 +309,16 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     if (input.secondaryParent) {
         const sp = input.secondaryParent;
         if (sp.id && householdMemberIds.has(sp.id)) {
+            // A submitted (non-null) but blank name is rejected, not silently
+            // dropped (Decision 5) — same rule as the primary parent/children
+            // updates. `null` stays a no-op (#1688's existing carve-out).
+            if (sp.name !== undefined && sp.name !== null && !nameWrite(sp.name)) {
+                throw new IntakeError("name_required", "A name is required for the second parent / guardian.", ["secondaryParent"]);
+            }
             await prisma.person.update({
                 where: { id: sp.id },
                 data: {
-                    ...(sp.name !== undefined && sp.name !== null && { name: sp.name }),
+                    ...(sp.name !== undefined && sp.name !== null && { name: nameWrite(sp.name) }),
                     ...(sp.dob !== undefined && normalizeAdultDob(sp.dob)),
                     ...(sp.over25 !== undefined && !sp.dob && { isDeclaredAdult: !!sp.over25 }),
                     ...(sp.allergies !== undefined && { allergies: sp.allergies }),
@@ -314,18 +326,18 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             });
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
-        } else if (sp.name) {
+        } else if (nameWrite(sp.name)) {
             // saveIntake is a bare sequence of autocommit statements, so the mint
             // gets its own two-statement transaction — an id minted outside one
             // would be burned if the create failed. #1688's name_required
-            // rejection is the sibling branch below, so a nameless second parent
-            // never opens a transaction at all.
+            // rejection is the sibling branch below, so a nameless (or
+            // whitespace-only) second parent never opens a transaction at all.
             const created = await withTx(prisma, async (tx) =>
                 tx.person.create({
                     data: {
                         id: await mintPersonId(tx),
                         householdId,
-                        name: sp.name,
+                        name: nameWrite(sp.name),
                         ...(sp.email && { email: sp.email.toLowerCase() }),
                         ...normalizeAdultDob(sp.dob),
                         ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
@@ -347,21 +359,26 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // only), create the rest. Never delete; never add a HouseholdLead row.
     for (const child of input.children ?? []) {
         if (child.id && householdMemberIds.has(child.id)) {
+            // Same rejection as the primary parent (Decision 5): an existing
+            // child's name can't be blanked through an update.
+            if (child.name !== undefined && !nameWrite(child.name)) {
+                throw new IntakeError("name_required", "A name is required for each child.", ["children"]);
+            }
             await prisma.person.update({
                 where: { id: child.id },
                 data: {
-                    ...(child.name !== undefined && { name: child.name }),
+                    ...(child.name !== undefined && { name: nameWrite(child.name) }),
                     ...(child.dob !== undefined && normalizeAdultDob(child.dob)),
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
-        } else if (child.name) {
+        } else if (child.name?.trim()) {
             await withTx(prisma, async (tx) =>
                 tx.person.create({
                     data: {
                         id: await mintPersonId(tx),
                         householdId,
-                        name: child.name,
+                        name: nameWrite(child.name),
                         ...(child.email && { email: child.email.toLowerCase() }),
                         ...normalizeAdultDob(child.dob),
                         allergies: child.allergies ?? null,

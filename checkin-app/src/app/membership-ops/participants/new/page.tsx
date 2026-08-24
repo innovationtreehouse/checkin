@@ -121,7 +121,7 @@ function NewParticipantForm() {
     }
   };
 
-  const submitDisabled = saving || (!isYouthSelected && !email && !householdId) || (isYouthSelected && !parentEmail && !householdId) || (isYouthSelected && !!parentEmail && !parentName.trim());
+  const submitDisabled = saving || !name.trim() || (!isYouthSelected && !email && !householdId) || (isYouthSelected && !parentEmail && !householdId) || (isYouthSelected && !!parentEmail && !parentName.trim());
 
   return (
     <Container size="md" pb="md">

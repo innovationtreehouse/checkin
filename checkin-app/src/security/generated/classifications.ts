@@ -344,6 +344,13 @@ export const classifications = {
         success: 'internal',
         error: 'internal',
     },
+    PersonMerge: {
+        id: 'internal',
+        fromId: 'internal',
+        toId: 'internal',
+        mergedAt: 'internal',
+        snapshot: 'pii',
+    },
     IdCounter: {
         name: 'internal',
         value: 'internal',
@@ -404,6 +411,7 @@ export const relations = {
         household: { model: 'Household', isList: false },
         mergedInto: { model: 'Person', isList: false },
         mergedFrom: { model: 'Person', isList: true },
+        mergedArchive: { model: 'PersonMerge', isList: true },
         toolStatuses: { model: 'ToolStatus', isList: true },
         bgAttestations: { model: 'BackgroundCheckAttestation', isList: true },
         bgAttestationsAsSubject: { model: 'BackgroundCheckAttestation', isList: true },
@@ -535,6 +543,9 @@ export const relations = {
     IntegrationErrorLog: {
     },
     CronRunLog: {
+    },
+    PersonMerge: {
+        to: { model: 'Person', isList: false },
     },
     IdCounter: {
     },

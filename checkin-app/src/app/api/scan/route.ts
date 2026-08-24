@@ -29,7 +29,7 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -54,6 +54,21 @@ export const POST = withKiosk(
         }
         const isReplay = body.replay === true;
 
+        // Q10: a terminally-failed outbox row rides this same endpoint to reach
+        // the server-side DLQ instead of being lost on the kiosk. It shares
+        // replay's identity requirements (clientEventId + scannedAt) but is a
+        // distinct signal -- never a redelivery attempt, so the two are exclusive.
+        if (body.dead !== undefined && typeof body.dead !== 'boolean') {
+            return apiError("dead must be a boolean.", 400);
+        }
+        const isDead = body.dead === true;
+        if (isDead && isReplay) {
+            return apiError("dead and replay are mutually exclusive.", 400);
+        }
+        const deadStatus = typeof body.deadStatus === 'number' && Number.isFinite(body.deadStatus)
+            ? body.deadStatus
+            : 'unknown';
+
         // A live scan is happening now and never inherits the kiosk's clock (D3's
         // window and the debounce both measure against server now). A replay must
         // carry its own id and event time: falling back to now would make the
@@ -65,6 +80,15 @@ export const POST = withKiosk(
             }
             if (!scannedAt) {
                 return apiError("A replayed scan requires a valid scannedAt.", 400);
+            }
+            eventTime = scannedAt;
+        }
+        if (isDead) {
+            if (!clientEventId) {
+                return apiError("A dead-lettered scan requires clientEventId.", 400);
+            }
+            if (!scannedAt) {
+                return apiError("A dead-lettered scan requires a valid scannedAt.", 400);
             }
             eventTime = scannedAt;
         }
@@ -106,33 +130,61 @@ export const POST = withKiosk(
             where: { id: participantId },
         });
 
-        if (!badgeRecord) {
-            return apiError(`Participant ${participantId} not found.`, 404);
-        }
-
-        // A badge still encoding a tombstone's id must not reject its owner at the
-        // door — walk mergedIntoId to the live survivor and scan as them. Capped
-        // at MAX_MERGE_HOPS; a chain that deep can't be resolved with confidence,
-        // so fall back to the reissue message instead of chasing it further.
+        // A badge still encoding a merged-away id must not reject its owner at the
+        // door. Two ways such an id presents, since 2b archives before it deletes:
+        //   row is GONE      -> PersonMerge.fromId -> toId   (2b-3 onward)
+        //   tombstone exists -> mergedIntoId                 (today, and legacy)
+        // One loop, not two: an archive row's survivor may itself be a tombstone.
+        //
+        // Order is the trap. The archive lookup must run BEFORE the not-found 404 —
+        // once tombstones are deleted the findUnique above simply misses and the
+        // badge is rejected at the door, the exact failure this exists to prevent.
+        // Dormant till then; pinned by an integration test that deletes a row by hand.
+        //
+        // The archive arm cannot exceed one hop (toId is a RESTRICT FK the merge
+        // repoints), but shares MAX_MERGE_HOPS anyway: being wrong costs a member
+        // refused at the door, and a bad 2a backfill is all it would take.
         let participant = badgeRecord;
+        let lookupId = participantId;
         let mergeHops = 0;
-        while (participant.mergedIntoId != null) {
+        while (participant == null || participant.mergedIntoId != null) {
+            const tombstonePointer = participant === null ? null : participant.mergedIntoId;
+            if (tombstonePointer === null) {
+                const archived = await prisma.personMerge.findUnique({
+                    where: { fromId: lookupId },
+                    select: { toId: true },
+                });
+                if (!archived) {
+                    // Before any hop the scanned id is simply unknown. After one, we got
+                    // here by following a merge pointer into a gap — a different fault,
+                    // and one the operator can act on by reissuing the badge.
+                    return mergeHops > 0
+                        ? apiError(`This badge belongs to a merged record; reissue it for participant ${lookupId}.`, 409)
+                        : apiError(`Participant ${participantId} not found.`, 404);
+                }
+                lookupId = archived.toId;
+            } else {
+                lookupId = tombstonePointer;
+            }
+            // Counted once the next id is known, so the cap message can name the
+            // record to reissue for — and so that id is never fetched.
             mergeHops++;
             if (mergeHops > MAX_MERGE_HOPS) {
-                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
+                return apiError(`This badge belongs to a merged record; reissue it for participant ${lookupId}.`, 409);
             }
-            const next: typeof participant | null = await prisma.person.findUnique({ where: { id: participant.mergedIntoId } });
-            if (!next) {
-                return apiError(`This badge belongs to a merged record; reissue it for participant ${participant.mergedIntoId}.`, 409);
-            }
-            participant = next;
+            participant = await prisma.person.findUnique({ where: { id: lookupId } });
         }
         if (mergeHops > 0) {
             logger.info("Scan forwarded from merged record", {
-                badgeId: badgeRecord.id,
-                tombstoneId: badgeRecord.mergedIntoId,
+                badgeId: participantId,
+                tombstoneId: badgeRecord?.mergedIntoId ?? null,
                 survivorId: participant.id,
                 hops: mergeHops,
+                // The scanned id had no Person row at all — the archive resolved it.
+                // Watch this during the 2b-3 rollout: it going true is the delete
+                // path working, and staying false while tombstones are being removed
+                // means badges are resolving some other way than expected.
+                viaArchive: badgeRecord == null,
             });
         }
 
@@ -205,8 +257,10 @@ export const POST = withKiosk(
 
             // 4. Double scan debounce check (3 seconds) — now under the lock, so
             // it sees the committed badge event of any racing scan ahead of it.
+            // A dead-lettered event always skips it too: it only ever parks, and
+            // the touch must never be silently dropped by a debounce window.
             const threeSecondsAgo = new Date(Date.now() - 3000);
-            const recentScan = isConfirm ? null : await tx.rawBadgeLog.findFirst({
+            const recentScan = (isConfirm || isDead) ? null : await tx.rawBadgeLog.findFirst({
                 where: {
                     personId: participant.id,
                     timestamp: {
@@ -226,8 +280,12 @@ export const POST = withKiosk(
             // A replay older than the freshness window, or one that lands behind
             // visit activity newer than its own scan time, can't be trusted to
             // toggle — state has moved past it. Park it for a human instead.
+            // A dead-lettered event always parks: it never reaches the server
+            // live, so there is nothing here for it to safely toggle against.
             let parkReason: string | null = null;
-            if (isReplay) {
+            if (isDead) {
+                parkReason = `client_dead:${deadStatus}`;
+            } else if (isReplay) {
                 const stale = Date.now() - eventTime.getTime() > REPLAY_FRESHNESS_WINDOW_MS;
                 if (stale) {
                     parkReason = "stale_replay";
@@ -251,7 +309,7 @@ export const POST = withKiosk(
                     personId: participant.id,
                     location: "Main Entrance",
                     ...(clientEventId ? { clientEventId } : {}),
-                    ...(isReplay ? { timestamp: eventTime } : {}),
+                    ...((isReplay || isDead) ? { timestamp: eventTime } : {}),
                     ...(parkReason ? { reviewReason: parkReason } : {}),
                 },
             });

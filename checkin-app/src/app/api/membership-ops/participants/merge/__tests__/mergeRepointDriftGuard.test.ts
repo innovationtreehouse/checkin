@@ -46,6 +46,13 @@ const SCHEMA = join(__dirname, '..', '..', '..', '..', '..', '..', '..', 'prisma
  * Matches the to-one side only (`foo Person @relation(fields: [fooId], ...)`),
  * which is where the FK column and its `onDelete` actually live — the `Person[]`
  * back-reference carries neither.
+ *
+ * ponytail: line-oriented regex, matching how this schema is actually written.
+ * Two shapes it cannot see, neither of which occurs here — if either ever does,
+ * this parser is what needs upgrading (to the DMMF, which knows both):
+ *   - an `@relation(...)` wrapped across multiple lines
+ *   - an implicit many-to-many (`Person[]` on both sides, no `fields:` at all),
+ *     whose FKs live in a generated join table rather than in either model
  */
 function personForeignKeys(): string[] {
     const out: string[] = [];
@@ -84,6 +91,7 @@ const DISPOSITIONS: Record<string, string> = {
     'Event.attendanceConfirmedById': 'repointed (SET NULL) — who confirmed attendance is a staff-action audit fact; left behind it reads as nobody.',
     'OrgMembershipProcess.noteAckById': 'repointed (SET NULL) — who read the family intake note, same audit-fact rationale.',
     'OrgMembershipProcess.subjectPersonId': 'repointed (SET NULL) — step 5 updateMany, then archiveDuplicatePersonBg leaves the survivor exactly one open PERSON_BG.',
+    'PersonMerge.toId': 'repointed (RESTRICT) — an earlier merge\'s archive row naming this record as ITS survivor. Repointed, not chained: the archive answers "where is this person now", and RESTRICT means a row left here would pin the very Person that #1456 2b-3 exists to delete. Deliberately the opposite call from Person.mergedIntoId below, which keeps its chain for provenance — the archive already has mergedAt and the AuditLog for that.',
     'PersonRole.grantedById': 'repointed (SET NULL) — swept AFTER the holder pass, so a granter stamp on a row the dedupe just deleted is not counted as moved.',
     'Program.leadMentorId': 'repointed (SET NULL) — step 5 updateMany.',
     'RawBadgeLog.personId': 'repointed (RESTRICT) — the FK that makes a later Person delete possible at all. Plain updateMany; no unique constraint.',
@@ -95,7 +103,7 @@ const DISPOSITIONS: Record<string, string> = {
     // ── deduped: bare joins, where a duplicate carries no extra decision ──────
     'CorporationLead.personId': 'deduped (RESTRICT) — bare join, the duplicate is deleted.',
     'CorporationMember.personId': 'deduped (RESTRICT) — bare join, the duplicate is deleted.',
-    'PersonRole.personId': 'deduped (CASCADE) — PK is (personId, role). Moved unless the survivor already holds that role, in which case the duplicate goes: the survivor already has the grant. Never left on the tombstone, because CASCADE would later destroy a security grant with no audit row (#1456 Decision 4). Person\'s legacy role mirrors are rewritten from the survivor\'s final role set, since moving rows directly bypasses applyRoleFlag\'s dual-write.',
+    'PersonRole.personId': 'deduped (CASCADE) — PK is (personId, role). Moved unless the survivor already holds that role, in which case the duplicate goes: the survivor already has the grant. Never left on the tombstone, because CASCADE would later destroy a security grant with no audit row (#1456 Decision 4). Person\'s legacy role mirrors are rewritten from an IN-TX read of the survivor\'s final rows, since moving rows directly bypasses applyRoleFlag\'s dual-write and an unconditional four-flag overwrite must not be sourced from a pre-tx snapshot. CAVEAT: which rows to move is still decided from that snapshot, so a grant landing mid-merge stays on the tombstone — the roles surface should refuse tombstone targets, filed as an epic follow-up.',
     'ProgramVolunteer.personId': 'deduped (RESTRICT) — bare join, the duplicate is deleted.',
     'RSVP.personId': 'repointed/deduped/pre-refused (RESTRICT) — moved when only one side has it; a past-event duplicate is deleted; a FUTURE-event duplicate is pre-refused, because which answer is real is a human call.',
 
