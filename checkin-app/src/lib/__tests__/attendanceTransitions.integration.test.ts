@@ -193,7 +193,7 @@ describe('attendanceTransitions', () => {
         });
 
         it('returns [] for a non-existent visit id', async () => {
-            const result = await processVisitCheckout(99999999, new Date());
+            const result = await processVisitCheckout(99999999, new Date(), prisma, "WEB");
             expect(result).toEqual([]);
         });
     });
