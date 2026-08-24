@@ -46,6 +46,10 @@ export interface TrendBucket {
     totalParticipantHours: number;
     structuredHours: number;
     unstructuredHours: number;
+    // Hours only, keyed by arrivedVia (or "UNSPECIFIED"). One person can carry
+    // both a scan and a roster mark in the same bucket, so this is NOT a
+    // decomposition of uniqueVolunteers/uniqueParticipants — those stay whole.
+    bySource: Record<string, number>;
 }
 
 export const GET = withAuth(
@@ -107,6 +111,7 @@ export const GET = withAuth(
                 participantHours: number;
                 structuredHours: number;
                 unstructuredHours: number;
+                bySource: Record<string, number>;
             }>();
 
             for (const visit of visits) {
@@ -123,6 +128,7 @@ export const GET = withAuth(
                         participantHours: 0,
                         structuredHours: 0,
                         unstructuredHours: 0,
+                        bySource: {},
                     });
                 }
 
@@ -143,6 +149,11 @@ export const GET = withAuth(
                 } else {
                     bucket.unstructuredHours += hours;
                 }
+
+                // Reporting axis only: decomposes hours, not people (see bySource
+                // comment on TrendBucket above).
+                const source = visit.arrivedVia ?? "UNSPECIFIED";
+                bucket.bySource[source] = (bucket.bySource[source] ?? 0) + hours;
             }
 
             const buckets: TrendBucket[] = Array.from(bucketMap.values())
@@ -156,7 +167,17 @@ export const GET = withAuth(
                     totalParticipantHours: Math.round(b.participantHours * 10) / 10,
                     structuredHours: Math.round(b.structuredHours * 10) / 10,
                     unstructuredHours: Math.round(b.unstructuredHours * 10) / 10,
+                    bySource: Object.fromEntries(
+                        Object.entries(b.bySource).map(([source, hours]) => [source, Math.round(hours * 10) / 10])
+                    ),
                 }));
+
+            const bySourceTotals: Record<string, number> = {};
+            for (const b of buckets) {
+                for (const [source, hours] of Object.entries(b.bySource)) {
+                    bySourceTotals[source] = Math.round(((bySourceTotals[source] ?? 0) + hours) * 10) / 10;
+                }
+            }
 
             const totals: TrendBucket = {
                 label: "Total",
@@ -167,6 +188,7 @@ export const GET = withAuth(
                 totalParticipantHours: Math.round(buckets.reduce((s, b) => s + b.totalParticipantHours, 0) * 10) / 10,
                 structuredHours: Math.round(buckets.reduce((s, b) => s + b.structuredHours, 0) * 10) / 10,
                 unstructuredHours: Math.round(buckets.reduce((s, b) => s + b.unstructuredHours, 0) * 10) / 10,
+                bySource: bySourceTotals,
             };
 
             return NextResponse.json({ buckets, totals, period });
