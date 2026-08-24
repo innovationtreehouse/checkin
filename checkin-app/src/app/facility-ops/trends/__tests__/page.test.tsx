@@ -67,6 +67,6 @@ describe("facility-ops/trends page", () => {
     fireEvent.click(screen.getByText("Show hours by source"));
 
     expect(await screen.findByText("Scanner")).toBeInTheDocument();
-    expect(screen.getByText("Web")).toBeInTheDocument();
+    expect(screen.getByText("Web (legacy)")).toBeInTheDocument();
   });
 });
