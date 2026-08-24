@@ -231,7 +231,7 @@ export const classifications = {
         personId: 'public',
         status: 'public',
         isPaymentPlanRequested: 'personal',
-        pendingSince: 'internal',
+        pendingSince: 'personal',
         wasOrgMemberAtApproval: 'internal',
         inventoryHeldAt: 'internal',
         paymentPlanDeniedAt: 'personal',
