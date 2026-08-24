@@ -172,11 +172,15 @@ export const GET = withAuth(
                     ),
                 }));
 
+            // Accumulate raw, round once — per-step rounding drifts across buckets.
             const bySourceTotals: Record<string, number> = {};
             for (const b of buckets) {
                 for (const [source, hours] of Object.entries(b.bySource)) {
-                    bySourceTotals[source] = Math.round(((bySourceTotals[source] ?? 0) + hours) * 10) / 10;
+                    bySourceTotals[source] = (bySourceTotals[source] ?? 0) + hours;
                 }
+            }
+            for (const source of Object.keys(bySourceTotals)) {
+                bySourceTotals[source] = Math.round(bySourceTotals[source] * 10) / 10;
             }
 
             const totals: TrendBucket = {
