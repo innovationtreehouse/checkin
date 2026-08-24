@@ -157,7 +157,7 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
         expect(log?.reviewReason).toBe('out_of_order');
     });
 
-    // #1347: the park is only half the story — a parked row nobody can see is
+    // The park is only half the story — a parked row nobody can see is
     // invariant 3 broken. This closes the loop end to end against the real DB:
     // park via the route, then run the EXACT query GET /api/system-status/
     // unsynced-scans runs and prove the row is in it, and that a dismiss takes

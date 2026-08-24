@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  *
- * Unit tests (mocked prisma) for the parked-scan review surface (#1347,
+ * Unit tests (mocked prisma) for the parked-scan review surface (
  * KIOSK_RESILIENCE §2 D7): the list's filter, both routes' role admission, and
  * that the dismiss stamps reviewedAt AND reviewedBy and nothing else.
  *

@@ -1,8 +1,8 @@
--- Review stamp for parked kiosk scans (docs/designs/KIOSK_RESILIENCE.md §2 D7,
--- #1347). Expand-only: two nullable columns the previous release never names in
--- a SELECT, so its reads are unaffected (rule 1). Every existing parked row
+-- Review stamp for parked kiosk scans (docs/designs/KIOSK_RESILIENCE.md §2 D7).
+-- Expand-only: two nullable columns the previous release never names in a
+-- SELECT, so its reads are unaffected (rule 1). Every existing parked row
 -- keeps reviewedAt NULL, which is what puts it in the review queue — the
--- backlog #1667/#1669 already created shows up on first load, by design.
+-- existing parked backlog shows up on first load, by design.
 --
 -- Both columns are one unit (a stamp with no actor is not a dismissal), so
 -- BEGIN/COMMIT — prisma migrate deploy does not wrap a migration file in a
