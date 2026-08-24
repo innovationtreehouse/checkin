@@ -122,8 +122,8 @@ export const POST = withAuth({}, async (req, auth) => {
                     personId: subjectId,
                     arrivedAt: arrivalTime,
                     departedAt: departureTime,
-                    arrivedVia: "WEB",
-                    departedVia: departureTime ? "WEB" : null,
+                    arrivedVia: "TYPED",
+                    departedVia: departureTime ? "TYPED" : null,
                     associatedEventId: eventId
                 }
             });
@@ -143,7 +143,7 @@ export const POST = withAuth({}, async (req, auth) => {
         // If a departure time was provided, we process the checkout logic directly
         // to handle any back-to-back event transitions.
         if (departureTime) {
-             await processVisitCheckout(visit.id, departureTime, undefined, "WEB");
+             await processVisitCheckout(visit.id, departureTime, undefined, "TYPED");
         }
 
         // Fire-and-forget: notify only on a fresh active check-in (mirrors /api/scan).
