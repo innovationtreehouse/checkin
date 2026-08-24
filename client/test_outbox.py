@@ -445,6 +445,68 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             self.assertEqual(waits[2], DRAIN_PACE_SECONDS)
             self.assertEqual(ob.dead_count(), 0)
 
+    def test_dead_pass_rotates_past_a_failing_row(self):
+        # #1727: a terminally-refused row must not head-of-line-block the
+        # dead rows behind it — after a failure, the next cycle tries the
+        # next row (never-tried before retried), round-robin thereafter.
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-stuck", "1", "2026-08-18T10:00:00+00:00")
+            ob.enqueue("evt-next", "2", "2026-08-18T10:01:00+00:00")
+            ob.mark_dead("evt-stuck", 404)
+            ob.mark_dead("evt-next", 409)
+
+            seen = []
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                seen.append(client_event_id)
+                return ({"error": "refused"}, 400, None)
+
+            def fake_sleep(secs):
+                if len(seen) >= 4:
+                    raise _StopLoop()
+
+            with self.assertLogs("kiosk", level="WARNING"):
+                with self.assertRaises(_StopLoop):
+                    replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                                 in_closed_window_fn=lambda: False)
+
+            # oldest-first for the never-tried, then alternating — not
+            # evt-stuck four times.
+            self.assertEqual(seen[:2], ["evt-stuck", "evt-next"])
+            self.assertEqual(set(seen[2:4]), {"evt-stuck", "evt-next"})
+            self.assertEqual(ob.dead_count(), 2)
+
+    def test_dead_pass_rotation_still_deletes_on_success(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-stuck", "1", "2026-08-18T10:00:00+00:00")
+            ob.enqueue("evt-ok", "2", "2026-08-18T10:01:00+00:00")
+            ob.mark_dead("evt-stuck", 404)
+            ob.mark_dead("evt-ok", 409)
+
+            def send_fn(participant_id, force_close_token=None, client_event_id=None,
+                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                if client_event_id == "evt-stuck":
+                    return ({"error": "refused"}, 400, None)
+                return ({}, 200, None)
+
+            sleeps = {"n": 0}
+
+            def fake_sleep(secs):
+                sleeps["n"] += 1
+                if sleeps["n"] >= 3:
+                    raise _StopLoop()
+
+            with self.assertLogs("kiosk", level="WARNING"):
+                with self.assertRaises(_StopLoop):
+                    replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                                 in_closed_window_fn=lambda: False)
+
+            # evt-ok retired via rotation even though evt-stuck keeps failing
+            self.assertEqual(ob.dead_count(), 1)
+
     def test_dead_pass_never_jumps_the_pending_fifo(self):
         with tempfile.TemporaryDirectory() as d:
             ob = Outbox(os.path.join(d, "outbox.db"))

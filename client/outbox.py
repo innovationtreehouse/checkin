@@ -66,7 +66,8 @@ class Outbox:
         last_status      INTEGER,
         state            TEXT NOT NULL DEFAULT 'pending',
         created_at       TEXT NOT NULL,
-        force_close_token TEXT
+        force_close_token TEXT,
+        last_attempt_at  TEXT
     )"""
 
     def _open(self, path):
@@ -79,6 +80,10 @@ class Outbox:
                 # Kiosks already carry an outbox.db from the pre-token schema.
                 try:
                     conn.execute("ALTER TABLE outbox ADD COLUMN force_close_token TEXT")
+                except sqlite3.OperationalError:
+                    pass  # already there
+                try:
+                    conn.execute("ALTER TABLE outbox ADD COLUMN last_attempt_at TEXT")
                 except sqlite3.OperationalError:
                     pass  # already there
                 conn.commit()
@@ -170,15 +175,27 @@ class Outbox:
             ).fetchone()[0]
 
     def dead_rows(self):
-        """The oldest dead-lettered row awaiting the server-side DLQ (LIMIT 1:
-        the dead pass sends one per cycle, so materializing the whole backlog
-        each cycle is pure churn on a constrained kiosk).
+        """The next dead-lettered row for the server-side DLQ (LIMIT 1: one
+        send per cycle). Rotation, not FIFO (#1727): never-tried rows oldest
+        first, then least-recently-tried -- so one terminally-refused row
+        cannot head-of-line-block the rows behind it.
         Only read once the pending FIFO is empty -- never competes with it."""
         with self._lock:
             return self._conn.execute(
                 "SELECT client_event_id, participant_id, scanned_at, last_status "
-                "FROM outbox WHERE state='dead' ORDER BY scanned_at ASC LIMIT 1"
+                "FROM outbox WHERE state='dead' "
+                "ORDER BY (last_attempt_at IS NOT NULL), last_attempt_at ASC, scanned_at ASC "
+                "LIMIT 1"
             ).fetchall()
+
+    def mark_dead_attempt(self, client_event_id):
+        """Stamp a failed DLQ delivery so rotation moves past this row."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE outbox SET last_attempt_at=? WHERE client_event_id=?",
+                (now_iso(), client_event_id),
+            )
+            self._conn.commit()
 
 
 def classify_response(status, body):
@@ -248,6 +265,7 @@ def _send_dead_row(outbox, send_fn, push_fn=None, backoff=MIN_BACKOFF_SECONDS):
         if push_fn:
             push_fn({"html": "", "queued": outbox.pending_count()})
         return None, MIN_BACKOFF_SECONDS
+    outbox.mark_dead_attempt(client_event_id)
     log.warning(
         f"Dead-letter DLQ delivery failed for {client_event_id} "
         f"(status={status}, originally dead-lettered with {last_status}); backing off"
