@@ -1014,7 +1014,10 @@ describe("Merge Participants API", () => {
 
     // Matrix 11
     it("single-sided auto-backfill: keeper null, tombstone set -> keeper backfilled", async () => {
-        const kA = await prisma.person.create({ data: { name: null, phone: null, dateOfBirth: null, image: null, googleId: null, email: null, householdId } });
+        // #1432 R3: a null-name Person is unrepresentable, so Matrix 11's name
+        // arm retires — a set keeper name must survive; the null-backfill
+        // behavior stays proven by the five still-nullable fields.
+        const kA = await prisma.person.create({ data: { name: "Keeper Name", phone: null, dateOfBirth: null, image: null, googleId: null, email: null, householdId } });
         const kB = await prisma.person.create({
             data: {
                 name: "Backfill Source", phone: "555-0100", dateOfBirth: new Date("1990-01-01"),
@@ -1026,7 +1029,7 @@ describe("Merge Participants API", () => {
         const res = await POST(mergeReq(kA.id, kB.id));
         expect(res.status).toBe(200);
         const kept = await prisma.person.findUnique({ where: { id: kA.id } });
-        expect(kept?.name).toBe("Backfill Source");
+        expect(kept?.name).toBe("Keeper Name");
         expect(kept?.phone).toBe("555-0100");
         expect(kept?.dateOfBirth?.toISOString()).toBe(new Date("1990-01-01").toISOString());
         expect(kept?.image).toBe("https://example.com/a.png");
