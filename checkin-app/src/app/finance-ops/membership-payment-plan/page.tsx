@@ -13,6 +13,8 @@ import { sharesHousehold } from '@/lib/conflictOfInterest';
 
 import { PageLoader } from "@/components/ui/PageLoader";
 
+type HouseholdLead = { id: number; name: string | null; email: string | null };
+
 type MembershipPaymentPlanRequest = {
   id: number;
   stageEnteredAt: string | null;
@@ -21,6 +23,7 @@ type MembershipPaymentPlanRequest = {
     household: {
       id: number;
       name: string;
+      householdMembers?: HouseholdLead[];
     };
   };
 };
@@ -150,6 +153,11 @@ export default function MembershipPaymentPlansPage() {
 
   if (!ready) return null;
 
+  const leadEmails = (req: MembershipPaymentPlanRequest): string[] =>
+    (req.orgMembership.household.householdMembers ?? [])
+      .map(l => l.email)
+      .filter((e): e is string => !!e);
+
   const columns: DataTableColumn<MembershipPaymentPlanRequest>[] = [
     {
       header: 'Household',
@@ -160,6 +168,15 @@ export default function MembershipPaymentPlansPage() {
           <Text size="sm" c="dimmed">{req.orgMembership.isVolunteer ? 'Volunteer household' : 'Standard household'}</Text>
         </>
       ),
+    },
+    {
+      header: 'Family Email',
+      render: (req) => {
+        const emails = leadEmails(req);
+        return emails.length
+          ? emails.map(e => <Text key={e} size="sm">{e}</Text>)
+          : <Text size="sm" c="dimmed">—</Text>;
+      },
     },
     {
       header: 'Requested On',

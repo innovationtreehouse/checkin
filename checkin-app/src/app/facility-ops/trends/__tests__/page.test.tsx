@@ -11,9 +11,9 @@ beforeEach(() => resetRtl());
 
 const trendsData = {
   buckets: [
-    { label: "Jan 2026", periodStart: "2026-01-01", uniqueVolunteers: 3, uniqueParticipants: 5, totalVolunteerHours: 12.5, totalParticipantHours: 0.5, structuredHours: 8, unstructuredHours: 4.5 },
+    { label: "Jan 2026", periodStart: "2026-01-01", uniqueVolunteers: 3, uniqueParticipants: 5, totalVolunteerHours: 12.5, totalParticipantHours: 0.5, structuredHours: 8, unstructuredHours: 4.5, bySource: { SCANNER: 9, WEB: 4 } },
   ],
-  totals: { label: "Total", periodStart: "", uniqueVolunteers: 3, uniqueParticipants: 5, totalVolunteerHours: 12.5, totalParticipantHours: 0.5, structuredHours: 8, unstructuredHours: 4.5 },
+  totals: { label: "Total", periodStart: "", uniqueVolunteers: 3, uniqueParticipants: 5, totalVolunteerHours: 12.5, totalParticipantHours: 0.5, structuredHours: 8, unstructuredHours: 4.5, bySource: { SCANNER: 9, WEB: 4 } },
 };
 
 function mockRoutes() {
@@ -54,5 +54,19 @@ describe("facility-ops/trends page", () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("period=week")),
     );
+  });
+
+  it("shows the source-breakdown table only once the toggle is switched on", async () => {
+    setSession({ id: 1, isBoardMember: true });
+    mockRoutes();
+    renderWithProviders(<ParticipationTrendsPage />);
+    await screen.findByText("Jan 2026");
+
+    expect(screen.queryByText("Scanner")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Show hours by source"));
+
+    expect(await screen.findByText("Scanner")).toBeInTheDocument();
+    expect(screen.getByText("Web")).toBeInTheDocument();
   });
 });

@@ -16,16 +16,6 @@ export const ACTIVE_ORG_MEMBER_PERSON_WHERE: Prisma.PersonWhereInput = {
 };
 
 /**
- * Prisma `include` fragment that loads exactly the membership data
- * `personRecordIsActiveOrgMember` needs (the household's membership).
- * Spread into a findMany/findUnique `include` to compute org membership in-query
- * without an extra round-trip.
- */
-export const ACTIVE_ORG_MEMBER_INCLUDE = {
-    household: { include: { orgMembership: true } },
-} satisfies Prisma.PersonInclude;
-
-/**
  * Does the Person with this id currently count as an active Treehouse Member?
  * One indexed existence check; returns false for unknown ids.
  */
@@ -40,7 +30,7 @@ export async function isActiveOrgMember(personId: number): Promise<boolean> {
 
 /**
  * Pure predicate over an already-loaded Person record. Use when a query has
- * already pulled membership data (e.g. via {@link ACTIVE_ORG_MEMBER_INCLUDE}) and an
+ * already pulled membership data and an
  * extra query would be wasteful. Accepts any record whose household carries its
  * membership; a missing household or membership reads as "not an org member".
  */

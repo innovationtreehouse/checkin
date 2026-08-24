@@ -195,4 +195,54 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
         expect(after?.reviewReason).toBe('stale_replay');
         expect(after?.reviewedBy).toBe(keyholder.id);
     });
+
+    // #1347 PR-2 / Q10 — server-side DLQ ingest. A dead-lettered outbox row
+    // parks with a client_dead:<status> reviewReason and must surface in the
+    // unsynced-scans list PR-1 defines (reviewReason != null), without this
+    // test depending on PR-1's own route/query code.
+    it('a dead-lettered event parks with client_dead:<status> and surfaces in the unsynced-scans query shape', async () => {
+        const scannedAt = new Date(Date.now() - 5 * 60_000);
+        const res = await POST(scanReq({
+            participantId: member.id, clientEventId: 'evt-dead-dlq', scannedAt: scannedAt.toISOString(), dead: true, deadStatus: 404,
+        }));
+        expect(res.status).toBe(200);
+        expect((await res.json()).type).toBe('parked');
+
+        expect(await prisma.visit.findFirst({ where: { personId: member.id } })).toBeNull();
+
+        const log = await prisma.rawBadgeLog.findUnique({ where: { clientEventId: 'evt-dead-dlq' } });
+        expect(log?.reviewReason).toBe('client_dead:404');
+        expect(log?.timestamp.getTime()).toBe(scannedAt.getTime());
+
+        // PR-1's planned unsynced-scans query shape.
+        const unsynced = await prisma.rawBadgeLog.findMany({
+            where: { personId: member.id, reviewReason: { not: null } },
+        });
+        expect(unsynced.map((r) => r.clientEventId)).toContain('evt-dead-dlq');
+    });
+
+    it('re-sending a dead-lettered event with the same clientEventId dedups instead of parking twice', async () => {
+        const scannedAt = new Date(Date.now() - 2 * 60_000);
+        const first = await POST(scanReq({
+            participantId: member.id, clientEventId: 'evt-dead-retry', scannedAt: scannedAt.toISOString(), dead: true, deadStatus: 400,
+        }));
+        expect((await first.json()).type).toBe('parked');
+
+        const retry = await POST(scanReq({
+            participantId: member.id, clientEventId: 'evt-dead-retry', scannedAt: scannedAt.toISOString(), dead: true, deadStatus: 400,
+        }));
+        expect((await retry.json()).type).toBe('duplicate_ignored');
+
+        const rows = await prisma.rawBadgeLog.findMany({ where: { clientEventId: 'evt-dead-retry' } });
+        expect(rows).toHaveLength(1);
+    });
+
+    it('rejects dead:true and replay:true together', async () => {
+        const res = await POST(scanReq({
+            participantId: member.id, clientEventId: 'evt-dead-and-replay',
+            scannedAt: new Date().toISOString(), dead: true, replay: true,
+        }));
+        expect(res.status).toBe(400);
+        expect(await prisma.rawBadgeLog.findUnique({ where: { clientEventId: 'evt-dead-and-replay' } })).toBeNull();
+    });
 });

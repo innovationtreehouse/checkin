@@ -6,6 +6,7 @@ import { addHouseholdLead, HouseholdLeadLimitError } from "@/lib/household/leads
 import { isValidEmail } from "@/lib/emergencyContacts/identity";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
 import { mintPersonId } from "@/lib/person/mintId";
+import { nameWrite } from "@/lib/person/name";
 import { withTx } from "@/lib/db-client";
 import { apiError } from "@/lib/api-response";
 
@@ -22,6 +23,10 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
 
         if (!email && !parentEmail && !householdId) {
             return apiError("Email, Parent Email, or Household assignment is required", 400);
+        }
+
+        if (!nameWrite(name)) {
+            return apiError("Name is required", 400);
         }
 
         if (email && !isValidEmail(email)) {
@@ -100,7 +105,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
             newParticipant = await withTx(prisma, async (tx) => tx.person.create({
                 data: {
                     id: await mintPersonId(tx),
-                    name,
+                    name: nameWrite(name),
                     ...(email && { email }),
                     // #1165: 26+ participants are stored declared-adult with no DoB.
                     ...normalizeAdultDob(dob),
@@ -116,7 +121,7 @@ export const POST = withAuth({ roles: ['isSysadmin', 'isBoardMember'] }, async (
                 return tx.person.create({
                     data: {
                         id: await mintPersonId(tx),
-                        name,
+                        name: nameWrite(name),
                         ...(email && { email }),
                         // #1165: 26+ participants are stored declared-adult with no DoB.
                         ...normalizeAdultDob(dob),

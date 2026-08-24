@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { handler } from "@/security/handler";
 import { apiError } from "@/lib/api-response";
-import { isActiveOrgMember, ACTIVE_ORG_MEMBER_INCLUDE } from "@/lib/orgMembership";
+import { isActiveOrgMember } from "@/lib/orgMembership";
 import { hasHouseholdConflict } from "@/lib/conflictOfInterest";
 import { STATES, fromWhere } from "@/lib/programs/enrollmentState";
 import { LIVE_PERSON } from "@/lib/person/filters";
@@ -28,12 +28,25 @@ export const GET = handler('GET /api/finance-ops/payment-plans', async ({ req })
             // can't drift from the state table.
             where: { ...(holdsQueue ? STATES.PENDING_HOLD_FAILED.where : STATES.PENDING_HELD.where), person: LIVE_PERSON },
             include: {
-                // Nests household->orgMembership (same shape as ACTIVE_ORG_MEMBER_INCLUDE)
-                // so the board can see CURRENT membership while a request is still
-                // pending — wasOrgMemberAtApproval is null until approved, so it can't
-                // answer this. Derive live client-side; nothing new to stamp/store here.
-                person: { include: ACTIVE_ORG_MEMBER_INCLUDE },
-                program: true // carries startAt (public) — half of the next-year flag
+                // Nests household→orgMembership so the board can see CURRENT
+                // membership while a request is still pending —
+                // wasOrgMemberAtApproval is null until approved, so it can't
+                // answer this. Derive live client-side; nothing new to stamp.
+                // householdMembers (leads) carry the family contact email.
+                person: {
+                    include: {
+                        household: {
+                            include: {
+                                orgMembership: true,
+                                householdMembers: {
+                                    where: { isHouseholdLead: true, ...LIVE_PERSON },
+                                    select: { id: true, name: true, email: true },
+                                },
+                            },
+                        },
+                    },
+                },
+                program: true, // carries startAt (public) — half of the next-year flag
             },
             orderBy: {
                 pendingSince: 'asc'

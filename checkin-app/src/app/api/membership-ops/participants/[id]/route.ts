@@ -3,6 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
+import { nameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
@@ -22,7 +23,13 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
         const body = await request.json();
         
         const updateData: Record<string, NonNullable<unknown> | null | string | number | boolean | Date> = {};
-        if (body.name !== undefined) updateData.name = body.name;
+        if (body.name !== undefined) {
+            const writtenName = nameWrite(body.name);
+            if (!writtenName) {
+                return apiError("Name cannot be blank", 400);
+            }
+            updateData.name = writtenName;
+        }
         if (body.email !== undefined) updateData.email = body.email;
         if (body.phone !== undefined) {
             if (body.phone !== "" && body.phone !== null && !isValidPhone(body.phone)) {

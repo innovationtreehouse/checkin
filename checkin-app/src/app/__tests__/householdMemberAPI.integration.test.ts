@@ -195,6 +195,21 @@ describe('Household Member API Integration Tests', () => {
             expect(auditLogs.length).toBeGreaterThan(0);
         });
 
+        it('should reject a blank name and leave the stored name unchanged', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
+
+            const req = new Request('http://localhost:4000/api/household/member', {
+                method: 'PATCH',
+                body: JSON.stringify({ participantId: testMemberId, name: '   ' })
+            });
+
+            const res = await PATCH(req as unknown as import("next/server").NextRequest);
+            expect(res.status).toBe(400);
+
+            const updatedProfile = await prisma.person.findUnique({ where: { id: testMemberId } });
+            expect(updatedProfile?.name).toBe('Updated Child');
+        });
+
         it('should blank out email and dob if empty strings are sent', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testLeadId } });
 

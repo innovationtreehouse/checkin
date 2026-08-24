@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
+import { lastKeyholderGuard, runFacilityClose } from "@/lib/scan-service";
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
@@ -116,7 +117,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
 
     try {
         const body = await req.json();
-        const { visitId } = body;
+        const { visitId, forceCloseToken: clientToken } = body;
 
         if (!visitId) {
             return apiError("visitId is required", 400);
@@ -146,15 +147,39 @@ export const DELETE = withAuth({}, async (req, auth) => {
             return apiError("Visit not found", 404);
         }
 
+        if (visit.departedAt) {
+            return apiError("Visit already checked out", 400);
+        }
+
+        // Last-keyholder close guard (shared with PATCH/DELETE manual/[id]).
+        const guard = await lastKeyholderGuard(visitId, visit.person, clientToken);
+        if (guard.action === 'warn') {
+            return NextResponse.json({
+                error: guard.message,
+                type: "warning",
+                forceCloseToken: guard.token,
+                confirmSeconds: guard.confirmSeconds,
+            }, { status: 400 });
+        }
+        const { facilityClosed } = guard;
+
         const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
+
+        if (facilityClosed) {
+            try {
+                await runFacilityClose();
+            } catch (err) {
+                logger.error("Failed to close facility-wide visits after web checkout:", err);
+            }
+        }
 
         // Fire-and-forget: send check-out notifications (mirrors /api/scan)
         sendCheckinNotifications(visit.personId, 'checkout').catch(err =>
             logger.error('Checkout notification error:', err)
         );
 
-        return NextResponse.json({ success: true, visit: updatedVisit });
+        return NextResponse.json({ success: true, visit: updatedVisit, facilityClosed });
     } catch (error) {
         await logBackendError(error, "DELETE /api/attendance");
         return apiError("Failed to force checkout", 500);

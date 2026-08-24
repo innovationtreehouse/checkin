@@ -109,6 +109,54 @@ describe('Admin Participants API Integration Tests', () => {
             expect(data.error).toContain('Email, Parent Email, or Household assignment is required');
         });
 
+        it('should return 400 Bad Request if name is missing', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
+                method: 'POST',
+                body: JSON.stringify({ email: 'new-lone-participants-test-noname@example.com' })
+            });
+
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toMatch(/name/i);
+        });
+
+        it('should return 400 Bad Request if name is blank', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
+                method: 'POST',
+                body: JSON.stringify({ name: '   ', email: 'new-lone-participants-test-blank@example.com' })
+            });
+
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toMatch(/name/i);
+        });
+
+        it('trims leading/trailing whitespace from a submitted name', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const req = new Request('http://localhost:4000/api/membership-ops/participants', {
+                method: 'POST',
+                body: JSON.stringify({ name: '  Trimmed Name  ', email: 'new-lone-participants-test-trim@example.com' })
+            });
+
+            const res = await POST(req as unknown as Parameters<typeof POST>[0]);
+            expect(res.status).toBe(200);
+            const data = await res.json();
+            expect(data.participant.name).toBe('Trimmed Name');
+        });
+
         it('should return 400 Bad Request if email format is invalid', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({
                 user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
@@ -313,6 +361,27 @@ describe('Admin Participants API Integration Tests', () => {
             expect(auditJson(log.newData).name).toBe('Updated Name');
 
             // Cleanup is handled by afterEach
+        });
+
+        it('rejects blanking a participant name via PUT and leaves the stored name alone', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({
+                user: { id: testAdminId, isSysadmin: true, isBoardMember: false }
+            });
+
+            const editUser = await prisma.person.create({
+                data: { email: 'edit-test-user-blank@example.com', name: 'Keep This Name', household: { create: { name: "Test HH" } } }
+            });
+
+            const req = new Request(`http://localhost:4000/api/membership-ops/participants/${editUser.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ name: '   ' })
+            });
+
+            const res = await PUT(req as unknown as Parameters<typeof PUT>[0], { params: Promise.resolve({ id: editUser.id.toString() }) });
+            expect(res.status).toBe(400);
+
+            const dbCheck = await prisma.person.findUnique({ where: { id: editUser.id } });
+            expect(dbCheck?.name).toBe('Keep This Name');
         });
 
         it('sets the over-25 declaration on a person with no date of birth', async () => {

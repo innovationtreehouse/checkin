@@ -6,6 +6,7 @@ import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isYouth } from "@/lib/time";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
+import { nameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
@@ -47,10 +48,15 @@ export const PATCH = withAuth(
                 return apiError(PHONE_ERROR, 400);
             }
 
+            // A submitted-but-blank name is rejected, not silently dropped (Decision 5).
+            if (name !== undefined && !nameWrite(name)) {
+                return apiError("Name cannot be blank", 400);
+            }
+
             const updatedProfile = await prisma.person.update({
                 where: { id: userId },
                 data: {
-                    name: name !== undefined ? name : undefined,
+                    name: nameWrite(name),
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                     // #1165: a self-entered DoB for a 26+ member is stripped and the
                     // over-25 flag set instead; with no DoB the over-25 checkbox owns

@@ -47,7 +47,7 @@ jest.mock("@/lib/prisma", () => ({
         auditLog: { create: jest.fn() },
         // buildCallerContext reads the led-household roster (the route's only
         // ctxNeeds prefetch) to resolve led_households.
-        person: { findMany: jest.fn() },
+        person: { findUnique: jest.fn(), findMany: jest.fn() },
         $transaction: jest.fn(async (cb: (t: unknown) => unknown) => cb(tx)),
     },
 }));
@@ -55,6 +55,7 @@ jest.mock("@/lib/prisma", () => ({
 const mockSession = getServerSession as jest.Mock;
 const visitFindUnique = prisma.visit.findUnique as jest.Mock;
 const auditCreate = prisma.auditLog.create as jest.Mock;
+const personFindUnique = prisma.person.findUnique as jest.Mock;
 const personFindMany = prisma.person.findMany as jest.Mock;
 
 const OWN_ID = 7;
@@ -87,6 +88,7 @@ beforeEach(() => {
     tx.visit.updateMany.mockResolvedValue({ count: 1 });
     (processVisitCheckout as jest.Mock).mockResolvedValue([{ ...baseVisit }]);
     auditCreate.mockResolvedValue({});
+    personFindUnique.mockResolvedValue({ isKeyholder: false });
     personFindMany.mockResolvedValue([]); // not a household lead unless a test says so
 });
 
