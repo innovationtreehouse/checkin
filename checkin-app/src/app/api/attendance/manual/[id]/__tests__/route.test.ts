@@ -176,7 +176,7 @@ describe("PATCH /api/attendance/manual/[id]", () => {
 
         expect(res.status).toBe(200);
         expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
-            data: { departedAt: new Date("2026-07-20T16:30:00Z"), departedVia: "WEB" },
+            data: { departedAt: new Date("2026-07-20T16:30:00Z"), departedVia: "TYPED" },
         }));
     });
 
@@ -212,7 +212,7 @@ describe("PATCH /api/attendance/manual/[id]", () => {
         const res = await PATCH(req("PATCH", { departedAt: "2026-07-20T17:00:00Z" }), ctx as never);
 
         expect(res.status).toBe(200);
-        expect(processVisitCheckout).toHaveBeenCalledWith(42, new Date("2026-07-20T17:00:00Z"), undefined, "WEB");
+        expect(processVisitCheckout).toHaveBeenCalledWith(42, new Date("2026-07-20T17:00:00Z"), undefined, "TYPED");
         // The lock-scoped update must not have closed it first.
         expect(tx.visit.update).toHaveBeenCalledWith(expect.objectContaining({
             data: expect.not.objectContaining({ departedAt: expect.anything() }),
