@@ -326,8 +326,10 @@ export const DELETE = withAuth({}, async (req, auth, { params }: { params: Promi
 
         // Advise a manual Shopify restock only when an ACTIVE removal freed a
         // tracked seat; `released` already handles the PENDING hold path (+1).
+        // Staff-only (#1519): a lead mentor or self-removing parent can't act on
+        // Shopify inventory, so the advisory is noise (and a foot-gun) for them.
         const hasShopifyVariant = !!currentProgram.shopifyVariantId;
-        if (!released && enrollment.status === 'ACTIVE' && currentProgram.maxParticipants !== null && hasShopifyVariant) {
+        if (isSysAdminOrBoard && !released && enrollment.status === 'ACTIVE' && currentProgram.maxParticipants !== null && hasShopifyVariant) {
             responseObj.notice = "Seat freed. This enrollment held a seat in Shopify; it was NOT put back on sale automatically. If you want it available for a paying family, add +1 to this program's inventory in Shopify.";
         }
         return NextResponse.json(responseObj);
