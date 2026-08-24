@@ -49,6 +49,8 @@ function openVisits(householdIds: number[]) {
 function fakeDb(householdIds: number[], warnedAt: Date | null = null, youthPresent = true) {
     const update = jest.fn().mockResolvedValue({});
     const db = {
+        // The facility advisory lock is a no-op against a fake client.
+        $executeRaw: jest.fn().mockResolvedValue(0),
         boardSettings: { findUnique: jest.fn().mockResolvedValue({ orgMembershipYearBoundary: null, bgRecheckMonths: 0 }) },
         visit: {
             count: jest.fn().mockResolvedValue(1),

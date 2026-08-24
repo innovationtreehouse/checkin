@@ -32,3 +32,17 @@ describe('unit-tier prisma mock: $queryRaw', () => {
         );
     });
 });
+
+describe('unit-tier prisma mock: $executeRaw', () => {
+    const exec = prisma.$executeRaw as unknown as (s: string[]) => Promise<number>;
+
+    test('advisory lock is a no-op', async () => {
+        await expect(exec(['SELECT pg_advisory_xact_lock(', ', ', ')'])).resolves.toBe(0);
+    });
+
+    test('still rejects every other raw execute', async () => {
+        await expect(exec(['DELETE FROM "Person"'])).rejects.toThrow(
+            'Unit tests must not call the real Prisma client',
+        );
+    });
+});
