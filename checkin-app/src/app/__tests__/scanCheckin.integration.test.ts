@@ -82,15 +82,19 @@ describe('POST /api/scan — real check-in/out logic', () => {
         await prisma.household.deleteMany({ where: { id: { in: [keyholderHouseholdId, normalHouseholdId] } } });
     });
 
-    it('rejects a non-keyholder check-in with 403 when the facility is closed', async () => {
+    it('parks a non-keyholder kiosk scan when the facility is closed (advisory close)', async () => {
         const res = await POST(scanReq(normalId));
-        expect(res.status).toBe(403);
+        expect(res.status).toBe(200);
         const json = await res.json();
-        expect(json.error).toMatch(/Facility is closed/);
+        expect(json.type).toBe('parked');
 
-        // Negative side-effect assertion: no visit row was created.
         const visits = await prisma.visit.count({ where: { personId: normalId } });
         expect(visits).toBe(0);
+        const parked = await prisma.rawBadgeLog.findFirst({
+            where: { personId: normalId },
+            orderBy: { timestamp: 'desc' },
+        });
+        expect(parked?.reviewReason).toBe('facility_closed');
     });
 
     it('lets a isKeyholder check in (opening the facility) and creates an open visit', async () => {

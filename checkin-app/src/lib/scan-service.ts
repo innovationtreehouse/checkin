@@ -4,6 +4,7 @@ import { sendCheckinNotifications } from "@/lib/notifications";
 import { apiError, apiJson } from "@/lib/api-response";
 import type { Person } from "@/generated/prisma/client";
 import { type DbClient, isRootClient } from "@/lib/db-client";
+import { withFacilityLock } from "@/lib/facilityLock";
 import { MAX_VISIT_MS } from "@/lib/visitTimes";
 import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits, youthIsPresent } from "@/lib/supervision";
 import { isYouth } from "@/lib/time";
@@ -33,9 +34,14 @@ export const SUPERVISION_CONFIRM_DEADFRONT_MS = 1_000;
  * effects (notifications) intentionally run off the global client either way.
  */
 export async function processCheckin(participant: Person, authType: string, db: DbClient = prisma, visitTime: Date = new Date()) {
+    // Facility lock covers the open-state read AND the create, so a racing
+    // last-keyholder sweep (#254) cannot leave this visit open after close.
+    // Same 2-arg lock space as runFacilityClose — independent of the per-person
+    // lock the scan route already holds.
+    return withFacilityLock(db, async (tx) => {
     // Non-keyholders require an open facility (at least 1 isKeyholder present)
     if (!participant.isKeyholder) {
-        const activeKeyholders = await db.visit.count({
+        const activeKeyholders = await tx.visit.count({
             where: {
                 departedAt: null,
                 deletedAt: null,
@@ -44,14 +50,30 @@ export async function processCheckin(participant: Person, authType: string, db: 
         });
 
         if (activeKeyholders === 0) {
+            // Closed is advisory (#1347): a kiosk badge is recorded for review,
+            // not rejected. Dashboard check-in still 403s (no badge to park).
+            if (authType === "kiosk") {
+                const badge = await tx.rawBadgeLog.findFirst({
+                    where: { personId: participant.id, reviewReason: null },
+                    orderBy: { timestamp: "desc" },
+                    select: { id: true },
+                });
+                if (badge) {
+                    await tx.rawBadgeLog.update({
+                        where: { id: badge.id },
+                        data: { reviewReason: "facility_closed" },
+                    });
+                }
+                return apiJson({ type: "parked", message: "Recorded for review." });
+            }
             return apiError("Facility is closed. A Keyholder must check in first.", 403);
         }
     }
 
     const arrivalTime = visitTime;
-    const eventId = await findAssociatedEventAt(participant.id, arrivalTime, db);
+    const eventId = await findAssociatedEventAt(participant.id, arrivalTime, tx);
 
-    const newVisit = await db.visit.create({
+    const newVisit = await tx.visit.create({
         data: {
             personId: participant.id,
             arrivedAt: arrivalTime,
@@ -72,7 +94,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
     const isYouthArrival = !participant.isDeclaredAdult
         && isYouth(participant.dateOfBirth, { unknownIs: "youth" });
     const supervisionWarning = isYouthArrival
-        && supervisingAdultCount(await supervisingAdultVisits(db)) < MIN_SUPERVISING_ADULTS
+        && supervisingAdultCount(await supervisingAdultVisits(tx)) < MIN_SUPERVISING_ADULTS
         ? `Warning: fewer than ${MIN_SUPERVISING_ADULTS} supervising adults are in the building.`
         : undefined;
 
@@ -83,6 +105,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
         participant,
         visit: newVisit,
         signedRequest: authType === "kiosk",
+    });
     });
 }
 
@@ -204,7 +227,7 @@ export async function processCheckout(
             // under the route's tx client the route runs both AFTER it commits
             // (see finalizeFacilityClose / route.ts).
             if (isRootClient(db)) {
-                await closeAllOpenVisits(db);
+                await withFacilityLock(db, (tx) => closeAllOpenVisits(tx));
                 kickPostEventEmails();
             }
         }
@@ -350,7 +373,7 @@ function kickPostEventEmails() {
  * finalizeFacilityClose) and from web close paths.
  */
 export async function runFacilityClose(): Promise<void> {
-    await closeAllOpenVisits(prisma);
+    await withFacilityLock(prisma, (tx) => closeAllOpenVisits(tx));
     kickPostEventEmails();
 }
 
