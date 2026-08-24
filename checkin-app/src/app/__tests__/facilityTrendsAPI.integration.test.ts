@@ -225,6 +225,29 @@ describe('Facility trends API', () => {
         expect(data.totals.totalVolunteerHours).toBe(8);
     });
 
+    // Issue #1676: bySource decomposes HOURS by arrivedVia, never people. This
+    // program's bucket is the case that matters — `volunteerId` carries both a
+    // LEAD_MARKED (3h) and a SYSTEM (3h) visit here, so a per-source person count
+    // would double-count them, but uniqueVolunteers must not.
+    it('decomposes hours by source without decomposing unique-person counts', async () => {
+        const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${programId}`);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+
+        // SCANNER: enrolled adult (3h, participant) + youth (2h, volunteer).
+        // LEAD_MARKED and SYSTEM: volunteerId's two visits, 3h each.
+        expect(data.totals.bySource).toEqual({ SCANNER: 5, LEAD_MARKED: 3, SYSTEM: 3 });
+
+        const bySourceSum = Object.values(data.totals.bySource as Record<string, number>)
+            .reduce((sum: number, hours: number) => sum + hours, 0);
+        expect(bySourceSum).toBeCloseTo(data.totals.totalVolunteerHours + data.totals.totalParticipantHours, 5);
+
+        // volunteerId is still ONE unique volunteer, not one per source.
+        expect(data.totals.uniqueVolunteers).toBe(2); // youthId + volunteerId
+        expect(data.totals).not.toHaveProperty('uniqueVolunteersBySource');
+        expect(data.totals).not.toHaveProperty('uniqueParticipantsBySource');
+    });
+
     // Source records how an arrival was measured; it does not decide whether the
     // visit is facility time. An untagged arrival, a scanned one, a staff roster
     // mark and the legacy SYSTEM spelling all sum the same way.
