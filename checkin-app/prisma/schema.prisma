@@ -55,6 +55,7 @@ enum AuditAction {
 enum VisitSource {
   SCANNER
   WEB
+  TYPED
   LEAD_MARKED
   FACILITY_CLOSE
   AUTO_CLOSE

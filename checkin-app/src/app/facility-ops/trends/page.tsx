@@ -30,7 +30,8 @@ interface ProgramOption {
 // the same window, so this axis never touches the volunteer/participant stats.
 const SOURCE_LABELS: Record<string, string> = {
   SCANNER: "Scanner",
-  WEB: "Web",
+  WEB: "Web (legacy)",
+  TYPED: "Typed",
   LEAD_MARKED: "Staff-Marked",
   FACILITY_CLOSE: "Facility Close",
   AUTO_CLOSE: "Auto Close",
