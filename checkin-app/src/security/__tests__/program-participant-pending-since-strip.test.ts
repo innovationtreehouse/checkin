@@ -1,15 +1,7 @@
 /**
  * @jest-environment node
  */
-/**
- * #1409: ProgramParticipant.pendingSince was 'internal', which the program
- * lead mentor / core-volunteer view of GET /api/programs/[id] never holds
- * (their_program_participants:pii/:personal only) — the roster fell back to
- * "Pending Since: Unknown". Re-tiered to 'personal', a band that view already
- * grants. Pulls the live view tokens from the registry so this tracks any
- * future policy edit, and pins that a band the lead still lacks (:internal)
- * keeps stripping a sibling field on the same row.
- */
+// View tokens come from the live registry, so these pins track policy edits.
 import { stripValue } from '@/security/stripper';
 import { type CallerContext } from '@/security/access-resolvers';
 import { getRoute, type Role, type Token } from '@/security/core';
