@@ -88,7 +88,7 @@ model Person {
   /// @sensitivity:pii
   phone         String?
   /// @sensitivity:public
-  name          String?
+  name          String
   /// @sensitivity:internal
   emailVerified DateTime?
   /// @sensitivity:public
