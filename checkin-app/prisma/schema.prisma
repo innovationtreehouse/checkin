@@ -991,7 +991,11 @@ model ProgramParticipant {
   status               ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
   isPaymentPlanRequested Boolean                  @default(false)
-  /// @sensitivity:internal
+  /// #1409: re-tiered from 'internal' to 'personal' — leads/core-vols hold
+  /// :personal but not :internal on their_program_participants, so this was
+  /// stripping to "Unknown" on the program-ops roster. Matches the sibling
+  /// workflow timestamp paymentPlanDeniedAt below; board/sysadmin hold both.
+  /// @sensitivity:personal
   pendingSince         DateTime?                @default(now())
   /// Point-in-time snapshot of the household's org-membership status the moment a
   /// scholarship/payment-plan request was APPROVED (status flipped to ACTIVE).
