@@ -157,6 +157,45 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
         expect(log?.reviewReason).toBe('out_of_order');
     });
 
+    // The park is only half the story — a parked row nobody can see is
+    // invariant 3 broken. This closes the loop end to end against the real DB:
+    // park via the route, then run the EXACT query GET /api/system-status/
+    // unsynced-scans runs and prove the row is in it, and that a dismiss takes
+    // it back out. The route's own filter/admission are unit-tested; what only
+    // Postgres can settle is that `reviewReason != null AND reviewedAt = null`
+    // actually selects what /api/scan just wrote.
+    it('a parked replay surfaces in the unsynced-scans list query until it is dismissed (D7)', async () => {
+        const scannedAt = new Date(Date.now() - 40 * 60_000); // 40 min ago > 10 min W
+        const res = await POST(scanReq({ participantId: member.id, clientEventId: 'evt-d7-surfaces', scannedAt: scannedAt.toISOString(), replay: true }));
+        expect((await res.json()).type).toBe('parked');
+
+        const queue = () => prisma.rawBadgeLog.findMany({
+            where: { reviewReason: { not: null }, reviewedAt: null, personId: member.id },
+            select: { id: true, timestamp: true, reviewReason: true, person: { select: { id: true, name: true } } },
+            orderBy: { timestamp: 'desc' },
+            take: 100,
+        });
+
+        const parked = await queue();
+        expect(parked).toHaveLength(1);
+        expect(parked[0].reviewReason).toBe('stale_replay');
+        expect(parked[0].person.name).toBe('Replay Member');
+        expect(parked[0].timestamp.getTime()).toBe(scannedAt.getTime());
+
+        // The dismiss's guarded write, stamping both columns.
+        const dismissed = await prisma.rawBadgeLog.updateMany({
+            where: { id: parked[0].id, reviewReason: { not: null }, reviewedAt: null },
+            data: { reviewedAt: new Date(), reviewedBy: keyholder.id },
+        });
+        expect(dismissed.count).toBe(1);
+
+        expect(await queue()).toHaveLength(0);
+        // reviewReason survives the dismissal — the row keeps saying why it parked.
+        const after = await prisma.rawBadgeLog.findUnique({ where: { clientEventId: 'evt-d7-surfaces' } });
+        expect(after?.reviewReason).toBe('stale_replay');
+        expect(after?.reviewedBy).toBe(keyholder.id);
+    });
+
     // #1347 PR-2 / Q10 — server-side DLQ ingest. A dead-lettered outbox row
     // parks with a client_dead:<status> reviewReason and must surface in the
     // unsynced-scans list PR-1 defines (reviewReason != null), without this
