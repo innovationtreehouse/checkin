@@ -24,6 +24,7 @@ from nacl.signing import SigningKey
 import requests
 
 from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso, in_closed_window
+from health import health_monitor
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -177,6 +178,10 @@ class AttendanceState:
         self.current_counts = {"total": 0, "keyholders": 0, "volunteers": 0, "students": 0}
         self.confirm_token = None    # force-close confirm token, if a countdown is running
         self.confirm_deadline = 0.0  # monotonic clock, end of that countdown
+        self.last_browser_seen = time.monotonic()
+        self.last_attendance_ok = None
+        self.attendance_auth_fail = False
+        self.scanner_ok = True
 
     def arm_confirm(self, token, seconds):
         """Hold the confirm token the server minted with a force-close warning."""
@@ -226,6 +231,8 @@ class KioskHandler(BaseHTTPRequestHandler):
     disable_blackout = False
 
     def do_GET(self):
+        if self.state is not None:
+            self.state.last_browser_seen = time.monotonic()
         if self.path == "/":
             self._serve_wrapper()
         elif self.path == "/events":
@@ -538,6 +545,15 @@ class KioskHandler(BaseHTTPRequestHandler):
                 stream=True,
                 timeout=30
             )
+
+            if self.state is not None:
+                self.state.last_browser_seen = time.monotonic()
+                if sign_path == "/api/attendance":
+                    if resp.status_code == 200:
+                        self.state.last_attendance_ok = time.monotonic()
+                        self.state.attendance_auth_fail = False
+                    elif resp.status_code in (401, 403):
+                        self.state.attendance_auth_fail = True
             
             try:
                 self.send_response(resp.status_code)
@@ -600,39 +616,70 @@ def usb_scanner_listener(backend, state, outbox, device_path):
     ENTER_KEY = 28
 
     log.info(f"Attempting to open USB device: {device_path}")
+    dev = None
     try:
         dev = find_device(device_path)
-        if not dev:
-            # Fallback: if it's not found by name/path, but looks like a path, try opening it directly
-            if device_path.startswith("/dev/input/"):
-                import evdev
-                dev = evdev.InputDevice(device_path)
-            else:
-                log.error(f"No device found matching: {device_path}")
-                return
-
-        dev.grab()
-        log.info(f"Listening on: {dev.name} ({dev.path})")
+        if not dev and device_path.startswith("/dev/input/"):
+            import evdev as _evdev
+            dev = _evdev.InputDevice(device_path)
+        if dev:
+            dev.grab()
+            log.info(f"Listening on: {dev.name} ({dev.path})")
+            state.scanner_ok = True
+        else:
+            log.error(f"No device found matching: {device_path}")
+            state.scanner_ok = False
     except Exception as e:
         log.error(f"Cannot open USB device {device_path}: {e}")
-        return
+        state.scanner_ok = False
 
-    buffer = ""
-    for event in dev.read_loop():
-        if event.type != evdev.ecodes.EV_KEY:
-            continue
-        key_event = evdev.categorize(event)
-        if key_event.keystate != 1:
-            continue
+    backoff = 1.0
+    while True:
+        buffer = ""
+        try:
+            for event in dev.read_loop():
+                backoff = 1.0
+                state.scanner_ok = True
+                if event.type != evdev.ecodes.EV_KEY:
+                    continue
+                key_event = evdev.categorize(event)
+                if key_event.keystate != 1:
+                    continue
 
-        if key_event.scancode == ENTER_KEY:
-            if buffer.strip():
-                participant_id = buffer.strip()
-                log.info(f"Scanned ID: {participant_id}")
-                handle_scan(backend, state, outbox, participant_id)
-            buffer = ""
-        elif key_event.scancode in KEY_MAP:
-            buffer += KEY_MAP[key_event.scancode]
+                if key_event.scancode == ENTER_KEY:
+                    if buffer.strip():
+                        participant_id = buffer.strip()
+                        log.info(f"Scanned ID: {participant_id}")
+                        handle_scan(backend, state, outbox, participant_id)
+                    buffer = ""
+                elif key_event.scancode in KEY_MAP:
+                    buffer += KEY_MAP[key_event.scancode]
+        except Exception as e:
+            state.scanner_ok = False
+            log.warning(f"Scanner lost ({e}); re-grab in {backoff:.0f}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+            try:
+                if dev is not None:
+                    try:
+                        dev.ungrab()
+                    except Exception:
+                        pass
+                    try:
+                        dev.close()
+                    except Exception:
+                        pass
+                dev = find_device(device_path)
+                if not dev and device_path.startswith("/dev/input/"):
+                    import evdev as _evdev
+                    dev = _evdev.InputDevice(device_path)
+                if not dev:
+                    continue
+                dev.grab()
+                log.info(f"Re-grabbed scanner: {dev.name} ({dev.path})")
+                state.scanner_ok = True
+            except Exception as regrab_err:
+                log.warning(f"Scanner re-grab failed: {regrab_err}")
 
 def stdin_scanner_listener(backend, state, outbox):
     log.info("USB device not configured — reading scans from stdin")
@@ -904,6 +951,16 @@ def main():
     # Start version poller thread
     vpoller = threading.Thread(target=version_poller, args=(backend, state), daemon=True)
     vpoller.start()
+
+    allow_reboot = bool(config.get("allow_reboot", False))
+    allow_wifi_bounce = bool(config.get("allow_wifi_bounce", False))
+    hmon = threading.Thread(
+        target=health_monitor,
+        args=(backend_url, state),
+        kwargs={"allow_reboot": allow_reboot, "allow_wifi_bounce": allow_wifi_bounce},
+        daemon=True,
+    )
+    hmon.start()
 
     # Start the outbox replay thread: drains queued scans in order,
     # re-signing and resubmitting each one, once the backend is reachable.

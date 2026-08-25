@@ -391,6 +391,40 @@ export function SystemVersionBox() {
   );
 }
 
+type HeartbeatRow = { metric: string; timestamp: string; value: number };
+
+export function KioskHeartbeatBox() {
+  const [rows, setRows] = useState<HeartbeatRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/system-status/kiosk-heartbeat")
+      .then((res) => (res.ok ? res.json() : Promise.reject(res)))
+      .then((data: { heartbeat?: HeartbeatRow[] }) => {
+        setRows(Array.isArray(data?.heartbeat) ? data.heartbeat : []);
+      })
+      .catch(() => setRows(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  let body: string;
+  if (loading) body = "Checking…";
+  else if (rows == null) body = "Unable to read kiosk last-seen.";
+  else if (rows.length === 0) body = "No kiosk request since this task started (stale during overnight curfew is expected).";
+  else {
+    const age = rows[0].value;
+    const minutes = Math.floor(age / 60);
+    body = minutes < 1 ? `Kiosk last seen ${age}s ago` : `Kiosk last seen ${minutes}m ago`;
+  }
+
+  return (
+    <Card withBorder radius="md" padding="lg">
+      <Title order={4} mb="xs">Kiosk last seen</Title>
+      <Text size="sm" c="dimmed">{body}</Text>
+    </Card>
+  );
+}
+
 export function BadgeScanChart() {
   const [stats, setStats] = useState<DailyStat[] | null>(null);
   const [loading, setLoading] = useState(true);

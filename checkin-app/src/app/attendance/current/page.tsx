@@ -123,9 +123,10 @@ function KioskDisplayInner() {
     if (canCheckInHousehold) fetchHousehold();
   }, [canCheckInHousehold, currentUserHouseholdId]);
 
-  // A signed kiosk display (sig/ts/nonce present) is unattended, so it must not
-  // idle-stop — only the interactive staff view does. Either way the visibility
-  // gate applies; a cookieless kiosk poll can't wake a slept env anyway.
+  // Unattended kiosk displays must not idle-stop. The Pi proxy never puts
+  // sig/ts/nonce on the iframe URL, so keying on those params froze the
+  // door screen after 10 quiet minutes. Gate on mode=kiosk (the URL the
+  // proxy actually loads) or the signedRequest response flag.
   const isSignedKiosk = !!(searchParams.get("sig") && searchParams.get("ts") && searchParams.get("nonce"));
 
   const fetchAttendance = useCallback(async () => {
@@ -158,7 +159,8 @@ function KioskDisplayInner() {
     }
   }, [searchParams]);
 
-  usePolling(fetchAttendance, 60000, { idleStopMs: isSignedKiosk ? undefined : POLL_IDLE_STOP_MS });
+  const isKioskDisplay = searchParams.get("mode") === "kiosk" || isSignedKiosk;
+  usePolling(fetchAttendance, 60000, { idleStopMs: isKioskDisplay ? undefined : POLL_IDLE_STOP_MS });
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

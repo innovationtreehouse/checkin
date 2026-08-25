@@ -4,6 +4,8 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
+import fs from "fs";
+import path from "path";
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
@@ -146,6 +148,12 @@ describe("attendance/current page", () => {
         expect.objectContaining({ method: "DELETE", body: JSON.stringify({ visitId: 202 }) }),
       ),
     );
+  });
+
+  it("kiosk idle-stop keys on mode=kiosk or signedRequest, not URL sig params", () => {
+    const src = fs.readFileSync(path.join(__dirname, "../page.tsx"), "utf8");
+    expect(src).toContain('searchParams.get("mode") === "kiosk" || isSignedKiosk');
+    expect(src).toContain("idleStopMs: isKioskDisplay ? undefined : POLL_IDLE_STOP_MS");
   });
 
   it("kiosk mode hides admin controls and shows privacy-safe first names", async () => {
