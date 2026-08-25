@@ -27,7 +27,10 @@
 
 BEGIN;
 
-CREATE TABLE IF NOT EXISTS "_visit_source_web_backfill" AS
+-- The snapshot lives in its own schema so the drift check (public schema vs
+-- schema.prisma) never sees it.
+CREATE SCHEMA IF NOT EXISTS "backfill";
+CREATE TABLE IF NOT EXISTS "backfill"."_visit_source_web_backfill" AS
 SELECT "id", "arrivedVia", "departedVia"
 FROM "Visit"
 WHERE "arrivedVia" = 'WEB' OR "departedVia" = 'WEB';

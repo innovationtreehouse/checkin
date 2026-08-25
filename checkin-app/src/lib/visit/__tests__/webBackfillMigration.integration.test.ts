@@ -16,7 +16,7 @@ const MIGRATION = join(
 const TAG = 'webbackfill-mig';
 
 async function wipe() {
-    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "_visit_source_web_backfill"');
+    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS "backfill"."_visit_source_web_backfill"');
     await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', newData: { path: ['testTag'], equals: TAG } } });
     await prisma.visit.deleteMany({ where: { person: { household: { name: `hh-${TAG}` } } } });
     await prisma.person.deleteMany({ where: { household: { name: `hh-${TAG}` } } });
@@ -79,7 +79,7 @@ test('migration moves audited roster marks to LEAD_MARKED, the rest to TYPED, an
     expect(after.get(leadMarked.id)).toMatchObject({ arrivedVia: 'LEAD_MARKED', departedVia: 'LEAD_MARKED' });
 
     const snapshot = await prisma.$queryRawUnsafe<{ id: number }[]>(
-        'SELECT "id" FROM "_visit_source_web_backfill" ORDER BY "id"',
+        'SELECT "id" FROM "backfill"."_visit_source_web_backfill" ORDER BY "id"',
     );
     expect(snapshot.map((r) => r.id)).toEqual([audited.id, plainWeb.id].sort((a, b) => a - b));
 });
