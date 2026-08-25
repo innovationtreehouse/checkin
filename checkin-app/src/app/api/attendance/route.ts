@@ -164,7 +164,7 @@ export const DELETE = withAuth({}, async (req, auth) => {
         }
         const { facilityClosed } = guard;
 
-        const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "WEB");
+        const finalVisits = await processVisitCheckout(visitId, new Date(), undefined, "TYPED");
         const updatedVisit = finalVisits.length > 0 ? finalVisits[finalVisits.length - 1] : visit;
 
         if (facilityClosed) {
@@ -266,7 +266,7 @@ export const POST = withAuth({}, async (req, auth) => {
                     data: {
                         personId: participant.id,
                         arrivedAt: arrivalTime,
-                        arrivedVia: "WEB",
+                        arrivedVia: "TYPED",
                         associatedEventId: eventId
                     }
                 });

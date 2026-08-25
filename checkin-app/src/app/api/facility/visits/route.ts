@@ -91,7 +91,7 @@ export const PATCH = withAuth(
                             // how the arrival was measured, and correction significance
                             // weights that source. A departure staff typed is theirs.
                             ...(parsedArrived ? { arrivedAt: nextArrived } : {}),
-                            ...(parsedDeparted ? { departedAt: nextDeparted, departedVia: "LEAD_MARKED" } : {}),
+                            ...(parsedDeparted ? { departedAt: nextDeparted, departedVia: "TYPED" } : {}),
                         },
                     })
                 };

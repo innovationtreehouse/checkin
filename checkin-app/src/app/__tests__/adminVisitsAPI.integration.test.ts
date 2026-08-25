@@ -268,7 +268,7 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(200);
             const data = await res.json();
             expect(new Date(data.visit.departedAt).toISOString()).toBe(now.toISOString());
-            expect(data.visit.departedVia).toBe('LEAD_MARKED');
+            expect(data.visit.departedVia).toBe('TYPED');
 
             const updatedVisit = await prisma.visit.findUnique({ where: { id: testVisitId } });
             expect(updatedVisit?.departedAt?.toISOString()).toBe(now.toISOString());
@@ -443,14 +443,14 @@ describe('Admin Visits API Integration Tests', () => {
             expect(res.status).toBe(403);
         });
 
-        it('creates a closed LEAD_MARKED visit for another person and audits actor + subject', async () => {
+        it('creates a closed TYPED visit for another person and audits actor + subject', async () => {
             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: testAdminId, isSysadmin: true } });
             const res = await post({ personId: testUserId, arrivedAt: arrived.toISOString(), departedAt: departed.toISOString() });
 
             expect(res.status).toBe(200);
             const { visit } = await res.json();
             const stored = await prisma.visit.findUnique({ where: { id: visit.id } });
-            expect(stored).toMatchObject({ personId: testUserId, arrivedVia: 'LEAD_MARKED', departedVia: 'LEAD_MARKED' });
+            expect(stored).toMatchObject({ personId: testUserId, arrivedVia: 'TYPED', departedVia: 'TYPED' });
             expect(stored?.departedAt).toBeInstanceOf(Date);
 
             const audit = await prisma.auditLog.findFirst({
