@@ -134,14 +134,13 @@ const _PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]', asyn
             // arrivedVia is left as-is: it records how the arrival was measured,
             // and correction significance weights it (a member overwriting a staff
             // observation scores higher than editing their own self-report), so
-            // restamping WEB here would erase the very signal review reads.
-            // departedVia still becomes WEB — an edited departure is a self-report
-            // now, whatever captured it before.
+            // restamping TYPED here would erase the very signal review reads.
+            // departedVia becomes TYPED — an edited departure is a typed clock.
             return tx.visit.update({
                 where: { id: visitId },
                 data: {
                     ...(arrivedAt ? { arrivedAt: nextArrived } : {}),
-                    ...(departedAt && !closingOpenVisit ? { departedAt: nextDeparted, departedVia: "WEB" } : {}),
+                    ...(departedAt && !closingOpenVisit ? { departedAt: nextDeparted, departedVia: "TYPED" } : {}),
                 },
             });
         });
@@ -152,7 +151,7 @@ const _PATCH = handler<{ id: string }>('PATCH /api/attendance/manual/[id]', asyn
         // that survives. Empty means the close lost a race — nothing applied.
         let surviving = updated;
         if (closingOpenVisit) {
-            const chunks = await processVisitCheckout(visitId, nextDeparted!, undefined, "WEB");
+            const chunks = await processVisitCheckout(visitId, nextDeparted!, undefined, "TYPED");
             if (chunks.length === 0) throw notFound("Visit not found.");
             surviving = chunks[chunks.length - 1];
         }

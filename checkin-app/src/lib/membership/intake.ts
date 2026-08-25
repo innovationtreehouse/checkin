@@ -308,6 +308,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Secondary parent: update if it belongs to this household, else create.
     if (input.secondaryParent) {
         const sp = input.secondaryParent;
+        let spName: string | undefined;
         if (sp.id && householdMemberIds.has(sp.id)) {
             // A submitted (non-null) but blank name is rejected, not silently
             // dropped (Decision 5) — same rule as the primary parent/children
@@ -326,7 +327,8 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
             });
             // A second guardian is a household lead (parent).
             await addLeadOrRecord(sp.id);
-        } else if (nameWrite(sp.name)) {
+        } else if ((spName = nameWrite(sp.name)) !== undefined) {
+            const newSpName: string = spName;
             // saveIntake is a bare sequence of autocommit statements, so the mint
             // gets its own two-statement transaction — an id minted outside one
             // would be burned if the create failed. #1688's name_required
@@ -337,7 +339,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     data: {
                         id: await mintPersonId(tx),
                         householdId,
-                        name: nameWrite(sp.name),
+                        name: newSpName,
                         ...(sp.email && { email: sp.email.toLowerCase() }),
                         ...normalizeAdultDob(sp.dob),
                         ...(!sp.dob && { isDeclaredAdult: !!sp.over25 }),
@@ -358,6 +360,7 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
     // Children are non-lead household members. Update existing (own household
     // only), create the rest. Never delete; never add a HouseholdLead row.
     for (const child of input.children ?? []) {
+        let childName: string | undefined;
         if (child.id && householdMemberIds.has(child.id)) {
             // Same rejection as the primary parent (Decision 5): an existing
             // child's name can't be blanked through an update.
@@ -372,13 +375,14 @@ export async function saveIntake(userId: number, input: IntakeSaveInput) {
                     ...(child.allergies !== undefined && { allergies: child.allergies }),
                 },
             });
-        } else if (child.name?.trim()) {
+        } else if ((childName = nameWrite(child.name)) !== undefined) {
+            const newChildName: string = childName;
             await withTx(prisma, async (tx) =>
                 tx.person.create({
                     data: {
                         id: await mintPersonId(tx),
                         householdId,
-                        name: nameWrite(child.name),
+                        name: newChildName,
                         ...(child.email && { email: child.email.toLowerCase() }),
                         ...normalizeAdultDob(child.dob),
                         allergies: child.allergies ?? null,
