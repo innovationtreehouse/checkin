@@ -85,7 +85,10 @@ function KioskDisplayInner() {
   // safety flag below is only meaningful while `data` is non-null, so each one is
   // rendered behind that check.
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
-  const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
+  // Missing `safety` is UNKNOWN, never all-clear (KIOSK_RESILIENCE §5.24 / B6).
+  // `{ isLastKeyholder: false, isTwoDeepViolation: false }` manufactured a
+  // compliant kiosk screen whenever the payload omitted the flags.
+  const safety = data?.safety ?? null;
 
   // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
   // fall back to the birth date the privileged payload still ships. This feeds the
@@ -464,13 +467,19 @@ function KioskDisplayInner() {
             cannot be checked. Verify supervision in the building.
           </Alert>
         )}
-        {data && safety.isTwoDeepViolation && (
+        {data && !safety && (
+          <Alert color="orange" icon="⚠️" title="Supervision status unknown" mb="lg">
+            Attendance loaded without safety flags, so Two-Deep Compliance and keyholder
+            coverage cannot be checked. Verify supervision in the building.
+          </Alert>
+        )}
+        {data && safety?.isTwoDeepViolation && (
           <Alert color="red" icon="🚨" title="Critical Warning" mb="lg">
             Two-Deep Compliance is failing! An unaccompanied youth is present without sufficient
             adult supervision.
           </Alert>
         )}
-        {data && !safety.isTwoDeepViolation && safety.isLastKeyholder && (
+        {data && safety && !safety.isTwoDeepViolation && safety.isLastKeyholder && (
           <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
             Only one isKeyholder is currently in the building.
           </Alert>

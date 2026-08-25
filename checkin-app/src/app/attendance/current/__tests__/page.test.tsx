@@ -655,6 +655,21 @@ describe("attendance/current page", () => {
     );
   });
 
+  it("does not treat a roster without safety flags as two-deep compliant (B6)", async () => {
+    setAdminSession();
+    const { safety: _omit, ...withoutSafety } = attendanceData;
+    void _omit;
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": withoutSafety,
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Two-Deep Compliance is failing!", { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByText("Only one isKeyholder is currently in the building.")).not.toBeInTheDocument();
+  });
+
   it("shows a critical two-deep-violation banner over the last-keyholder warning", async () => {
     setAdminSession();
     mockFetchJson({
