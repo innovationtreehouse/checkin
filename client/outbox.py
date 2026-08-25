@@ -67,7 +67,9 @@ class Outbox:
         state            TEXT NOT NULL DEFAULT 'pending',
         created_at       TEXT NOT NULL,
         force_close_token TEXT,
-        last_attempt_at  TEXT
+        last_attempt_at  TEXT,
+        intent           TEXT,
+        clock_suspect    INTEGER NOT NULL DEFAULT 0
     )"""
 
     def _open(self, path):
@@ -86,6 +88,16 @@ class Outbox:
                     conn.execute("ALTER TABLE outbox ADD COLUMN last_attempt_at TEXT")
                 except sqlite3.OperationalError:
                     pass  # already there
+                try:
+                    conn.execute("ALTER TABLE outbox ADD COLUMN intent TEXT")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute(
+                        "ALTER TABLE outbox ADD COLUMN clock_suspect INTEGER NOT NULL DEFAULT 0"
+                    )
+                except sqlite3.OperationalError:
+                    pass
                 conn.commit()
             except sqlite3.DatabaseError:
                 conn.close()
@@ -105,14 +117,24 @@ class Outbox:
                 pass
             return connect_and_init()
 
-    def enqueue(self, client_event_id, participant_id, scanned_at, force_close_token=None):
+    def enqueue(self, client_event_id, participant_id, scanned_at, force_close_token=None,
+                intent=None, clock_suspect=False):
         """Idempotent: a retried enqueue of the same event is a no-op."""
         with self._lock:
             self._conn.execute(
                 "INSERT OR IGNORE INTO outbox "
-                "(client_event_id, participant_id, scanned_at, created_at, force_close_token) "
-                "VALUES (?,?,?,?,?)",
-                (client_event_id, str(participant_id), scanned_at, now_iso(), force_close_token),
+                "(client_event_id, participant_id, scanned_at, created_at, force_close_token, "
+                " intent, clock_suspect) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    client_event_id,
+                    str(participant_id),
+                    scanned_at,
+                    now_iso(),
+                    force_close_token,
+                    intent,
+                    1 if clock_suspect else 0,
+                ),
             )
             self._conn.commit()
             n = self.pending_count()
@@ -139,9 +161,18 @@ class Outbox:
         Survives restart: rows persist in the WAL file untouched."""
         with self._lock:
             return self._conn.execute(
-                "SELECT client_event_id, participant_id, scanned_at, attempts, force_close_token "
+                "SELECT client_event_id, participant_id, scanned_at, attempts, force_close_token, "
+                "intent, clock_suspect "
                 "FROM outbox WHERE state='pending' ORDER BY scanned_at ASC"
             ).fetchall()
+
+    def mark_clock_suspect(self):
+        """A large wall-clock step: queued scans may carry a wrong scannedAt."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE outbox SET clock_suspect=1 WHERE state='pending'"
+            )
+            self._conn.commit()
 
     def ack(self, client_event_id):
         """Server confirmed (2xx, or a dedup/duplicate_ignored response)."""
@@ -294,18 +325,21 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
             sleep_fn(dead_wait if dead_wait is not None else DRAIN_PACE_SECONDS)
             continue
 
-        client_event_id, participant_id, scanned_at, attempts, force_close_token = rows[0]
+        client_event_id, participant_id, scanned_at, attempts, force_close_token, intent, clock_suspect = rows[0]
         # replay=True is what tells the server this is a redelivery: the live
         # attempt already sent this clientEventId (D4 try-first), so only the
         # drain may trip the replay-only guards. The token rides along so a
         # confirm given before the outage still closes (§5.23a); a replay
-        # without one parks for review.
+        # without one parks for review. Intent is the direction the kiosk
+        # displayed; the server must not re-toggle from live state.
         body, status, retry_after = send_fn(
             participant_id,
             force_close_token=force_close_token,
             client_event_id=client_event_id,
             scanned_at=scanned_at,
             replay=True,
+            intent=intent,
+            clock_suspect=bool(clock_suspect),
         )
         outcome = classify_response(status, body)
 

@@ -10,6 +10,8 @@ import { withinMaxDuration } from "@/lib/visitTimes";
 import { LIVE_VISIT } from "@/lib/visit/filters";
 import { visitSubject } from "@/lib/visit/scope";
 import { lockFacility } from "@/lib/facilityLock";
+import { appendPresenceEvent, PresenceClass } from "@/lib/presence/events";
+import { flushParkedClosed } from "@/lib/presence/project";
 
 // Self-service manual visit entry. INTENTIONAL by design: a member records a
 // visit for THEMSELVES, or — as a household lead — for a member of their own
@@ -117,7 +119,18 @@ export const POST = withAuth({}, async (req, auth) => {
                     const activeKeyholders = await tx.visit.count({
                         where: { departedAt: null, person: { isKeyholder: true }, ...LIVE_VISIT }
                     });
-                    if (activeKeyholders === 0) return { facilityClosed: true as const };
+                    if (activeKeyholders === 0) {
+                        // Same rule as a scan (projection C): hold, then project
+                        // when a keyholder Visit exists. No 403.
+                        await appendPresenceEvent(tx, {
+                            personId: subjectId,
+                            occurredAt: arrivalTime,
+                            direction: "IN",
+                            source: "TYPED",
+                            classification: PresenceClass.PARKED_CLOSED,
+                        });
+                        return { heldClosed: true as const };
+                    }
                 }
             }
 
@@ -131,6 +144,24 @@ export const POST = withAuth({}, async (req, auth) => {
                     associatedEventId: eventId
                 }
             });
+            await appendPresenceEvent(tx, {
+                personId: subjectId,
+                occurredAt: arrivalTime,
+                direction: "IN",
+                source: "TYPED",
+                classification: PresenceClass.PROJECTED,
+                visitId: created.id,
+            });
+            if (departureTime) {
+                await appendPresenceEvent(tx, {
+                    personId: subjectId,
+                    occurredAt: departureTime,
+                    direction: "OUT",
+                    source: "TYPED",
+                    classification: PresenceClass.PROJECTED,
+                    visitId: created.id,
+                });
+            }
             // freshCheckin only when a NEW open visit was created — not a backfilled
             // closed visit (has departure) and not the dedup return above.
             return { visit: created, freshCheckin: !departureTime };
@@ -139,10 +170,22 @@ export const POST = withAuth({}, async (req, auth) => {
             timeout: 15000,
         });
 
-        if ('facilityClosed' in result) {
-            return apiError("Facility is closed. A Keyholder must check in first.", 403);
+        if ('heldClosed' in result) {
+            return NextResponse.json({
+                type: "parked",
+                message: "Recorded. Will appear on the roster when a keyholder checks in.",
+            });
         }
         const { visit, freshCheckin } = result;
+
+        const subjectIsKeyholder = subjectId === userId ? auth.user.isKeyholder : subject.isKeyholder;
+        if (freshCheckin && subjectIsKeyholder) {
+            await prisma.$transaction(async (tx) => {
+                await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(subjectId)})`;
+                await lockFacility(tx);
+                await flushParkedClosed(tx);
+            });
+        }
 
         // If a departure time was provided, we process the checkout logic directly
         // to handle any back-to-back event transitions.

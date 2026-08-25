@@ -97,7 +97,7 @@ class BackendClient:
 
     def post_scan(self, participant_id, force_close_token=None,
                   client_event_id=None, scanned_at=None, replay=False,
-                  dead=False, dead_status=None):
+                  dead=False, dead_status=None, intent=None, clock_suspect=False):
         path = "/api/scan"
         payload = {}
         try:
@@ -116,12 +116,16 @@ class BackendClient:
             # cannot infer replay-ness from the id.
             payload["replay"] = True
         if dead:
-            # #1347 PR-2 / Q10: the dead-letter drain pass, mutually exclusive
-            # with replay. dead_status is the terminal status that got this row
+            # Dead-letter drain pass, mutually exclusive with replay.
+            # dead_status is the terminal status that got this row
             # dead-lettered locally -- it lands in the server's reviewReason.
             payload["dead"] = True
             if dead_status is not None:
                 payload["deadStatus"] = dead_status
+        if intent in ("IN", "OUT"):
+            payload["intent"] = intent
+        if clock_suspect:
+            payload["clockSuspect"] = True
         body = json.dumps(payload)
 
         headers = self._headers("POST", path, body)
@@ -170,6 +174,27 @@ class BackendClient:
             log.error(f"Failed to get server version: {e}")
             return None, 0
 
+# A wall-clock step larger than this vs monotonic is a clockSuspect scan
+# (NTP jump, bad RTC). Small skew is don't-care.
+CLOCK_STEP_SECONDS = 180
+
+
+class ClockWatch:
+    """Detect a large step in wall time that would stamp scannedAt wrong."""
+
+    def __init__(self):
+        self._last_wall = time.time()
+        self._last_mono = time.monotonic()
+
+    def check(self):
+        wall = time.time()
+        mono = time.monotonic()
+        jumped = abs((wall - self._last_wall) - (mono - self._last_mono)) > CLOCK_STEP_SECONDS
+        self._last_wall = wall
+        self._last_mono = mono
+        return jumped
+
+
 class AttendanceState:
     def __init__(self):
         self.lock = threading.Lock()
@@ -177,6 +202,12 @@ class AttendanceState:
         self.current_counts = {"total": 0, "keyholders": 0, "volunteers": 0, "students": 0}
         self.confirm_token = None    # force-close confirm token, if a countdown is running
         self.confirm_deadline = 0.0  # monotonic clock, end of that countdown
+        # Local presence view: the direction the kiosk displays is the intent
+        # of record. Seeded from the last attendance fetch; updated on each
+        # badge so offline scans still carry IN/OUT.
+        self.present_ids = set()
+        self.keyholder_ids = set()
+        self.clock_watch = ClockWatch()
 
     def arm_confirm(self, token, seconds):
         """Hold the confirm token the server minted with a force-close warning."""
@@ -215,6 +246,45 @@ class AttendanceState:
         with self.lock:
             for q in self.subscribers:
                 q.put(event_data)
+
+    def displayed_intent(self, participant_id):
+        """IN if this badge is not currently shown as present, else OUT."""
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            pid = participant_id
+        with self.lock:
+            return "OUT" if pid in self.present_ids else "IN"
+
+    def note_presence(self, participant_id, checking_in, is_keyholder=None):
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            return
+        with self.lock:
+            if checking_in:
+                self.present_ids.add(pid)
+            else:
+                self.present_ids.discard(pid)
+            if is_keyholder is True:
+                self.keyholder_ids.add(pid)
+
+    def seed_from_attendance(self, att_data):
+        """Replace the local presence view with the server roster."""
+        visits = att_data.get("attendance") or []
+        present = set()
+        keyholders = set()
+        for visit in visits:
+            person = visit.get("participant") or visit.get("person") or {}
+            pid = person.get("id")
+            if pid is None:
+                continue
+            present.add(int(pid))
+            if person.get("isKeyholder"):
+                keyholders.add(int(pid))
+        with self.lock:
+            self.present_ids = present
+            self.keyholder_ids |= keyholders
 
 # ---------------------------------------------------------------------------
 # Transparent Signing Proxy & Kiosk Handler
@@ -682,14 +752,24 @@ def _scan_result_banner_html(body, status):
         return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0
     return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0
 
-def _saved_banner_html(queued):
+def _saved_banner_html(queued, intent=None):
     # A queued scan reads as done and safe to walk away from -- distinct
-    # from the red "not saved" state.
-    return f'<div class="banner banner-saved">✓ Saved — will sync ({queued} waiting)</div>'
+    # from the red "not saved" state. The displayed direction is the intent
+    # of record even when the server has not acked yet.
+    label = "CHECKED IN" if intent == "IN" else "CHECKED OUT" if intent == "OUT" else "Saved"
+    return f'<div class="banner banner-saved">✓ {label} — will sync ({queued} waiting)</div>'
 
 def handle_scan(backend, state, outbox, participant_id):
     client_event_id = new_event_id()
     scanned_at = now_iso()
+    clock_suspect = state.clock_watch.check()
+    if clock_suspect:
+        outbox.mark_clock_suspect()
+        log.warning("Large clock step detected; marking queued scans clockSuspect")
+    # Displayed direction is decided here, from the local presence view, and
+    # carried with the event. The server must not re-infer it from live state.
+    intent = state.displayed_intent(participant_id)
+    state.note_presence(participant_id, checking_in=(intent == "IN"))
     # Any scan ends a running force-close countdown; carrying the token is what
     # turns this one into the confirm. Taken once, and stored with the event if
     # this scan ends up queued -- a confirm given before the outage must still
@@ -700,10 +780,13 @@ def handle_scan(backend, state, outbox, participant_id):
     # already has a pending queued event, enqueue behind it instead of
     # attempting live delivery out of order.
     if outbox.has_pending_for_participant(participant_id):
-        outbox.enqueue(client_event_id, participant_id, scanned_at, confirm_token)
+        outbox.enqueue(
+            client_event_id, participant_id, scanned_at, confirm_token,
+            intent=intent, clock_suspect=clock_suspect,
+        )
         queued = outbox.pending_count()
-        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
-        log.info(f"Queued (predecessor pending): participant {participant_id}")
+        state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+        log.info(f"Queued (predecessor pending): participant {participant_id} {intent}")
         return
 
     body, status, retry_after = backend.post_scan(
@@ -711,15 +794,20 @@ def handle_scan(backend, state, outbox, participant_id):
         force_close_token=confirm_token,
         client_event_id=client_event_id,
         scanned_at=scanned_at,
+        intent=intent,
+        clock_suspect=clock_suspect,
     )
     outcome = classify_response(status, body)
 
     if outcome == "retry":
         # Try live first; only persist to the outbox if it wasn't confirmed.
-        outbox.enqueue(client_event_id, participant_id, scanned_at, confirm_token)
+        outbox.enqueue(
+            client_event_id, participant_id, scanned_at, confirm_token,
+            intent=intent, clock_suspect=clock_suspect,
+        )
         queued = outbox.pending_count()
-        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
-        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id}")
+        state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id} {intent}")
         return
 
     # ack or dead: server responded definitively at scan time -- render the
@@ -740,6 +828,7 @@ def handle_scan(backend, state, outbox, participant_id):
     if backend.attendance_path and outcome == "ack":
         att_data, att_status = backend.get_attendance()
         if att_status == 200:
+            state.seed_from_attendance(att_data)
             event_payload = {"html": ""}
             for key in ("attendance", "counts", "safety"):
                 if key in att_data:
@@ -764,6 +853,7 @@ def attendance_poller(backend, state, interval=30, sleep_fn=time.sleep,
             continue
         att_data, att_status = backend.get_attendance()
         if att_status == 200 and "counts" in att_data:
+            state.seed_from_attendance(att_data)
             new_counts = att_data["counts"]
             with state.lock:
                 changed = new_counts != state.current_counts
@@ -893,6 +983,7 @@ def main():
         att_data, att_status = backend.get_attendance()
         if att_status == 200 and "counts" in att_data:
             state.current_counts = att_data["counts"]
+            state.seed_from_attendance(att_data)
             log.info(f"Initial state: {state.current_counts['total']} people present")
         else:
             log.warning("Could not fetch initial attendance state")
