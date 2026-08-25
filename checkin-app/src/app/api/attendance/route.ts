@@ -5,6 +5,7 @@ import { getKioskPublicKeys, verifyKioskSignature } from "@/lib/verify-kiosk";
 import { getFullAttendance } from "@/lib/getFullAttendance";
 import { findAssociatedEventAt, processVisitCheckout } from "@/lib/attendanceTransitions";
 import { lastKeyholderGuard, runFacilityClose } from "@/lib/scan-service";
+import { lockFacility } from "@/lib/facilityLock";
 import { sendCheckinNotifications } from "@/lib/notifications";
 import { logBackendError, logger } from "@/lib/logger";
 import { config } from "@/lib/config";
@@ -235,6 +236,7 @@ export const POST = withAuth({}, async (req, auth) => {
             // paths serialize against each other. Re-check under the lock, then create.
             const result = await prisma.$transaction(async (tx) => {
                 await tx.$executeRaw`SELECT pg_advisory_xact_lock(${participant.id})`;
+                await lockFacility(tx);
 
                 const activeVisit = await tx.visit.findFirst({
                     where: {

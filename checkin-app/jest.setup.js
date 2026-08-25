@@ -48,7 +48,7 @@ process.env.CHECKIN_ENV = 'dev';
   // that serializes them — matching production.
   // mintId is the same shape again: its two mints must run on separate
   // connections so the IdCounter row lock is what serializes them.
-  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|visitWriteLockConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency|mintId)\.integration\.test\.[jt]sx?$/.test(testPath)) {
+  if (testPath && /(scanConcurrency|attendanceManualConcurrency|attendanceManualCheckinConcurrency|visitWriteLockConcurrency|programsParticipantsConcurrency|programsPublicRegisterConcurrency|trustedAdultConcurrency|householdLeadsConcurrency|mintId|facilityCloseLock)\.integration\.test\.[jt]sx?$/.test(testPath)) {
     process.env.TEST_DB_POOL_MAX = '2';
   }
 }
@@ -135,10 +135,18 @@ jest.mock('@/lib/prisma', () => {
     if (sql.includes('IdCounter')) return Promise.resolve([{ value: nextMintedId++ }]);
     return rejectFn()(strings, ...values);
   };
+  // Advisory locks are a DB-only concern — a no-op under the unit mock, same
+  // narrow-carve-out pattern as the IdCounter mint above.
+  const executeRaw = (strings, ...values) => {
+    const sql = Array.isArray(strings) ? strings.join('') : String(strings);
+    if (sql.includes('pg_advisory_xact_lock')) return Promise.resolve(0);
+    return rejectFn()(strings, ...values);
+  };
   const models = new Map();
   const handler = {
     get(_target, prop) {
       if (prop === '$queryRaw') return queryRaw;
+      if (prop === '$executeRaw') return executeRaw;
       if (!models.has(prop)) {
         // Each method access on an unset key returns a rejecting function so
         // accidental calls fail loudly; explicit assignment overrides it.

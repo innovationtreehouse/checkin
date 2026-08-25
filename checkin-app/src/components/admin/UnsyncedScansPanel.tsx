@@ -25,6 +25,7 @@ const REASON_COPY: Record<string, string> = {
   stale_replay: "queued scan arrived after the freshness window",
   out_of_order: "state had already moved past this scan",
   force_close_review: "force-close replay without a valid confirm token",
+  facility_closed: "badge scanned while no keyholder was present",
 };
 
 // client_dead:<status> is a dynamic family, not a fixed key.
