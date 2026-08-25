@@ -1019,4 +1019,194 @@ describe('Individual Program API Integration Tests', () => {
             expect(data.warning).toMatch(/capped and uncapped/i);
         });
     });
+
+    // ── Variant⟺price invariant (#1520) ──────────────────────────────────────
+    // The capacity/oversell math assumes a program has a Shopify variant iff it
+    // has a price on some tier. PATCH accepts raw shopifyVariantId/memberPrice/
+    // nonMemberPrice with no cross-check — these pin the guard that rejects both
+    // illegal EFFECTIVE (post-patch) states, in either direction.
+    describe('PATCH /api/programs/[id] — variant<->price invariant guard', () => {
+        let freeProgramId: number; // no price, no variant
+        let pricedNoVariantProgramId: number; // priced, no variant
+        let pricedWithVariantProgramId: number; // priced + variant (the legal wired state)
+
+        beforeAll(async () => {
+            const freeProgram = await prisma.program.create({
+                data: { name: 'Free Prog ID API Test', startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), leadMentorId: leadId },
+            });
+            freeProgramId = freeProgram.id;
+
+            const pricedNoVariant = await prisma.program.create({
+                data: { name: 'Priced No Variant Prog ID API Test', startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), leadMentorId: leadId, orgMemberPriceCents: 2500 },
+            });
+            pricedNoVariantProgramId = pricedNoVariant.id;
+
+            const pricedWithVariant = await prisma.program.create({
+                data: {
+                    name: 'Priced With Variant Prog ID API Test',
+                    startAt: new Date('2026-01-01'),
+                    endAt: new Date('2026-12-31'),
+                    leadMentorId: leadId,
+                    orgMemberPriceCents: 2500,
+                    nonOrgMemberPriceCents: 3500,
+                    shopifyVariantId: 'dev-mock-variant-invariant-guard',
+                },
+            });
+            pricedWithVariantProgramId = pricedWithVariant.id;
+        });
+
+        afterAll(async () => {
+            const ids = [freeProgramId, pricedNoVariantProgramId, pricedWithVariantProgramId].filter(Boolean);
+            await prisma.program.deleteMany({ where: { id: { in: ids } } });
+        });
+
+        // ── Illegal direction 1: wiring a variant onto a price-null program ──
+        it('rejects wiring a variant onto a program with no price on either tier (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ shopifyVariantId: 'shopify-raw-variant-abc' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('A program cannot have a Shopify variant without a price on at least one tier');
+
+            const after = await prisma.program.findUnique({ where: { id: freeProgramId } });
+            expect(after?.shopifyVariantId).toBeNull();
+        });
+
+        it('rejects wiring a variant in the same request that nulls out the only price (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pricedNoVariantProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ shopifyVariantId: 'shopify-raw-variant-def', memberPrice: '' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(pricedNoVariantProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('A program cannot have a Shopify variant without a price on at least one tier');
+        });
+
+        // ── Illegal direction 2: nulling both prices while a variant remains ──
+        it('rejects nulling the only priced tier while a variant remains stranded (400)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pricedWithVariantProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ memberPrice: '', nonMemberPrice: '' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(pricedWithVariantProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+            const data = await res.json();
+            expect(data.error).toBe('A program cannot have a Shopify variant without a price on at least one tier');
+
+            const after = await prisma.program.findUnique({ where: { id: pricedWithVariantProgramId } });
+            expect(after?.orgMemberPriceCents).toBe(2500);
+        });
+
+        it('rejects a partial patch that nulls the last remaining priced tier (effective computation uses the OTHER tier already null)', async () => {
+            // pricedWithVariant has BOTH tiers priced; drop it to a single tier first
+            // so the next PATCH only needs to null the one remaining price to strand
+            // the variant — proving the guard reads the CURRENT row for the untouched
+            // field, not just the body.
+            await prisma.program.update({ where: { id: pricedWithVariantProgramId }, data: { nonOrgMemberPriceCents: null } });
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pricedWithVariantProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ memberPrice: '' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(pricedWithVariantProgramId) as unknown as never);
+            expect(res.status).toBe(400);
+
+            // Restore both tiers for the tests below that depend on this fixture.
+            await prisma.program.update({ where: { id: pricedWithVariantProgramId }, data: { orgMemberPriceCents: 2500, nonOrgMemberPriceCents: 3500 } });
+        });
+
+        // ── Legal transitions ──
+        it('allows wiring a price and a variant together in the same request', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ memberPrice: '10', shopifyVariantId: 'shopify-raw-variant-ghi' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.orgMemberPriceCents).toBe(1000);
+            expect(data.program.shopifyVariantId).toBe('shopify-raw-variant-ghi');
+        });
+
+        it('allows clearing both prices and the variant together in the same request', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ memberPrice: '', shopifyVariantId: '' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.orgMemberPriceCents).toBeNull();
+            expect(data.program.shopifyVariantId).toBeNull();
+        });
+
+        it('allows a lead mentor to null one priced tier when the other tier still covers the variant (effective state stays legal)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pricedWithVariantProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ nonMemberPrice: '' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(pricedWithVariantProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.orgMemberPriceCents).toBe(2500);
+            expect(data.program.nonOrgMemberPriceCents).toBeNull();
+
+            // Restore for isolation from other tests in this block.
+            await prisma.program.update({ where: { id: pricedWithVariantProgramId }, data: { nonOrgMemberPriceCents: 3500 } });
+        });
+
+        it('allows an unrelated field edit that leaves the effective price/variant state untouched', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${pricedWithVariantProgramId}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ maxParticipants: 12 }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(pricedWithVariantProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.maxParticipants).toBe(12);
+            expect(data.program.shopifyVariantId).toBe('dev-mock-variant-invariant-guard');
+        });
+
+        // A non-privileged caller's shopifyVariantId in the body is ignored entirely
+        // (existing sysadmin/board gate), so it can't be used to smuggle an effective
+        // variant into the guard's computation on behalf of a lead mentor.
+        it('ignores a lead mentor-supplied shopifyVariantId for the effective-state computation (ungated field stays inert)', async () => {
+            (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } });
+
+            const req = new Request(`http://localhost:4000/api/programs/${freeProgramId}`, {
+                method: 'PATCH',
+                // freeProgramId has no price at this point (reset by the earlier "clear both" test);
+                // a lead mentor can't set shopifyVariantId, so this must NOT 400.
+                body: JSON.stringify({ shopifyVariantId: 'sneaky-variant', name: 'Free Prog ID API Test Renamed' }),
+            });
+            const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(freeProgramId) as unknown as never);
+            expect(res.status).toBe(200);
+
+            const data = await res.json();
+            expect(data.program.shopifyVariantId).toBeNull();
+        });
+    });
 });

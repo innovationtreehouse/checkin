@@ -55,6 +55,7 @@ enum AuditAction {
 enum VisitSource {
   SCANNER
   WEB
+  TYPED
   LEAD_MARKED
   FACILITY_CLOSE
   AUTO_CLOSE
@@ -88,7 +89,7 @@ model Person {
   /// @sensitivity:pii
   phone         String?
   /// @sensitivity:public
-  name          String?
+  name          String
   /// @sensitivity:internal
   emailVerified DateTime?
   /// @sensitivity:public
@@ -991,7 +992,8 @@ model ProgramParticipant {
   status               ProgramParticipantStatus @default(PENDING)
   /// @sensitivity:personal
   isPaymentPlanRequested Boolean                  @default(false)
-  /// @sensitivity:internal
+  /// Same tier as paymentPlanDeniedAt — workflow timestamps lead mentors need.
+  /// @sensitivity:personal
   pendingSince         DateTime?                @default(now())
   /// Point-in-time snapshot of the household's org-membership status the moment a
   /// scholarship/payment-plan request was APPROVED (status flipped to ACTIVE).
@@ -1088,6 +1090,15 @@ model RawBadgeLog {
   clientEventId String?  @unique // kiosk replay idempotency key; NULL for legacy/web writers
   /// @sensitivity:internal
   reviewReason  String?          // set when a stale/out-of-order replay is parked instead of toggled
+
+  /// Review stamp for a parked row (§2 D7): null while it still needs a human.
+  /// `reviewReason != null AND reviewedAt = null` IS the unsynced-scans queue.
+  /// @sensitivity:internal
+  reviewedAt    DateTime?
+  /// Actor who dismissed the row. Plain Int like Visit.deletedById — the audit
+  /// trail is the provenance, and a relation would need a Person back-link for
+  /// nothing this reads. @sensitivity:internal
+  reviewedBy    Int?
 
   person Person @relation(fields: [personId], references: [id])
 

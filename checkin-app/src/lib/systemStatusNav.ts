@@ -9,5 +9,6 @@ export const SYSTEM_STATUS_NAV_LINKS: NavLink[] = [
   { name: "Link Status", href: "/system-status/links", icon: "🔗" },
   { name: "Lifecycle", href: "/system-status/lifecycle", icon: "🔄" },
   { name: "Errors", href: "/system-status/errors", icon: "🚨" },
+  { name: "Unsynced Scans", href: "/system-status/unsynced-scans", icon: "📡" },
   { name: "Audit Log", href: "/system-status/audit-log", icon: "📜" },
 ];

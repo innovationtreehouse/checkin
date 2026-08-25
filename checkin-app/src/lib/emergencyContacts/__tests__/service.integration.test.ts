@@ -40,7 +40,7 @@ async function makeHousehold(suffix: string) {
     return hh.id;
 }
 
-async function addMember(householdId: number, data: { name?: string; email?: string; phone?: string }) {
+async function addMember(householdId: number, data: { name: string; email?: string; phone?: string }) {
     return prisma.person.create({ data: { householdId, ...data } });
 }
 

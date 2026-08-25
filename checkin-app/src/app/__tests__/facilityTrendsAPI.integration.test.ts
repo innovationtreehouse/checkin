@@ -225,6 +225,29 @@ describe('Facility trends API', () => {
         expect(data.totals.totalVolunteerHours).toBe(8);
     });
 
+    // Issue #1676: bySource decomposes HOURS by arrivedVia, never people. This
+    // program's bucket is the case that matters — `volunteerId` carries both a
+    // LEAD_MARKED (3h) and a SYSTEM (3h) visit here, so a per-source person count
+    // would double-count them, but uniqueVolunteers must not.
+    it('decomposes hours by source without decomposing unique-person counts', async () => {
+        const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${programId}`);
+        expect(res.status).toBe(200);
+        const data = await res.json();
+
+        // SCANNER: enrolled adult (3h, participant) + youth (2h, volunteer).
+        // LEAD_MARKED and SYSTEM: volunteerId's two visits, 3h each.
+        expect(data.totals.bySource).toEqual({ SCANNER: 5, LEAD_MARKED: 3, SYSTEM: 3 });
+
+        const bySourceSum = Object.values(data.totals.bySource as Record<string, number>)
+            .reduce((sum: number, hours: number) => sum + hours, 0);
+        expect(bySourceSum).toBeCloseTo(data.totals.totalVolunteerHours + data.totals.totalParticipantHours, 5);
+
+        // volunteerId is still ONE unique volunteer, not one per source.
+        expect(data.totals.uniqueVolunteers).toBe(2); // youthId + volunteerId
+        expect(data.totals).not.toHaveProperty('uniqueVolunteersBySource');
+        expect(data.totals).not.toHaveProperty('uniqueParticipantsBySource');
+    });
+
     // Source records how an arrival was measured; it does not decide whether the
     // visit is facility time. An untagged arrival, a scanned one, a staff roster
     // mark and the legacy SYSTEM spelling all sum the same way.
@@ -310,10 +333,9 @@ describe('Facility trends API', () => {
         await prisma.program.delete({ where: { id: program.id } });
     });
 
-    // #1632: the staff walk-in insert route stamps LEAD_MARKED, the same source
-    // the historical backfill rewrites old WEB rows to. Driven through the real
-    // route (not a hand-built fixture) so a regression back to WEB fails here —
-    // on the stamp and its correction weight, since the hours count either way.
+    // #1624: staff walk-in insert stamps TYPED (typed clocks, actor on the
+    // audit row). Hours count either way; the stamp is what must not regress
+    // to WEB or LEAD_MARKED (window, no clock).
     it('counts a real staff walk-in insert in trends hours', async () => {
         const program = await prisma.program.create({ data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `StaffEntry ${TAG}` } });
         const insertArrival = new Date(Date.now() - 4 * 3600000);
@@ -340,7 +362,7 @@ describe('Facility trends API', () => {
         expect(insertRes.status).toBe(200);
         const { visit } = await insertRes.json();
         visitIds.push(visit.id);
-        expect(visit.arrivedVia).toBe('LEAD_MARKED');
+        expect(visit.arrivedVia).toBe('TYPED');
 
         const res = await callAs({ id: adminId, isSysadmin: true }, `?period=month&programId=${program.id}`);
         const data = await res.json();
@@ -350,11 +372,7 @@ describe('Facility trends API', () => {
         expect(data.totals.totalVolunteerHours).toBe(2);
         expect(data.totals.structuredHours).toBe(2);
 
-        // F13 pin: deleting this walk-in through the real DELETE route must weigh
-        // it at the LEAD_MARKED source weight (2), not the WEB weight (1) it
-        // replaced — that source-weight bump is the backfill's whole premise.
-        // 120 minutes * weight 2 * byProxy(admin acting for volunteerId) 2 = 480,
-        // double the 240 a WEB-weighted score would give the same edit.
+        // Delete of a TYPED walk-in: 120 minutes * weight 1 * byProxy 2 = 240.
         (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
         const deleteRes = await VISITS_DELETE(new Request('http://localhost:4000/api/facility/visits', {
             method: 'DELETE',
@@ -367,7 +385,7 @@ describe('Facility trends API', () => {
             orderBy: { id: 'desc' },
         });
         expect((deleteAudit?.newData as { significance?: { score: number; flagged: boolean } })?.significance)
-            .toEqual({ score: 480, flagged: true });
+            .toEqual({ score: 240, flagged: true });
 
         await prisma.programVolunteer.deleteMany({ where: { programId: program.id } });
         await prisma.auditLog.deleteMany({ where: { tableName: 'Visit', affectedEntityId: visit.id } });

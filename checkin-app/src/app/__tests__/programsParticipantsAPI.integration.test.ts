@@ -934,13 +934,99 @@ describe('Program Participants API Integration Tests', () => {
         // Removing an ACTIVE seat frees the room but does NOT auto-restock
         // Shopify (paid/comped seats are only put back on sale by a human). The
         // route returns an advisory `notice` and fires NO +1 — the staffer
-        // decides whether to restock.
-        it('advises (notice) on ACTIVE removal from a capped Shopify program, and does NOT +1', async () => {
+        // decides whether to restock. Staff-only (#1519): only sysadmin/board
+        // can actually act on the notice in Shopify.
+        it('advises (notice) on ACTIVE removal from a capped Shopify program when staff removes, and does NOT +1', async () => {
             const prevCheckinEnv = process.env.CHECKIN_ENV;
             process.env.CHECKIN_ENV = 'local'; // arms the adjustProgramInventory mock (logs the delta)
             const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
             const shopifyProgram = await prisma.program.create({
                 data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Notice Shopify Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, shopifyVariantId: 'dev-mock-variant-notice-partic' },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: shopifyProgram.id, personId: commonId, status: 'ACTIVE' },
+                });
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } }); // staff removal
+
+                const res = await DELETE(
+                    new Request(`http://localhost:4000/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'DELETE',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: commonId }),
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(shopifyProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.notice).toMatch(/NOT put back on sale automatically/i);
+                expect(data.warning).toBeUndefined();
+                // Freed seat is NOT auto-restocked: no positive-delta Shopify call.
+                expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1'));
+                // Seat-freeing itself is unaffected by who removed it.
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: commonId } },
+                });
+                expect(row).toBeNull();
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        // #1519: the lead mentor is authorized to remove the participant (same
+        // seat-freeing outcome as staff above), but can't act on Shopify
+        // inventory, so the advisory must not reach them.
+        it('does NOT advise (no notice) on ACTIVE removal from a capped Shopify program when the lead mentor removes', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const shopifyProgram = await prisma.program.create({
+                data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Notice Lead Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, shopifyVariantId: 'dev-mock-variant-notice-lead', leadMentorId: leadId },
+            });
+            try {
+                await prisma.programParticipant.create({
+                    data: { programId: shopifyProgram.id, personId: commonId, status: 'ACTIVE' },
+                });
+                (getServerSession as jest.Mock).mockResolvedValue({ user: { id: leadId } }); // lead-mentor removal
+
+                const res = await DELETE(
+                    new Request(`http://localhost:4000/api/programs/${shopifyProgram.id}/participants`, {
+                        method: 'DELETE',
+                        headers: { cookie: 'session=test' },
+                        body: JSON.stringify({ participantId: commonId }),
+                    }) as unknown as import("next/server").NextRequest,
+                    createParams(shopifyProgram.id) as unknown as never,
+                );
+                expect(res.status).toBe(200);
+                const data = await res.json();
+                expect(data.notice).toBeUndefined();
+                expect(data.warning).toBeUndefined();
+                expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1'));
+                // Seat-freeing itself is unaffected: the row is still gone.
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: commonId } },
+                });
+                expect(row).toBeNull();
+            } finally {
+                logSpy.mockRestore();
+                process.env.CHECKIN_ENV = prevCheckinEnv;
+                await prisma.programParticipant.deleteMany({ where: { programId: shopifyProgram.id } });
+                await prisma.program.delete({ where: { id: shopifyProgram.id } });
+            }
+        });
+
+        // #1519: same for self-removal (e.g. a parent withdrawing themselves via
+        // the public program page) — authorized to free the seat, but not to act
+        // on Shopify inventory.
+        it('does NOT advise (no notice) on ACTIVE removal from a capped Shopify program on self-removal', async () => {
+            const prevCheckinEnv = process.env.CHECKIN_ENV;
+            process.env.CHECKIN_ENV = 'local';
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const shopifyProgram = await prisma.program.create({
+                data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Notice Self Partic API Test', enrollmentStatus: 'OPEN', maxParticipants: 5, shopifyVariantId: 'dev-mock-variant-notice-self' },
             });
             try {
                 await prisma.programParticipant.create({
@@ -958,10 +1044,14 @@ describe('Program Participants API Integration Tests', () => {
                 );
                 expect(res.status).toBe(200);
                 const data = await res.json();
-                expect(data.notice).toMatch(/NOT put back on sale automatically/i);
+                expect(data.notice).toBeUndefined();
                 expect(data.warning).toBeUndefined();
-                // Freed seat is NOT auto-restocked: no positive-delta Shopify call.
                 expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('Would adjust inventory by 1'));
+                // Seat-freeing itself is unaffected: the row is still gone.
+                const row = await prisma.programParticipant.findUnique({
+                    where: { programId_personId: { programId: shopifyProgram.id, personId: commonId } },
+                });
+                expect(row).toBeNull();
             } finally {
                 logSpy.mockRestore();
                 process.env.CHECKIN_ENV = prevCheckinEnv;

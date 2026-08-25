@@ -161,7 +161,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             });
 
             const checkoutTime = new Date(`${baseDateString}11:45:00Z`); // Stays entirely within Event A
-            const finalVisits = await processVisitCheckout(visit.id, checkoutTime);
+            const finalVisits = await processVisitCheckout(visit.id, checkoutTime, prisma, "WEB");
 
             expect(finalVisits.length).toBe(1);
             expect(finalVisits[0].associatedEventId).toBe(eventAId);
@@ -180,7 +180,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             });
 
             const checkoutTime = new Date(`${baseDateString}13:00:00Z`); // Leaves during Event B
-            const finalVisits = await processVisitCheckout(visit.id, checkoutTime);
+            const finalVisits = await processVisitCheckout(visit.id, checkoutTime, prisma, "WEB");
 
             // Expecting 3 visits:
             // 1. Unassociated gap (09:30 -> 10:00)
@@ -219,7 +219,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             });
 
             const checkoutTime = new Date(`${baseDateString}13:00:00Z`); // Leaves during Event B/C time
-            const finalVisits = await processVisitCheckout(visit.id, checkoutTime);
+            const finalVisits = await processVisitCheckout(visit.id, checkoutTime, prisma, "WEB");
 
             // Since user is not enrolled in B or C anymore, it should simply extend their stay in A
             // until checkout time.
@@ -242,7 +242,7 @@ describe('Auto-Association and Checkout Chunking Logic', () => {
             });
 
             const checkoutTime = new Date(`${baseDateString}15:00:00Z`);
-            const finalVisits = await processVisitCheckout(visit.id, checkoutTime);
+            const finalVisits = await processVisitCheckout(visit.id, checkoutTime, prisma, "WEB");
 
             expect(finalVisits.length).toBe(2);
 

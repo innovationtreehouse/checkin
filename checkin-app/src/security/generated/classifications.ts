@@ -231,7 +231,7 @@ export const classifications = {
         personId: 'public',
         status: 'public',
         isPaymentPlanRequested: 'personal',
-        pendingSince: 'internal',
+        pendingSince: 'personal',
         wasOrgMemberAtApproval: 'internal',
         inventoryHeldAt: 'internal',
         paymentPlanDeniedAt: 'personal',
@@ -262,6 +262,8 @@ export const classifications = {
         location: 'personal',
         clientEventId: 'internal',
         reviewReason: 'internal',
+        reviewedAt: 'internal',
+        reviewedBy: 'internal',
     },
     Visit: {
         id: 'public',

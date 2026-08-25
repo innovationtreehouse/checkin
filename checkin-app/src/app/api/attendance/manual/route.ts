@@ -9,6 +9,7 @@ import { apiError } from "@/lib/api-response";
 import { withinMaxDuration } from "@/lib/visitTimes";
 import { LIVE_VISIT } from "@/lib/visit/filters";
 import { visitSubject } from "@/lib/visit/scope";
+import { lockFacility } from "@/lib/facilityLock";
 
 // Self-service manual visit entry. INTENTIONAL by design: a member records a
 // visit for THEMSELVES, or — as a household lead — for a member of their own
@@ -91,6 +92,9 @@ export const POST = withAuth({}, async (req, auth) => {
         // participant (checkout closes only one, the other lingers forever).
         const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(subjectId)})`;
+            if (!departureTime) {
+                await lockFacility(tx);
+            }
 
             // Only an open visit carries dedup-able state; a closed one (departure
             // provided) is just a historical record, so multiple are fine.
@@ -122,8 +126,8 @@ export const POST = withAuth({}, async (req, auth) => {
                     personId: subjectId,
                     arrivedAt: arrivalTime,
                     departedAt: departureTime,
-                    arrivedVia: "WEB",
-                    departedVia: departureTime ? "WEB" : null,
+                    arrivedVia: "TYPED",
+                    departedVia: departureTime ? "TYPED" : null,
                     associatedEventId: eventId
                 }
             });
@@ -143,7 +147,7 @@ export const POST = withAuth({}, async (req, auth) => {
         // If a departure time was provided, we process the checkout logic directly
         // to handle any back-to-back event transitions.
         if (departureTime) {
-             await processVisitCheckout(visit.id, departureTime, undefined, "WEB");
+             await processVisitCheckout(visit.id, departureTime, undefined, "TYPED");
         }
 
         // Fire-and-forget: notify only on a fresh active check-in (mirrors /api/scan).

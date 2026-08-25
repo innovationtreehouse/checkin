@@ -300,6 +300,32 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             return apiError("End date is required", 400);
         }
 
+        // Variant⟺price invariant (#1520): a program has a Shopify variant iff it
+        // has a price on some tier — the capacity/oversell math assumes this
+        // everywhere. Compute the post-PATCH EFFECTIVE values (current row + body
+        // deltas, undefined = "field not touched") and reject both illegal
+        // directions on the merged result: wiring a variant onto a price-null
+        // program, and nulling both prices out from under an existing variant.
+        // One check on the effective state covers both — guarding only one
+        // direction is a false sense of safety.
+        const newOrgMemberPriceCents = memberPrice !== undefined
+            ? dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined)
+            : undefined;
+        const newNonOrgMemberPriceCents = nonMemberPrice !== undefined
+            ? dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined)
+            : undefined;
+        // Shopify identifiers are sysadmin/board-only, so a non-privileged caller's
+        // effective variant is always the current one regardless of what's in body.
+        const newShopifyVariantId = (isSysAdminOrBoard && shopifyVariantId !== undefined)
+            ? (shopifyVariantId || null)
+            : undefined;
+        const effOrgMemberPriceCents = newOrgMemberPriceCents !== undefined ? newOrgMemberPriceCents : currentProgram.orgMemberPriceCents;
+        const effNonOrgMemberPriceCents = newNonOrgMemberPriceCents !== undefined ? newNonOrgMemberPriceCents : currentProgram.nonOrgMemberPriceCents;
+        const effShopifyVariantId = newShopifyVariantId !== undefined ? newShopifyVariantId : currentProgram.shopifyVariantId;
+        if (effShopifyVariantId && effOrgMemberPriceCents == null && effNonOrgMemberPriceCents == null) {
+            return apiError("A program cannot have a Shopify variant without a price on at least one tier", 400);
+        }
+
         const updateData: Record<string, unknown> = {
             ...(name !== undefined && { name }),
             ...(leadMentorId !== undefined && { leadMentorId }),
@@ -313,14 +339,14 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(maxAge !== undefined && { maxAge }),
             ...(maxParticipants !== undefined && { maxParticipants }),
             ...(leadMentorNotificationSettings !== undefined && { leadMentorNotificationSettings }),
-            ...(memberPrice !== undefined && { orgMemberPriceCents: dollarsToCentsOrNull(memberPrice != null ? String(memberPrice) : undefined) }),
-            ...(nonMemberPrice !== undefined && { nonOrgMemberPriceCents: dollarsToCentsOrNull(nonMemberPrice != null ? String(nonMemberPrice) : undefined) }),
+            ...(newOrgMemberPriceCents !== undefined && { orgMemberPriceCents: newOrgMemberPriceCents }),
+            ...(newNonOrgMemberPriceCents !== undefined && { nonOrgMemberPriceCents: newNonOrgMemberPriceCents }),
             // Shopify identifiers are sysadmin/board-only — a lead mentor's PATCH can't
             // touch them (they can break checkout, so they stay off the lead surface).
             // Empty string clears the field. This is the manual repair path when there's
             // no live Shopify to sync against (local/testing).
             ...(isSysAdminOrBoard && shopifyProductId !== undefined && { shopifyProductId: shopifyProductId || null }),
-            ...(isSysAdminOrBoard && shopifyVariantId !== undefined && { shopifyVariantId: shopifyVariantId || null }),
+            ...(newShopifyVariantId !== undefined && { shopifyVariantId: newShopifyVariantId }),
         };
 
         const updatedProgram = await prisma.program.update({
