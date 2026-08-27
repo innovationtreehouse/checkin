@@ -165,11 +165,6 @@ export const ROW_SCOPE_KEY: Record<string, string> = {
  * it as pending). Removed.
  */
 export const OPT_OUT_PENDING_ROUTE = new Set<string>([
-    // Append-only projection source (#1347 Stage-2); no route returns it — the
-    // review panel reads RawBadgeLog and the heartbeat bag is synthesized. A
-    // "my presence history" route is plausible later; that is when this earns
-    // a real binding.
-    'PresenceEvent',
     'OrgMembershipProcess', // board/admin today; a household-facing status route is plausible
     'BackgroundCheckAttestation', // bind their_own at migration, keep notes `internal`
     'Corporation', // has leads→personId; a corp-lead view is plausible

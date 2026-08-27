@@ -356,7 +356,7 @@ export const POST = withKiosk(
                 },
                 orderBy: { arrivedAt: "desc" },
             });
-            const direction = intent ?? (activeVisit ? "OUT" as const : "IN" as const);
+
 
             // 6. Project. Intent-carrying events apply IN/OUT as displayed
             // (conflicts park; closed non-keyholder INs hold for C). Legacy
