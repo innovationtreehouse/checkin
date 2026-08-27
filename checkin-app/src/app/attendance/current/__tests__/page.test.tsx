@@ -663,6 +663,46 @@ describe("attendance/current page", () => {
     );
   });
 
+  it("does not treat a roster without safety flags as two-deep compliant (B6)", async () => {
+    setAdminSession();
+    const { safety: _omit, ...withoutSafety } = attendanceData;
+    void _omit;
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": withoutSafety,
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Two-Deep Compliance is failing!", { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByText("Only one isKeyholder is currently in the building.")).not.toBeInTheDocument();
+  });
+
+  it("treats a malformed safety object as unknown, not compliant (B6)", async () => {
+    setAdminSession();
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": { ...attendanceData, safety: {} },
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+  });
+
+  it("treats a partial safety object (one flag missing) as unknown (B6)", async () => {
+    setAdminSession();
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": { ...attendanceData, safety: { isTwoDeepViolation: true } },
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    // Even a true violation flag cannot render as a verdict when the pair is
+    // incomplete — coverage of the other flag is silently un-checkable.
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Two-Deep Compliance is failing!", { exact: false })).not.toBeInTheDocument();
+  });
+
   it("shows a critical two-deep-violation banner over the last-keyholder warning", async () => {
     setAdminSession();
     mockFetchJson({

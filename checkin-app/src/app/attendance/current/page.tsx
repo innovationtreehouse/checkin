@@ -44,8 +44,8 @@ type Visit = {
 
 type Counts = { keyholders: number; volunteers: number; youth: number; total: number };
 type SafetyFlags = { isLastKeyholder: boolean; isTwoDeepViolation: boolean };
-type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safety: SafetyFlags };
-type LimitedResponse = { access: "limited"; counts: Counts; safety: SafetyFlags; self: Visit | null; household: Visit[] };
+type FullResponse = { access: "full"; attendance: Visit[]; counts: Counts; safety?: SafetyFlags };
+type LimitedResponse = { access: "limited"; counts: Counts; safety?: SafetyFlags; self: Visit | null; household: Visit[] };
 type AttendanceResponse = FullResponse | LimitedResponse;
 
 function KioskDisplayInner() {
@@ -85,7 +85,14 @@ function KioskDisplayInner() {
   // safety flag below is only meaningful while `data` is non-null, so each one is
   // rendered behind that check.
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
-  const safety = data?.safety || { isLastKeyholder: false, isTwoDeepViolation: false };
+  // Missing OR malformed `safety` is UNKNOWN, never all-clear (KIOSK_RESILIENCE
+  // §5.24 / B6). Both flags must be actual booleans — a partial object like
+  // `{}` must not read as compliant.
+  const rawSafety = data?.safety;
+  const safety =
+    typeof rawSafety?.isTwoDeepViolation === "boolean" && typeof rawSafety?.isLastKeyholder === "boolean"
+      ? rawSafety
+      : null;
 
   // Prefer the server-computed flag (the only youth signal the kiosk payload carries),
   // fall back to the birth date the privileged payload still ships. This feeds the
@@ -460,19 +467,20 @@ function KioskDisplayInner() {
         )}
 
         {/* Safety warnings — a missing roster reads as unknown, not as all-clear */}
-        {!loading && !data && (
+        {!loading && !safety && (
           <Alert color="orange" icon="⚠️" title="Supervision status unknown" mb="lg">
-            Attendance could not be loaded, so Two-Deep Compliance and keyholder coverage
-            cannot be checked. Verify supervision in the building.
+            {data
+              ? "Attendance loaded without safety flags, so Two-Deep Compliance and keyholder coverage cannot be checked. Verify supervision in the building."
+              : "Attendance could not be loaded, so Two-Deep Compliance and keyholder coverage cannot be checked. Verify supervision in the building."}
           </Alert>
         )}
-        {data && safety.isTwoDeepViolation && (
+        {data && safety?.isTwoDeepViolation && (
           <Alert color="red" icon="🚨" title="Critical Warning" mb="lg">
             Two-Deep Compliance is failing! An unaccompanied youth is present without sufficient
             adult supervision.
           </Alert>
         )}
-        {data && !safety.isTwoDeepViolation && safety.isLastKeyholder && (
+        {data && safety && !safety.isTwoDeepViolation && safety.isLastKeyholder && (
           <Alert color="yellow" icon="⚠️" title="Warning" mb="lg">
             Only one isKeyholder is currently in the building.
           </Alert>

@@ -694,6 +694,22 @@ defineRoute({
     orderedView: [],
 });
 
+// In-memory kiosk last-seen (KIOSK_RESILIENCE §3.4). No DB row: the stamp
+// lives on the task, so the bag is a synthesized SystemMetricLog (metric
+// `kiosk_last_seen`, timestamp = last verified kiosk request, value = age
+// in seconds). Empty array means never seen since this task started (or
+// overnight after scale-to-zero). Landed registry-first, ahead of the route.
+defineRoute({
+    endpoint: 'GET /api/system-status/kiosk-heartbeat',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'heartbeat',
+    returns: ['SystemMetricLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:internal', 'member', 'public']],
+    ],
+});
+
 // Volunteer designations (dues-discount allowlist; email is pii) — admin
 // surface, registered ahead of its handler() conversion (inert until then). GET
 // is a pure findMany (create/delete live on other HTTP methods).
