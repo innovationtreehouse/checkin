@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 from outbox import (Outbox, classify_response, replay_drain, new_event_id, now_iso,
                     in_closed_window, MIN_BACKOFF_SECONDS, DRAIN_PACE_SECONDS)
-from client import handle_scan, _saved_banner_html
+from client import handle_scan, _saved_banner_html, ClockWatch
 
 
 class _StopLoop(Exception):
@@ -20,6 +20,8 @@ class FakeState:
     def __init__(self, confirm_token=None):
         self.events = []
         self.confirm_token = confirm_token
+        self.clock_watch = ClockWatch()
+        self.present_ids = set()
 
     def push_event(self, data):
         self.events.append(data)
@@ -27,6 +29,15 @@ class FakeState:
     def take_confirm(self):
         token, self.confirm_token = self.confirm_token, None
         return token
+
+    def displayed_intent(self, participant_id):
+        return "IN"
+
+    def note_presence(self, participant_id, checking_in, is_keyholder=None):
+        return
+
+    def seed_from_attendance(self, att_data):
+        return
 
 
 class TestOutboxDurability(unittest.TestCase):
@@ -41,6 +52,17 @@ class TestOutboxDurability(unittest.TestCase):
             rows = ob2.pending_rows()
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0][0], "evt-1")
+
+    def test_enqueue_persists_intent_and_clock_suspect(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "outbox.db")
+            ob = Outbox(path)
+            ob.enqueue("evt-1", "42", "2026-08-18T10:00:00+00:00", intent="IN", clock_suspect=True)
+            row = ob.pending_rows()[0]
+            self.assertEqual(row[5], "IN")
+            self.assertEqual(row[6], 1)
+            ob.mark_clock_suspect()
+            self.assertEqual(ob.pending_rows()[0][6], 1)
 
     def test_corrupt_file_moved_aside_and_queue_still_usable(self):
         with tempfile.TemporaryDirectory() as d:
@@ -157,7 +179,7 @@ class TestReplayDrain(unittest.TestCase):
             calls = {"n": 0}
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False):
+                        scanned_at=None, replay=False, **kwargs):
                 idx = calls["n"]
                 calls["n"] += 1
                 return responses[idx]
@@ -236,7 +258,7 @@ class TestReplayDrain(unittest.TestCase):
             seen_ids = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False):
+                        scanned_at=None, replay=False, **kwargs):
                 seen_ids.append(client_event_id)
                 if len(seen_ids) < 3:
                     return ({}, 503, None)
@@ -265,7 +287,7 @@ class TestReplayDrain(unittest.TestCase):
             seen = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False):
+                        scanned_at=None, replay=False, **kwargs):
                 seen.append(replay)
                 return ({"type": "checkin"}, 200, None)
 
@@ -291,7 +313,7 @@ class TestReplayDrain(unittest.TestCase):
             seen = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False):
+                        scanned_at=None, replay=False, **kwargs):
                 seen.append((client_event_id, force_close_token))
                 return ({"type": "checkout"}, 200, None)
 
@@ -315,7 +337,7 @@ class TestReplayDrain(unittest.TestCase):
             pushed = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False):
+                        scanned_at=None, replay=False, **kwargs):
                 return ({"error": "unknown participant"}, 404, None)
 
             def fake_sleep(secs):
@@ -342,7 +364,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             seen = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 seen.append((client_event_id, dead, dead_status))
                 return ({"type": "parked"}, 200, None)
 
@@ -366,7 +388,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             calls = {"n": 0}
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 calls["n"] += 1
                 return ({"error": "still down"}, 500, None)
 
@@ -393,7 +415,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             waits = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 return ({"error": "person gone"}, 404, None)
 
             def fake_sleep(secs):
@@ -425,7 +447,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             waits = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 return ({}, next(outcomes), None)
 
             def fake_sleep(secs):
@@ -459,7 +481,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             seen = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 seen.append(client_event_id)
                 return ({"error": "refused"}, 400, None)
 
@@ -487,7 +509,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             ob.mark_dead("evt-ok", 409)
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 if client_event_id == "evt-stuck":
                     return ({"error": "refused"}, 400, None)
                 return ({}, 200, None)
@@ -517,7 +539,7 @@ class TestDeadLetterDrainPass(unittest.TestCase):
             seen = []
 
             def send_fn(participant_id, force_close_token=None, client_event_id=None,
-                        scanned_at=None, replay=False, dead=False, dead_status=None):
+                        scanned_at=None, replay=False, dead=False, dead_status=None, **kwargs):
                 seen.append((client_event_id, dead))
                 return ({"type": "checkin"}, 200, None)
 
@@ -571,7 +593,7 @@ class TestHandleScanQueuesOnFailure(unittest.TestCase):
             handle_scan(backend, state, ob, "9")
 
             self.assertEqual(ob.pending_count(), 1)
-            self.assertIn("Saved", state.events[-1]["html"])
+            self.assertIn("will sync", state.events[-1]["html"])
             self.assertIn("1 waiting", state.events[-1]["html"])
 
     def test_successful_scan_is_not_queued(self):

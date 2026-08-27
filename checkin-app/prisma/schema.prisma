@@ -195,6 +195,7 @@ model Person {
   programsLed         Program[]                    @relation("ProgramLeadMentor")
   rsvps               RSVP[]
   rawBadgeLogs        RawBadgeLog[]
+  presenceEvents      PresenceEvent[]
   visits              Visit[]
   eventsConfirmedBy   Event[]                      @relation("EventAttendanceConfirmer")
 
@@ -1104,6 +1105,47 @@ model RawBadgeLog {
   person Person @relation(fields: [personId], references: [id])
 
   @@index([personId, timestamp]) // Double-badge detection in /api/scan
+}
+
+/// Direction the producing surface displayed (invariant 5). Visits project
+/// from this log; they do not re-toggle from live state.
+enum PresenceDirection {
+  IN
+  OUT
+}
+
+/// Stage-2 substrate (KIOSK_RESILIENCE §6): every presence-affecting surface
+/// appends an intent-carrying event; Visits project from the ordered log.
+/// Expand-only — old writers never touch this table.
+model PresenceEvent {
+  /// @sensitivity:internal
+  id             Int               @id @default(autoincrement())
+  /// @sensitivity:public
+  personId       Int
+  /// @sensitivity:personal
+  occurredAt     DateTime
+  /// @sensitivity:internal
+  direction      PresenceDirection
+  /// @sensitivity:public
+  source         VisitSource
+  /// @sensitivity:internal
+  clientEventId  String?           @unique
+  /// M2 classify output: PROJECTED | PARKED_* | CONFLICT_*. String, not an
+  /// enum, so new park reasons do not need ADD VALUE. @sensitivity:internal
+  classification String?
+  /// @sensitivity:internal
+  clockSuspect   Boolean           @default(false)
+  /// Visit this event projected into, when classification is PROJECTED.
+  /// Plain Int (no FK): a tombstoned visit must not cascade-delete the log.
+  /// @sensitivity:internal
+  visitId        Int?
+  /// @sensitivity:internal
+  createdAt      DateTime          @default(now())
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@index([personId, occurredAt])
+  @@index([classification, occurredAt])
 }
 
 model Visit {
