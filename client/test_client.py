@@ -120,6 +120,32 @@ class TestExampleConfigMatchesDefaults(unittest.TestCase):
 class TestForceCloseConfirm(unittest.TestCase):
     """§5.23 explicit confirm: the warning arms a token, the next scan spends it."""
 
+    def test_post_scan_sends_displayed_intent(self):
+        client = BackendClient("http://fake", SigningKey(b"\x00" * 32))
+        client.session = MagicMock()
+        client.session.post.return_value = MagicMock(status_code=200, headers={}, json=lambda: {})
+        client.post_scan(7, intent="IN")
+        payload = json.loads(client.session.post.call_args.kwargs["data"])
+        self.assertEqual(payload["intent"], "IN")
+        client.post_scan(7, intent="OUT", clock_suspect=True)
+        payload = json.loads(client.session.post.call_args.kwargs["data"])
+        self.assertEqual(payload["intent"], "OUT")
+        self.assertTrue(payload["clockSuspect"])
+
+    def test_handle_scan_carries_local_presence_as_intent(self):
+        state = AttendanceState()
+        state.push_event = lambda event: None
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = (
+            {"type": "checkin", "participant": {"email": "a@example.com"}},
+            200,
+            None,
+        )
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+        self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "IN")
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+        self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "OUT")
+
     def test_post_scan_sends_the_token_only_when_one_is_held(self):
         client = BackendClient("http://fake", "fake_key")
         with patch.object(BackendClient, "_headers", return_value={}), \

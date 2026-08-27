@@ -3,6 +3,8 @@ import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { apiError, apiJson } from "@/lib/api-response";
 import { processCheckin, processCheckout, finalizeFacilityClose, SUPERVISION_CONFIRM_MS, SUPERVISION_CONFIRM_DEADFRONT_MS } from "@/lib/scan-service";
+import { appendPresenceEvent, parkReasonToClass, PresenceClass } from "@/lib/presence/events";
+import { applyPresenceIntent, flushParkedClosed } from "@/lib/presence/project";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
 
@@ -29,7 +31,7 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown; intent?: unknown; clockSuspect?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -102,6 +104,16 @@ export const POST = withKiosk(
             typeof body.forceCloseToken === 'string' && body.forceCloseToken.length > 0
                 ? body.forceCloseToken
                 : null;
+
+        // Displayed direction (invariant 5). Absent → legacy live-state toggle.
+        if (body.intent !== undefined && body.intent !== 'IN' && body.intent !== 'OUT') {
+            return apiError("intent must be IN or OUT.", 400);
+        }
+        const intent = body.intent === 'IN' || body.intent === 'OUT' ? body.intent : null;
+        if (body.clockSuspect !== undefined && typeof body.clockSuspect !== 'boolean') {
+            return apiError("clockSuspect must be a boolean.", 400);
+        }
+        const clockSuspect = body.clockSuspect === true;
 
         // Web session: check if user can scan this participant
         let pendingHouseholdCheck = false;
@@ -283,7 +295,9 @@ export const POST = withKiosk(
             // A dead-lettered event always parks: it never reaches the server
             // live, so there is nothing here for it to safely toggle against.
             let parkReason: string | null = null;
-            if (isDead) {
+            if (clockSuspect) {
+                parkReason = "clock_suspect";
+            } else if (isDead) {
                 parkReason = `client_dead:${deadStatus}`;
             } else if (isReplay) {
                 const stale = Date.now() - eventTime.getTime() > REPLAY_FRESHNESS_WINDOW_MS;
@@ -314,11 +328,26 @@ export const POST = withKiosk(
                 },
             });
 
+            // Dual-write the Stage-2 log. A parked scan must not consult Visit
+            // state at all (the pinned park contract): only PARKED_CLOSED events
+            // ever flush, and those always arrive through applyPresenceIntent
+            // with a real intent — direction on any other parked event is
+            // advisory review context, never projected.
             if (parkReason) {
+                await appendPresenceEvent(tx, {
+                    personId: participant.id,
+                    occurredAt: eventTime,
+                    direction: intent ?? "IN",
+                    source: "SCANNER",
+                    clientEventId,
+                    classification: parkReasonToClass(parkReason),
+                    clockSuspect,
+                });
                 return apiJson({ type: 'parked', message: 'Recorded for review.' });
             }
 
-            // 6. Check-in or check-out
+            // Live path. Direction: the displayed intent if the kiosk sent one,
+            // else the live-state toggle (legacy callers).
             const activeVisit = await tx.visit.findFirst({
                 where: {
                     personId: participant.id,
@@ -328,11 +357,55 @@ export const POST = withKiosk(
                 orderBy: { arrivedAt: "desc" },
             });
 
-            if (activeVisit) {
-                return await processCheckout(participant, activeVisit.id, authType, tx, confirmToken, eventTime, isReplay ? clientEventId : null);
-            } else {
-                return await processCheckin(participant, authType, tx, eventTime);
+
+            // 6. Project. Intent-carrying events apply IN/OUT as displayed
+            // (conflicts park; closed non-keyholder INs hold for C). Legacy
+            // callers without intent still toggle from live state.
+            if (intent) {
+                return await applyPresenceIntent(tx, {
+                    participant,
+                    direction: intent,
+                    occurredAt: eventTime,
+                    authType,
+                    source: "SCANNER",
+                    clientEventId,
+                    confirmToken,
+                    replayEventId: isReplay ? clientEventId : null,
+                });
             }
+
+            const res = activeVisit
+                ? await processCheckout(participant, activeVisit.id, authType, tx, confirmToken, eventTime, isReplay ? clientEventId : null)
+                : await processCheckin(participant, authType, tx, eventTime);
+
+            // Classification comes from the ACTUAL outcome. Only a confirmed
+            // toggle is PROJECTED; only a genuine closed-facility hold is
+            // PARKED_CLOSED (the auto-flush class) — review parks keep their
+            // own class so the flush can never bypass a human gate; warnings
+            // (visit still open) stay unclassified.
+            let classification: string | null = null;
+            try {
+                const body = (await res.clone().json()) as { type?: string; reason?: string };
+                if (body.type === "checkin" || body.type === "checkout") {
+                    classification = PresenceClass.PROJECTED;
+                } else if (body.type === "parked") {
+                    classification = body.reason ? parkReasonToClass(body.reason) : null;
+                }
+            } catch {
+                classification = null;
+            }
+            await appendPresenceEvent(tx, {
+                personId: participant.id,
+                occurredAt: eventTime,
+                direction: activeVisit ? "OUT" : "IN",
+                source: "SCANNER",
+                clientEventId,
+                classification,
+            });
+            if (!activeVisit && participant.isKeyholder && classification === PresenceClass.PROJECTED) {
+                await flushParkedClosed(tx);
+            }
+            return res;
         }, {
             // maxWait: time a racing scan waits to acquire a connection / start.
             // timeout: ceiling on the whole locked section, including time spent
