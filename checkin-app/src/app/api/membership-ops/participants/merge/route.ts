@@ -503,6 +503,7 @@ export const POST = withAuth(
                     visits: 0,
                     personBgArchived: 0,
                     rawBadgeLogs: 0,
+                    presenceEvents: 0,
                     noteAcks: 0,
                     attendanceConfirmations: 0,
                     trustedAdultDecisions: 0,
@@ -604,6 +605,9 @@ export const POST = withAuth(
                 // RawBadgeLog.personId is RESTRICT: a scan left on the tombstone pins
                 // that Person row in place forever.
                 moved.rawBadgeLogs = (await tx.rawBadgeLog.updateMany({ where: { personId: mergeId }, data: { personId: keepId } })).count;
+                // PresenceEvent.personId is CASCADE: the append-only log follows the
+                // survivor so later flushes project against the live record.
+                moved.presenceEvents = (await tx.presenceEvent.updateMany({ where: { personId: mergeId }, data: { personId: keepId } })).count;
 
                 // "Which staff member did this" facts, all SET NULL — left on the
                 // tombstone they read as nobody the moment the row goes.

@@ -52,9 +52,23 @@ export async function processCheckin(participant: Person, authType: string, db: 
         if (activeKeyholders === 0) {
             // Closed is advisory: a kiosk badge is held (projection C) until a
             // keyholder Visit exists, then auto-projected in occurredAt order.
-            // Not a human-queue item — reviewReason stays null. Dashboard
-            // check-in still 403s (no badge to hold).
+            // The raw log still carries facility_closed so the scan stays
+            // visible on the review panel — without it, a night where no
+            // keyholder ever arrives leaves the touch in limbo on every
+            // surface. A flushed event's row is simply dismissible.
+            // Dashboard check-in still 403s (no badge to hold).
             if (authType === "kiosk") {
+                const badge = await tx.rawBadgeLog.findFirst({
+                    where: { personId: participant.id, reviewReason: null },
+                    orderBy: { timestamp: "desc" },
+                    select: { id: true },
+                });
+                if (badge) {
+                    await tx.rawBadgeLog.update({
+                        where: { id: badge.id },
+                        data: { reviewReason: "facility_closed" },
+                    });
+                }
                 return apiJson({ type: "parked", message: "Recorded. Will project when a keyholder is present." });
             }
             return apiError("Facility is closed. A Keyholder must check in first.", 403);

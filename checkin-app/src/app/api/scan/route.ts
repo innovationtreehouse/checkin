@@ -328,8 +328,26 @@ export const POST = withKiosk(
                 },
             });
 
-            // Dual-write the Stage-2 log. Direction: the displayed intent if
-            // the kiosk sent one, else the live-state toggle (legacy callers).
+            // Dual-write the Stage-2 log. A parked scan must not consult Visit
+            // state at all (the pinned park contract): only PARKED_CLOSED events
+            // ever flush, and those always arrive through applyPresenceIntent
+            // with a real intent — direction on any other parked event is
+            // advisory review context, never projected.
+            if (parkReason) {
+                await appendPresenceEvent(tx, {
+                    personId: participant.id,
+                    occurredAt: eventTime,
+                    direction: intent ?? "IN",
+                    source: "SCANNER",
+                    clientEventId,
+                    classification: parkReasonToClass(parkReason),
+                    clockSuspect,
+                });
+                return apiJson({ type: 'parked', message: 'Recorded for review.' });
+            }
+
+            // Live path. Direction: the displayed intent if the kiosk sent one,
+            // else the live-state toggle (legacy callers).
             const activeVisit = await tx.visit.findFirst({
                 where: {
                     personId: participant.id,
@@ -338,21 +356,7 @@ export const POST = withKiosk(
                 },
                 orderBy: { arrivedAt: "desc" },
             });
-            const inferredDirection = activeVisit ? "OUT" as const : "IN" as const;
-            const direction = intent ?? inferredDirection;
-
-            if (parkReason) {
-                await appendPresenceEvent(tx, {
-                    personId: participant.id,
-                    occurredAt: eventTime,
-                    direction,
-                    source: "SCANNER",
-                    clientEventId,
-                    classification: parkReasonToClass(parkReason),
-                    clockSuspect,
-                });
-                return apiJson({ type: 'parked', message: 'Recorded for review.' });
-            }
+            const direction = intent ?? (activeVisit ? "OUT" as const : "IN" as const);
 
             // 6. Project. Intent-carrying events apply IN/OUT as displayed
             // (conflicts park; closed non-keyholder INs hold for C). Legacy
@@ -385,7 +389,7 @@ export const POST = withKiosk(
             await appendPresenceEvent(tx, {
                 personId: participant.id,
                 occurredAt: eventTime,
-                direction: inferredDirection,
+                direction: activeVisit ? "OUT" : "IN",
                 source: "SCANNER",
                 clientEventId,
                 classification,

@@ -119,18 +119,10 @@ export const POST = withAuth({}, async (req, auth) => {
                     const activeKeyholders = await tx.visit.count({
                         where: { departedAt: null, person: { isKeyholder: true }, ...LIVE_VISIT }
                     });
-                    if (activeKeyholders === 0) {
-                        // Same rule as a scan (projection C): hold, then project
-                        // when a keyholder Visit exists. No 403.
-                        await appendPresenceEvent(tx, {
-                            personId: subjectId,
-                            occurredAt: arrivalTime,
-                            direction: "IN",
-                            source: "TYPED",
-                            classification: PresenceClass.PARKED_CLOSED,
-                        });
-                        return { heldClosed: true as const };
-                    }
+                    // Keyholder-first stands for staff backfills (#254 ruling):
+                    // a refused request writes nothing — projection C's hold is
+                    // for kiosk scans, which must never be lost.
+                    if (activeKeyholders === 0) return { facilityClosed: true as const };
                 }
             }
 
@@ -170,11 +162,8 @@ export const POST = withAuth({}, async (req, auth) => {
             timeout: 15000,
         });
 
-        if ('heldClosed' in result) {
-            return NextResponse.json({
-                type: "parked",
-                message: "Recorded. Will appear on the roster when a keyholder checks in.",
-            });
+        if ('facilityClosed' in result) {
+            return apiError("Facility is closed. A Keyholder must check in first.", 403);
         }
         const { visit, freshCheckin } = result;
 

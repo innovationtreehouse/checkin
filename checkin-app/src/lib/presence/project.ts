@@ -1,6 +1,7 @@
 import type { Person, PresenceDirection } from "@/generated/prisma/client";
 import { apiJson } from "@/lib/api-response";
 import type { DbClient } from "@/lib/db-client";
+import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
 import { processCheckin, processCheckout } from "@/lib/scan-service";
 import {
@@ -62,7 +63,7 @@ export async function applyPresenceIntent(
         const holdClosed = args.authType === "kiosk" || args.holdWhenClosed === true;
         if (!args.participant.isKeyholder && holdClosed) {
             const activeKeyholders = await db.visit.count({
-                where: { departedAt: null, person: { isKeyholder: true }, ...LIVE_VISIT },
+                where: { departedAt: null, person: { isKeyholder: true, ...LIVE_PERSON }, ...LIVE_VISIT },
             });
             if (activeKeyholders === 0) {
                 await classifyPresenceEvent(db, event.id, PresenceClass.PARKED_CLOSED);
@@ -111,8 +112,14 @@ export async function flushParkedClosed(db: DbClient): Promise<void> {
         include: { person: true },
     });
     for (const ev of held) {
+        // A merge racing the flush leaves a tombstone here (the repoint runs at
+        // merge time; this is the in-flight window). One hop reaches the keeper —
+        // the archive design guarantees chains never exceed it.
+        const person = ev.person.mergedIntoId
+            ? ((await db.person.findUnique({ where: { id: ev.person.mergedIntoId } })) ?? ev.person)
+            : ev.person;
         const openVisit = await db.visit.findFirst({
-            where: { personId: ev.personId, departedAt: null, ...LIVE_VISIT },
+            where: { personId: person.id, departedAt: null, ...LIVE_VISIT },
             select: { id: true },
         });
         if (ev.direction === "IN") {
@@ -120,7 +127,7 @@ export async function flushParkedClosed(db: DbClient): Promise<void> {
                 await classifyPresenceEvent(db, ev.id, PresenceClass.CONFLICT_DOUBLE_IN);
                 continue;
             }
-            const res = await processCheckin(ev.person, "kiosk", db, ev.occurredAt);
+            const res = await processCheckin(person, "kiosk", db, ev.occurredAt);
             const projected = await visitIdFromCheckin(res);
             await classifyPresenceEvent(
                 db,
@@ -129,7 +136,7 @@ export async function flushParkedClosed(db: DbClient): Promise<void> {
                 projected,
             );
         } else if (openVisit) {
-            await processCheckout(ev.person, openVisit.id, "kiosk", db, null, ev.occurredAt, ev.clientEventId);
+            await processCheckout(person, openVisit.id, "kiosk", db, null, ev.occurredAt, ev.clientEventId);
             await classifyPresenceEvent(db, ev.id, PresenceClass.PROJECTED, openVisit.id);
         } else {
             await classifyPresenceEvent(db, ev.id, PresenceClass.CONFLICT_OUT_NO_IN);

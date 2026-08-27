@@ -32,6 +32,10 @@ jest.mock('@/lib/prisma', () => {
         systemMetricLog: {
             create: jest.fn().mockResolvedValue({}),
         },
+        presenceEvent: {
+            create: jest.fn().mockResolvedValue({ id: 1 }),
+            update: jest.fn().mockResolvedValue({}),
+        },
         // The route runs steps 4–6 inside a $transaction under a per-participant
         // advisory lock; the callback receives a tx client. For unit tests the
         // tx client is just this same mock, and the lock query is a no-op.
