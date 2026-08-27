@@ -32,6 +32,8 @@ const db = prisma as unknown as { rawBadgeLog: { findMany: jest.Mock; updateMany
 const mockSession = getServerSession as jest.Mock;
 const SYSADMIN = { user: { id: 99, isSysadmin: true, isBoardMember: false } };
 const BOARD = { user: { id: 42, isSysadmin: false, isBoardMember: true } };
+const KEYHOLDER = { user: { id: 8, isSysadmin: false, isBoardMember: false, isKeyholder: true } };
+const OPERATIONS = { user: { id: 9, isSysadmin: false, isBoardMember: false, isOperations: true } };
 const MEMBER = { user: { id: 7, isSysadmin: false, isBoardMember: false } };
 
 const parkedRow = {
@@ -92,6 +94,17 @@ describe("GET /api/system-status/unsynced-scans", () => {
         expect((await GET(listReq())).status).toBe(200);
     });
 
+    it("admits a keyholder (Q15)", async () => {
+        mockSession.mockResolvedValue(KEYHOLDER);
+        expect((await GET(listReq())).status).toBe(200);
+    });
+
+    it("403s operations — aggregate attendance only (#1633)", async () => {
+        mockSession.mockResolvedValue(OPERATIONS);
+        expect((await GET(listReq())).status).toBe(403);
+        expect(db.rawBadgeLog.findMany).not.toHaveBeenCalled();
+    });
+
     it("401 anonymous / 403 plain member, without querying", async () => {
         mockSession.mockResolvedValue(null);
         expect((await GET(listReq())).status).toBe(401);
@@ -149,6 +162,17 @@ describe("POST /api/system-status/unsynced-scans/[id] (dismiss)", () => {
         mockSession.mockResolvedValue(MEMBER);
         expect((await POST(dismissReq(), dismissCtx())).status).toBe(403);
 
+        expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("admits a keyholder dismiss; 403s operations", async () => {
+        mockSession.mockResolvedValue(KEYHOLDER);
+        expect((await POST(dismissReq(), dismissCtx())).status).toBe(200);
+        expect(db.rawBadgeLog.updateMany.mock.calls[0][0].data.reviewedBy).toBe(KEYHOLDER.user.id);
+
+        jest.clearAllMocks();
+        mockSession.mockResolvedValue(OPERATIONS);
+        expect((await POST(dismissReq(), dismissCtx())).status).toBe(403);
         expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
     });
 });
