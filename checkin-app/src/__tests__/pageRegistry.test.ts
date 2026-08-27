@@ -65,4 +65,11 @@ describe('Facility Ops directory agrees with the section gates', () => {
       expect(p.visible(board, true, null)).toBe(true);
     }
   });
+
+  // Q15: keyholders review unsynced scans; operations stay at aggregate only.
+  it('lists /system-status/unsynced-scans to keyholders and not to operations', () => {
+    const entry = entryFor('/system-status/unsynced-scans');
+    expect(entry.visible({ isKeyholder: true }, true, null)).toBe(true);
+    expect(entry.visible({ isOperations: true }, true, null)).toBe(false);
+  });
 });
