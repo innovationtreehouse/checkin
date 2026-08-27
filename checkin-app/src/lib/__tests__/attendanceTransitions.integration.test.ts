@@ -103,7 +103,7 @@ describe('attendanceTransitions', () => {
             const checkout = new Date();
             const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt } });
 
-            const result = await processVisitCheckout(visit.id, checkout, prisma, "WEB");
+            const result = await processVisitCheckout(visit.id, checkout, prisma, "TYPED");
             expect(result).toHaveLength(1);
             expect(result[0].departedAt).toEqual(checkout);
             expect(result[0].associatedEventId).toBeNull();
@@ -117,7 +117,7 @@ describe('attendanceTransitions', () => {
             const ev = await makeEvent('mid', eventStart, eventEnd);
             const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
 
-            const result = await processVisitCheckout(visit.id, checkout, prisma, "WEB");
+            const result = await processVisitCheckout(visit.id, checkout, prisma, "TYPED");
 
             // Original open visit is replaced by the chunks.
             const original = await prisma.visit.findUnique({ where: { id: visit.id } });
@@ -145,7 +145,7 @@ describe('attendanceTransitions', () => {
             const e2 = await makeEvent('back2', e2Start, e2End);
             const visit = await prisma.visit.create({ data: { personId: participantId, arrivedAt: t0 } });
 
-            const result = await processVisitCheckout(visit.id, checkout, prisma, "WEB");
+            const result = await processVisitCheckout(visit.id, checkout, prisma, "TYPED");
 
             const v1 = result.find(v => v.associatedEventId === e1.id);
             const v2 = result.find(v => v.associatedEventId === e2.id);
@@ -188,12 +188,12 @@ describe('attendanceTransitions', () => {
             const visit = await prisma.visit.create({
                 data: { personId: participantId, arrivedAt: new Date(Date.now() - HOUR), departedAt: new Date() },
             });
-            const result = await processVisitCheckout(visit.id, new Date(), prisma, "WEB");
+            const result = await processVisitCheckout(visit.id, new Date(), prisma, "TYPED");
             expect(result).toEqual([]);
         });
 
         it('returns [] for a non-existent visit id', async () => {
-            const result = await processVisitCheckout(99999999, new Date(), prisma, "WEB");
+            const result = await processVisitCheckout(99999999, new Date(), prisma, "TYPED");
             expect(result).toEqual([]);
         });
     });
