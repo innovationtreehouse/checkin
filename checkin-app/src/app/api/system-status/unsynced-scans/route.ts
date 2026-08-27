@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { handler } from "@/security/handler";
 
 // Registry-governed (GET /api/system-status/unsynced-scans): admission anyRole
-// sysadmin/board; envelope 'scans'.
+// sysadmin/board/keyholder (Q15; operations stay out — #1633); envelope 'scans'.
 //
 // The review queue from KIOSK_RESILIENCE §2 D7: RawBadgeLog rows a replay
 // PARKED instead of toggling (reviewReason set by /api/scan) and that nobody
