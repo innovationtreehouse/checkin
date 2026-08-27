@@ -96,4 +96,19 @@ describe('GET /api/attendance — real kiosk signature wiring', () => {
         const res = await GET(attendanceReq(headers));
         expect(res.status).toBe(401);
     });
+
+    it('a signed kiosk poll stays display-only even when a keyholder session is present', async () => {
+        const { getFullAttendance } = jest.requireMock('@/lib/getFullAttendance') as {
+            getFullAttendance: jest.Mock;
+        };
+        (getServerSession as jest.Mock).mockResolvedValue({
+            user: { id: 1, isKeyholder: true, isSysadmin: false, isBoardMember: false },
+        });
+
+        const res = await GET(attendanceReq(signedHeaders(signer, freshNonce())));
+        const json = await res.json();
+        expect(res.status).toBe(200);
+        expect(json.signedRequest).toBe(true);
+        expect(getFullAttendance).toHaveBeenCalledWith({ kiosk: true });
+    });
 });
