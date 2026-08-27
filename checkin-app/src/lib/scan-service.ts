@@ -69,7 +69,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
                         data: { reviewReason: "facility_closed" },
                     });
                 }
-                return apiJson({ type: "parked", message: "Recorded. Will project when a keyholder is present." });
+                return apiJson({ type: "parked", reason: "facility_closed", message: "Recorded. Will project when a keyholder is present." });
             }
             return apiError("Facility is closed. A Keyholder must check in first.", 403);
         }
@@ -184,7 +184,7 @@ export async function processCheckout(
                         where: { clientEventId: replayEventId },
                         data: { reviewReason: 'force_close_review' },
                     });
-                    return apiJson({ type: 'parked', message: 'Recorded for review.' });
+                    return apiJson({ type: 'parked', reason: 'force_close_review', message: 'Recorded for review.' });
                 }
 
                 if (!confirmForceClose) {

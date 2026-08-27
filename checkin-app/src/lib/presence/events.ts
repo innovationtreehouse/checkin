@@ -10,6 +10,7 @@ export const PresenceClass = {
     PARKED_CLOSED: "PARKED_CLOSED",
     PARKED_DEAD: "PARKED_DEAD",
     PARKED_OUT_OF_ORDER: "PARKED_OUT_OF_ORDER",
+    PARKED_REVIEW: "PARKED_REVIEW",
     CONFLICT_DOUBLE_IN: "CONFLICT_DOUBLE_IN",
     CONFLICT_OUT_NO_IN: "CONFLICT_OUT_NO_IN",
 } as const;
@@ -22,7 +23,9 @@ export function parkReasonToClass(reason: string): PresenceClassification {
     if (reason === "clock_suspect") return PresenceClass.PARKED_CLOCK;
     if (reason === "facility_closed") return PresenceClass.PARKED_CLOSED;
     if (reason.startsWith("client_dead:")) return PresenceClass.PARKED_DEAD;
-    return PresenceClass.PARKED_DEAD;
+    // force_close_review and any future human-gated reason: parked for a
+    // person, never auto-flushed.
+    return PresenceClass.PARKED_REVIEW;
 }
 
 export async function appendPresenceEvent(

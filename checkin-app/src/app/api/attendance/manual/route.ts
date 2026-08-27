@@ -171,7 +171,7 @@ export const POST = withAuth({}, async (req, auth) => {
         if (freshCheckin && subjectIsKeyholder) {
             await prisma.$transaction(async (tx) => {
                 await tx.$executeRaw`SELECT pg_advisory_xact_lock(${Number(subjectId)})`;
-                await lockFacility(tx);
+                // flushParkedClosed takes the facility lock itself (reentrant).
                 await flushParkedClosed(tx);
             });
         }

@@ -206,7 +206,6 @@ class AttendanceState:
         # of record. Seeded from the last attendance fetch; updated on each
         # badge so offline scans still carry IN/OUT.
         self.present_ids = set()
-        self.keyholder_ids = set()
         self.clock_watch = ClockWatch()
 
     def arm_confirm(self, token, seconds):
@@ -266,25 +265,19 @@ class AttendanceState:
                 self.present_ids.add(pid)
             else:
                 self.present_ids.discard(pid)
-            if is_keyholder is True:
-                self.keyholder_ids.add(pid)
 
     def seed_from_attendance(self, att_data):
         """Replace the local presence view with the server roster."""
         visits = att_data.get("attendance") or []
         present = set()
-        keyholders = set()
         for visit in visits:
             person = visit.get("participant") or visit.get("person") or {}
             pid = person.get("id")
             if pid is None:
                 continue
             present.add(int(pid))
-            if person.get("isKeyholder"):
-                keyholders.add(int(pid))
         with self.lock:
             self.present_ids = present
-            self.keyholder_ids |= keyholders
 
 # ---------------------------------------------------------------------------
 # Transparent Signing Proxy & Kiosk Handler

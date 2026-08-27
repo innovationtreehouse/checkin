@@ -369,7 +369,6 @@ export const POST = withKiosk(
                     authType,
                     source: "SCANNER",
                     clientEventId,
-                    clockSuspect,
                     confirmToken,
                     replayEventId: isReplay ? clientEventId : null,
                 });
@@ -379,12 +378,21 @@ export const POST = withKiosk(
                 ? await processCheckout(participant, activeVisit.id, authType, tx, confirmToken, eventTime, isReplay ? clientEventId : null)
                 : await processCheckin(participant, authType, tx, eventTime);
 
-            let classification: string = PresenceClass.PROJECTED;
+            // Classification comes from the ACTUAL outcome. Only a confirmed
+            // toggle is PROJECTED; only a genuine closed-facility hold is
+            // PARKED_CLOSED (the auto-flush class) — review parks keep their
+            // own class so the flush can never bypass a human gate; warnings
+            // (visit still open) stay unclassified.
+            let classification: string | null = null;
             try {
-                const body = (await res.clone().json()) as { type?: string };
-                if (body.type === "parked") classification = PresenceClass.PARKED_CLOSED;
+                const body = (await res.clone().json()) as { type?: string; reason?: string };
+                if (body.type === "checkin" || body.type === "checkout") {
+                    classification = PresenceClass.PROJECTED;
+                } else if (body.type === "parked") {
+                    classification = body.reason ? parkReasonToClass(body.reason) : null;
+                }
             } catch {
-                classification = PresenceClass.PROJECTED;
+                classification = null;
             }
             await appendPresenceEvent(tx, {
                 personId: participant.id,

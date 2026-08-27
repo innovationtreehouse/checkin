@@ -1,6 +1,7 @@
 import type { Person, PresenceDirection } from "@/generated/prisma/client";
 import { apiJson } from "@/lib/api-response";
-import type { DbClient } from "@/lib/db-client";
+import type { DbClient, TxClient } from "@/lib/db-client";
+import { withFacilityLock } from "@/lib/facilityLock";
 import { LIVE_PERSON } from "@/lib/person/filters";
 import { LIVE_VISIT } from "@/lib/visit/filters";
 import { processCheckin, processCheckout } from "@/lib/scan-service";
@@ -27,11 +28,8 @@ export async function applyPresenceIntent(
         authType: string;
         source: "SCANNER" | "TYPED";
         clientEventId?: string | null;
-        clockSuspect?: boolean;
         confirmToken?: string | null;
         replayEventId?: string | null;
-        /** Manual open follows C too: hold instead of 403 when closed. */
-        holdWhenClosed?: boolean;
     },
 ): Promise<Response> {
     const event = await appendPresenceEvent(db, {
@@ -40,13 +38,8 @@ export async function applyPresenceIntent(
         direction: args.direction,
         source: args.source,
         clientEventId: args.clientEventId,
-        clockSuspect: args.clockSuspect,
-        classification: args.clockSuspect ? PresenceClass.PARKED_CLOCK : null,
+        classification: null,
     });
-
-    if (args.clockSuspect) {
-        return apiJson({ type: "parked", message: "Recorded for review." });
-    }
 
     const openVisit = await db.visit.findFirst({
         where: { personId: args.participant.id, departedAt: null, ...LIVE_VISIT },
@@ -60,8 +53,7 @@ export async function applyPresenceIntent(
             return apiJson({ type: "parked", message: "Recorded for review." });
         }
 
-        const holdClosed = args.authType === "kiosk" || args.holdWhenClosed === true;
-        if (!args.participant.isKeyholder && holdClosed) {
+        if (!args.participant.isKeyholder && args.authType === "kiosk") {
             const activeKeyholders = await db.visit.count({
                 where: { departedAt: null, person: { isKeyholder: true, ...LIVE_PERSON }, ...LIVE_VISIT },
             });
@@ -99,17 +91,45 @@ export async function applyPresenceIntent(
         args.occurredAt,
         args.replayEventId ?? null,
     );
-    await classifyPresenceEvent(db, event.id, PresenceClass.PROJECTED, openVisit.id);
+    // Mirror the IN branch: PROJECTED only when someone actually left. A
+    // force-close warning or a review park leaves the visit open — the
+    // confirming re-badge writes its own event and projects then.
+    if (await checkoutConfirmed(res)) {
+        await classifyPresenceEvent(db, event.id, PresenceClass.PROJECTED, openVisit.id);
+    }
     return res;
+}
+
+async function checkoutConfirmed(res: Response): Promise<boolean> {
+    if (!res.ok) return false;
+    try {
+        const body = (await res.clone().json()) as { type?: string };
+        return body.type === "checkout";
+    } catch {
+        return false;
+    }
 }
 
 /** After a keyholder Visit exists, project every PARKED_CLOSED event in
  *  happened-at order. No human on the happy path (projection C). */
 export async function flushParkedClosed(db: DbClient): Promise<void> {
+    // Serialize read-decide-project against every other keyholder check-in on
+    // ANY surface (kiosk, web, manual) — two overlapping flushes would both
+    // read the same PARKED_CLOSED rows and double-project them. The lock is
+    // reentrant, so callers already holding it compose. Batch-bounded: a long
+    // closed-night backlog projects across successive keyholder INs instead of
+    // risking the locked transaction's timeout.
+    await withFacilityLock(db, (tx) => flushParkedClosedLocked(tx));
+}
+
+const FLUSH_BATCH = 50;
+
+async function flushParkedClosedLocked(db: TxClient): Promise<void> {
     const held = await db.presenceEvent.findMany({
         where: { classification: PresenceClass.PARKED_CLOSED },
         orderBy: { occurredAt: "asc" },
         include: { person: true },
+        take: FLUSH_BATCH,
     });
     for (const ev of held) {
         // A merge racing the flush leaves a tombstone here (the repoint runs at
