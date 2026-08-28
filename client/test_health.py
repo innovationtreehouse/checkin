@@ -1,3 +1,6 @@
+import os
+import tempfile
+import time
 import unittest
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
@@ -55,6 +58,79 @@ class TestHealthMonitorTick(unittest.TestCase):
         with patch.object(health, "_wifi_bounce") as bounce:
             mon.tick(now=1000, diagnose_fn=lambda _u: health.L2, in_closed_fn=lambda: False)
             bounce.assert_called_once()
+
+
+class TestRecoveryLadder(unittest.TestCase):
+    def _state(self, last_browser_seen=0.0, scanner_ok=True):
+        events = []
+        state = SimpleNamespace(
+            last_browser_seen=last_browser_seen,
+            last_attendance_ok=None,
+            attendance_auth_fail=False,
+            scanner_ok=scanner_ok,
+            push_event=events.append,
+        )
+        return state, events
+
+    def test_no_full_cycle_inside_bounce_grace(self):
+        state, _ = self._state()
+        mon = health.HealthMonitor("http://x", state)
+        mon.last_chromium_bounce = 1000
+        with patch.object(health.os, "_exit") as ex:
+            mon.tick(now=1000 + health.BOUNCE_GRACE_SECONDS - 1,
+                     diagnose_fn=lambda _u: health.OK, in_closed_fn=lambda: False)
+            ex.assert_not_called()
+
+    def test_full_cycle_after_grace_records_strike(self):
+        state, _ = self._state()
+        mon = health.HealthMonitor("http://x", state)
+        mon.last_chromium_bounce = 1000
+        with tempfile.TemporaryDirectory() as d:
+            strike_file = os.path.join(d, "strikes")
+            with patch.object(health, "FULL_CYCLE_SENTINEL", strike_file), \
+                 patch.object(health.os, "_exit") as ex:
+                mon.tick(now=1200, diagnose_fn=lambda _u: health.OK, in_closed_fn=lambda: False)
+                ex.assert_called_once()
+            with open(strike_file) as f:
+                self.assertEqual(len(f.read().split()), 1)
+
+    def test_repeated_full_cycles_escalate_to_reboot(self):
+        state, _ = self._state()
+        mon = health.HealthMonitor("http://x", state, allow_reboot=True)
+        mon.last_chromium_bounce = 4800
+        with tempfile.TemporaryDirectory() as d:
+            strike_file = os.path.join(d, "strikes")
+            with open(strike_file, "w") as f:
+                f.write(f"{time.time() - 60}\n{time.time() - 30}")
+            with patch.object(health, "FULL_CYCLE_SENTINEL", strike_file), \
+                 patch.object(health, "_reboot") as reboot, \
+                 patch.object(health.os, "_exit") as ex:
+                mon.tick(now=5000, diagnose_fn=lambda _u: health.OK, in_closed_fn=lambda: False)
+                reboot.assert_called_once()
+                ex.assert_not_called()
+
+    def test_persistent_L2_escalates_after_wifi_bounces(self):
+        state, _ = self._state()
+        mon = health.HealthMonitor("http://x", state, allow_reboot=True)
+        with patch.object(health, "_reboot") as reboot:
+            mon.tick(now=5000, diagnose_fn=lambda _u: health.L2, in_closed_fn=lambda: False)
+            reboot.assert_not_called()
+            mon.tick(now=5000 + health.ESCALATION_AFTER_SECONDS,
+                     diagnose_fn=lambda _u: health.L2, in_closed_fn=lambda: False)
+            reboot.assert_called_once()
+
+    def test_ok_resets_degradation_clock(self):
+        state, _ = self._state(last_browser_seen=6000.0)
+        mon = health.HealthMonitor("http://x", state, allow_reboot=True)
+        mon.tick(now=5000, diagnose_fn=lambda _u: health.L2, in_closed_fn=lambda: False)
+        mon.tick(now=6000, diagnose_fn=lambda _u: health.OK, in_closed_fn=lambda: False)
+        self.assertIsNone(mon.degraded_since)
+
+    def test_scanner_down_surfaces_banner(self):
+        state, events = self._state(last_browser_seen=1000.0, scanner_ok=False)
+        mon = health.HealthMonitor("http://x", state)
+        mon.tick(now=1000, diagnose_fn=lambda _u: health.OK, in_closed_fn=lambda: False)
+        self.assertTrue(any("Scanner" in e.get("html", "") for e in events))
 
 
 if __name__ == "__main__":

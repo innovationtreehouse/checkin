@@ -20,14 +20,19 @@ from outbox import in_closed_window
 log = logging.getLogger("kiosk")
 
 CHROMIUM_BOUNCE_SENTINEL = ".chromium-bounce"
+FULL_CYCLE_SENTINEL = ".full-cycle-times"
 PROBE_PATH = "/api/health"
 PROBE_TIMEOUT = 5
 OPEN_HOURS_INTERVAL = 30
 WEDGE_SILENCE_SECONDS = 150
 ATTENDANCE_STALE_SECONDS = 180
 CHROMIUM_COOLDOWN = 300
+BOUNCE_GRACE_SECONDS = 180  # cold-Pi Chromium relaunch + first paint can exceed the wedge threshold
 FULL_CYCLE_COOLDOWN = 300
+FULL_CYCLE_STRIKE_WINDOW = 3600
+FULL_CYCLE_STRIKE_LIMIT = 2
 WIFI_COOLDOWN = 300
+ESCALATION_AFTER_SECONDS = 900
 ESCALATION_REBOOT_COOLDOWN = 3600
 WARMING_CAP_SECONDS = 600
 NIGHTLY_REBOOT_HOUR = 3  # local, inside the 23:00–06:00 closed window
@@ -114,6 +119,7 @@ class HealthMonitor:
         self.allow_wifi_bounce = allow_wifi_bounce
         self.layer = OK
         self.warming_since = None
+        self.degraded_since = None
         self.last_chromium_bounce = 0.0
         self.last_full_cycle = 0.0
         self.last_wifi_bounce = 0.0
@@ -129,6 +135,8 @@ class HealthMonitor:
 
         result = (diagnose_fn or diagnose)(self.base_url)
         self.layer = result
+        if result not in (L2, L3):
+            self.degraded_since = None
 
         if result == WARMING:
             if self.warming_since is None:
@@ -145,17 +153,26 @@ class HealthMonitor:
         self.warming_since = None
 
         if result == OK:
+            if getattr(self.state, "scanner_ok", True) is False:
+                self.state.push_event({
+                    "html": '<div class="banner banner-error">✗ Scanner disconnected — badge scans will not register</div>',
+                })
             self._maybe_wedge(now)
             return result
 
-        if result in (L2, L3) and self.allow_wifi_bounce:
-            if now - self.last_wifi_bounce >= WIFI_COOLDOWN:
+        if result in (L2, L3):
+            if self.degraded_since is None:
+                self.degraded_since = now
+            elif now - self.degraded_since >= ESCALATION_AFTER_SECONDS:
+                self.escalate(now)
+            if self.allow_wifi_bounce and now - self.last_wifi_bounce >= WIFI_COOLDOWN:
                 log.warning("L2/L3 — bouncing wifi")
                 self.last_wifi_bounce = now
                 _wifi_bounce()
             return result
 
-        # L4/L5: upstream — report only, never thrash wifi.
+        # L4/L5: upstream — report only. Neither a wifi bounce nor a reboot
+        # can fix the far side, so no ladder rung fires here.
         return result
 
     def _maybe_wedge(self, now):
@@ -174,9 +191,15 @@ class HealthMonitor:
             })
             return
         if now - self.last_chromium_bounce < CHROMIUM_COOLDOWN:
-            if now - self.last_full_cycle >= FULL_CYCLE_COOLDOWN:
+            if (now - self.last_chromium_bounce >= BOUNCE_GRACE_SECONDS
+                    and now - self.last_full_cycle >= FULL_CYCLE_COOLDOWN):
+                # A full cycle restarts this process, so the strike count that
+                # decides "cycling isn't working, reboot" has to live on disk.
+                if self._full_cycle_strikes() >= FULL_CYCLE_STRIKE_LIMIT and self.escalate(now):
+                    return
                 log.warning("browser still wedged after Chromium bounce — full cycle")
                 self.last_full_cycle = now
+                self._record_full_cycle()
                 os._exit(0)
             return
         log.warning("browser silent %.0fs — Chromium bounce", silence)
@@ -195,6 +218,30 @@ class HealthMonitor:
         log.warning("nightly reboot")
         _reboot()
 
+    def _full_cycle_strikes(self):
+        try:
+            with open(FULL_CYCLE_SENTINEL) as f:
+                stamps = [float(x) for x in f.read().split()]
+        except (OSError, ValueError):
+            return 0
+        return sum(1 for s in stamps if time.time() - s < FULL_CYCLE_STRIKE_WINDOW)
+
+    def _record_full_cycle(self):
+        now_wall = time.time()
+        stamps = []
+        try:
+            with open(FULL_CYCLE_SENTINEL) as f:
+                stamps = [float(x) for x in f.read().split()]
+        except (OSError, ValueError):
+            pass
+        stamps = [s for s in stamps if now_wall - s < FULL_CYCLE_STRIKE_WINDOW]
+        stamps.append(now_wall)
+        try:
+            with open(FULL_CYCLE_SENTINEL, "w") as f:
+                f.write("\n".join(str(s) for s in stamps))
+        except OSError as e:
+            log.warning("could not record full cycle: %s", e)
+
     def escalate(self, now=None):
         now = now or time.monotonic()
         if not self.allow_reboot:
@@ -211,7 +258,6 @@ def health_monitor(backend_url, state, interval=OPEN_HOURS_INTERVAL,
                    sleep_fn=time.sleep, allow_reboot=False, allow_wifi_bounce=False,
                    in_closed_fn=in_closed_window):
     monitor = HealthMonitor(backend_url, state, allow_reboot, allow_wifi_bounce)
-    state.health = monitor
     while True:
         sleep_fn(interval)
         try:

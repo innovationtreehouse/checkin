@@ -698,6 +698,23 @@ def usb_scanner_listener(backend, state, outbox, device_path):
 
     backoff = 1.0
     while True:
+        if dev is None:
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+            try:
+                dev = find_device(device_path)
+                if not dev and device_path.startswith("/dev/input/"):
+                    import evdev as _evdev
+                    dev = _evdev.InputDevice(device_path)
+                if not dev:
+                    continue
+                dev.grab()
+                log.info(f"Re-grabbed scanner: {dev.name} ({dev.path})")
+                state.scanner_ok = True
+            except Exception as regrab_err:
+                log.warning(f"Scanner re-grab failed: {regrab_err}")
+                dev = None
+                continue
         buffer = ""
         try:
             for event in dev.read_loop():
@@ -720,29 +737,15 @@ def usb_scanner_listener(backend, state, outbox, device_path):
         except Exception as e:
             state.scanner_ok = False
             log.warning(f"Scanner lost ({e}); re-grab in {backoff:.0f}s")
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 30)
             try:
-                if dev is not None:
-                    try:
-                        dev.ungrab()
-                    except Exception:
-                        pass
-                    try:
-                        dev.close()
-                    except Exception:
-                        pass
-                dev = find_device(device_path)
-                if not dev and device_path.startswith("/dev/input/"):
-                    import evdev as _evdev
-                    dev = _evdev.InputDevice(device_path)
-                if not dev:
-                    continue
-                dev.grab()
-                log.info(f"Re-grabbed scanner: {dev.name} ({dev.path})")
-                state.scanner_ok = True
-            except Exception as regrab_err:
-                log.warning(f"Scanner re-grab failed: {regrab_err}")
+                dev.ungrab()
+            except Exception:
+                pass
+            try:
+                dev.close()
+            except Exception:
+                pass
+            dev = None
 
 def stdin_scanner_listener(backend, state, outbox):
     log.info("USB device not configured — reading scans from stdin")
