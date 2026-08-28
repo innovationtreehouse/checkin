@@ -200,6 +200,41 @@ class TestReplayDrain(unittest.TestCase):
                              in_closed_window_fn=lambda: False)
             return ob
 
+    def test_drain_holds_while_server_protocol_is_below_replay_generation(self):
+        with tempfile.TemporaryDirectory() as d:
+            ob = Outbox(os.path.join(d, "outbox.db"))
+            ob.enqueue("evt-1", "42", "2026-08-18T10:00:00+00:00")
+
+            sent = []
+
+            def send_fn(*a, **k):
+                sent.append((a, k))
+                return {"type": "checkin"}, 200, None
+
+            ticks = {"n": 0}
+
+            def fake_sleep(_secs):
+                ticks["n"] += 1
+                if ticks["n"] >= 3:
+                    raise _StopLoop()
+
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False,
+                             protocol_ok_fn=lambda: False)
+            # Nothing sent, nothing lost: the row is held, not dropped.
+            self.assertEqual(sent, [])
+            self.assertEqual(len(ob.pending_rows()), 1)
+
+            # Server upgrades mid-run: the same drain resumes and delivers.
+            ticks["n"] = -10
+            with self.assertRaises(_StopLoop):
+                replay_drain(ob, send_fn, push_fn=None, sleep_fn=fake_sleep,
+                             in_closed_window_fn=lambda: False,
+                             protocol_ok_fn=lambda: True)
+            self.assertEqual(len(sent), 1)
+            self.assertEqual(ob.pending_rows(), [])
+
     def test_acked_events_are_removed_in_order(self):
         ob = self._run([
             ({"type": "checkin"}, 200, None),

@@ -245,4 +245,27 @@ describe('Scan replay — clientEventId dedup and freshness window (real DB)', (
         expect(res.status).toBe(400);
         expect(await prisma.rawBadgeLog.findUnique({ where: { clientEventId: 'evt-dead-and-replay' } })).toBeNull();
     });
+
+    it('accepts a declared protocolVersion this server speaks, absent included', async () => {
+        for (const extra of [{}, { protocolVersion: 1 }, { protocolVersion: 2 }]) {
+            const res = await POST(scanReq({ participantId: member.id, ...extra }));
+            expect(res.status).toBe(200);
+            // Toggle back so each iteration starts checked out.
+            await prisma.visit.deleteMany({ where: { personId: member.id } });
+        }
+    });
+
+    it('rejects a protocolVersion newer than this server (deploy-order race fails loud)', async () => {
+        const res = await POST(scanReq({ participantId: member.id, protocolVersion: 3 }));
+        expect(res.status).toBe(400);
+        expect((await res.json()).error).toMatch(/protocolVersion/);
+        expect(await prisma.visit.findFirst({ where: { personId: member.id } })).toBeNull();
+    });
+
+    it('rejects a malformed protocolVersion', async () => {
+        for (const bad of ['2', 0, 1.5, null]) {
+            const res = await POST(scanReq({ participantId: member.id, protocolVersion: bad }));
+            expect(res.status).toBe(400);
+        }
+    });
 });

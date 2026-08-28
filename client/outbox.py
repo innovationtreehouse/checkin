@@ -304,7 +304,8 @@ def _send_dead_row(outbox, send_fn, push_fn=None, backoff=MIN_BACKOFF_SECONDS):
     return _backoff_seconds(retry_after, backoff), min(backoff * 2, MAX_BACKOFF_SECONDS)
 
 
-def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window):
+def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window,
+                 protocol_ok_fn=lambda: True):
     """Single drain thread: pulls pending rows in scanned_at order,
     resubmits each one (send_fn re-signs per call), and applies the
     ack/retry/dead outcome. Runs forever; call in a background thread."""
@@ -315,6 +316,13 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
         # non-GET and would wake the curfewed service. Covers the dead
         # pass too, since it's gated behind this same check.
         if in_closed_window_fn():
+            sleep_fn(DRAIN_PACE_SECONDS)
+            continue
+
+        # Deploy-order race: a server that hasn't advertised the replay
+        # generation would misread these rows as live toggles. Hold the
+        # queue (rows keep) until kiosk-version says it's safe.
+        if not protocol_ok_fn():
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
 

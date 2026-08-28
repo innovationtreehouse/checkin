@@ -100,7 +100,7 @@ class BackendClient:
                   client_event_id=None, scanned_at=None, replay=False,
                   dead=False, dead_status=None, intent=None, clock_suspect=False):
         path = "/api/scan"
-        payload = {}
+        payload = {"protocolVersion": SCAN_PROTOCOL_VERSION}
         try:
             payload["participantId"] = int(participant_id)
         except ValueError:
@@ -170,14 +170,22 @@ class BackendClient:
                 self.base_url + path, headers=headers, timeout=5
             )
             data = r.json()
-            return data.get("version"), r.status_code
+            advertised = data.get("scanProtocolVersion")
+            protocol = advertised if isinstance(advertised, int) else 1
+            return data.get("version"), protocol, r.status_code
         except Exception as e:
             log.error(f"Failed to get server version: {e}")
-            return None, 0
+            return None, 1, 0
 
 # A wall-clock step larger than this vs monotonic is a clockSuspect scan
 # (NTP jump, bad RTC). Small skew is don't-care.
 CLOCK_STEP_SECONDS = 180
+
+# The scan-body generation this client speaks (2 = replay/dead/intent/
+# clockSuspect). Sent with every POST /api/scan; replay behavior is enabled
+# only when the server advertises at least this via kiosk-version, so an
+# auto-updated kiosk can't race a not-yet-deployed server.
+SCAN_PROTOCOL_VERSION = 2
 
 
 class ClockWatch:
@@ -203,6 +211,7 @@ class AttendanceState:
         self.current_counts = {"total": 0, "keyholders": 0, "volunteers": 0, "students": 0}
         self.confirm_token = None    # force-close confirm token, if a countdown is running
         self.confirm_deadline = 0.0  # monotonic clock, end of that countdown
+        self.scan_protocol = 1       # server-advertised scan generation; drain holds below 2
         self.last_browser_seen = time.monotonic()
         self.last_attendance_ok = None
         self.attendance_auth_fail = False
@@ -938,10 +947,11 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
     # Get initial server version
     initial_server_version = None
     for _ in range(6):
-        sv, status = backend.get_server_version()
+        sv, sp, status = backend.get_server_version()
         if status == 200 and sv:
             initial_server_version = sv
-            log.info(f"Initial server version: {initial_server_version}")
+            state.scan_protocol = sp
+            log.info(f"Initial server version: {initial_server_version} (scan protocol {sp})")
             break
         time.sleep(5)
 
@@ -953,7 +963,9 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
         # attendance_poller's. Self-update below is NOT gated: git pull hits
         # no server, and overnight is the safe window to restart in.
         if initial_server_version and not in_closed_window_fn():
-            sv, status = backend.get_server_version()
+            sv, sp, status = backend.get_server_version()
+            if status == 200:
+                state.scan_protocol = sp
             if status == 200 and sv and sv != initial_server_version:
                 log.info(f"Server version changed from {initial_server_version} to {sv}. Requesting reload.")
                 state.push_event({"reload": True})
@@ -1052,7 +1064,8 @@ def main():
     # Start the outbox replay thread: drains queued scans in order,
     # re-signing and resubmitting each one, once the backend is reachable.
     drain = threading.Thread(
-        target=replay_drain, args=(outbox, backend.post_scan, state.push_event), daemon=True
+        target=replay_drain, args=(outbox, backend.post_scan, state.push_event),
+        kwargs={"protocol_ok_fn": lambda: state.scan_protocol >= SCAN_PROTOCOL_VERSION}, daemon=True
     )
     drain.start()
 

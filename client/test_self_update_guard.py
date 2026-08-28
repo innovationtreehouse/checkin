@@ -54,7 +54,7 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
 
     def _run(self, head_sequence, state_name="state"):
         backend = MagicMock()
-        backend.get_server_version.return_value = ("v1", 200)
+        backend.get_server_version.return_value = ("v1", 2, 200)
         state = MagicMock()
 
         calls = []
@@ -110,7 +110,7 @@ class TestVersionPollerClosedWindow(unittest.TestCase):
 
     def _run(self, in_closed_window_fn, iterations=2):
         backend = MagicMock()
-        backend.get_server_version.return_value = ("v1", 200)
+        backend.get_server_version.return_value = ("v1", 2, 200)
         state = MagicMock()
 
         calls = {"n": 0}

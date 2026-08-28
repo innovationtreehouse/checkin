@@ -7,6 +7,7 @@ import { appendPresenceEvent, parkReasonToClass, PresenceClass } from "@/lib/pre
 import { applyPresenceIntent, flushParkedClosed } from "@/lib/presence/project";
 import { config } from "@/lib/config";
 import { withKiosk } from "@/lib/kioskAuth";
+import { SCAN_PROTOCOL_VERSION } from "@/lib/scanProtocol";
 
 // A merged-away badge should still get its owner through the door — an admin
 // tidying up dupes must not be the reason a member gets rejected at the
@@ -31,7 +32,7 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown; intent?: unknown; clockSuspect?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown; intent?: unknown; clockSuspect?: unknown; protocolVersion?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -114,6 +115,18 @@ export const POST = withKiosk(
             return apiError("clockSuspect must be a boolean.", 400);
         }
         const clockSuspect = body.clockSuspect === true;
+
+        // Contract bit (§2): a caller may declare the scan-body generation it
+        // speaks. Higher than this server supports is a deploy-order race —
+        // fail loud rather than silently misread fields we don't know.
+        if (body.protocolVersion !== undefined) {
+            if (typeof body.protocolVersion !== 'number' || !Number.isInteger(body.protocolVersion) || body.protocolVersion < 1) {
+                return apiError("protocolVersion must be a positive integer.", 400);
+            }
+            if (body.protocolVersion > SCAN_PROTOCOL_VERSION) {
+                return apiError(`Unsupported protocolVersion ${body.protocolVersion}; this server speaks ${SCAN_PROTOCOL_VERSION}.`, 400);
+            }
+        }
 
         // Web session: check if user can scan this participant
         let pendingHouseholdCheck = false;
