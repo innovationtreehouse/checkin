@@ -64,8 +64,12 @@ describe('POST /api/webhooks/shopify — negatives & idempotency', () => {
         // shopifyVariantId is the variant the enroll flow's checkout link is
         // built from — seed it so the guard under test has something to match
         // line_items against.
+        // endAt "now": membership coverage always reaches it, whatever
+        // orgMembershipYearBoundary a concurrently-running suite has installed
+        // on the shared BoardSettings row (a boundary's next occurrence is
+        // never in the past, so the dues-settled test can't lose that race).
         const program = await prisma.program.create({
-            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: PROGRAM_VARIANT_ID },
+            data: { startAt: new Date('2026-01-01'), endAt: new Date(), name: `Webhook Test Program ${TAG}`, enrollmentStatus: 'OPEN', shopifyVariantId: PROGRAM_VARIANT_ID },
         });
         programId = program.id;
 

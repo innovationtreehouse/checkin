@@ -43,19 +43,35 @@ while true; do
     exit 1
   fi
 
-  $CHROME \
-    --kiosk \
-    --noerrdialogs \
-    --disable-infobars \
-    --no-first-run \
-    --disable-session-crashed-bubble \
-    --password-store=basic \
-    "http://localhost:${PORT}" &
-  CHROME_PID=$!
+  start_chrome() {
+    $CHROME \
+      --kiosk \
+      --noerrdialogs \
+      --disable-infobars \
+      --no-first-run \
+      --disable-session-crashed-bubble \
+      --password-store=basic \
+      "http://localhost:${PORT}" &
+    CHROME_PID=$!
+  }
 
-  # If the client dies (e.g. self-update), kill the browser and loop
-  wait $CLIENT_PID
+  rm -f .chromium-bounce
+  start_chrome
+
+  # Inner loop: bounce Chromium alone when client.py writes the sentinel.
+  # os._exit(0) still kills CLIENT_PID and takes the outer cycle.
+  while kill -0 "$CLIENT_PID" 2>/dev/null; do
+    if [ -f .chromium-bounce ]; then
+      rm -f .chromium-bounce
+      echo "Chromium bounce requested"
+      kill "$CHROME_PID" 2>/dev/null || true
+      wait "$CHROME_PID" 2>/dev/null || true
+      start_chrome
+    fi
+    sleep 2
+  done
   echo "Client died, restarting kiosk loop..."
-  kill $CHROME_PID || true
+  kill "$CHROME_PID" 2>/dev/null || true
+  wait "$CHROME_PID" 2>/dev/null || true
   sleep 2
 done
