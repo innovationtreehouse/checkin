@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import { Button, Card, Center, Group, Loader, Stack, Table, Text, Title } from "@mantine/core";
+import { Button, Card, Center, Group, Loader, Modal, Radio, Stack, Table, Text, Title } from "@mantine/core";
 import { relTime } from "@/lib/time";
 import { useOrgTime } from "@/components/TimezoneProvider";
 
@@ -40,7 +39,12 @@ export function UnsyncedScansPanel() {
   const [failed, setFailed] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<Set<number>>(new Set());
-  const { formatTime } = useOrgTime();
+  const [recording, setRecording] = useState<UnsyncedScan | null>(null);
+  const [outcome, setOutcome] = useState<"open" | "closed">("closed");
+  const [departedAt, setDepartedAt] = useState("");
+  const [recordBusy, setRecordBusy] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const { formatTime, formatDateTime } = useOrgTime();
 
   useEffect(() => {
     fetch("/api/system-status/unsynced-scans")
@@ -51,6 +55,44 @@ export function UnsyncedScansPanel() {
       .then((data) => setScans(data.scans ?? []))
       .catch(() => setFailed(true));
   }, []);
+
+  function openRecord(scan: UnsyncedScan) {
+    setRecording(scan);
+    setOutcome("closed");
+    setDepartedAt("");
+    setRecordError(null);
+  }
+
+  // Q3/B4 (ruled): the Visit is written at the scan's own time, and an IN with
+  // no OUT is the reviewer's call — leave it open (only while the facility is
+  // open) or close it at a departure they supply. The server enforces both.
+  async function record() {
+    if (!recording) return;
+    setRecordBusy(true);
+    setRecordError(null);
+    try {
+      const res = await fetch(`/api/system-status/unsynced-scans/${recording.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "record",
+          ...(outcome === "closed" && departedAt
+            ? { departedAt: new Date(departedAt).toISOString() }
+            : {}),
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      setScans((rows) => (rows ?? []).filter((r) => r.id !== recording.id));
+      setRecording(null);
+    } catch (e) {
+      setRecordError(e instanceof Error ? e.message : "Could not record that visit.");
+    } finally {
+      setRecordBusy(false);
+    }
+  }
 
   async function dismiss(id: number) {
     setDismissing((prev) => new Set(prev).add(id));
@@ -129,11 +171,7 @@ export function UnsyncedScansPanel() {
                 </Table.Td>
                 <Table.Td style={{ whiteSpace: "nowrap", width: 1 }}>
                   <Group gap="xs" justify="flex-end" wrap="nowrap">
-                    {/* Deep link only — this panel mints nothing. Writing a Visit at
-                        scannedAt inherits the open KIOSK_RESILIENCE §5.26/B4 staleness
-                        question, so the record goes through the manual-visit tool that
-                        already owns those bounds. */}
-                    <Button component={Link} href="/facility-ops/visits" size="xs" variant="default">
+                    <Button size="xs" variant="default" onClick={() => openRecord(s)}>
                       Record visit
                     </Button>
                     <Button
@@ -151,6 +189,51 @@ export function UnsyncedScansPanel() {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+
+      <Modal
+        opened={recording !== null}
+        onClose={() => setRecording(null)}
+        title="Record this visit"
+      >
+        {recording && (
+          <Stack gap="sm">
+            <Text size="sm">
+              Writes a visit for {recording.person.name ?? `Person #${recording.person.id}`} arriving{" "}
+              {formatDateTime(recording.timestamp, { dateStyle: "medium", timeStyle: "short" })} — the
+              scan&apos;s own time, not now.
+            </Text>
+            <Radio.Group
+              value={outcome}
+              onChange={(v) => setOutcome(v as "open" | "closed")}
+              aria-label="Visit outcome"
+            >
+              <Stack gap="xs">
+                <Radio value="closed" label="They left — close the visit at:" />
+                {outcome === "closed" && (
+                  <input
+                    type="datetime-local"
+                    aria-label="Departure time"
+                    value={departedAt}
+                    onChange={(e) => setDepartedAt(e.currentTarget.value)}
+                  />
+                )}
+                <Radio value="open" label="They are still here — leave the visit open" />
+              </Stack>
+            </Radio.Group>
+            {recordError && <Text c="red" size="sm">{recordError}</Text>}
+            <Group justify="flex-end" gap="xs">
+              <Button variant="subtle" onClick={() => setRecording(null)}>Cancel</Button>
+              <Button
+                onClick={record}
+                loading={recordBusy}
+                disabled={outcome === "closed" && !departedAt}
+              >
+                Record visit
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
     </Card>
   );
 }

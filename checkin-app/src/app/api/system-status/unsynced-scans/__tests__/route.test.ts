@@ -25,10 +25,22 @@ jest.mock("@/lib/verify-kiosk", () => ({
 // import (hoisted) loads prisma before this module body runs.
 jest.mock("@/lib/prisma", () => ({
     __esModule: true,
-    default: { rawBadgeLog: { findMany: jest.fn(), updateMany: jest.fn() } },
+    default: {
+        rawBadgeLog: { findMany: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
+        person: { findUnique: jest.fn(), findFirst: jest.fn() },
+        visit: { findFirst: jest.fn(), count: jest.fn(), create: jest.fn() },
+        presenceEvent: { findUnique: jest.fn(), update: jest.fn() },
+        $transaction: jest.fn(),
+    },
 }));
 
-const db = prisma as unknown as { rawBadgeLog: { findMany: jest.Mock; updateMany: jest.Mock } };
+const db = prisma as unknown as {
+    rawBadgeLog: { findMany: jest.Mock; updateMany: jest.Mock; findFirst: jest.Mock };
+    person: { findUnique: jest.Mock; findFirst: jest.Mock };
+    visit: { findFirst: jest.Mock; count: jest.Mock; create: jest.Mock };
+    presenceEvent: { findUnique: jest.Mock; update: jest.Mock };
+    $transaction: jest.Mock;
+};
 const mockSession = getServerSession as jest.Mock;
 const SYSADMIN = { user: { id: 99, isSysadmin: true, isBoardMember: false } };
 const BOARD = { user: { id: 42, isSysadmin: false, isBoardMember: true } };
@@ -53,12 +65,25 @@ const dismissReq = () =>
         method: "POST",
     }) as unknown as import("next/server").NextRequest;
 const dismissCtx = (id = "5") => ({ params: Promise.resolve({ id }) });
+const recordReq = (body: Record<string, unknown>) =>
+    new Request("http://localhost/api/system-status/unsynced-scans/5", {
+        method: "POST",
+        body: JSON.stringify(body),
+    }) as unknown as import("next/server").NextRequest;
 
 beforeEach(() => {
     jest.clearAllMocks();
     mockSession.mockResolvedValue(SYSADMIN);
     db.rawBadgeLog.findMany.mockResolvedValue([parkedRow]);
     db.rawBadgeLog.updateMany.mockResolvedValue({ count: 1 });
+    db.rawBadgeLog.findFirst.mockResolvedValue(parkedRow);
+    db.person.findUnique.mockResolvedValue({ id: 12, isKeyholder: false, mergedIntoId: null });
+    db.visit.findFirst.mockResolvedValue(null);
+    db.visit.count.mockResolvedValue(0);
+    db.visit.create.mockResolvedValue({ id: 900 });
+    db.presenceEvent.findUnique.mockResolvedValue(null);
+    // The route's transaction body runs against the same mock surface.
+    db.$transaction.mockImplementation((fn: (tx: unknown) => unknown) => fn(db));
 });
 
 describe("GET /api/system-status/unsynced-scans", () => {
@@ -174,5 +199,88 @@ describe("POST /api/system-status/unsynced-scans/[id] (dismiss)", () => {
         mockSession.mockResolvedValue(OPERATIONS);
         expect((await POST(dismissReq(), dismissCtx())).status).toBe(403);
         expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+    });
+});
+
+describe("POST /api/system-status/unsynced-scans/[id] (record — ruled branches)", () => {
+    it("400s an unknown action without touching anything", async () => {
+        expect((await POST(recordReq({ action: "sweep" }), dismissCtx())).status).toBe(400);
+        expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+        expect(db.visit.create).not.toHaveBeenCalled();
+    });
+
+    it("400s a departedAt at or before the scan time", async () => {
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T19:14:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(400);
+        expect(db.visit.create).not.toHaveBeenCalled();
+    });
+
+    it("403s leave-open while no keyholder is in the building (#254 live rule)", async () => {
+        db.visit.count.mockResolvedValue(0);
+        const res = await POST(recordReq({ action: "record" }), dismissCtx());
+        expect(res.status).toBe(403);
+        expect(db.visit.create).not.toHaveBeenCalled();
+        expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("leave-open needs no keyholder check when the scanned person IS a keyholder", async () => {
+        db.person.findUnique.mockResolvedValue({ id: 12, isKeyholder: true, mergedIntoId: null });
+        const res = await POST(recordReq({ action: "record" }), dismissCtx());
+        expect(res.status).toBe(200);
+        expect(db.visit.count).not.toHaveBeenCalled();
+        expect(db.visit.create).toHaveBeenCalled();
+    });
+
+    it("409s when a visit already covers the scan time, and stamps nothing", async () => {
+        db.visit.findFirst.mockResolvedValue({ id: 7 });
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T20:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(409);
+        expect(db.visit.create).not.toHaveBeenCalled();
+        expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("mints the visit at the row's own timestamp — days late is fine (Q3 ruling)", async () => {
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(200);
+        const created = db.visit.create.mock.calls[0][0].data;
+        expect(created.arrivedAt).toEqual(parkedRow.timestamp);
+        expect(created.departedAt).toEqual(new Date("2026-08-20T21:00:00.000Z"));
+        expect(created.arrivedVia).toBe("SCANNER");
+        expect(db.rawBadgeLog.updateMany.mock.calls[0][0].where).toEqual({
+            id: 5, reviewReason: { not: null }, reviewedAt: null,
+        });
+    });
+
+    it("re-projects the matching PARKED presence event onto the minted visit", async () => {
+        db.presenceEvent.findUnique.mockResolvedValue({ id: 33, classification: "PARKED_STALE" });
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(200);
+        expect(db.presenceEvent.findUnique).toHaveBeenCalledWith({ where: { clientEventId: "evt-stale" } });
+        expect(db.presenceEvent.update).toHaveBeenCalledWith({
+            where: { id: 33 },
+            data: { classification: "PROJECTED", visitId: 900 },
+        });
+    });
+
+    it("does not move a presence event that is not parked", async () => {
+        db.presenceEvent.findUnique.mockResolvedValue({ id: 33, classification: "PROJECTED" });
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(200);
+        expect(db.presenceEvent.update).not.toHaveBeenCalled();
     });
 });
