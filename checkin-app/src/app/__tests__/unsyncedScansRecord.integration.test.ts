@@ -147,6 +147,58 @@ describe('unsynced-scans record resolution (real DB)', () => {
         expect(ev?.visitId).toBe(visit?.id);
     });
 
+    it('409s an OUT-direction parked scan — a departure is not an arrival', async () => {
+        const row = await park({ clientEventId: `evt-${TAG}-out` });
+        await prisma.presenceEvent.create({
+            data: {
+                personId: memberId,
+                occurredAt: new Date('2026-08-20T19:14:00.000Z'),
+                direction: 'OUT',
+                source: 'SCANNER',
+                clientEventId: `evt-${TAG}-out`,
+                classification: 'PARKED_STALE',
+            },
+        });
+        const res = await POST(req(row.id, { action: 'record', departedAt: '2026-08-20T21:00:00.000Z' }), ctx(row.id));
+        expect(res.status).toBe(409);
+        expect(await prisma.visit.count({ where: { personId: memberId } })).toBe(0);
+        expect((await prisma.rawBadgeLog.findUnique({ where: { id: row.id } }))?.reviewedAt).toBeNull();
+    });
+
+    it('409s leave-open when a LATER open visit exists — no second open visit, ever', async () => {
+        const row = await park(); // parked 19:14
+        await prisma.visit.create({
+            data: { personId: memberId, arrivedAt: new Date('2026-08-20T20:00:00.000Z'), arrivedVia: 'SCANNER' },
+        });
+        const res = await POST(req(row.id, { action: 'record' }), ctx(row.id));
+        expect(res.status).toBe(409);
+        expect(await prisma.visit.count({ where: { personId: memberId, departedAt: null } })).toBe(1);
+    });
+
+    it('400s a visit longer than 24 hours', async () => {
+        const row = await park();
+        const res = await POST(req(row.id, { action: 'record', departedAt: '2026-08-22T21:00:00.000Z' }), ctx(row.id));
+        expect(res.status).toBe(400);
+        expect(await prisma.visit.count({ where: { personId: memberId } })).toBe(0);
+    });
+
+    it('writes the audit row and the departure presence event on a closed mint', async () => {
+        const row = await park();
+        const res = await POST(req(row.id, { action: 'record', departedAt: '2026-08-20T21:00:00.000Z' }), ctx(row.id));
+        expect(res.status).toBe(200);
+        const visit = await prisma.visit.findFirst({ where: { personId: memberId } });
+        expect(visit?.departedVia).toBe('TYPED');
+        const audit = await prisma.auditLog.findFirst({
+            where: { tableName: 'Visit', affectedEntityId: visit!.id },
+        });
+        expect(audit?.actorId).toBe(keyholderId);
+        const out = await prisma.presenceEvent.findFirst({
+            where: { personId: memberId, direction: 'OUT' },
+        });
+        expect(out?.classification).toBe('PROJECTED');
+        expect(out?.visitId).toBe(visit?.id);
+    });
+
     it('a bodyless POST is still a plain dismiss', async () => {
         const row = await park();
         const res = await POST(req(row.id), ctx(row.id));

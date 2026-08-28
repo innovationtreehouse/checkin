@@ -29,17 +29,27 @@ jest.mock("@/lib/prisma", () => ({
         rawBadgeLog: { findMany: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
         person: { findUnique: jest.fn(), findFirst: jest.fn() },
         visit: { findFirst: jest.fn(), count: jest.fn(), create: jest.fn() },
-        presenceEvent: { findUnique: jest.fn(), update: jest.fn() },
+        presenceEvent: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+        auditLog: { create: jest.fn() },
         $transaction: jest.fn(),
+        $executeRaw: jest.fn(),
     },
 }));
+jest.mock("@/lib/attendanceTransitions", () => ({
+    findAssociatedEventAt: jest.fn().mockResolvedValue(null),
+    processVisitCheckout: jest.fn().mockResolvedValue([]),
+}));
+jest.mock("@/lib/facilityLock", () => ({ lockFacility: jest.fn() }));
+jest.mock("@/lib/presence/project", () => ({ flushParkedClosed: jest.fn() }));
 
 const db = prisma as unknown as {
     rawBadgeLog: { findMany: jest.Mock; updateMany: jest.Mock; findFirst: jest.Mock };
     person: { findUnique: jest.Mock; findFirst: jest.Mock };
     visit: { findFirst: jest.Mock; count: jest.Mock; create: jest.Mock };
-    presenceEvent: { findUnique: jest.Mock; update: jest.Mock };
+    presenceEvent: { findUnique: jest.Mock; update: jest.Mock; create: jest.Mock };
+    auditLog: { create: jest.Mock };
     $transaction: jest.Mock;
+    $executeRaw: jest.Mock;
 };
 const mockSession = getServerSession as jest.Mock;
 const SYSADMIN = { user: { id: 99, isSysadmin: true, isBoardMember: false } };
@@ -274,13 +284,78 @@ describe("POST /api/system-status/unsynced-scans/[id] (record — ruled branches
         });
     });
 
-    it("does not move a presence event that is not parked", async () => {
-        db.presenceEvent.findUnique.mockResolvedValue({ id: 33, classification: "PROJECTED" });
+    it("409s instead of moving a presence event that is no longer parked", async () => {
+        db.presenceEvent.findUnique.mockResolvedValue({ id: 33, direction: "IN", classification: "CONFLICT_DOUBLE_IN" });
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(409);
+        expect(db.visit.create).not.toHaveBeenCalled();
+        expect(db.presenceEvent.update).not.toHaveBeenCalled();
+    });
+
+    it("409s an OUT-direction scan — a departure must not be minted as an arrival", async () => {
+        db.presenceEvent.findUnique.mockResolvedValue({ id: 33, direction: "OUT", classification: "PARKED_STALE" });
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(409);
+        expect((await res.json()).error).toMatch(/departure/);
+        expect(db.visit.create).not.toHaveBeenCalled();
+        expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("400s a visit longer than 24 hours — the ruling waived staleness, not length", async () => {
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-22T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(400);
+        expect(db.visit.create).not.toHaveBeenCalled();
+    });
+
+    it("400s a malformed JSON body instead of silently dismissing", async () => {
+        const req = new Request("http://localhost/api/system-status/unsynced-scans/5", {
+            method: "POST",
+            body: '{"action": "record"',
+        }) as unknown as import("next/server").NextRequest;
+        const res = await POST(req, dismissCtx());
+        expect(res.status).toBe(400);
+        expect(db.rawBadgeLog.updateMany).not.toHaveBeenCalled();
+    });
+
+    it("takes the participant advisory lock and the facility lock inside the transaction", async () => {
+        const { lockFacility } = jest.requireMock("@/lib/facilityLock");
         const res = await POST(
             recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
             dismissCtx(),
         );
         expect(res.status).toBe(200);
-        expect(db.presenceEvent.update).not.toHaveBeenCalled();
+        expect(db.$executeRaw).toHaveBeenCalled();
+        expect(lockFacility).toHaveBeenCalled();
+    });
+
+    it("keyholder minted open releases the PARKED_CLOSED backlog (flush runs)", async () => {
+        const { flushParkedClosed } = jest.requireMock("@/lib/presence/project");
+        db.person.findUnique.mockResolvedValue({ id: 12, isKeyholder: true, mergedIntoId: null });
+        const res = await POST(recordReq({ action: "record" }), dismissCtx());
+        expect(res.status).toBe(200);
+        expect(flushParkedClosed).toHaveBeenCalled();
+    });
+
+    it("appends the departure presence event and processes checkout on a closed mint", async () => {
+        const { processVisitCheckout } = jest.requireMock("@/lib/attendanceTransitions");
+        const res = await POST(
+            recordReq({ action: "record", departedAt: "2026-08-20T21:00:00.000Z" }),
+            dismissCtx(),
+        );
+        expect(res.status).toBe(200);
+        // No parked event linked (default mock) → an IN is appended for the log,
+        // plus the OUT for the supplied departure.
+        expect(db.presenceEvent.create).toHaveBeenCalledTimes(2);
+        expect(processVisitCheckout).toHaveBeenCalledWith(900, new Date("2026-08-20T21:00:00.000Z"), undefined, "TYPED");
+        expect(db.auditLog.create).toHaveBeenCalled();
     });
 });

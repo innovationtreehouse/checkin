@@ -44,7 +44,7 @@ export function UnsyncedScansPanel() {
   const [departedAt, setDepartedAt] = useState("");
   const [recordBusy, setRecordBusy] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
-  const { formatTime, formatDateTime } = useOrgTime();
+  const { formatTime } = useOrgTime();
 
   useEffect(() => {
     fetch("/api/system-status/unsynced-scans")
@@ -198,9 +198,12 @@ export function UnsyncedScansPanel() {
         {recording && (
           <Stack gap="sm">
             <Text size="sm">
+              {/* Browser-local on purpose: the datetime input below is parsed in
+                  the reviewer's zone, so the arrival is shown in the same zone —
+                  mixing org time here invited off-by-a-timezone departures. */}
               Writes a visit for {recording.person.name ?? `Person #${recording.person.id}`} arriving{" "}
-              {formatDateTime(recording.timestamp, { dateStyle: "medium", timeStyle: "short" })} — the
-              scan&apos;s own time, not now.
+              {new Date(recording.timestamp).toLocaleString()} (your local time) — the scan&apos;s own
+              time, not now.
             </Text>
             <Radio.Group
               value={outcome}
@@ -208,7 +211,7 @@ export function UnsyncedScansPanel() {
               aria-label="Visit outcome"
             >
               <Stack gap="xs">
-                <Radio value="closed" label="They left — close the visit at:" />
+                <Radio value="closed" label="They left — close the visit at (your local time):" />
                 {outcome === "closed" && (
                   <input
                     type="datetime-local"

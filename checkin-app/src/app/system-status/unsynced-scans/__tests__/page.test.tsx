@@ -96,7 +96,7 @@ describe("SystemStatusUnsyncedScansPage", () => {
             "/api/system-status/unsynced-scans": { scans: [scan()] },
         });
         fetchMock.mockImplementationOnce(() =>
-            Promise.resolve({ ok: true, json: () => Promise.resolve({ scans: [scan()] }) }),
+            Promise.resolve({ ok: true, json: () => Promise.resolve({ scans: [scan()] }) } as unknown as Response),
         );
         renderWithProviders(<SystemStatusUnsyncedScansPage />);
         fireEvent.click(await screen.findByRole("button", { name: "Record visit" }));
@@ -105,7 +105,7 @@ describe("SystemStatusUnsyncedScansPage", () => {
                 ok: false,
                 status: 409,
                 json: () => Promise.resolve({ error: "A visit already covers that scan time — dismiss the row instead." }),
-            }),
+            } as unknown as Response),
         );
         const dialog = await screen.findByRole("dialog");
         fireEvent.click(within(dialog).getByLabelText("They are still here — leave the visit open"));
