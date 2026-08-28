@@ -2,7 +2,8 @@ import prisma from "@/lib/prisma";
 import { handler, badRequest, notFound, unauthorized } from "@/security/handler";
 
 // Registry-governed (POST /api/system-status/unsynced-scans/[id]): admission
-// anyRole sysadmin/board; envelope null. `[id]` is a RawBadgeLog id.
+// anyRole sysadmin/board/keyholder (Q15; operations stay out — #1633);
+// envelope null. `[id]` is a RawBadgeLog id.
 //
 // Dismiss — "I looked, nothing to do." It stamps the two review columns and
 // touches nothing else: no Visit is minted here (KIOSK_RESILIENCE §5.26/B4 is
