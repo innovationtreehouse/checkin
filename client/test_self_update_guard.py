@@ -147,5 +147,38 @@ class TestVersionPollerClosedWindow(unittest.TestCase):
         self.assertGreater(backend.get_server_version.call_count, 1)
 
 
+class TestVersionPollerLateInit(unittest.TestCase):
+    """A kiosk that boots while the backend is down must still learn the
+    scan protocol once the server returns: the recurring poll is not gated
+    on the bootstrap fetch having succeeded, or the drain's protocol gate
+    would hold the outbox until a process restart."""
+
+    def test_failed_bootstrap_recovers_on_the_recurring_poll(self):
+        backend = MagicMock()
+        # Bootstrap window: all failures. Recurring loop: server is back.
+        results = [(None, 1, 0)] * 6 + [("v-late", 2, 200)] * 5
+        backend.get_server_version.side_effect = results
+        state = MagicMock()
+        state.scan_protocol = 1
+
+        calls = {"n": 0}
+
+        def fake_sleep(_):
+            calls["n"] += 1
+            if calls["n"] >= 9:
+                raise _StopLoop()
+
+        with tempfile.TemporaryDirectory() as d:
+            with patch("client.subprocess.run"),                  patch("client.subprocess.check_output", return_value="same\n"),                  patch("client.time.sleep", side_effect=fake_sleep):
+                with self.assertRaises(_StopLoop):
+                    version_poller(backend, state, interval=0,
+                                   state_path=os.path.join(d, "state"),
+                                   in_closed_window_fn=lambda: False)
+
+        self.assertEqual(state.scan_protocol, 2)
+        # And the late version is adopted without pushing a reload.
+        state.push_event.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -962,11 +962,18 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
         # (§3.1): this signed GET keep-alives the service same as
         # attendance_poller's. Self-update below is NOT gated: git pull hits
         # no server, and overnight is the safe window to restart in.
-        if initial_server_version and not in_closed_window_fn():
+        # NOT gated on the init fetch having succeeded: the drain's protocol
+        # gate feeds off this poll, and a kiosk that boots while the backend
+        # is down (the exact condition that fills the outbox) must still
+        # learn the protocol once the server is back.
+        if not in_closed_window_fn():
             sv, sp, status = backend.get_server_version()
             if status == 200:
                 state.scan_protocol = sp
-            if status == 200 and sv and sv != initial_server_version:
+            if status == 200 and sv and initial_server_version is None:
+                initial_server_version = sv
+                log.info(f"Server version (late init): {sv} (scan protocol {sp})")
+            elif status == 200 and sv and sv != initial_server_version:
                 log.info(f"Server version changed from {initial_server_version} to {sv}. Requesting reload.")
                 state.push_event({"reload": True})
                 initial_server_version = sv  # Update to prevent spam

@@ -311,6 +311,7 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
     ack/retry/dead outcome. Runs forever; call in a background thread."""
     backoff = MIN_BACKOFF_SECONDS
     dead_backoff = MIN_BACKOFF_SECONDS
+    protocol_hold_logged = False
     while True:
         # D4: never send during the closed window -- a queued POST is
         # non-GET and would wake the curfewed service. Covers the dead
@@ -321,10 +322,17 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
 
         # Deploy-order race: a server that hasn't advertised the replay
         # generation would misread these rows as live toggles. Hold the
-        # queue (rows keep) until kiosk-version says it's safe.
+        # queue (rows keep) until kiosk-version says it's safe. Logged on
+        # entry so ops can tell a held queue from an empty or offline one.
         if not protocol_ok_fn():
+            if not protocol_hold_logged:
+                log.warning("Outbox drain held: server has not advertised the replay protocol")
+                protocol_hold_logged = True
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
+        if protocol_hold_logged:
+            log.info("Outbox drain resumed: server advertises the replay protocol")
+            protocol_hold_logged = False
 
         rows = outbox.pending_rows()
         if not rows:
