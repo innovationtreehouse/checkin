@@ -45,6 +45,9 @@ const styles = StyleSheet.create({
         height: '2.25in',
         display: 'flex',
         flexDirection: 'column',
+        // The clip covers the top third of the badge back, so pad past 0.75in of the
+        // 2.25in height and centre the QR in the clip-free bottom two thirds.
+        paddingTop: '0.75in',
         justifyContent: 'center',
         alignItems: 'center',
         position: 'relative'
@@ -76,8 +79,9 @@ const styles = StyleSheet.create({
         height: 71, // source 1198x568 ≈ 2.11:1
     },
     qrCode: {
-        width: 100,
-        height: 100,
+        // Sized with the id caption to fit the 1.5in (108pt) clip-free strip.
+        width: 80,
+        height: 80,
     },
     qrIdText: {
         fontFamily: 'Roboto',
