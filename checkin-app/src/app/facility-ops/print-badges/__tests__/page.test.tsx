@@ -81,7 +81,7 @@ describe("facility-ops/print-badges page", () => {
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("Kim Keyholder");
 
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Kim" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Kim" } });
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("q=Kim")),
@@ -182,7 +182,7 @@ describe("facility-ops/print-badges page", () => {
 
     // Search away the other John. He is still an ACTIVE member, so Smith stays "John S.".
     searchResults.current = [johns[0]];
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Smi" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Smi" } });
 
     // Settle on the narrowed table — mid-fetch the DataTable shows a spinner and no rows.
     await waitFor(() => {
@@ -240,7 +240,7 @@ describe("facility-ops/print-badges page", () => {
 
     // Narrow to just one off-roster John.
     searchResults.current = [offRosterPeople[0]];
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Nonmember" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Nonmember" } });
     await waitFor(() => {
       expect(screen.getByText("John Nonmember")).toBeInTheDocument();
       expect(screen.queryByText("John Guest")).not.toBeInTheDocument();

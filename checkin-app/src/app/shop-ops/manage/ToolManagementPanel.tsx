@@ -7,6 +7,8 @@ import { ToolLevelBadge, toToolLevel, toolLevelDot, toolLevelLabel } from '@/com
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
 import { PageLoader } from "@/components/ui/PageLoader";
+import { matchesPersonQuery } from "@/lib/searchId";
+
 type Tool = {
   id: number;
   name: string;
@@ -291,14 +293,11 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
     }
   };
 
-  const filtered = members.filter(m =>
-    (m.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (m.email ?? '').toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = members.filter(m => matchesPersonQuery(m, search));
 
   return (
     <div>
-      <TextInput placeholder="Search members..." value={search} onChange={e => setSearch(e.currentTarget.value)} mb="md" />
+      <TextInput placeholder="Search members by name, email, or ID..." value={search} onChange={e => setSearch(e.currentTarget.value)} mb="md" />
 
       {filtered.length === 0 && <Text c="dimmed">No members match.</Text>}
 

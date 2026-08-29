@@ -12,6 +12,8 @@ import { sharesHousehold } from '@/lib/conflictOfInterest';
 import { formatDateOnly } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
+import { searchId, matchesPersonQuery } from "@/lib/searchId";
+
 type Household = {
   id: number;
   name?: string | null;
@@ -172,13 +174,12 @@ export default function AdminHouseholdsPage() {
   }
 
   const q = filter.trim().toLowerCase();
+  const idQuery = searchId(filter);
   const filtered = q
     ? households.filter((h) =>
         (h.name || `Household #${h.id}`).toLowerCase().includes(q) ||
-        (h.householdMembers?.some((p) =>
-          (p.name || '').toLowerCase().includes(q) ||
-          (p.email || '').toLowerCase().includes(q)
-        ) ?? false)
+        h.id === idQuery ||
+        (h.householdMembers?.some((p) => matchesPersonQuery(p, filter)) ?? false)
       )
     : households;
 
@@ -193,7 +194,7 @@ export default function AdminHouseholdsPage() {
       <AlertBanner message={error} tone="error" />
 
       <TextInput
-        placeholder="Filter by household or participant name/email"
+        placeholder="Filter by household or participant name, email, or ID"
         value={filter}
         onChange={(e) => setFilter(e.currentTarget.value)}
         maw={400}

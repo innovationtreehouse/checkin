@@ -7,6 +7,8 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { formatPhone } from "@/lib/phone";
 
 import { PageLoader } from "@/components/ui/PageLoader";
+import { matchesPersonQuery, searchId } from "@/lib/searchId";
+
 type ParticipantInfo = {
   id: number;
   name: string | null;
@@ -81,8 +83,9 @@ export default function EmergencyContactsPage() {
   const filteredHouseholds = households.filter((h) => {
     const query = searchQuery.toLowerCase();
     if (h.name && h.name.toLowerCase().includes(query)) return true;
-    if (h.leads.some(l => l.name && l.name.toLowerCase().includes(query))) return true;
-    if (h.householdMembers.some(p => p.name && p.name.toLowerCase().includes(query))) return true;
+    if (h.id === searchId(searchQuery)) return true;
+    if (h.leads.some(l => matchesPersonQuery({ id: l.id, name: l.name }, searchQuery))) return true;
+    if (h.householdMembers.some(p => matchesPersonQuery(p, searchQuery))) return true;
     return false;
   });
 
@@ -110,7 +113,7 @@ export default function EmergencyContactsPage() {
         <TextInput
           mt="md"
           size="md"
-          placeholder="Search by Household Name, Parent Name, or Household Member Name..."
+          placeholder="Search by Household Name, Parent Name, Member Name, or ID..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.currentTarget.value)}
         />

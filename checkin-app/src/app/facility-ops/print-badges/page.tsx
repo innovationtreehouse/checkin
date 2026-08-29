@@ -241,7 +241,7 @@ export default function PrintBadgesPage() {
 
       <Group gap="md" wrap="wrap">
         <TextInput
-          placeholder="Search by name or email..."
+          placeholder="Search by name, email, or ID..."
           style={{ flex: 1, minWidth: 200 }}
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.currentTarget.value)}
