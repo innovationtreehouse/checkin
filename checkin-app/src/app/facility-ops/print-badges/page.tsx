@@ -33,6 +33,7 @@ export default function PrintBadgesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideInactive, setHideInactive] = useState(true);
+  const [filterByYear, setFilterByYear] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [availableYears, setAvailableYears] = useState<string[]>([]);
@@ -120,7 +121,12 @@ export default function PrintBadgesPage() {
 
   // Every count, every checkbox and the PDF itself read `visible`/`selectedVisible`,
   // never `participants`/`selectedIds` — a hidden person can't leak into a print run.
-  const visible = hideInactive ? participants.filter(p => p.isMember) : participants;
+  // The year filter waits for the roster: printedYears is empty until it lands, and
+  // filtering against an empty map would blank the list mid-load.
+  const visible = participants.filter(p =>
+    (!hideInactive || p.isMember) &&
+    (!filterByYear || roster === null || !selectedYear || printedYears.get(p.id) === selectedYear)
+  );
   const hidden = participants.length - visible.length;
   const selectedVisible = visible.filter(p => selectedIds.has(p.id));
 
@@ -253,6 +259,11 @@ export default function PrintBadgesPage() {
           onChange={setSelectedYear}
           style={{ minWidth: 140 }}
           allowDeselect={false}
+        />
+        <Checkbox
+          label="Filter by year"
+          checked={filterByYear}
+          onChange={(e) => setFilterByYear(e.currentTarget.checked)}
         />
         <Checkbox
           label={hidden ? `Hide inactive (${hidden})` : "Hide inactive"}
