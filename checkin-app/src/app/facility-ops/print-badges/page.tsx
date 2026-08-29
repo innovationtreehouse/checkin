@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import QRCode from "qrcode";
 import { pdf } from "@react-pdf/renderer";
 import { Badge, Button, Checkbox, Group, Select, Stack, Text, TextInput } from "@mantine/core";
@@ -16,6 +16,7 @@ import { computeDisplayNames } from "@/components/admin/badgeNames";
 type ParticipantRow = {
   id: number;
   name: string | null;
+  nickname: string | null;
   email: string | null;
   isMember?: boolean;
   isBoardMember?: boolean;
@@ -29,7 +30,7 @@ export default function PrintBadgesPage() {
   // Every ACTIVE member org-wide — the population printed names disambiguate against.
   // Separate from `participants`, which is whatever the search box last matched.
   // `year` is per person: only a household that settled this renewal cycle gets one.
-  const [roster, setRoster] = useState<{ id: number; name: string; year: string | null }[] | null>(null);
+  const [roster, setRoster] = useState<{ id: number; name: string; nickname: string | null; year: string | null }[] | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideInactive, setHideInactive] = useState(true);
@@ -41,6 +42,10 @@ export default function PrintBadgesPage() {
   const [loading, setLoading] = useState(false);
   const [availableYears, setAvailableYears] = useState<string[]>([]);
   const [selectedYear, setSelectedYear] = useState<string | null>(null);
+  // What the admin has typed into a Nickname box, keyed by person. Held apart from
+  // `participants` so a keystroke never waits on the save that follows it.
+  const [nicknameDrafts, setNicknameDrafts] = useState<Record<number, string>>({});
+  const saveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
   const fetchParticipants = useCallback(async () => {
     setLoading(true);
@@ -101,6 +106,50 @@ export default function PrintBadgesPage() {
       });
   }, [ready, selectedYear]);
 
+  // Clear pending saves on unmount so a debounce cannot fire into a dead component.
+  useEffect(() => {
+    const timers = saveTimers.current;
+    return () => Object.values(timers).forEach(clearTimeout);
+  }, []);
+
+  // A saved nickname lands in `roster` as well as `participants`: the roster is what
+  // disambiguation runs over, so this is what keeps the Printed Name column honest.
+  const applyNickname = useCallback((id: number, nickname: string | null) => {
+    setParticipants(prev => prev.map(p => (p.id === id ? { ...p, nickname } : p)));
+    setRoster(prev => prev?.map(m => (m.id === id ? { ...m, nickname } : m)) ?? prev);
+  }, []);
+
+  const saveNickname = useCallback(async (id: number, raw: string) => {
+    const nickname = raw.trim() || null;
+    try {
+      const res = await fetch(`/api/people/${id}/nickname`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nickname }),
+      });
+      if (!res.ok) throw new Error(`nickname save failed: ${res.status}`);
+      applyNickname(id, nickname);
+    } catch (e) {
+      console.error("Failed to save nickname:", e);
+      notifications.show({ color: 'red', message: 'Could not save that nickname — it is not on the badge. Edit the box to retry.', autoClose: false });
+    }
+  }, [applyNickname]);
+
+  const editNickname = (id: number, value: string) => {
+    setNicknameDrafts(prev => ({ ...prev, [id]: value }));
+    clearTimeout(saveTimers.current[id]);
+    saveTimers.current[id] = setTimeout(() => saveNickname(id, value), 600);
+  };
+
+  // Leaving the box commits immediately rather than waiting out the debounce, so
+  // printing right after typing prints what is on screen. Tabbing through a box
+  // whose value already matches the stored one is not an edit and writes nothing.
+  const commitNickname = (id: number, value: string) => {
+    clearTimeout(saveTimers.current[id]);
+    if (value.trim() === (participants.find(p => p.id === id)?.nickname ?? '')) return;
+    saveNickname(id, value);
+  };
+
   const printedNames = useMemo(() => computeDisplayNames(roster ?? []), [roster]);
   const printedYears = useMemo(() => new Map((roster ?? []).map(m => [m.id, m.year])), [roster]);
 
@@ -108,7 +157,7 @@ export default function PrintBadgesPage() {
   // computeDisplayNames over the search results made names shift when the query changed
   // (#1651). A bare first name can collide, but it is stable across searches.
   const offRosterName = (p: ParticipantRow) =>
-    (p.name ?? '').trim().split(/\s+/)[0] || `User #${p.id}`;
+    (p.nickname ?? '').trim() || (p.name ?? '').trim().split(/\s+/)[0] || `User #${p.id}`;
 
   // The badge name and this column read the same maps, so the column is proof of what
   // will print.
@@ -218,6 +267,20 @@ export default function PrintBadgesPage() {
       render: (p) => <Text fw={600}>{p.name || 'N/A'}</Text>,
     },
     {
+      header: 'Nickname',
+      render: (p) => (
+        <TextInput
+          size="xs"
+          w={130}
+          placeholder="Goes by…"
+          aria-label={`Nickname for ${p.name ?? `#${p.id}`}`}
+          value={nicknameDrafts[p.id] ?? p.nickname ?? ''}
+          onChange={(e) => editNickname(p.id, e.currentTarget.value)}
+          onBlur={(e) => commitNickname(p.id, e.currentTarget.value)}
+        />
+      ),
+    },
+    {
       header: 'Printed Name',
       render: (p) => <Text>{printedName(p)}</Text>,
     },
@@ -248,6 +311,7 @@ export default function PrintBadgesPage() {
     <Stack>
       <Text c="dimmed">
         Select participants to generate double-sided standard Avery 5390 ID badges.
+        Type a nickname to print the name someone goes by instead of their first name.
       </Text>
 
       <Group gap="md" wrap="wrap">

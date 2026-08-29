@@ -11,6 +11,9 @@ import type { Prisma } from "@/generated/prisma/client";
 export const HOUSEHOLD_PEER_SELECT = {
     id: true,
     name: true,
+    // The name the member goes by, printed on their badge. @sensitivity:public, same
+    // as `name`, and a household lead edits it from the my-household cards.
+    nickname: true,
     email: true,
     phone: true,
     dateOfBirth: true,

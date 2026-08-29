@@ -60,8 +60,10 @@ const johnRoutes = {
 };
 const cell = (fullName: string, index: number) =>
   screen.getByText(fullName).closest("tr")!.querySelectorAll("td")[index].textContent;
-const printedNameCell = (fullName: string) => cell(fullName, 3);
-const yearCell = (fullName: string) => cell(fullName, 5);
+const printedNameCell = (fullName: string) => cell(fullName, 4);
+const yearCell = (fullName: string) => cell(fullName, 6);
+const nicknameBox = (fullName: string) =>
+  screen.getByRole("textbox", { name: `Nickname for ${fullName}` });
 
 describe("facility-ops/print-badges page", () => {
   it("loads and renders the participant roster", async () => {
@@ -274,6 +276,78 @@ describe("facility-ops/print-badges page", () => {
 
     expect(printedNameCell("John Nonmember")).toBe(nameBefore);
   }, 15000);
+
+  // The nickname box is the zero-click edit: no button, no modal, and the Printed
+  // Name column has to follow the save or it stops being proof of what will print.
+  it("saves a typed nickname and reprints the name around it", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      ...johnRoutes,
+      "/api/people/1/nickname": { person: { id: 1, name: "John Smith", nickname: "Johnny" } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/people/1/nickname",
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ nickname: "Johnny" }) }),
+      ),
+    );
+    // Johnny no longer collides with John Doe, so BOTH names lose the prefix.
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("Johnny"));
+    expect(printedNameCell("John Doe")).toBe("John");
+  });
+
+  it("clears a nickname when the box is emptied", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const withNickname = [{ ...johns[0], nickname: "Johnny" }, johns[1]];
+    const fetchMock = mockFetchJson({
+      "/api/people/search?roster=active": { people: [{ ...johnRoster[0], nickname: "Johnny" }, johnRoster[1]] },
+      "/api/people/search": { people: withNickname },
+      "/api/people/1/nickname": { person: { id: 1, name: "John Smith", nickname: null } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("Johnny"));
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "" } });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/people/1/nickname",
+        expect.objectContaining({ body: JSON.stringify({ nickname: null }) }),
+      ),
+    );
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+  });
+
+  // A silent failure here prints the OLD name onto a physical badge, so the save
+  // must not move the Printed Name column unless the server took it.
+  it("warns and leaves the printed name alone when the nickname save fails", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const logged = jest.spyOn(console, "error").mockImplementation(() => {});
+    mockFetchJson(johnRoutes); // no /nickname route -> 404
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", autoClose: false }),
+      ),
+    );
+    expect(printedNameCell("John Smith")).toBe("John S.");
+    logged.mockRestore();
+  });
 
   it("admits an operations user", async () => {
     setSession({ id: 5, isOperations: true });

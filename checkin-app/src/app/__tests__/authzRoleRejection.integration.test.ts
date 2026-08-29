@@ -44,6 +44,7 @@ import { POST as ONBOARDING_POST } from '@/app/api/profile/onboarding/route';
 import { GET as BROKEN_HH_GET } from '@/app/api/admin/broken-households/route';
 import { GET as LOCALIZATION_GET, PUT as LOCALIZATION_PUT } from '@/app/api/admin/settings/localization/route';
 import { GET as BADGES_GET } from '@/app/api/facility/badges/route';
+import { PATCH as NICKNAME_PATCH } from '@/app/api/people/[id]/nickname/route';
 import { GET as FAC_VISITS_GET, PATCH as FAC_VISITS_PATCH, DELETE as FAC_VISITS_DELETE } from '@/app/api/facility/visits/route';
 import { POST as FAC_VISITS_INSERT_POST } from '@/app/api/facility/visits/insert/route';
 import { GET as MISSING_CONTACT_GET } from '@/app/api/membership-audit/households-missing-contact/route';
@@ -165,6 +166,9 @@ describe('Protected-route role rejection', () => {
         { name: 'POST /api/membership-ops/participants/merge', invoke: () => MERGE_POST(nreq('http://localhost/api/membership-ops/participants/merge', 'POST', {})) },
         { name: 'GET /api/membership-ops/participants/merge/analyze', invoke: () => MERGE_ANALYZE_GET(nreq('http://localhost/api/membership-ops/participants/merge/analyze')) },
         { name: 'POST /api/membership-ops/participants/import/preview', invoke: () => IMPORT_PREVIEW_POST(nreq('http://localhost/api/membership-ops/participants/import/preview', 'POST')) },
+        // A person id that cannot exist, so the operations-clears-the-gate case below
+        // 404s on the lookup instead of writing a nickname onto a real row.
+        { name: 'PATCH /api/people/[id]/nickname', invoke: () => NICKNAME_PATCH(nreq('http://localhost/api/people/999999999/nickname', 'PATCH', { nickname: 'Goes By' }), idCtx(999999999)) },
         { name: 'GET /api/system-status/health', invoke: () => SYSTEM_HEALTH_GET(nreq('http://localhost/api/system-status/health')) },
         { name: 'GET /api/facility/trends', invoke: () => TRENDS_GET(nreq('http://localhost/api/facility/trends')) },
         { name: 'GET /api/safety/trusted-adults', invoke: () => ADMIN_TA_GET(nreq('http://localhost/api/safety/trusted-adults')) },
@@ -268,7 +272,9 @@ describe('Protected-route role rejection', () => {
     // not record, correct or remove a visit, and do not read the raw badge events
     // behind one. So trends must NOT 401/403 an operations actor, and every
     // /api/facility/visits verb plus the raw badge log must 403 them.
-    const facilityOpsGrantedNames = ['GET /api/facility/trends'];
+    // The nickname write rides with printing, not with the record: it sets the text on
+    // a badge, and never touches a visit or the raw badge events behind one.
+    const facilityOpsGrantedNames = ['GET /api/facility/trends', 'PATCH /api/people/[id]/nickname'];
     const facilityOpsWithheldNames = [
         'GET /api/facility/badges',
         'GET /api/facility/visits',

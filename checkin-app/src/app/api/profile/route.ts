@@ -6,7 +6,7 @@ import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isYouth } from "@/lib/time";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
-import { nameWrite } from "@/lib/person/name";
+import { nameWrite, nicknameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
@@ -42,7 +42,7 @@ export const PATCH = withAuth(
             }
 
             const body = await req.json();
-            const { name, phone, dob, over25, notificationSettings, emailSuppressed } = body;
+            const { name, nickname, phone, dob, over25, notificationSettings, emailSuppressed } = body;
 
             if (phone !== undefined && phone !== "" && !isValidPhone(phone)) {
                 return apiError(PHONE_ERROR, 400);
@@ -57,6 +57,7 @@ export const PATCH = withAuth(
                 where: { id: userId },
                 data: {
                     name: nameWrite(name),
+                    nickname: nicknameWrite(nickname),
                     phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                     // #1165: a self-entered DoB for a 26+ member is stripped and the
                     // over-25 flag set instead; with no DoB the over-25 checkbox owns
@@ -70,6 +71,7 @@ export const PATCH = withAuth(
                 },
                 select: {
                     name: true,
+                    nickname: true,
                     email: true,
                     phone: true,
                     dateOfBirth: true,

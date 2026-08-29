@@ -328,7 +328,7 @@ describe("HouseholdPage", () => {
         "/api/household/member",
         expect.objectContaining({
           method: "PATCH",
-          body: JSON.stringify({ participantId: 12, name: "Casey Smith", email: "", dob: "", phone: "5125559999", isLead: true, over25: true, allergies: "" }),
+          body: JSON.stringify({ participantId: 12, name: "Casey Smith", nickname: "", email: "", dob: "", phone: "5125559999", isLead: true, over25: true, allergies: "" }),
         }),
       ),
     );

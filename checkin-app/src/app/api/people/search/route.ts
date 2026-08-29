@@ -85,6 +85,7 @@ export const GET = withAuth(
                     select: {
                         id: true,
                         name: true,
+                        nickname: true,
                         household: {
                             select: {
                                 orgMembership: {
@@ -111,6 +112,7 @@ export const GET = withAuth(
                     people: members.map(m => ({
                         id: m.id,
                         name: m.name ?? '',
+                        nickname: m.nickname,
                         year: cycle && m.household?.orgMembership?.processes.length ? cycle.label : null,
                     })),
                 });
@@ -199,6 +201,7 @@ export const GET = withAuth(
             const formatted = people.map(p => ({
                 id: p.id,
                 name: p.name,
+                nickname: p.nickname,
                 email: p.email,
                 phone: p.phone,
                 // `undefined` drops the key on JSON serialization — a stripped
