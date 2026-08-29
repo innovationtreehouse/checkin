@@ -1,6 +1,7 @@
 import inspect
 import json
 import os
+import subprocess
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
@@ -9,12 +10,16 @@ from nacl.signing import SigningKey
 
 from client import (
     AttendanceState,
+    RELEASE_CHANNEL_MARKER,
+    RELEASE_TAG_GLOB,
     BackendClient,
     DEFAULT_KIOSK_PATH,
     _scan_result_banner_html,
     attendance_poller,
     handle_scan,
+    latest_release_tag,
     main,
+    resolve_update_target,
 )
 from outbox import Outbox, in_closed_window
 
@@ -64,6 +69,70 @@ class TestSupervisionWarningBanner(unittest.TestCase):
 
         self.assertIn("banner-ok", html_out)
         self.assertNotIn("banner-warning", html_out)
+
+
+def _git_stub(tags="", kiosk_sh=None, tag_commit="tagsha", main_head="mainsha"):
+    """Stand in for the git calls resolve_update_target makes."""
+    def run(argv, **kwargs):
+        if argv[:3] == ["git", "tag", "-l"]:
+            return tags
+        if argv[:2] == ["git", "show"]:
+            if kiosk_sh is None:
+                raise subprocess.CalledProcessError(128, argv)
+            return kiosk_sh
+        if argv[:2] == ["git", "rev-list"]:
+            return tag_commit + "\n"
+        if argv[:2] == ["git", "rev-parse"]:
+            return main_head + "\n"
+        raise AssertionError(f"unexpected git call: {argv}")
+    return run
+
+
+class TestReleaseChannel(unittest.TestCase):
+    """The Pi follows release tags, because the server deploys from them. A Pi
+    on main runs client code whose server counterpart is not deployed."""
+
+    def test_tags_are_ranked_by_version_not_by_date(self):
+        # v1.10.0 must outrank v1.9.0, and a patch cut later must not outrank a
+        # newer minor -- both of which -v:refname gets right and date sorting
+        # does not. Asserting the flag because git, not us, does the sorting.
+        with patch("client.subprocess.check_output") as co:
+            co.return_value = "v1.2.1\nv1.2.0\n"
+            self.assertEqual(latest_release_tag(), "v1.2.1")
+
+        argv = co.call_args.args[0]
+        self.assertIn("--sort=-v:refname", argv)
+        self.assertIn(RELEASE_TAG_GLOB, argv)
+
+    def test_no_tags_at_all_falls_back_to_main(self):
+        with patch("client.subprocess.check_output", side_effect=_git_stub(tags="")):
+            self.assertEqual(resolve_update_target(), "mainsha")
+
+    def test_a_release_that_tracks_releases_is_adopted(self):
+        stub = _git_stub(tags="v1.3.0\n", kiosk_sh=f"# {RELEASE_CHANNEL_MARKER}\n")
+        with patch("client.subprocess.check_output", side_effect=stub):
+            self.assertEqual(resolve_update_target(), "tagsha")
+
+    def test_a_release_that_still_pulls_main_is_not_adopted(self):
+        # The state on the day this landed: the newest release predates the
+        # channel. Adopting it would check out a tree that pulls main straight
+        # back, restarting the kiosk once per poll, forever.
+        stub = _git_stub(tags="v1.2.1\n", kiosk_sh="git pull origin main\n")
+        with patch("client.subprocess.check_output", side_effect=stub):
+            self.assertEqual(resolve_update_target(), "mainsha")
+
+    def test_a_tag_with_no_kiosk_sh_is_not_adopted(self):
+        stub = _git_stub(tags="v0.1.0\n", kiosk_sh=None)
+        with patch("client.subprocess.check_output", side_effect=stub):
+            self.assertEqual(resolve_update_target(), "mainsha")
+
+    def test_kiosk_sh_carries_the_marker_the_gate_greps_for(self):
+        # The gate reads this marker out of a TAG's kiosk.sh. Drop the line here
+        # and no future release is ever adopted -- silently, since the fallback
+        # is the old behaviour and nothing else changes.
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "kiosk.sh")) as f:
+            self.assertIn(RELEASE_CHANNEL_MARKER, f.read())
 
 
 class TestBackendClient(unittest.TestCase):

@@ -47,6 +47,19 @@ DEFAULT_OUTBOX_PATH = "outbox.db"
 # for. Relative path -- kiosk.sh cds into client/ before launching client.py.
 SELF_UPDATE_STATE_FILE = ".self_update_last_target"
 
+# The kiosk tracks releases, not main. The server deploys from release tags, so
+# a Pi following main runs client code whose server counterpart is not deployed
+# yet -- that skew is what this channel exists to close.
+RELEASE_TAG_GLOB = "v[0-9]*"
+
+# A release is adopted only if its own kiosk.sh tracks releases too. The marker
+# is that line, in this file's sibling script. Without the gate the changeover
+# oscillates: the newest release still pulls main, so a Pi that checked it out
+# would be pulled straight back to main, and back to the release, once per poll
+# -- restarting the kiosk every time. Until a release carries the marker the
+# channel stays on main, exactly as before.
+RELEASE_CHANNEL_MARKER = "release-channel: tags"
+
 def load_config(path="config.json"):
     if not os.path.exists(path):
         log.error(f"Config file not found: {path}")
@@ -930,6 +943,45 @@ def _should_restart_for_update(remote_head, last_restart_target):
     # never-tried or newly-advanced target.
     return remote_head != last_restart_target
 
+def fetch_update_refs(timeout=15):
+    """Refresh both candidate targets. --force lets a moved tag land."""
+    subprocess.run(
+        ["git", "fetch", "--tags", "--force", "origin", "main"],
+        capture_output=True, timeout=timeout,
+    )
+
+def latest_release_tag():
+    """Highest release tag, or None. Sorted by version, not by tag date: a
+    patch cut after a later minor must not outrank it."""
+    out = subprocess.check_output(
+        ["git", "tag", "-l", RELEASE_TAG_GLOB, "--sort=-v:refname"], text=True
+    )
+    tags = out.split()
+    return tags[0] if tags else None
+
+def _tracks_releases(ref):
+    try:
+        script = subprocess.check_output(
+            ["git", "show", f"{ref}:client/kiosk.sh"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return RELEASE_CHANNEL_MARKER in script
+
+def resolve_update_target():
+    """The commit this kiosk should be running. kiosk.sh checks this out and
+    version_poller restarts when HEAD differs, so both read it from here and
+    cannot disagree about where the Pi is meant to be."""
+    tag = latest_release_tag()
+    if tag and _tracks_releases(tag):
+        return subprocess.check_output(
+            ["git", "rev-list", "-n", "1", tag], text=True
+        ).strip()
+    return subprocess.check_output(
+        ["git", "rev-parse", "origin/main"], text=True
+    ).strip()
+
 def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE,
                     in_closed_window_fn=in_closed_window):
     """Background thread that checks for client and server version updates."""
@@ -961,10 +1013,10 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
 
         # 2. Check Client Version Update
         try:
-            subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
+            fetch_update_refs()
 
             local_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-            remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
+            remote_head = resolve_update_target()
             
             if local_head and remote_head and local_head != remote_head:
                 if _should_restart_for_update(remote_head, last_restart_target):
