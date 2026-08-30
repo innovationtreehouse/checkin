@@ -115,9 +115,6 @@ const AUTHZ_TESTED = new Set<string>([
     'membership-ops/participants/merge/analyze',
     'membership-ops/volunteer-memberships',
     'membership/reviews',
-    // PATCH deny-path (401 anon / 403 plain user) plus the operations-clears-the-gate
-    // case in authzRoleRejection.integration.test.ts.
-    'people/[id]/nickname',
     'people/search',
     'programs',
     // POST deny-path (401 anon / 403 non-board) in authzRoleRejection.integration.test.ts.

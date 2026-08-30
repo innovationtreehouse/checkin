@@ -283,7 +283,7 @@ describe("facility-ops/print-badges page", () => {
     setSession({ id: 1, isSysadmin: true });
     const fetchMock = mockFetchJson({
       ...johnRoutes,
-      "/api/people/1/nickname": { person: { id: 1, name: "John Smith", nickname: "Johnny" } },
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: "Johnny" } },
     });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("John Smith");
@@ -294,8 +294,8 @@ describe("facility-ops/print-badges page", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/people/1/nickname",
-        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ nickname: "Johnny" }) }),
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ method: "PUT", body: JSON.stringify({ nickname: "Johnny" }) }),
       ),
     );
     // Johnny no longer collides with John Doe, so BOTH names lose the prefix.
@@ -309,7 +309,7 @@ describe("facility-ops/print-badges page", () => {
     const fetchMock = mockFetchJson({
       "/api/people/search?roster=active": { people: [{ ...johnRoster[0], nickname: "Johnny" }, johnRoster[1]] },
       "/api/people/search": { people: withNickname },
-      "/api/people/1/nickname": { person: { id: 1, name: "John Smith", nickname: null } },
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: null } },
     });
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("John Smith");
@@ -320,7 +320,7 @@ describe("facility-ops/print-badges page", () => {
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/people/1/nickname",
+        "/api/membership-ops/participants/1",
         expect.objectContaining({ body: JSON.stringify({ nickname: null }) }),
       ),
     );
@@ -332,7 +332,7 @@ describe("facility-ops/print-badges page", () => {
   it("warns and leaves the printed name alone when the nickname save fails", async () => {
     setSession({ id: 1, isSysadmin: true });
     const logged = jest.spyOn(console, "error").mockImplementation(() => {});
-    mockFetchJson(johnRoutes); // no /nickname route -> 404
+    mockFetchJson(johnRoutes); // no participant-edit route -> 404
     renderWithProviders(<PrintBadgesPage />);
     await screen.findByText("John Smith");
     await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
@@ -355,6 +355,20 @@ describe("facility-ops/print-badges page", () => {
     renderWithProviders(<PrintBadgesPage />);
 
     expect(await screen.findByText("Kim Keyholder")).toBeInTheDocument();
+  });
+
+  // Operations prints badges but does not edit the person record the nickname lives
+  // on, so the column is withheld rather than shown and 403'd on save.
+  it("withholds the nickname column from an operations user", async () => {
+    setSession({ id: 5, isOperations: true });
+    mockFetchJson(johnRoutes);
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    expect(screen.queryByRole("textbox", { name: /^Nickname for/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Type a nickname/)).not.toBeInTheDocument();
+    // The printed name still reflects a stored nickname — reading it is not editing it.
+    expect(cell("John Smith", 3)).toBe("John S.");
   });
 
   it("shows filter-aware empty state when search matches only inactive people", async () => {

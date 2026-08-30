@@ -24,7 +24,11 @@ type ParticipantRow = {
 };
 
 export default function PrintBadgesPage() {
-  const { ready, loading: authLoading } = useRequireRole(FACILITY_AGGREGATE_ROLES);
+  const { user, ready, loading: authLoading } = useRequireRole(FACILITY_AGGREGATE_ROLES);
+  // Printing is board-or-operations, but a nickname is a write to the person's record
+  // and rides the participant-edit gate. So operations prints badges and reads the
+  // names; only board/sysadmin can change one.
+  const canEditNickname = !!user?.isSysadmin || !!user?.isBoardMember;
 
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   // Every ACTIVE member org-wide — the population printed names disambiguate against.
@@ -122,8 +126,8 @@ export default function PrintBadgesPage() {
   const saveNickname = useCallback(async (id: number, raw: string) => {
     const nickname = raw.trim() || null;
     try {
-      const res = await fetch(`/api/people/${id}/nickname`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/membership-ops/participants/${id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nickname }),
       });
@@ -266,9 +270,9 @@ export default function PrintBadgesPage() {
       header: 'Name',
       render: (p) => <Text fw={600}>{p.name || 'N/A'}</Text>,
     },
-    {
+    ...(canEditNickname ? [{
       header: 'Nickname',
-      render: (p) => (
+      render: (p: ParticipantRow) => (
         <TextInput
           size="xs"
           w={130}
@@ -279,7 +283,7 @@ export default function PrintBadgesPage() {
           onBlur={(e) => commitNickname(p.id, e.currentTarget.value)}
         />
       ),
-    },
+    }] : []),
     {
       header: 'Printed Name',
       render: (p) => <Text>{printedName(p)}</Text>,
@@ -311,7 +315,7 @@ export default function PrintBadgesPage() {
     <Stack>
       <Text c="dimmed">
         Select participants to generate double-sided standard Avery 5390 ID badges.
-        Type a nickname to print the name someone goes by instead of their first name.
+        {canEditNickname && " Type a nickname to print the name someone goes by instead of their first name."}
       </Text>
 
       <Group gap="md" wrap="wrap">

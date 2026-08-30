@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
-import { nameWrite } from "@/lib/person/name";
+import { nameWrite, nicknameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
@@ -30,6 +30,11 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
             }
             updateData.name = writtenName;
         }
+        // The name this person goes by, printed on their badge in place of the first
+        // name parsed out of `name`. Optional, so a blank clears it rather than being
+        // rejected; `undefined` leaves the stored value alone.
+        const nickname = nicknameWrite(body.nickname);
+        if (nickname !== undefined) updateData.nickname = nickname;
         if (body.email !== undefined) updateData.email = body.email;
         if (body.phone !== undefined) {
             if (body.phone !== "" && body.phone !== null && !isValidPhone(body.phone)) {
@@ -60,7 +65,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
         // audit payload — this route neither ships nor writes it.
         const { dateOfBirth: priorDob, ...prior } = (await prisma.person.findUnique({
             where: { id },
-            select: { name: true, email: true, phone: true, dateOfBirth: true, isDeclaredAdult: true, lastBackgroundCheck: true },
+            select: { name: true, nickname: true, email: true, phone: true, dateOfBirth: true, isDeclaredAdult: true, lastBackgroundCheck: true },
         })) ?? {};
 
         // A date of birth on file supersedes the over-25 declaration (normalizeAdultDob):
@@ -94,6 +99,7 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
         const formatted = {
             id: updatedParticipant.id,
             name: updatedParticipant.name,
+            nickname: updatedParticipant.nickname,
             email: updatedParticipant.email,
             phone: updatedParticipant.phone,
             dateOfBirth: updatedParticipant.dateOfBirth,
