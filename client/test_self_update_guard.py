@@ -1,5 +1,5 @@
 """Guard against #1616: version_poller's self-update exit must not
-restart-loop when git pull can't fast-forward on the Pi."""
+restart-loop when the Pi's checkout of the target fails."""
 
 import os
 import tempfile
@@ -85,11 +85,11 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
                     version_poller(backend, state, interval=0, state_path=state_path)
         return exit_mock
 
-    def test_mismatch_then_stuck_pull_then_genuine_advance(self):
+    def test_mismatch_then_stuck_checkout_then_genuine_advance(self):
         heads = [
             ("aaa", "bbb"),  # mismatch, never tried -> restart
-            ("aaa", "bbb"),  # pull didn't advance, same target -> no restart
-            ("aaa", "ccc"),  # remote moved on -> restart again
+            ("aaa", "bbb"),  # HEAD didn't move, same target -> no restart
+            ("aaa", "ccc"),  # target moved on -> restart again
         ]
         with self.assertLogs("kiosk", level="WARNING") as logs:
             exit_mock = self._run(heads)

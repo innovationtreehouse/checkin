@@ -939,7 +939,7 @@ def _write_last_restart_target(remote_head, path=SELF_UPDATE_STATE_FILE):
 
 def _should_restart_for_update(remote_head, last_restart_target):
     # False once we've already exited for this exact remote_head and the
-    # restart didn't move HEAD past it (non-fast-forward pull); True for a
+    # restart didn't move HEAD onto it (the checkout failed); True for a
     # never-tried or newly-advanced target.
     return remote_head != last_restart_target
 
@@ -1002,8 +1002,8 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
 
         # 1. Check Server Version Update -- skipped during the closed window
         # (§3.1): this signed GET keep-alives the service same as
-        # attendance_poller's. Self-update below is NOT gated: git pull hits
-        # no server, and overnight is the safe window to restart in.
+        # attendance_poller's. Self-update below is NOT gated: the git fetch
+        # hits no server, and overnight is the safe window to restart in.
         if initial_server_version and not in_closed_window_fn():
             sv, status = backend.get_server_version()
             if status == 200 and sv and sv != initial_server_version:
@@ -1034,13 +1034,14 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
                         )
                 else:
                     # Restarted for this target already and HEAD didn't move --
-                    # git pull can't fast-forward. Stay up and keep serving
+                    # kiosk.sh's checkout failed. Stay up and keep serving
                     # scans on the current version instead of looping.
                     log.warning(
-                        f"Still on {local_head}, git pull did not advance past "
-                        f"{remote_head} after a restart (dirty tree, local "
-                        "commits, or diverged history on the Pi). Not "
-                        "restarting again until the checkout is fixed."
+                        f"Still on {local_head}, HEAD did not advance to "
+                        f"{remote_head} after a restart (kiosk.sh could not "
+                        "check the target out: dirty tree, local changes, or "
+                        "an unresolvable target). Not restarting again until "
+                        "the checkout is fixed."
                     )
         except Exception as e:
             log.error(f"Error checking client version: {e}")
