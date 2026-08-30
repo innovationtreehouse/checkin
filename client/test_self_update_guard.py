@@ -1,5 +1,5 @@
 """Guard against #1616: version_poller's self-update exit must not
-restart-loop when git pull can't fast-forward on the Pi."""
+restart-loop when the Pi's checkout of the target fails."""
 
 import os
 import tempfile
@@ -57,34 +57,39 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
         backend.get_server_version.return_value = ("v1", 200)
         state = MagicMock()
 
-        calls = []
-
-        def fake_check_output(cmd, text=True):
-            calls.append(cmd)
-            local, remote = head_sequence[(len(calls) - 1) // 2]
-            return local if cmd[-1] == "HEAD" else remote
-
+        # One sleep precedes each loop iteration, so the count names which
+        # pair of the sequence is in play; the loop ends when it runs out.
         def fake_sleep(_):
             fake_sleep.n += 1
             if fake_sleep.n > len(head_sequence):
                 raise _StopLoop()
         fake_sleep.n = 0
 
+        def fake_check_output(cmd, **kwargs):
+            # Target resolution is patched below, so HEAD is the only git
+            # read the poller still makes for itself.
+            self.assertEqual(cmd[-1], "HEAD")
+            return head_sequence[fake_sleep.n - 1][0]
+
+        def fake_update_target():
+            return head_sequence[fake_sleep.n - 1][1]
+
         with tempfile.TemporaryDirectory() as d:
             state_path = os.path.join(d, state_name)
             with patch("client.subprocess.run"), \
                  patch("client.subprocess.check_output", side_effect=fake_check_output), \
+                 patch("client.resolve_update_target", side_effect=fake_update_target), \
                  patch("client.os._exit") as exit_mock, \
                  patch("client.time.sleep", side_effect=fake_sleep):
                 with self.assertRaises(_StopLoop):
                     version_poller(backend, state, interval=0, state_path=state_path)
         return exit_mock
 
-    def test_mismatch_then_stuck_pull_then_genuine_advance(self):
+    def test_mismatch_then_stuck_checkout_then_genuine_advance(self):
         heads = [
             ("aaa", "bbb"),  # mismatch, never tried -> restart
-            ("aaa", "bbb"),  # pull didn't advance, same target -> no restart
-            ("aaa", "ccc"),  # remote moved on -> restart again
+            ("aaa", "bbb"),  # HEAD didn't move, same target -> no restart
+            ("aaa", "ccc"),  # target moved on -> restart again
         ]
         with self.assertLogs("kiosk", level="WARNING") as logs:
             exit_mock = self._run(heads)

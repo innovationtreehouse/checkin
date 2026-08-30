@@ -130,7 +130,30 @@ When `usb_device` is empty in `config.json`, the client reads participant IDs fr
 - `badge.py` — Send one signed scan by hand; reuses `client.py`'s signing
 - `scanner_discovery.py` — Manual helper: list USB input devices matching a pattern (needs `python3-evdev` and real hardware)
 - `generate_keys.py` — One-time Ed25519 keypair generator
-- `kiosk.sh` — Pi startup script (launches client.py, reads port from config, opens Chromium)
+- `kiosk.sh` — Pi startup script (updates the checkout, launches client.py, reads port from config, opens Chromium)
 - `migrate.sh` — One-time migration script for Pis on the old standalone `checkin-client` repo
 - `config.json` — Runtime configuration (not committed)
 - `client.key` — Ed25519 private key (not committed)
+
+## Update channel
+
+The Pi runs the latest **release tag**, not `main`. The server deploys from
+releases, so a Pi following `main` runs client code whose server counterpart is
+not deployed yet — the paths it calls may not exist.
+
+`kiosk.sh` fetches and checks out the target at the top of each loop;
+`client.py`'s `version_poller` restarts the client when `HEAD` no longer matches
+it. Both read the target from `resolve_update_target()`, so they cannot disagree
+about where the Pi is meant to be.
+
+A release is only adopted if its own `kiosk.sh` carries the
+`release-channel: tags` marker. Until such a release is cut the Pi keeps
+following `main`, unchanged. Without that gate the changeover would oscillate: a
+release predating the channel pulls `main` back on its next loop, so the Pi would
+bounce between the two once per poll.
+
+To see what a Pi would move to:
+
+```bash
+cd ~/checkin/client && python3 -c 'import client; print(client.resolve_update_target())'
+```
