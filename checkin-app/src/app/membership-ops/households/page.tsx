@@ -12,7 +12,7 @@ import { sharesHousehold } from '@/lib/conflictOfInterest';
 import { formatDateOnly } from '@/lib/time';
 
 import { PageLoader } from "@/components/ui/PageLoader";
-import { searchId, matchesPersonQuery } from "@/lib/searchId";
+import { householdQueryMatcher, personQueryMatcher } from "@/lib/searchId";
 
 type Household = {
   id: number;
@@ -173,15 +173,14 @@ export default function AdminHouseholdsPage() {
     return null;
   }
 
-  const q = filter.trim().toLowerCase();
-  const idQuery = searchId(filter);
-  const filtered = q
-    ? households.filter((h) =>
-        (h.name || `Household #${h.id}`).toLowerCase().includes(q) ||
-        h.id === idQuery ||
-        (h.householdMembers?.some((p) => matchesPersonQuery(p, filter)) ?? false)
-      )
-    : households;
+  // An unnamed household is listed as "Household #id", so that is what its name
+  // has to match on.
+  const matchesHousehold = householdQueryMatcher(filter);
+  const matchesPerson = personQueryMatcher(filter);
+  const filtered = households.filter((h) =>
+    matchesHousehold({ id: h.id, name: h.name || `Household #${h.id}` }) ||
+    (h.householdMembers?.some(matchesPerson) ?? false)
+  );
 
   return (
     <Stack>

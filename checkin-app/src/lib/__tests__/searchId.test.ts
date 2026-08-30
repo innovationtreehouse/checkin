@@ -1,4 +1,4 @@
-import { matchesPersonQuery, searchId } from '@/lib/searchId';
+import { householdQueryMatcher, personQueryMatcher, searchId } from '@/lib/searchId';
 
 describe('searchId', () => {
     it('reads a bare number as an id', () => {
@@ -22,28 +22,53 @@ describe('searchId', () => {
     });
 });
 
-describe('matchesPersonQuery', () => {
+describe('personQueryMatcher', () => {
     const person = { id: 42, name: 'Ali Ada', email: 'ali@example.com' };
 
     it('matches on name or email, case-insensitively', () => {
-        expect(matchesPersonQuery(person, 'ali')).toBe(true);
-        expect(matchesPersonQuery(person, 'ADA')).toBe(true);
-        expect(matchesPersonQuery(person, 'EXAMPLE.com')).toBe(true);
-        expect(matchesPersonQuery(person, 'bob')).toBe(false);
+        expect(personQueryMatcher('ali')(person)).toBe(true);
+        expect(personQueryMatcher('ADA')(person)).toBe(true);
+        expect(personQueryMatcher('EXAMPLE.com')(person)).toBe(true);
+        expect(personQueryMatcher('bob')(person)).toBe(false);
     });
 
     it('matches the id exactly, not as a substring', () => {
-        expect(matchesPersonQuery(person, '42')).toBe(true);
-        expect(matchesPersonQuery(person, ' 42 ')).toBe(true);
-        expect(matchesPersonQuery(person, '4')).toBe(false);
+        expect(personQueryMatcher('42')(person)).toBe(true);
+        expect(personQueryMatcher(' 42 ')(person)).toBe(true);
+        expect(personQueryMatcher('4')(person)).toBe(false);
     });
 
     it('matches everything on an empty query', () => {
-        expect(matchesPersonQuery(person, '')).toBe(true);
-        expect(matchesPersonQuery(person, '   ')).toBe(true);
+        expect(personQueryMatcher('')(person)).toBe(true);
+        expect(personQueryMatcher('   ')(person)).toBe(true);
     });
 
     it('does not match on a field the caller did not supply', () => {
-        expect(matchesPersonQuery({ id: 42, name: 'Ali Ada' }, 'example.com')).toBe(false);
+        expect(personQueryMatcher('example.com')({ id: 42, name: 'Ali Ada' })).toBe(false);
+    });
+
+    it('parses the query once, not once per row', () => {
+        const matches = personQueryMatcher('42');
+        expect([{ id: 41 }, { id: 42 }, { id: 43 }].filter(matches)).toEqual([{ id: 42 }]);
+    });
+});
+
+describe('householdQueryMatcher', () => {
+    const household = { id: 7, name: 'Ada Household' };
+
+    it('matches on name or the household\'s own id', () => {
+        expect(householdQueryMatcher('ada')(household)).toBe(true);
+        expect(householdQueryMatcher('7')(household)).toBe(true);
+        expect(householdQueryMatcher('77')(household)).toBe(false);
+        expect(householdQueryMatcher('bell')(household)).toBe(false);
+    });
+
+    it('matches an unnamed household on the label the caller passes in', () => {
+        expect(householdQueryMatcher('household #7')({ id: 7, name: 'Household #7' })).toBe(true);
+        expect(householdQueryMatcher('ada')({ id: 7, name: null })).toBe(false);
+    });
+
+    it('matches everything on an empty query', () => {
+        expect(householdQueryMatcher('')(household)).toBe(true);
     });
 });

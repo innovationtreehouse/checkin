@@ -7,7 +7,7 @@ import { ToolLevelBadge, toToolLevel, toolLevelDot, toolLevelLabel } from '@/com
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
 import { PageLoader } from "@/components/ui/PageLoader";
-import { matchesPersonQuery } from "@/lib/searchId";
+import { personQueryMatcher } from "@/lib/searchId";
 
 type Tool = {
   id: number;
@@ -293,7 +293,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
     }
   };
 
-  const filtered = members.filter(m => matchesPersonQuery(m, search));
+  const filtered = members.filter(personQueryMatcher(search));
 
   return (
     <div>
