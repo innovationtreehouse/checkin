@@ -89,6 +89,33 @@ describe("getKioskDisplayNames", () => {
         expect(map.get(2)).toBe("Sarah K.");
     });
 
+    it("initializes the last name, not the middle name", () => {
+        const map = getKioskDisplayNames([
+            { id: 1, name: "John Frank Doe", email: "j1@example.com" },
+            { id: 2, name: "John Smith", email: "j2@example.com" },
+        ]);
+        expect(map.get(1)).toBe("John D.");
+        expect(map.get(2)).toBe("John S.");
+    });
+
+    it("initializes the final word of a multi-word last name", () => {
+        const map = getKioskDisplayNames([
+            { id: 1, name: "Maria De La Cruz", email: "m1@example.com" },
+            { id: 2, name: "Maria Diaz", email: "m2@example.com" },
+        ]);
+        expect(map.get(1)).toBe("Maria C.");
+        expect(map.get(2)).toBe("Maria D.");
+    });
+
+    it("initializes the final word of a multi-word last name in comma format", () => {
+        const map = getKioskDisplayNames([
+            { id: 1, name: "De La Cruz, Maria", email: "m1@example.com" },
+            { id: 2, name: "Diaz, Maria", email: "m2@example.com" },
+        ]);
+        expect(map.get(1)).toBe("Maria C.");
+        expect(map.get(2)).toBe("Maria D.");
+    });
+
     it("handles three-way collision with mixed last initials", () => {
         const map = getKioskDisplayNames([
             { id: 1, name: "Sarah Morris", email: "s1@example.com" },

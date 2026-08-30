@@ -6,9 +6,12 @@
 // same-first-name badge shares; a partial prefix gets a trailing "." (e.g. "John S.", "John Sm.").
 // True duplicates (identical full name) fall back to the full last name.
 export function computeDisplayNames(badges: { id: number; name: string }[]): Map<number, string> {
+    // The last name is the FINAL word, so "John Frank Doe" is a John D. and a
+    // multi-word surname abbreviates on its last word. Anything between the first
+    // and last word is a middle name, which a badge never shows.
     const parse = (full: string) => {
         const parts = (full || '').trim().split(/\s+/);
-        return { first: parts[0] || '', last: parts.slice(1).join(' ') };
+        return { first: parts[0] || '', last: parts.length > 1 ? parts[parts.length - 1] : '' };
     };
     const parsed = badges.map(b => ({ id: b.id, ...parse(b.name) }));
     const groups = new Map<string, typeof parsed>();
