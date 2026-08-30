@@ -57,23 +57,28 @@ class TestVersionPollerLoopGuard(unittest.TestCase):
         backend.get_server_version.return_value = ("v1", 200)
         state = MagicMock()
 
-        calls = []
-
-        def fake_check_output(cmd, text=True):
-            calls.append(cmd)
-            local, remote = head_sequence[(len(calls) - 1) // 2]
-            return local if cmd[-1] == "HEAD" else remote
-
+        # One sleep precedes each loop iteration, so the count names which
+        # pair of the sequence is in play; the loop ends when it runs out.
         def fake_sleep(_):
             fake_sleep.n += 1
             if fake_sleep.n > len(head_sequence):
                 raise _StopLoop()
         fake_sleep.n = 0
 
+        def fake_check_output(cmd, **kwargs):
+            # Target resolution is patched below, so HEAD is the only git
+            # read the poller still makes for itself.
+            self.assertEqual(cmd[-1], "HEAD")
+            return head_sequence[fake_sleep.n - 1][0]
+
+        def fake_update_target():
+            return head_sequence[fake_sleep.n - 1][1]
+
         with tempfile.TemporaryDirectory() as d:
             state_path = os.path.join(d, state_name)
             with patch("client.subprocess.run"), \
                  patch("client.subprocess.check_output", side_effect=fake_check_output), \
+                 patch("client.resolve_update_target", side_effect=fake_update_target), \
                  patch("client.os._exit") as exit_mock, \
                  patch("client.time.sleep", side_effect=fake_sleep):
                 with self.assertRaises(_StopLoop):
