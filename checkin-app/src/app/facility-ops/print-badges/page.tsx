@@ -118,9 +118,19 @@ export default function PrintBadgesPage() {
 
   // A saved nickname lands in `roster` as well as `participants`: the roster is what
   // disambiguation runs over, so this is what keeps the Printed Name column honest.
+  // The draft is dropped once it is stored, so the box goes back to reading the
+  // person record and a nickname changed elsewhere is not shadowed by stale local
+  // text. A draft that no longer matches is newer typing with its own save pending —
+  // leave it.
   const applyNickname = useCallback((id: number, nickname: string | null) => {
     setParticipants(prev => prev.map(p => (p.id === id ? { ...p, nickname } : p)));
     setRoster(prev => prev?.map(m => (m.id === id ? { ...m, nickname } : m)) ?? prev);
+    setNicknameDrafts(prev => {
+      if (prev[id] === undefined || (prev[id].trim() || null) !== nickname) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }, []);
 
   const saveNickname = useCallback(async (id: number, raw: string) => {

@@ -327,6 +327,36 @@ describe("facility-ops/print-badges page", () => {
     await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
   });
 
+  // A committed draft is dropped, so the box reads the person record again and a
+  // nickname changed elsewhere (another admin, any refetch) is not shadowed by
+  // stale local text.
+  it("shows a refetched nickname in the box after a save, not the stale draft", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    let people: ((typeof johns)[number] & { nickname?: string })[] = johns;
+    const fetchMock = mockFetchJson({
+      "/api/people/search?roster=active": { people: johnRoster },
+      "/api/people/search": () => ({ people }),
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: "Johnny" } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+    expect(nicknameBox("John Smith")).toHaveValue("Johnny");
+
+    people = [{ ...johns[0], nickname: "Jon" }, johns[1]];
+    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "John" } });
+
+    await waitFor(() => expect(nicknameBox("John Smith")).toHaveValue("Jon"));
+  });
+
   // A silent failure here prints the OLD name onto a physical badge, so the save
   // must not move the Printed Name column unless the server took it.
   it("warns and leaves the printed name alone when the nickname save fails", async () => {
