@@ -20,6 +20,7 @@ export default function ProfilePage() {
 
   const [form, setForm] = useState({
     name: "",
+    nickname: "",
     email: "",
     phone: "",
     dob: "",
@@ -32,6 +33,7 @@ export default function ProfilePage() {
         const data = await res.json();
         setForm({
           name: data.profile.name || "",
+          nickname: data.profile.nickname || "",
           email: data.profile.email || "",
           phone: data.profile.phone || "",
           dob: data.profile.dateOfBirth ? new Date(data.profile.dateOfBirth).toISOString().split('T')[0] : "",
@@ -66,6 +68,7 @@ export default function ProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name,
+          nickname: form.nickname,
           phone: form.phone,
           dob: form.over25 ? null : (form.dob || null),
           over25: form.over25
@@ -107,6 +110,7 @@ export default function ProfilePage() {
             <Stack>
               <TextInput label="Email Address" value={form.email} disabled title="Email cannot be changed here." />
               <TextInput label="Full Name" description="Printed on name badges exactly as typed — please double-check the spelling." required value={form.name} onChange={(e) => setForm({ ...form, name: e.currentTarget.value })} placeholder="e.g. Jane Doe" disabled={readOnly} />
+              <TextInput label="Nickname (optional)" description="Printed on your name badge in place of your first name. Leave blank to use your first name." value={form.nickname} onChange={(e) => setForm({ ...form, nickname: e.currentTarget.value })} placeholder="e.g. Janey" disabled={readOnly} />
               <TextInput type="tel" label="Phone Number" required value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="(555) 123-4567" disabled={readOnly} />
               <Checkbox
                 label="I am over 25"

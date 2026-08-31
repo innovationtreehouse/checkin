@@ -14,7 +14,7 @@ beforeEach(() => resetRtl());
 const mentor = { id: 7, name: "Mona Mentor", email: "mona@example.com" };
 
 async function pickMentor() {
-  fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Mona" } });
+  fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Mona" } });
   fireEvent.click(await screen.findByText("Mona Mentor", { exact: false }));
 }
 
@@ -117,7 +117,7 @@ describe("CreateProgramPage", () => {
     renderWithProviders(<CreateProgramPage />);
     await screen.findByLabelText("Program Name", { exact: false });
 
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "nobody" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "nobody" } });
     // 404 (unmatched route) -> `if (!res.ok) return [];` branch; no dropdown/Clear button appears.
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Clear" })).not.toBeInTheDocument();

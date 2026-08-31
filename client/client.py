@@ -24,6 +24,7 @@ from nacl.signing import SigningKey
 import requests
 
 from outbox import Outbox, classify_response, replay_drain, new_event_id, now_iso, in_closed_window
+from health import health_monitor
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -45,6 +46,19 @@ DEFAULT_OUTBOX_PATH = "outbox.db"
 # Self-update loop guard (see version_poller): remote head we already exited
 # for. Relative path -- kiosk.sh cds into client/ before launching client.py.
 SELF_UPDATE_STATE_FILE = ".self_update_last_target"
+
+# The kiosk tracks releases, not main. The server deploys from release tags, so
+# a Pi following main runs client code whose server counterpart is not deployed
+# yet -- that skew is what this channel exists to close.
+RELEASE_TAG_GLOB = "v[0-9]*"
+
+# A release is adopted only if its own kiosk.sh tracks releases too. The marker
+# is that line, in this file's sibling script. Without the gate the changeover
+# oscillates: the newest release still pulls main, so a Pi that checked it out
+# would be pulled straight back to main, and back to the release, once per poll
+# -- restarting the kiosk every time. Until a release carries the marker the
+# channel stays on main, exactly as before.
+RELEASE_CHANNEL_MARKER = "release-channel: tags"
 
 def load_config(path="config.json"):
     if not os.path.exists(path):
@@ -97,7 +111,7 @@ class BackendClient:
 
     def post_scan(self, participant_id, force_close_token=None,
                   client_event_id=None, scanned_at=None, replay=False,
-                  dead=False, dead_status=None):
+                  dead=False, dead_status=None, intent=None, clock_suspect=False):
         path = "/api/scan"
         payload = {}
         try:
@@ -116,12 +130,16 @@ class BackendClient:
             # cannot infer replay-ness from the id.
             payload["replay"] = True
         if dead:
-            # #1347 PR-2 / Q10: the dead-letter drain pass, mutually exclusive
-            # with replay. dead_status is the terminal status that got this row
+            # Dead-letter drain pass, mutually exclusive with replay.
+            # dead_status is the terminal status that got this row
             # dead-lettered locally -- it lands in the server's reviewReason.
             payload["dead"] = True
             if dead_status is not None:
                 payload["deadStatus"] = dead_status
+        if intent in ("IN", "OUT"):
+            payload["intent"] = intent
+        if clock_suspect:
+            payload["clockSuspect"] = True
         body = json.dumps(payload)
 
         headers = self._headers("POST", path, body)
@@ -170,6 +188,27 @@ class BackendClient:
             log.error(f"Failed to get server version: {e}")
             return None, 0
 
+# A wall-clock step larger than this vs monotonic is a clockSuspect scan
+# (NTP jump, bad RTC). Small skew is don't-care.
+CLOCK_STEP_SECONDS = 180
+
+
+class ClockWatch:
+    """Detect a large step in wall time that would stamp scannedAt wrong."""
+
+    def __init__(self):
+        self._last_wall = time.time()
+        self._last_mono = time.monotonic()
+
+    def check(self):
+        wall = time.time()
+        mono = time.monotonic()
+        jumped = abs((wall - self._last_wall) - (mono - self._last_mono)) > CLOCK_STEP_SECONDS
+        self._last_wall = wall
+        self._last_mono = mono
+        return jumped
+
+
 class AttendanceState:
     def __init__(self):
         self.lock = threading.Lock()
@@ -177,6 +216,15 @@ class AttendanceState:
         self.current_counts = {"total": 0, "keyholders": 0, "volunteers": 0, "students": 0}
         self.confirm_token = None    # force-close confirm token, if a countdown is running
         self.confirm_deadline = 0.0  # monotonic clock, end of that countdown
+        self.last_browser_seen = time.monotonic()
+        self.last_attendance_ok = None
+        self.attendance_auth_fail = False
+        self.scanner_ok = True
+        # Local presence view: the direction the kiosk displays is the intent
+        # of record. Seeded from the last attendance fetch; updated on each
+        # badge so offline scans still carry IN/OUT.
+        self.present_ids = set()
+        self.clock_watch = ClockWatch()
 
     def arm_confirm(self, token, seconds):
         """Hold the confirm token the server minted with a force-close warning."""
@@ -216,6 +264,39 @@ class AttendanceState:
             for q in self.subscribers:
                 q.put(event_data)
 
+    def displayed_intent(self, participant_id):
+        """IN if this badge is not currently shown as present, else OUT."""
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            pid = participant_id
+        with self.lock:
+            return "OUT" if pid in self.present_ids else "IN"
+
+    def note_presence(self, participant_id, checking_in, is_keyholder=None):
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            return
+        with self.lock:
+            if checking_in:
+                self.present_ids.add(pid)
+            else:
+                self.present_ids.discard(pid)
+
+    def seed_from_attendance(self, att_data):
+        """Replace the local presence view with the server roster."""
+        visits = att_data.get("attendance") or []
+        present = set()
+        for visit in visits:
+            person = visit.get("participant") or visit.get("person") or {}
+            pid = person.get("id")
+            if pid is None:
+                continue
+            present.add(int(pid))
+        with self.lock:
+            self.present_ids = present
+
 # ---------------------------------------------------------------------------
 # Transparent Signing Proxy & Kiosk Handler
 # ---------------------------------------------------------------------------
@@ -226,6 +307,8 @@ class KioskHandler(BaseHTTPRequestHandler):
     disable_blackout = False
 
     def do_GET(self):
+        if self.state is not None:
+            self.state.last_browser_seen = time.monotonic()
         if self.path == "/":
             self._serve_wrapper()
         elif self.path == "/events":
@@ -297,8 +380,9 @@ class KioskHandler(BaseHTTPRequestHandler):
     border: 2px solid #fbbf24;
     color: #fff;
     white-space: pre-wrap;
-    /* No fade: the force-close warning stays fully legible for its whole
-       countdown, and the countdown itself removes it. */
+    /* No fade: an amber banner stays fully legible for its whole dwell, which
+       for the force-close warning is its countdown and for a closed-facility
+       hold is CLOSED_HOLD_DWELL_S. */
     animation: none;
   }}
   .banner-saved {{
@@ -427,9 +511,10 @@ class KioskHandler(BaseHTTPRequestHandler):
           banner.style.animation = null;
         }}
         const secs = data.countdown || 0;
+        const dwell = data.dwell || 0;
         clearInterval(countdownTimer);
         clearTimeout(bannerTimer);
-        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, secs ? secs * 1000 : 12000);
+        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, (dwell || secs || 12) * 1000);
         if (secs) startCountdown(secs);
       }}
       // Tell iframe to refresh attendance display with inline data
@@ -538,6 +623,15 @@ class KioskHandler(BaseHTTPRequestHandler):
                 stream=True,
                 timeout=30
             )
+
+            if self.state is not None:
+                self.state.last_browser_seen = time.monotonic()
+                if sign_path == "/api/attendance":
+                    if resp.status_code == 200:
+                        self.state.last_attendance_ok = time.monotonic()
+                        self.state.attendance_auth_fail = False
+                    elif resp.status_code in (401, 403):
+                        self.state.attendance_auth_fail = True
             
             try:
                 self.send_response(resp.status_code)
@@ -600,39 +694,73 @@ def usb_scanner_listener(backend, state, outbox, device_path):
     ENTER_KEY = 28
 
     log.info(f"Attempting to open USB device: {device_path}")
+    dev = None
     try:
         dev = find_device(device_path)
-        if not dev:
-            # Fallback: if it's not found by name/path, but looks like a path, try opening it directly
-            if device_path.startswith("/dev/input/"):
-                import evdev
-                dev = evdev.InputDevice(device_path)
-            else:
-                log.error(f"No device found matching: {device_path}")
-                return
-
-        dev.grab()
-        log.info(f"Listening on: {dev.name} ({dev.path})")
+        if not dev and device_path.startswith("/dev/input/"):
+            import evdev as _evdev
+            dev = _evdev.InputDevice(device_path)
+        if dev:
+            dev.grab()
+            log.info(f"Listening on: {dev.name} ({dev.path})")
+            state.scanner_ok = True
+        else:
+            log.error(f"No device found matching: {device_path}")
+            state.scanner_ok = False
     except Exception as e:
         log.error(f"Cannot open USB device {device_path}: {e}")
-        return
+        state.scanner_ok = False
 
-    buffer = ""
-    for event in dev.read_loop():
-        if event.type != evdev.ecodes.EV_KEY:
-            continue
-        key_event = evdev.categorize(event)
-        if key_event.keystate != 1:
-            continue
+    backoff = 1.0
+    while True:
+        if dev is None:
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+            try:
+                dev = find_device(device_path)
+                if not dev and device_path.startswith("/dev/input/"):
+                    import evdev as _evdev
+                    dev = _evdev.InputDevice(device_path)
+                if not dev:
+                    continue
+                dev.grab()
+                log.info(f"Re-grabbed scanner: {dev.name} ({dev.path})")
+                state.scanner_ok = True
+            except Exception as regrab_err:
+                log.warning(f"Scanner re-grab failed: {regrab_err}")
+                dev = None
+                continue
+        buffer = ""
+        try:
+            for event in dev.read_loop():
+                backoff = 1.0
+                state.scanner_ok = True
+                if event.type != evdev.ecodes.EV_KEY:
+                    continue
+                key_event = evdev.categorize(event)
+                if key_event.keystate != 1:
+                    continue
 
-        if key_event.scancode == ENTER_KEY:
-            if buffer.strip():
-                participant_id = buffer.strip()
-                log.info(f"Scanned ID: {participant_id}")
-                handle_scan(backend, state, outbox, participant_id)
-            buffer = ""
-        elif key_event.scancode in KEY_MAP:
-            buffer += KEY_MAP[key_event.scancode]
+                if key_event.scancode == ENTER_KEY:
+                    if buffer.strip():
+                        participant_id = buffer.strip()
+                        log.info(f"Scanned ID: {participant_id}")
+                        handle_scan(backend, state, outbox, participant_id)
+                    buffer = ""
+                elif key_event.scancode in KEY_MAP:
+                    buffer += KEY_MAP[key_event.scancode]
+        except Exception as e:
+            state.scanner_ok = False
+            log.warning(f"Scanner lost ({e}); re-grab in {backoff:.0f}s")
+            try:
+                dev.ungrab()
+            except Exception:
+                pass
+            try:
+                dev.close()
+            except Exception:
+                pass
+            dev = None
 
 def stdin_scanner_listener(backend, state, outbox):
     log.info("USB device not configured — reading scans from stdin")
@@ -646,9 +774,16 @@ def stdin_scanner_listener(backend, state, outbox):
         except EOFError:
             break
 
+# A closed-facility hold dwells far longer than an ordinary banner so the
+# member can read why their scan is waiting on someone else. Any later badge
+# event replaces it early.
+CLOSED_HOLD_DWELL_S = 30
+CLOSED_HOLD_COPY = "Scan successful, waiting for key holder before opening the building"
+
 def _scan_result_banner_html(body, status):
-    """Returns (html, countdown_seconds). Pure -- arming the confirm token is
-    the caller's job, so the drain can render a response without arming one."""
+    """Returns (html, countdown_seconds, dwell_seconds). Pure -- arming the
+    confirm token is the caller's job, so the drain can render a response
+    without arming one. dwell_seconds of 0 means the default dwell."""
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
     # emails, messages) and are ultimately assigned to the wrapper page via
@@ -665,11 +800,24 @@ def _scan_result_banner_html(body, status):
                 seconds = body.get("confirmSeconds")
                 countdown = seconds if isinstance(seconds, int) and 0 < seconds <= 120 else 15
                 warn += f'<br><span id="fc-countdown">{countdown}</span>s left to confirm'
-            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown
+            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown, 0
         err = html.escape(body.get("error", "Unknown error"))
-        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0
+        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0, 0
 
     stype = body.get("type", "")
+    # A park created no Visit, so none of these may render as a check-in: the
+    # green tick plus the "?" a park body has no name for reads as one at arm's
+    # length. Amber says captured-but-not-complete, which is what happened --
+    # the scan is held and projects on its own once a keyholder badges in.
+    if stype == "parked":
+        if body.get("reason") == "facility_closed":
+            return (
+                f'<div class="banner banner-warning">✓ {CLOSED_HOLD_COPY}</div>',
+                0,
+                CLOSED_HOLD_DWELL_S,
+            )
+        held = html.escape(body.get("message", "Recorded for review."))
+        return f'<div class="banner banner-warning">✓ {held}</div>', 0, 0
     email = html.escape(str(body.get("participant", {}).get("email", "?")))
     msg = html.escape(body.get("message", ""))
     label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
@@ -677,19 +825,29 @@ def _scan_result_banner_html(body, status):
     if warning:
         # Scan succeeded but the room is short of supervising adults (#1436):
         # amber, and it dwells 12s instead of 5s. Still confirms the scan.
-        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0
+        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0, 0
     if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0
-    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0
+        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0, 0
+    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0, 0
 
-def _saved_banner_html(queued):
+def _saved_banner_html(queued, intent=None):
     # A queued scan reads as done and safe to walk away from -- distinct
-    # from the red "not saved" state.
-    return f'<div class="banner banner-saved">✓ Saved — will sync ({queued} waiting)</div>'
+    # from the red "not saved" state. The displayed direction is the intent
+    # of record even when the server has not acked yet.
+    label = "CHECKED IN" if intent == "IN" else "CHECKED OUT" if intent == "OUT" else "Saved"
+    return f'<div class="banner banner-saved">✓ {label} — will sync ({queued} waiting)</div>'
 
 def handle_scan(backend, state, outbox, participant_id):
     client_event_id = new_event_id()
     scanned_at = now_iso()
+    clock_suspect = state.clock_watch.check()
+    if clock_suspect:
+        outbox.mark_clock_suspect()
+        log.warning("Large clock step detected; marking queued scans clockSuspect")
+    # Displayed direction is decided here, from the local presence view, and
+    # carried with the event. The server must not re-infer it from live state.
+    intent = state.displayed_intent(participant_id)
+    state.note_presence(participant_id, checking_in=(intent == "IN"))
     # Any scan ends a running force-close countdown; carrying the token is what
     # turns this one into the confirm. Taken once, and stored with the event if
     # this scan ends up queued -- a confirm given before the outage must still
@@ -700,10 +858,13 @@ def handle_scan(backend, state, outbox, participant_id):
     # already has a pending queued event, enqueue behind it instead of
     # attempting live delivery out of order.
     if outbox.has_pending_for_participant(participant_id):
-        outbox.enqueue(client_event_id, participant_id, scanned_at, confirm_token)
+        outbox.enqueue(
+            client_event_id, participant_id, scanned_at, confirm_token,
+            intent=intent, clock_suspect=clock_suspect,
+        )
         queued = outbox.pending_count()
-        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
-        log.info(f"Queued (predecessor pending): participant {participant_id}")
+        state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+        log.info(f"Queued (predecessor pending): participant {participant_id} {intent}")
         return
 
     body, status, retry_after = backend.post_scan(
@@ -711,23 +872,28 @@ def handle_scan(backend, state, outbox, participant_id):
         force_close_token=confirm_token,
         client_event_id=client_event_id,
         scanned_at=scanned_at,
+        intent=intent,
+        clock_suspect=clock_suspect,
     )
     outcome = classify_response(status, body)
 
     if outcome == "retry":
         # Try live first; only persist to the outbox if it wasn't confirmed.
-        outbox.enqueue(client_event_id, participant_id, scanned_at, confirm_token)
+        outbox.enqueue(
+            client_event_id, participant_id, scanned_at, confirm_token,
+            intent=intent, clock_suspect=clock_suspect,
+        )
         queued = outbox.pending_count()
-        state.push_event({"html": _saved_banner_html(queued), "queued": queued})
-        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id}")
+        state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id} {intent}")
         return
 
     # ack or dead: server responded definitively at scan time -- render the
     # existing immediate banner, unchanged behavior for the online path.
-    banner_html, countdown = _scan_result_banner_html(body, status)
+    banner_html, countdown, dwell = _scan_result_banner_html(body, status)
     if countdown:
         state.arm_confirm(body["forceCloseToken"], countdown)
-    state.push_event({"html": banner_html, "countdown": countdown})
+    state.push_event({"html": banner_html, "countdown": countdown, "dwell": dwell})
 
     if outcome == "ack":
         ptype = body.get("type", "?")
@@ -740,6 +906,7 @@ def handle_scan(backend, state, outbox, participant_id):
     if backend.attendance_path and outcome == "ack":
         att_data, att_status = backend.get_attendance()
         if att_status == 200:
+            state.seed_from_attendance(att_data)
             event_payload = {"html": ""}
             for key in ("attendance", "counts", "safety"):
                 if key in att_data:
@@ -764,6 +931,7 @@ def attendance_poller(backend, state, interval=30, sleep_fn=time.sleep,
             continue
         att_data, att_status = backend.get_attendance()
         if att_status == 200 and "counts" in att_data:
+            state.seed_from_attendance(att_data)
             new_counts = att_data["counts"]
             with state.lock:
                 changed = new_counts != state.current_counts
@@ -793,9 +961,48 @@ def _write_last_restart_target(remote_head, path=SELF_UPDATE_STATE_FILE):
 
 def _should_restart_for_update(remote_head, last_restart_target):
     # False once we've already exited for this exact remote_head and the
-    # restart didn't move HEAD past it (non-fast-forward pull); True for a
+    # restart didn't move HEAD onto it (the checkout failed); True for a
     # never-tried or newly-advanced target.
     return remote_head != last_restart_target
+
+def fetch_update_refs(timeout=15):
+    """Refresh both candidate targets. --force lets a moved tag land."""
+    subprocess.run(
+        ["git", "fetch", "--tags", "--force", "origin", "main"],
+        capture_output=True, timeout=timeout,
+    )
+
+def latest_release_tag():
+    """Highest release tag, or None. Sorted by version, not by tag date: a
+    patch cut after a later minor must not outrank it."""
+    out = subprocess.check_output(
+        ["git", "tag", "-l", RELEASE_TAG_GLOB, "--sort=-v:refname"], text=True
+    )
+    tags = out.split()
+    return tags[0] if tags else None
+
+def _tracks_releases(ref):
+    try:
+        script = subprocess.check_output(
+            ["git", "show", f"{ref}:client/kiosk.sh"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return RELEASE_CHANNEL_MARKER in script
+
+def resolve_update_target():
+    """The commit this kiosk should be running. kiosk.sh checks this out and
+    version_poller restarts when HEAD differs, so both read it from here and
+    cannot disagree about where the Pi is meant to be."""
+    tag = latest_release_tag()
+    if tag and _tracks_releases(tag):
+        return subprocess.check_output(
+            ["git", "rev-list", "-n", "1", tag], text=True
+        ).strip()
+    return subprocess.check_output(
+        ["git", "rev-parse", "origin/main"], text=True
+    ).strip()
 
 def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE,
                     in_closed_window_fn=in_closed_window):
@@ -817,8 +1024,8 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
 
         # 1. Check Server Version Update -- skipped during the closed window
         # (§3.1): this signed GET keep-alives the service same as
-        # attendance_poller's. Self-update below is NOT gated: git pull hits
-        # no server, and overnight is the safe window to restart in.
+        # attendance_poller's. Self-update below is NOT gated: the git fetch
+        # hits no server, and overnight is the safe window to restart in.
         if initial_server_version and not in_closed_window_fn():
             sv, status = backend.get_server_version()
             if status == 200 and sv and sv != initial_server_version:
@@ -828,10 +1035,10 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
 
         # 2. Check Client Version Update
         try:
-            subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
+            fetch_update_refs()
 
             local_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-            remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
+            remote_head = resolve_update_target()
             
             if local_head and remote_head and local_head != remote_head:
                 if _should_restart_for_update(remote_head, last_restart_target):
@@ -849,13 +1056,14 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
                         )
                 else:
                     # Restarted for this target already and HEAD didn't move --
-                    # git pull can't fast-forward. Stay up and keep serving
+                    # kiosk.sh's checkout failed. Stay up and keep serving
                     # scans on the current version instead of looping.
                     log.warning(
-                        f"Still on {local_head}, git pull did not advance past "
-                        f"{remote_head} after a restart (dirty tree, local "
-                        "commits, or diverged history on the Pi). Not "
-                        "restarting again until the checkout is fixed."
+                        f"Still on {local_head}, HEAD did not advance to "
+                        f"{remote_head} after a restart (kiosk.sh could not "
+                        "check the target out: dirty tree, local changes, or "
+                        "an unresolvable target). Not restarting again until "
+                        "the checkout is fixed."
                     )
         except Exception as e:
             log.error(f"Error checking client version: {e}")
@@ -893,6 +1101,7 @@ def main():
         att_data, att_status = backend.get_attendance()
         if att_status == 200 and "counts" in att_data:
             state.current_counts = att_data["counts"]
+            state.seed_from_attendance(att_data)
             log.info(f"Initial state: {state.current_counts['total']} people present")
         else:
             log.warning("Could not fetch initial attendance state")
@@ -904,6 +1113,16 @@ def main():
     # Start version poller thread
     vpoller = threading.Thread(target=version_poller, args=(backend, state), daemon=True)
     vpoller.start()
+
+    allow_reboot = bool(config.get("allow_reboot", False))
+    allow_wifi_bounce = bool(config.get("allow_wifi_bounce", False))
+    hmon = threading.Thread(
+        target=health_monitor,
+        args=(backend_url, state),
+        kwargs={"allow_reboot": allow_reboot, "allow_wifi_bounce": allow_wifi_bounce},
+        daemon=True,
+    )
+    hmon.start()
 
     # Start the outbox replay thread: drains queued scans in order,
     # re-signing and resubmitting each one, once the backend is reachable.

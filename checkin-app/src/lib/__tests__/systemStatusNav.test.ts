@@ -14,8 +14,9 @@ describe("SYSTEM_STATUS_NAV_LINKS", () => {
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
 
-  // Every tab, Audit Log included, is open to the whole section audience
-  // (sysadmin + board) — the layout filters nothing.
+  // The full list is the board/sysadmin audience. The layout filters it
+  // down to Unsynced Scans for a keyholder (Q15); this module stays the
+  // unfiltered catalog.
   it("exposes every tab to the section audience", () => {
     expect(SYSTEM_STATUS_NAV_LINKS.map((l) => l.name)).toEqual([
       "System Status",

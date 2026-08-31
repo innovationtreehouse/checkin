@@ -41,8 +41,12 @@ export async function GET(req: NextRequest) {
 
         let isKiosk = false;
 
-        if (!user && pubKeys.length > 0 && hasKioskHeaders) {
-            // Kiosk request — verify signature
+        // Minimization keys on the DISPLAY, not the credential (KIOSK_RESILIENCE
+        // §5.25 / B9). A valid kiosk signature means this request is the public
+        // kiosk screen — even when a keyholder has signed in on that same
+        // browser. The staff grant (`keyholders:personal`) stays on a session
+        // request that is NOT kiosk-signed (a laptop, not the door display).
+        if (pubKeys.length > 0 && hasKioskHeaders) {
             const result = verifyKioskSignature(
                 "GET",
                 "/api/attendance",
@@ -73,9 +77,8 @@ export async function GET(req: NextRequest) {
         // payload into an iframe with a wildcard postMessage target origin
         // (client/client.py). It gets a display-only roster: no dateOfBirth
         // (personal), no phone (pii), no emergency contacts (personal) — none of
-        // which it renders. A signed-in keyholder/board/sysadmin still gets the
-        // full payload: that grant is deliberate (registry.ts `keyholders:personal`,
-        // for pickup/emergency lookups) and unchanged here.
+        // which it renders. A signed-in keyholder on a non-kiosk browser still
+        // gets the full payload (pickup/emergency lookups).
         const { attendance, counts, safety } = await getFullAttendance({ kiosk: isKiosk });
 
         // Determine access level

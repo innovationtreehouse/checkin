@@ -8,6 +8,7 @@ import { renewalSeasonWindow, nextBoundary, bgValidUntilBoundary, grantRenewalPa
 import { grantableRenewalWhere, settledThisCycleWhere } from "@/lib/membership/lifecycle";
 import { PaymentError } from "@/lib/membership/payment";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { searchId } from "@/lib/searchId";
 
 export const dynamic = 'force-dynamic';
 
@@ -119,11 +120,18 @@ export const GET = withAuth(
                 });
             }
 
+            // A bare number searches ids too — the household's own, and any member's,
+            // since both are printed in the ops tables and pasted back into this box.
+            const idQuery = searchId(q);
             const whereClause = q ? {
                 OR: [
                     { name: { contains: q, mode: 'insensitive' as const } },
                     { householdMembers: { some: { name: { contains: q, mode: 'insensitive' as const } } } },
                     { householdMembers: { some: { email: { contains: q, mode: 'insensitive' as const } } } },
+                    ...(idQuery !== null ? [
+                        { id: idQuery },
+                        { householdMembers: { some: { id: idQuery } } },
+                    ] : []),
                 ]
             } : {};
 

@@ -10,6 +10,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import { PageLoader } from "@/components/ui/PageLoader";
 import { formatPhone } from "@/lib/phone";
 import { formatDateOnly } from "@/lib/time";
+import { searchId } from "@/lib/searchId";
 
 interface ParticipantMergeView {
   id: number;
@@ -68,6 +69,12 @@ function formatFieldValue(field: ConflictField, value: unknown): string {
   }
   if (field === "phone" && typeof value === "string") return formatPhone(value);
   return String(value ?? "—");
+}
+
+// Two characters are too little to search on — except for an id, which is a whole
+// query at one digit.
+function isSearchable(query: string) {
+  return query.trim().length > 2 || searchId(query) !== null;
 }
 
 export default function MergeParticipants() {
@@ -138,7 +145,7 @@ export default function MergeParticipants() {
   }, [keepId, analyzedA?.id, analyzedB?.id]);
 
   useEffect(() => {
-    if (searchA.length > 2 && !pA) {
+    if (isSearchable(searchA) && !pA) {
       fetch(`/api/people/search?q=${encodeURIComponent(searchA)}`)
         .then(r => r.json())
         .then(d => setResultsA(d.people || []));
@@ -148,7 +155,7 @@ export default function MergeParticipants() {
   }, [searchA, pA]);
 
   useEffect(() => {
-    if (searchB.length > 2 && !pB) {
+    if (isSearchable(searchB) && !pB) {
       fetch(`/api/people/search?q=${encodeURIComponent(searchB)}`)
         .then(r => r.json())
         .then(d => setResultsB(d.people || []));
@@ -255,7 +262,7 @@ export default function MergeParticipants() {
             label={label}
             value={value}
             onChange={(e) => setValue(e.currentTarget.value)}
-            placeholder="Search by name or email..."
+            placeholder="Search by name, email, or ID..."
           />
           {results.length > 0 && (
             <Paper withBorder shadow="md" radius="sm" pos="absolute" left={0} right={0} style={{ zIndex: 10, maxHeight: 320, overflowY: "auto" }}>

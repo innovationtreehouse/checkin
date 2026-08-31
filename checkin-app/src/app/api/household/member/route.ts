@@ -8,7 +8,7 @@ import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { HOUSEHOLD_PEER_SELECT } from "@/lib/household/participantProjection";
 import { householdLeadship } from "@/lib/household/leads";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
-import { nameWrite } from "@/lib/person/name";
+import { nameWrite, nicknameWrite, isNicknameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const PATCH = withAuth(
@@ -19,7 +19,7 @@ export const PATCH = withAuth(
             const userId = auth.user.id;
 
             const body = await req.json();
-            const { participantId, name, email, dob, phone, isLead, over25, allergies } = body;
+            const { participantId, name, nickname, email, dob, phone, isLead, over25, allergies } = body;
 
             if (!participantId) {
                 return apiError("Participant ID is required", 400);
@@ -33,6 +33,10 @@ export const PATCH = withAuth(
             // A submitted-but-blank name is rejected, not silently dropped (Decision 5).
             if (name !== undefined && !nameWrite(name)) {
                 return apiError("Name cannot be blank", 400);
+            }
+
+            if (!isNicknameWrite(nickname)) {
+                return apiError("Invalid nickname", 400);
             }
 
             const hh = await householdLeadship(userId);
@@ -57,6 +61,7 @@ export const PATCH = withAuth(
                     where: { id: participantId },
                     data: {
                         name: nameWrite(name),
+                        nickname: nicknameWrite(nickname),
                         email: email !== undefined ? (email === "" ? null : email.toLowerCase()) : undefined,
                         phone: phone !== undefined ? (phone === "" ? null : formatPhone(phone)) : undefined,
                         // #1165: a real sub-26 DoB is kept and supersedes the 25+ flag; a

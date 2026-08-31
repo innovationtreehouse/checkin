@@ -66,7 +66,7 @@ describe("membership-ops/households page", () => {
     renderWithProviders(<AdminHouseholdsPage />);
     await screen.findByText("The Smiths");
 
-    fireEvent.change(screen.getByPlaceholderText("Filter by household or participant name/email"), {
+    fireEvent.change(screen.getByPlaceholderText("Filter by household or participant name, email, or ID"), {
       target: { value: "Jones" },
     });
 

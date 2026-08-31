@@ -659,24 +659,30 @@ defineRoute({
 // RawBadgeLog rows a replay parked instead of toggling (reviewReason set,
 // reviewedAt still null). Landed registry-first, ahead of the route.
 //
-// Same admin pair and same everyones band as the sibling GET
-// /api/facility/badges, MINUS pii: the panel names the person and nothing
-// more, so the route selects person { id, name } only (both public-tier) and
-// there is no email/phone in the bag for a pii grant to cover. Narrower than
-// the sibling ON PURPOSE — widening it later is a boundary PR, which is the
-// point. 'personal' is required for RawBadgeLog.timestamp (the "scanned
-// 2:14pm" the row copy is built on) and location; 'internal' for the row's
-// own bookkeeping — reviewReason, clientEventId, personId, and the two new
-// reviewedAt/reviewedBy columns.
+// Same everyones band as the sibling GET /api/facility/badges, MINUS pii:
+// the panel names the person and nothing more, so the route selects person
+// { id, name } only (both public-tier) and there is no email/phone in the
+// bag for a pii grant to cover. Narrower than the sibling ON PURPOSE —
+// widening it later is a boundary PR, which is the point. 'personal' is
+// required for RawBadgeLog.timestamp (the "scanned 2:14pm" the row copy is
+// built on) and location; 'internal' for the row's own bookkeeping —
+// reviewReason, clientEventId, personId, and the two new reviewedAt/reviewedBy
+// columns.
+//
+// Q15 admits keyholders. isOperations stays out: #1633 / the attendance rule
+// puts operations at aggregate only — they do not read one person's raw
+// badge events. The bag is already minimized, so the keyholder grant matches
+// board's band rather than growing it.
 defineRoute({
     endpoint: 'GET /api/system-status/unsynced-scans',
-    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     envelope: 'scans',
     // Bag: { RawBadgeLog } with person (Person).
     returns: ['RawBadgeLog', 'Person'],
     orderedView: [
         ['isSysadmin',    ['everyones:personal', 'everyones:internal', 'member', 'public']],
         ['isBoardMember', ['everyones:personal', 'everyones:internal', 'member', 'public']],
+        ['isKeyholder',   ['everyones:personal', 'everyones:internal', 'member', 'public']],
     ],
 });
 
@@ -689,9 +695,25 @@ defineRoute({
 // visit tool, which carries its own registered grant. Landed registry-first.
 defineRoute({
     endpoint: 'POST /api/system-status/unsynced-scans/[id]',
-    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember', 'isKeyholder'] },
     envelope: null,
     orderedView: [],
+});
+
+// In-memory kiosk last-seen (KIOSK_RESILIENCE §3.4). No DB row: the stamp
+// lives on the task, so the bag is a synthesized SystemMetricLog (metric
+// `kiosk_last_seen`, timestamp = last verified kiosk request, value = age
+// in seconds). Empty array means never seen since this task started (or
+// overnight after scale-to-zero). Landed registry-first, ahead of the route.
+defineRoute({
+    endpoint: 'GET /api/system-status/kiosk-heartbeat',
+    authorize: { anyRole: ['isSysadmin', 'isBoardMember'] },
+    envelope: 'heartbeat',
+    returns: ['SystemMetricLog'],
+    orderedView: [
+        ['isSysadmin',    ['everyones:internal', 'member', 'public']],
+        ['isBoardMember', ['everyones:internal', 'member', 'public']],
+    ],
 });
 
 // Volunteer designations (dues-discount allowlist; email is pii) — admin

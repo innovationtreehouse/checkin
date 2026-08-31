@@ -1,6 +1,7 @@
 import inspect
 import json
 import os
+import subprocess
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, Mock, patch
@@ -9,12 +10,18 @@ from nacl.signing import SigningKey
 
 from client import (
     AttendanceState,
+    RELEASE_CHANNEL_MARKER,
+    RELEASE_TAG_GLOB,
     BackendClient,
     DEFAULT_KIOSK_PATH,
+    CLOSED_HOLD_COPY,
+    CLOSED_HOLD_DWELL_S,
     _scan_result_banner_html,
     attendance_poller,
     handle_scan,
+    latest_release_tag,
     main,
+    resolve_update_target,
 )
 from outbox import Outbox, in_closed_window
 
@@ -64,6 +71,143 @@ class TestSupervisionWarningBanner(unittest.TestCase):
 
         self.assertIn("banner-ok", html_out)
         self.assertNotIn("banner-warning", html_out)
+
+
+def _git_stub(tags="", kiosk_sh=None, tag_commit="tagsha", main_head="mainsha"):
+    """Stand in for the git calls resolve_update_target makes."""
+    def run(argv, **kwargs):
+        if argv[:3] == ["git", "tag", "-l"]:
+            return tags
+        if argv[:2] == ["git", "show"]:
+            if kiosk_sh is None:
+                raise subprocess.CalledProcessError(128, argv)
+            return kiosk_sh
+        if argv[:2] == ["git", "rev-list"]:
+            return tag_commit + "\n"
+        if argv[:2] == ["git", "rev-parse"]:
+            return main_head + "\n"
+        raise AssertionError(f"unexpected git call: {argv}")
+    return run
+
+
+class TestReleaseChannel(unittest.TestCase):
+    """The Pi follows release tags, because the server deploys from them. A Pi
+    on main runs client code whose server counterpart is not deployed."""
+
+    def test_tags_are_ranked_by_version_not_by_date(self):
+        # v1.10.0 must outrank v1.9.0, and a patch cut later must not outrank a
+        # newer minor -- both of which -v:refname gets right and date sorting
+        # does not. Asserting the flag because git, not us, does the sorting.
+        with patch("client.subprocess.check_output") as co:
+            co.return_value = "v1.2.1\nv1.2.0\n"
+            self.assertEqual(latest_release_tag(), "v1.2.1")
+
+        argv = co.call_args.args[0]
+        self.assertIn("--sort=-v:refname", argv)
+        self.assertIn(RELEASE_TAG_GLOB, argv)
+
+    def test_no_tags_at_all_falls_back_to_main(self):
+        with patch("client.subprocess.check_output", side_effect=_git_stub(tags="")):
+            self.assertEqual(resolve_update_target(), "mainsha")
+
+    def test_a_release_that_tracks_releases_is_adopted(self):
+        stub = _git_stub(tags="v1.3.0\n", kiosk_sh=f"# {RELEASE_CHANNEL_MARKER}\n")
+        with patch("client.subprocess.check_output", side_effect=stub):
+            self.assertEqual(resolve_update_target(), "tagsha")
+
+    def test_a_release_that_still_pulls_main_is_not_adopted(self):
+        # The state on the day this landed: the newest release predates the
+        # channel. Adopting it would check out a tree that pulls main straight
+        # back, restarting the kiosk once per poll, forever.
+        stub = _git_stub(tags="v1.2.1\n", kiosk_sh="git pull origin main\n")
+        with patch("client.subprocess.check_output", side_effect=stub):
+            self.assertEqual(resolve_update_target(), "mainsha")
+
+    def test_a_tag_with_no_kiosk_sh_is_not_adopted(self):
+        stub = _git_stub(tags="v0.1.0\n", kiosk_sh=None)
+        with patch("client.subprocess.check_output", side_effect=stub):
+            self.assertEqual(resolve_update_target(), "mainsha")
+
+    def test_kiosk_sh_carries_the_marker_the_gate_greps_for(self):
+        # The gate reads this marker out of a TAG's kiosk.sh. Drop the line here
+        # and no future release is ever adopted -- silently, since the fallback
+        # is the old behaviour and nothing else changes.
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "kiosk.sh")) as f:
+            self.assertIn(RELEASE_CHANNEL_MARKER, f.read())
+
+class TestParkedScanBanner(unittest.TestCase):
+    """A park creates no Visit. The kiosk may not render one as a check-in, and
+    must not blame the member for a keyholder who has not badged yet."""
+
+    CLOSED = {
+        "type": "parked",
+        "reason": "facility_closed",
+        "message": "Recorded. Will project when a keyholder is present.",
+    }
+    REVIEW = {"type": "parked", "message": "Recorded for review."}
+
+    def test_the_hold_is_amber_and_confirms_the_scan(self):
+        html_out = scan_banner(self.CLOSED)
+
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-ok", html_out)
+        self.assertNotIn("banner-error", html_out)
+        self.assertIn(CLOSED_HOLD_COPY, html_out)
+
+    def test_the_copy_names_the_keyholder_as_what_is_awaited(self):
+        # The member did nothing wrong and cannot fix "no keyholder has
+        # badged" -- the banner reports their scan landed and what it waits on.
+        self.assertEqual(
+            CLOSED_HOLD_COPY,
+            "Scan successful, waiting for key holder before opening the building",
+        )
+
+    def test_holds_for_thirty_seconds_without_fading(self):
+        _, countdown, dwell = _scan_result_banner_html(self.CLOSED, 200)
+
+        self.assertEqual(dwell, 30)
+        self.assertEqual(dwell, CLOSED_HOLD_DWELL_S)
+        # The dwell is only honoured because .banner-warning suppresses the 5s
+        # fade; on any class that does not, the banner silently blanks at 5s.
+        self.assertIn("banner-warning", scan_banner(self.CLOSED))
+        # Not a force-close countdown -- nothing to tick, nothing to confirm.
+        self.assertEqual(countdown, 0)
+
+    def test_no_park_shows_the_placeholder_it_has_no_name_for(self):
+        self.assertNotIn("?", scan_banner(self.CLOSED))
+        self.assertNotIn("?", scan_banner(self.REVIEW))
+
+    def test_a_review_park_also_stops_reading_as_a_checkin(self):
+        # Double-in and out-without-in park too, and used to fall through to
+        # the green tick -- the same "reads as a check-in" look, one branch on.
+        html_out = scan_banner(self.REVIEW)
+
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-ok", html_out)
+        self.assertNotIn("CHECKED IN", html_out)
+        self.assertIn("Recorded for review.", html_out)
+        self.assertNotIn(CLOSED_HOLD_COPY, html_out)
+
+    def test_a_park_from_a_server_too_old_to_send_a_reason_is_still_not_green(self):
+        # ops runs a release whose closed-facility park carries no `reason`, so
+        # until the server ships that hold arrives here indistinguishable from a
+        # review park. It must not be a green tick either.
+        html_out = scan_banner({k: v for k, v in self.CLOSED.items() if k != "reason"})
+
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-ok", html_out)
+
+    def test_the_dwell_reaches_the_display(self):
+        state = AttendanceState()
+        pushed = []
+        state.push_event = pushed.append
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = (self.CLOSED, 200, None)
+
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+
+        self.assertEqual(pushed[-1]["dwell"], CLOSED_HOLD_DWELL_S)
 
 
 class TestBackendClient(unittest.TestCase):
@@ -119,6 +263,32 @@ class TestExampleConfigMatchesDefaults(unittest.TestCase):
 
 class TestForceCloseConfirm(unittest.TestCase):
     """§5.23 explicit confirm: the warning arms a token, the next scan spends it."""
+
+    def test_post_scan_sends_displayed_intent(self):
+        client = BackendClient("http://fake", SigningKey(b"\x00" * 32))
+        client.session = MagicMock()
+        client.session.post.return_value = MagicMock(status_code=200, headers={}, json=lambda: {})
+        client.post_scan(7, intent="IN")
+        payload = json.loads(client.session.post.call_args.kwargs["data"])
+        self.assertEqual(payload["intent"], "IN")
+        client.post_scan(7, intent="OUT", clock_suspect=True)
+        payload = json.loads(client.session.post.call_args.kwargs["data"])
+        self.assertEqual(payload["intent"], "OUT")
+        self.assertTrue(payload["clockSuspect"])
+
+    def test_handle_scan_carries_local_presence_as_intent(self):
+        state = AttendanceState()
+        state.push_event = lambda event: None
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = (
+            {"type": "checkin", "participant": {"email": "a@example.com"}},
+            200,
+            None,
+        )
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+        self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "IN")
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+        self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "OUT")
 
     def test_post_scan_sends_the_token_only_when_one_is_held(self):
         client = BackendClient("http://fake", "fake_key")

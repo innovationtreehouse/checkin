@@ -30,6 +30,26 @@ describe("ProfilePage", () => {
         expect(fetchMock).toHaveBeenCalledWith("/api/profile", expect.objectContaining({ method: "PATCH" }));
     });
 
+    // The nickname an admin set while printing has to be visible and editable here —
+    // it is the member's own name, not a back-office label.
+    it("shows the nickname on file and saves an edit to it", async () => {
+        setSession({ id: 1 });
+        const fetchMock = mockFetchJson({
+            "/api/profile": { profile: { name: "David Smith", nickname: "Dave", email: "d@example.com", phone: "555-1111", dateOfBirth: "1990-01-01" } },
+        });
+        renderWithProviders(<ProfilePage />);
+
+        const nicknameInput = await screen.findByLabelText(/Nickname/);
+        expect(nicknameInput).toHaveValue("Dave");
+
+        fireEvent.change(nicknameInput, { target: { value: "Davey" } });
+        fireEvent.click(screen.getByRole("button", { name: "Save Profile" }));
+
+        await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ message: "Profile updated successfully!" })));
+        const [, patchOpts] = fetchMock.mock.calls.find(([, init]) => init?.method === "PATCH")!;
+        expect(JSON.parse(patchOpts!.body as string)).toMatchObject({ nickname: "Davey" });
+    });
+
     it("prefills the over-25 attestation and posts it without a DoB", async () => {
         setSession({ id: 3 });
         const fetchMock = mockFetchJson({

@@ -120,7 +120,7 @@ export default function CreateProgramPage() {
               label="Lead Mentor / Program Coordinator"
               required
               description="The lead mentor will be able to manage this program's roster and events."
-              placeholder="Search by name or email..."
+              placeholder="Search by name, email, or ID..."
               selectedId={leadMentorId || null}
               selectedLabel={mentorSearch}
               search={async (q) => {

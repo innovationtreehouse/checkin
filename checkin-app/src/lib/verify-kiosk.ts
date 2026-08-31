@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { config } from "./config";
+import { stampKioskSeen } from "./kioskSeen";
 
 /**
  * Verify an Ed25519 signature from the kiosk client.
@@ -132,6 +133,7 @@ export function verifyKioskSignature(
         return { ok: false, status: 401, error: "Replay detected" };
     }
     seenNonces.set(nonceHeader, nowMs + MAX_AGE_SECONDS * 1000);
+    stampKioskSeen(nowMs);
 
     return { ok: true };
 }

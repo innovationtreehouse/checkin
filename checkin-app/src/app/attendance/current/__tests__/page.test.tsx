@@ -4,6 +4,8 @@ jest.mock("next/navigation", () => require("@/test-helpers/rtl").navMock());
 jest.mock("next-auth/react", () => require("@/test-helpers/rtl").authMock());
 jest.mock("@mantine/notifications", () => ({ notifications: { show: jest.fn() } }));
 
+import fs from "fs";
+import path from "path";
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, setSearchParams, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
@@ -106,7 +108,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), {
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), {
       target: { value: "Wendy" },
     });
 
@@ -148,6 +150,12 @@ describe("attendance/current page", () => {
     );
   });
 
+  it("kiosk idle-stop keys on mode=kiosk or signedRequest, not URL sig params", () => {
+    const src = fs.readFileSync(path.join(__dirname, "../page.tsx"), "utf8");
+    expect(src).toContain('searchParams.get("mode") === "kiosk" || isSignedKiosk');
+    expect(src).toContain("idleStopMs: isKioskDisplay ? undefined : POLL_IDLE_STOP_MS");
+  });
+
   it("kiosk mode hides admin controls and shows privacy-safe first names", async () => {
     setSearchParams("mode=kiosk");
     // No admin flags — also exercises the session `|| false` / `|| null` fallbacks.
@@ -159,7 +167,7 @@ describe("attendance/current page", () => {
     expect(screen.queryByText("Karen Keyholder")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check Me In" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out a user" })).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name or email)...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name, email, or ID)...")).not.toBeInTheDocument();
     expect(screen.queryByText("Household Check-ins")).not.toBeInTheDocument();
   });
 
@@ -183,7 +191,7 @@ describe("attendance/current page", () => {
     expect(screen.getByText("Individual names are only visible to administrators", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Your household members are shown above.", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check Me In" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name or email)...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name, email, or ID)...")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out a user" })).not.toBeInTheDocument();
   });
 
@@ -368,7 +376,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "W" } });
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), { target: { value: "W" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     expect(screen.queryByText("Wendy West")).not.toBeInTheDocument();
@@ -389,7 +397,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "noname" } });
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), { target: { value: "noname" } });
 
     expect(await screen.findByText("Unnamed")).toBeInTheDocument();
     expect(screen.getByText("noname@example.com")).toBeInTheDocument();
@@ -408,7 +416,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "wendy" } });
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), { target: { value: "wendy" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     expect(screen.queryByText("Wendy West")).not.toBeInTheDocument();
@@ -653,6 +661,46 @@ describe("attendance/current page", () => {
         expect.objectContaining({ color: "red", message: "Failed to check out.", autoClose: false }),
       ),
     );
+  });
+
+  it("does not treat a roster without safety flags as two-deep compliant (B6)", async () => {
+    setAdminSession();
+    const { safety: _omit, ...withoutSafety } = attendanceData;
+    void _omit;
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": withoutSafety,
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Two-Deep Compliance is failing!", { exact: false })).not.toBeInTheDocument();
+    expect(screen.queryByText("Only one isKeyholder is currently in the building.")).not.toBeInTheDocument();
+  });
+
+  it("treats a malformed safety object as unknown, not compliant (B6)", async () => {
+    setAdminSession();
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": { ...attendanceData, safety: {} },
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+  });
+
+  it("treats a partial safety object (one flag missing) as unknown (B6)", async () => {
+    setAdminSession();
+    mockFetchJson({
+      "/api/household": householdData,
+      "/api/attendance": { ...attendanceData, safety: { isTwoDeepViolation: true } },
+    });
+    renderWithProviders(<KioskDisplay />);
+
+    // Even a true violation flag cannot render as a verdict when the pair is
+    // incomplete — coverage of the other flag is silently un-checkable.
+    expect(await screen.findByText("Supervision status unknown")).toBeInTheDocument();
+    expect(screen.queryByText("Two-Deep Compliance is failing!", { exact: false })).not.toBeInTheDocument();
   });
 
   it("shows a critical two-deep-violation banner over the last-keyholder warning", async () => {

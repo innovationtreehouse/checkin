@@ -91,6 +91,7 @@ const DISPOSITIONS: Record<string, string> = {
     'Event.attendanceConfirmedById': 'repointed (SET NULL) — who confirmed attendance is a staff-action audit fact; left behind it reads as nobody.',
     'OrgMembershipProcess.noteAckById': 'repointed (SET NULL) — who read the family intake note, same audit-fact rationale.',
     'OrgMembershipProcess.subjectPersonId': 'repointed (SET NULL) — step 5 updateMany, then archiveDuplicatePersonBg leaves the survivor exactly one open PERSON_BG.',
+    'PresenceEvent.personId': 'repointed (CASCADE) — the append-only presence log projects visits, so events left on a tombstone would flush against a person the projection can no longer treat as live; the log follows the survivor like RawBadgeLog does.',
     'PersonMerge.toId': 'repointed (RESTRICT) — an earlier merge\'s archive row naming this record as ITS survivor. Repointed, not chained: the archive answers "where is this person now", and RESTRICT means a row left here would pin the very Person that #1456 2b-3 exists to delete. Deliberately the opposite call from Person.mergedIntoId below, which keeps its chain for provenance — the archive already has mergedAt and the AuditLog for that.',
     'PersonRole.grantedById': 'repointed (SET NULL) — swept AFTER the holder pass, so a granter stamp on a row the dedupe just deleted is not counted as moved.',
     'Program.leadMentorId': 'repointed (SET NULL) — step 5 updateMany.',
