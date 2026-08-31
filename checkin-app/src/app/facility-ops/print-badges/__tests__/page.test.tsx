@@ -42,6 +42,13 @@ const withInactive = [
   { id: 3, name: "Lapsed Larry", email: "larry@example.com", isMember: false },
 ];
 
+// An ACTIVE member who also holds a sysadmin login — the filter must hide her on
+// the role, not on membership.
+const withAdmin = [
+  participants[0],
+  { id: 4, name: "Ada Admin", email: "ada@example.com", isMember: true, isSysadmin: true },
+];
+
 // Two ACTIVE members whose first names collide. `?roster=active` is keyed first so it
 // wins mockFetchJson's substring match over the plain search URL.
 const johns = [
@@ -134,6 +141,37 @@ describe("facility-ops/print-badges page", () => {
     expect(screen.getByRole("checkbox", { name: "Select all" })).toBeChecked();
   });
 
+  it("hides admins by default and reveals them flagged when unchecked", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/people/search": { people: withAdmin } });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("Kim Keyholder");
+
+    const filter = screen.getByRole("checkbox", { name: /hide inactive & admins/i });
+    expect(filter).toBeChecked();
+    expect(screen.queryByText("Ada Admin")).not.toBeInTheDocument();
+
+    fireEvent.click(filter);
+    expect(await screen.findByText("Ada Admin")).toBeInTheDocument();
+    expect(screen.getByText("ADMIN")).toBeInTheDocument();
+  });
+
+  it("drops a revealed admin from the print run when the filter is re-applied", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({ "/api/people/search": { people: withAdmin } });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("Kim Keyholder");
+
+    const filter = screen.getByRole("checkbox", { name: /hide inactive & admins/i });
+    fireEvent.click(filter); // reveal the admin
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+    expect(screen.getByRole("button", { name: "Generate Badge (2)" })).toBeInTheDocument();
+
+    fireEvent.click(filter); // hide again — the admin must leave the print run
+    expect(screen.getByRole("button", { name: "Generate Badge (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate Sticker (1)" })).toBeInTheDocument();
+  });
+
   // #1625. The Printed Name column exists so this pair of assertions is writable at all:
   // it is the only place the value the badge will print is observable without generating
   // a PDF. Both were red against the old behaviour, where the name was computed over the
@@ -191,8 +229,8 @@ describe("facility-ops/print-badges page", () => {
     fireEvent.click(filter);
     await waitFor(() => expect(screen.queryByText("John Doe")).not.toBeInTheDocument());
     expect(screen.getByText("John Smith")).toBeInTheDocument();
-    // "Hide inactive (N)" counts only inactive rows, never the year-filtered ones.
-    expect(screen.getByRole("checkbox", { name: /^hide inactive$/i })).toBeInTheDocument();
+    // "Hide inactive & admins (N)" counts only its own rows, never the year-filtered ones.
+    expect(screen.getByRole("checkbox", { name: /^hide inactive & admins$/i })).toBeInTheDocument();
   }, 15000);
 
   it("keeps the printed name fixed when the search box narrows the visible rows", async () => {
@@ -297,7 +335,7 @@ describe("facility-ops/print-badges page", () => {
     );
     expect(screen.getByText(/2 hidden by the filter/)).toBeInTheDocument();
     expect(screen.queryByText("No participants found.")).not.toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: /hide inactive \(2\)/i })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /hide inactive & admins \(2\)/i })).toBeChecked();
   });
 
   it("holds badge generation when the member roster request fails", async () => {

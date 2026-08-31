@@ -106,6 +106,14 @@ describe('GET /api/people/search?roster=active', () => {
         await prisma.person.update({ where: { id: admin.id }, data: { isSysadmin: true } });
         adminId = admin.id;
 
+        // An ACTIVE member who also holds a sysadmin login. The roster must exclude
+        // her on the ROLE — membership status can't be what catches her. The exclusion
+        // reads the PersonRole table, so grant the role row (the mirror column alone
+        // would not be seen).
+        const sue = await makePerson('Sysadmin Sue', 'sue', 'ACTIVE');
+        await prisma.personRole.create({ data: { personId: sue.id, role: 'SYSADMIN' } });
+        await prisma.person.update({ where: { id: sue.id }, data: { isSysadmin: true } });
+
         await makePerson('John Smith', 'smith', 'ACTIVE');
         await makePerson('John Doe', 'doe', 'ACTIVE');
         await makePerson('John Lapsed', 'lapsed', 'NONE');
@@ -163,6 +171,15 @@ describe('GET /api/people/search?roster=active', () => {
 
     it('still searches normally without the roster flag', async () => {
         expect(await roster('q=John Smith')).toEqual(['John Smith']);
+    });
+
+    it('excludes sysadmin logins from the roster, even as ACTIVE members', async () => {
+        // Admin logins never wear a badge by default — the role, not membership
+        // status, is what removes her, and it also keeps her out of printed-name
+        // disambiguation.
+        const names = (await rosterRows('roster=active')).map(p => p.name);
+        expect(names).toContain('John Smith');
+        expect(names).not.toContain('Sysadmin Sue');
     });
 
     describe('the membership year (#1628)', () => {

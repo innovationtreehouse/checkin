@@ -81,7 +81,11 @@ export const GET = withAuth(
                 const stageFilter: { gte: Date; lt?: Date } = { gte: cycle?.settledSince ?? MAX_DATE };
                 if (settledBefore) stageFilter.lt = settledBefore;
                 const members = await prisma.person.findMany({
-                    where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
+                    // No sysadmin logins: those exist for remote system management and
+                    // never wear a badge, so they neither print by default nor count
+                    // toward printed-name disambiguation. Role table, not the legacy
+                    // mirror column — PersonRole is the source of truth.
+                    where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE, roles: { none: { role: 'SYSADMIN' } } },
                     select: {
                         id: true,
                         name: true,
