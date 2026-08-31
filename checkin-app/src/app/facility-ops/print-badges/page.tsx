@@ -19,6 +19,7 @@ type ParticipantRow = {
   nickname: string | null;
   email: string | null;
   isMember?: boolean;
+  isSysadmin?: boolean;
   isBoardMember?: boolean;
   isKeyholder?: boolean;
 };
@@ -203,12 +204,14 @@ export default function PrintBadgesPage() {
   // never `participants`/`selectedIds` — a hidden person can't leak into a print run.
   // The year filter waits for the roster: printedYears is empty until it lands, and
   // filtering against an empty map would blank the list mid-load.
+  // Sysadmin logins hide with the inactive: they exist for remote system management,
+  // not for wearing a badge on the floor, so a badge never prints for one by default.
   const visible = participants.filter(p =>
-    (!hideInactive || p.isMember) &&
+    (!hideInactive || (p.isMember && !p.isSysadmin)) &&
     (!filterByYear || roster === null || !selectedYear || printedYears.get(p.id) === selectedYear)
   );
   // Counts the two filters own separately, so each label names only its own hidden rows.
-  const inactiveHidden = hideInactive ? participants.filter(p => !p.isMember).length : 0;
+  const inactiveHidden = hideInactive ? participants.filter(p => !p.isMember || p.isSysadmin).length : 0;
   const hidden = participants.length - visible.length;
   const selectedVisible = visible.filter(p => selectedIds.has(p.id));
 
@@ -325,9 +328,10 @@ export default function PrintBadgesPage() {
       header: 'Roles',
       render: (p) => (
         <Group gap={4}>
+          {p.isSysadmin && <Badge size="xs" color="red">ADMIN</Badge>}
           {p.isBoardMember && <Badge size="xs" color="blue">BOARD</Badge>}
           {p.isKeyholder && <Badge size="xs" color="orange">KEYHOLDER</Badge>}
-          {!p.isBoardMember && !p.isKeyholder && p.isMember && (
+          {!p.isSysadmin && !p.isBoardMember && !p.isKeyholder && p.isMember && (
             <Badge size="xs">MEMBER</Badge>
           )}
         </Group>
@@ -363,7 +367,7 @@ export default function PrintBadgesPage() {
           onChange={(e) => setFilterByYear(e.currentTarget.checked)}
         />
         <Checkbox
-          label={inactiveHidden ? `Hide inactive (${inactiveHidden})` : "Hide inactive"}
+          label={inactiveHidden ? `Hide inactive & admins (${inactiveHidden})` : "Hide inactive & admins"}
           checked={hideInactive}
           onChange={(e) => setHideInactive(e.currentTarget.checked)}
         />
