@@ -50,8 +50,13 @@ export async function processCheckin(participant: Person, authType: string, db: 
         });
 
         if (activeKeyholders === 0) {
-            // Closed is advisory (#1347): a kiosk badge is recorded for review,
-            // not rejected. Dashboard check-in still 403s (no badge to park).
+            // Closed is advisory: a kiosk badge is held (projection C) until a
+            // keyholder Visit exists, then auto-projected in occurredAt order.
+            // The raw log still carries facility_closed so the scan stays
+            // visible on the review panel — without it, a night where no
+            // keyholder ever arrives leaves the touch in limbo on every
+            // surface. A flushed event's row is simply dismissible.
+            // Dashboard check-in still 403s (no badge to hold).
             if (authType === "kiosk") {
                 const badge = await tx.rawBadgeLog.findFirst({
                     where: { personId: participant.id, reviewReason: null },
@@ -64,7 +69,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
                         data: { reviewReason: "facility_closed" },
                     });
                 }
-                return apiJson({ type: "parked", message: "Recorded for review." });
+                return apiJson({ type: "parked", reason: "facility_closed", message: "Recorded. Will project when a keyholder is present." });
             }
             return apiError("Facility is closed. A Keyholder must check in first.", 403);
         }
@@ -179,7 +184,7 @@ export async function processCheckout(
                         where: { clientEventId: replayEventId },
                         data: { reviewReason: 'force_close_review' },
                     });
-                    return apiJson({ type: 'parked', message: 'Recorded for review.' });
+                    return apiJson({ type: 'parked', reason: 'force_close_review', message: 'Recorded for review.' });
                 }
 
                 if (!confirmForceClose) {

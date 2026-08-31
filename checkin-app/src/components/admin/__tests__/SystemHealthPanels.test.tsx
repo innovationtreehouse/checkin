@@ -1,6 +1,6 @@
 import { screen, fireEvent } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, resetRtl } from "@/test-helpers/rtl";
-import { SystemVersionBox, BadgeScanChart, SReadDiagnosticsBox, CronRunsBox } from "../SystemHealthPanels";
+import { SystemVersionBox, BadgeScanChart, SReadDiagnosticsBox, CronRunsBox, KioskHeartbeatBox } from "../SystemHealthPanels";
 
 beforeEach(() => resetRtl());
 
@@ -119,5 +119,17 @@ describe("CronRunsBox", () => {
     // did run last night, and must not read as "not running".
     expect(screen.getByText(/2 hours ago/)).toBeInTheDocument();
     expect(screen.getByText(/3 days ago/)).toBeInTheDocument();
+  });
+});
+
+describe("KioskHeartbeatBox", () => {
+  it("renders last-seen age from the heartbeat envelope", async () => {
+    mockFetchJson({
+      "/api/system-status/kiosk-heartbeat": {
+        heartbeat: [{ metric: "kiosk_last_seen", timestamp: new Date().toISOString(), value: 90 }],
+      },
+    });
+    renderWithProviders(<KioskHeartbeatBox />);
+    expect(await screen.findByText(/Kiosk last seen 1m ago/)).toBeInTheDocument();
   });
 });

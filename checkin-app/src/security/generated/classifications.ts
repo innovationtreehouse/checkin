@@ -8,6 +8,7 @@ export const classifications = {
         email: 'pii',
         phone: 'pii',
         name: 'public',
+        nickname: 'public',
         emailVerified: 'internal',
         image: 'public',
         dateOfBirth: 'personal',
@@ -265,6 +266,18 @@ export const classifications = {
         reviewedAt: 'internal',
         reviewedBy: 'internal',
     },
+    PresenceEvent: {
+        id: 'internal',
+        personId: 'public',
+        occurredAt: 'personal',
+        direction: 'internal',
+        source: 'public',
+        clientEventId: 'internal',
+        classification: 'internal',
+        clockSuspect: 'internal',
+        visitId: 'internal',
+        createdAt: 'internal',
+    },
     Visit: {
         id: 'public',
         personId: 'public',
@@ -426,6 +439,7 @@ export const relations = {
         programsLed: { model: 'Program', isList: true },
         rsvps: { model: 'RSVP', isList: true },
         rawBadgeLogs: { model: 'RawBadgeLog', isList: true },
+        presenceEvents: { model: 'PresenceEvent', isList: true },
         visits: { model: 'Visit', isList: true },
         eventsConfirmedBy: { model: 'Event', isList: true },
         trustedAdultRecordsAsAdult: { model: 'TrustedAdult', isList: true },
@@ -522,6 +536,9 @@ export const relations = {
         person: { model: 'Person', isList: false },
     },
     RawBadgeLog: {
+        person: { model: 'Person', isList: false },
+    },
+    PresenceEvent: {
         person: { model: 'Person', isList: false },
     },
     Visit: {

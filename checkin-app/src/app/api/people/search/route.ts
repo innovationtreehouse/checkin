@@ -6,6 +6,7 @@ import { ACTIVE_ORG_MEMBER_PERSON_WHERE, personRecordIsActiveOrgMember } from "@
 import { apiError } from "@/lib/api-response";
 import { rolesToFlags } from "@/lib/roles";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { searchId } from "@/lib/searchId";
 import { leaderAgeCutoff } from "@/lib/programAge";
 import { badgeYearCycle, badgeYearCycleForLabel, MAX_DATE } from "@/lib/membership/renewal";
 
@@ -80,10 +81,15 @@ export const GET = withAuth(
                 const stageFilter: { gte: Date; lt?: Date } = { gte: cycle?.settledSince ?? MAX_DATE };
                 if (settledBefore) stageFilter.lt = settledBefore;
                 const members = await prisma.person.findMany({
-                    where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE },
+                    // No sysadmin logins: those exist for remote system management and
+                    // never wear a badge, so they neither print by default nor count
+                    // toward printed-name disambiguation. Role table, not the legacy
+                    // mirror column — PersonRole is the source of truth.
+                    where: { ...LIVE_PERSON, ...ACTIVE_ORG_MEMBER_PERSON_WHERE, roles: { none: { role: 'SYSADMIN' } } },
                     select: {
                         id: true,
                         name: true,
+                        nickname: true,
                         household: {
                             select: {
                                 orgMembership: {
@@ -110,6 +116,7 @@ export const GET = withAuth(
                     people: members.map(m => ({
                         id: m.id,
                         name: m.name ?? '',
+                        nickname: m.nickname,
                         year: cycle && m.household?.orgMembership?.processes.length ? cycle.label : null,
                     })),
                 });
@@ -123,6 +130,11 @@ export const GET = withAuth(
             // leader-eligible: 23+ by DOB, or isDeclaredAdult (marked 25+).
             const ageCutoff = leaderAgeCutoff();
 
+            // The Participants directory prints the id column, so a bare number is
+            // also an id lookup — OR'd with the text match, since "42" can equally
+            // be part of a name or email.
+            const idQuery = searchId(q);
+
             const people = await prisma.person.findMany({
                 // Both clauses below are ORs, so they go in an AND array rather than as
                 // two `OR:` keys — a second top-level OR would silently overwrite the
@@ -135,6 +147,7 @@ export const GET = withAuth(
                             OR: [
                                 { name: { contains: q, mode: 'insensitive' as const } },
                                 { email: { contains: q, mode: 'insensitive' as const } },
+                                ...(idQuery !== null ? [{ id: idQuery }] : []),
                             ]
                         }] : []),
                         ...(adultsOnly ? [{
@@ -192,6 +205,7 @@ export const GET = withAuth(
             const formatted = people.map(p => ({
                 id: p.id,
                 name: p.name,
+                nickname: p.nickname,
                 email: p.email,
                 phone: p.phone,
                 // `undefined` drops the key on JSON serialization — a stripped

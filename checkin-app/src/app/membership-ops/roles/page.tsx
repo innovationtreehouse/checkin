@@ -59,7 +59,7 @@ export default function RolesPage() {
       <Card withBorder radius="md" padding="lg" style={{ overflow: 'visible' }}>
         <EntityPicker<PersonRow>
           label="Add or edit a person's roles"
-          placeholder="Search people by name or email..."
+          placeholder="Search people by name, email, or ID..."
           selectedId={null}
           search={async (q) => {
             const res = await fetch(`/api/people/search?q=${encodeURIComponent(q)}`);

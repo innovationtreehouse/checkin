@@ -6,9 +6,19 @@ type NamedEntity = {
     email?: string;
 };
 
+/** The last whitespace-separated word of a name, or "" when there isn't one. */
+function finalWord(text: string): string {
+    const parts = text.trim().split(/\s+/);
+    return parts[parts.length - 1] || "";
+}
+
 /**
- * Parse a full name into first and last name parts.
+ * Parse a full name into a first name and the last name the display abbreviates.
  * Handles "First Last", "Last, First", and email-prefix fallback.
+ *
+ * The last name is the FINAL word, so "John Frank Doe" is a John D. and a
+ * multi-word surname abbreviates on its last word. Anything between the first and
+ * last word is a middle name, which the display never shows.
  */
 function parseName(entity: NamedEntity): { first: string; last: string } {
     const raw = entity.name?.trim();
@@ -22,7 +32,7 @@ function parseName(entity: NamedEntity): { first: string; last: string } {
         const [lastPart, firstPart] = raw.split(",", 2);
         return {
             first: (firstPart || "").trim(),
-            last: (lastPart || "").trim(),
+            last: finalWord(lastPart || ""),
         };
     }
 
@@ -30,7 +40,7 @@ function parseName(entity: NamedEntity): { first: string; last: string } {
     const parts = raw.split(/\s+/);
     return {
         first: parts[0],
-        last: parts.slice(1).join(" "),
+        last: parts.length > 1 ? parts[parts.length - 1] : "",
     };
 }
 
@@ -43,6 +53,8 @@ function parseName(entity: NamedEntity): { first: string; last: string } {
  *    append the first initial of the last name (e.g. "Sarah M.").
  * 3. If that still isn't unique, append the first two characters
  *    of the last name (e.g. "Sarah Mo.", "Sarah Ma.").
+ *
+ * "Last name" throughout is the final word of the name — see parseName.
  */
 export function getKioskDisplayNames(entities: NamedEntity[]): Map<number, string> {
     const parsed = entities.map((e) => ({
