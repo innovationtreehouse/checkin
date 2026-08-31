@@ -33,7 +33,10 @@ export default function PrintBadgesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [hideInactive, setHideInactive] = useState(true);
-  const [filterByYear, setFilterByYear] = useState(true);
+  // Default off: a household stays ACTIVE past the boundary it paid for, so its badge
+  // reads "Not renewed" until it settles the new cycle — the renewal prompt ops chases.
+  // Filtering by year on by default would hide exactly those rows.
+  const [filterByYear, setFilterByYear] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [availableYears, setAvailableYears] = useState<string[]>([]);
@@ -127,6 +130,8 @@ export default function PrintBadgesPage() {
     (!hideInactive || p.isMember) &&
     (!filterByYear || roster === null || !selectedYear || printedYears.get(p.id) === selectedYear)
   );
+  // Counts the two filters own separately, so each label names only its own hidden rows.
+  const inactiveHidden = hideInactive ? participants.filter(p => !p.isMember).length : 0;
   const hidden = participants.length - visible.length;
   const selectedVisible = visible.filter(p => selectedIds.has(p.id));
 
@@ -266,7 +271,7 @@ export default function PrintBadgesPage() {
           onChange={(e) => setFilterByYear(e.currentTarget.checked)}
         />
         <Checkbox
-          label={hidden ? `Hide inactive (${hidden})` : "Hide inactive"}
+          label={inactiveHidden ? `Hide inactive (${inactiveHidden})` : "Hide inactive"}
           checked={hideInactive}
           onChange={(e) => setHideInactive(e.currentTarget.checked)}
         />

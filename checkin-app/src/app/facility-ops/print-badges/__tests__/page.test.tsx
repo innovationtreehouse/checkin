@@ -169,6 +169,32 @@ describe("facility-ops/print-badges page", () => {
     expect(yearCell("John Doe")).toBe("Not renewed");
   }, 15000);
 
+  // Filter-by-year is off by default so an ACTIVE-but-not-renewed household keeps its
+  // "Not renewed" row (the renewal prompt). Turning it on drops that row, leaving only
+  // households that settled the selected cycle.
+  it("filters the list to the selected year only when the box is checked", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    mockFetchJson({
+      "/api/people/search?roster=years": { years: ["2026-2027"], current: "2026-2027" },
+      ...johnRoutes,
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(yearCell("John Smith")).toBe("2026-2027"));
+
+    // Off by default: the not-renewed John is still visible.
+    const filter = screen.getByRole("checkbox", { name: /filter by year/i });
+    expect(filter).not.toBeChecked();
+    expect(screen.getByText("John Doe")).toBeInTheDocument();
+
+    // On: only the household that settled 2026-2027 remains.
+    fireEvent.click(filter);
+    await waitFor(() => expect(screen.queryByText("John Doe")).not.toBeInTheDocument());
+    expect(screen.getByText("John Smith")).toBeInTheDocument();
+    // "Hide inactive (N)" counts only inactive rows, never the year-filtered ones.
+    expect(screen.getByRole("checkbox", { name: /^hide inactive$/i })).toBeInTheDocument();
+  }, 15000);
+
   it("keeps the printed name fixed when the search box narrows the visible rows", async () => {
     setSession({ id: 1, isSysadmin: true });
     const searchResults = { current: johns };
