@@ -25,4 +25,16 @@ describe('computeDisplayNames', () => {
     it('shows bare first name for the entry lacking a last name; others disambiguate around it', () => {
         expect(run(['John', 'John Smith'])).toEqual(['John', 'John S.']);
     });
+
+    it('initializes the last name, not the middle name', () => {
+        expect(run(['John Frank Doe', 'John Smith'])).toEqual(['John D.', 'John S.']);
+    });
+
+    it('initializes the final word of a multi-word last name', () => {
+        expect(run(['Maria De La Cruz', 'Maria Diaz'])).toEqual(['Maria C.', 'Maria D.']);
+    });
+
+    it('grows the prefix over the last name alone, ignoring the middle name', () => {
+        expect(run(['John Frank Doe', 'John Frank Dorsey'])).toEqual(['John Doe', 'John Dor.']);
+    });
 });
