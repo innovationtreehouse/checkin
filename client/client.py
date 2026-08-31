@@ -380,8 +380,9 @@ class KioskHandler(BaseHTTPRequestHandler):
     border: 2px solid #fbbf24;
     color: #fff;
     white-space: pre-wrap;
-    /* No fade: the force-close warning stays fully legible for its whole
-       countdown, and the countdown itself removes it. */
+    /* No fade: an amber banner stays fully legible for its whole dwell, which
+       for the force-close warning is its countdown and for a closed-facility
+       hold is CLOSED_HOLD_DWELL_S. */
     animation: none;
   }}
   .banner-saved {{
@@ -510,9 +511,10 @@ class KioskHandler(BaseHTTPRequestHandler):
           banner.style.animation = null;
         }}
         const secs = data.countdown || 0;
+        const dwell = data.dwell || 0;
         clearInterval(countdownTimer);
         clearTimeout(bannerTimer);
-        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, secs ? secs * 1000 : 12000);
+        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, (dwell || secs || 12) * 1000);
         if (secs) startCountdown(secs);
       }}
       // Tell iframe to refresh attendance display with inline data
@@ -772,9 +774,16 @@ def stdin_scanner_listener(backend, state, outbox):
         except EOFError:
             break
 
+# A closed-facility hold dwells far longer than an ordinary banner so the
+# member can read why their scan is waiting on someone else. Any later badge
+# event replaces it early.
+CLOSED_HOLD_DWELL_S = 30
+CLOSED_HOLD_COPY = "Scan successful, waiting for key holder before opening the building"
+
 def _scan_result_banner_html(body, status):
-    """Returns (html, countdown_seconds). Pure -- arming the confirm token is
-    the caller's job, so the drain can render a response without arming one."""
+    """Returns (html, countdown_seconds, dwell_seconds). Pure -- arming the
+    confirm token is the caller's job, so the drain can render a response
+    without arming one. dwell_seconds of 0 means the default dwell."""
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
     # emails, messages) and are ultimately assigned to the wrapper page via
@@ -791,11 +800,24 @@ def _scan_result_banner_html(body, status):
                 seconds = body.get("confirmSeconds")
                 countdown = seconds if isinstance(seconds, int) and 0 < seconds <= 120 else 15
                 warn += f'<br><span id="fc-countdown">{countdown}</span>s left to confirm'
-            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown
+            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown, 0
         err = html.escape(body.get("error", "Unknown error"))
-        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0
+        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0, 0
 
     stype = body.get("type", "")
+    # A park created no Visit, so none of these may render as a check-in: the
+    # green tick plus the "?" a park body has no name for reads as one at arm's
+    # length. Amber says captured-but-not-complete, which is what happened --
+    # the scan is held and projects on its own once a keyholder badges in.
+    if stype == "parked":
+        if body.get("reason") == "facility_closed":
+            return (
+                f'<div class="banner banner-warning">✓ {CLOSED_HOLD_COPY}</div>',
+                0,
+                CLOSED_HOLD_DWELL_S,
+            )
+        held = html.escape(body.get("message", "Recorded for review."))
+        return f'<div class="banner banner-warning">✓ {held}</div>', 0, 0
     email = html.escape(str(body.get("participant", {}).get("email", "?")))
     msg = html.escape(body.get("message", ""))
     label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
@@ -803,10 +825,10 @@ def _scan_result_banner_html(body, status):
     if warning:
         # Scan succeeded but the room is short of supervising adults (#1436):
         # amber, and it dwells 12s instead of 5s. Still confirms the scan.
-        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0
+        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0, 0
     if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0
-    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0
+        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0, 0
+    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0, 0
 
 def _saved_banner_html(queued, intent=None):
     # A queued scan reads as done and safe to walk away from -- distinct
@@ -868,10 +890,10 @@ def handle_scan(backend, state, outbox, participant_id):
 
     # ack or dead: server responded definitively at scan time -- render the
     # existing immediate banner, unchanged behavior for the online path.
-    banner_html, countdown = _scan_result_banner_html(body, status)
+    banner_html, countdown, dwell = _scan_result_banner_html(body, status)
     if countdown:
         state.arm_confirm(body["forceCloseToken"], countdown)
-    state.push_event({"html": banner_html, "countdown": countdown})
+    state.push_event({"html": banner_html, "countdown": countdown, "dwell": dwell})
 
     if outcome == "ack":
         ptype = body.get("type", "?")
