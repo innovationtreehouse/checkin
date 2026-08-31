@@ -14,6 +14,8 @@ from client import (
     RELEASE_TAG_GLOB,
     BackendClient,
     DEFAULT_KIOSK_PATH,
+    CLOSED_HOLD_COPY,
+    CLOSED_HOLD_DWELL_S,
     _scan_result_banner_html,
     attendance_poller,
     handle_scan,
@@ -133,6 +135,79 @@ class TestReleaseChannel(unittest.TestCase):
         here = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(here, "kiosk.sh")) as f:
             self.assertIn(RELEASE_CHANNEL_MARKER, f.read())
+
+class TestParkedScanBanner(unittest.TestCase):
+    """A park creates no Visit. The kiosk may not render one as a check-in, and
+    must not blame the member for a keyholder who has not badged yet."""
+
+    CLOSED = {
+        "type": "parked",
+        "reason": "facility_closed",
+        "message": "Recorded. Will project when a keyholder is present.",
+    }
+    REVIEW = {"type": "parked", "message": "Recorded for review."}
+
+    def test_the_hold_is_amber_and_confirms_the_scan(self):
+        html_out = scan_banner(self.CLOSED)
+
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-ok", html_out)
+        self.assertNotIn("banner-error", html_out)
+        self.assertIn(CLOSED_HOLD_COPY, html_out)
+
+    def test_the_copy_names_the_keyholder_as_what_is_awaited(self):
+        # The member did nothing wrong and cannot fix "no keyholder has
+        # badged" -- the banner reports their scan landed and what it waits on.
+        self.assertEqual(
+            CLOSED_HOLD_COPY,
+            "Scan successful, waiting for key holder before opening the building",
+        )
+
+    def test_holds_for_thirty_seconds_without_fading(self):
+        _, countdown, dwell = _scan_result_banner_html(self.CLOSED, 200)
+
+        self.assertEqual(dwell, 30)
+        self.assertEqual(dwell, CLOSED_HOLD_DWELL_S)
+        # The dwell is only honoured because .banner-warning suppresses the 5s
+        # fade; on any class that does not, the banner silently blanks at 5s.
+        self.assertIn("banner-warning", scan_banner(self.CLOSED))
+        # Not a force-close countdown -- nothing to tick, nothing to confirm.
+        self.assertEqual(countdown, 0)
+
+    def test_no_park_shows_the_placeholder_it_has_no_name_for(self):
+        self.assertNotIn("?", scan_banner(self.CLOSED))
+        self.assertNotIn("?", scan_banner(self.REVIEW))
+
+    def test_a_review_park_also_stops_reading_as_a_checkin(self):
+        # Double-in and out-without-in park too, and used to fall through to
+        # the green tick -- the same "reads as a check-in" look, one branch on.
+        html_out = scan_banner(self.REVIEW)
+
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-ok", html_out)
+        self.assertNotIn("CHECKED IN", html_out)
+        self.assertIn("Recorded for review.", html_out)
+        self.assertNotIn(CLOSED_HOLD_COPY, html_out)
+
+    def test_a_park_from_a_server_too_old_to_send_a_reason_is_still_not_green(self):
+        # ops runs a release whose closed-facility park carries no `reason`, so
+        # until the server ships that hold arrives here indistinguishable from a
+        # review park. It must not be a green tick either.
+        html_out = scan_banner({k: v for k, v in self.CLOSED.items() if k != "reason"})
+
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-ok", html_out)
+
+    def test_the_dwell_reaches_the_display(self):
+        state = AttendanceState()
+        pushed = []
+        state.push_event = pushed.append
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = (self.CLOSED, 200, None)
+
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+
+        self.assertEqual(pushed[-1]["dwell"], CLOSED_HOLD_DWELL_S)
 
 
 class TestBackendClient(unittest.TestCase):

@@ -59,7 +59,7 @@ export async function applyPresenceIntent(
             });
             if (activeKeyholders === 0) {
                 await classifyPresenceEvent(db, event.id, PresenceClass.PARKED_CLOSED);
-                return apiJson({ type: "parked", message: "Recorded. Will project when a keyholder is present." });
+                return apiJson({ type: "parked", reason: "facility_closed", message: "Recorded. Will project when a keyholder is present." });
             }
         }
 
