@@ -2,18 +2,19 @@
 // pulling in @react-pdf/renderer (ESM, untransformed by jest).
 
 // First name only, adding the minimum last-name prefix needed to disambiguate within this batch.
-// Unique first name → first name alone. Collision → shortest prefix (1+ chars) that no other
-// same-first-name badge shares; a partial prefix gets a trailing "." (e.g. "John S.", "John Sm.").
-// True duplicates (identical full name) fall back to the full last name.
-export function computeDisplayNames(badges: { id: number; name: string }[]): Map<number, string> {
+// A nickname stands in for the first name; the last name it disambiguates against still comes
+// from `name`. Unique first name → first name alone. Collision → shortest prefix (1+ chars) that
+// no other same-first-name badge shares; a partial prefix gets a trailing "." (e.g. "John S.",
+// "John Sm."). True duplicates (identical full name) fall back to the full last name.
+export function computeDisplayNames(badges: { id: number; name: string; nickname?: string | null }[]): Map<number, string> {
     // The last name is the FINAL word, so "John Frank Doe" is a John D. and a
     // multi-word surname abbreviates on its last word. Anything between the first
     // and last word is a middle name, which a badge never shows.
-    const parse = (full: string) => {
+    const parse = (full: string, nickname?: string | null) => {
         const parts = (full || '').trim().split(/\s+/);
-        return { first: parts[0] || '', last: parts.length > 1 ? parts[parts.length - 1] : '' };
+        return { first: (nickname || '').trim() || parts[0] || '', last: parts.length > 1 ? parts[parts.length - 1] : '' };
     };
-    const parsed = badges.map(b => ({ id: b.id, ...parse(b.name) }));
+    const parsed = badges.map(b => ({ id: b.id, ...parse(b.name, b.nickname) }));
     const groups = new Map<string, typeof parsed>();
     for (const p of parsed) {
         const key = p.first.toLowerCase();

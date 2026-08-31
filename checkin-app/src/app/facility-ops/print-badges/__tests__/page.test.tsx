@@ -20,7 +20,7 @@ jest.mock("@react-pdf/renderer", () => ({
 }));
 
 import type { ReactNode } from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
 import PrintBadgesPage from "../page";
@@ -60,8 +60,10 @@ const johnRoutes = {
 };
 const cell = (fullName: string, index: number) =>
   screen.getByText(fullName).closest("tr")!.querySelectorAll("td")[index].textContent;
-const printedNameCell = (fullName: string) => cell(fullName, 3);
-const yearCell = (fullName: string) => cell(fullName, 5);
+const printedNameCell = (fullName: string) => cell(fullName, 4);
+const yearCell = (fullName: string) => cell(fullName, 6);
+const nicknameBox = (fullName: string) =>
+  screen.getByRole("textbox", { name: `Nickname for ${fullName}` });
 
 describe("facility-ops/print-badges page", () => {
   it("loads and renders the participant roster", async () => {
@@ -275,12 +277,181 @@ describe("facility-ops/print-badges page", () => {
     expect(printedNameCell("John Nonmember")).toBe(nameBefore);
   }, 15000);
 
+  // The nickname box is the zero-click edit: no button, no modal, and the Printed
+  // Name column has to follow the save or it stops being proof of what will print.
+  it("saves a typed nickname and reprints the name around it", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      ...johnRoutes,
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: "Johnny" } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ method: "PUT", body: JSON.stringify({ nickname: "Johnny" }) }),
+      ),
+    );
+    // Johnny no longer collides with John Doe, so BOTH names lose the prefix.
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("Johnny"));
+    expect(printedNameCell("John Doe")).toBe("John");
+  });
+
+  it("clears a nickname when the box is emptied", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const withNickname = [{ ...johns[0], nickname: "Johnny" }, johns[1]];
+    const fetchMock = mockFetchJson({
+      "/api/people/search?roster=active": { people: [{ ...johnRoster[0], nickname: "Johnny" }, johnRoster[1]] },
+      "/api/people/search": { people: withNickname },
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: null } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("Johnny"));
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "" } });
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ body: JSON.stringify({ nickname: null }) }),
+      ),
+    );
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+  });
+
+  // A committed draft is dropped, so the box reads the person record again and a
+  // nickname changed elsewhere (another admin, any refetch) is not shadowed by
+  // stale local text.
+  it("shows a refetched nickname in the box after a save, not the stale draft", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    let people: ((typeof johns)[number] & { nickname?: string })[] = johns;
+    const fetchMock = mockFetchJson({
+      "/api/people/search?roster=active": { people: johnRoster },
+      "/api/people/search": () => ({ people }),
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: "Johnny" } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ method: "PUT" }),
+      ),
+    );
+    expect(nicknameBox("John Smith")).toHaveValue("Johnny");
+
+    people = [{ ...johns[0], nickname: "Jon" }, johns[1]];
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "John" } });
+
+    await waitFor(() => expect(nicknameBox("John Smith")).toHaveValue("Jon"));
+  });
+
+  it("saves through the debounce alone, without leaving the box", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      ...johnRoutes,
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: "Johnny" } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+      act(() => {
+        jest.advanceTimersByTime(700);
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ method: "PUT", body: JSON.stringify({ nickname: "Johnny" }) }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // Every accepted PUT writes an audit row, so a debounce firing on a value that
+  // already matches the stored one — a pause mid-word, a retyped identical name —
+  // must write nothing.
+  it("skips the write when the debounce fires on an unchanged value", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      "/api/people/search?roster=active": { people: [{ ...johnRoster[0], nickname: "Johnny" }, johnRoster[1]] },
+      "/api/people/search": { people: [{ ...johns[0], nickname: "Johnny" }, johns[1]] },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny " } });
+      act(() => {
+        jest.advanceTimersByTime(700);
+      });
+      expect(fetchMock).not.toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.anything(),
+      );
+      // The matching draft is dropped too — the box reads the record again.
+      expect(nicknameBox("John Smith")).toHaveValue("Johnny");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // A silent failure here prints the OLD name onto a physical badge, so the save
+  // must not move the Printed Name column unless the server took it.
+  it("warns and leaves the printed name alone when the nickname save fails", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const logged = jest.spyOn(console, "error").mockImplementation(() => {});
+    mockFetchJson(johnRoutes); // no participant-edit route -> 404
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+    await waitFor(() => expect(printedNameCell("John Smith")).toBe("John S."));
+
+    fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+    fireEvent.blur(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+
+    await waitFor(() =>
+      expect(notifications.show).toHaveBeenCalledWith(
+        expect.objectContaining({ color: "red", autoClose: false }),
+      ),
+    );
+    expect(printedNameCell("John Smith")).toBe("John S.");
+    logged.mockRestore();
+  });
+
   it("admits an operations user", async () => {
     setSession({ id: 5, isOperations: true });
     mockFetchJson({ "/api/people/search": { people: participants } });
     renderWithProviders(<PrintBadgesPage />);
 
     expect(await screen.findByText("Kim Keyholder")).toBeInTheDocument();
+  });
+
+  // Operations prints badges but does not edit the person record the nickname lives
+  // on, so the column is withheld rather than shown and 403'd on save.
+  it("withholds the nickname column from an operations user", async () => {
+    setSession({ id: 5, isOperations: true });
+    mockFetchJson(johnRoutes);
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    expect(screen.queryByRole("textbox", { name: /^Nickname for/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Type a nickname/)).not.toBeInTheDocument();
+    // The printed name still reflects a stored nickname — reading it is not editing it.
+    expect(cell("John Smith", 3)).toBe("John S.");
   });
 
   it("shows filter-aware empty state when search matches only inactive people", async () => {
