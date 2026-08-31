@@ -116,15 +116,11 @@ export default function PrintBadgesPage() {
     return () => Object.values(timers).forEach(clearTimeout);
   }, []);
 
-  // A saved nickname lands in `roster` as well as `participants`: the roster is what
-  // disambiguation runs over, so this is what keeps the Printed Name column honest.
-  // The draft is dropped once it is stored, so the box goes back to reading the
-  // person record and a nickname changed elsewhere is not shadowed by stale local
-  // text. A draft that no longer matches is newer typing with its own save pending —
-  // leave it.
-  const applyNickname = useCallback((id: number, nickname: string | null) => {
-    setParticipants(prev => prev.map(p => (p.id === id ? { ...p, nickname } : p)));
-    setRoster(prev => prev?.map(m => (m.id === id ? { ...m, nickname } : m)) ?? prev);
+  // The draft is dropped once the record holds its value, so the box goes back to
+  // reading the person record and a nickname changed elsewhere is not shadowed by
+  // stale local text. A draft that no longer matches is newer typing with its own
+  // save pending — leave it.
+  const dropSavedDraft = useCallback((id: number, nickname: string | null) => {
     setNicknameDrafts(prev => {
       if (prev[id] === undefined || (prev[id].trim() || null) !== nickname) return prev;
       const next = { ...prev };
@@ -133,8 +129,28 @@ export default function PrintBadgesPage() {
     });
   }, []);
 
+  // A saved nickname lands in `roster` as well as `participants`: the roster is what
+  // disambiguation runs over, so this is what keeps the Printed Name column honest.
+  const applyNickname = useCallback((id: number, nickname: string | null) => {
+    setParticipants(prev => prev.map(p => (p.id === id ? { ...p, nickname } : p)));
+    setRoster(prev => prev?.map(m => (m.id === id ? { ...m, nickname } : m)) ?? prev);
+    dropSavedDraft(id, nickname);
+  }, [dropSavedDraft]);
+
+  // Read through a ref so a debounced save compares against the participants as of
+  // when it fires, not as of the keystroke that scheduled it.
+  const participantsRef = useRef(participants);
+  participantsRef.current = participants;
+
+  // A value that already matches the stored one is not an edit and writes nothing —
+  // the debounce and blur paths both land here, and every accepted PUT writes an
+  // audit row.
   const saveNickname = useCallback(async (id: number, raw: string) => {
     const nickname = raw.trim() || null;
+    if (nickname === (participantsRef.current.find(p => p.id === id)?.nickname ?? null)) {
+      dropSavedDraft(id, nickname);
+      return;
+    }
     try {
       const res = await fetch(`/api/membership-ops/participants/${id}`, {
         method: 'PUT',
@@ -147,7 +163,7 @@ export default function PrintBadgesPage() {
       console.error("Failed to save nickname:", e);
       notifications.show({ color: 'red', message: 'Could not save that nickname — it is not on the badge. Edit the box to retry.', autoClose: false });
     }
-  }, [applyNickname]);
+  }, [applyNickname, dropSavedDraft]);
 
   const editNickname = (id: number, value: string) => {
     setNicknameDrafts(prev => ({ ...prev, [id]: value }));
@@ -156,11 +172,9 @@ export default function PrintBadgesPage() {
   };
 
   // Leaving the box commits immediately rather than waiting out the debounce, so
-  // printing right after typing prints what is on screen. Tabbing through a box
-  // whose value already matches the stored one is not an edit and writes nothing.
+  // printing right after typing prints what is on screen.
   const commitNickname = (id: number, value: string) => {
     clearTimeout(saveTimers.current[id]);
-    if (value.trim() === (participants.find(p => p.id === id)?.nickname ?? '')) return;
     saveNickname(id, value);
   };
 

@@ -93,8 +93,9 @@ model Person {
   name          String
   /// The name this person actually goes by. Printed on their badge in place of
   /// the first name parsed out of `name`; the last-name disambiguation still
-  /// applies on top of it. Set by the person, a household lead, or ops while
-  /// printing. Same 'public' tier as `name` — it is worn on a badge.
+  /// applies on top of it. Set by the person, a household lead, or a
+  /// board/sysadmin printing badges. Same 'public' tier as `name` — it is worn
+  /// on a badge.
   /// @sensitivity:public
   nickname      String?
   /// @sensitivity:internal

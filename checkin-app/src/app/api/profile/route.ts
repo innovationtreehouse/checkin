@@ -6,7 +6,7 @@ import { handler, notFound, unauthorized } from "@/security/handler";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
 import { isYouth } from "@/lib/time";
 import { normalizeAdultDob } from "@/lib/person/adultDob";
-import { nameWrite, nicknameWrite } from "@/lib/person/name";
+import { nameWrite, nicknameWrite, isNicknameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const GET = handler('GET /api/profile', async ({ auth }) => {
@@ -51,6 +51,10 @@ export const PATCH = withAuth(
             // A submitted-but-blank name is rejected, not silently dropped (Decision 5).
             if (name !== undefined && !nameWrite(name)) {
                 return apiError("Name cannot be blank", 400);
+            }
+
+            if (!isNicknameWrite(nickname)) {
+                return apiError("Invalid nickname", 400);
             }
 
             const updatedProfile = await prisma.person.update({

@@ -20,7 +20,7 @@ jest.mock("@react-pdf/renderer", () => ({
 }));
 
 import type { ReactNode } from "react";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { renderWithProviders, mockFetchJson, setSession, resetRtl } from "@/test-helpers/rtl";
 import { notifications } from "@mantine/notifications";
 import PrintBadgesPage from "../page";
@@ -352,9 +352,62 @@ describe("facility-ops/print-badges page", () => {
     expect(nicknameBox("John Smith")).toHaveValue("Johnny");
 
     people = [{ ...johns[0], nickname: "Jon" }, johns[1]];
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "John" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "John" } });
 
     await waitFor(() => expect(nicknameBox("John Smith")).toHaveValue("Jon"));
+  });
+
+  it("saves through the debounce alone, without leaving the box", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      ...johnRoutes,
+      "/api/membership-ops/participants/1": { participant: { id: 1, name: "John Smith", nickname: "Johnny" } },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny" } });
+      act(() => {
+        jest.advanceTimersByTime(700);
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.objectContaining({ method: "PUT", body: JSON.stringify({ nickname: "Johnny" }) }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // Every accepted PUT writes an audit row, so a debounce firing on a value that
+  // already matches the stored one — a pause mid-word, a retyped identical name —
+  // must write nothing.
+  it("skips the write when the debounce fires on an unchanged value", async () => {
+    setSession({ id: 1, isSysadmin: true });
+    const fetchMock = mockFetchJson({
+      "/api/people/search?roster=active": { people: [{ ...johnRoster[0], nickname: "Johnny" }, johnRoster[1]] },
+      "/api/people/search": { people: [{ ...johns[0], nickname: "Johnny" }, johns[1]] },
+    });
+    renderWithProviders(<PrintBadgesPage />);
+    await screen.findByText("John Smith");
+
+    jest.useFakeTimers();
+    try {
+      fireEvent.change(nicknameBox("John Smith"), { target: { value: "Johnny " } });
+      act(() => {
+        jest.advanceTimersByTime(700);
+      });
+      expect(fetchMock).not.toHaveBeenCalledWith(
+        "/api/membership-ops/participants/1",
+        expect.anything(),
+      );
+      // The matching draft is dropped too — the box reads the record again.
+      expect(nicknameBox("John Smith")).toHaveValue("Johnny");
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   // A silent failure here prints the OLD name onto a physical badge, so the save

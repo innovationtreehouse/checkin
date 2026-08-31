@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 import prisma from "@/lib/prisma";
 import { withAuth } from "@/lib/auth";
 import { isValidPhone, formatPhone, PHONE_ERROR } from "@/lib/phone";
-import { nameWrite, nicknameWrite } from "@/lib/person/name";
+import { nameWrite, nicknameWrite, isNicknameWrite } from "@/lib/person/name";
 import { apiError } from "@/lib/api-response";
 
 export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
@@ -33,6 +33,9 @@ export const PUT = withAuth<{ params: Promise<{ id: string }> }>(
         // The name this person goes by, printed on their badge in place of the first
         // name parsed out of `name`. Optional, so a blank clears it rather than being
         // rejected; `undefined` leaves the stored value alone.
+        if (!isNicknameWrite(body.nickname)) {
+            return apiError("Invalid nickname", 400);
+        }
         const nickname = nicknameWrite(body.nickname);
         if (nickname !== undefined) updateData.nickname = nickname;
         if (body.email !== undefined) updateData.email = body.email;
