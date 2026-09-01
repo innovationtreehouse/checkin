@@ -200,6 +200,11 @@ class TestReplayDrain(unittest.TestCase):
                              in_closed_window_fn=lambda: False)
             return ob
 
+    def test_a_426_version_bounce_is_a_retry_not_a_dead_letter(self):
+        # A rolling deploy can land a replay on an instance that does not
+        # speak the row's generation yet; the bounce must hold the row.
+        self.assertEqual(classify_response(426, {"error": "Unsupported protocolVersion"}), "retry")
+
     def test_drain_holds_while_server_protocol_is_below_replay_generation(self):
         with tempfile.TemporaryDirectory() as d:
             ob = Outbox(os.path.join(d, "outbox.db"))

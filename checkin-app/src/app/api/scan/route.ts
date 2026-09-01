@@ -117,14 +117,21 @@ export const POST = withKiosk(
         const clockSuspect = body.clockSuspect === true;
 
         // Contract bit (§2): a caller may declare the scan-body generation it
-        // speaks. Higher than this server supports is a deploy-order race —
-        // fail loud rather than silently misread fields we don't know.
+        // speaks. A version newer than this server refuses only the bodies
+        // that can be misread — replay/dead rows, whose scannedAt semantics
+        // the newer generation may have changed. A LIVE scan is a bare toggle
+        // at server-now under every generation, so it always processes: a
+        // version race must degrade replay delivery, never door availability.
+        // 426 (not 400) so the kiosk drain holds the row and retries — this
+        // is also what closes the rolling-deploy race for future bumps: a
+        // too-new replay landing on a not-yet-upgraded instance bounces
+        // instead of being misread, whatever the advertised version said.
         if (body.protocolVersion !== undefined) {
             if (typeof body.protocolVersion !== 'number' || !Number.isInteger(body.protocolVersion) || body.protocolVersion < 1) {
                 return apiError("protocolVersion must be a positive integer.", 400);
             }
-            if (body.protocolVersion > SCAN_PROTOCOL_VERSION) {
-                return apiError(`Unsupported protocolVersion ${body.protocolVersion}; this server speaks ${SCAN_PROTOCOL_VERSION}.`, 400);
+            if ((isReplay || isDead) && body.protocolVersion > SCAN_PROTOCOL_VERSION) {
+                return apiError(`Unsupported protocolVersion ${body.protocolVersion}; this server speaks ${SCAN_PROTOCOL_VERSION}.`, 426);
             }
         }
 

@@ -247,6 +247,11 @@ def classify_response(status, body):
         return "retry"  # clock skew / key mismatch -- re-signing can recover
     if status == 429:
         return "retry"
+    if status == 426:
+        # Version race: this instance does not speak the row's protocol
+        # generation yet (rolling deploy). The row is fine — hold and retry
+        # until an upgraded instance answers.
+        return "retry"
     if status == 400 and isinstance(body, dict) and body.get("type") == "warning":
         return "ack"  # force-close caution; the touch WAS recorded server-side
     if status in (400, 404, 409):
