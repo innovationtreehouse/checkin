@@ -3,6 +3,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { DUES_SETTLED_PERSON_WHERE } from "@/lib/orgMembership";
 import { handler, notFound, badRequest } from "@/security/handler";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { searchId } from "@/lib/searchId";
 
 // Admission + field stripping declared in src/security/registry.ts under
 // 'GET /api/programs/[id]/eligible-participants'. Admission ('program-lead-mentor',
@@ -34,10 +35,14 @@ export const GET = handler<{ id: string }>('GET /api/programs/[id]/eligible-part
     ];
 
     if (q) {
+        // A bare number is also an id lookup, OR'd with the text match — the
+        // participant tables print the id column.
+        const idQuery = searchId(q);
         andClauses.push({
             OR: [
                 { name: { contains: q, mode: 'insensitive' } },
-                { email: { contains: q, mode: 'insensitive' } }
+                { email: { contains: q, mode: 'insensitive' } },
+                ...(idQuery !== null ? [{ id: idQuery }] : []),
             ]
         });
     }

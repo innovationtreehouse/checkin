@@ -51,8 +51,8 @@ describe("AdminParticipantsIndex", () => {
         fireEvent.click(screen.getByRole("button", { name: /Name/ }));
         fireEvent.click(screen.getByRole("button", { name: /Name/ }));
 
-        fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "ali" } });
-        await waitFor(() => expect(screen.getByPlaceholderText("Search by name or email...")).toHaveValue("ali"));
+        fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "ali" } });
+        await waitFor(() => expect(screen.getByPlaceholderText("Search by name, email, or ID...")).toHaveValue("ali"));
 
         // Scope to Alice's row rather than a fixed index — the sort toggles above can reorder rows.
         const aliceRow = screen.getByText("Alice A").closest("tr")!;
@@ -109,7 +109,7 @@ describe("AdminParticipantsIndex", () => {
         renderWithProviders(<AdminParticipantsIndex />);
         expect(screen.queryByText("No people found.")).not.toBeInTheDocument();
 
-        fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "zzz" } });
+        fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "zzz" } });
         expect(await screen.findByText("No people found.")).toBeInTheDocument();
     });
 
@@ -118,7 +118,7 @@ describe("AdminParticipantsIndex", () => {
         global.fetch = jest.fn().mockRejectedValue(new Error("boom"));
         renderWithProviders(<AdminParticipantsIndex />);
         await waitFor(() => expect(errSpy).toHaveBeenCalled());
-        expect(screen.getByPlaceholderText("Search by name or email...")).toBeInTheDocument();
+        expect(screen.getByPlaceholderText("Search by name, email, or ID...")).toBeInTheDocument();
         errSpy.mockRestore();
     });
 

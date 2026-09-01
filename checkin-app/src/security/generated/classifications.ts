@@ -8,6 +8,7 @@ export const classifications = {
         email: 'pii',
         phone: 'pii',
         name: 'public',
+        nickname: 'public',
         emailVerified: 'internal',
         image: 'public',
         dateOfBirth: 'personal',

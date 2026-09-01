@@ -20,6 +20,8 @@ import { AttendanceTabs } from "../AttendanceTabs";
 
 import { PageLoader } from "@/components/ui/PageLoader";
 import { CountBadge } from "@/components/ui/CountBadge";
+import { personQueryMatcher } from "@/lib/searchId";
+
 type Person = {
   id: number;
   email: string;
@@ -100,6 +102,7 @@ function KioskDisplayInner() {
   const visitIsYouth = (v: Visit) => v.participant.isYouth ?? isYouth(v.participant.dateOfBirth, { unknownIs: "youth" });
 
   const fullAttendance = isFull ? (data as FullResponse).attendance : [];
+  const matchesSignOutQuery = personQueryMatcher(searchSignOutQuery);
   const keyholderList = fullAttendance.filter(v => v.participant.isKeyholder);
   const volunteerList = fullAttendance.filter(v => !v.participant.isKeyholder && !visitIsYouth(v));
   const youthList = fullAttendance.filter(v => visitIsYouth(v));
@@ -193,11 +196,8 @@ function KioskDisplayInner() {
         const res = await fetch(`/api/roles`);
         if (res.ok) {
           const data = await res.json();
-          const filtered = data.people.filter(
-            (p: Person) =>
-              (p.name || "").toLowerCase().includes((searchQuery || "").toLowerCase()) ||
-              (p.email || "").toLowerCase().includes((searchQuery || "").toLowerCase())
-          );
+          const matchesSearch = personQueryMatcher(searchQuery);
+          const filtered = data.people.filter((p: Person) => matchesSearch(p));
           setSearchResults(filtered);
         }
       } catch (error) {
@@ -444,7 +444,7 @@ function KioskDisplayInner() {
         {!isKioskMode && canManuallyCheckInGlobal && (
           <Box mb="lg" pos="relative">
             <TextInput
-              placeholder="Manually check someone in (Search by name or email)..."
+              placeholder="Manually check someone in (Search by name, email, or ID)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.currentTarget.value)}
             />
@@ -528,7 +528,7 @@ function KioskDisplayInner() {
             <Text c="dimmed" ta="center" py="xl">No one is checked in.</Text>
           ) : (
             fullAttendance
-              .filter(v => ((v.participant.name || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase()) || (v.participant.email || "").toLowerCase().includes((searchSignOutQuery || "").toLowerCase())))
+              .filter(v => matchesSignOutQuery(v.participant))
               .sort((a, b) => (a.participant.name || "").localeCompare(b.participant.name || ""))
               .map(v => (
                 <Paper key={v.id} withBorder radius="md" p="sm">

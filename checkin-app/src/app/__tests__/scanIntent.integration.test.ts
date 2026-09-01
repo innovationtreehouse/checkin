@@ -106,7 +106,11 @@ describe("Scan intent — Stage-2 projection (real DB)", () => {
 
     it("a non-keyholder IN while closed holds (C) and projects after a keyholder Visit", async () => {
         const held = await POST(scanReq({ participantId: member.id, clientEventId: "evt-held", intent: "IN" }));
-        expect((await held.json()).type).toBe("parked");
+        const heldBody = await held.json();
+        expect(heldBody.type).toBe("parked");
+        // The kiosk keys its amber "waiting for key holder" banner on this
+        // reason; without it the hold renders as an ordinary check-in.
+        expect(heldBody.reason).toBe("facility_closed");
         expect(await prisma.visit.findFirst({ where: { personId: member.id } })).toBeNull();
         const parked = await prisma.presenceEvent.findUnique({ where: { clientEventId: "evt-held" } });
         expect(parked?.classification).toBe(PresenceClass.PARKED_CLOSED);
