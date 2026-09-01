@@ -247,6 +247,11 @@ def classify_response(status, body):
         return "retry"  # clock skew / key mismatch -- re-signing can recover
     if status == 429:
         return "retry"
+    if status == 426:
+        # Version race: this instance does not speak the row's protocol
+        # generation yet (rolling deploy). The row is fine — hold and retry
+        # until an upgraded instance answers.
+        return "retry"
     if status == 400 and isinstance(body, dict) and body.get("type") == "warning":
         return "ack"  # force-close caution; the touch WAS recorded server-side
     if status in (400, 404, 409):
@@ -304,12 +309,14 @@ def _send_dead_row(outbox, send_fn, push_fn=None, backoff=MIN_BACKOFF_SECONDS):
     return _backoff_seconds(retry_after, backoff), min(backoff * 2, MAX_BACKOFF_SECONDS)
 
 
-def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window):
+def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_window_fn=in_closed_window,
+                 protocol_ok_fn=lambda: True):
     """Single drain thread: pulls pending rows in scanned_at order,
     resubmits each one (send_fn re-signs per call), and applies the
     ack/retry/dead outcome. Runs forever; call in a background thread."""
     backoff = MIN_BACKOFF_SECONDS
     dead_backoff = MIN_BACKOFF_SECONDS
+    protocol_hold_logged = False
     while True:
         # D4: never send during the closed window -- a queued POST is
         # non-GET and would wake the curfewed service. Covers the dead
@@ -317,6 +324,20 @@ def replay_drain(outbox, send_fn, push_fn=None, sleep_fn=time.sleep, in_closed_w
         if in_closed_window_fn():
             sleep_fn(DRAIN_PACE_SECONDS)
             continue
+
+        # Deploy-order race: a server that hasn't advertised the replay
+        # generation would misread these rows as live toggles. Hold the
+        # queue (rows keep) until kiosk-version says it's safe. Logged on
+        # entry so ops can tell a held queue from an empty or offline one.
+        if not protocol_ok_fn():
+            if not protocol_hold_logged:
+                log.warning("Outbox drain held: server has not advertised the replay protocol")
+                protocol_hold_logged = True
+            sleep_fn(DRAIN_PACE_SECONDS)
+            continue
+        if protocol_hold_logged:
+            log.info("Outbox drain resumed: server advertises the replay protocol")
+            protocol_hold_logged = False
 
         rows = outbox.pending_rows()
         if not rows:
