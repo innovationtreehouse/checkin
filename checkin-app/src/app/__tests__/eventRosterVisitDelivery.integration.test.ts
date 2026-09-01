@@ -43,9 +43,13 @@ describe('GET /api/events/[id] — roster visit times reach program staff', () =
     let leadId = 0, coreVolId = 0, participantId = 0;
     let eventId = 0, otherEventId = 0;
 
+    // Child rows first: a Program cannot be deleted while its enrollment and
+    // volunteer join rows still point at it.
     async function wipe() {
         await prisma.visit.deleteMany({ where: { person: { household: { name: { contains: TAG } } } } });
         await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
+        await prisma.programVolunteer.deleteMany({ where: { program: { name: { contains: TAG } } } });
+        await prisma.programParticipant.deleteMany({ where: { program: { name: { contains: TAG } } } });
         await prisma.program.deleteMany({ where: { name: { contains: TAG } } });
         await prisma.person.deleteMany({ where: { household: { name: { contains: TAG } } } });
         await prisma.household.deleteMany({ where: { name: { contains: TAG } } });
