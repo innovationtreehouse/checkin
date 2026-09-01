@@ -108,7 +108,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), {
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), {
       target: { value: "Wendy" },
     });
 
@@ -167,7 +167,7 @@ describe("attendance/current page", () => {
     expect(screen.queryByText("Karen Keyholder")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check Me In" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out a user" })).not.toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name or email)...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name, email, or ID)...")).not.toBeInTheDocument();
     expect(screen.queryByText("Household Check-ins")).not.toBeInTheDocument();
   });
 
@@ -226,7 +226,7 @@ describe("attendance/current page", () => {
     expect(screen.getByText("Individual names are only visible to administrators", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Your household members are shown above.", { exact: false })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Check Me In" })).toBeInTheDocument();
-    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name or email)...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Manually check someone in (Search by name, email, or ID)...")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out a user" })).not.toBeInTheDocument();
   });
 
@@ -411,7 +411,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "W" } });
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), { target: { value: "W" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     expect(screen.queryByText("Wendy West")).not.toBeInTheDocument();
@@ -432,7 +432,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "noname" } });
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), { target: { value: "noname" } });
 
     expect(await screen.findByText("Unnamed")).toBeInTheDocument();
     expect(screen.getByText("noname@example.com")).toBeInTheDocument();
@@ -451,7 +451,7 @@ describe("attendance/current page", () => {
     renderWithProviders(<KioskDisplay />);
     await screen.findByText("People Present: 3");
 
-    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name or email)..."), { target: { value: "wendy" } });
+    fireEvent.change(screen.getByPlaceholderText("Manually check someone in (Search by name, email, or ID)..."), { target: { value: "wendy" } });
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     expect(screen.queryByText("Wendy West")).not.toBeInTheDocument();

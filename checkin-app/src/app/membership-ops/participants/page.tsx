@@ -251,7 +251,7 @@ export default function AdminParticipantsIndex() {
 
       <Card withBorder radius="md" padding="lg">
         <TextInput
-          placeholder="Search by name or email..."
+          placeholder="Search by name, email, or ID..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.currentTarget.value)}
         />

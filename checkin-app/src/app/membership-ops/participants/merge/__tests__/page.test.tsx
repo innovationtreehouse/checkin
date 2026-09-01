@@ -33,11 +33,11 @@ function mockRoutes() {
 }
 
 async function selectBoth() {
-  fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Alice" } });
+  fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Alice" } });
   fireEvent.click(await screen.findByText("Alice Adams", { exact: false }));
 
   // Box A is now a selected card, so only box B's search input remains.
-  fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Bob" } });
+  fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Bob" } });
   fireEvent.click(await screen.findByText("Bob Adams", { exact: false }));
 }
 
@@ -73,7 +73,7 @@ describe("membership-ops/participants/merge page", () => {
     });
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Sam" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Sam" } });
 
     expect(await screen.findByText("Sam One", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Sam Two", { exact: false })).toBeInTheDocument();
@@ -127,9 +127,9 @@ describe("membership-ops/participants/merge page", () => {
     });
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Zack" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Zack" } });
     fireEvent.click(await screen.findByText("Zack Zero", { exact: false }));
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Belle" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Belle" } });
     fireEvent.click(await screen.findByText("Belle Best", { exact: false }));
 
     await screen.findByText("Keep and augment");
@@ -155,12 +155,12 @@ describe("membership-ops/participants/merge page", () => {
     mockRoutes();
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Alice" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Alice" } });
     fireEvent.click(await screen.findByText("Alice Adams", { exact: false }));
     expect(screen.getByText("Alice Adams", { exact: false })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Change" }));
-    expect(screen.getAllByPlaceholderText("Search by name or email...")).toHaveLength(2);
+    expect(screen.getAllByPlaceholderText("Search by name, email, or ID...")).toHaveLength(2);
     // The re-shown search box still has "Alice" as its value, which re-triggers the
     // search effect; let that settle so it doesn't leak an unawaited update.
     expect(await screen.findByText("Alice Adams", { exact: false })).toBeInTheDocument();
@@ -200,9 +200,9 @@ describe("membership-ops/participants/merge page", () => {
     });
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Leo" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Leo" } });
     fireEvent.click(await screen.findByText("Leo Lead", { exact: false }));
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Otto" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Otto" } });
     fireEvent.click(await screen.findByText("Otto Other", { exact: false }));
 
     // Otto out-scores Leo, so Leo (the household lead) is the one slated for deletion.
@@ -229,9 +229,9 @@ describe("membership-ops/participants/merge page", () => {
     });
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Mia" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Mia" } });
     fireEvent.click(await screen.findByText("Mia Member", { exact: false }));
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Hank" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Hank" } });
     fireEvent.click(await screen.findByText("Hank High", { exact: false }));
 
     expect(await screen.findByText(/is in a household with others/)).toBeInTheDocument();
@@ -275,7 +275,7 @@ describe("membership-ops/participants/merge page", () => {
     await screen.findByText("Merge Successful!");
 
     fireEvent.click(screen.getByRole("button", { name: "Merge More" }));
-    expect(screen.getAllByPlaceholderText("Search by name or email...")).toHaveLength(2);
+    expect(screen.getAllByPlaceholderText("Search by name, email, or ID...")).toHaveLength(2);
   });
 
   it("cancels out of preview mode back to the analysis screen", async () => {
@@ -378,9 +378,9 @@ describe("membership-ops/participants/merge page", () => {
     });
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Gia" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Gia" } });
     fireEvent.click(await screen.findByText("Gia Google", { exact: false }));
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Gary" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Gary" } });
     fireEvent.click(await screen.findByText("Gary Gmail", { exact: false }));
 
     await screen.findByText("Keep and augment");
@@ -415,9 +415,9 @@ describe("membership-ops/participants/merge page", () => {
     });
     renderWithProviders(<MergeParticipants />);
 
-    fireEvent.change(screen.getAllByPlaceholderText("Search by name or email...")[0], { target: { value: "Dan" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Search by name, email, or ID...")[0], { target: { value: "Dan" } });
     fireEvent.click(await screen.findByText("Dan Date", { exact: false }));
-    fireEvent.change(screen.getByPlaceholderText("Search by name or email..."), { target: { value: "Dot" } });
+    fireEvent.change(screen.getByPlaceholderText("Search by name, email, or ID..."), { target: { value: "Dot" } });
     fireEvent.click(await screen.findByText("Dot Different", { exact: false }));
 
     await screen.findByText("Keep and augment");
@@ -436,7 +436,7 @@ describe("membership-ops/participants/merge page", () => {
     mockRoutes();
     renderWithProviders(<MergeParticipants />);
 
-    expect(screen.queryByPlaceholderText("Search by name or email...")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("Search by name, email, or ID...")).not.toBeInTheDocument();
     expect(screen.queryByText("Keep and augment")).not.toBeInTheDocument();
   });
 });

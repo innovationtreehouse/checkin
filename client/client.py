@@ -47,6 +47,19 @@ DEFAULT_OUTBOX_PATH = "outbox.db"
 # for. Relative path -- kiosk.sh cds into client/ before launching client.py.
 SELF_UPDATE_STATE_FILE = ".self_update_last_target"
 
+# The kiosk tracks releases, not main. The server deploys from release tags, so
+# a Pi following main runs client code whose server counterpart is not deployed
+# yet -- that skew is what this channel exists to close.
+RELEASE_TAG_GLOB = "v[0-9]*"
+
+# A release is adopted only if its own kiosk.sh tracks releases too. The marker
+# is that line, in this file's sibling script. Without the gate the changeover
+# oscillates: the newest release still pulls main, so a Pi that checked it out
+# would be pulled straight back to main, and back to the release, once per poll
+# -- restarting the kiosk every time. Until a release carries the marker the
+# channel stays on main, exactly as before.
+RELEASE_CHANNEL_MARKER = "release-channel: tags"
+
 def load_config(path="config.json"):
     if not os.path.exists(path):
         log.error(f"Config file not found: {path}")
@@ -367,8 +380,9 @@ class KioskHandler(BaseHTTPRequestHandler):
     border: 2px solid #fbbf24;
     color: #fff;
     white-space: pre-wrap;
-    /* No fade: the force-close warning stays fully legible for its whole
-       countdown, and the countdown itself removes it. */
+    /* No fade: an amber banner stays fully legible for its whole dwell, which
+       for the force-close warning is its countdown and for a closed-facility
+       hold is CLOSED_HOLD_DWELL_S. */
     animation: none;
   }}
   .banner-saved {{
@@ -497,9 +511,10 @@ class KioskHandler(BaseHTTPRequestHandler):
           banner.style.animation = null;
         }}
         const secs = data.countdown || 0;
+        const dwell = data.dwell || 0;
         clearInterval(countdownTimer);
         clearTimeout(bannerTimer);
-        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, secs ? secs * 1000 : 12000);
+        bannerTimer = setTimeout(() => {{ container.innerHTML = ''; }}, (dwell || secs || 12) * 1000);
         if (secs) startCountdown(secs);
       }}
       // Tell iframe to refresh attendance display with inline data
@@ -759,9 +774,16 @@ def stdin_scanner_listener(backend, state, outbox):
         except EOFError:
             break
 
+# A closed-facility hold dwells far longer than an ordinary banner so the
+# member can read why their scan is waiting on someone else. Any later badge
+# event replaces it early.
+CLOSED_HOLD_DWELL_S = 30
+CLOSED_HOLD_COPY = "Scan successful, waiting for key holder before opening the building"
+
 def _scan_result_banner_html(body, status):
-    """Returns (html, countdown_seconds). Pure -- arming the confirm token is
-    the caller's job, so the drain can render a response without arming one."""
+    """Returns (html, countdown_seconds, dwell_seconds). Pure -- arming the
+    confirm token is the caller's job, so the drain can render a response
+    without arming one. dwell_seconds of 0 means the default dwell."""
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
     # emails, messages) and are ultimately assigned to the wrapper page via
@@ -778,11 +800,24 @@ def _scan_result_banner_html(body, status):
                 seconds = body.get("confirmSeconds")
                 countdown = seconds if isinstance(seconds, int) and 0 < seconds <= 120 else 15
                 warn += f'<br><span id="fc-countdown">{countdown}</span>s left to confirm'
-            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown
+            return f'<div class="banner banner-warning">⚠️ {warn}</div>', countdown, 0
         err = html.escape(body.get("error", "Unknown error"))
-        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0
+        return f'<div class="banner banner-error">✗ Scan failed: {err}</div>', 0, 0
 
     stype = body.get("type", "")
+    # A park created no Visit, so none of these may render as a check-in: the
+    # green tick plus the "?" a park body has no name for reads as one at arm's
+    # length. Amber says captured-but-not-complete, which is what happened --
+    # the scan is held and projects on its own once a keyholder badges in.
+    if stype == "parked":
+        if body.get("reason") == "facility_closed":
+            return (
+                f'<div class="banner banner-warning">✓ {CLOSED_HOLD_COPY}</div>',
+                0,
+                CLOSED_HOLD_DWELL_S,
+            )
+        held = html.escape(body.get("message", "Recorded for review."))
+        return f'<div class="banner banner-warning">✓ {held}</div>', 0, 0
     email = html.escape(str(body.get("participant", {}).get("email", "?")))
     msg = html.escape(body.get("message", ""))
     label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
@@ -790,10 +825,10 @@ def _scan_result_banner_html(body, status):
     if warning:
         # Scan succeeded but the room is short of supervising adults (#1436):
         # amber, and it dwells 12s instead of 5s. Still confirms the scan.
-        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0
+        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0, 0
     if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0
-    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0
+        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0, 0
+    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0, 0
 
 def _saved_banner_html(queued, intent=None):
     # A queued scan reads as done and safe to walk away from -- distinct
@@ -855,10 +890,10 @@ def handle_scan(backend, state, outbox, participant_id):
 
     # ack or dead: server responded definitively at scan time -- render the
     # existing immediate banner, unchanged behavior for the online path.
-    banner_html, countdown = _scan_result_banner_html(body, status)
+    banner_html, countdown, dwell = _scan_result_banner_html(body, status)
     if countdown:
         state.arm_confirm(body["forceCloseToken"], countdown)
-    state.push_event({"html": banner_html, "countdown": countdown})
+    state.push_event({"html": banner_html, "countdown": countdown, "dwell": dwell})
 
     if outcome == "ack":
         ptype = body.get("type", "?")
@@ -926,9 +961,48 @@ def _write_last_restart_target(remote_head, path=SELF_UPDATE_STATE_FILE):
 
 def _should_restart_for_update(remote_head, last_restart_target):
     # False once we've already exited for this exact remote_head and the
-    # restart didn't move HEAD past it (non-fast-forward pull); True for a
+    # restart didn't move HEAD onto it (the checkout failed); True for a
     # never-tried or newly-advanced target.
     return remote_head != last_restart_target
+
+def fetch_update_refs(timeout=15):
+    """Refresh both candidate targets. --force lets a moved tag land."""
+    subprocess.run(
+        ["git", "fetch", "--tags", "--force", "origin", "main"],
+        capture_output=True, timeout=timeout,
+    )
+
+def latest_release_tag():
+    """Highest release tag, or None. Sorted by version, not by tag date: a
+    patch cut after a later minor must not outrank it."""
+    out = subprocess.check_output(
+        ["git", "tag", "-l", RELEASE_TAG_GLOB, "--sort=-v:refname"], text=True
+    )
+    tags = out.split()
+    return tags[0] if tags else None
+
+def _tracks_releases(ref):
+    try:
+        script = subprocess.check_output(
+            ["git", "show", f"{ref}:client/kiosk.sh"],
+            text=True, stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        return False
+    return RELEASE_CHANNEL_MARKER in script
+
+def resolve_update_target():
+    """The commit this kiosk should be running. kiosk.sh checks this out and
+    version_poller restarts when HEAD differs, so both read it from here and
+    cannot disagree about where the Pi is meant to be."""
+    tag = latest_release_tag()
+    if tag and _tracks_releases(tag):
+        return subprocess.check_output(
+            ["git", "rev-list", "-n", "1", tag], text=True
+        ).strip()
+    return subprocess.check_output(
+        ["git", "rev-parse", "origin/main"], text=True
+    ).strip()
 
 def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FILE,
                     in_closed_window_fn=in_closed_window):
@@ -950,8 +1024,8 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
 
         # 1. Check Server Version Update -- skipped during the closed window
         # (§3.1): this signed GET keep-alives the service same as
-        # attendance_poller's. Self-update below is NOT gated: git pull hits
-        # no server, and overnight is the safe window to restart in.
+        # attendance_poller's. Self-update below is NOT gated: the git fetch
+        # hits no server, and overnight is the safe window to restart in.
         if initial_server_version and not in_closed_window_fn():
             sv, status = backend.get_server_version()
             if status == 200 and sv and sv != initial_server_version:
@@ -961,10 +1035,10 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
 
         # 2. Check Client Version Update
         try:
-            subprocess.run(["git", "fetch", "origin", "main"], capture_output=True, timeout=15)
+            fetch_update_refs()
 
             local_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-            remote_head = subprocess.check_output(["git", "rev-parse", "origin/main"], text=True).strip()
+            remote_head = resolve_update_target()
             
             if local_head and remote_head and local_head != remote_head:
                 if _should_restart_for_update(remote_head, last_restart_target):
@@ -982,13 +1056,14 @@ def version_poller(backend, state, interval=60, state_path=SELF_UPDATE_STATE_FIL
                         )
                 else:
                     # Restarted for this target already and HEAD didn't move --
-                    # git pull can't fast-forward. Stay up and keep serving
+                    # kiosk.sh's checkout failed. Stay up and keep serving
                     # scans on the current version instead of looping.
                     log.warning(
-                        f"Still on {local_head}, git pull did not advance past "
-                        f"{remote_head} after a restart (dirty tree, local "
-                        "commits, or diverged history on the Pi). Not "
-                        "restarting again until the checkout is fixed."
+                        f"Still on {local_head}, HEAD did not advance to "
+                        f"{remote_head} after a restart (kiosk.sh could not "
+                        "check the target out: dirty tree, local changes, or "
+                        "an unresolvable target). Not restarting again until "
+                        "the checkout is fixed."
                     )
         except Exception as e:
             log.error(f"Error checking client version: {e}")
