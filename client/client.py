@@ -844,15 +844,18 @@ def handle_scan(backend, state, outbox, participant_id):
     if clock_suspect:
         outbox.mark_clock_suspect()
         log.warning("Large clock step detected; marking queued scans clockSuspect")
-    # Displayed direction is decided here, from the local presence view, and
-    # carried with the event. The server must not re-infer it from live state.
-    intent = state.displayed_intent(participant_id)
-    state.note_presence(participant_id, checking_in=(intent == "IN"))
     # Any scan ends a running force-close countdown; carrying the token is what
     # turns this one into the confirm. Taken once, and stored with the event if
     # this scan ends up queued -- a confirm given before the outage must still
     # close when it drains, rather than parking for review.
     confirm_token = state.take_confirm()
+    # Displayed direction is decided here, from the local presence view, and
+    # carried with the event. The server must not re-infer it from live state.
+    # A live confirm token means the last keyholder is confirming a close, so
+    # pin OUT: the warning scan already discarded them from the presence view,
+    # and toggling to IN would park the confirm instead of closing.
+    intent = "OUT" if confirm_token else state.displayed_intent(participant_id)
+    state.note_presence(participant_id, checking_in=(intent == "IN"))
 
     # A fresh scan must not jump its own predecessor -- if this participant
     # already has a pending queued event, enqueue behind it instead of
