@@ -131,24 +131,9 @@ Things the app takes as true because they are handled outside it.
   name recorded, what shows is the part of their address before the @, never the
   address itself.  [Decision — *Policy: Records Policy, Art. IV*]
 
-- A keyholder can close the building from the kiosk with no network. The kiosk
-  runs the last-keyholder warning and the two-badge confirm itself, off the last
-  roster it fetched, and the queued close carries a flag that stands in for the
-  server-minted token. The server honours that flag only when the close finally
-  replays, and only where it independently reads the room as a last keyholder
-  leaving with others still present — the flag replaces the token, never the
-  keyholder-and-occupancy check.  [Decision — *Policy: Event, Location and
-  Keyholder Policy, Arts. VI–VII*]
-
-- An offline close trusts the keyholder to have cleared the room: it departs
-  everyone still shown present. A small facility standing empty at lock-up is the
-  normal case, and the keyholder is the person who saw the room.  [Decision]
-
-- The two-deep caution still shows on an offline close, off the last-known
-  roster, but only as a warning — never as the hard stop a server-connected close
-  can raise. The kiosk cannot re-verify supervision without the server, so it
-  warns and leaves the call to the keyholder standing at the reader; they get the
-  message, they make the call.  [Decision — deliberate limit]
+- A keyholder can lock up from the kiosk with no network — closing the building
+  does not depend on the server being reachable. Offline the two-deep check can
+  only warn, never hold the close, the same limit the online warning has.  [Decision — *Policy: Event, Location and Keyholder Policy, Arts. VI–VII*]
 
 ### The visit record
 
