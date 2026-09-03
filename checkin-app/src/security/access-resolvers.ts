@@ -33,9 +33,9 @@ export interface CallerContext {
      *  program the caller leads/core-vols. Drives the 'their_program_households' scope. */
     householdIdsInScopePrograms: Set<number>;
     /** Event IDs whose Event.programId is in programsLed ∪ programsCoreVolIn.
-     *  RSVP has no programId column (PK [eventId, participantId]); it reaches a
-     *  program only via eventId → Event.programId. Drives 'their_program_participants'
-     *  on RSVP. */
+     *  Neither RSVP nor Visit has a programId column; both reach a program only
+     *  via their event → Event.programId. Drives 'their_program_participants' on
+     *  RSVP (eventId) and on Visit (associatedEventId). */
     eventIdsInScopePrograms: Set<number>;
     /** Person IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
