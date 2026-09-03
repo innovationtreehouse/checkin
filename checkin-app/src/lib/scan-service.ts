@@ -130,7 +130,11 @@ export async function processCheckout(
     confirmToken: string | null = null,
     visitTime: Date = new Date(),
     /** clientEventId of a REPLAYED event (drain-delivered), null for a live scan. */
-    replayEventId: string | null = null
+    replayEventId: string | null = null,
+    /** The kiosk confirmed this close locally while offline — the two-scan
+     *  confirm ran on the kiosk, no server token was ever minted to echo.
+     *  Honored only on a replay; a live scan stays server-authoritative. */
+    forceCloseConfirmed: boolean = false
 ) {
     let facilityClosed = false;
 
@@ -173,11 +177,22 @@ export async function processCheckout(
                         createHash("sha256").update(confirmToken).digest()
                     );
 
-                if (!confirmForceClose && replayEventId) {
-                    // KIOSK_RESILIENCE.md §4 + §5.23a: validity is by issuance, so a
-                    // confirm queued through an outage still closes -- but only if it
-                    // carries the token (checked above). A replay WITHOUT one was
-                    // never confirmed by anyone, and nobody is at the reader hours
+                // Offline close: while disconnected the kiosk has no server token
+                // to mint, so it runs the two-scan warning+confirm locally and
+                // flags the confirmed close on the queued event. Validity is by
+                // issuance (§5.23a), extended to a client-issued confirm — a
+                // keyholder standing at the reader confirmed the room is clear.
+                // Honored only on a replay (the drain); a live scan carrying the
+                // flag falls through to the server-authoritative token flow below.
+                // This bypasses ONLY the token: the isKeyholder / no-other-keyholder
+                // / others-present guards above still bound it, so a client flag can
+                // never close a facility the server doesn't independently read as a
+                // last-keyholder-with-others close.
+                const offlineConfirmed = forceCloseConfirmed && replayEventId != null;
+
+                if (!confirmForceClose && !offlineConfirmed && replayEventId) {
+                    // A replay WITHOUT a token and WITHOUT the offline-confirmed flag
+                    // was never confirmed by anyone, and nobody is at the reader hours
                     // later to answer a warning, so park it for a human. Never mint
                     // or stamp on a replay: an unattended countdown is not a confirm.
                     await db.rawBadgeLog.update({
@@ -187,7 +202,7 @@ export async function processCheckout(
                     return apiJson({ type: 'parked', reason: 'force_close_review', message: 'Recorded for review.' });
                 }
 
-                if (!confirmForceClose) {
+                if (!confirmForceClose && !offlineConfirmed) {
                     // Mint a fresh token with the warning; the old one dies here, so
                     // an unconfirmed countdown cannot be redeemed later.
                     const token = randomUUID();

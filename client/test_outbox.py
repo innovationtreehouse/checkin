@@ -39,6 +39,18 @@ class FakeState:
     def seed_from_attendance(self, att_data):
         return
 
+    def take_local_close(self, participant_id):
+        return False
+
+    def arm_local_close(self, participant_id, seconds):
+        return
+
+    def offline_last_keyholder(self, participant_id):
+        return False
+
+    def offline_supervision_warning(self):
+        return None
+
 
 class TestOutboxDurability(unittest.TestCase):
     def test_pending_rows_survive_process_restart(self):

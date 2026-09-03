@@ -16,6 +16,7 @@ from client import (
     DEFAULT_KIOSK_PATH,
     CLOSED_HOLD_COPY,
     CLOSED_HOLD_DWELL_S,
+    FORCE_CLOSE_CONFIRM_SECONDS,
     _scan_result_banner_html,
     attendance_poller,
     handle_scan,
@@ -399,6 +400,105 @@ class TestAttendancePollerClosedWindow(unittest.TestCase):
     def test_polls_at_1200(self):
         backend = self._run(lambda: in_closed_window(datetime(2026, 8, 18, 12, 0)))
         backend.get_attendance.assert_called()
+
+
+class TestOfflineForceClose(unittest.TestCase):
+    """Offline the server mints no token, so the kiosk runs the last-keyholder
+    warning + two-scan confirm itself and flags the queued close as confirmed."""
+
+    ROSTER = {
+        "attendance": [
+            {"participant": {"id": 9, "isKeyholder": True}},
+            {"participant": {"id": 5, "isKeyholder": False}},
+        ],
+        "counts": {"keyholders": 1, "total": 2, "volunteers": 0, "youth": 1},
+        "safety": {"isLastKeyholder": True, "isTwoDeepViolation": False},
+    }
+
+    def _state(self, two_deep_violation=False):
+        state = AttendanceState()
+        roster = dict(self.ROSTER)
+        roster["safety"] = {"isLastKeyholder": True, "isTwoDeepViolation": two_deep_violation}
+        state.seed_from_attendance(roster)
+        state.current_counts = dict(roster["counts"])
+        return state
+
+    def _backend_offline(self):
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = ({"error": "Connection refused"}, 0, None)
+        return backend
+
+    def test_seed_tracks_keyholders_and_two_deep(self):
+        state = self._state(two_deep_violation=True)
+        self.assertEqual(state.keyholder_ids, {9})
+        self.assertTrue(state.last_two_deep_violation)
+        self.assertTrue(state.offline_last_keyholder(9))
+        self.assertFalse(state.offline_last_keyholder(5), "a non-keyholder is never the last keyholder")
+
+    def test_not_last_keyholder_when_another_keyholder_present(self):
+        state = self._state()
+        state.keyholder_ids = {9, 3}
+        state.current_counts = {"keyholders": 2, "total": 3}
+        self.assertFalse(state.offline_last_keyholder(9))
+
+    def test_local_close_is_bound_single_use_and_expires(self):
+        state = AttendanceState()
+        self.assertFalse(state.take_local_close(9))
+        state.arm_local_close(9, 15)
+        self.assertFalse(state.take_local_close(5), "another badge must not consume it")
+        self.assertTrue(state.take_local_close(9))
+        self.assertFalse(state.take_local_close(9), "single use")
+        state.arm_local_close(9, 0)  # countdown already over
+        self.assertFalse(state.take_local_close(9), "an expired countdown confirms nothing")
+
+    def test_offline_last_keyholder_out_warns_and_arms_without_confirming(self):
+        state = self._state()
+        events = []
+        state.push_event = events.append
+        backend = self._backend_offline()
+        ob = Outbox(":memory:")
+
+        handle_scan(backend, state, ob, 9)
+
+        self.assertIn("banner-warning", events[-1]["html"])
+        self.assertIn("last key holder", events[-1]["html"].lower())
+        self.assertEqual(events[-1]["countdown"], FORCE_CLOSE_CONFIRM_SECONDS)
+        self.assertFalse(backend.post_scan.call_args.kwargs["force_close_confirmed"])
+        rows = ob.pending_rows()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][5], "OUT")   # intent
+        self.assertEqual(rows[0][7], 0)        # not yet confirmed
+
+    def test_second_scan_confirms_the_close_as_out_not_in(self):
+        state = self._state()
+        state.push_event = lambda e: None
+        backend = self._backend_offline()
+        ob = Outbox(":memory:")
+
+        handle_scan(backend, state, ob, 9)   # warn + arm; flips presence to absent
+        events = []
+        state.push_event = events.append
+        handle_scan(backend, state, ob, 9)   # confirm
+
+        rows = ob.pending_rows()
+        self.assertEqual(len(rows), 2)
+        confirm = rows[1]
+        self.assertEqual(confirm[5], "OUT", "the confirm repeats OUT, never toggles to IN")
+        self.assertEqual(confirm[7], 1, "the confirm carries force_close_confirmed")
+        self.assertIn("BUILDING CLOSED", events[-1]["html"])
+        self.assertEqual(backend.post_scan.call_count, 1, "confirm queues behind the warning, no live post")
+
+    def test_offline_supervision_caution_is_yellow_never_red(self):
+        state = self._state(two_deep_violation=True)
+        events = []
+        state.push_event = events.append
+
+        handle_scan(self._backend_offline(), state, Outbox(":memory:"), 9)
+
+        html_out = events[-1]["html"]
+        self.assertIn("banner-warning", html_out)
+        self.assertNotIn("banner-error", html_out)
+        self.assertIn("Two-deep", html_out)
 
 
 if __name__ == "__main__":

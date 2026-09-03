@@ -111,7 +111,8 @@ class BackendClient:
 
     def post_scan(self, participant_id, force_close_token=None,
                   client_event_id=None, scanned_at=None, replay=False,
-                  dead=False, dead_status=None, intent=None, clock_suspect=False):
+                  dead=False, dead_status=None, intent=None, clock_suspect=False,
+                  force_close_confirmed=False):
         path = "/api/scan"
         payload = {}
         try:
@@ -140,6 +141,10 @@ class BackendClient:
             payload["intent"] = intent
         if clock_suspect:
             payload["clockSuspect"] = True
+        if force_close_confirmed:
+            # Offline force-close: the two-scan confirm ran on the kiosk, so there
+            # is no server token to echo. The server honors this only on a replay.
+            payload["forceCloseConfirmed"] = True
         body = json.dumps(payload)
 
         headers = self._headers("POST", path, body)
@@ -216,6 +221,11 @@ class AttendanceState:
         self.current_counts = {"total": 0, "keyholders": 0, "volunteers": 0, "students": 0}
         self.confirm_token = None    # force-close confirm token, if a countdown is running
         self.confirm_deadline = 0.0  # monotonic clock, end of that countdown
+        # Offline force-close: the server mints no token while disconnected, so
+        # the kiosk arms its own two-scan confirm, bound to the keyholder who
+        # triggered the warning. The confirm scan carries forceCloseConfirmed.
+        self.local_close_participant = None
+        self.local_close_deadline = 0.0  # monotonic clock, end of that countdown
         self.last_browser_seen = time.monotonic()
         self.last_attendance_ok = None
         self.attendance_auth_fail = False
@@ -224,6 +234,11 @@ class AttendanceState:
         # of record. Seeded from the last attendance fetch; updated on each
         # badge so offline scans still carry IN/OUT.
         self.present_ids = set()
+        # Keyholders present and the last known two-deep state, from the roster.
+        # Offline these decide whether a keyholder's OUT is a last-out-with-others
+        # close, and whether to show a (yellow-only) supervision caution.
+        self.keyholder_ids = set()
+        self.last_two_deep_violation = False
         self.clock_watch = ClockWatch()
 
     def arm_confirm(self, token, seconds):
@@ -241,6 +256,55 @@ class AttendanceState:
             self.confirm_token = None
             self.confirm_deadline = 0.0
             return token if live else None
+
+    def arm_local_close(self, participant_id, seconds):
+        """Arm the offline force-close confirm for this keyholder. The next scan
+        of the SAME badge within the window is the confirm (no server token)."""
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            return
+        with self.lock:
+            self.local_close_participant = pid
+            self.local_close_deadline = time.monotonic() + seconds
+
+    def take_local_close(self, participant_id):
+        """True iff a live offline-close confirm is armed for THIS badge — single
+        use. Another badge never consumes it; an expired one is cleared lazily."""
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            return False
+        with self.lock:
+            live = time.monotonic() < self.local_close_deadline
+            if self.local_close_participant == pid and live:
+                self.local_close_participant = None
+                self.local_close_deadline = 0.0
+                return True
+            if not live:
+                self.local_close_participant = None
+                self.local_close_deadline = 0.0
+            return False
+
+    def offline_last_keyholder(self, participant_id):
+        """From the last roster: is this badge a keyholder who is the only
+        keyholder present, with others still here — the close condition. Stale
+        while offline, but the keyholder can see the room."""
+        try:
+            pid = int(participant_id)
+        except (TypeError, ValueError):
+            return False
+        with self.lock:
+            return (pid in self.keyholder_ids
+                    and self.current_counts.get("keyholders", 0) <= 1
+                    and self.current_counts.get("total", 0) > 1)
+
+    def offline_supervision_warning(self):
+        """Yellow supervision caution from the last known safety state, or None.
+        Never red offline: the kiosk cannot re-check two-deep without the server,
+        so it warns and trusts the keyholder standing at the reader."""
+        with self.lock:
+            return TWO_DEEP_CLOSE_WARNING if self.last_two_deep_violation else None
 
     def subscribe(self):
         """Register a new SSE client, returns a Queue to read events from."""
@@ -288,14 +352,20 @@ class AttendanceState:
         """Replace the local presence view with the server roster."""
         visits = att_data.get("attendance") or []
         present = set()
+        keyholders = set()
         for visit in visits:
             person = visit.get("participant") or visit.get("person") or {}
             pid = person.get("id")
             if pid is None:
                 continue
             present.add(int(pid))
+            if person.get("isKeyholder"):
+                keyholders.add(int(pid))
+        safety = att_data.get("safety") or {}
         with self.lock:
             self.present_ids = present
+            self.keyholder_ids = keyholders
+            self.last_two_deep_violation = bool(safety.get("isTwoDeepViolation"))
 
 # ---------------------------------------------------------------------------
 # Transparent Signing Proxy & Kiosk Handler
@@ -780,6 +850,30 @@ def stdin_scanner_listener(backend, state, outbox):
 CLOSED_HOLD_DWELL_S = 30
 CLOSED_HOLD_COPY = "Scan successful, waiting for key holder before opening the building"
 
+# Offline force-close: the kiosk runs the last-keyholder warning + two-scan
+# confirm itself when the server is unreachable. Same window as the server's.
+FORCE_CLOSE_CONFIRM_SECONDS = 15
+OFFLINE_CLOSE_WARN_COPY = "You are the last key holder and others are still here. Badge again to close the building."
+# Yellow, never red: offline the kiosk can't re-verify two-deep, so it warns
+# and trusts the keyholder to clear the room (attendance-checkin.md).
+TWO_DEEP_CLOSE_WARNING = "Two-deep supervision may not be met -- make sure everyone is out before you close."
+
+
+def _offline_close_warning_html(supervision=None):
+    """Local last-keyholder warning shown when offline: no server token, so the
+    countdown just paces the confirm the kiosk is arming itself."""
+    parts = [html.escape(OFFLINE_CLOSE_WARN_COPY)]
+    if supervision:
+        parts.append("⚠️ " + html.escape(supervision))
+    parts.append(f'<span id="fc-countdown">{FORCE_CLOSE_CONFIRM_SECONDS}</span>s to confirm')
+    return '<div class="banner banner-warning">⚠️ ' + "<br>".join(parts) + '</div>'
+
+
+def _offline_close_saved_html(queued):
+    """The confirm scan, queued while offline: the building is closed locally and
+    the close syncs when the link returns."""
+    return f'<div class="banner banner-saved">✓ BUILDING CLOSED — will sync ({queued} waiting)</div>'
+
 def _scan_result_banner_html(body, status):
     """Returns (html, countdown_seconds, dwell_seconds). Pure -- arming the
     confirm token is the caller's job, so the drain can render a response
@@ -844,15 +938,23 @@ def handle_scan(backend, state, outbox, participant_id):
     if clock_suspect:
         outbox.mark_clock_suspect()
         log.warning("Large clock step detected; marking queued scans clockSuspect")
-    # Displayed direction is decided here, from the local presence view, and
-    # carried with the event. The server must not re-infer it from live state.
-    intent = state.displayed_intent(participant_id)
-    state.note_presence(participant_id, checking_in=(intent == "IN"))
-    # Any scan ends a running force-close countdown; carrying the token is what
-    # turns this one into the confirm. Taken once, and stored with the event if
-    # this scan ends up queued -- a confirm given before the outage must still
-    # close when it drains, rather than parking for review.
+    # A force-close confirm repeats the OUT that warned -- it must NOT toggle to
+    # IN off the optimistic presence flip the warning scan already applied. The
+    # signal is a live armed confirm: the server's minted token (online) or the
+    # kiosk's own armed close (offline, no server token). Take both before
+    # deciding intent. Each is single-use and stored with the event if queued --
+    # a confirm given before the outage must still close when it drains, rather
+    # than parking for review.
+    local_close = state.take_local_close(participant_id)
     confirm_token = state.take_confirm()
+    force_close_confirmed = local_close
+    if confirm_token or local_close:
+        intent = "OUT"
+    else:
+        # Displayed direction, from the local presence view, carried with the
+        # event. The server must not re-infer it from live state.
+        intent = state.displayed_intent(participant_id)
+    state.note_presence(participant_id, checking_in=(intent == "IN"))
 
     # A fresh scan must not jump its own predecessor -- if this participant
     # already has a pending queued event, enqueue behind it instead of
@@ -861,9 +963,13 @@ def handle_scan(backend, state, outbox, participant_id):
         outbox.enqueue(
             client_event_id, participant_id, scanned_at, confirm_token,
             intent=intent, clock_suspect=clock_suspect,
+            force_close_confirmed=force_close_confirmed,
         )
         queued = outbox.pending_count()
-        state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+        # The offline force-close confirm normally lands here: its own warning
+        # scan is still pending ahead of it. Queue the close behind it and say so.
+        banner = _offline_close_saved_html(queued) if force_close_confirmed else _saved_banner_html(queued, intent)
+        state.push_event({"html": banner, "queued": queued})
         log.info(f"Queued (predecessor pending): participant {participant_id} {intent}")
         return
 
@@ -874,6 +980,7 @@ def handle_scan(backend, state, outbox, participant_id):
         scanned_at=scanned_at,
         intent=intent,
         clock_suspect=clock_suspect,
+        force_close_confirmed=force_close_confirmed,
     )
     outcome = classify_response(status, body)
 
@@ -882,10 +989,25 @@ def handle_scan(backend, state, outbox, participant_id):
         outbox.enqueue(
             client_event_id, participant_id, scanned_at, confirm_token,
             intent=intent, clock_suspect=clock_suspect,
+            force_close_confirmed=force_close_confirmed,
         )
         queued = outbox.pending_count()
-        state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
-        log.warning(f"Scan queued (server unreachable/warming): participant {participant_id} {intent}")
+        if not force_close_confirmed and intent == "OUT" and state.offline_last_keyholder(participant_id):
+            # Offline last-keyholder close: no server to warn or mint a token, so
+            # the kiosk runs the warning + two-scan confirm itself. This OUT touch
+            # is already queued above (it parks harmlessly on drain -- the badge is
+            # never lost); the confirm scan queues the actual close.
+            state.arm_local_close(participant_id, FORCE_CLOSE_CONFIRM_SECONDS)
+            supervision = state.offline_supervision_warning()
+            state.push_event({"html": _offline_close_warning_html(supervision),
+                              "countdown": FORCE_CLOSE_CONFIRM_SECONDS})
+            log.warning(f"Offline force-close warning: last keyholder {participant_id}, others present")
+        elif force_close_confirmed:
+            state.push_event({"html": _offline_close_saved_html(queued), "queued": queued})
+            log.warning(f"Offline force-close CONFIRMED, queued: keyholder {participant_id}")
+        else:
+            state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+            log.warning(f"Scan queued (server unreachable/warming): participant {participant_id} {intent}")
         return
 
     # ack or dead: server responded definitively at scan time -- render the
