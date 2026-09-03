@@ -24,8 +24,9 @@ DRAIN_PACE_SECONDS = 1.0
 # evicted to enforce this -- it is a log-only warning, not a hard cap.
 WARN_QUEUE_SIZE = 50_000
 
-# docs/designs/KIOSK_RESILIENCE.md D4/Q17: the drain never sends during the
-# closed window -- a queued POST is non-GET and wakes the curfewed service.
+# docs/rules/attendance-checkin.md (kiosk resilience): the drain never sends
+# during the closed window -- a queued POST is non-GET and wakes the curfewed
+# service.
 # The window is 23:00-06:00 local.
 CLOSED_WINDOW_START_HOUR = 23  # local time, inclusive
 CLOSED_WINDOW_END_HOUR = 6     # local time, exclusive

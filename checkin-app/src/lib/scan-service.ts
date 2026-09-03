@@ -174,8 +174,9 @@ export async function processCheckout(
                     );
 
                 if (!confirmForceClose && replayEventId) {
-                    // KIOSK_RESILIENCE.md §4 + §5.23a: validity is by issuance, so a
-                    // confirm queued through an outage still closes -- but only if it
+                    // docs/rules/attendance-checkin.md (kiosk resilience): a force-close
+                    // confirm is valid by issuance, so a confirm queued through an outage
+                    // still closes -- but only if it
                     // carries the token (checked above). A replay WITHOUT one was
                     // never confirmed by anyone, and nobody is at the reader hours
                     // later to answer a warning, so park it for a human. Never mint
