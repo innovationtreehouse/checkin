@@ -655,8 +655,7 @@ defineRoute({
     ],
 });
 
-// Parked kiosk scans awaiting review (docs/rules/attendance-checkin.md, kiosk
-// resilience) — the
+// Parked kiosk scans awaiting review (KIOSK_RESILIENCE §2 D7, #1347) — the
 // RawBadgeLog rows a replay parked instead of toggling (reviewReason set,
 // reviewedAt still null). Landed registry-first, ahead of the route.
 //
@@ -701,7 +700,7 @@ defineRoute({
     orderedView: [],
 });
 
-// In-memory kiosk last-seen. No DB row: the stamp
+// In-memory kiosk last-seen (KIOSK_RESILIENCE §3.4). No DB row: the stamp
 // lives on the task, so the bag is a synthesized SystemMetricLog (metric
 // `kiosk_last_seen`, timestamp = last verified kiosk request, value = age
 // in seconds). Empty array means never seen since this task started (or
