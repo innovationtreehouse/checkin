@@ -339,6 +339,32 @@ class TestForceCloseConfirm(unittest.TestCase):
         self.assertEqual(backend.post_scan.call_args.kwargs["force_close_token"], "tok-1")
         self.assertEqual(events[1]["countdown"], 0)
 
+    def test_last_keyholder_confirm_repeats_out_not_toggles_to_in(self):
+        """The warning scan discards the present keyholder from the local view,
+        so displayed_intent would flip the confirm to IN and the server would
+        park it instead of closing. A live token pins the confirm OUT."""
+        state = AttendanceState()
+        state.push_event = lambda event: None
+        state.present_ids.add(7)  # last keyholder is currently present
+        backend = Mock(attendance_path=None)
+        backend.post_scan.return_value = ({
+            "type": "warning", "error": "you are the last keyholder",
+            "forceCloseToken": "tok-1", "confirmSeconds": 15,
+        }, 400, None)
+
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+        self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "OUT")
+
+        backend.post_scan.return_value = ({
+            "type": "checkout", "message": "Checked out and Facility closed",
+            "participant": {"email": "k@example.com"},
+        }, 200, None)
+        handle_scan(backend, state, Outbox(":memory:"), 7)
+
+        self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "OUT",
+                         "the confirm must repeat OUT, not toggle to IN")
+        self.assertEqual(backend.post_scan.call_args.kwargs["force_close_token"], "tok-1")
+
     def test_a_queued_confirm_carries_its_token_into_the_outbox(self):
         """Without this the drain replays token-less and the server parks the
         close for review -- silently undoing the confirm the keyholder gave."""
