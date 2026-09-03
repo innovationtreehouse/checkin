@@ -32,7 +32,7 @@ const maxDate = (a: Date | null, b: Date | null): Date | null =>
 // unauthenticated, and hands us the parsed body + actor. We own authorization.
 export const POST = withKiosk(
     { rateLimit: { name: "scan", limit: 300 } },
-    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; dead?: unknown; deadStatus?: unknown; intent?: unknown; clockSuspect?: unknown }, auth) => {
+    async (_req, body: { participantId?: unknown; clientEventId?: unknown; scannedAt?: unknown; replay?: unknown; forceCloseToken?: unknown; forceCloseConfirmed?: unknown; dead?: unknown; deadStatus?: unknown; intent?: unknown; clockSuspect?: unknown }, auth) => {
     const startTime = Date.now();
 
     try {
@@ -105,6 +105,12 @@ export const POST = withKiosk(
             typeof body.forceCloseToken === 'string' && body.forceCloseToken.length > 0
                 ? body.forceCloseToken
                 : null;
+
+        // The kiosk ran the force-close warning+confirm locally while offline and
+        // has no server token to echo. Honored only on a replay (processCheckout),
+        // and only when the server independently sees a last-keyholder-with-others
+        // close — the flag bypasses the token, never the occupancy guards.
+        const forceCloseConfirmed = body.forceCloseConfirmed === true;
 
         // Displayed direction (invariant 5). Absent → legacy live-state toggle.
         if (body.intent !== undefined && body.intent !== 'IN' && body.intent !== 'OUT') {
@@ -372,11 +378,12 @@ export const POST = withKiosk(
                     clientEventId,
                     confirmToken,
                     replayEventId: isReplay ? clientEventId : null,
+                    forceCloseConfirmed,
                 });
             }
 
             const res = activeVisit
-                ? await processCheckout(participant, activeVisit.id, authType, tx, confirmToken, eventTime, isReplay ? clientEventId : null)
+                ? await processCheckout(participant, activeVisit.id, authType, tx, confirmToken, eventTime, isReplay ? clientEventId : null, forceCloseConfirmed)
                 : await processCheckin(participant, authType, tx, eventTime);
 
             // Classification comes from the ACTUAL outcome. Only a confirmed
