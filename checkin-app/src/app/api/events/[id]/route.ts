@@ -73,7 +73,11 @@ export const GET = handler<{ id: string }>('GET /api/events/[id]', async ({ auth
             },
             visits: {
                 where: LIVE_VISIT,
-                select: { id: true, personId: true, arrivedAt: true, departedAt: true }
+                // associatedEventId is the scope key a lead mentor / core volunteer
+                // resolves their_program_participants on (Visit has no programId).
+                // Unselected, the row fails closed and arrivedAt/departedAt strip
+                // away for everyone but sysadmin/board.
+                select: { id: true, personId: true, arrivedAt: true, departedAt: true, associatedEventId: true }
             },
             rsvps: {
                 where: { person: LIVE_PERSON },
