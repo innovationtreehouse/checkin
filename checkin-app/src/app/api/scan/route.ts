@@ -14,9 +14,10 @@ import { withKiosk } from "@/lib/kioskAuth";
 // a corrupt/cyclic chain can't loop the lookup forever, and reissue instead.
 const MAX_MERGE_HOPS = 5;
 
-// docs/designs/KIOSK_RESILIENCE.md §2: a replayed scan older than this parks
-// for human review instead of toggling — state may have moved on while the
-// kiosk was offline, and a bare toggle can't tell entering from leaving.
+// docs/rules/attendance-checkin.md (kiosk resilience): a replayed scan older
+// than this parks for human review instead of toggling — state may have moved
+// on while the kiosk was offline, and a bare toggle can't tell entering from
+// leaving.
 const REPLAY_FRESHNESS_WINDOW_MS = 10 * 60 * 1000;
 
 // F7: the out-of-order guard needs the true latest activity across ALL of a

@@ -296,9 +296,9 @@ describe('POST /api/scan', () => {
         expect(json.message).toBe('Scan ignored due to debounce.');
     });
 
-    // §2 D2/D3/D4 (docs/designs/KIOSK_RESILIENCE.md) — replayed-scan idempotency.
-    // `replay: true` marks a redelivery; D4's try-first rule puts clientEventId
-    // on the live attempt too, so the id alone never implies a replay.
+    // Replayed-scan idempotency (docs/rules/attendance-checkin.md, kiosk
+    // resilience). `replay: true` marks a redelivery; the try-first rule puts
+    // clientEventId on the live attempt too, so the id alone never implies a replay.
     describe('replayed scans (clientEventId/scannedAt)', () => {
         function replayReq(overrides: Record<string, unknown> = {}) {
             return new Request('http://localhost/api/scan', {

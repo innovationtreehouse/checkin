@@ -179,8 +179,9 @@ export async function processCheckout(
 
                 // Offline close: while disconnected the kiosk has no server token
                 // to mint, so it runs the two-scan warning+confirm locally and
-                // flags the confirmed close on the queued event. Validity is by
-                // issuance (§5.23a), extended to a client-issued confirm — a
+                // flags the confirmed close on the queued event. A force-close
+                // confirm is valid by issuance (docs/rules/attendance-checkin.md,
+                // kiosk resilience), extended here to a client-issued confirm -- a
                 // keyholder standing at the reader confirmed the room is clear.
                 // Honored only on a replay (the drain); a live scan carrying the
                 // flag falls through to the server-authoritative token flow below.

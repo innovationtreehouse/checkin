@@ -41,8 +41,9 @@ export async function GET(req: NextRequest) {
 
         let isKiosk = false;
 
-        // Minimization keys on the DISPLAY, not the credential (KIOSK_RESILIENCE
-        // §5.25 / B9). A valid kiosk signature means this request is the public
+        // Minimization keys on the DISPLAY, not the credential (see
+        // docs/rules/attendance-checkin.md, "The kiosk" — public-screen only).
+        // A valid kiosk signature means this request is the public
         // kiosk screen — even when a keyholder has signed in on that same
         // browser. The staff grant (`keyholders:personal`) stays on a session
         // request that is NOT kiosk-signed (a laptop, not the door display).
