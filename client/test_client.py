@@ -290,6 +290,20 @@ class TestForceCloseConfirm(unittest.TestCase):
         handle_scan(backend, state, Outbox(":memory:"), 7)
         self.assertEqual(backend.post_scan.call_args.kwargs["intent"], "OUT")
 
+    def test_get_server_version_parses_the_advertised_scan_protocol(self):
+        client = BackendClient("http://fake", "fake_key")
+        with patch.object(BackendClient, "_headers", return_value={}), \
+             patch.object(client.session, "get") as get:
+            get.return_value = Mock(status_code=200, json=Mock(
+                return_value={"version": "abc", "scanProtocolVersion": 2}))
+            self.assertEqual(client.get_server_version(), ("abc", 2, 200))
+
+            # A server that predates the contract advertises nothing: treat as
+            # the bare-toggle generation so replay behavior stays off.
+            get.return_value = Mock(status_code=200, json=Mock(
+                return_value={"version": "abc"}))
+            self.assertEqual(client.get_server_version(), ("abc", 1, 200))
+
     def test_post_scan_sends_the_token_only_when_one_is_held(self):
         client = BackendClient("http://fake", "fake_key")
         with patch.object(BackendClient, "_headers", return_value={}), \
@@ -297,11 +311,12 @@ class TestForceCloseConfirm(unittest.TestCase):
             post.return_value = Mock(status_code=200, json=Mock(return_value={}))
 
             client.post_scan(7)
-            self.assertEqual(json.loads(post.call_args.kwargs["data"]), {"participantId": 7})
+            self.assertEqual(json.loads(post.call_args.kwargs["data"]),
+                             {"participantId": 7, "protocolVersion": 2})
 
             client.post_scan(7, "tok-1")
             self.assertEqual(json.loads(post.call_args.kwargs["data"]),
-                             {"participantId": 7, "forceCloseToken": "tok-1"})
+                             {"participantId": 7, "protocolVersion": 2, "forceCloseToken": "tok-1"})
 
     def test_token_is_single_use_and_dies_with_the_countdown(self):
         state = AttendanceState()
