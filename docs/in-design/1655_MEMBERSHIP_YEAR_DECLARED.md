@@ -212,20 +212,39 @@ adds the current-year option inside the overlap.
 
 Today `BoardSettings.orgMembershipVariantId` is a single evergreen variant id
 (schema ~line 624; the checkout link is built from it server-side). This design
-replaces it with a **mapping from membership year to variant id** — each year's
+replaces it with a **new table, one row per membership year** — each year's
 membership product sold through its own variant.
 
-Shape is an [open question](#open-questions) — a small `MembershipYearVariant`
-table keyed by year is the natural fit and matches how programs already carry
-per-program variant ids, but a JSON map on `BoardSettings` is a lighter option if
-years are few. Either way:
+**A row per year, never a column per year.** The mapping is its own table keyed
+by the year's integer, so rolling a new year is inserting one row — the
+`BoardSettings` schema is never touched again for this, and in fact shrinks once
+the two evergreen scalars retire (below). A column-per-year, or a growing set of
+`orgMembershipVariant2026Id` fields, is exactly what this avoids.
 
-- **Checkout** builds the link from the variant for the year being sold. In the
+```
+MembershipYearVariant
+  membershipYear    Int     @unique   // the opening-year key: 2026
+  shopifyVariantId  String            // the Shopify variant sold for that year
+  productUrl        String?           // optional, same role as today's product URL
+```
+
+A table rather than a JSON map on `BoardSettings` (both avoid a per-year column)
+because the reconcilers below ask "is this line-item variant *any* membership
+year's variant" — a keyed `where variant in (…)` query the table answers
+directly, where a JSON blob would have to be loaded and parsed at every match
+site. It also matches how programs already carry per-program variant ids, so it
+reads like the rest of the catalogue.
+
+- **Checkout** builds the link from the row for the year being sold. In the
   overlap window both years are on sale; outside it, the current year.
-- **Rolling a new year** is adding that year's variant to the mapping before its
-  renewal window opens — an ops step, parallel to setting up any year's
-  catalogue. This is the operational task that replaces "the evergreen variant
-  just keeps working".
+- **Rolling a new year** is inserting that year's row before its renewal window
+  opens — an ops step, parallel to setting up any year's catalogue. This is the
+  operational task that replaces "the evergreen variant just keeps working".
+- **The two evergreen `BoardSettings` scalars** (`orgMembershipVariantId`,
+  `orgMembershipProductUrl`) become the current year's row at backfill, then are
+  dropped at the contract stage once every reader is on the table. Net schema
+  change over time is one table added and two columns removed — not a settings
+  table that grows each year.
 
 ### Impact on the drift reconcilers (#625 / #1293 / #1349)
 
@@ -357,9 +376,6 @@ Surfaced honestly; not answered where the sources do not decide them.
   same key. Cleaner, but the year means "the cycle this signature satisfies", not
   "a year that was bought", so the field carries a slightly different sense on
   that kind. Decide before or explicitly after this change.
-- **Settings shape for the variant mapping.** A `MembershipYearVariant` table vs
-  a JSON map on `BoardSettings`. Table matches the program pattern; JSON is
-  lighter for few years.
 - **Misconfigured-variant surface.** How a paid membership order whose variant is
   in no year's mapping is surfaced — the existing unmatched-payment path is the
   natural home, to be confirmed against it.

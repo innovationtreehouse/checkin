@@ -6,12 +6,13 @@ Everything here expires when the change has run. The design is in
 ## Decisions owed before building
 
 The design's [Open questions](1655_MEMBERSHIP_YEAR_DECLARED.md#open-questions)
-are the owed decisions. Two block the schema and must be settled first:
+are the owed decisions. One blocks the schema and must be settled first:
 
 - **Multi-year purchase** — decides whether `appliesToYear` is a single integer
   (assumed here) or something wider.
-- **Variant-mapping shape** — `MembershipYearVariant` table vs JSON on
-  `BoardSettings`. Step 3 assumes the table.
+
+The variant mapping is settled: a `MembershipYearVariant` table, one row per year
+(see the design's Settings section) — not a JSON blob and not a per-year column.
 
 The rest (grant overlap-window edge, refund/year correction, PERSON_AGREEMENT
 adoption, misconfigured-variant surface) can be settled during the build; each
@@ -28,9 +29,10 @@ whole rolling-deploy drain window, so the schema is safe against the previous
 release still serving traffic.
 
 1. **Schema:** add `appliesToYear Int?` to `OrgMembershipProcess` with its
-   sensitivity annotation. Add the year→variant mapping (a `MembershipYearVariant`
-   table, or the agreed shape), and keep `BoardSettings.orgMembershipVariantId`
-   in place for now — it is the current year's entry until the reconcilers move.
+   sensitivity annotation. Add the `MembershipYearVariant` table (one row per
+   year, keyed by the opening-year integer), and keep
+   `BoardSettings.orgMembershipVariantId`
+   in place for now — it is the current year's row until the reconcilers move.
    Regenerate `src/security/generated/classifications.ts`.
 
 2. **Stamp on the Shopify path:** in the paid webhook /
