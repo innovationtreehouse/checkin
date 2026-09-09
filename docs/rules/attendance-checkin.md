@@ -125,11 +125,17 @@ Things the app takes as true because they are handled outside it.
   paths it is a server-minted token echoed back through a confirm dialog.  [Decision]
 
 - A force-close is triggered only by an explicit confirm — the second badge within
-  the visible countdown, or the echoed server-minted token — never inferred from
-  the spacing between two raw badge reads. An ordinary double-tap cannot close the
-  building over the people standing in it, and a replayed scan force-closes only
-  when it carries the token minted before the outage; it can never mint one, so an
-  unattended countdown never becomes a confirm.  [Decision]
+  the visible countdown — never inferred from the spacing between two raw badge
+  reads. An ordinary double-tap cannot close the building over the people standing
+  in it, and an unattended countdown never becomes a confirm: the confirm is always
+  a human's second badge at the door. With a server present that confirm is the
+  echoed server-minted token; with no network the kiosk runs the same warning and
+  second-badge confirm itself, so a keyholder can still lock up offline. The queued
+  close carries the confirm, and the server honours it on the delayed replay only
+  where it independently reads a last keyholder leaving with others still present.
+  Offline the supervision close-guard can only warn, never hold a departure — the
+  kiosk cannot re-check two-deep without the server, so it leaves the call to the
+  keyholder at the reader.  [Decision — *Policy: Event, Location and Keyholder Policy, Arts. VI–VII, §VIII.4*]
 
 ### The kiosk
 
