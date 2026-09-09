@@ -3,19 +3,29 @@
 // `visible` predicate mirrors the route's real gate (NAV_ITEMS[].visible +
 // the section layout's useRequireRole). Over-listing here never grants access:
 // every target re-enforces its own gate on arrival, so a drifted predicate at
-// worst shows a link that 403s. See docs/designs/INDEX_PAGE_SCOPING.md.
+// worst shows a link that 403s. Where the section owns an exported predicate
+// (shopRoles, FACILITY_NAV_LINKS, canReviewBackgroundChecks) the directory reads
+// it rather than holding a second copy, so the two cannot drift (#1569).
 
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
+import type { SessionUser } from '@/types/auth';
 import { leadsAnyProgram } from '@/components/navBadges';
+import { SHOP_NAV_LINKS, shopRoles } from '@/lib/shopNav';
+import { FACILITY_NAV_LINKS, FACILITY_SECTION_ROLES } from '@/lib/facilityNav';
+import { canReviewBackgroundChecks } from '@/lib/membershipOpsNav';
 
-export type RegistryUser = {
-  isSysadmin?: boolean;
-  isBoardMember?: boolean;
-  isKeyholder?: boolean;
-  isOperations?: boolean;
-  householdLead?: boolean;
-  toolStatuses?: Array<{ level: string }>;
-};
+// A structural subset of the real session user, so the directory's predicates
+// read the same fields the gates do and no field shape is hand-copied to drift.
+export type RegistryUser = Pick<
+  SessionUser,
+  | 'isSysadmin'
+  | 'isBoardMember'
+  | 'isKeyholder'
+  | 'isOperations'
+  | 'isBackgroundCheckReviewer'
+  | 'householdLead'
+  | 'toolStatuses'
+>;
 
 // counts mirrors the nav: computed roles (leads ≥1 program) aren't on the
 // session user, they ride in on the todo-counts payload the index already fetches.
@@ -37,10 +47,27 @@ const BOARD_OR_OPS: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!
 const BOARD_ONLY: Visible = (u) => !!u?.isBoardMember;
 const SYSADMIN: Visible = (u) => !!u?.isSysadmin;
 const SAFETY: Visible = (u) => !!u?.isSysadmin || !!u?.isBoardMember || !!u?.isKeyholder;
-const SHOP: Visible = (u) =>
-  !!u?.isSysadmin ||
-  !!u?.isBoardMember ||
-  !!u?.toolStatuses?.some((ts) => ts.level === 'MAY_CERTIFY_OTHERS');
+
+// Shop Ops reads its own table: the section gate is isCertifier, and each tab's
+// visibility is SHOP_NAV_LINKS' own predicate (e.g. Create is admin-only). The
+// hub redirects to a visible tab, so it follows the section gate.
+const shopGate = (href: string): Visible => (u) => {
+  const roles = shopRoles(u);
+  if (!roles.isCertifier) return false;
+  const link = SHOP_NAV_LINKS.find((l) => l.href === href);
+  return link ? link.visible(roles) : true;
+};
+
+// Facility Ops reads FACILITY_NAV_LINKS' per-tab roles; the hub follows the
+// derived section gate (anyone who can open at least one tab).
+const facilityGate = (href: string): Visible => {
+  const link = FACILITY_NAV_LINKS.find((l) => l.href === href);
+  const roles = link ? link.roles : FACILITY_SECTION_ROLES;
+  return (u) => roles.some((r) => !!u?.[r]);
+};
+
+// Background-check reviewers reach only the Review tab; shared with the layout gate.
+const MEMBERSHIP_REVIEW: Visible = (u) => canReviewBackgroundChecks(u);
 
 export type PageEntry = {
   href: string;
@@ -87,23 +114,21 @@ export const PAGES: PageEntry[] = [
   { href: '/safety/pickup', label: 'Pickup', section: 'Safety', visible: SAFETY },
   { href: '/safety/trusted-adults', label: 'Trusted Adults (Safety)', section: 'Safety', visible: SAFETY },
 
-  // Shop Ops — board or certifier
-  { href: '/shop-ops', label: 'Shop Ops', section: 'Shop Ops', visible: SHOP },
-  { href: '/shop-ops/create', label: 'Create', section: 'Shop Ops', visible: SHOP },
-  { href: '/shop-ops/live', label: 'Live', section: 'Shop Ops', visible: SHOP },
-  { href: '/shop-ops/manage', label: 'Manage', section: 'Shop Ops', visible: SHOP },
+  // Shop Ops — section is certifier-gated; Create is admin-only (SHOP_NAV_LINKS).
+  { href: '/shop-ops', label: 'Shop Ops', section: 'Shop Ops', visible: shopGate('/shop-ops') },
+  { href: '/shop-ops/create', label: 'Create', section: 'Shop Ops', visible: shopGate('/shop-ops/create') },
+  { href: '/shop-ops/live', label: 'Live', section: 'Shop Ops', visible: shopGate('/shop-ops/live') },
+  { href: '/shop-ops/manage', label: 'Manage', section: 'Shop Ops', visible: shopGate('/shop-ops/manage') },
 
-  // Facility Ops — board, plus operations on the two aggregate tools (#1633:
-  // operations reach attendance in aggregate only). Visits, Badges (the raw
-  // badge-event log) and Corrections are one person's record, so they stay
-  // board-only. The index redirects to the caller's first visible tab, so it is
-  // listed to anyone the section admits.
-  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: BOARD_OR_OPS },
-  { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: BOARD },
-  { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: BOARD_OR_OPS },
-  { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: BOARD_OR_OPS },
-  { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: BOARD },
-  { href: '/facility-ops/corrections', label: 'Corrections', section: 'Facility Ops', keywords: 'audit attendance edit delete flagged significance review', visible: BOARD },
+  // Facility Ops — each row reads its tab's own roles from FACILITY_NAV_LINKS
+  // (operations reach the two aggregate tools only, #1633). The hub follows the
+  // derived section gate; it redirects to the caller's first visible tab.
+  { href: '/facility-ops', label: 'Facility Ops', section: 'Facility Ops', visible: facilityGate('/facility-ops') },
+  { href: '/facility-ops/badges', label: 'Badges', section: 'Facility Ops', visible: facilityGate('/facility-ops/badges') },
+  { href: '/facility-ops/print-badges', label: 'Print Badges', section: 'Facility Ops', visible: facilityGate('/facility-ops/print-badges') },
+  { href: '/facility-ops/trends', label: 'Trends', section: 'Facility Ops', visible: facilityGate('/facility-ops/trends') },
+  { href: '/facility-ops/visits', label: 'Visits', section: 'Facility Ops', visible: facilityGate('/facility-ops/visits') },
+  { href: '/facility-ops/corrections', label: 'Corrections', section: 'Facility Ops', keywords: 'audit attendance edit delete flagged significance review', visible: facilityGate('/facility-ops/corrections') },
 
   // Membership Ops — board
   { href: '/membership-ops', label: 'Membership Ops', section: 'Membership Ops', visible: BOARD },
@@ -114,7 +139,7 @@ export const PAGES: PageEntry[] = [
   { href: '/membership-ops/participants/new', label: 'New Participant', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/participants/import', label: 'Import Participants', section: 'Membership Ops', visible: BOARD },
   { href: '/membership-ops/participants/merge', label: 'Merge Participants', section: 'Membership Ops', visible: BOARD },
-  { href: '/membership-ops/review', label: 'Membership Review', section: 'Membership Ops', visible: BOARD },
+  { href: '/membership-ops/review', label: 'Membership Review', section: 'Membership Ops', visible: MEMBERSHIP_REVIEW },
   { href: '/membership-ops/roles', label: 'Roles', section: 'Membership Ops', visible: BOARD },
 
   // Membership Audit — board

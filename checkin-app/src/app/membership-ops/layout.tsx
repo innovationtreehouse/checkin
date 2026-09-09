@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { Box, Center, Group, Loader, Stack, Text } from "@mantine/core";
-import { MEMBERSHIP_OPS_NAV_LINKS } from "@/lib/membershipOpsNav";
+import { MEMBERSHIP_OPS_NAV_LINKS, canReviewBackgroundChecks } from "@/lib/membershipOpsNav";
 import { useRequireRole } from "@/hooks/useRequireRole";
 import { useTodoCounts } from "@/hooks/useTodoCounts";
 import { tabBadgeFor, reviewBadges } from "@/components/navBadges";
@@ -23,7 +23,7 @@ export default function MembershipOpsLayout({ children }: { children: React.Reac
 
   // Review tab is for reviewers + board members (implicit reviewers); all other tabs
   // are admin-only. A reviewer-only user therefore sees just the Review tab.
-  const canReview = !!(sessionUser?.isBackgroundCheckReviewer || sessionUser?.isBoardMember);
+  const canReview = canReviewBackgroundChecks(sessionUser);
   // Fetch counts for reviewers too (not just admins), so the Review tab badges
   // work for a reviewer-only user.
   const todoCounts = useTodoCounts(isAdmin || canReview);
