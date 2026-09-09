@@ -15,6 +15,7 @@
  */
 import prisma from '@/lib/prisma';
 import { config, isStagingAccessAllowed } from '@/lib/config';
+import { householdLeadship } from '@/lib/household/leads';
 import type { AuthResult } from '@/types/auth';
 import type { Authorize, CtxNeeds, Role } from './core';
 import { LIVE_PERSON } from '@/lib/person/filters';
@@ -40,8 +41,9 @@ export interface CallerContext {
     /** Person IDs with an un-departed Visit. Only populated for keyholders. */
     activeVisitorIds: Set<number>;
     /** Live members of the caller's household, INCLUDING the caller. Populated
-     *  only when the caller is a household lead — the empty set for everyone
-     *  else is what makes 'led_households' narrower than 'their_households'.
+     *  only when the caller may manage their household (householdLeadship →
+     *  canManage: a lead OR a sysadmin) — the empty set for everyone else is
+     *  what makes 'led_households' narrower than 'their_households'.
      *  Visit has no householdId column; it reaches a household only via
      *  personId ∈ this set. Drives 'led_households'. */
     ledHouseholdMemberIds: Set<number>;
@@ -100,14 +102,21 @@ export async function buildCallerContext(auth: AuthResult, needs: CtxNeeds): Pro
                   select: { personId: true },
               })
             : [],
-        // Lead-gated on purpose: sharing a household is not the relationship
-        // 'led_households' names. A non-lead member gets the empty set, so the
-        // scope never resolves for them. Mirrors lib/household/activityMembers.
-        needs.ledHouseholdMembers && auth.user.householdLead && ctx.householdId !== undefined
-            ? prisma.person.findMany({
-                  where: { householdId: ctx.householdId, ...LIVE_PERSON },
-                  select: { id: true },
-              })
+        // Resolve leadership from the DB via householdLeadship — the SAME
+        // predicate the authz gate uses (visitSubject → canManage), so the view
+        // roster cannot be narrower than the write it accompanies. canManage
+        // folds in the sysadmin override; a non-lead member gets canManage=false
+        // and the empty set, which is what keeps led_households strictly
+        // narrower than their_households.
+        needs.ledHouseholdMembers
+            ? householdLeadship(auth.user.id).then(lead =>
+                  lead?.canManage
+                      ? prisma.person.findMany({
+                            where: { householdId: lead.householdId, ...LIVE_PERSON },
+                            select: { id: true },
+                        })
+                      : [],
+              )
             : [],
     ]);
 
