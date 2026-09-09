@@ -5,21 +5,18 @@ Everything here expires when the change has run. The design is in
 
 ## Decisions owed before building
 
-The design's [Open questions](1655_MEMBERSHIP_YEAR_DECLARED.md#open-questions)
-are the owed decisions. One blocks the schema and must be settled first:
-
-- **Multi-year purchase** — decides whether `appliesToYear` is a single integer
-  (assumed here) or something wider.
-
-The variant mapping is settled: a `MembershipYearVariant` table, one row per year
-(see the design's Settings section) — not a JSON blob and not a per-year column.
-
-The rest (grant overlap-window edge, refund/year correction, PERSON_AGREEMENT
-adoption, misconfigured-variant surface) can be settled during the build; each
-has a fallback in the design that keeps today's behaviour.
+No design decisions are owed — the product owner has settled them (see the
+design's [Decisions](1655_MEMBERSHIP_YEAR_DECLARED.md#decisions-previously-open)):
+one year per settlement (`appliesToYear` is a single integer), no proration in
+software, overlap races resolve to the shorter grant, refunds/wrong-year are
+handled by people, misconfigured variants flow to the unmatched-payment path, and
+the variant mapping is a `MembershipYearVariant` table (one row per year). What
+remains are the build-time mechanics below.
 
 Still unknown, and only production can say: how many legacy processes the
-backfill cannot resolve. Step 6 counts them.
+backfill (step 5) cannot resolve. It leaves those `appliesToYear` null; the year
+readers treat null as "not settled for the coming year", so they read exactly as
+today.
 
 ## Sequence
 
@@ -49,15 +46,17 @@ release still serving traffic.
    in `POST /api/membership-ops/households`) into one "Grant membership" that
    always settles through a process carrying the year: the `active: true` blunt
    status flip and the season-only `comingYear: true` override become one path.
-   The current-vs-coming select shows only inside the overlap.
+   The current-vs-coming select shows only inside the overlap, and always requires
+   a certification reason. On a concurrent grant inside the overlap the shorter
+   (current-year) grant wins — the coming-year stamp yields to a current-year
+   settlement rather than overwriting it.
 
-   **This is the step that closes the status-only hole**: the `active: true` branch
-   today upserts `OrgMembership.status = ACTIVE` with no process, so it must stop
-   granting membership without a year-bearing settlement. If the merge is deferred
-   to a fast follow, this branch still cannot stay as-is — it either routes through
-   the settlement path or is disabled — or it silently produces year-less ACTIVE
-   memberships the new readers cannot place. See the design's grant section and the
-   unifying open question.
+   The `active: true` branch today upserts `OrgMembership.status = ACTIVE` with no
+   process. It can express only "current year" and cannot grant the coming year at
+   all — the reason the second button exists. It must route through the settlement
+   path (or be disabled) once the year readers land; left as a bare status flip it
+   both blocks the merge and leaves grants with no uniform year-bearing record. See
+   the design's grant section for the full breakage.
 
 4. **Checkout builds from the per-year variant:** the membership checkout link
    (`ensurePaymentLink` / `buildMembershipCheckoutUrl` in
@@ -117,13 +116,12 @@ release still serving traffic.
    `orgMembershipVariantId` repo-wide and drive it to zero (or to only the
    backward-compat shim, if one is kept for the drain window).
 
-8. **PERSON_AGREEMENT (only if adopted):** if the open question is decided yes,
-   stamp `appliesToYear` on PERSON_AGREEMENT processes at creation
-   (`personAgreementTriggers.ts`) and reshape its local `handledThisCycleWhere` to
-   the year key. If decided no, leave it on its `stageEnteredAt` floor and skip
-   this step.
-
 ## Left alone deliberately
+
+`personAgreementTriggers.ts`'s local `handledThisCycleWhere(personId, floor)`
+shares only the function name. It dedups the adult-child yearly-agreement trigger
+on `stageEnteredAt ≥ floor`; a signature satisfying a cycle is not a settlement
+buying a year, so it keeps its floor and is not touched.
 
 `duesSettledAwaitingBg` in `src/lib/membership/lifecycle.ts` is a status +
 `paidAt` set, not a cycle probe — it answers "paid, awaiting BG clearance" for the

@@ -183,7 +183,7 @@ no longer a function of review latency.
 A paid order whose membership variant is not in the mapping is a
 misconfiguration, not a guess to paper over: it is surfaced the way an unmatched
 membership payment is surfaced today rather than being stamped with an inferred
-year. (Exact surface is an [open question](#open-questions).)
+year — it flows to the existing unmatched-payment path.
 
 ### Board grant or comp → stamped at grant
 
@@ -201,9 +201,9 @@ A board grant settles a household's membership with no Shopify order and no
 
 The overlap window is the existing renewal window (`renewalWindow` /
 `renewalSeasonWindow`) — the span, opening a set period before the boundary,
-during which renewals are in season. Its exact definition, and whether the grant
-prompt should key off precisely that window or a variant of it, is an
-[open question](#open-questions).
+during which renewals are in season. The only remaining detail is a test pinning
+the boundary-instant edge; on a concurrent grant inside the overlap the shorter
+grant wins (below).
 
 #### The two grant buttons collapse to one
 
@@ -219,24 +219,53 @@ The grant surface today is two buttons on the households ops page, both posting 
   produces an ACTIVE process — the one that, under this design, carries
   `appliesToYear`.
 
-The declared-year model exposes why they are two, and why they should be one. The
-second button exists only because "renewal season" was the proxy for "the coming
-year" — the exact inference this design replaces. And the first button is a
-latent hole the year makes visible: a status-only grant leaves a household ACTIVE
-with **no settlement carrying a year**, so `settledThisCycleWhere` and
-`membershipValidThrough` cannot say what year it covers.
+**Why they are two, spelled out.** The horizon function reads coverage in two
+layers: an ACTIVE membership is covered to the next boundary *by its status
+alone*, and it reaches the boundary *after* that only when a process exists with
+`appliesToYear` = the coming year. The blunt `active: true` toggle sets status and
+writes no process — so it can express exactly one thing, "covered to the next
+boundary", i.e. the **current year**. It has no way to grant the coming year,
+because granting the coming year *is* writing that process. That is the entire
+reason the season-only second button was added: it is the only path that produces
+the process the coming-year horizon needs.
 
-So the two collapse into **one "Grant membership" action that always settles
-through a process which stamps `appliesToYear`** — auto outside the overlap,
-current-vs-coming prompt inside — replacing both the blunt status flip and the
-season-only coming-year button. This is an enabled simplification, not a
-prerequisite, but it is the clean home for the grant-path year stamp: without it,
-the blunt toggle has to be special-cased to create-and-stamp a process anyway.
-Residual questions the merge must settle — whether a reason is now always
-required (the coming-year path requires one, the toggle does not), how a grant on
-a household with no in-flight process creates one to settle (today
-`grantRenewalPayment` only *completes* an existing renewal), and consolidating the
-two COI guards — are in [Open questions](#open-questions).
+**What breaks if the toggle is left as-is under this design.** Nothing silently
+mis-computes for a *current-year* grant — status alone still yields the right
+horizon. The breakage is twofold and concrete:
+
+- **The buttons cannot be unified, and the toggle cannot be widened safely.** If
+  someone later offered the blunt toggle to a member in season meaning to grant
+  the coming year, it would set ACTIVE with no coming-year process — silently
+  granting the *current* year instead. The wrong outcome would look like success.
+- **Two divergent record shapes for the same act.** One grant leaves a
+  year-stamped, reasoned settlement (the process); the other leaves a bare status
+  flip with no year and no reason. Audit, the renewal sweep's "handled this cycle"
+  read, and any future per-year accounting then have to special-case a grant that
+  carries no year.
+
+**So the two collapse into one "Grant membership" that always settles through a
+process carrying `appliesToYear`** — auto year outside the overlap, current-vs-
+coming prompt inside. The current-year grant stops being a bare status upsert and
+becomes a settlement like every other, so every grant leaves one uniform record.
+Doing the merge in this change is cleanest; if it is deferred, the `active: true`
+branch still cannot stay as a status-only flip once the year readers land — it
+must route through the settlement path or be disabled.
+
+**The overlap prompt races to the shorter grant.** Inside the overlap two actors
+can act on one household at once — one granting (or the family buying) the current
+year, another the coming year. On a race the **shorter coverage wins**: the
+outcome settles to the current year (the summer), never the coming one. The actor
+who saw and chose the shorter grant gets exactly what the UI showed them, and the
+conservative coverage is the safe one to land on a tie — extending a family a year
+they did not clearly buy is the worse error. The grant that stamps the coming year
+therefore yields to a concurrent current-year settlement rather than overwriting
+it.
+
+Residual mechanics the merge settles — whether a reason is always required (the
+coming-year path requires one; make the unified grant require one too), and how a
+grant on a household with no in-flight process creates one to settle, since
+`grantRenewalPayment` today only *completes* an existing PENDING_PAYMENT renewal —
+are build details, not open design questions.
 
 ## Settings and catalogue: per-year variants
 
@@ -355,7 +384,7 @@ Every consumer and test that moves:
 | `src/app/api/membership-ops/households/route.ts` (two call sites: the detail `findFirst` and the list `include`) | Pass the coming-year integer; the surrounding window/`MAX_DATE` plumbing for these probes goes. |
 | `src/lib/orgMembership.ts` — `membershipValidThrough` | Same; the `settledThisCycleWhere` call keys on the year. `duesSettledAwaitingBg` (the paid-awaiting-BG horizon) is untouched — it is a status/`paidAt` set, not a cycle probe. |
 | `src/lib/membership/renewal.ts` — `runRenewalSweep` skip-test | The `handledThisCycleWhere(windowStart)` arm of the sweep's process probe moves to the year key. Confirmed: this is the same fragment, so the skip-test moves with the money horizons — the three readers stay in lock-step, which is the invariant the current docblock asserts. |
-| `src/lib/membership/personAgreementTriggers.ts` — the local `handledThisCycleWhere(personId, floor)` | Sibling of the same shape, keyed on `stageEnteredAt ≥ floor` for `PERSON_AGREEMENT`. It can adopt `appliesToYear` **only if** PERSON_AGREEMENT processes are stamped with the cycle year they satisfy at creation. Recommended for consistency but a genuine scope decision — see [Open questions](#open-questions); if not adopted now, it keeps its `stageEnteredAt` floor and this design leaves it alone. |
+| `src/lib/membership/personAgreementTriggers.ts` — the local `handledThisCycleWhere(personId, floor)` | **Left alone — out of scope.** It shares only the function name; it dedups the adult-child yearly-agreement trigger, keyed on `stageEnteredAt ≥ floor` for `PERSON_AGREEMENT`. A signature satisfying a cycle is not a settlement buying a year, so it keeps its `stageEnteredAt` floor and this design does not touch it. |
 | `src/lib/membership/__tests__/lifecycle.test.ts` | The two `toEqual` fragment assertions for `settledThisCycleWhere` / `handledThisCycleWhere` rewrite to the year shape. |
 | `src/lib/membership/__tests__/renewal.test.ts` | The `handledThisCycleWhere(windowStart)` assertion in the sweep test rewrites. |
 | `src/app/__tests__/householdsListGrantableAPI.integration.test.ts` | The "settled this cycle" / "handled this cycle" probe expectations move to declared-year fixtures. |
@@ -410,46 +439,45 @@ boundary defines the years completely, so a table would be a second source of
 truth for a span two integers describe. This design does not design #1484; it
 adopts its representation and cross-links it.
 
+## Decisions (previously open)
+
+The product owner has settled these; recorded here so they are not re-opened.
+
+- **One year per settlement.** A purchase or grant buys exactly one membership
+  year — no multi-year purchase. `appliesToYear` is a single integer, full stop.
+- **No proration in software.** Prorating a partial year's cost is done with
+  Shopify discounts. The app does not model it; the year field carries no
+  partial-coverage marker.
+- **Overlap race resolves to the shorter grant.** Two concurrent grants on one
+  household in the overlap settle to the current year (the summer), never the
+  coming one — see [the grant section](#the-two-grant-buttons-collapse-to-one).
+  The overlap span is the existing `renewalWindow`; the only remaining detail is a
+  test pinning the behaviour at the boundary instant.
+- **Refunds and wrong-year stamps are handled by people, not machinery.** A
+  refunded settlement is not auto-unwound and no skipped renewal auto-re-opens —
+  the board settles it with the family, exactly as it does a place bought at the
+  member rate that a later background-check rejection does not claw back
+  (`docs/rules/membership.md`), and consistent with the standing Assumption that
+  refunds are handled outside the app. A genuinely wrong `appliesToYear` (rare) is
+  a board/sysadmin manual correction; a mis-mapped variant never stamps a guess in
+  the first place (below).
+- **A misconfigured membership variant flows to the unmatched-payment path.** A
+  paid membership order whose variant is in no year's mapping is surfaced exactly
+  as any unmatched membership payment is today — it is not stamped with an
+  inferred year.
+
 ## Open questions
 
-Surfaced honestly; not answered where the sources do not decide them.
+None of design substance remain. What is left are build-time mechanics with a
+decided direction, not open questions:
 
-- **Multi-year purchase.** Can one order or one grant buy more than one
-  membership year (e.g. a family paying two years at once)? A single
-  `appliesToYear` integer models one year per settlement. If multi-year is a real
-  case, it is either multiple settlements or a range — undecided, and it changes
-  the column's shape.
-- **Mid-year proration.** The policy allows a payment to buy less than twelve
-  months; nothing here prorates. Proration is a fee question, not a year
-  question, so it likely stays out — but confirm it does not want the year field
-  to carry a partial-coverage marker.
-- **Exact overlap-window definition.** The grant prompt fires "inside the
-  overlap". Is that precisely the existing `renewalWindow`, or a distinct span?
-  And what is the correct behaviour for a grant made exactly at the boundary
-  instant? Pinned to a helper, but the helper's boundary edge deserves an
-  explicit test.
-- **Refunds and year corrections.** If a settlement is refunded or was stamped
-  with the wrong year, can the board correct `appliesToYear` after the fact, and
-  what re-opens (a renewal that was skipped because the year read as bought)?
-  There is a related standing rule that a rejected background check does not
-  unwind a place already bought — a year correction is a different lever and
-  needs its own decision.
-- **PERSON_AGREEMENT adoption.** Whether to stamp `appliesToYear` on
-  PERSON_AGREEMENT processes so its local `handledThisCycleWhere` collapses to the
-  same key. Cleaner, but the year means "the cycle this signature satisfies", not
-  "a year that was bought", so the field carries a slightly different sense on
-  that kind. Decide before or explicitly after this change.
-- **Misconfigured-variant surface.** How a paid membership order whose variant is
-  in no year's mapping is surfaced — the existing unmatched-payment path is the
-  natural home, to be confirmed against it.
-- **Unifying the two grant buttons.** The merge to one "Grant membership" action
-  (above) must settle: whether a certification reason is now always required; how
-  a grant on a household with no in-flight process creates one to settle, since
-  `grantRenewalPayment` today only completes an existing PENDING_PAYMENT renewal;
-  and whether the blunt status-only override is dropped entirely or kept as a
-  distinct break-glass path. If kept, it must still stamp a year or it re-opens the
-  hole. Whether to do the merge in this change or as a fast follow is itself open —
-  the year stamp on the grant path is required either way.
+- The unified grant should always require a certification reason (the coming-year
+  path already does).
+- A grant on a household with no in-flight process must create one to settle,
+  since `grantRenewalPayment` today only completes an existing PENDING_PAYMENT
+  renewal. Whether the merge lands in this change or as a fast follow is a
+  sequencing call; either way the `active: true` status-only flip cannot remain
+  once the year readers land.
 
 ## Alternatives considered
 
