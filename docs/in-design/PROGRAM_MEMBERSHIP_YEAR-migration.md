@@ -73,7 +73,10 @@ whole drain window.
 8. Interface: required start on the create form
    (`checkin-app/src/app/program-ops/new/page.tsx`) and the program settings form,
    plus the conditional membership-year select on both. Label the select so it
-   reads as looking up the budget's answer, not as making a call.
+   reads as looking up the budget's answer, not as making a call. Render every
+   year in the `2026-27` span form via a shared `formatMembershipYear(key)` helper
+   — the same helper the settlement-year work (`1655_MEMBERSHIP_YEAR_DECLARED`)
+   uses, authored once so a member sees one label everywhere.
 
 ## Left alone deliberately
 
