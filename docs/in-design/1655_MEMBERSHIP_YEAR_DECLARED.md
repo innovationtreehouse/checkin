@@ -205,51 +205,42 @@ during which renewals are in season. The only remaining detail is a test pinning
 the boundary-instant edge; on a concurrent grant inside the overlap the shorter
 grant wins (below).
 
-#### The two grant buttons collapse to one
+#### The two grant buttons become one
 
-The grant surface today is two buttons on the households ops page, both posting to
+**The design:** one "Grant membership" button that always writes a real settlement
+record stamped with the year. Outside renewal season it stamps the current year
+with no prompt (the only sensible year then); inside the renewal-window overlap it
+prompts current-vs-coming and stamps the answer. That single button replaces both
+of today's.
+
+Today there are two buttons on the households ops page, both posting to
 `POST /api/membership-ops/households`:
 
-- **Grant Membership** (`active: true`) — a blunt override on a non-member that
-  flips `OrgMembership.status` straight to ACTIVE by upsert. It **creates no
-  `OrgMembershipProcess`**, records no certification reason, and has no year.
-- **Grant for coming year** (`comingYear: true`) — offered only in renewal season;
-  delegates to `grantRenewalPayment`, which completes an already-in-flight RENEWAL
-  at PENDING_PAYMENT through the real settlement path and requires a reason. It
-  produces an ACTIVE process — the one that, under this design, carries
-  `appliesToYear`.
+- **Grant Membership** (`active: true`) — a non-member override that flips
+  `OrgMembership.status` to ACTIVE and nothing else. It writes **no settlement
+  record** (no `OrgMembershipProcess`), so no year and no reason.
+- **Grant for coming year** (`comingYear: true`) — shown only in renewal season;
+  writes a real settlement record (via `grantRenewalPayment`) with a reason. That
+  record is the thing that, under this design, carries `appliesToYear`.
 
-**Why they are two, spelled out.** The horizon function reads coverage in two
+**Why there are two today, and why one replaces them.** Coverage is read in two
 layers: an ACTIVE membership is covered to the next boundary *by its status
-alone*, and it reaches the boundary *after* that only when a process exists with
-`appliesToYear` = the coming year. The blunt `active: true` toggle sets status and
-writes no process — so it can express exactly one thing, "covered to the next
-boundary", i.e. the **current year**. It has no way to grant the coming year,
-because granting the coming year *is* writing that process. That is the entire
-reason the season-only second button was added: it is the only path that produces
-the process the coming-year horizon needs.
+alone*, and reaches the boundary *after* that only when a settlement record says
+so. The first button writes no record, so it can only ever mean "covered to the
+next boundary" — the **current year**. It physically cannot grant the coming year,
+because granting the coming year *is* writing that record. The season-only second
+button exists solely to write it. Give the grant a real record every time — which
+the year stamp requires anyway — and the split disappears: one button covers both,
+prompting for the year only where the year is genuinely ambiguous.
 
-**What breaks if the toggle is left as-is under this design.** Nothing silently
-mis-computes for a *current-year* grant — status alone still yields the right
-horizon. The breakage is twofold and concrete:
-
-- **The buttons cannot be unified, and the toggle cannot be widened safely.** If
-  someone later offered the blunt toggle to a member in season meaning to grant
-  the coming year, it would set ACTIVE with no coming-year process — silently
-  granting the *current* year instead. The wrong outcome would look like success.
-- **Two divergent record shapes for the same act.** One grant leaves a
-  year-stamped, reasoned settlement (the process); the other leaves a bare status
-  flip with no year and no reason. Audit, the renewal sweep's "handled this cycle"
-  read, and any future per-year accounting then have to special-case a grant that
-  carries no year.
-
-**So the two collapse into one "Grant membership" that always settles through a
-process carrying `appliesToYear`** — auto year outside the overlap, current-vs-
-coming prompt inside. The current-year grant stops being a bare status upsert and
-becomes a settlement like every other, so every grant leaves one uniform record.
-Doing the merge in this change is cleanest; if it is deferred, the `active: true`
-branch still cannot stay as a status-only flip once the year readers land — it
-must route through the settlement path or be disabled.
+This is a simplification the year model enables, not a warning against it. The one
+firm consequence is that the old flag-only button **cannot be kept as it is** once
+coverage is read from records: a flag with no year can only say "current year", so
+it is replaced by the record-writing button rather than left beside it. Doing the
+replacement in this change is cleanest; if it is deferred, the `active: true`
+branch must still route through the settlement path or be disabled — never left as
+a bare status flip, which would grant memberships with no year the new readers can
+place.
 
 **The overlap prompt races to the shorter grant.** Inside the overlap two actors
 can act on one household at once — one granting (or the family buying) the current
@@ -450,7 +441,7 @@ The product owner has settled these; recorded here so they are not re-opened.
   partial-coverage marker.
 - **Overlap race resolves to the shorter grant.** Two concurrent grants on one
   household in the overlap settle to the current year (the summer), never the
-  coming one — see [the grant section](#the-two-grant-buttons-collapse-to-one).
+  coming one — see [the grant section](#the-two-grant-buttons-become-one).
   The overlap span is the existing `renewalWindow`; the only remaining detail is a
   test pinning the behaviour at the boundary instant.
 - **Refunds and wrong-year stamps are handled by people, not machinery.** A
