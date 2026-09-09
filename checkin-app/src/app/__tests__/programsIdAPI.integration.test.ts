@@ -25,6 +25,7 @@ describe('Individual Program API Integration Tests', () => {
     let siblingId: number;
     let publicProgramId: number;
     let orgMemberOnlyProgramId: number;
+    let publicMemberOnlyProgramId: number;
 
     // Distinctive name we assert NEVER appears in an anonymous response — the
     // roster/association leak (#P0-5.1a) is closed iff this string is absent.
@@ -117,6 +118,11 @@ describe('Individual Program API Integration Tests', () => {
         });
         orgMemberOnlyProgramId = orgMemberOnlyProgram.id;
 
+        const publicMemberOnlyProgram = await prisma.program.create({
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Public Member Only Prog ID API Test', phase: 'RUNNING', orgMemberOnly: true, publiclyVisible: true, leadMentorId: leadId }
+        });
+        publicMemberOnlyProgramId = publicMemberOnlyProgram.id;
+
         // Enroll a participant with a recognizable name into the public program so
         // the leak tests have a roster identity to look for.
         const enrolled = await prisma.person.create({
@@ -164,7 +170,7 @@ describe('Individual Program API Integration Tests', () => {
             });
         }
 
-        const validProgramIds = [publicProgramId, orgMemberOnlyProgramId].filter(id => id !== undefined);
+        const validProgramIds = [publicProgramId, orgMemberOnlyProgramId, publicMemberOnlyProgramId].filter(id => id !== undefined);
         if (validProgramIds.length > 0) {
             // ProgramParticipant/ProgramVolunteer have no cascade — clear the
             // roster rows before the program.
@@ -254,6 +260,32 @@ describe('Individual Program API Integration Tests', () => {
 
              const data = await res.json();
              expect(data.name).toBe('Member Only Prog ID API Test');
+        });
+
+        it('lets an unauthenticated caller view a publiclyVisible members-only program, roster still hidden', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue(null);
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicMemberOnlyProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.name).toBe('Public Member Only Prog ID API Test');
+             // The join gate lives on the enrollment route, not the view — the roster
+             // association gate still hides participants/volunteers from a non-member.
+             expect(data.participants).toBeUndefined();
+             expect(data.volunteers).toBeUndefined();
+        });
+
+        it('lets a common (non-member) user view a publiclyVisible members-only program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: commonId } });
+
+             const req = new Request(`http://localhost:4000/api/programs/${publicMemberOnlyProgramId}`, { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest, createParams(publicMemberOnlyProgramId) as unknown as never);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.name).toBe('Public Member Only Prog ID API Test');
         });
 
         // ── Roster / association leak regression (auth-consistency §5.1a) ───────────

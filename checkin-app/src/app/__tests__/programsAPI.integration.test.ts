@@ -68,7 +68,8 @@ describe('Programs API Integration Tests', () => {
             data: [
                 { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Public API Test Program', phase: 'RUNNING', orgMemberOnly: false, minAge: 10, maxAge: 18, leadMentorNotificationSettings: { notifyRsvp: true } },
                 { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Draft API Test Program', phase: 'PLANNING', orgMemberOnly: false, leadMentorId: leadId },
-                { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true }
+                { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true },
+                { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Public Member Only API Test Program', phase: 'RUNNING', orgMemberOnly: true, publiclyVisible: true }
             ]
         });
     });
@@ -106,6 +107,21 @@ describe('Programs API Integration Tests', () => {
              expect(publicActive).toBeDefined();
              expect(draft).toBeUndefined(); // Filtered because it is in PLANNING
              expect(orgMemberOnly).toBeUndefined(); // Filtered because orgMemberOnly is true
+        });
+
+        it('shows a publiclyVisible members-only program to an unauthenticated caller', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue(null);
+
+             const req = new Request('http://localhost:4000/api/programs', { method: 'GET' });
+             const res = await GET(req as unknown as import("next/server").NextRequest);
+             expect(res.status).toBe(200);
+
+             const programs = await res.json();
+             const hidden = programs.find((p: { name?: string }) => p.name === 'Member Only API Test Program');
+             const shown = programs.find((p: { name?: string }) => p.name === 'Public Member Only API Test Program');
+
+             expect(hidden).toBeUndefined(); // members-only and NOT publiclyVisible — stays hidden
+             expect(shown).toBeDefined();    // members-only but opted into the public catalogue
         });
 
         it('should return drafts if the authenticated user is the lead mentor', async () => {
