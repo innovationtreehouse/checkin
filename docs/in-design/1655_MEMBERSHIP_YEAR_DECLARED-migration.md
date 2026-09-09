@@ -61,9 +61,25 @@ release still serving traffic.
 
 4. **Checkout builds from the per-year variant:** the membership checkout link
    (`ensurePaymentLink` / `buildMembershipCheckoutUrl` in
-   `src/lib/membership/payment.ts`) selects the variant for the year being sold.
-   The seed writes no `BoardSettings` variant mapping — seed at least the current
-   year's variant, or membership checkout and the flow tests break.
+   `src/lib/membership/payment.ts`) selects the variant for the year being sold,
+   and **fails closed** (surfaced, not a silent dead end) when that year's row is
+   absent. The seed writes no `BoardSettings` variant mapping — seed at least the
+   current AND coming year's variant rows, or membership checkout, the renewal
+   sweep (below), and the flow tests break.
+
+4a. **Renewal-sweep hard stop:** `runRenewalSweep` in
+    `src/lib/membership/renewal.ts` gains a second early return alongside its
+    existing no-boundary guard: with no coming-year `MembershipYearVariant` row it
+    opens nothing and returns a reason. A renewal opened with no product to pay
+    through is worse than one not opened.
+
+4b. **Settings surface + misconfig pill:** the membership settings page
+    (`src/app/settings/membership/page.tsx`) renders the variant rows for the
+    in-play years only — current and coming, derived from the boundary, past years
+    filtered out (rows retained). The coming-year row renders as an empty,
+    fillable slot with a red "needs variant" badge until set, and the
+    `settingsMisconfig` count in `src/app/api/nav/todo-counts/route.ts` includes
+    the missing coming-year variant so the nav pill flags it months ahead.
 
 5. **Backfill (one-time, run against production after the column exists):** for
    every `OrgMembershipProcess` whose year today's logic can decide, compute the

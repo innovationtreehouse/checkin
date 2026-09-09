@@ -276,6 +276,39 @@ reads like the rest of the catalogue.
   change over time is one table added and two columns removed — not a settings
   table that grows each year.
 
+### How the table is shown, and the renewal hard stop
+
+The rows persist for every year ever sold, but the settings surface renders only
+the years **in play**, and which those are is *derived from the boundary, never
+stored* — the same principle as the year integer itself. At any instant the
+editable surface shows exactly two: the **current** year (still sellable to a late
+joiner) and the **coming** year. Past years' rows stay in the table — settled
+processes reference them through `appliesToYear`, and the reconcilers match old
+orders against them — but they drop off the editable surface once they become
+past. Nothing is deleted; a year simply stops rendering when the boundary crosses.
+
+**The coming-year slot appears roughly twelve months ahead, on its own.** A year
+becomes "coming" the moment the previous boundary passes, so its row is visible
+for the whole year before its renewal window opens — no lead-time setting, and far
+more warning than the window needs. Until it is filled it renders as an **empty
+slot with a red "needs variant" badge**, and it feeds the existing
+`settingsMisconfig` nav pill (which already counts unset required checkout
+settings), so the board is nagged to enter it well before it is needed.
+
+**The renewal sweep hard-stops on the missing coming-year variant.**
+`runRenewalSweep` already refuses when no boundary is configured; it gains a
+second early return of the same shape: **with no coming-year variant row, it opens
+no renewals and reports the gap**, because a renewal it opened could not be paid —
+there would be no product to check out through. The board sees the same gap twice
+before it bites: the empty-slot badge and the nav pill, both live for months, and
+then the sweep's own refusal reason. Building a coming-year checkout link is
+fail-closed for the same reason — an in-window renewal attempted before the
+variant exists is surfaced, not left as a silent dead end.
+
+When the boundary crosses, this rolls forward with no intervention: the coming
+year becomes current, a fresh empty coming-year slot appears, and its badge starts
+asking to be filled for the next cycle.
+
 ### Impact on the drift reconcilers (#625 / #1293 / #1349)
 
 The finance reconcilers (`checkin-app/src/lib/finance/reconcile.ts`,
