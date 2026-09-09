@@ -42,11 +42,22 @@ release still serving traffic.
    order whose variant is in no year's mapping is surfaced via the existing
    unmatched-payment path, not stamped with a guess.
 
-3. **Stamp on the grant path:** `grantRenewalPayment` → `activate` and the
-   certify-payment-plan path write `appliesToYear`. Outside the overlap window,
-   compute and stamp it with no prompt; inside the overlap, the board's answer is
-   required and stamped. Wire the current-year vs coming-year choice into the
-   grant UI (`membership-ops` grant action) — shown only inside the overlap.
+3. **Stamp on the grant path, and unify the grant buttons:** `grantRenewalPayment`
+   → `activate` and the certify-payment-plan path write `appliesToYear` — auto
+   outside the overlap, board's answer required inside. Then fold the two grant
+   buttons on `src/app/membership-ops/households/page.tsx` (and their two branches
+   in `POST /api/membership-ops/households`) into one "Grant membership" that
+   always settles through a process carrying the year: the `active: true` blunt
+   status flip and the season-only `comingYear: true` override become one path.
+   The current-vs-coming select shows only inside the overlap.
+
+   **This is the step that closes the status-only hole**: the `active: true` branch
+   today upserts `OrgMembership.status = ACTIVE` with no process, so it must stop
+   granting membership without a year-bearing settlement. If the merge is deferred
+   to a fast follow, this branch still cannot stay as-is — it either routes through
+   the settlement path or is disabled — or it silently produces year-less ACTIVE
+   memberships the new readers cannot place. See the design's grant section and the
+   unifying open question.
 
 4. **Checkout builds from the per-year variant:** the membership checkout link
    (`ensurePaymentLink` / `buildMembershipCheckoutUrl` in

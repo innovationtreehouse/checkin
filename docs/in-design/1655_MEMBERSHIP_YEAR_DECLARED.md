@@ -187,9 +187,8 @@ year. (Exact surface is an [open question](#open-questions).)
 
 ### Board grant or comp → stamped at grant
 
-A board grant or comp settles a process with no Shopify order and no `paidAt`
-(`grantRenewalPayment` → `activate`; the certify-payment-plan path). There is no
-variant to read, so the grant states the year directly:
+A board grant settles a household's membership with no Shopify order and no
+`paidAt`, and it states the year directly since there is no variant to read:
 
 - **Outside the renewal-window overlap**, the year is unambiguous — there is
   exactly one membership year a settlement made now would sensibly buy — so it is
@@ -204,9 +203,40 @@ The overlap window is the existing renewal window (`renewalWindow` /
 `renewalSeasonWindow`) — the span, opening a set period before the boundary,
 during which renewals are in season. Its exact definition, and whether the grant
 prompt should key off precisely that window or a variant of it, is an
-[open question](#open-questions). Today's "grant the coming year" button already
-carries the coming-year meaning implicitly; this makes that meaning explicit and
-adds the current-year option inside the overlap.
+[open question](#open-questions).
+
+#### The two grant buttons collapse to one
+
+The grant surface today is two buttons on the households ops page, both posting to
+`POST /api/membership-ops/households`:
+
+- **Grant Membership** (`active: true`) — a blunt override on a non-member that
+  flips `OrgMembership.status` straight to ACTIVE by upsert. It **creates no
+  `OrgMembershipProcess`**, records no certification reason, and has no year.
+- **Grant for coming year** (`comingYear: true`) — offered only in renewal season;
+  delegates to `grantRenewalPayment`, which completes an already-in-flight RENEWAL
+  at PENDING_PAYMENT through the real settlement path and requires a reason. It
+  produces an ACTIVE process — the one that, under this design, carries
+  `appliesToYear`.
+
+The declared-year model exposes why they are two, and why they should be one. The
+second button exists only because "renewal season" was the proxy for "the coming
+year" — the exact inference this design replaces. And the first button is a
+latent hole the year makes visible: a status-only grant leaves a household ACTIVE
+with **no settlement carrying a year**, so `settledThisCycleWhere` and
+`membershipValidThrough` cannot say what year it covers.
+
+So the two collapse into **one "Grant membership" action that always settles
+through a process which stamps `appliesToYear`** — auto outside the overlap,
+current-vs-coming prompt inside — replacing both the blunt status flip and the
+season-only coming-year button. This is an enabled simplification, not a
+prerequisite, but it is the clean home for the grant-path year stamp: without it,
+the blunt toggle has to be special-cased to create-and-stamp a process anyway.
+Residual questions the merge must settle — whether a reason is now always
+required (the coming-year path requires one, the toggle does not), how a grant on
+a household with no in-flight process creates one to settle (today
+`grantRenewalPayment` only *completes* an existing renewal), and consolidating the
+two COI guards — are in [Open questions](#open-questions).
 
 ## Settings and catalogue: per-year variants
 
@@ -379,6 +409,14 @@ Surfaced honestly; not answered where the sources do not decide them.
 - **Misconfigured-variant surface.** How a paid membership order whose variant is
   in no year's mapping is surfaced — the existing unmatched-payment path is the
   natural home, to be confirmed against it.
+- **Unifying the two grant buttons.** The merge to one "Grant membership" action
+  (above) must settle: whether a certification reason is now always required; how
+  a grant on a household with no in-flight process creates one to settle, since
+  `grantRenewalPayment` today only completes an existing PENDING_PAYMENT renewal;
+  and whether the blunt status-only override is dropped entirely or kept as a
+  distinct break-glass path. If kept, it must still stamp a year or it re-opens the
+  hole. Whether to do the merge in this change or as a fast follow is itself open —
+  the year stamp on the grant path is required either way.
 
 ## Alternatives considered
 
