@@ -73,8 +73,14 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
 }
 
 /**
- * Processes a checkout. It takes an open visit and a checkout time, and creates multiple
+ * Processes a checkout. It takes a visit and a checkout time, and creates multiple
  * visits if the user was enrolled in back-to-back events during their stay.
+ *
+ * Normally the visit must be open — an already-closed one is a no-op, so a
+ * double checkout can't re-chunk. A closed backfill (a route that creates the
+ * visit already-closed because it must not transiently violate the
+ * one-open-visit unique index) passes `rechunkClosed` to split that closed
+ * visit into per-event segments exactly as an open check-in + checkout would.
  *
  * The departure is capped at `arrivedAt + MAX_VISIT_MS`. A caller that took a
  * typed time has already rejected anything longer, so the cap only ever bites
@@ -83,13 +89,13 @@ export async function findAssociatedEventAt(participantId: number, targetTime: D
  *
  * It returns the final list of visits spanning their arrival to departure.
  */
-export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "TYPED" | "AUTO_CLOSE") {
+export async function processVisitCheckout(visitId: number, checkoutTime: Date, db: DbClient = prisma, source: "SCANNER" | "TYPED" | "AUTO_CLOSE", rechunkClosed = false) {
     const originalVisit = await db.visit.findUnique({
         where: { id: visitId }
     });
 
-    if (!originalVisit || originalVisit.departedAt || originalVisit.deletedAt) {
-        return []; // Already checked out, tombstoned, or doesn't exist
+    if (!originalVisit || originalVisit.deletedAt || (originalVisit.departedAt && !rechunkClosed)) {
+        return []; // Tombstoned, missing, or already checked out (unless re-chunking a closed backfill)
     }
 
     // Chunks recreated below are all segments of one physical visit: they keep

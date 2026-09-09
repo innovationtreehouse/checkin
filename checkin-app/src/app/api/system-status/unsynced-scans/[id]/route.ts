@@ -181,6 +181,13 @@ export const POST = handler<{ id: string }>(
                     classification: PresenceClass.PROJECTED,
                     visitId: visit.id,
                 });
+                // A closed backfill splits into per-event segments, same as an
+                // open check-in + checkout. Runs on the tx client so the
+                // delete+recreate is atomic with the create; the visit was
+                // created closed to avoid transiently breaking the one-open-visit
+                // unique index, so rechunkClosed lets it re-chunk.
+                const chunks = await processVisitCheckout(visit.id, parsedDeparted, tx, "TYPED", true);
+                return chunks.length > 0 ? chunks[chunks.length - 1].id : visit.id;
             }
 
             return visit.id;
@@ -197,11 +204,6 @@ export const POST = handler<{ id: string }>(
                 // flushParkedClosed takes the facility lock itself (reentrant).
                 await flushParkedClosed(tx);
             });
-        }
-
-        // Same back-to-back transition handling a manual closed backfill gets.
-        if (parsedDeparted) {
-            await processVisitCheckout(visitId, parsedDeparted, undefined, "TYPED");
         }
 
         await prisma.auditLog.create({

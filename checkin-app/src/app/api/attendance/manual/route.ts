@@ -153,10 +153,18 @@ export const POST = withAuth({}, async (req, auth) => {
                     classification: PresenceClass.PROJECTED,
                     visitId: created.id,
                 });
+                // A closed backfill must land in the same visit/segment state as
+                // an open check-in at the arrival followed by a checkout at the
+                // departure: split the stay into per-event segments. Runs on the
+                // tx client so the delete+recreate is atomic with the create; the
+                // visit was created closed to avoid transiently breaking the
+                // one-open-visit unique index, so rechunkClosed lets it re-chunk.
+                const chunks = await processVisitCheckout(created.id, departureTime, tx, "TYPED", true);
+                return { visit: chunks.length > 0 ? chunks[chunks.length - 1] : created, freshCheckin: false };
             }
             // freshCheckin only when a NEW open visit was created — not a backfilled
             // closed visit (has departure) and not the dedup return above.
-            return { visit: created, freshCheckin: !departureTime };
+            return { visit: created, freshCheckin: true };
         }, {
             maxWait: 5000,
             timeout: 15000,
@@ -174,12 +182,6 @@ export const POST = withAuth({}, async (req, auth) => {
                 // flushParkedClosed takes the facility lock itself (reentrant).
                 await flushParkedClosed(tx);
             });
-        }
-
-        // If a departure time was provided, we process the checkout logic directly
-        // to handle any back-to-back event transitions.
-        if (departureTime) {
-             await processVisitCheckout(visit.id, departureTime, undefined, "TYPED");
         }
 
         // Fire-and-forget: notify only on a fresh active check-in (mirrors /api/scan).

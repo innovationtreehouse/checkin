@@ -8,6 +8,7 @@
 
 import { POST } from '@/app/api/attendance/manual/route';
 import prisma from '@/lib/prisma';
+import { processVisitCheckout } from '@/lib/attendanceTransitions';
 import { getServerSession } from 'next-auth/next';
 
 // Mock NextAuth
@@ -393,5 +394,113 @@ describe('Manual Attendance API — household-lead insert for a member', () => {
         const res = await post({ arrivedAt: new Date(Date.now() - 600000).toISOString(), personId: childId });
         expect(res.status).toBe(403);
         expect(await prisma.visit.count({ where: { personId: childId, departedAt: null } })).toBe(0);
+    });
+});
+
+// #1773: a CLOSED backfill (arrival + departure up front) must land in the same
+// visit/segment state as an open check-in at the arrival followed by a checkout
+// at the departure — so a stay spanning back-to-back events is split into one
+// segment per event, not left as one visit carrying the soonest event.
+describe('Manual Attendance API — closed backfill chunks back-to-back events', () => {
+    const TAG = 'manual-backfill-chunk-test';
+    const HOUR = 60 * 60 * 1000;
+    let personId: number;
+    let programId: number;
+    let householdId: number;
+
+    const post = (body: unknown) => POST(new Request('http://localhost:4000/api/attendance/manual', {
+        method: 'POST', body: JSON.stringify(body),
+    }) as unknown as import('next/server').NextRequest) as Promise<Response>;
+
+    // A stay covering two adjacent events, anchored in the recent past so the
+    // route's no-future / ≤24h / staleness bounds all pass.
+    const t0 = new Date(Date.now() - 4 * HOUR);          // arrival == event 1 start
+    const e1Start = t0;
+    const e1End = new Date(t0.getTime() + HOUR);
+    const e2Start = e1End;                                // back-to-back handoff
+    const e2End = new Date(t0.getTime() + 2 * HOUR);
+    const departure = new Date(t0.getTime() + 3 * HOUR); // ~1h ago, past e2's end
+    let e1Id: number;
+    let e2Id: number;
+
+    const segments = () => prisma.visit.findMany({
+        where: { personId, deletedAt: null },
+        orderBy: { arrivedAt: 'asc' },
+        select: { arrivedAt: true, departedAt: true, associatedEventId: true, arrivedVia: true, departedVia: true },
+    });
+
+    beforeAll(async () => {
+        const leaked = await prisma.person.findMany({ where: { email: { contains: TAG } }, select: { id: true, householdId: true } });
+        const ids = leaked.map(p => p.id);
+        await prisma.visit.deleteMany({ where: { personId: { in: ids } } });
+        await prisma.auditLog.deleteMany({ where: { actorId: { in: ids } } });
+        await prisma.programParticipant.deleteMany({ where: { personId: { in: ids } } });
+        await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
+        await prisma.person.deleteMany({ where: { id: { in: ids } } });
+        await prisma.household.deleteMany({ where: { id: { in: leaked.map(p => p.householdId).filter((h): h is number => h != null) } } });
+
+        const program = await prisma.program.create({
+            data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: `${TAG} Program`, enrollmentStatus: 'OPEN' },
+        });
+        programId = program.id;
+        const person = await prisma.person.create({
+            data: { email: `person-${TAG}@example.com`, name: 'Backfill Chunk', household: { create: { name: 'Test HH' } } },
+        });
+        personId = person.id;
+        householdId = person.householdId!;
+        await prisma.programParticipant.create({
+            data: { programId, personId, status: 'ACTIVE', pendingSince: null },
+        });
+        const e1 = await prisma.event.create({ data: { name: `${TAG} e1`, programId, startAt: e1Start, endAt: e1End, description: 'x' } });
+        const e2 = await prisma.event.create({ data: { name: `${TAG} e2`, programId, startAt: e2Start, endAt: e2End, description: 'x' } });
+        e1Id = e1.id;
+        e2Id = e2.id;
+    });
+
+    afterEach(async () => {
+        await prisma.visit.deleteMany({ where: { personId } });
+    });
+
+    afterAll(async () => {
+        await prisma.auditLog.deleteMany({ where: { actorId: personId } });
+        await prisma.programParticipant.deleteMany({ where: { programId } });
+        await prisma.event.deleteMany({ where: { name: { contains: TAG } } });
+        await prisma.program.delete({ where: { id: programId } });
+        await prisma.person.delete({ where: { id: personId } });
+        await prisma.household.delete({ where: { id: householdId } });
+    });
+
+    it('splits the stay into one segment per event, not one visit with the soonest event', async () => {
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: personId } });
+        const res = await post({ arrivedAt: t0.toISOString(), departedAt: departure.toISOString() });
+        expect(res.status).toBe(201);
+
+        const rows = await segments();
+        // One segment per event — NOT a single visit carrying only e1 (the soonest).
+        expect(rows).toHaveLength(2);
+        expect(rows[0].associatedEventId).toBe(e1Id);
+        expect(rows[0].arrivedAt).toEqual(e1Start);
+        expect(rows[0].departedAt).toEqual(e2Start);
+        expect(rows[1].associatedEventId).toBe(e2Id);
+        expect(rows[1].arrivedAt).toEqual(e2Start);
+        expect(rows[1].departedAt).toEqual(departure);
+        // Backfill provenance is preserved on every segment.
+        expect(rows.every(r => r.arrivedVia === 'TYPED' && r.departedVia === 'TYPED')).toBe(true);
+    });
+
+    it('parity: closed backfill end state equals open check-in at arrival + checkout at departure', async () => {
+        // Open path: an open visit at the arrival, then a checkout at the departure.
+        const open = await prisma.visit.create({ data: { personId, arrivedAt: t0, arrivedVia: 'TYPED' } });
+        await processVisitCheckout(open.id, departure, prisma, 'TYPED');
+        const openState = await segments();
+        await prisma.visit.deleteMany({ where: { personId } });
+
+        // Closed path: the backfill route with the same arrival + departure.
+        (getServerSession as jest.Mock).mockResolvedValue({ user: { id: personId } });
+        const res = await post({ arrivedAt: t0.toISOString(), departedAt: departure.toISOString() });
+        expect(res.status).toBe(201);
+        const closedState = await segments();
+
+        expect(closedState).toEqual(openState);
     });
 });
