@@ -105,9 +105,12 @@ field, read by classify/validate and the transition diagram; this design only
 stops *the two cycle probes* from keying coverage off it. Do not drop it.
 
 `landsNextYear` / `nextBoundary` / `memberYearStarts` in
-`src/lib/programYear.ts` are the shared boundary helpers this design reuses. No
-change beyond possibly adding a `membershipYearOf(date, boundary): number`
-convenience if one does not already fall out of `nextBoundary`.
+`src/lib/programYear.ts` are the shared boundary helpers this design reuses. Add
+two here, authored once and shared with the program-year work: a
+`membershipYearOf(date, boundary): number` that returns the opening-year key, and
+a `formatMembershipYear(key): string` that renders it as the `2026-27` span for
+every human-facing surface (grant prompt, valid-until, program pricing, and the
+program-year label). Storage is the integer key; the span is never stored.
 
 ## Contract stage, later
 

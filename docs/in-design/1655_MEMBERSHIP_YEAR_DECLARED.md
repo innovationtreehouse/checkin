@@ -91,33 +91,42 @@ than merely re-pointing it.
 
 ## Naming a membership year
 
-A membership year is named by an integer: the calendar year of the boundary that
-opens it. With a 1 September boundary, membership year **2026** runs from
-1 September 2026 to 31 August 2027.
+A membership year spans two calendar years — with a 1 September boundary it runs
+from 1 September of one year to 31 August of the next — so its **name is the
+spanning form, `2026-27`**: the year the boundary opens in, and the year it
+closes in. That is what a human sees anywhere a membership year is shown, and it
+is unambiguous in a way a bare `2026` is not.
 
-This is the identical scheme already chosen for programs in
+**Stored as a single integer — the opening-boundary year (`2026`).** The closing
+half is always the opening half plus one, so storing both would be storing a
+derivable fact twice; the `2026-27` label is *formatted* from the one integer by
+a shared helper, not stored. The integer is not a stored date, for the same
+reason program design gives: a stored date would be a second copy of the board's
+boundary setting, wrong from the moment the setting moved and silently so. The
+integer re-resolves against the current boundary every time it is read.
+
+This is the identical storage scheme already chosen for programs in
 `docs/in-design/PROGRAM_MEMBERSHIP_YEAR.md` — see
 [Reconciliation with program fiscal year](#reconciliation-with-program-fiscal-year-1484).
-The name is an integer, not a stored date, for the same reason it is there: a
-stored date would be a second copy of the board's boundary setting, wrong from
-the moment the setting moved and silently so. An integer is re-resolved against
-the current boundary every time it is read.
+The one addition here is a shared **display helper** that renders that integer as
+the `2026-27` span, so a member reads the same label for a program's year and for
+the year their own dues cover.
 
 **Precisely which year "the coming year" is.** At any instant *now*, let
 `nextBoundary` be the next occurrence (≥ *now*) of the configured boundary's
 month and day — the existing `nextBoundary(boundary, now)` in
 `checkin-app/src/lib/programYear.ts`. Then:
 
-- The **current** membership year — the one the organisation is living in — is
-  named `nextBoundary.getUTCFullYear() - 1`.
+- The **current** membership year — the one the organisation is living in — has
+  the integer key `nextBoundary.getUTCFullYear() - 1` (displayed `2025-26`).
 - The **coming** membership year — the one a renewal or an in-window join buys —
-  is named `nextBoundary.getUTCFullYear()`.
+  has the integer key `nextBoundary.getUTCFullYear()` (displayed `2026-27`).
 
 At the boundary instant itself, `nextBoundary` steps to the following year (the
 existing helper treats a boundary exactly at *now* as already passed and rolls
-forward), so on 1 September 2027 the current year becomes 2027 and the coming
-year 2028 — the horizon advances the moment the boundary is crossed, with no
-special case.
+forward), so on 1 September 2027 the current-year key becomes 2027 and the
+coming-year key 2028 — the horizon advances the moment the boundary is crossed,
+with no special case.
 
 ## What is stored, and where
 
