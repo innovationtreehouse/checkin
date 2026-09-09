@@ -376,6 +376,15 @@ class AttendanceState:
             self.keyholder_ids = keyholders
             self.last_two_deep_violation = bool(safety.get("isTwoDeepViolation"))
 
+    def facility_closed(self):
+        """Best-effort local view of whether the facility is closed (no keyholder
+        present), from the last successful attendance poll. Offline this is the
+        only signal: a keyholder who badges while disconnected is not reflected
+        here until the next poll. ponytail: last-poll count, not a local keyholder
+        set — the badge alone doesn't tell the client who is a keyholder."""
+        with self.lock:
+            return self.current_counts.get("keyholders", 0) == 0
+
 # ---------------------------------------------------------------------------
 # Transparent Signing Proxy & Kiosk Handler
 # ---------------------------------------------------------------------------
@@ -600,7 +609,7 @@ class KioskHandler(BaseHTTPRequestHandler):
       const iframe = document.querySelector("iframe");
       if (iframe && iframe.contentWindow) {{
         if (data.attendance) {{
-          iframe.contentWindow.postMessage({{type: "refresh-attendance", attendance: data.attendance, counts: data.counts, safety: data.safety}}, "*");
+          iframe.contentWindow.postMessage({{type: "refresh-attendance", attendance: data.attendance, held: data.held, counts: data.counts, safety: data.safety}}, "*");
         }} else {{
           iframe.contentWindow.postMessage("refresh-attendance", "*");
         }}
@@ -936,12 +945,21 @@ def _scan_result_banner_html(body, status):
         return f'<div class="banner banner-ok">✓ {who} — {msg}</div>', 0, 0
     return f'<div class="banner banner-ok">✓ {who} — {label}</div>', 0, 0
 
-def _saved_banner_html(queued, intent=None):
+def _saved_banner_html(queued, intent=None, facility_closed=False):
     # A queued scan reads as done and safe to walk away from -- distinct
     # from the red "not saved" state. The displayed direction is the intent
     # of record even when the server has not acked yet.
+    # Returns (html, dwell_seconds); dwell 0 means the default dwell.
+    if facility_closed and intent == "IN":
+        # No keyholder present per the last poll, so an offline IN is held, not an
+        # open — mirror the online closed-facility hold (_scan_result_banner_html)
+        # rather than claiming a completed check-in, and hold it as long.
+        return (
+            f'<div class="banner banner-warning">✓ {CLOSED_HOLD_COPY} (will sync, {queued} waiting)</div>',
+            CLOSED_HOLD_DWELL_S,
+        )
     label = "CHECKED IN" if intent == "IN" else "CHECKED OUT" if intent == "OUT" else "Saved"
-    return f'<div class="banner banner-saved">✓ {label} — will sync ({queued} waiting)</div>'
+    return f'<div class="banner banner-saved">✓ {label} — will sync ({queued} waiting)</div>', 0
 
 def handle_scan(backend, state, outbox, participant_id):
     client_event_id = new_event_id()
@@ -980,8 +998,11 @@ def handle_scan(backend, state, outbox, participant_id):
         queued = outbox.pending_count()
         # The offline force-close confirm normally lands here: its own warning
         # scan is still pending ahead of it. Queue the close behind it and say so.
-        banner = _offline_close_saved_html(queued) if force_close_confirmed else _saved_banner_html(queued, intent)
-        state.push_event({"html": banner, "queued": queued})
+        if force_close_confirmed:
+            state.push_event({"html": _offline_close_saved_html(queued), "queued": queued})
+        else:
+            banner_html, dwell = _saved_banner_html(queued, intent, facility_closed=state.facility_closed())
+            state.push_event({"html": banner_html, "queued": queued, "dwell": dwell})
         log.info(f"Queued (predecessor pending): participant {participant_id} {intent}")
         return
 
@@ -1018,7 +1039,8 @@ def handle_scan(backend, state, outbox, participant_id):
             state.push_event({"html": _offline_close_saved_html(queued), "queued": queued})
             log.warning(f"Offline force-close CONFIRMED, queued: keyholder {participant_id}")
         else:
-            state.push_event({"html": _saved_banner_html(queued, intent), "queued": queued})
+            banner_html, dwell = _saved_banner_html(queued, intent, facility_closed=state.facility_closed())
+            state.push_event({"html": banner_html, "queued": queued, "dwell": dwell})
             log.warning(f"Scan queued (server unreachable/warming): participant {participant_id} {intent}")
         return
 
@@ -1042,7 +1064,7 @@ def handle_scan(backend, state, outbox, participant_id):
         if att_status == 200:
             state.seed_from_attendance(att_data)
             event_payload = {"html": ""}
-            for key in ("attendance", "counts", "safety"):
+            for key in ("attendance", "held", "counts", "safety"):
                 if key in att_data:
                     event_payload[key] = att_data[key]
             if "counts" in att_data:
