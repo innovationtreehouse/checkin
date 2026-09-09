@@ -14,8 +14,10 @@ import type { TxClient } from "@/lib/db-client";
  * DB and the dev-reset TRUNCATE have no seed row); `GREATEST` absorbs whatever
  * the sequence has already written (fixtures, unconverted sites) without ever
  * winding the counter back; `setval` pushes the sequence up to the minted value
- * so the reverse collision can't happen either. `setval` is non-transactional
- * on purpose — a rollback leaves the gap in the sequence, not in the counter.
+ * so the reverse collision can't happen either. Postgres requires UPDATE on
+ * the sequence for `setval` (USAGE/SELECT is not enough). `setval` is
+ * non-transactional on purpose — a rollback leaves the gap in the sequence,
+ * not in the counter.
  *
  * `TxClient`, not `DbClient`, so the mint is always paired with its `create`:
  * minting on the root client autocommits the increment on its own, and a failed
