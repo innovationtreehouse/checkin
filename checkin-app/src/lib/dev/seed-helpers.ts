@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { PrismaClient, ProgramPhase, EnrollmentStatus } from "@/generated/prisma/client";
 import { addHouseholdLead } from "@/lib/household/leads";
 import { setRoleFlag, type RoleFlag } from "@/lib/roles";
 import { mintPersonId } from "@/lib/person/mintId";
@@ -272,7 +272,7 @@ export async function seedBaseline(prisma: Db): Promise<void> {
     // 5. Sample program
     const program = await prisma.program.findFirst({ where: { name: "Woodworking 101" } });
     if (!program) {
-        await prisma.program.create({
+        const created = await prisma.program.create({
             data: {
                 name: "Woodworking 101",
                 leadMentorId: isBoardMember.id,
@@ -285,9 +285,42 @@ export async function seedBaseline(prisma: Db): Promise<void> {
                 maxParticipants: 20,
             },
         });
+        await instanceForProgram(prisma, created, "Fall 2026");
     }
 
     console.log("🎉 Seed complete — 9 debug personas, tools, and a sample program are ready.");
+}
+
+// Program → Instance → Event phase 1: mirror the migration backfill in seeded
+// data so dev matches a backfilled prod — one instance per program, offering
+// columns copied. Nothing reads the tier yet (§7 P1); this just keeps the shape
+// real. Child FKs (participant/volunteer) stay on programId until a later phase.
+type ProgramOfferingCols = {
+    id: number;
+    leadMentorId: number | null;
+    startAt: Date;
+    endAt: Date;
+    phase: ProgramPhase;
+    enrollmentStatus: EnrollmentStatus;
+    maxParticipants: number | null;
+    shopifyProductId: string | null;
+    shopifyVariantId: string | null;
+};
+async function instanceForProgram(prisma: Db, program: ProgramOfferingCols, name: string) {
+    return prisma.programInstance.create({
+        data: {
+            programId: program.id,
+            name,
+            leadMentorId: program.leadMentorId,
+            startAt: program.startAt,
+            endAt: program.endAt,
+            phase: program.phase,
+            enrollmentStatus: program.enrollmentStatus,
+            maxParticipants: program.maxParticipants,
+            shopifyProductId: program.shopifyProductId,
+            shopifyVariantId: program.shopifyVariantId,
+        },
+    });
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -354,6 +387,7 @@ export async function createProgram(prisma: Db): Promise<string> {
             maxParticipants: 20,
         },
     });
+    await instanceForProgram(prisma, program, `Run ${tag}`);
     const enrollees = await prisma.person.findMany({ take: 2, orderBy: { id: "asc" } });
     for (const p of enrollees) {
         await prisma.programParticipant.create({
@@ -367,12 +401,18 @@ export async function createProgram(prisma: Db): Promise<string> {
 export async function createEvent(prisma: Db): Promise<string> {
     const tag = uid();
     const latestProgram = await prisma.program.findFirst({ orderBy: { id: "desc" } });
+    // Attach to the latest program's instance too (§7 P1: instanceId mirrors
+    // programId, backfilled 1:1). programId stays authoritative for now.
+    const latestInstance = latestProgram
+        ? await prisma.programInstance.findFirst({ where: { programId: latestProgram.id }, orderBy: { id: "desc" } })
+        : null;
     const startAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     const endAt = new Date(startAt.getTime() + 2 * 60 * 60 * 1000);
     const event = await prisma.event.create({
         data: {
             name: `Test Event ${tag}`,
             programId: latestProgram?.id ?? null,
+            instanceId: latestInstance?.id ?? null,
             startAt,
             endAt,
             description: "Auto-generated dev event",
