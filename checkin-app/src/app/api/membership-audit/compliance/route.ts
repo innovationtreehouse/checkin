@@ -4,7 +4,7 @@ import { withAuth } from "@/lib/auth";
 import { householdBgIsFresh, nextBoundary } from "@/lib/membership/renewal";
 import { bgFreshThreshold, personBgVerdict } from "@/lib/membership/personBgCheck";
 import { agreementCycleFloor, autoPopulationWhere } from "@/lib/membership/personAgreementTriggers";
-import { BG_OBLIGATED_WHERE, LIVE_PERSON } from "@/lib/person/filters";
+import { bgObligatedWhere, LIVE_PERSON } from "@/lib/person/filters";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +55,7 @@ function mergeSourceIdentities(s: {
  *                          fresh check. Skipped when the policy is unset.
  *   peopleMissingDob     — check-obligated people whose age is unknown (no DOB,
  *                          not declared 25+): data hygiene, NOT bg-needed.
- * Check-obligated = BG_OBLIGATED_WHERE: program-attached, or a signing adult (lead)
+ * Check-obligated = bgObligatedWhere: program-attached, or a signing adult (lead)
  * of an ACTIVE member household.
  *
  * And two lists of background-check dates that trace to no named person (#1260):
@@ -114,7 +114,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     for (const p of stuck) if (p.orgMembership) add(p.orgMembership.householdId, "STUCK_BG_CLEARANCE");
 
     // 4. Check-obligated people ≥18 without a fresh background check (warn-only).
-    //    Subject = BG_OBLIGATED_WHERE: (ProgramParticipant ∪ ProgramVolunteer ∪
+    //    Subject = bgObligatedWhere: (ProgramParticipant ∪ ProgramVolunteer ∪
     //    Program.leadMentor) ∪ the leads of ACTIVE member households.
     //    A program lead/volunteer may sit in a household that isn't a member household,
     //    so these are person-scoped, NOT folded into the householdId reason map above.
@@ -135,7 +135,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         // Same population the PERSON_BG triggers open for, so every obligation they
         // create has a row here with a submit action behind it.
         const people = await prisma.person.findMany({
-            where: { ...BG_OBLIGATED_WHERE, ...LIVE_PERSON },
+            where: { ...bgObligatedWhere(new Date()), ...LIVE_PERSON },
             select: {
                 id: true,
                 name: true,
