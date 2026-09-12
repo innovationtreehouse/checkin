@@ -387,6 +387,32 @@ make the catalog *more* server-driven than checkin itself — a checkin-wide
 direction decision, not a catalog-port concern. If checkin ever moves that way,
 the catalog moves with it, in the library.
 
+### Nav placement
+
+checkin's nav is a **single ordered `NAV_ITEMS` array in `AppFrame.tsx`**
+(`{ href, label, icon, visible(user, signedIn, counts) }`, rendered in array
+order, filtered by `visible`). Order is a checkin-shell concern, so the library
+**exports** the catalog entry (`catalogNav`: href/label/icon + the
+`isCatalogViewer` predicate) and **checkin-app decides its index** in
+`NAV_ITEMS` — the library never dictates order.
+
+- **One top-level entry, label `Inventory`** (forward-looking: catalog is the
+  first Inventory surface; more arrive as the migration proceeds). Its
+  sub-screens (Items, Categories, Proposals, Conversion Challenges) are **tabs
+  inside the section**, following checkin's existing ops-section pattern
+  (`SectionTabs`), not separate top-level nav items.
+- **Default position: in the ops cluster, immediately after `Shop Ops`** — the
+  catalog is the parts/tools reference domain that Shop Ops consumes, so it reads
+  naturally there. (This slot is a recommendation, not load-bearing; checkin can
+  reorder freely since it owns the array.)
+- **Gate: `isCatalogViewer`** — note this is **broader** than the board-only
+  `*-Ops` items around it (any RBAC role / program leader / volunteer sees it, by
+  §6), so more staff see `Inventory` than see e.g. `Finance Ops`. That is
+  intended.
+- **Badge:** if a manager-facing count is wanted (e.g. open proposals), it uses
+  checkin's existing `navBadges` mechanism keyed on the section href — optional,
+  not first-landing.
+
 ---
 
 ## 8. Receipt-app crossings — when HTTP becomes an in-process call
@@ -559,7 +585,9 @@ monitoring-db pattern) — no table renames needed; **org identity from an `Org`
 registry row (checkin-owned, seeded on initial migration with a stable id),
 injected via `configureCatalog` as an accessor — multi-org-ready, not an env
 scalar or a cross-DB settings read** (§6); UI stays `"use client"` (no
-server-component migration).
+server-component migration); nav = one `Inventory` entry in `AppFrame`'s
+`NAV_ITEMS`, default slot right after `Shop Ops`, gated by `isCatalogViewer`,
+sub-screens as `SectionTabs` (§7).
 
 ---
 
