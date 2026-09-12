@@ -55,7 +55,7 @@ never in a release** — with a clean port at each crossing.
 | Scope | **Full port** of the four A12 surfaces (§ below), with temporary shims at the not-yet-migrated receipt-app / workflow-mapping boundaries (§8). |
 | UI location | **All UI in the library** — components, pages, route handlers. checkin-app only re-exports and mounts (§3). |
 | UI style | **Keep the client pattern** — `"use client"` pages + `/api/*` routes; re-auth + re-theme only. Matches checkin's dominant pattern, same as #1286 §7. |
-| `orgId` / user identity | **Keep the columns; inject the values** — resolved by #1286 §6. `orgId` is load-bearing (`Location.orgId`, `@@unique([orgId, gtin13])`, `ProvisionalResolution`'s org-scoped unique, every S4/S5 contract). Keep it. Org identity comes from **`INVENTORY_ORG_ID`/`INVENTORY_ORG_NAME` env** via the shared **`packages/org` `getOrgIdentity()`** helper (#1286 introduces it) — **not** a `SettingsData` row. User ids (`userId`/`proposedByUserId`/…) map to checkin **`Person.id`** via the injected principal. Both flow through the single `configureLocalInventory()` injection (§6). |
+| `orgId` / user identity | **Keep the columns; inject the values** — resolved by #1286 §6. `orgId` is load-bearing (`Location.orgId`, `@@unique([orgId, gtin13])`, `ProvisionalResolution`'s org-scoped unique, every S4/S5 contract). Keep it. Org identity comes from a **checkin-owned `Org` registry table** (seeded on initial migration with a stable well-known id), injected as an **accessor** `org: getOrg(): OrgIdentity` — **not** an env scalar, **not** a `SettingsData` row, **not** a cross-DB read. User ids (`userId`/`proposedByUserId`/…) map to checkin **`Person.id`** via the injected principal. Both flow through the single `configureLocalInventory()` injection (§6). |
 
 ### The four A12 surfaces (scope)
 
@@ -146,7 +146,6 @@ checkin/
       package.json
     org-events-poller/  utils/            new vendored @inventory/* deps
     gtin/  workflows/  receipt-types/     REUSED — vendored by #1286
-    org/                                  REUSED — shared getOrgIdentity() helper (#1286 §6)
   checkin-app/                            ← WIRING ONLY, no inventory logic
     src/instrumentation.ts                + one configureLocalInventory({...}) call at boot
     src/app/(inventory)/**/{page,route}.tsx  re-export stubs
@@ -171,12 +170,12 @@ export { GET, POST } from '@inventory/local-inventory/routes/receive-queue'
 
 **Auth + DB + org injection without the library importing checkin:** the library
 declares interfaces in `contract.ts` (`InventoryPrincipal`, `InventoryAuth` with
-`getPrincipal()` / `requireManager()` / `isViewer()`, `OrgIdentity = { id, name }`),
-plus the crossing **ports** (§8). checkin-app calls
-`configureLocalInventory({ auth, db, org, catalogEvents })` **once** in
-`instrumentation.ts` — the one justified boot singleton, mirroring
-`configureCatalog()`. Org identity (`org`) comes from the shared `packages/org`
-helper (§6), never a `SettingsData` row.
+`getPrincipal()` / `requireManager()` / `isViewer()`, `OrgIdentity = { id, name }`
+behind an accessor `getOrg(): OrgIdentity`), plus the crossing **ports** (§8).
+checkin-app calls `configureLocalInventory({ auth, db, org, catalogEvents })`
+**once** in `instrumentation.ts` — the one justified boot singleton, mirroring
+`configureCatalog()`. The `org` accessor is backed by **checkin's `Org` registry
+table** (§6) — never a `SettingsData` row, never a cross-DB read.
 
 **Honest residue** — same three mechanical things that structurally cannot leave
 checkin-app: (1) the FS-routing stub files; (2) their `pageRegistry` entries
@@ -296,16 +295,23 @@ variant**. The source's `orgId` came from the org-bearer token and the acting
 user from the auth-server cookie; **both are retired**, and checkin has no `orgId`
 concept (it *is* Treehouse). So:
 
-- **Org identity from one env var**, read via the shared **`packages/org`
-  `getOrgIdentity()`** helper #1286 introduces: `INVENTORY_ORG_ID` (+
-  `INVENTORY_ORG_NAME`), passed as `org` into `configureLocalInventory()`. A
-  per-app **`SettingsData` row is rejected** for the same reason #1286 rejects a
-  `BoardSettings` reach — every library must obtain org identity **one** way, by
-  construction. local-inventory reads the **same** env / helper as catalog, so
-  their `orgId` values match (required — §8's S5 events and `@@unique([orgId,
-  gtin13])` line up across the two DBs only if the value is identical).
-- **Keep `org_id`/`org_name` columns** (String) — multi-org-capable; single-org
-  today stamps every row with the one injected identity.
+- **Org identity from a checkin-owned `Org` registry table** — not an env scalar.
+  checkin-app hosts the one process, so the `Org` table (`{ id, name, … }`) lives
+  in **checkin's schema**; the Treehouse row is **seeded on the initial
+  migration with a stable, well-known id** (deterministic across dev/prod so the
+  stamped `org_id`s match everywhere). #1286 introduces and seeds this table —
+  **local-inventory adds nothing here**, it only receives the injected accessor.
+- **Injected as an accessor**, `org: getOrg(): OrgIdentity`, into
+  `configureLocalInventory()`. Single-org returns the one seeded row; a future
+  multi-org resolves the current org per request (session / tenant / route) —
+  **same seam, no library change**. **No library reaches cross-DB into checkin's
+  `Org` table** — checkin-app reads its own table and injects, so consistency is
+  by injection, not shared reads. local-inventory and catalog receive the **same**
+  injected id (required — §8's S5 events and `@@unique([orgId, gtin13])` line up
+  across the two DBs only if the value is identical).
+- **Keep `org_id`/`org_name` columns** (String) — they already match a registry
+  id; single-org stamps every row with the one seeded org, multi-org fills them
+  from the resolved accessor.
 - **User ids → checkin `Person.id`**, supplied by the injected
   `InventoryPrincipal` (`getPrincipal()`), not a users table (the source's
   local-users table is gone with its auth). Attribution columns (`userId`,
@@ -339,7 +345,8 @@ Eight pages, each an A12 surface / exception screen:
   `received-org-events`). **local-inventory is the org-facing consumer that
   surfaces these** — workflow-mapping deliberately does not (BYDESIGN, §10).
 - `system-data` — settings (`SettingsData`: poll interval/window, global server
-  URL). Poll-config only — **org identity is not here** (it comes from env, §6).
+  URL). Poll-config only — **org identity is not here** (it comes from the injected
+  `Org` accessor, §6).
   These poll fields are **dead on arrival**: the S5 crossing is in-process and
   push-driven from day one (§8a), so there is no timer to configure. Keep the row
   (harmless, and the model ports cleaner intact); drop the fields with the
@@ -493,10 +500,10 @@ existing container. Same as #1286 §9, plus:
   the workspace build already covers `packages/*`.
 - **Provision the dedicated inventory database** + `LOCAL_INVENTORY_DATABASE_URL`
   secret (monitoring-db pattern in the Infra database module).
-- **Org-identity env** (`INVENTORY_ORG_ID`, `INVENTORY_ORG_NAME`) — the **same
-  values #1286 sets** (§6); already in the app environment once catalog lands.
-  local-inventory reads them via the shared `packages/org` helper, adds no new
-  env of its own here.
+- **Org registry** — the checkin-owned `Org` table + its seeded Treehouse row
+  (stable id) are **#1286's** deploy artifact (§6); already present once catalog
+  lands. local-inventory adds no env and no seed here — it receives the injected
+  `org` accessor at boot.
 - Add **inventory `prisma migrate deploy`** (against `LOCAL_INVENTORY_DATABASE_URL`)
   to the deploy sequence, ordered with checkin's and catalog's migration steps.
 - **S5 consumer lifecycle**: **no background timer** (§8a). A one-shot boot
@@ -577,12 +584,14 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
 ## 12. Open items / assumptions
 
 - **`orgId` value — RESOLVED by #1286 §6** (was this doc's one open question).
-  Org identity is `INVENTORY_ORG_ID`/`INVENTORY_ORG_NAME` env, read via the shared
-  `packages/org` `getOrgIdentity()` helper, injected through
-  `configureLocalInventory()`. local-inventory reads the **same** env/helper as
-  catalog, so the two apps' `orgId` agree by construction (required for the S5
-  events and cross-DB uniques to line up). Columns kept; no `SettingsData` row for
-  it. **No STOP-AND-ASK remains.**
+  Org identity is a **checkin-owned `Org` registry row** (seeded on the initial
+  migration with a stable well-known id), injected into `configureLocalInventory()`
+  as an accessor `getOrg()` — not an env scalar, not a `SettingsData` row, no
+  cross-DB read. checkin-app injects the **same** id into catalog and
+  local-inventory, so the two apps' `orgId` agree by construction (required for the
+  S5 events and cross-DB uniques to line up). Multi-org later = more rows + a
+  per-request accessor, no library change. Columns kept. **No STOP-AND-ASK
+  remains.**
 - **Production data: none to migrate.** The source populates org inventory by
   running the pipeline (receive → apply) or manual UI edits; there is no bulk
   import to build, and none is wanted. Out of scope.
@@ -593,7 +602,7 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
   inventory library services / Prisma client against `LOCAL_INVENTORY_DATABASE_URL`.
   Add `VolunteerDesignation` rows (project memory: seed has 0) so the viewer gate
   and inventory pages are exercisable in dev and flow tests. Both seeds stamp rows
-  with the same `INVENTORY_ORG_ID` (§6) and must agree on the GTINs a provisional
+  with the same seeded `Org` id (§6) and must agree on the GTINs a provisional
   resolves to (so the S5 merge path is exercisable end-to-end).
 - **No in-app S5 timer** (§8a) — the consumer is push-driven (boot drain +
   drain-on-emit), so nothing keeps the container awake. This requires **#1286's
@@ -609,9 +618,10 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
 **Resolved by reuse of #1286:** own dedicated database
 (`LOCAL_INVENTORY_DATABASE_URL`); checkin security regime over a separate schema;
 retire source auth for checkin next-auth; `INVENTORY_MANAGER` for writes + broad
-viewer gate for reads (no new role); org+user identity from env via shared
-`packages/org` helper injected through `configureLocalInventory()` (no settings
-row); keep-JSON-contracts / convert-transport crossing rule; vitest + flow-tests
+viewer gate for reads (no new role); org+user identity from a checkin-owned `Org`
+registry row (seeded, stable id) injected as an accessor through
+`configureLocalInventory()` — not env, not a settings row, not cross-DB;
+keep-JSON-contracts / convert-transport crossing rule; vitest + flow-tests
 (no Playwright); no table renames.
 **Left open:** nothing blocking — only the tracked deferrals (§11 track 8).
 
