@@ -889,12 +889,12 @@ def _scan_result_banner_html(body, status):
     without arming one. dwell_seconds of 0 means the default dwell."""
     # Build banner HTML for the wrapper page.
     # All values below originate from the backend response (participant names,
-    # emails, messages) and are ultimately assigned to the wrapper page via
-    # innerHTML. Names/emails are user-controlled (set via PATCH /api/profile),
-    # so every interpolated value MUST be HTML-escaped to prevent stored XSS in
-    # the kiosk browser — which can issue signed, kiosk-authenticated requests
-    # through the local proxy. Escape before the newline->`<br>` substitution so
-    # injected markup cannot survive.
+    # messages) and are ultimately assigned to the wrapper page via innerHTML.
+    # Names are user-controlled (set via PATCH /api/profile), so every
+    # interpolated value MUST be HTML-escaped to prevent stored XSS in the kiosk
+    # browser — which can issue signed, kiosk-authenticated requests through the
+    # local proxy. Escape before the newline->`<br>` substitution so injected
+    # markup cannot survive.
     if status >= 400 or "error" in body:
         if body.get("type") == "warning":
             warn = html.escape(body.get("error", "Warning")).replace("\n", "<br>")
@@ -921,17 +921,20 @@ def _scan_result_banner_html(body, status):
             )
         held = html.escape(body.get("message", "Recorded for review."))
         return f'<div class="banner banner-warning">✓ {held}</div>', 0, 0
-    email = html.escape(str(body.get("participant", {}).get("email", "?")))
+    # The name the person goes by, resolved server-side by the same rule the kiosk
+    # roster uses — nickname, else first name, else the part of the address before
+    # the @. The raw address is never sent and never shown.
+    who = html.escape(str(body.get("participant", {}).get("name") or "?"))
     msg = html.escape(body.get("message", ""))
     label = "CHECKED IN" if stype == "checkin" else "CHECKED OUT"
     warning = html.escape(body.get("warning", "")).replace("\n", "<br>")
     if warning:
         # Scan succeeded but the room is short of supervising adults (#1436):
         # amber, and it dwells 12s instead of 5s. Still confirms the scan.
-        return f'<div class="banner banner-warning">✓ {email} — {label}<br>⚠️ {warning}</div>', 0, 0
+        return f'<div class="banner banner-warning">✓ {who} — {label}<br>⚠️ {warning}</div>', 0, 0
     if msg and msg != "Checked in successfully" and msg != "Checked out successfully":
-        return f'<div class="banner banner-ok">✓ {email} — {msg}</div>', 0, 0
-    return f'<div class="banner banner-ok">✓ {email} — {label}</div>', 0, 0
+        return f'<div class="banner banner-ok">✓ {who} — {msg}</div>', 0, 0
+    return f'<div class="banner banner-ok">✓ {who} — {label}</div>', 0, 0
 
 def _saved_banner_html(queued, intent=None):
     # A queued scan reads as done and safe to walk away from -- distinct
@@ -1028,8 +1031,8 @@ def handle_scan(backend, state, outbox, participant_id):
 
     if outcome == "ack":
         ptype = body.get("type", "?")
-        email = body.get("participant", {}).get("email", "?")
-        log.info(f"Scan result: {ptype.upper()} — {email}")
+        who = body.get("participant", {}).get("name") or "?"
+        log.info(f"Scan result: {ptype.upper()} — {who}")
     else:
         log.warning(f"Scan rejected, not queued: {body.get('error', body)}")
 

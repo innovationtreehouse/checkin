@@ -8,7 +8,19 @@ import { withFacilityLock } from "@/lib/facilityLock";
 import { MAX_VISIT_MS } from "@/lib/visitTimes";
 import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits, youthIsPresent } from "@/lib/supervision";
 import { isYouth } from "@/lib/time";
+import { getKioskDisplayName } from "@/lib/kiosk-names";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+
+/**
+ * What a scan response may say about who scanned: an id and the same
+ * nickname-else-first-name label the kiosk roster shows. The kiosk renders this on
+ * an unattended public screen and forwards it into an iframe with a wildcard
+ * postMessage origin (client/client.py), so the raw Person — email, phone, date of
+ * birth — never ships (docs/rules/attendance-checkin.md, "The kiosk").
+ */
+function scanParticipant(participant: Person) {
+    return { id: participant.id, name: getKioskDisplayName(participant) };
+}
 
 /** Seconds the kiosk counts down after showing the force-close warning. The
  *  countdown is display; the confirm is the token, which has no elapsed-time
@@ -107,7 +119,7 @@ export async function processCheckin(participant: Person, authType: string, db: 
         message: "Checked in successfully",
         type: "checkin" as const,
         warning: supervisionWarning,
-        participant,
+        participant: scanParticipant(participant),
         visit: newVisit,
         signedRequest: authType === "kiosk",
     });
@@ -279,7 +291,7 @@ export async function processCheckout(
         message: facilityClosed ? "Checked out and Facility closed" : "Checked out successfully",
         type: "checkout" as const,
         warning: supervisionWarning,
-        participant,
+        participant: scanParticipant(participant),
         visit: updatedVisit,
         facilityClosed,
         signedRequest: authType === "kiosk",

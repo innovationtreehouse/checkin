@@ -37,6 +37,52 @@ def scan_banner(body, status=200):
     return _scan_result_banner_html(body, status)[0]
 
 
+class TestScanBannerName(unittest.TestCase):
+    """The banner names whoever scanned by the name they go by. It is an
+    unattended public screen, so it must never read out an email address
+    (checkin docs/rules/attendance-checkin.md, "The kiosk")."""
+
+    def test_banner_shows_the_name_the_server_resolved(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "message": "Checked in successfully",
+            "participant": {"id": 1, "name": "Bo"},
+        })
+
+        self.assertIn("✓ Bo — CHECKED IN", html_out)
+
+    def test_banner_never_shows_an_address_even_if_one_is_sent(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "message": "Checked in successfully",
+            "participant": {"id": 1, "name": "Bo", "email": "robert@example.com"},
+        })
+
+        self.assertNotIn("@", html_out)
+        self.assertNotIn("robert", html_out)
+
+    def test_a_nameless_participant_falls_back_to_a_placeholder(self):
+        for participant in ({}, {"id": 1}, {"id": 1, "name": None}, {"id": 1, "name": ""}):
+            with self.subTest(participant=participant):
+                html_out = scan_banner({
+                    "type": "checkout",
+                    "message": "Checked out successfully",
+                    "participant": participant,
+                })
+
+                self.assertIn("✓ ? — CHECKED OUT", html_out)
+
+    def test_the_name_is_escaped_like_every_other_backend_value(self):
+        html_out = scan_banner({
+            "type": "checkin",
+            "message": "Checked in successfully",
+            "participant": {"id": 1, "name": "<img src=x onerror=alert(1)>"},
+        })
+
+        self.assertNotIn("<img", html_out)
+        self.assertIn("&lt;img", html_out)
+
+
 class TestSupervisionWarningBanner(unittest.TestCase):
     """A scan that succeeds but leaves the room short of supervising adults
     (checkin#1436) still confirms the scan — in amber, which dwells longer."""
@@ -46,7 +92,7 @@ class TestSupervisionWarningBanner(unittest.TestCase):
             "type": "checkout",
             "message": "Checked out successfully",
             "warning": "Warning: only 2 supervising adults remain in the building.",
-            "participant": {"email": "a@example.com"},
+            "participant": {"id": 1, "name": "Alex"},
         })
 
         self.assertIn("banner-warning", html_out)
@@ -57,7 +103,7 @@ class TestSupervisionWarningBanner(unittest.TestCase):
         html_out = scan_banner({
             "type": "checkin",
             "warning": "<img src=x onerror=alert(1)>",
-            "participant": {"email": "a@example.com"},
+            "participant": {"id": 1, "name": "Alex"},
         })
 
         self.assertNotIn("<img", html_out)
@@ -67,7 +113,7 @@ class TestSupervisionWarningBanner(unittest.TestCase):
         html_out = scan_banner({
             "type": "checkin",
             "message": "Checked in successfully",
-            "participant": {"email": "a@example.com"},
+            "participant": {"id": 1, "name": "Alex"},
         })
 
         self.assertIn("banner-ok", html_out)
@@ -282,7 +328,7 @@ class TestForceCloseConfirm(unittest.TestCase):
         state.push_event = lambda event: None
         backend = Mock(attendance_path=None)
         backend.post_scan.return_value = (
-            {"type": "checkin", "participant": {"email": "a@example.com"}},
+            {"type": "checkin", "participant": {"id": 7, "name": "Alex"}},
             200,
             None,
         )
@@ -348,7 +394,7 @@ class TestForceCloseConfirm(unittest.TestCase):
 
         backend.post_scan.return_value = ({
             "type": "checkout", "message": "Checked out and Facility closed",
-            "participant": {"email": "k@example.com"},
+            "participant": {"id": 7, "name": "Kim"},
         }, 200, None)
         handle_scan(backend, state, Outbox(":memory:"), 7)
 
