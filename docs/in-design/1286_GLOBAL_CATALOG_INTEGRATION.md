@@ -44,7 +44,7 @@ defined at each crossing so the temporary seam is explicit and removable.
 | Roles | One **new** checkin role: `INVENTORY_MANAGER` (source's global- and org-manager collapse into it for now). Viewer = any RBAC-role holder, program leader, or volunteer (not any authenticated user). See §6. |
 | Scope | **Full port**, including receipt-facing pieces, with temporary shims at not-yet-migrated app boundaries. |
 | UI location | **All UI in the library** — components, pages, route handlers. checkin-app only re-exports and mounts (§3). |
-| UI style | **Reskin in place** for the first landing: keep the API-route + `*Client.tsx` pattern; re-auth + re-theme. Convert hot pages to server components later (also in the library). |
+| UI style | **Keep the client pattern** — `"use client"` components + `/api/*` routes; re-auth + re-theme only. This *is* checkin's dominant pattern (72/87 `page.tsx` are `"use client"`, writes via API routes, server actions essentially unused), so the catalog already matches it. No server-component conversion planned. |
 
 ---
 
@@ -317,22 +317,27 @@ All UI lives in the library (`packages/global-catalog/src/{components,pages}`).
 checkin-app only re-exports pages (§3) and splices `catalogNav`. Both apps use
 the same Mantine version, so the reskin is component-level, not a rewrite.
 
-For the first landing, **keep the source's API-route + `*Client.tsx` pattern**;
-re-theme to checkin and re-wire auth:
+**Keep the source's API-route + `"use client"` pattern** — re-theme and re-wire
+auth only. This is not a compromise: it *is* how checkin behaves today (72 of 87
+`page.tsx` are `"use client"`, `programs/[id]` etc. fetch `/api/*` from
+`useState`/`useEffect`, writes go through API routes, server actions are
+essentially unused). So the catalog already matches checkin's server-side model —
+there is no client→server conversion to do, now or later.
 
 - Drop the source `Layout`/nav shell. Catalog pages render inside checkin's
   shell (the checkin layout wraps the `(catalog)` route group); the library
   exports `catalogNav` for checkin's nav to render, gated by `isCatalogViewer`.
 - Keep `CategoriesClient`, `GlobalInventoryClient`, `ItemReferenceProposalsClient`,
   `ConversionChallengesClient`, `ProvisionalProposalsClient`, etc. **in the
-  library**; restyle to checkin conventions and point their `fetch` calls at the
-  `/api/catalog/*` routes (whose handlers are library factories).
+  library** as `"use client"` components; restyle to checkin conventions and
+  point their `fetch` calls at the `/api/catalog/*` routes (whose handlers are
+  library factories). Wire auth via `useSession` client-side + `getServerSession`
+  in the route handlers, exactly as checkin's own client pages do.
 
-"More server-driven" is the **eventual** target (§1) and also lands in the
-library: convert the read-heavy pages (catalog browse, proposal queues) to
-server components calling the services directly and delete their `/api/*` GET
-routes. Because pages already live in the package, that conversion never touches
-checkin-app. Not in the first PR track.
+**No server-component migration is planned.** A full server-driven rewrite would
+make the catalog *more* server-driven than checkin itself — a checkin-wide
+direction decision, not a catalog-port concern. If checkin ever moves that way,
+the catalog moves with it, in the library.
 
 ---
 
@@ -466,9 +471,10 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
    `pageRegistry` entries, `catalogNav` splice, `transpilePackages`, flow test.
 6. **Infra** — deploy sequence + DB provisioning.
 7. **(Deferred — each a tracked follow-up issue vs #1286, not prose "later")**
-   server-component conversion of hot pages; removal of temporary receipt shims
-   when receipt-app migrates; browser-only UI test coverage if a gap appears
-   (§10). File the follow-up issues at merge so nothing relies on memory.
+   removal of temporary receipt shims when receipt-app migrates; browser-only UI
+   test coverage if a gap appears (§10). File the follow-up issues at merge so
+   nothing relies on memory. *(No server-component migration — the catalog stays
+   `"use client"`, matching checkin; see §7.)*
 
 ---
 
