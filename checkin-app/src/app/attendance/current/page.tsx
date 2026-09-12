@@ -26,6 +26,7 @@ type Person = {
   id: number;
   email: string;
   name?: string | null;
+  nickname?: string | null;
   isKeyholder: boolean;
   isSysadmin: boolean;
   // Server-computed youth classification. The kiosk payload carries this INSTEAD of
@@ -87,9 +88,9 @@ function KioskDisplayInner() {
   // safety flag below is only meaningful while `data` is non-null, so each one is
   // rendered behind that check.
   const counts = data?.counts || { keyholders: 0, volunteers: 0, youth: 0, total: 0 };
-  // Missing OR malformed `safety` is UNKNOWN, never all-clear (KIOSK_RESILIENCE
-  // §5.24 / B6). Both flags must be actual booleans — a partial object like
-  // `{}` must not read as compliant.
+  // Missing OR malformed `safety` is UNKNOWN, never all-clear (see
+  // docs/rules/attendance-checkin.md, kiosk resilience). Both flags must be
+  // actual booleans — a partial object like `{}` must not read as compliant.
   const rawSafety = data?.safety;
   const safety =
     typeof rawSafety?.isTwoDeepViolation === "boolean" && typeof rawSafety?.isLastKeyholder === "boolean"
@@ -323,7 +324,7 @@ function KioskDisplayInner() {
   const kioskDisplayNames = useMemo(() => {
     if (!isKioskMode) return new Map<number, string>();
     const allVisits = [...keyholderList, ...volunteerList, ...youthList];
-    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email })));
+    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, nickname: v.participant.nickname, email: v.participant.email })));
   }, [isKioskMode, keyholderList, volunteerList, youthList]);
 
   const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);

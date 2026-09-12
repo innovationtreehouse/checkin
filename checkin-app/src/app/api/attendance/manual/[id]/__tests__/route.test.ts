@@ -297,6 +297,11 @@ describe("household-lead correction of a member's visit", () => {
 
     beforeEach(() => {
         (visitSubject as jest.Mock).mockImplementation(leadScope);
+        // buildCallerContext resolves the led_households roster from the DB via
+        // householdLeadship (person.findUnique) — the SAME predicate the write
+        // authz uses — so the default actor here is a genuine lead. Individual
+        // tests override this to model a sysadmin, a non-lead, etc.
+        personFindUnique.mockResolvedValue({ isKeyholder: false, householdId: HOUSEHOLD_ID, isHouseholdLead: true, isSysadmin: false });
         visitFindUnique.mockResolvedValue(memberVisit);
         tx.visit.findFirst.mockResolvedValue({ id: 42 });
         // The row written back is the MEMBER's. Leaving the default (personId =
@@ -343,11 +348,10 @@ describe("household-lead correction of a member's visit", () => {
 
     // THE regression pin for the registry↔route seam. Both edges matter: the
     // times must SURVIVE (led_households:personal is granted and resolving) and
-    // the 'internal' tombstone columns must be GONE. On legacy withAuth the raw
-    // `visit.update` row shipped whole and deletedAt/deletedById/
-    // forceCloseWarnedAt reached the browser.
+    // the 'internal' tombstone columns must be GONE. The session carries no
+    // householdLead claim — the roster resolves from the DB (householdLeadship),
+    // which is the whole point: the view no longer depends on the session claim.
     it("strips the internal tombstone columns while keeping the times the lead may see", async () => {
-        mockSession.mockResolvedValue({ user: { id: OWN_ID, householdLead: true, householdId: HOUSEHOLD_ID } });
         personFindMany.mockResolvedValue([{ id: OWN_ID }, { id: MEMBER_ID }]);
 
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
@@ -361,13 +365,27 @@ describe("household-lead correction of a member's visit", () => {
         }
     });
 
-    // The other edge: led_households is gated on the roster, not on "is a lead".
-    // visitSubject (DB leadship) and ledHouseholdMemberIds (session householdLead
-    // + householdId) are different sources and can disagree on a stale session —
-    // when they do, the grant must not resolve and the times must not ship.
-    it("strips the times when the roster does not contain the visit's person", async () => {
-        mockSession.mockResolvedValue({ user: { id: OWN_ID, householdLead: true, householdId: HOUSEHOLD_ID } });
-        personFindMany.mockResolvedValue([{ id: OWN_ID }]); // MEMBER_ID absent
+    // #1614 case (a): a sysadmin who is NOT a household lead, correcting a visit
+    // in their own household. canManage is true via the sysadmin override in
+    // householdLeadship, so led_households resolves and the times ship — even
+    // though no householdLead claim rides the session. This is the divergence
+    // the roster used to have with the write authz, now closed.
+    it("keeps the times for a sysadmin who is not a household lead", async () => {
+        personFindUnique.mockResolvedValue({ isKeyholder: false, householdId: HOUSEHOLD_ID, isHouseholdLead: false, isSysadmin: true });
+        personFindMany.mockResolvedValue([{ id: OWN_ID }, { id: MEMBER_ID }]);
+
+        const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
+        expect(res.status).toBe(200);
+        const { visit } = await res.json();
+        expect(visit.arrivedAt).toBe("2026-07-20T14:05:00.000Z");
+    });
+
+    // The empty-set invariant: led_households is gated on the DB leadership
+    // predicate (householdLeadship → canManage), so a caller the DB credits as
+    // neither a lead nor a sysadmin gets the empty roster and the times must NOT
+    // ship — even where some other signal let the write through.
+    it("strips the times when the DB credits the caller as neither lead nor sysadmin", async () => {
+        personFindUnique.mockResolvedValue({ isKeyholder: false, householdId: HOUSEHOLD_ID, isHouseholdLead: false, isSysadmin: false });
 
         const res = await PATCH(req("PATCH", { arrivedAt: "2026-07-20T14:05:00Z" }), ctx as never);
         expect(res.status).toBe(200);

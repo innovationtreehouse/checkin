@@ -1121,8 +1121,9 @@ enum PresenceDirection {
   OUT
 }
 
-/// Stage-2 substrate (KIOSK_RESILIENCE §6): every presence-affecting surface
-/// appends an intent-carrying event; Visits project from the ordered log.
+/// Stage-2 substrate (docs/rules/attendance-checkin.md, kiosk resilience):
+/// every presence-affecting surface appends an intent-carrying event; Visits
+/// project from the ordered log.
 /// Expand-only — old writers never touch this table.
 model PresenceEvent {
   /// @sensitivity:internal

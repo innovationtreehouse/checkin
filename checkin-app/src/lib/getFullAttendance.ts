@@ -15,7 +15,8 @@ import { MIN_SUPERVISING_ADULTS, supervisingAdultCount, supervisingAdultVisits }
  *   emergency-contact modal on /attendance/current.
  *
  * - `{ kiosk: true }` (a signature-verified kiosk): a display-only roster —
- *   id, display name, isKeyholder, isYouth, arrival time and the program badge.
+ *   id, display name, nickname, isKeyholder, isYouth, arrival time and the
+ *   program badge.
  *   The kiosk is an UNATTENDED device in a public room, and it forwards whatever
  *   it receives into an iframe with a wildcard postMessage origin
  *   (`client/client.py`), so no `personal`/`pii` field may reach it. It renders
@@ -40,6 +41,9 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
                     // grid (#329). googleId/isSysadmin aren't rendered anywhere downstream.
                     email: true,
                     name: true,
+                    // Worn on the badge and shown on the kiosk in place of the first
+                    // name; 'public' tier, same as name.
+                    nickname: true,
                     isKeyholder: true,
                     // dateOfBirth is read on both paths (it computes isYouth / the
                     // counts) but only SHIPS on the privileged path.
@@ -128,6 +132,7 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
                 participant: {
                     id: person.id,
                     name: displayName,
+                    nickname: person.nickname,
                     isKeyholder: person.isKeyholder,
                     // The kiosk splits the board into keyholder/volunteer/youth
                     // columns. It gets the classification, not the birth date.
@@ -142,6 +147,7 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
             participant: {
                 id: person.id,
                 name: displayName,
+                nickname: person.nickname,
                 isKeyholder: person.isKeyholder,
                 isYouth: youthMap.get(v.id)!,
                 dateOfBirth: person.dateOfBirth,
