@@ -26,6 +26,7 @@ type Person = {
   id: number;
   email: string;
   name?: string | null;
+  nickname?: string | null;
   isKeyholder: boolean;
   isSysadmin: boolean;
   // Server-computed youth classification. The kiosk payload carries this INSTEAD of
@@ -323,7 +324,7 @@ function KioskDisplayInner() {
   const kioskDisplayNames = useMemo(() => {
     if (!isKioskMode) return new Map<number, string>();
     const allVisits = [...keyholderList, ...volunteerList, ...youthList];
-    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, email: v.participant.email })));
+    return getKioskDisplayNames(allVisits.map(v => ({ id: v.participant.id, name: v.participant.name || null, nickname: v.participant.nickname, email: v.participant.email })));
   }, [isKioskMode, keyholderList, volunteerList, youthList]);
 
   const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);
