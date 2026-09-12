@@ -168,9 +168,10 @@ change only when a *new* route is added, which is a deliberate act anyway).
 **Auth + DB + org injection without the library importing checkin:** the library
 declares interfaces in `contract.ts` (`CatalogPrincipal`, `CatalogAuth` with
 `getPrincipal()` / `requireManager()` / `isViewer()`, and `OrgIdentity =
-{ id, name }`). checkin-app calls `configureCatalog({ auth, db, org })` **once**
-in `instrumentation.ts`, passing a next-auth-backed `CatalogAuth`, the
-connection, and the org identity (§6). Pages and route handlers read the
+{ id, name }` behind an accessor `getOrg(): OrgIdentity`). checkin-app calls
+`configureCatalog({ auth, db, org })` **once** in `instrumentation.ts`, passing a
+next-auth-backed `CatalogAuth`, the connection, and an `org` accessor backed by
+checkin's `Org` registry table (§6). Pages and route handlers read the
 configured runtime — so the stubs stay pure re-exports and the library's import
 graph never reaches into checkin. (`configureCatalog` is an app-boot singleton —
 the one justified global; the ceiling is "one runtime per process," fine for a
@@ -321,25 +322,35 @@ integration must define where these values come from — and, since receipt-app
 and the rest of Inventory follow into this one process, they must be **consistent
 across every library**, not defined per-app.
 
-Decision:
+Decision — an **org registry row, not an env scalar.** An env var (`INVENTORY_ORG_ID`)
+was the wrong instinct: a scalar in config bakes in single-org, so "go
+multi-org" later means ripping env plumbing out of every library. Instead the
+org is a **row in an `Org` registry table** (`{ id, name, … }`), so single-org
+today is one row and multi-org later is *more rows* — no schema or config
+rewrite.
 
-- **Org identity comes from one env var, not a settings row.** `INVENTORY_ORG_ID`
-  (+ `INVENTORY_ORG_NAME`), read once at boot and passed as `org` into
-  `configureCatalog({ auth, db, org })`. A per-app **settings-table row is
-  explicitly rejected**: the catalog is a separate DB/library, so reading
-  checkin-app's `BoardSettings` would be a cross-DB reach, and every future
-  library fetching org identity its own way is exactly the inconsistency we must
-  avoid. An env var injected through the boot seam is read identically by every
-  library. (This mirrors how `MONITORING_DATABASE_URL` / `CATALOG_DATABASE_URL`
-  are provided — config via env, not via another app's tables.)
-- **A thin shared helper** (`packages/org`, exporting `getOrgIdentity()` that
-  reads those env vars) gives every migrated library **one** way to obtain the
-  value — so consistency is by construction, not convention. The catalog reads it
-  once and injects; other libraries do the same when they land.
-- **Keep the `org_id` / `org_name` columns** (String) — do not drop them.
-  Whole-Inventory is multi-org-capable and a future multi-org checkin is not
-  foreclosed; single-org today just means every row is stamped with the one
-  injected identity.
+- **Where the table lives: the host app (checkin) owns the `Org` registry.** The
+  org concept is cross-cutting, not catalog-specific — every migrated Inventory
+  library (receipt, expense, income…) needs the same org identity, so it cannot
+  live inside the catalog DB. checkin-app is the host/root of the one process,
+  so the `Org` table sits in **checkin's schema**. (Alternative if stronger
+  isolation is ever wanted: a dedicated shared org registry DB. Not needed now.)
+- **Registered on the initial migration/seed**, not lazily on first load. The
+  Treehouse org row is seeded with a **stable, well-known id** (deterministic
+  across dev/prod so cross-references and stamped `org_id`s match everywhere).
+  Lazy first-load registration is rejected — nondeterministic id, boot races.
+- **Consistency across libraries is preserved by injection, not shared reads.**
+  checkin-app reads its own `Org` table and passes org identity into
+  `configureCatalog({ auth, db, org })`. `org` is an **accessor**
+  (`getOrg(): OrgIdentity`), not a frozen value: single-org returns the one row;
+  multi-org later resolves the current org per request (from session / tenant /
+  route) — same seam, no library change. **No library ever reaches cross-DB into
+  checkin's `Org` table** — this is what the earlier "no settings-table row"
+  objection was really about (cross-DB per-library reads), and injection avoids
+  it while still using a table.
+- **Keep the `org_id` / `org_name` columns** (String) — do not drop them. They
+  already match a registry id; single-org just stamps every row with the one
+  seeded org, and multi-org fills them from the resolved accessor.
 - **User identity (`local_user_id`) maps to checkin `Person.id`**, supplied by
   the injected `CatalogPrincipal` (`getPrincipal()`), not a separate users table
   (the source's local-users table is gone with its auth). So **both org and user
@@ -458,8 +469,9 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
   / the monitoring DB is provisioned in the Infra database module.
 - Add **catalog `prisma migrate deploy`** (against `CATALOG_DATABASE_URL`) to the
   deploy sequence, ordered with checkin's own migration step.
-- Set the **org-identity env** (`INVENTORY_ORG_ID`, `INVENTORY_ORG_NAME`) in the
-  app environment (§6) — injected at boot, read by every migrated library.
+- **Seed the `Org` registry row** for Treehouse (stable well-known id) in the
+  initial migration/seed (§6) — checkin-app reads it and injects org identity
+  into each library; multi-org later adds rows, no config change.
 - No new Caddy route, no new port, no new container — same app, new paths.
 
 ---
@@ -543,10 +555,11 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
 **Resolved in Q&A:** single `INVENTORY_MANAGER` role (managers collapsed); viewer
 = any RBAC role / program leader / volunteer; catalog gets its **own dedicated
 database** on the shared Postgres server (`CATALOG_DATABASE_URL`,
-monitoring-db pattern) — no table renames needed; **org identity from
-`INVENTORY_ORG_ID`/`INVENTORY_ORG_NAME` env (shared `packages/org` helper),
-injected via `configureCatalog`, not a settings row** (§6); UI stays
-`"use client"` (no server-component migration).
+monitoring-db pattern) — no table renames needed; **org identity from an `Org`
+registry row (checkin-owned, seeded on initial migration with a stable id),
+injected via `configureCatalog` as an accessor — multi-org-ready, not an env
+scalar or a cross-DB settings read** (§6); UI stays `"use client"` (no
+server-component migration).
 
 ---
 
