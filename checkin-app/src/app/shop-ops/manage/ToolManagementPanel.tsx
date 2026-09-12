@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRequireRole } from '@/hooks/useRequireRole';
-import { Alert, Anchor, Button, Card, Center, Collapse, Group, Loader, Modal, Select, Stack, Table, Tabs, Text, TextInput } from '@mantine/core';
+import { Alert, Anchor, Button, Card, Center, Group, Loader, Modal, Select, Stack, Table, Tabs, Text, TextInput } from '@mantine/core';
 import { ToolLevelBadge, toToolLevel, toolLevelDot, toolLevelLabel } from '@/components/ToolLevelBadge';
 import { ScrollableTabsList } from '@/components/ui/ScrollableTabsList';
 
@@ -225,7 +225,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                 <Text c="dimmed" size="sm">{isOpen ? '▲' : '▼'}</Text>
               </Group>
 
-              <Collapse in={isOpen}>
+              {isOpen && (
                 <Card.Section withBorder p="md">
                   {loadingCerts ? <Center py="sm"><Loader size="sm" /></Center> : (
                     <>
@@ -254,7 +254,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                     </>
                   )}
                 </Card.Section>
-              </Collapse>
+              )}
             </Card>
           );
         })}
@@ -313,7 +313,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
                 <Text c="dimmed" size="sm">{isOpen ? '▲' : '▼'}</Text>
               </Group>
 
-              <Collapse in={isOpen}>
+              {isOpen && (
                 <Card.Section withBorder p="md">
                   {loadingCerts ? <Center py="sm"><Loader size="sm" /></Center> : (
                     <>
@@ -342,7 +342,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
                     </>
                   )}
                 </Card.Section>
-              </Collapse>
+              )}
             </Card>
           );
         })}
