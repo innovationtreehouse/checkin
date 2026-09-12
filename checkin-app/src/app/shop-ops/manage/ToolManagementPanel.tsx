@@ -155,9 +155,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
   const [grantSaving, setGrantSaving] = useState(false);
   const [search, setSearch] = useState("");
 
-  const toggle = async (toolId: number) => {
-    if (expanded === toolId) { setExpanded(null); setCerts([]); return; }
-    setExpanded(toolId);
+  const loadCerts = async (toolId: number) => {
     setLoadingCerts(true);
     try {
       const res = await fetch(`/api/shop/certifications?toolId=${toolId}`);
@@ -165,6 +163,12 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
     } finally {
       setLoadingCerts(false);
     }
+  };
+
+  const toggle = (toolId: number) => {
+    if (expanded === toolId) { setExpanded(null); setCerts([]); return; }
+    setExpanded(toolId);
+    void loadCerts(toolId);
   };
 
   const saveGuide = async () => {
@@ -247,7 +251,7 @@ function ToolsTab({ tools, members, isAdmin, isCertifier, onToolsChange }: {
                           {grantMsg && <Text size="sm" c="cyan" mb="sm">{grantMsg}</Text>}
                           <GrantForm tools={tools} members={members} prefillToolId={tool.id}
                             canGrantCertifier={isAdmin}
-                            onGranted={m => { setGrantMsg(m); toggle(tool.id).then(() => toggle(tool.id)); }}
+                            onGranted={m => { setGrantMsg(m); void loadCerts(tool.id); }}
                             saving={grantSaving} setSaving={setGrantSaving} />
                         </>
                       )}
@@ -281,9 +285,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
   const [grantMsg, setGrantMsg] = useState("");
   const [grantSaving, setGrantSaving] = useState(false);
 
-  const toggle = async (memberId: number) => {
-    if (expanded === memberId) { setExpanded(null); setCerts([]); return; }
-    setExpanded(memberId);
+  const loadCerts = async (memberId: number) => {
     setLoadingCerts(true);
     try {
       const res = await fetch(`/api/shop/certifications?personId=${memberId}`);
@@ -291,6 +293,12 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
     } finally {
       setLoadingCerts(false);
     }
+  };
+
+  const toggle = (memberId: number) => {
+    if (expanded === memberId) { setExpanded(null); setCerts([]); return; }
+    setExpanded(memberId);
+    void loadCerts(memberId);
   };
 
   const filtered = members.filter(personQueryMatcher(search));
@@ -335,7 +343,7 @@ function PersonTab({ members, tools, isCertifier, isAdmin }: { members: Member[]
                           {grantMsg && <Text size="sm" c="cyan" mb="sm">{grantMsg}</Text>}
                           <GrantForm tools={tools} members={members} prefillMemberId={member.id}
                             canGrantCertifier={isAdmin}
-                            onGranted={m => { setGrantMsg(m); toggle(member.id).then(() => toggle(member.id)); }}
+                            onGranted={m => { setGrantMsg(m); void loadCerts(member.id); }}
                             saving={grantSaving} setSaving={setGrantSaving} />
                         </>
                       )}
