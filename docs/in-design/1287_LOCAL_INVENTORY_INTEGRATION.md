@@ -115,7 +115,7 @@ catalog is a *producer* and never needed it) and `utils`.
 | `@inventory/gtin` | Reuse | Already `packages/gtin` (vendored by #1286). No second copy. |
 | `@inventory/workflows` | Reuse | Already `packages/workflows` (vendored by #1286). Shared xstate helpers. |
 | `@inventory/receipt-types`, `receipt-contract-fixtures` | Reuse (temporary) | Already vendored by #1286 as temporary copies — local-inventory imports the same copy. Endgame: the permanent shared contract when receipt-app lands. |
-| `@inventory/org-events-poller` | **Yes — new `packages/org-events-poller`** | Shared S5 outbox-consumer poller (`startOrgEventsPoller`). Consumed by local-inventory/expense/workflow-mapping — a cross-app utility, **standalone package**, not folded into `local-inventory`. |
+| `@inventory/org-events-poller` | **Yes — new `packages/org-events-poller`** | Shared S5 outbox-consumer machinery (cursor, ledger write, `assertTransition`, `onEvent` dispatch). Consumed by local-inventory/expense/workflow-mapping — a cross-app utility, **standalone package**, not folded into `local-inventory`. **Drive its drain from the in-process signal + boot, not its `setInterval`** (§8a) — expose/extract a one-shot `drainOnce` if the package only ships the timer-start today; the wall-clock loop is not used in checkin. |
 | `@inventory/utils` | **Yes — new `packages/utils`** (or reuse if #1286 already needed it) | Generic helpers. Standalone shared package; check whether #1286 already vendored it before adding a second copy. |
 | `@inventory/pg-test-harness` | n/a | Already present in checkin. Reuse. |
 
@@ -185,12 +185,15 @@ entries (checkin centralizes the boundary on purpose). Adding a *new* inventory
 route touches all three; editing inventory behavior touches none.
 
 **One extra boot concern local-inventory has that catalog does not:** the source
-`container.ts` **starts the org-events poller on import** (guarded by
-`LOCAL_INVENTORY_DATABASE_URL` being set, so `next build` doesn't connect). In
-checkin the poller must be started from `configureLocalInventory()` /
-`instrumentation.ts`, **not** as a container import side effect — so it starts
-once, in the server runtime, after the catalog-events port is bound (§8). Land it
-**inert** until the catalog producer exists (§8, §11).
+`container.ts` **starts a time-based org-events poller on import** (guarded by
+`LOCAL_INVENTORY_DATABASE_URL` being set, so `next build` doesn't connect). checkin
+**drops the interval poller entirely** — an in-app `setInterval` would keep the
+container's event loop awake forever and fight clean shutdown. Instead the S5
+consumer is **push-driven** (§8a): a one-shot **boot catch-up drain** from
+`configureLocalInventory()` / `instrumentation.ts` (server runtime only, never a
+container-import side effect, never during `next build`), plus **drain-on-emit**
+signalled in-process by catalog's producer. No wall-clock timer. Land it **inert**
+until the catalog producer emits (§8, §11).
 
 ---
 
@@ -337,8 +340,10 @@ Eight pages, each an A12 surface / exception screen:
   surfaces these** — workflow-mapping deliberately does not (BYDESIGN, §10).
 - `system-data` — settings (`SettingsData`: poll interval/window, global server
   URL). Poll-config only — **org identity is not here** (it comes from env, §6).
-  These poll fields become **inert** once the S5 crossing is in-process (§8) —
-  keep the row, note the deprecation path.
+  These poll fields are **dead on arrival**: the S5 crossing is in-process and
+  push-driven from day one (§8a), so there is no timer to configure. Keep the row
+  (harmless, and the model ports cleaner intact); drop the fields with the
+  track-8 cleanup rather than wiring UI to them.
 
 Drop the source `AppShell`/nav shell; pages render inside checkin's shell. Wire
 auth via `useSession` client-side + the checkin session in the route handlers.
@@ -374,27 +379,48 @@ which does the org-item merge and **parks a `uom_mismatch` `InventoryMergeConfli
 when the provisional's counted conversion factor ≠ the resolved real item's factor
 (surface 3, the exception screen — see `mergeOrgItems`).
 
-**Conversion at co-residence:** catalog lands first (#1286), so it is co-resident
-from local-inventory's first day. But the crossing is still **not collapsed to a
-synchronous call.** Instead:
+**Conversion at co-residence — and why there is no in-app timer.** catalog lands
+first (#1286), so it is co-resident from local-inventory's **first day**. There is
+therefore **no remote producer to poll** — and the source's time-based
+`setInterval` poller must **not** be carried across. An in-app interval poller
+would keep the Node event loop busy forever (never-idle container), wake every N
+minutes with no traffic, duplicate-poll across replicas, and fight a clean
+SIGTERM. The async seam stays; the **trigger** changes from "poll on a timer" to
+"drain on an in-process signal." Concretely the in-process adapter is:
 
-- Bind the **in-process** `catalogEvents` port adapter in
-  `configureLocalInventory()`: the poller stops HTTP-polling catalog's
-  `/api/internal/org-events` and instead **reads catalog's OrgEvent rows via the
-  catalog library's service/port in-process** (both DBs live in the same process;
-  the read is a direct call into `@inventory/global-catalog`, not a cross-DB
-  join). The async seam — poll-cursor, local ledger, retry, `assertTransition`
-  guard — **stays**.
+- **Boot catch-up drain** — one-shot on startup: drain any `OrgEvent` rows written
+  while this process was down (crash recovery). No timer.
+- **Drain-on-emit** — catalog's `emitOrgEvent`, **after it commits** the
+  `OrgEvent` row, fires an in-process signal through the injected port; the
+  consumer drains **all pending rows for that org** (not just the just-written
+  one — so a sibling replica's writes are swept too). No timer.
+- **Bounded per-row retry** on a failed drain (backoff on the row); a stuck row is
+  re-attempted by the next emit-drain. **No periodic sweep** — events keep
+  arriving, so the next emit is the retry clock. Add a long-interval safety sweep
+  **only** if a real stuck-row gap appears, and if so run it on checkin's
+  **external scheduler** (the existing cron/Lambda infra), never an in-app
+  `setInterval` — so the container is still poked from outside, not self-woken.
+
+Everything durable stays: the `OrgEvent` outbox rows, local `received_org_events`
+ledger, ordering, and the `assertTransition` guard. Only the wall-clock timer is
+gone.
+
 - Keep the shared S5 union (`parseOrgEvent`) as the contract in both modes.
-- The `http` adapter (today's HTTP poll of catalog) is the first-landing binding
-  and is retired once catalog co-resides — which, since catalog lands first, may
-  be **immediately**; but land the poller **inert** (no scheduled invocation)
-  until the catalog producer actually emits, per #1286 §8's inert-consumer note.
+- The `http`/poll adapter exists in the port **only** as the fallback shape for a
+  *remote* producer. Since catalog is co-resident from day one, **local-inventory
+  ships the in-process push adapter and never ships an in-app interval poller.**
+  Land the consumer **inert** (drain wired but the catalog producer not yet
+  emitting) until catalog actually emits, per #1286 §8's inert-consumer note.
 
-**Port shape** (`contract.ts`): `CatalogEventSource { pollSince(cursor): OrgEvent[] }`
-with two adapters (`http` = poll catalog route; `in-process` = call catalog
-service). local-inventory imports the port, never `@inventory/global-catalog`
-directly — checkin injects the bound adapter.
+**Port shape** (`contract.ts`): `CatalogEventSource` with `drainPending(orgId)`
+(sweep + apply) plus a `subscribe(onEmit)` the producer calls post-commit; the
+`in-process` adapter binds `onEmit` to catalog's emit hook, and `drainPending`
+reads catalog's OrgEvent rows via the catalog library service (both DBs in one
+process — a direct call into `@inventory/global-catalog`, not a cross-DB join).
+The retained `pollSince(cursor)` shape is the remote/`http` fallback only.
+local-inventory imports the port, never `@inventory/global-catalog` directly —
+checkin injects the bound adapter and, in `configureLocalInventory()`, runs the
+boot drain.
 
 **Preserve these BYDESIGN behaviors** (do not "fix" in the port):
 - `conversion_challenge_*` events are **not** consumed / not back-propagated
@@ -473,9 +499,12 @@ existing container. Same as #1286 §9, plus:
   env of its own here.
 - Add **inventory `prisma migrate deploy`** (against `LOCAL_INVENTORY_DATABASE_URL`)
   to the deploy sequence, ordered with checkin's and catalog's migration steps.
-- **Poller lifecycle**: the org-events poller starts from
-  `instrumentation.ts` / `configureLocalInventory()` in the server runtime only
-  (never during `next build`). One poller per process.
+- **S5 consumer lifecycle**: **no background timer** (§8a). A one-shot boot
+  catch-up drain runs from `instrumentation.ts` / `configureLocalInventory()` in
+  the server runtime only (never during `next build`); thereafter the consumer is
+  woken by catalog's in-process emit signal. Nothing keeps the event loop awake
+  between events, so idle CPU is zero and SIGTERM is clean. Safe under N replicas
+  (each boot-drains; drain-on-emit sweeps all pending rows for the org).
 - No new Caddy route, no new port, no new container.
 
 ---
@@ -531,8 +560,10 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
 5. **UI + nav** — reskinned pages/components (in the library), page stub tree +
    `pageRegistry` entries, `inventoryNav` splice, `transpilePackages`, A12 flow
    test.
-6. **S5 consumer** — bind the in-process catalog-events adapter; poller started
-   from `instrumentation.ts`, inert until catalog emits. Depends on 1–4 and on
+6. **S5 consumer** — bind the in-process catalog-events adapter (push-driven, §8a:
+   boot drain + drain-on-emit, **no timer**); wired from `instrumentation.ts`,
+   inert until catalog emits. Requires #1286's `emitOrgEvent` to expose the
+   post-commit signal hook the consumer subscribes to. Depends on 1–4 and on
    #1286's catalog producer being co-resident.
 7. **Infra** — deploy sequence + DB provisioning.
 8. **(Deferred — each a tracked follow-up issue vs #1287, not prose "later")**
@@ -564,10 +595,13 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
   and inventory pages are exercisable in dev and flow tests. Both seeds stamp rows
   with the same `INVENTORY_ORG_ID` (§6) and must agree on the GTINs a provisional
   resolves to (so the S5 merge path is exercisable end-to-end).
-- **`SettingsData` poll fields deprecate on in-process S5** (§7) — keep the row
-  for the overlap; the `pollIntervalMinutes` / `globalServerUrl` become inert once
-  the in-process catalog-events adapter is bound. Track removal with the track-8
-  HTTP-adapter retirement.
+- **No in-app S5 timer** (§8a) — the consumer is push-driven (boot drain +
+  drain-on-emit), so nothing keeps the container awake. This requires **#1286's
+  `emitOrgEvent` to expose a post-commit signal hook** the consumer subscribes to
+  via the injected port — a coordination point with the catalog design; if #1286
+  ships without that hook, add it there (its own PR) before track 6. `SettingsData`
+  poll fields (`pollIntervalMinutes` / `globalServerUrl`) are dead on arrival;
+  drop them with the track-8 cleanup.
 - **Deferral discipline.** Anything past the first landing (track 8) is a
   **GitHub follow-up issue referencing #1287**, filed at merge — never a bare
   "later" in prose or a code comment.
