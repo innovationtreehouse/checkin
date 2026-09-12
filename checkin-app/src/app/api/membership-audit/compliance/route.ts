@@ -66,13 +66,14 @@ function mergeSourceIdentities(s: {
  *                             record's date. Permanent until #1396 closes that hole.
  */
 export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (req) => {
+    const now = new Date();
     const sinceParam = new URL(req.url).searchParams.get("bgClearedSince");
     const since = sinceParam ? new Date(sinceParam) : null;
     const bgClearedSince = since && !Number.isNaN(since.getTime()) ? since : null;
     const settings = await prisma.boardSettings.findUnique({ where: { id: 1 } });
     const bgRecheckMonths = settings?.bgRecheckMonths ?? 0;
     const boundary = settings?.orgMembershipYearBoundary
-        ? nextBoundary(settings.orgMembershipYearBoundary, new Date())
+        ? nextBoundary(settings.orgMembershipYearBoundary, now)
         : null;
 
     // householdId -> Set<reason>
@@ -135,7 +136,7 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
         // Same population the PERSON_BG triggers open for, so every obligation they
         // create has a row here with a submit action behind it.
         const people = await prisma.person.findMany({
-            where: { ...bgObligatedWhere(new Date()), ...LIVE_PERSON },
+            where: { ...bgObligatedWhere(now), ...LIVE_PERSON },
             select: {
                 id: true,
                 name: true,
@@ -334,14 +335,14 @@ export const GET = withAuth({ roles: ["isSysadmin", "isBoardMember"] }, async (r
     // list from offering people the automatic pass would never have considered.
     const overCeiling = await prisma.person.findMany({
         where: {
-            ...autoPopulationWhere(new Date()),
+            ...autoPopulationWhere(now),
             isDeclaredAdult: true,
             ...LIVE_PERSON,
         },
         select: { id: true, name: true, householdId: true },
         orderBy: { name: "asc" },
     });
-    const floor = settings?.orgMembershipYearBoundary ? agreementCycleFloor(settings.orgMembershipYearBoundary, new Date()) : null;
+    const floor = settings?.orgMembershipYearBoundary ? agreementCycleFloor(settings.orgMembershipYearBoundary, now) : null;
     const handled = await prisma.orgMembershipProcess.findMany({
         where: {
             kind: "PERSON_AGREEMENT",
