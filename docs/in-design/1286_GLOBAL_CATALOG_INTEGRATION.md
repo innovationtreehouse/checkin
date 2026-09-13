@@ -1,14 +1,52 @@
 # Global catalog: porting `global-catalog-app` into checkin
 
+## Problem
+
+The organization maintains a shared catalog of what its parts, tools, and
+consumables *are* — the reference data every inventory and receipt workflow
+depends on to name and match items. Today that catalog lives in a separate
+application, on separate infrastructure, behind its own login, that the
+organization is retiring. Staff who need to read or curate the catalog cannot do
+it where they already work (checkin), and it is the first piece of a larger set
+of inventory tools that must all move to one place.
+
+## Objective
+
+The catalog is available inside the existing staff application as ordinary
+navigation, using the same sign-in and the same look and feel, deployed and
+operated as one system — with the catalog's own logic kept cleanly separable so
+that the rest of the inventory tools can follow it in later without entangling
+the two.
+
+## Executive summary
+
+- **Staff** reach the catalog as a new **Inventory** area in the existing nav;
+  those who curate it get a single new manager role, everyone else with a staff
+  relationship can read it.
+- **Operators** get one application to run and deploy — no second service, no
+  second login — with the catalog on its own database on the shared server.
+- **Developers** get the catalog as an isolated library: its logic, data, and
+  screens live in one package, and the host application only wires it in. Working
+  on the catalog does not mean reading the host application.
+- **The organization** gets the first inventory tool moved, on a seam designed so
+  the remaining tools migrate onto it rather than around it.
+
+---
+
 **Issue:** [#1286](https://github.com/innovationtreehouse/checkin/issues/1286)
-— backlog item CI1 (PORT · NEEDS-DESIGN · XL).
+— backlog item CI1 (PORT · NEEDS-DESIGN · XL). Relates to RB4 "Catalog Manager"
+([#1316](https://github.com/innovationtreehouse/checkin/issues/1316), open) — see
+§6.
 
 **Status:** design. No board decision gates the mechanics below; the one product
-choice (which staff may operate the catalog) is settled in §6.
+choice (which staff may operate the catalog) is resolved in §6 against RB4.
 
 **Source:** `global-catalog-app/` in the `innovationtreehouse/Inventory` repo
-(local: `/Volumes/Untitled/Inventory/global-catalog-app`). Not currently
-deployed in Infra.
+(not vendored here — it is a separate repo). Not currently deployed in Infra.
+
+**Domain rules relied on:** `docs/rules/principles.md` (least-privilege — the
+viewer gate in §6 widens read access and is justified there); the
+security-boundary and migration-order rules cited inline in §5 and §4.
 
 ---
 
@@ -118,9 +156,11 @@ catalog" should never be true.
 The library owns **everything with substance**: services, repositories,
 workflows, `lib`, the Prisma schema/client/migrations, **the React components,
 the page components (server + client), the route handlers, and the nav
-manifest.** `@inventory/money` already proves the mechanism — checkin consumes a
-workspace package as raw TS source. A package that also ships **tsx** needs one
-line in next.config (`transpilePackages`).
+manifest.** `@inventory/money` already proves workspace packages compile in-app —
+checkin consumes it as raw TS source **with no `transpilePackages`** (money ships
+no JSX). A package that also ships **tsx** likely needs
+`transpilePackages: ['@inventory/global-catalog']` in next.config; **verify this
+during track 5** rather than assuming — it is one line if required.
 
 ```
 checkin/
@@ -132,7 +172,7 @@ checkin/
         components/                        ALL catalog UI (Mantine, reskinned)
         pages/                             page components — server + client
         routes/                            route-handler factories (GET/POST/…)
-        nav.ts                             exported nav manifest (catalogNav: NavItem[])
+        nav.ts                             section-tab links (NavLink[]) + top-level entry descriptor
         runtime.ts                         configureCatalog() + getPrincipal()/db/org accessors
         contract.ts                        CatalogAuth / CatalogPrincipal interfaces
       package.json
@@ -141,9 +181,9 @@ checkin/
   checkin-app/                             ← WIRING ONLY, no catalog logic
     src/instrumentation.ts                 + one configureCatalog({...}) call at boot
     src/app/(catalog)/**/{page,route}.tsx  re-export stubs (see below)
-    src/lib/nav*                           splice in `catalogNav` from the library
+    src/components/AppFrame.tsx            + one NAV_ITEMS entry (Inventory), from the library descriptor
     src/security/{registry,scopeBindings}.ts   + catalog entries (boundary is checkin's)
-    next.config.ts                         + transpilePackages: ['@inventory/global-catalog']
+    next.config.ts                         + transpilePackages (if tsx needs it — verify, §3)
 ```
 
 ### The cut — what's forced into checkin-app, and why it's thin
@@ -215,8 +255,14 @@ to minimize port churn; rename only if a shared call site reads ambiguously.)
 Implications:
 
 - **Two Prisma clients** load in the checkin-app process (catalog +
-  checkin), each with its own connection string / pool. Same as
-  monitoring-db + checkin today.
+  checkin), each with its own connection string / pool. **This is new** —
+  checkin-app loads only its own client today; `@inventory/monitoring-db` is
+  consumed by the Lambda functions and `packages/*` (s-read, telemetry,
+  s-ingest-core, monitoring-relay), never by checkin-app, and
+  `deploy/docker-compose.prod.yml` sets only `DATABASE_URL`. So monitoring-db is
+  the precedent for **own-DB packaging**, not for a second client inside the Next
+  process. The catalog is the first to run two clients in checkin-app; the cost
+  is a second connection pool (bounded via the client's pool config).
 - **No cross-database SQL** (can't JOIN catalog ↔ checkin). By design — the
   catalog↔checkin/receipt crossings are service-level calls (§8), never SQL
   joins, and the S5 outbox lives entirely inside the catalog DB. A transaction
@@ -282,14 +328,24 @@ logout,me}`. checkin already owns login and session.
 Every catalog route/page guard is re-expressed against the checkin session
 (`getServerSession(authOptions)` + role/predicate check).
 
-### Role mapping — one manager role + a broad viewer gate
+### Role mapping — one manager role (RB4) + a broad viewer gate
+
+**This role is not net-new — it is RB4.** The backlog already carries RB4
+"Catalog Manager" ([#1316](https://github.com/innovationtreehouse/checkin/issues/1316),
+open DECISION), and `docs/backlog/TOPDOWN.md` (GC-ROLES) resolves that RB4 is a
+**kept** role (basis external to the app) and asks the **owner to supply its
+official name**. `INVENTORY_MANAGER` is that owner-supplied name (chosen
+forward-looking, since the whole Inventory suite follows the catalog). So this
+does **not** violate GC-ROLES' "no net-new RBAC roles" — RB4 is one of the two
+role rows GC-ROLES explicitly keeps, and this port is its implementation. **Track
+2 references and closes #1316.**
 
 Source tiers → checkin:
 
 | Source tier | checkin |
 |---|---|
-| **global-manager** + **org-manager** | **one new role** `INVENTORY_MANAGER` (collapsed for now; split later if a multi-org need appears) |
-| **viewer** | any **RBAC-role holder, program leader, or volunteer** — not any authenticated user |
+| **global-manager** + **org-manager** | **one role `INVENTORY_MANAGER` (= RB4 "Catalog Manager")** — the source's two manager tiers collapse into it; split only if a real multi-org need appears |
+| **viewer** | any **RBAC-role holder, program leader, or volunteer** — not any authenticated user (least-privilege note below) |
 
 **Adding the role** touches checkin's role foundation (all in checkin's own
 schema, not the catalog schema):
@@ -307,6 +363,14 @@ schema, not the catalog schema):
 any of — holds `INVENTORY_MANAGER`, holds **any** `PersonRole` (RBAC role),
 `programsLed` non-empty (program leader), or has a `VolunteerDesignation` (keyed
 by email; volunteer). This is the single chokepoint for read access.
+
+**Least-privilege note** (`docs/rules/principles.md`): this gate *widens* read
+access — a broad set of staff can read the whole catalog. That is deliberate and
+proportionate: the catalog is reference data, tiered `public`/`internal` with
+**no `pii`** (§5), so a wide read audience exposes no personal data; write access
+stays narrow (`INVENTORY_MANAGER` only). The widening is confined to non-personal
+reference data, which is what least-privilege permits — stated here so the
+widening is a decision on the record, not an accident.
 
 Per-route authorization then reads: **writes** → `INVENTORY_MANAGER`; **reads** →
 `isCatalogViewer`.
@@ -362,8 +426,9 @@ rewrite.
 ## 7. UI — reskin in place
 
 All UI lives in the library (`packages/global-catalog/src/{components,pages}`).
-checkin-app only re-exports pages (§3) and splices `catalogNav`. Both apps use
-the same Mantine version, so the reskin is component-level, not a rewrite.
+checkin-app only re-exports pages (§3) and wires nav (see Nav placement). Both
+apps use the same Mantine version, so the reskin is component-level, not a
+rewrite.
 
 **Keep the source's API-route + `"use client"` pattern** — re-theme and re-wire
 auth only. This is not a compromise: it *is* how checkin behaves today (72 of 87
@@ -389,18 +454,26 @@ the catalog moves with it, in the library.
 
 ### Nav placement
 
-checkin's nav is a **single ordered `NAV_ITEMS` array in `AppFrame.tsx`**
-(`{ href, label, icon, visible(user, signedIn, counts) }`, rendered in array
-order, filtered by `visible`). Order is a checkin-shell concern, so the library
-**exports** the catalog entry (`catalogNav`: href/label/icon + the
-`isCatalogViewer` predicate) and **checkin-app decides its index** in
-`NAV_ITEMS` — the library never dictates order.
+checkin has **two nav layers**, and the catalog uses both:
+
+1. **Top-level sidebar** = a single ordered `NAV_ITEMS` array in `AppFrame.tsx`
+   (`{ href, label, icon, visible(user, signedIn, counts) }`, rendered in order,
+   filtered by `visible`).
+2. **Section tabs** within a section = a `NavLink[]` array (checkin's shared
+   `NavLink` type in `src/lib/nav/types.ts`; each section keeps its own array,
+   e.g. `FACILITY_NAV_LINKS`) rendered by `SectionTabs`.
+
+Order is a checkin-shell concern, so the library **exports descriptors** — the
+top-level entry (href/label/icon + the `isCatalogViewer` predicate) and the
+section-tab `NavLink[]` — and **checkin-app places them**: it adds the entry to
+`AppFrame.tsx`'s `NAV_ITEMS` at its chosen index. The library never dictates
+sidebar order.
 
 - **One top-level entry, label `Inventory`** (forward-looking: catalog is the
   first Inventory surface; more arrive as the migration proceeds). Its
-  sub-screens (Items, Categories, Proposals, Conversion Challenges) are **tabs
-  inside the section**, following checkin's existing ops-section pattern
-  (`SectionTabs`), not separate top-level nav items.
+  sub-screens (Items, Categories, Proposals, Conversion Challenges) are the
+  section's **`NavLink[]` tabs** rendered by `SectionTabs`, following checkin's
+  existing ops-section pattern — not separate top-level nav items.
 - **Default position: in the ops cluster, immediately after `Shop Ops`** — the
   catalog is the parts/tools reference domain that Shop Ops consumes, so it reads
   naturally there. (This slot is a recommendation, not load-bearing; checkin can
@@ -510,8 +583,11 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
   is a package, so it **keeps vitest** — its `src/__tests__/{unit,integration}`
   port with almost no change, run by the package's own `test` / `test:integration`
   scripts, reusing `@inventory/pg-test-harness`. **No jest conversion** (jest is
-  checkin-app's convention, not the packages'). Wire the package's test scripts
-  into the workspace test aggregation so CI runs them.
+  checkin-app's convention, not the packages'). **CI wiring is not automatic:**
+  the root `test` scripts only run `-w checkin-app`, and there is no
+  package-test aggregation today — so add an explicit run for the catalog package
+  (a root script, e.g. `npm -w @inventory/global-catalog run test`, plus its
+  integration counterpart, and/or a CI job) so its vitest suites actually run.
 - **Security tests**: registry/stripper coverage for catalog routes lives in
   `checkin-app/src/security/__tests__` (jest — it tests checkin-app's boundary
   wiring). Companion to the boundary PR (track 3).
@@ -545,7 +621,9 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
    `configureCatalog` wired in checkin-app `instrumentation.ts`; API stub tree +
    security guards. Depends on 1–3.
 5. **UI + nav** — reskinned pages/components (in the library), page stub tree +
-   `pageRegistry` entries, `catalogNav` splice, `transpilePackages`, flow test.
+   `pageRegistry` entries, `Inventory` entry added to `AppFrame` `NAV_ITEMS` +
+   section `NavLink[]` tabs, `transpilePackages` (if tsx needs it — verify), flow
+   test.
 6. **Infra** — deploy sequence + DB provisioning.
 7. **(Deferred — each a tracked follow-up issue vs #1286, not prose "later")**
    removal of temporary receipt shims when receipt-app migrates; browser-only UI
@@ -557,11 +635,18 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
 
 ## 12. Open items / assumptions
 
-- **Production data: none, hand-entered.** There is no existing catalog data to
-  migrate. Prod is populated **by hand through the UI**, row by row, from a
-  Google Sheet. **No bulk-import endpoint or import script is built** — the
-  source has none (items are created singly via `POST /api/{categories,
-  subcategories,items}`), and none is wanted. Out of scope.
+- **Production data: none, hand-entered for the first landing.** There is no
+  existing catalog data to migrate. The initial prod catalog is populated **by
+  hand through the UI**, row by row, from a Google Sheet — no bulk-import
+  endpoint or import script is built (the source has none; items are created
+  singly). **This supersedes, for the first landing only, the receipt-replay seed
+  strategy** in `docs/backlog/TOPDOWN.md` GC-INVENTORY (Q22/Q30: replay
+  1,000–2,000 stored receipts to build the catalog). The two are sequential, not
+  contradictory: the receipt-replay corpus needs receipt-app, which is **not
+  present at first landing** (§8) — so the sheet-driven hand-load seeds the
+  catalog now, and the TOPDOWN replay strategy applies **later, when receipt-app
+  co-resides**. (Owner: confirm this sequencing is the intent, since "no bulk
+  load" was stated absolutely — see the review reply on #1814.)
 - **Dev/test seed — pull from `scripts/setup-test-data.sh`.** Inventory's
   `scripts/setup-test-data.sh` carries the baseline catalog rows (category
   `Electronics`/`N`, subcategory `Control System`/`10`, items `Roborio v2` +
