@@ -1,7 +1,8 @@
 import { readdirSync } from 'fs';
 import { join } from 'path';
-import { PAGES, REGISTRY_EXCLUDED } from '@/components/pageRegistry';
+import { PAGES, REGISTRY_EXCLUDED, type RegistryUser } from '@/components/pageRegistry';
 import { FACILITY_NAV_LINKS } from '@/lib/facilityNav';
+import { canReviewBackgroundChecks } from '@/lib/membershipOpsNav';
 
 // Walk src/app for every page.tsx and turn it into its route path, skipping
 // dynamic segments ([id]) which the directory deliberately omits.
@@ -71,5 +72,47 @@ describe('Facility Ops directory agrees with the section gates', () => {
     const entry = entryFor('/system-status/unsynced-scans');
     expect(entry.visible({ isKeyholder: true }, true, null)).toBe(true);
     expect(entry.visible({ isOperations: true }, true, null)).toBe(false);
+  });
+});
+
+// The two drifts #1569 named: a background-check reviewer was hidden from the one
+// Membership Ops tab the nav routes them to, and Create was listed to certifiers
+// the tab hides. Pin each directory row to the section's own gate so neither recurs.
+describe('directory rows agree with the section gates they read (#1569)', () => {
+  const entryFor = (href: string) => PAGES.find((p) => p.href === href)!;
+  const membershipOpsRows = PAGES.filter((p) => p.section === 'Membership Ops');
+  const visibleTo = (u: RegistryUser) =>
+    membershipOpsRows.filter((p) => p.visible(u, true, null)).map((p) => p.href);
+
+  it('shows a background-check reviewer exactly the Membership Review row', () => {
+    expect(visibleTo({ isBackgroundCheckReviewer: true })).toEqual(['/membership-ops/review']);
+  });
+
+  it('shows the Membership Review row to board members too (implicit reviewers)', () => {
+    expect(visibleTo({ isBoardMember: true })).toContain('/membership-ops/review');
+  });
+
+  it('gates the Membership Review row on the shared layout predicate for every role', () => {
+    const review = entryFor('/membership-ops/review');
+    const users: RegistryUser[] = [
+      {},
+      { isBackgroundCheckReviewer: true },
+      { isBoardMember: true },
+      { isSysadmin: true },
+      { isOperations: true },
+    ];
+    for (const u of users) {
+      expect(review.visible(u, true, null)).toBe(canReviewBackgroundChecks(u));
+    }
+  });
+
+  it('hides Create from a certifier who is not admin, but keeps Manage', () => {
+    const certifierOnly: RegistryUser = { toolStatuses: [{ toolId: 1, level: 'MAY_CERTIFY_OTHERS' }] };
+    expect(entryFor('/shop-ops/create').visible(certifierOnly, true, null)).toBe(false);
+    expect(entryFor('/shop-ops/manage').visible(certifierOnly, true, null)).toBe(true);
+  });
+
+  it('shows Create to a board member', () => {
+    expect(entryFor('/shop-ops/create').visible({ isBoardMember: true }, true, null)).toBe(true);
   });
 });

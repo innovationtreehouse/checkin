@@ -1,4 +1,4 @@
-import type { Session } from "next-auth";
+import type { SessionUser } from "@/types/auth";
 import type { NavLink } from "@/lib/nav/types";
 
 /**
@@ -25,7 +25,9 @@ export const SHOP_NAV_LINKS: ShopNavLink[] = [
   { name: "Live Certifications Center", href: "/shop-ops/live", icon: "📊", visible: () => true },
 ];
 
-export function shopRoles(user: Session["user"] | undefined): ShopRoles {
+export function shopRoles(
+  user: Pick<SessionUser, "isSysadmin" | "isBoardMember" | "toolStatuses"> | undefined,
+): ShopRoles {
   const isAdmin = !!user?.isSysadmin || !!user?.isBoardMember;
   const isCertifier =
     isAdmin || !!user?.toolStatuses?.some((ts) => ts.level === "MAY_CERTIFY_OTHERS");

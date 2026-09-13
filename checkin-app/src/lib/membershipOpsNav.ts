@@ -5,6 +5,19 @@
  */
 import type { NavLink } from "@/lib/nav/types";
 
+/**
+ * Board members are implicit background-check reviewers (small-org policy):
+ * the Review tab, the queue, PII visibility, the attestation, and the reviewer
+ * notification all admit a board member too. The single source of truth for the
+ * predicate, kept here so it stays import-safe for client components (no prisma);
+ * lib/membership/review.ts re-exports it for the server.
+ */
+export function canReviewBackgroundChecks(
+  user: { isBackgroundCheckReviewer?: boolean | null; isBoardMember?: boolean | null } | null | undefined,
+): boolean {
+  return Boolean(user?.isBackgroundCheckReviewer || user?.isBoardMember);
+}
+
 export const MEMBERSHIP_OPS_NAV_LINKS: NavLink[] = [
   { name: "Participants", href: "/membership-ops/participants", icon: "👥" },
   // The hold reason (the merge route blind-deleted the merge-side join row on
