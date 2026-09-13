@@ -599,6 +599,7 @@ export const POST = withAuth(
                 // Both sides can have owed a check — the survivor keeps exactly one.
                 moved.personBgArchived = await archiveDuplicatePersonBg(tx, keepId, auth.type === 'session' ? auth.user.id : 0);
                 await tx.program.updateMany({ where: { leadMentorId: mergeId }, data: { leadMentorId: keepId } });
+                await tx.programInstance.updateMany({ where: { leadMentorId: mergeId }, data: { leadMentorId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { trustedAdultPersonId: mergeId }, data: { trustedAdultPersonId: keepId } });
                 await tx.trustedAdult.updateMany({ where: { disclosedById: mergeId }, data: { disclosedById: keepId } });
 
