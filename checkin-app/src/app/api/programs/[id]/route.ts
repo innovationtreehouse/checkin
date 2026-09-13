@@ -337,7 +337,15 @@ export const PATCH = withAuth({}, async (req, auth, ctx: { params: Promise<{ id:
             ...(startAt !== undefined && { startAt: parseDateOnly(startAt) }),
             ...(endAt !== undefined && { endAt: parseDateOnly(endAt) }),
             ...(orgMemberOnly !== undefined && { orgMemberOnly }),
-            ...(publiclyVisible !== undefined && { publiclyVisible }),
+            // publiclyVisible only has meaning for a members-only program. Recompute
+            // it on the POST-PATCH effective state so neither flipping orgMemberOnly
+            // off (leaving a stale publiclyVisible) nor setting publiclyVisible on a
+            // public program can store the nonsense "public-but-publiclyVisible" row.
+            ...((orgMemberOnly !== undefined || publiclyVisible !== undefined) && {
+                publiclyVisible:
+                    (orgMemberOnly !== undefined ? orgMemberOnly : currentProgram.orgMemberOnly) &&
+                    (publiclyVisible !== undefined ? publiclyVisible : currentProgram.publiclyVisible),
+            }),
             ...(announceOnOpen !== undefined && { announceOnOpen }),
             ...(phase !== undefined && { phase }),
             ...(enrollmentStatus !== undefined && { enrollmentStatus }),

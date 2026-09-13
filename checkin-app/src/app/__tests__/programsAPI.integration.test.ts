@@ -345,5 +345,20 @@ describe('Programs API Integration Tests', () => {
              expect(data.program.maxAge).toBe(17);
              expect(data.program.maxParticipants).toBe(50);
         });
+
+        it('clamps publiclyVisible to false on create when the program is not members-only', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+
+             const req = new Request('http://localhost:4000/api/programs', {
+                 method: 'POST',
+                 body: JSON.stringify({ name: 'Clamp Create API Test Program', leadMentorId: leadId, startAt: '2026-01-01', endAt: '2026-12-31', maxParticipants: 50, orgMemberOnly: false, publiclyVisible: true })
+             });
+             const res = await POST(req as unknown as import("next/server").NextRequest);
+             expect(res.status).toBe(200);
+
+             const data = await res.json();
+             expect(data.program.orgMemberOnly).toBe(false);
+             expect(data.program.publiclyVisible).toBe(false);
+        });
     });
 });

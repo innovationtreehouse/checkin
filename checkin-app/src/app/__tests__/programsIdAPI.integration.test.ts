@@ -707,6 +707,43 @@ describe('Individual Program API Integration Tests', () => {
              expect(data.program.phase).toBe('FINISHED');
         });
 
+        // publiclyVisible is meaningless for a public program; the route clamps it so
+        // an API caller can't store the nonsense "public-but-publiclyVisible" row.
+        it('clamps publiclyVisible to false when PATCHed onto a public (non-members-only) program', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+             const prog = await prisma.program.create({
+                 data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Clamp Public Prog ID API Test', phase: 'RUNNING', orgMemberOnly: false, publiclyVisible: false, leadMentorId: leadId },
+             });
+             try {
+                 const req = new Request(`http://localhost:4000/api/programs/${prog.id}`, { method: 'PATCH', body: JSON.stringify({ publiclyVisible: true }) });
+                 const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(prog.id) as unknown as never);
+                 expect(res.status).toBe(200);
+                 const row = await prisma.program.findUnique({ where: { id: prog.id } });
+                 expect(row?.publiclyVisible).toBe(false);
+             } finally {
+                 await prisma.program.delete({ where: { id: prog.id } });
+             }
+        });
+
+        // Flipping orgMemberOnly off must drop a stale publiclyVisible, or the program
+        // reads as members-only-and-public — the exact nonsense state.
+        it('clears publiclyVisible when a members-only program is flipped to public', async () => {
+             (getServerSession as jest.Mock).mockResolvedValue({ user: { id: adminId, isSysadmin: true } });
+             const prog = await prisma.program.create({
+                 data: { startAt: new Date('2026-01-01'), endAt: new Date('2026-12-31'), name: 'Clamp Flip Prog ID API Test', phase: 'RUNNING', orgMemberOnly: true, publiclyVisible: true, leadMentorId: leadId },
+             });
+             try {
+                 const req = new Request(`http://localhost:4000/api/programs/${prog.id}`, { method: 'PATCH', body: JSON.stringify({ orgMemberOnly: false }) });
+                 const res = await PATCH(req as unknown as import("next/server").NextRequest, createParams(prog.id) as unknown as never);
+                 expect(res.status).toBe(200);
+                 const row = await prisma.program.findUnique({ where: { id: prog.id } });
+                 expect(row?.orgMemberOnly).toBe(false);
+                 expect(row?.publiclyVisible).toBe(false);
+             } finally {
+                 await prisma.program.delete({ where: { id: prog.id } });
+             }
+        });
+
         // Denied-household lockout (auth-consistency §5 risk #2 / GAP-1). A denied
         // lead mentor keeps `user.id`, so the leadMentorId-match gate would still
         // pass — the denied check must reject before any mutation. No write occurs.
