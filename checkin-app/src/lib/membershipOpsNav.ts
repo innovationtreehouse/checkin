@@ -4,17 +4,18 @@
  * first entry. Add a tool once here and it shows up as a tab.
  */
 import type { NavLink } from "@/lib/nav/types";
-import type { SessionUser } from "@/types/auth";
 
 /**
- * Background-check reviewers and board members (implicit reviewers) may open the
- * Review tab; every other Membership Ops tool is admin-only. One definition the
- * layout gate and the /index directory both read, so they cannot drift (#1569).
+ * Board members are implicit background-check reviewers (small-org policy):
+ * the Review tab, the queue, PII visibility, the attestation, and the reviewer
+ * notification all admit a board member too. The single source of truth for the
+ * predicate, kept here so it stays import-safe for client components (no prisma);
+ * lib/membership/review.ts re-exports it for the server.
  */
 export function canReviewBackgroundChecks(
-  user: Pick<SessionUser, "isBackgroundCheckReviewer" | "isBoardMember"> | undefined,
+  user: { isBackgroundCheckReviewer?: boolean | null; isBoardMember?: boolean | null } | null | undefined,
 ): boolean {
-  return !!user?.isBackgroundCheckReviewer || !!user?.isBoardMember;
+  return Boolean(user?.isBackgroundCheckReviewer || user?.isBoardMember);
 }
 
 export const MEMBERSHIP_OPS_NAV_LINKS: NavLink[] = [

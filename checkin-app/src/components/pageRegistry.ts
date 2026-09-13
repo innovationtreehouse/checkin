@@ -6,6 +6,7 @@
 // worst shows a link that 403s. Where the section owns an exported predicate
 // (shopRoles, FACILITY_NAV_LINKS, canReviewBackgroundChecks) the directory reads
 // it rather than holding a second copy, so the two cannot drift (#1569).
+// See docs/designs/INDEX_PAGE_SCOPING.md.
 
 import type { TodoCounts } from '@/app/api/nav/todo-counts/route';
 import type { SessionUser } from '@/types/auth';

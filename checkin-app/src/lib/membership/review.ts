@@ -14,6 +14,7 @@ import { hasHouseholdConflict, sharesHousehold } from "@/lib/conflictOfInterest"
 import { type DbClient, type TxClient } from "@/lib/db-client";
 import { awaitingBgReview } from "@/lib/membership/lifecycle";
 import { LIVE_PERSON } from "@/lib/person/filters";
+import { canReviewBackgroundChecks } from "@/lib/membershipOpsNav";
 
 /**
  * Background-check review — now a PARALLEL track, not a blocking phase.
@@ -36,18 +37,10 @@ import { LIVE_PERSON } from "@/lib/person/filters";
 
 const REQUIRED_APPROVALS = 2;
 
-/**
- * Board members are implicit background-check reviewers (small-org policy):
- * anywhere an explicit reviewer is required — the queue, PII visibility, the
- * attestation, and the reviewer notification — a board member qualifies too.
- * Single source of truth so the API gate, the service, and the UI can't drift.
- */
-export function canReviewBackgroundChecks(u: {
-    isBackgroundCheckReviewer?: boolean | null;
-    isBoardMember?: boolean | null;
-}): boolean {
-    return Boolean(u.isBackgroundCheckReviewer || u.isBoardMember);
-}
+// The reviewer predicate lives in membershipOpsNav (import-safe for the client);
+// re-exported here so the server callers that import it from this module — the
+// API gate, the service below, notifications — keep one body.
+export { canReviewBackgroundChecks };
 
 export class ReviewError extends Error {
     constructor(
