@@ -61,6 +61,12 @@ reconciliation), and the later
 [#1277](https://github.com/innovationtreehouse/checkin/issues/1277)–[#1279](https://github.com/innovationtreehouse/checkin/issues/1279)
 (FE6–FE8) — are referenced **without any closing keyword**: this is a design-doc
 PR, and a closing link here would auto-close them on merge with nothing built.
+Relates to **RB2 "Role: Finance"**
+([#1314](https://github.com/innovationtreehouse/checkin/issues/1314), open,
+readiness DECISION) — the canonical backlog issue for the finance role this port
+stands up (§6); referenced **without a closing keyword** and left open (the port
+partially addresses it with the interim `FINANCE` role; the label/scope decision
+stays #1314's, exactly as #1286 relates to RB4/#1316).
 
 **Status:** design. No board decision gates the mechanics below. This doc is the
 **third in a series** and **reuses the base architecture** established by the
@@ -415,7 +421,7 @@ mapping:
 
 | Source guard | checkin (this port) | Notes |
 |---|---|---|
-| `isFinance` (hold resolution, capital seed/review, QB queues, account/vendor mapping, owner-map management, finance-assign, resolve-unknown, raise-exception) | **`FINANCE`** — new `PersonRoleKind` | RB2 "Finance" umbrella (Treasurer / Bookkeeper / Accountant) that GC-ROLES **explicitly keeps** — a kept role, not a net-new invention. Follows the `isOperations` precedent: PersonRole-table-only, **no legacy mirror column**. |
+| `isFinance` (hold resolution, capital seed/review, QB queues, account/vendor mapping, owner-map management, finance-assign, resolve-unknown, raise-exception) | **`FINANCE`** — new `PersonRoleKind` | **RB2 "Role: Finance"** ([#1314](https://github.com/innovationtreehouse/checkin/issues/1314), readiness DECISION) — the umbrella (Treasurer / Bookkeeper / Accountant) GC-ROLES **explicitly keeps**, a kept role not a net-new invention. This port is where #1314 gets stood up; it **partially addresses #1314** (interim single row) **without closing it** — the label/sub-actor split stays #1314's, mirroring #1286↔RB4/#1316. Follows the `isOperations` precedent: PersonRole-table-only, **no legacy mirror column**. |
 | `isOrgManager` (account-mapping + owner-assignment management) | **`FINANCE`** (collapsed) | The source's org-manager is finance-staff pipeline management; collapse onto `FINANCE` rather than standing up a second role. Split later only if a real duty boundary appears. |
 | `isBudgetOwner` (approve/reject *your own* lines) | **budget-owner predicate on `Person`** — a data relationship, not an RBAC role | The line's owner is a `Person` (resolved via `PartOwnerMap`, FE2); "is this session the owner of this line?" is a per-row check, not a global role. Program Treasurer / Assistant Lead map here too (relationship-attached, GC-ROLES). |
 | `isAdmin` (a few admin-only ops) | **`SYSADMIN`** (existing) | Direct. |
@@ -807,9 +813,10 @@ library skeleton + shared packages) has landed; the inventory-load crossing (tra
    unit/integration tests. No UI, no QB write, no checkin wiring. Green in
    isolation.
 2. **`FINANCE` role foundation** — add the `FINANCE` `PersonRoleKind` (RB2, a kept
-   role) + `roles.ts` + next-auth types + grant UI. Own PR (role-system change).
-   Defines the budget-owner per-row predicate + the household-COI predicate over
-   checkin's household graph.
+   role — **references #1314 without closing it**; the label/scope stays #1314's
+   DECISION) + `roles.ts` + next-auth types + grant UI. Own PR (role-system
+   change). Defines the budget-owner per-row predicate + the household-COI
+   predicate over checkin's household graph.
 3. **Security boundary** — `@sensitivity` annotations (incl. the **`secret`** QB
    token tier), `generator security` for the expense schema, registry +
    scopeBindings entries, the **fail-closed QB-token registry entry**. Own PR
@@ -858,14 +865,18 @@ library skeleton + shared packages) has landed; the inventory-load crossing (tra
 
 ## 12. Open items / assumptions
 
-- **`FINANCE` role naming.** This design introduces a `FINANCE` `PersonRoleKind`
-  as the RB2 "Finance" umbrella actor. GC-ROLES keeps RB2 and says "no net-new
-  RBAC rows"; `FINANCE` is the *umbrella* row, with Treasurer / Bookkeeper /
-  Accountant as sub-actors that are **not** separate rows. If the owner wants a
-  different label (e.g. `TREASURER`) or wants finance folded onto `BOARD` instead
-  of a distinct row, that is a one-line change in track 2 — **flag for owner
-  confirmation.** Not a STOP-AND-ASK blocker (a sensible default is chosen), but
-  the one product choice worth a nod.
+- **`FINANCE` role naming — the one open DECISION (RB2 / #1314).** This design
+  introduces a `FINANCE` `PersonRoleKind` as the RB2 "Finance" umbrella actor.
+  RB2 is tracked as **[#1314](https://github.com/innovationtreehouse/checkin/issues/1314)
+  (readiness DECISION)** — the decision it names is exactly this: stand up a
+  finance role, and under what label. GC-ROLES keeps RB2 and says "no net-new RBAC
+  rows"; `FINANCE` is the *umbrella* row, with Treasurer / Bookkeeper / Accountant
+  as sub-actors that are **not** separate rows. If the owner wants a different
+  label (e.g. `TREASURER`) or wants finance folded onto `BOARD` instead of a
+  distinct row, that is a one-line change in track 2. The doc picks `FINANCE` as
+  the sensible default — **not a STOP-AND-ASK blocker** — but this is the product
+  choice worth the owner's nod, and it is #1314's to settle. Track 2 references
+  #1314 without closing it.
 - **Narrow read gate is a deliberate divergence** from #1286/#1287's broad viewer
   gate (§6). Confirmed by least-privilege + the sensitivity of financial data; if
   the owner wants finance data more broadly visible (e.g. all board, all program
