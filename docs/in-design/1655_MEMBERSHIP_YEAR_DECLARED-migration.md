@@ -5,17 +5,27 @@ Everything here expires when the change has run. The design is in
 
 ## Decisions owed before building
 
-No design decisions are owed — the product owner has settled them (see the
-design's [Decisions](1655_MEMBERSHIP_YEAR_DECLARED.md#decisions-previously-open)):
-one year per settlement (`appliesToYear` is a single integer), no proration in
-software, overlap races resolve to the shorter grant, refunds/wrong-year are
-handled by people, misconfigured variants flow to the unmatched-payment path, and
-the variant mapping is a `MembershipYearVariant` table (one row per year). What
-remains are the build-time mechanics below.
+Most decisions are settled (see the design's
+[Decisions](1655_MEMBERSHIP_YEAR_DECLARED.md#decisions-previously-open)): one year
+per settlement (`appliesToYear` is a single integer), no proration in software,
+overlap races resolve to the shorter grant, refunds/wrong-year are handled by
+people, misconfigured variants flow to the unmatched-payment path, and the variant
+mapping is a `MembershipYearVariant` table (one row per year).
+
+**One owner decision is owed before step 4:** which year's variant a *new INITIAL*
+checkout link sells inside the renewal-window overlap (`ensurePaymentLink` builds
+one link; the year it sells is the year the webhook will stamp). See the design's
+[Open questions](1655_MEMBERSHIP_YEAR_DECLARED.md#open-questions). The rest below
+are build-time mechanics.
+
+This design targets the post-#1812 reader model (coverage follows the live
+membership year via `membershipYearCycle` / `coveredThrough`; `settledThisCycleWhere`
+carries a paid-awaiting-BG `OR` arm). If #1655 lands before #1812, re-base step 6
+on whatever shape is then on `main`.
 
 Still unknown, and only production can say: how many legacy processes the
 backfill (step 5) cannot resolve. It leaves those `appliesToYear` null; the year
-readers treat null as "not settled for the coming year", so they read exactly as
+readers treat null as "not settled for the live cycle", so they read exactly as
 today.
 
 ## Sequence
@@ -62,9 +72,18 @@ release still serving traffic.
    (`ensurePaymentLink` / `buildMembershipCheckoutUrl` in
    `src/lib/membership/payment.ts`) selects the variant for the year being sold,
    and **fails closed** (surfaced, not a silent dead end) when that year's row is
-   absent. The seed writes no `BoardSettings` variant mapping — seed at least the
-   current AND coming year's variant rows, or membership checkout, the renewal
-   sweep (below), and the flow tests break.
+   absent. For a new INITIAL in the overlap, "the year being sold" is the owner
+   decision above.
+
+   Do **not** seed real `MembershipYearVariant` rows: per
+   `checkin-app/docs/designs/SHOPIFY_DEV_STORE_WEBHOOK.md` O4, variant ids are
+   per-environment config with no placeholder seed (a seeded id fails the real
+   store's variant-match guard). Instead, the local/flow mock path already resolves
+   `DEV_MOCK_MEMBERSHIP_VARIANT_ID` (`src/app/api/dev/shopify/orders-paid/route.ts`);
+   map that mock variant to the **live year** (`membershipYearCycle(...).cycleStart`
+   year) so mock checkout and the flow tests stamp a coherent `appliesToYear`
+   without a seeded row. Real environments get their rows from the one-time manual
+   setup O4 describes, not the seed.
 
 4a. **Renewal-sweep hard stop:** `runRenewalSweep` in
     `src/lib/membership/renewal.ts` gains a second early return alongside its
@@ -83,27 +102,38 @@ release still serving traffic.
 5. **Backfill (one-time, run against production after the column exists):** for
    every `OrgMembershipProcess` whose year today's logic can decide, compute the
    membership year its `stageEnteredAt` fell into — the year
-   `settledThisCycleWhere` would have matched it as settled for — and write
+   `settledThisCycleWhere` matches it as settled for today — and write
    `appliesToYear`. Leave it null where the logic cannot decide (e.g. a row with
    no `stageEnteredAt`, or an off-diagram legacy row). It sets nothing it cannot
-   derive. This freezes today's answer for every already-decided row, so no live
-   horizon moves at cutover except the summer-leak case.
+   derive. This **freezes today's answer** for every already-decided row — no live
+   horizon moves at cutover, including the handful of leaked summer INITIALs, which
+   read afterwards exactly as they read before. The leak is closed going forward by
+   the variant→year stamp, not retroactively. Correcting historical leaked INITIALs
+   (deriving from `paidAt`, which moves live horizons) is an optional separate pass
+   the owner can call for; the default is freeze.
 
 6. **Switch the readers** (only after step 5 has populated production):
    - `settledThisCycleWhere` / `handledThisCycleWhere` in
-     `src/lib/membership/lifecycle.ts` reshape to key on
-     `appliesToYear = comingYear` (money set: `status: "ACTIVE"`; sweep set:
-     `status: { in: ["ACTIVE","ARCHIVED"] }`), dropping the `windowStart`
-     parameter and the `stageEnteredAt` clause.
-   - The three readers pass the coming-year integer instead of a `windowStart`:
-     `src/app/api/membership-ops/households/route.ts` (both call sites),
-     `src/lib/orgMembership.ts` (`membershipValidThrough`),
+     `src/lib/membership/lifecycle.ts`: replace the `stageEnteredAt: { gte:
+     settledSince }` clause with `appliesToYear: liveYear`, **keeping the `OR`
+     arm** (`{status:"ACTIVE"}` OR `{status:{in:["PENDING_BG_CLEARANCE"]},
+     paidAt:{not:null}}`) and, for `handledThisCycleWhere`, its `ARCHIVED`
+     addition. The signatures take a year, not a `settledSince` date.
+   - The three readers pass `liveYear =
+     membershipYearCycle(boundary, now).cycleStart.getUTCFullYear()` instead of
+     `cycle.settledSince`:
+     `src/app/api/membership-ops/households/route.ts` (both call sites; leave
+     `coveredThrough`/`validUntil` and `settledForComingYear` as-is — they consume
+     the probe result), `src/lib/orgMembership.ts` (`membershipValidThrough`),
      `src/lib/membership/renewal.ts` (`runRenewalSweep` skip-test). Confirm all
      three move together — the design's invariant is that they stay in lock-step.
-   - Tests: `src/lib/membership/__tests__/lifecycle.test.ts` (the two fragment
-     `toEqual`s), `src/lib/membership/__tests__/renewal.test.ts` (the sweep
-     assertion), `src/app/__tests__/householdsListGrantableAPI.integration.test.ts`,
-     and check `src/__tests__/lifecycleStatusLiteralAllowlist.test.ts`.
+   - Tests: `src/lib/membership/__tests__/lifecycle.test.ts` (the `settledThisCycleWhere`
+     / `handledThisCycleWhere` `toEqual`s — now the `OR` + `stageEnteredAt` shape —
+     rewrite to `OR` + `appliesToYear`; `membershipYearCycle`/`coveredThrough`
+     assertions are untouched), `src/lib/membership/__tests__/renewal.test.ts` (the
+     sweep assertion), `src/app/__tests__/householdsListGrantableAPI.integration.test.ts`
+     (including #1812's bare-grant and paid-awaiting-BG cases), and check
+     `src/__tests__/lifecycleStatusLiteralAllowlist.test.ts`.
 
 7. **Move the reconcilers to the variant set** (#625 / #1293 / #1349): every
    reader of `orgMembershipVariantId` as a scalar switches to "any membership
@@ -123,21 +153,26 @@ shares only the function name. It dedups the adult-child yearly-agreement trigge
 on `stageEnteredAt ≥ floor`; a signature satisfying a cycle is not a settlement
 buying a year, so it keeps its floor and is not touched.
 
-`duesSettledAwaitingBg` in `src/lib/membership/lifecycle.ts` is a status +
-`paidAt` set, not a cycle probe — it answers "paid, awaiting BG clearance" for the
-program-access horizon and does not read the cycle window. It does not move.
+The paid-awaiting-BG arm inside `settledThisCycleWhere` (#1812's
+`{status:{in:["PENDING_BG_CLEARANCE"]}, paidAt:{not:null}}`, the shape
+`duesSettledAwaitingBg` also expresses) **stays**. #1812 moved it inside the cycle
+probe as settled money; this design keeps it and only swaps the date clause beside
+it for the year clause. Do not remove it or treat it as a separate horizon — that
+would reverse #1812.
 
 `stageEnteredAt` stays on the model. It is the lifecycle machine's stage-timing
 field, read by classify/validate and the transition diagram; this design only
 stops *the two cycle probes* from keying coverage off it. Do not drop it.
 
-`landsNextYear` / `nextBoundary` / `memberYearStarts` in
-`src/lib/programYear.ts` are the shared boundary helpers this design reuses. Add
-two here, authored once and shared with the program-year work: a
-`membershipYearOf(date, boundary): number` that returns the opening-year key, and
-a `formatMembershipYear(key): string` that renders it as the `2026-27` span for
-every human-facing surface (grant prompt, valid-until, program pricing, and the
-program-year label). Storage is the integer key; the span is never stored.
+The display/parse helpers already exist — `membershipYearCycle` (produces the
+`2026-2027` label, `settledSince`, `cycleStart`, `cycleEnd`) and
+`membershipYearCycleForLabel` (parses `2026-2027` back; its test rejects short
+forms) in `src/lib/membership/renewal.ts`. Reuse them; do **not** add a
+`formatMembershipYear`/`membershipYearOf` pair. The opening-year key is
+`membershipYearCycle(...).cycleStart.getUTCFullYear()`; the human label is
+`.label`. The prisma-free `nextBoundary` / `landsNextYear` / `memberYearStarts` in
+`src/lib/programYear.ts` remain the client-safe boundary helpers. Storage is the
+integer key; the `2026-2027` span is never stored.
 
 ## Contract stage, later
 
@@ -161,7 +196,14 @@ program's `appliesToYear`" rather than a date overlap.
 
 ## Destination: `docs/rules/membership.md`
 
-**Replace** the Renewal Procedure bullet that begins "Settling inside the renewal
+#1812 adds a Renewal bullet — "Coverage is what was bought, not what the calendar
+says…" — that states the coverage *policy* (settled ⇒ covered to the closing
+boundary; unsettled ⇒ lapsed at the opening one; a membership with no dues recorded
+has bought nothing). **That bullet stays.** This design does not change it; it
+changes only the *mechanism* by which "settled for the year in effect" is
+determined — from a `stageEnteredAt` window to a recorded `appliesToYear`.
+
+**Replace** the older Renewal bullet that begins "Settling inside the renewal
 window buys the coming membership year…" with:
 
 ```markdown
@@ -173,6 +215,9 @@ window buys the coming membership year…" with:
   on the normal schedule. The year is not inferred from when a stage completed.
   [Decision]
 ```
+
+This sits directly under #1812's "Coverage is what was bought" bullet as the
+mechanism beneath that policy — the two are consistent, not competing.
 
 **Insert** under Dues (near the grant/comp rules):
 
@@ -186,10 +231,11 @@ window buys the coming membership year…" with:
 Nothing about the column, the variant mapping, the webhook stamp, the backfill,
 or the reader reshape goes into the rules file — that is all mechanism.
 
-If the review decides `appliesToYear` and the program year are one shared concept
-(the design recommends this), note nothing extra in `membership.md`: the shared
-representation is a code fact, and `docs/rules/programs.md` already carries the
-program-year rule.
+The shared `appliesToYear` representation with the program year is a code fact, so
+nothing extra goes in `membership.md` for it. Note that `docs/rules/programs.md`
+does **not** yet carry a program-year rule on `main` — that rule arrives with the
+`PROGRAM_MEMBERSHIP_YEAR` proposal's own merge, not this one; do not assume it is
+already there.
 
 ## Last step
 

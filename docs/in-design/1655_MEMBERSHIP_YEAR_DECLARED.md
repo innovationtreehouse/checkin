@@ -93,40 +93,47 @@ than merely re-pointing it.
 
 A membership year spans two calendar years — with a 1 September boundary it runs
 from 1 September of one year to 31 August of the next — so its **name is the
-spanning form, `2026-27`**: the year the boundary opens in, and the year it
-closes in. That is what a human sees anywhere a membership year is shown, and it
-is unambiguous in a way a bare `2026` is not.
+spanning form, `2026-2027`** (both years in full): the year the boundary opens
+in, and the year it closes in. That is what a human sees anywhere a membership
+year is shown, and it is unambiguous in a way a bare `2026` is not. This is the
+exact label the shipped code already produces — `membershipYearCycle(...).label`
+in `checkin-app/src/lib/membership/renewal.ts` returns `` `${endYear-1}-${endYear}` ``
+— and `membershipYearCycleForLabel` parses it back (its test rejects short forms),
+so the design adopts the four-digit form rather than a `2026-27` variant the
+parser would reject.
 
 **Stored as a single integer — the opening-boundary year (`2026`).** The closing
 half is always the opening half plus one, so storing both would be storing a
-derivable fact twice; the `2026-27` label is *formatted* from the one integer by
-a shared helper, not stored. The integer is not a stored date, for the same
-reason program design gives: a stored date would be a second copy of the board's
-boundary setting, wrong from the moment the setting moved and silently so. The
-integer re-resolves against the current boundary every time it is read.
+derivable fact twice; the `2026-2027` label is *formatted* from the one integer
+by the existing `membershipYearCycle` / `membershipYearCycleForLabel` pair, not
+stored. The integer is not a stored date, for the same reason program design
+gives: a stored date would be a second copy of the board's boundary setting,
+wrong from the moment the setting moved and silently so. The integer re-resolves
+against the current boundary every time it is read.
 
 This is the identical storage scheme already chosen for programs in
 `docs/in-design/PROGRAM_MEMBERSHIP_YEAR.md` — see
 [Reconciliation with program fiscal year](#reconciliation-with-program-fiscal-year-1484).
-The one addition here is a shared **display helper** that renders that integer as
-the `2026-27` span, so a member reads the same label for a program's year and for
+No new formatter is introduced; both subjects render through the shipped label
+helper, so a member reads the same `2026-2027` label for a program's year and for
 the year their own dues cover.
 
-**Precisely which year "the coming year" is.** At any instant *now*, let
-`nextBoundary` be the next occurrence (≥ *now*) of the configured boundary's
-month and day — the existing `nextBoundary(boundary, now)` in
-`checkin-app/src/lib/programYear.ts`. Then:
+**Precisely which year a settlement's `appliesToYear` is compared against.**
+Coverage follows the **live** membership year, which the shipped
+`membershipYearCycle(boundary, now)` already computes as
+`{ label, settledSince, cycleStart, cycleEnd }`: in renewal season the live cycle
+is the coming one (the label flips on the day the window opens), and off season it
+is the one that opened at the last boundary. The integer key of the live cycle is
+`cycleStart.getUTCFullYear()`. A settlement covers the live cycle when its
+`appliesToYear` equals that key — this is the single comparison every reader makes
+(below), replacing the `stageEnteredAt ≥ settledSince` date test.
 
-- The **current** membership year — the one the organisation is living in — has
-  the integer key `nextBoundary.getUTCFullYear() - 1` (displayed `2025-26`).
-- The **coming** membership year — the one a renewal or an in-window join buys —
-  has the integer key `nextBoundary.getUTCFullYear()` (displayed `2026-27`).
-
-At the boundary instant itself, `nextBoundary` steps to the following year (the
-existing helper treats a boundary exactly at *now* as already passed and rolls
-forward), so on 1 September 2027 the current-year key becomes 2027 and the
-coming-year key 2028 — the horizon advances the moment the boundary is crossed,
-with no special case.
+There is no separate "current vs coming" integer to track: the live cycle already
+rolls forward on its own. Note the boundary-instant behaviour of the underlying
+helper — `nextBoundary` in `programYear.ts` uses a strict `<`, so at the exact
+boundary instant it returns *that* boundary, not the next; `membershipYearCycle`
+is built on it and inherits that edge. It is worth an explicit test but needs no
+special-casing in this design.
 
 ## What is stored, and where
 
@@ -137,18 +144,18 @@ It goes on the process, not on `OrgMembership`, because the process is the recor
 of a single settlement — one purchase, one grant, one renewal — and "which year
 did this buy" is a fact about that settlement, not about the household's
 membership as a whole. A household accumulates settlements over years; its
-coverage horizon is read off the settlement that bought the furthest year, which
-is exactly what the current query does when it looks for a process settled for
-the coming year. Storing the year on the membership would force a choice between
-overwriting last year's answer and inventing a per-year sub-record the process
-table already is.
+coverage horizon is read off the settlement whose `appliesToYear` matches the
+live cycle, which is exactly what the current query does when it looks for a
+process settled for this cycle. Storing the year on the membership would force a
+choice between overwriting last year's answer and inventing a per-year sub-record
+the process table already is.
 
 **Nullable during rollout, and never made NOT NULL by this design.** Legacy rows
 predate the column and cannot all be given a value they never recorded — the
 backfill can compute a year only where today's logic can (see the migration
 file). A NOT NULL constraint would need a value for rows that have none. The
 column stays nullable; the readers treat a null year as "not settled for the
-coming year", which is the safe reading and preserves today's behaviour for any
+live cycle", which is the safe reading and preserves today's behaviour for any
 row the backfill cannot resolve. Tightening to NOT NULL is a later contract-stage
 step gated on the backfill reaching completeness, not part of this change.
 
@@ -223,24 +230,28 @@ Today there are two buttons on the households ops page, both posting to
   writes a real settlement record (via `grantRenewalPayment`) with a reason. That
   record is the thing that, under this design, carries `appliesToYear`.
 
-**Why there are two today, and why one replaces them.** Coverage is read in two
-layers: an ACTIVE membership is covered to the next boundary *by its status
-alone*, and reaches the boundary *after* that only when a settlement record says
-so. The first button writes no record, so it can only ever mean "covered to the
-next boundary" — the **current year**. It physically cannot grant the coming year,
-because granting the coming year *is* writing that record. The season-only second
-button exists solely to write it. Give the grant a real record every time — which
-the year stamp requires anyway — and the split disappears: one button covers both,
-prompting for the year only where the year is genuinely ambiguous.
+**Why there are two today, and why one replaces them.** After #1812 coverage is
+what was *bought*: `coveredThrough(cycle, settled)` reaches the boundary that
+closes the live cycle only when a dues-paid process settled it, and otherwise
+stops at the boundary that *opened* it — an unsettled ACTIVE membership reads as
+lapsed the day after the boundary. So the flag-only "Grant Membership" button,
+which writes status and no process, now grants **nothing durable**: the household
+is ACTIVE but, carrying no settled process, lapses at the very next boundary.
+#1812's own test pins this ("an ACTIVE membership with no dues-paid process is NOT
+settled, however new — bare manual grant / import"). The season-only second button
+exists because writing a real settlement record is the *only* way to grant
+coverage that lasts, and today that record only carries its year implicitly
+(through `stageEnteredAt`).
 
-This is a simplification the year model enables, not a warning against it. The one
-firm consequence is that the old flag-only button **cannot be kept as it is** once
-coverage is read from records: a flag with no year can only say "current year", so
-it is replaced by the record-writing button rather than left beside it. Doing the
-replacement in this change is cleanest; if it is deferred, the `active: true`
-branch must still route through the settlement path or be disabled — never left as
-a bare status flip, which would grant memberships with no year the new readers can
-place.
+Give every grant a real record stamped with `appliesToYear` — which the year model
+requires anyway — and the split disappears: one button covers both, prompting for
+the year only where the year is genuinely ambiguous (the overlap). This is a
+simplification the year model enables, and #1812 strengthens the case: the
+flag-only path is no longer a weaker grant, it is a non-grant. The one firm
+consequence is that the `active: true` status flip **cannot be kept as it is** —
+it must route through the settlement path or be disabled, never left as a bare
+status flip that produces a membership lapsing at the next boundary with no record
+the readers can place.
 
 **The overlap prompt races to the shorter grant.** Inside the overlap two actors
 can act on one household at once — one granting (or the family buying) the current
@@ -285,8 +296,22 @@ directly, where a JSON blob would have to be loaded and parsed at every match
 site. It also matches how programs already carry per-program variant ids, so it
 reads like the rest of the catalogue.
 
-- **Checkout** builds the link from the row for the year being sold. In the
-  overlap window both years are on sale; outside it, the current year.
+This is not the "model membership years as rows" that `PROGRAM_MEMBERSHIP_YEAR.md`
+rejects, and it does not reintroduce a second source of truth for what a year *is*.
+The boundary still defines the year completely; a `MembershipYearVariant` row only
+maps an existing year to the Shopify variant that sells it. Its key is the same
+opening-year integer the boundary already defines — the row records a variant, not
+a year.
+
+- **Checkout** builds the link from the row for the year being sold. Today
+  `ensurePaymentLink(processId)` builds **one** link per process, so in the
+  overlap window — when both the current and coming year are plausible for a new
+  INITIAL — *which* year's variant that one link points at is a real question, not
+  a given. For a RENEWAL it is unambiguous (a renewal in season buys the coming
+  year). For an INITIAL in the overlap it is the #1655 ambiguity relocated to
+  link-build time, and it is an **owner decision** (see
+  [Open questions](#open-questions)); the year the link sells must equal the
+  `appliesToYear` the webhook will later stamp, whatever the answer.
 - **Rolling a new year** is inserting that year's row before its renewal window
   opens — an ops step, parallel to setting up any year's catalogue. This is the
   operational task that replaces "the evergreen variant just keeps working".
@@ -346,39 +371,58 @@ drift issues are cross-referenced here rather than treated as separate work.
 
 ## The deletion this enables
 
-With the year recorded, the timestamp inference collapses. In
-`checkin-app/src/lib/membership/lifecycle.ts`:
+With the year recorded, the **date** half of the cycle probe collapses to a year
+match. This is written against the post-#1812 shape, which keys on the live
+cycle's `settledSince` and keeps a paid-awaiting-BG arm. In
+`checkin-app/src/lib/membership/lifecycle.ts`, the change replaces only the
+`stageEnteredAt` clause — the `OR` arm stays:
 
 ```
-settledThisCycleWhere(windowStart)   →   { status: "ACTIVE", appliesToYear: comingYear }
-handledThisCycleWhere(windowStart)   →   { status: { in: ["ACTIVE","ARCHIVED"] }, appliesToYear: comingYear }
+// #1812 (current):
+settledThisCycleWhere(settledSince) = {
+  OR: [ { status: "ACTIVE" },
+        { status: { in: ["PENDING_BG_CLEARANCE"] }, paidAt: { not: null } } ],
+  stageEnteredAt: { gte: settledSince },
+}
+
+// #1655 (this design):
+settledThisCycleWhere(liveYear) = {
+  OR: [ { status: "ACTIVE" },
+        { status: { in: ["PENDING_BG_CLEARANCE"] }, paidAt: { not: null } } ],
+  appliesToYear: liveYear,
+}
 ```
 
-Both lose the `windowStart` parameter and the `stageEnteredAt` clause entirely.
-They take the coming-year integer, computed once per request from the boundary.
-`paidAt` never enters — the interim `paidAt`-fallback band-aid is not built (see
-[Alternatives](#alternatives-considered)).
+`liveYear` is `membershipYearCycle(boundary, now).cycleStart.getUTCFullYear()`,
+computed once per request. `handledThisCycleWhere` moves the same way, keeping its
+`ARCHIVED` addition. What is deleted is the `stageEnteredAt: { gte: settledSince }`
+clause and the `settledSince`/`MAX_DATE` plumbing that fed it — **not** the `OR`
+arm. The paid-awaiting-BG arm (`{ status: PENDING_BG_CLEARANCE, paidAt: not null }`)
+is #1812's decision that dues-paid-awaiting-clearance is settled money; this design
+keeps it. `paidAt` therefore still appears — but only inside that inherited arm, as
+the marker of a paid process, never as the year signal. The interim
+`paidAt`-fallback band-aid (inferring the *year* from `paidAt`) is still not built
+(see [Alternatives](#alternatives-considered)).
 
-A behaviour change falls out of this and is intended: coverage stops being gated
-on the season. Today, out of season the window start is `MAX_DATE`, so
-`settledThisCycleWhere` matches nothing and a family that pre-bought next year
-still reads as un-settled until the window opens. Keyed on `appliesToYear`, a
-family that bought the coming year reads as settled for it *whenever* that
-purchase exists — which is precisely the off-season leak the issue calls dormant,
-now closed from the correct direction.
+The off-season behaviour is now #1812's, not this design's: coverage already
+follows the live cycle in and out of season, and an unsettled ACTIVE household
+already reads as lapsed past the boundary. Keying the probe on `appliesToYear`
+rather than `stageEnteredAt ≥ settledSince` changes *which* processes count as
+settled for the live cycle — a summer INITIAL that bought the current year no
+longer counts toward next year — without reintroducing a season gate.
 
 Every consumer and test that moves:
 
 | Site | Change |
 |---|---|
-| `src/lib/membership/lifecycle.ts` — `settledThisCycleWhere`, `handledThisCycleWhere` | Reshaped to the `appliesToYear` form above; signatures take a year, not a `windowStart`. |
-| `src/app/api/membership-ops/households/route.ts` (two call sites: the detail `findFirst` and the list `include`) | Pass the coming-year integer; the surrounding window/`MAX_DATE` plumbing for these probes goes. |
-| `src/lib/orgMembership.ts` — `membershipValidThrough` | Same; the `settledThisCycleWhere` call keys on the year. `duesSettledAwaitingBg` (the paid-awaiting-BG horizon) is untouched — it is a status/`paidAt` set, not a cycle probe. |
-| `src/lib/membership/renewal.ts` — `runRenewalSweep` skip-test | The `handledThisCycleWhere(windowStart)` arm of the sweep's process probe moves to the year key. Confirmed: this is the same fragment, so the skip-test moves with the money horizons — the three readers stay in lock-step, which is the invariant the current docblock asserts. |
-| `src/lib/membership/personAgreementTriggers.ts` — the local `handledThisCycleWhere(personId, floor)` | **Left alone — out of scope.** It shares only the function name; it dedups the adult-child yearly-agreement trigger, keyed on `stageEnteredAt ≥ floor` for `PERSON_AGREEMENT`. A signature satisfying a cycle is not a settlement buying a year, so it keeps its `stageEnteredAt` floor and this design does not touch it. |
-| `src/lib/membership/__tests__/lifecycle.test.ts` | The two `toEqual` fragment assertions for `settledThisCycleWhere` / `handledThisCycleWhere` rewrite to the year shape. |
-| `src/lib/membership/__tests__/renewal.test.ts` | The `handledThisCycleWhere(windowStart)` assertion in the sweep test rewrites. |
-| `src/app/__tests__/householdsListGrantableAPI.integration.test.ts` | The "settled this cycle" / "handled this cycle" probe expectations move to declared-year fixtures. |
+| `src/lib/membership/lifecycle.ts` — `settledThisCycleWhere`, `handledThisCycleWhere` | Replace the `stageEnteredAt` clause with `appliesToYear: liveYear`; keep the `OR` arm (and `handledThisCycleWhere`'s `ARCHIVED`). Signatures take a year, not a `settledSince`. |
+| `src/app/api/membership-ops/households/route.ts` (detail `findFirst` + list `include`) | Pass `liveYear` from `membershipYearCycle(...)` instead of `cycle.settledSince`; the `settledSince`/`MAX_DATE` plumbing for these probes goes. `coveredThrough`/`validUntil` and `settledForComingYear` computation are unchanged — they consume the probe result. |
+| `src/lib/orgMembership.ts` — `membershipValidThrough` | Same swap. The `duesSettledAwaitingBg`-shaped arm now lives *inside* `settledThisCycleWhere` (per #1812), so this design keeps it there rather than treating it as separate. |
+| `src/lib/membership/renewal.ts` — `runRenewalSweep` skip-test | The `handledThisCycleWhere(...)` arm of the sweep's probe moves to the year key. Same fragment, so the skip-test moves with the money horizons — the readers stay in lock-step, the invariant the docblock asserts. |
+| `src/lib/membership/personAgreementTriggers.ts` — the local `handledThisCycleWhere(personId, floor)` | **Left alone — out of scope.** Shares only the function name; it dedups the adult-child yearly-agreement trigger, keyed on `stageEnteredAt ≥ floor` for `PERSON_AGREEMENT`. A signature satisfying a cycle is not a settlement buying a year, so it keeps its floor. |
+| `src/lib/membership/__tests__/lifecycle.test.ts` | The `toEqual` fragment assertions for `settledThisCycleWhere` / `handledThisCycleWhere` (now the `OR` + `stageEnteredAt` shape) rewrite to the `OR` + `appliesToYear` shape. |
+| `src/lib/membership/__tests__/renewal.test.ts` | The `handledThisCycleWhere(...)` assertion in the sweep test rewrites; `membershipYearCycle`/`coveredThrough` assertions are unaffected. |
+| `src/app/__tests__/householdsListGrantableAPI.integration.test.ts` | The settled/handled probe expectations move to declared-year fixtures (including #1812's bare-grant and paid-awaiting-BG cases). |
 | `src/__tests__/lifecycleStatusLiteralAllowlist.test.ts` | References `handledThisCycleWhere`; check whether the reshape touches the allowlisted literals. |
 
 ## Backfill of live production data
@@ -388,11 +432,21 @@ a one-time backfill, then the readers switch — the standard expand path from
 `checkin-app/docs/DEPLOY_MIGRATION_ORDER_OF_OPERATIONS.md`, kept safe across the
 rolling-deploy drain window because old code ignores the new column and the new
 readers only switch on once the column is populated. The exact sequence is in the
-migration file. The backfill computes each existing relevant process's year
-**once**, from today's logic (the year the process's `stageEnteredAt` fell into,
-matching what `settledThisCycleWhere` would answer), and stores it — freezing
-today's answer for rows already decided, so no live horizon shifts under a family
-at cutover except the summer-leak case this design exists to correct.
+migration file.
+
+**The backfill freezes today's answer; it does not retroactively fix the leak.**
+It computes each existing process's year **once** from the current logic — the
+year the process's `stageEnteredAt` fell into, matching exactly what
+`settledThisCycleWhere` answers today — and stores it. That means no live horizon
+shifts under any family at cutover: every already-decided row reads afterwards as
+it read before, including the handful of leaked summer INITIALs. The leak is closed
+**going forward**, for new settlements, by the variant→year stamp — not by
+rewriting history. This is deliberate: correcting a historical INITIAL would mean
+deriving its year from `paidAt` instead of `stageEnteredAt` (they disagree only in
+the leak window), and that is a different, riskier operation than a freeze — it
+moves live coverage horizons for real households at cutover. If the owner wants the
+existing leaked memberships corrected too, that is a separate, explicit pass over
+INITIALs keyed on `paidAt`, decided on its own; the default is freeze-and-fix-forward.
 
 ## Reconciliation with program fiscal year (#1484)
 
@@ -459,8 +513,19 @@ The product owner has settled these; recorded here so they are not re-opened.
 
 ## Open questions
 
-None of design substance remain. What is left are build-time mechanics with a
-decided direction, not open questions:
+One genuine owner decision remains:
+
+- **Which year's variant an INITIAL checkout link sells in the overlap.**
+  `ensurePaymentLink(processId)` builds one link. For a renewal the year is fixed;
+  for a brand-new INITIAL created inside the renewal-window overlap, the link must
+  point at either the current or the coming year's variant, and that choice *is*
+  the year the family will be stamped with. Defaulting it silently would move the
+  #1655 ambiguity to link-build time rather than removing it. Owner to decide the
+  rule (e.g. new INITIALs in the overlap sell the coming year, matching a renewal;
+  or sell the current year unless the family opts into next). Whatever the rule,
+  the sold variant's year must equal the `appliesToYear` the webhook stamps.
+
+The rest are build-time mechanics with a decided direction, not open questions:
 
 - The unified grant should always require a certification reason (the coming-year
   path already does).
@@ -469,6 +534,9 @@ decided direction, not open questions:
   renewal. Whether the merge lands in this change or as a fast follow is a
   sequencing call; either way the `active: true` status-only flip cannot remain
   once the year readers land.
+- Backfill is freeze-and-fix-forward by default; correcting historical leaked
+  INITIALs from `paidAt` is an optional separate pass the owner can call for (see
+  [Backfill](#backfill-of-live-production-data)).
 
 ## Alternatives considered
 
