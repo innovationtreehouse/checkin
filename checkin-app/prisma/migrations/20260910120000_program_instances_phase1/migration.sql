@@ -64,6 +64,10 @@ ALTER TABLE "Event" ADD CONSTRAINT "Event_instanceId_fkey" FOREIGN KEY ("instanc
 -- instance id it will point at. Offering columns are copied; the run label
 -- seeds from the parent name, and the narrowing overrides (minAge/maxAge/
 -- orgMemberOnly) stay NULL = "inherit the definition".
+-- The re-run guard keys on programId, not id: a program that lacks an instance
+-- is (re-)inserted with id = program.id, so if some non-aliased row already
+-- squats that id the forced INSERT fails LOUD on the PK instead of the id-guard
+-- silently skipping the program and leaving it instance-less.
 INSERT INTO "ProgramInstance" (
     "id", "programId", "name", "leadMentorId", "startAt", "endAt", "phase",
     "enrollmentStatus", "maxParticipants", "shopifyProductId", "shopifyVariantId"
@@ -72,7 +76,7 @@ SELECT
     p."id", p."id", p."name", p."leadMentorId", p."startAt", p."endAt", p."phase",
     p."enrollmentStatus", p."maxParticipants", p."shopifyProductId", p."shopifyVariantId"
 FROM "Program" p
-WHERE NOT EXISTS (SELECT 1 FROM "ProgramInstance" i WHERE i."id" = p."id");
+WHERE NOT EXISTS (SELECT 1 FROM "ProgramInstance" i WHERE i."programId" = p."id");
 
 -- Point existing program-bound events at their program's (id-aliased) instance.
 -- Program-less events (programId NULL) stay unlinked, as before.
