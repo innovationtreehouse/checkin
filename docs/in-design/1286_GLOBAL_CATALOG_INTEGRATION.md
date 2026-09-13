@@ -635,18 +635,21 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
 
 ## 12. Open items / assumptions
 
-- **Production data: none, hand-entered for the first landing.** There is no
-  existing catalog data to migrate. The initial prod catalog is populated **by
-  hand through the UI**, row by row, from a Google Sheet — no bulk-import
-  endpoint or import script is built (the source has none; items are created
-  singly). **This supersedes, for the first landing only, the receipt-replay seed
-  strategy** in `docs/backlog/TOPDOWN.md` GC-INVENTORY (Q22/Q30: replay
-  1,000–2,000 stored receipts to build the catalog). The two are sequential, not
-  contradictory: the receipt-replay corpus needs receipt-app, which is **not
-  present at first landing** (§8) — so the sheet-driven hand-load seeds the
-  catalog now, and the TOPDOWN replay strategy applies **later, when receipt-app
-  co-resides**. (Owner: confirm this sequencing is the intent, since "no bulk
-  load" was stated absolutely — see the review reply on #1814.)
+- **Production data: none to migrate. Two orthogonal population paths — not
+  alternatives.** There is no existing catalog data to import.
+  - **Direct** (this design): catalog entries are entered **by hand through the
+    UI**, from a Google Sheet. There is **no *direct* bulk-import endpoint or
+    script** — the source has none (items are created singly) and none is wanted.
+  - **Indirect** (receipt-driven, later): `docs/backlog/TOPDOWN.md` GC-INVENTORY
+    (Q22/Q30) describes replaying 1,000–2,000 stored **receipts** to load
+    inventory, which **triggers** catalog growth as a side effect (provisional
+    GTIN allocation, item-reference proposals — the S4 crossings in §8). That is
+    the **receipt pipeline's** job, not a catalog import, and it arrives **when
+    receipt-app migrates** into the process. This design neither builds nor
+    supersedes it; §8 is where the catalog receives those triggered actions.
+
+  So "no bulk load" (direct) and receipt-replay (indirect) do not conflict — they
+  are different mechanisms populating the catalog from different sources.
 - **Dev/test seed — pull from `scripts/setup-test-data.sh`.** Inventory's
   `scripts/setup-test-data.sh` carries the baseline catalog rows (category
   `Electronics`/`N`, subcategory `Control System`/`10`, items `Roborio v2` +
