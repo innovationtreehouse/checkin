@@ -23,6 +23,9 @@ export type ApprovalExpiry = { trustedAdultId: number; reviewBy: Date | null };
  * The warning email and todo-counts both read this so they cannot drift. Pass in
  * ALL of an adult's APPROVED reviews (unfiltered by the window), or the latest
  * cannot be identified; the caller may pre-scope to adults with a candidate.
+ *
+ * On a reviewBy tie the first row in `approvals` wins (kept), so pass them id-asc
+ * for a deterministic winner — matters only to which row the sweep stamps.
  */
 export function expiringApprovals<T extends ApprovalExpiry>(approvals: T[], now: Date, warnThreshold: Date): T[] {
     const currentByAdult = new Map<number, T>();

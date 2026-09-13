@@ -209,7 +209,8 @@ export const GET = withAuth({}, async (_req, auth) => {
             // stale in-window row — isn't nagged to renew someone they already renewed.
             prisma.trustedAdultReview.findMany({
                 where: { householdId, status: { in: APPROVED_STATUSES }, reviewBy: { not: null } },
-                select: { trustedAdultId: true, reviewBy: true },
+                select: { trustedAdultId: true, reviewBy: true, id: true },
+                orderBy: { id: "asc" },
             }),
             prisma.programParticipant.findMany({
                 where: { personId: { in: memberIds }, status: "PENDING", person: LIVE_PERSON },

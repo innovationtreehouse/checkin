@@ -553,6 +553,7 @@ export async function runExpirySweep(now: Date) {
         ? await prisma.trustedAdultReview.findMany({
               where: { trustedAdultId: { in: candidateAdultIds }, status: "APPROVED", reviewBy: { not: null } },
               select: { id: true, trustedAdultId: true, householdId: true, reviewBy: true, expiryWarningSentAt: true },
+              orderBy: { id: "asc" },
           })
         : [];
     const expiring = expiringApprovals(approvals, now, warnThreshold).filter((r) => r.expiryWarningSentAt === null);
