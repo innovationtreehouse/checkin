@@ -211,6 +211,7 @@ export const classifications = {
         phase: 'public',
         enrollmentStatus: 'public',
         orgMemberOnly: 'public',
+        publiclyVisible: 'public',
         announceOnOpen: 'public',
         announcedAt: 'internal',
         minAge: 'public',

@@ -941,7 +941,12 @@ model Program {
   enrollmentStatus               EnrollmentStatus @default(CLOSED)
   /// @sensitivity:public
   orgMemberOnly                  Boolean          @default(false)
-  /// Opt-in (#1153): when true, reaching UPCOMING+OPEN emails covered members once.
+  /// When an orgMemberOnly program is publiclyVisible, it appears in the public
+  /// catalogue and its detail page to non-members; enrollment still requires a
+  /// settled membership. Default false keeps a members-only program hidden.
+  /// @sensitivity:public
+  publiclyVisible                Boolean          @default(false)
+  /// Opt-in: when true, reaching UPCOMING+OPEN emails covered members once.
   /// Default false — no program announces unless a leader enables it.
   /// @sensitivity:public
   announceOnOpen                 Boolean          @default(false)
