@@ -1,0 +1,950 @@
+# Expense + QuickBooks: porting `expense-app` into checkin
+
+## Problem
+
+The organization turns hundreds of corporate-card receipts a year into booked
+QuickBooks entries: each receipt's money side is split into line items, each line
+is signed off by whoever owns that budget, capital purchases get a fixed-asset
+number, and the whole thing is posted to QuickBooks against the right account.
+Today that lives in a separate application, on separate infrastructure, behind
+its own login, that the organization is retiring — and it is the **money-side
+tail of the receipt→catalog→inventory pipeline**, the point where a received
+receipt finally becomes a general-ledger fact. Finance staff cannot run any of it
+where they already work (checkin), and — critically — **checkin has no
+QuickBooks integration at all** (no QB model, field, client, or credential
+anywhere in schema or `src`; confirmed in `docs/backlog/CUJS.md` A15). So this
+port also has to bring the first QuickBooks code into checkin.
+
+## Objective
+
+Expense capture, per-line owner approval, the finance flag/checkoff queues, the
+capital register, and QuickBooks posting are available inside the existing staff
+application as ordinary navigation, under the same sign-in and look and feel,
+deployed and operated as one system — with the expense logic kept cleanly
+separable (its own library, its own database), the pipeline couplings (receipt in,
+catalog lookups, inventory load out) designed as explicit swappable seams, and
+QuickBooks brought in as an **incremental phase ladder** grounded in the real
+`@inventory/quickbooks` client rather than a stub.
+
+## Executive summary
+
+- **Finance staff** reach expense as a new finance area in the existing nav;
+  checkoffs and holds route to a new `FINANCE` role and (for escalations) the
+  existing `BOARD` role, per-line approval routes to the line's **budget owner**,
+  and — unlike the catalog/inventory ports — **reads are narrow, not broad**:
+  expense data is financially sensitive, so there is no wide viewer gate (§6).
+- **Operators** get one application to run and deploy — no second service, no
+  second login — with expense on its own database on the shared server, and one
+  new operational step: a **one-time QuickBooks OAuth consent** to mint tokens
+  (§9).
+- **Developers** get expense as an isolated library (`@inventory/expense`): logic,
+  data, and screens in one package; checkin only wires it in. QuickBooks arrives
+  as the shared `@inventory/quickbooks` package — read client + OAuth already
+  built, the write path and checkin token storage net-new (§9).
+- **The organization** gets the pipeline's money terminus moved onto the seam the
+  catalog and inventory ports established, plus the **first QuickBooks connection**
+  — settled once, reused by donations and program-finance later (GC-QB).
+
+---
+
+**Issue:** [#1272](https://github.com/innovationtreehouse/checkin/issues/1272)
+— backlog epic **FE** (§6 of `docs/backlog/INDEX.md`), anchor item **FE1**.
+Journey **A13** in `docs/backlog/CUJS.md`. The epic's other issues —
+[#1273](https://github.com/innovationtreehouse/checkin/issues/1273) (FE2 budget
+owners / owner conflict),
+[#1274](https://github.com/innovationtreehouse/checkin/issues/1274) (FE3 QB
+posting + account/vendor mapping),
+[#1275](https://github.com/innovationtreehouse/checkin/issues/1275) (FE4 capital /
+depreciation),
+[#1276](https://github.com/innovationtreehouse/checkin/issues/1276) (FE5 QB drift /
+reconciliation), and the later
+[#1277](https://github.com/innovationtreehouse/checkin/issues/1277)–[#1279](https://github.com/innovationtreehouse/checkin/issues/1279)
+(FE6–FE8) — are referenced **without any closing keyword**: this is a design-doc
+PR, and a closing link here would auto-close them on merge with nothing built.
+
+**Status:** design. No board decision gates the mechanics below. This doc is the
+**third in a series** and **reuses the base architecture** established by the
+global-catalog design
+([#1286](https://github.com/innovationtreehouse/checkin/issues/1286),
+`docs/in-design/1286_GLOBAL_CATALOG_INTEGRATION.md`) and the local-inventory
+design
+([#1287](https://github.com/innovationtreehouse/checkin/issues/1287),
+`docs/in-design/1287_LOCAL_INVENTORY_INTEGRATION.md`) — **read those two first.**
+Everything about in-process packaging, the own-database topology, the security
+regime over a separate schema, the retire-source-auth decision, the injected
+`Org` registry, and the per-crossing coupling rule is carried over verbatim from
+them; this doc states the expense-specific surface, the finance role/read
+divergence, and the QuickBooks phase ladder that is unique to it.
+
+**Source:** `expense-app/` in the `innovationtreehouse/Inventory` repo (a separate
+repo — not vendored here). Not currently deployed in Infra.
+**QuickBooks client:** `packages/quickbooks/` (`@inventory/quickbooks`) in the same
+monorepo — a working read-only QBO client (OAuth2 in three `fetch` calls, no SDK),
+**not a stub** (§9).
+
+**Domain rules relied on:** `docs/backlog/TOPDOWN.md` **GC-FIN-CONTROL**
+(flags + checkoff + audit — the app surfaces flags for human checkoff, it does
+**not** enforce approval tiers), **GC-PROGRAM-FINANCE** and **GC-QB** (settle the
+QB connection/auth first); `docs/rules/principles.md` (least-privilege — here it
+*narrows* reads, §6); the security-boundary and migration-order rules cited inline
+in §5, §9, and the QB token handling in §9.
+
+---
+
+## 1. Goal and shape
+
+Bring expense into checkin as **more nav items in the existing checkin app — one
+Next.js process, one Infra deploy** — not a second service. Identical to the
+catalog (#1286 §1) and inventory (#1287 §1) decisions.
+
+**The whole app — domain *and* UI — lands as an isolated library package**
+(`@inventory/expense`): repositories, services, the xstate expense state machine,
+the QB processor, the capital register, Prisma schema/client, and every React
+component, page, and route handler. `checkin-app` holds **only structural wiring,
+no expense logic**: filesystem-routing re-export stubs, one `configureExpense()`
+boot call that injects checkin's auth + DB + org + the crossing adapters, a nav
+splice, and the security-registry entries (§5). The dependency arrow points one
+way — **the library never imports checkin; checkin injects into the library.**
+
+This is the **third app of the whole-Inventory migration** (catalog first,
+inventory second). Expense sits **downstream of receipt-app** (it consumes the
+receipt money side) and **couples sideways to the catalog** (item/account lookups)
+and **to local-inventory** (signoff triggers inventory load). Where expense
+touches Inventory apps that have not moved yet (receipt-app, the
+workflow-mapping orchestrator), we **keep the HTTP seam / bring temporary copies**
+exactly as #1286 §8 prescribes — temporary meaning **< 2 weeks, dev-only, never
+in a release** — with a clean port at each crossing (§8).
+
+The one thing this port adds that neither predecessor had: **QuickBooks**. It
+lands `@inventory/quickbooks` as the first QB code in checkin and grows the write
+path on an explicit phase ladder (§9).
+
+### Decisions locked (carried over from #1286/#1287, adapted)
+
+| Question | Decision |
+|---|---|
+| DB topology | **Own dedicated database** (`EXPENSE_DATABASE_URL`) on the **same Postgres server** — separate `schema.prisma` + own Prisma client + own migrations. Same `@inventory/monitoring-db` precedent #1286 followed. |
+| Security regime | **Adopt checkin's** registry + `@sensitivity` generator + stripper + scopeBindings over the separate schema (§5). QBO tokens are the first `secret`-tier data the Inventory suite carries. |
+| Auth | **Retire** `expense-app`'s `@inventory/auth` + `@inventory/web-auth` (+ `jose`, the login page, `/api/auth/{login,logout}`). checkin next-auth session is the only auth (§6). |
+| Roles | **New `FINANCE` role** (RB2 "Finance" umbrella — a role `docs/backlog/TOPDOWN.md` GC-ROLES explicitly *keeps*, not a net-new invention) for the checkoff/queue actor; **existing `BOARD`** for threshold/COI escalation; per-line approval routes to the line's **budget owner** (a `Person`, a data relationship not an RBAC role). **Reads narrow** — no broad viewer gate (§6). This is the port's main divergence from #1286/#1287. |
+| Scope | **Full port** of the A13 / FE1–FE5 surface (§ below), with temporary shims at the not-yet-migrated receipt-app / orchestrator boundaries (§8). FE6–FE8 noted, not designed (§9, §12). |
+| UI location | **All UI in the library** — components, pages, route handlers. checkin-app only re-exports and mounts (§3). |
+| UI style | **Keep the client pattern** — `"use client"` pages + `/api/*` routes; re-auth + re-theme only. Matches checkin's dominant pattern, same as #1286 §7 / #1287 §7. |
+| `orgId` / user identity | **Keep the columns; inject the values** — resolved by #1286 §6. Org identity comes from the **checkin-owned `Org` registry table** (seeded on the initial migration with a stable well-known id), injected as an accessor `getOrg(): OrgIdentity` — **not** an env scalar, **not** a `SettingsData` row, **not** a cross-DB read. The heavy user-id columns (`submitterId`, `ownerId`, `budgetOwnerUserId`, `decidedByUserId`, `capitalOwnerId`, `userId`) map to checkin **`Person.id`** via the injected principal. Both flow through the single `configureExpense()` injection (§6). |
+| QuickBooks | **Incremental phase ladder** QB-0…QB-3 (§9), grounded in `@inventory/quickbooks` (read client + OAuth already built; write path + checkin token storage + the `qb_pending` terminus net-new). Tokens stored `secret`-tier in the DB, never a gitignored file. |
+
+### The A13 / FE1–FE5 surface (scope)
+
+1. **Expense + line model; per-line owner approval** (FE1). Each line gets a
+   `LineItemOwnerApproval`; the budget owner approves/rejects their own lines.
+2. **Approval + flag / checkoff / audit** (FE1/FE2, GC-FIN-CONTROL). Flags —
+   tax-attached, threshold-crossed, missing-receipt, non-Everyday, **COI/conflict**
+   — are surfaced to the right human (finance / board) for a checkoff, all
+   audit-logged. The app does **not** enforce approval tiers; the **household-aware
+   COI conflict flag is the one with real logic** and is *buildable here* because
+   checkin has households (§6, the "port gets better" item). Actions:
+   approve / reject / assign-owner / finance-assign / raise-exception /
+   resolve-unknown, each with its queue.
+3. **Budget owners; owner↔PN associations; owner-conflict resolution** (FE2).
+   `PartOwnerMap` (owner per GTIN) + the owner-conflict resolution queue.
+4. **Capital review + depreciation-cycle designation** (FE4), including the
+   **capital-register seed intake** the QB script feeds (§8, §9 QB-1), and the
+   NET-NEW loop-closing step (assign ITFA number → log in QB → remind finance to
+   sticker the physical asset, Q66).
+5. **Expense holds + resubmit; MULTIPLE_MATCHES hold** (FE3). The account-mapping
+   exception screen: `NO_MATCH` / `MULTIPLE_MATCHES` / `NO_PART_NUMBER` holds,
+   resolve + resubmit.
+
+Each surface has its own **exception/queue screen** — those queues are the
+"missed oversight surfaces" A13 is about.
+
+---
+
+## 2. What the source is
+
+`expense-app` is a Next 16 / React 19 / Mantine 7 / Prisma 7 app — the **same
+stack checkin already runs**, and the same stack as the two prior ports. Cleanly
+layered:
+
+```
+src/
+  repositories/   expense, org, orgEvents, provisionalItemMap, provisionalResolution   (Prisma access)
+  services/       provisionalItemMapService                                            (domain logic)
+  workflows/      expense.machine + events/guards/invariants + expense-event-schema     (xstate lifecycle; QbLineItemSchema)
+  lib/            expense-qb-processor, expense-rules, financial-flow, capital-register,
+                  workflow-engine, expense-constants, catalog-schemas          (domain; portable)
+                  inventory-client, api-client, org-events-poller, org-events-container (crossings)
+                  auth, auth-shared, route-auth                                (RETIRE — see §6)
+  app/api/…       route handlers (thin: guard → validate → service → response)
+  app/…           page.tsx (client) per surface
+  components/      AppShellLayout, CapitalReviewPanel, LineItemOwnerApprovals, … (reskin/retire)
+prisma/schema.prisma  16 models (own migrations)
+```
+
+**Prisma models** (own schema, `@@map` to snake_case): `Expense`,
+`ExpenseLineItem`, `LineItemOwnerApproval`, `AccountMapping`, `ExpenseHold`,
+`ExpenseEvent` (the **QB outbox**), `ExpenseQbAccount`, `ExpenseAuditLog`,
+`PartOwnerMap`, `ProvisionalItemMap`, `ProvisionalResolution`,
+`ReceivedExpensePayload` (receipt intake), `ReceivedOrgEvent`, `CapitalAsset`
+(the **ITFA fixed-asset register**), `OrgSettings` (capital thresholds),
+`SettingsData` (poll config — dead on arrival, §8).
+
+The domain layer is framework-light and ports almost verbatim. The friction is
+**auth wiring, the QuickBooks terminus, and the three pipeline couplings** (§8/§9),
+not the domain. Two mechanisms worth flagging up front because the port must
+preserve them exactly:
+
+- **The QB "post" is an outbox emit, not a direct API call.** The state machine
+  runs `owner_approval → (capital_review → set_depreciation_cycle) → qb_pending`,
+  and at `qb_pending` `expense-qb-processor.ts` resolves each line to one QB
+  account, allocates tax/shipping/discount, and — in **one interactive
+  transaction** — writes a validated `QbExpenseEvent` row to the `ExpenseEvent`
+  table and advances `qb_pending → qb_complete`. The row is the durable outbox;
+  **something downstream posts it to QuickBooks.** In the source that downstream
+  writer does not exist yet — the machine terminates the moment the event is
+  committed. **The write path is exactly what §9 QB-2 builds** in
+  `@inventory/quickbooks`.
+- **`backfill` / `qb_skipped`.** An expense reconciled to an already-booked QB
+  transaction auto-approves owner signoff and lands terminal `qb_skipped` (QB post
+  skipped) while still building the capital register. This is the hook for GC-QB's
+  "reconcile with 3 years of existing QB, idempotent, sync-not-clobber" (§9 QB-1).
+
+### Workspace dependencies — reuse the prior ports' vendored packages, add QuickBooks
+
+The source depends on `@inventory/{auth, gtin, money, org-events-poller,
+receipt-types, service-client, web-auth, workflows}`. **The catalog port (#1286)
+already vendors `gtin`, `workflows`, `receipt-types`, `receipt-contract-fixtures`;
+the inventory port (#1287) already vendors `org-events-poller`; checkin already
+vendors `money`.** Expense **reuses** those. New to expense: `service-client` and
+— the headline — `@inventory/quickbooks`.
+
+| Source package | Ported? | Action |
+|---|---|---|
+| `@inventory/auth`, `@inventory/web-auth` | **No — dropped** | The source's auth system, retired for checkin next-auth (§6). Drop `jose` with them. |
+| `@inventory/gtin` | Reuse | `packages/gtin`, vendored by #1286. |
+| `@inventory/workflows` | Reuse | `packages/workflows`, vendored by #1286. Shared xstate helpers. |
+| `@inventory/money` | Reuse | Already in checkin `packages/money` (cents math). |
+| `@inventory/receipt-types`, `receipt-contract-fixtures` | Reuse (temporary) | Vendored by #1286 as temporary copies. Expense imports the same copy — it needs `CompletedReceiptSchema` (receipt intake, §8) and the S5 `parseOrgEvent` union (provisional events, §8). |
+| `@inventory/org-events-poller` | Reuse | `packages/org-events-poller`, vendored by #1287. But **drop the wall-clock timer** — the S5 consumer is push-driven exactly as #1287 §8a decided; expense is a **second consumer** of catalog events (provisional resolution). |
+| `@inventory/service-client` | **Yes — new `packages/service-client`** | The typed HTTP client the source uses for the catalog crossings (`/api/internal/*`, org-bearer). Standalone shared package (receipt/orchestrator use it too). It is the **`http` adapter** side of the catalog crossing; once catalog is co-resident the call goes in-process and this is used only for still-remote callees (§8). Check whether #1286/#1287 already vendored it before adding a second copy. |
+| `@inventory/quickbooks` | **Yes — new `packages/quickbooks`, NET-NEW to checkin** | The first QuickBooks code in checkin. Read client + OAuth2 (three `fetch` calls, no SDK) + types **already built**; write path + checkin token storage + the outbox-drain terminus are net-new (§9). Standalone shared package — donations (GC-DONOR) and program-finance (GC-PROGRAM-FINANCE) consume it later. |
+| `@inventory/pg-test-harness` | n/a | Already present in checkin. Reuse. |
+
+Only genuinely expense-specific helpers (`expense-qb-processor`, `expense-rules`,
+`capital-register`, `financial-flow`, `workflow-engine`, `catalog-schemas`,
+`inventory-client` wiring) live inside `expense/src/lib`.
+
+---
+
+## 3. Target layout — the meat lives in the library
+
+**Goal: a developer working on expense works entirely inside
+`packages/expense`.** Same cut #1286 §3 / #1287 §3 established.
+
+```
+checkin/
+  packages/
+    expense/                              ← the whole app, as a library
+      src/
+        repositories/  services/  workflows/  lib/       domain (ported verbatim)
+        prisma/schema.prisma  prisma/migrations/  generated/   separate schema+client
+        components/                        ALL expense UI (Mantine, reskinned)
+        pages/                             page components — client
+        routes/                            route-handler factories (GET/POST/…)
+        nav.ts                             section-tab links (NavLink[]) for the finance area (§7)
+        runtime.ts                         configureExpense() + getPrincipal()/db/org/crossing accessors
+        contract.ts                        ExpenseAuth / ExpensePrincipal / OrgIdentity + crossing ports (§8) + QB port (§9)
+      package.json
+    quickbooks/                           NEW — @inventory/quickbooks (first QB code in checkin, §9)
+    service-client/                       NEW — the http-adapter client for still-remote crossings
+    gtin/  workflows/  receipt-types/  org-events-poller/  money/   REUSED (vendored by #1286/#1287 / already present)
+  checkin-app/                            ← WIRING ONLY, no expense logic
+    src/instrumentation.ts                + one configureExpense({...}) call at boot (+ QB outbox drain, §9)
+    src/app/(finance)/**/{page,route}.tsx  re-export stubs
+    src/lib/nav/…                           the library's NavLink[] in the finance section tabs (§7)
+    src/security/{registry,scopeBindings}.ts   + expense entries incl. the QB-token secret entry (§5)
+    next.config.ts                        + transpilePackages (if tsx needs it — verify, §3)
+```
+
+### The cut — same as the prior ports
+
+Next's App Router discovers routes by **filesystem**, so the ~30 route handlers +
+~10 page files must physically sit under `checkin-app/src/app`. Each is a
+**one-line re-export** of a library module:
+
+```ts
+// checkin-app/src/app/(finance)/expenses/[id]/page.tsx
+export { default } from '@inventory/expense/pages/expense-detail'
+
+// checkin-app/src/app/(finance)/api/expenses/[id]/line-item-approvals/[approvalId]/approve/route.ts
+export { POST } from '@inventory/expense/routes/line-item-approval-approve'
+```
+
+**Auth + DB + org + crossings injected without the library importing checkin:**
+the library declares interfaces in `contract.ts` (`ExpensePrincipal`,
+`ExpenseAuth` with `getPrincipal()` / `requireFinance()` / `requireBoard()` /
+`isBudgetOwner()`, `OrgIdentity = { id, name }` behind `getOrg()`), plus the
+crossing **ports** (§8) and the **QB port** (§9). checkin-app calls
+`configureExpense({ auth, db, org, catalog, inventory, quickbooks, catalogEvents })`
+**once** in `instrumentation.ts` — the one justified boot singleton, mirroring
+`configureCatalog()` / `configureLocalInventory()`.
+
+**Honest residue** — same three mechanical things that structurally cannot leave
+checkin-app: (1) the FS-routing stub files; (2) their `pageRegistry` entries
+(checkin's drift guard — project memory); (3) the security registry/scopeBindings
+entries (checkin centralizes the boundary on purpose). Adding a *new* expense
+route touches all three; editing expense behavior touches none. **One extra boot
+concern** expense has: the QB outbox **drain** and the source's crash-recovery
+`recoverStrandedQbExpenses()` run once from `instrumentation.ts` (server runtime
+only, never during `next build`) — no wall-clock timer, exactly as #1287 §8a
+handled the org-events poller (§9).
+
+---
+
+## 4. Database — its own database on the shared server
+
+Own dedicated database (`EXPENSE_DATABASE_URL`) on the same Postgres server as
+checkin — separate `schema.prisma`, separate Prisma client, own migration
+history. Identical rationale and precedent to #1286 §4 (`@inventory/monitoring-db`).
+A dedicated DB namespaces the generic tables (`expenses`, `account_mapping`,
+`capital_assets`, …) so **no model/table renames** are needed.
+
+Implications (same as #1286 §4 / #1287 §4, plus):
+
+- **Four Prisma clients** now load in the checkin-app process (catalog +
+  local-inventory + expense + checkin), each its own connection string / pool.
+  Expense is the **fourth**; the incremental cost is one more bounded connection
+  pool. (monitoring-db is the own-DB *packaging* precedent, not the
+  second-client-in-Next precedent — that is catalog, #1286.)
+- **No cross-database SQL.** expense ↔ catalog ↔ local-inventory ↔ checkin
+  crossings are service-level (§8), never SQL joins. The household-COI check (§6)
+  reads checkin's `Person`/household graph via the injected principal/port, not a
+  cross-DB join.
+- **Migrations run independently** — add a `migrate deploy` step against
+  `EXPENSE_DATABASE_URL` to the deploy sequence (§9), ordered with checkin's,
+  catalog's, and inventory's.
+- **`db push` caveat** (project memory): the source relies on `@@unique`
+  constraints (`expense_events_org_expense_unique`,
+  `part_owner_map_org_gtin_unique`, `capital_assets_org_number_unique`, …) that
+  are the idempotency/dedup backstops. Use `migrate deploy`, not `db push`, for
+  any DB the uniqueness tests run against.
+
+**The QB token store lives here too** — a small `secret`-tier table (or one
+row) in the expense DB, not a gitignored file. See §9.
+
+---
+
+## 5. Adopting checkin's security regime over a separate schema
+
+Same mechanism as #1286 §5 / #1287 §5 (a `generator security` block emitting an
+`expense-classifications.ts`, merged in the security core; registry +
+scopeBindings entries; responses through checkin's stripper). Two things are
+**different from the prior ports**, and both matter:
+
+### Expense data is genuinely sensitive — this is not public reference data
+
+The catalog and inventory ports could widen reads because their data was
+non-personal `public`/`internal` reference data. **Expense is not.** Vendor names,
+amounts, `reimbursementFor` (names a person and why they were paid),
+`submitterId`, and the audit log's before/after values are financial and
+person-linked. So the tiering is heavier and the **read audience is narrow** (§6):
+
+- **`secret`** — **QBO OAuth tokens and the client secret** (access token, refresh
+  token, `realmId` optional). `secret` fields **never** leave to any client and
+  cannot appear in any registry view (a type error if you try). This is the first
+  `secret`-tier data the Inventory suite carries; getting it right is the point of
+  §9's token-storage decision.
+- **`internal`** — **money + vendor + attribution + free text + plumbing**:
+  amounts (`*Cents`, `unitPriceCents`, `taxCents`, thresholds), `vendorName`,
+  `receiptNumber` / `orderNumber`, `reimbursementFor`, `qbAccount` / account
+  mappings, `assetNumber` and the capital register, all actor ids/usernames
+  (`submitterId`, `ownerId`, `budgetOwnerUserId`, `decidedByUserId`,
+  `capitalOwnerId`, `userId`, `username`), free text (`notes`, `reason`,
+  `rejectionReason`, `failureReason`, audit `valueBefore`/`valueAfter`), and
+  cross-app plumbing (`payload`, `payloadJson`, `matchedRows`, `receiptId`,
+  `sourceQbTxnId`, `sourceEventId`).
+- **`public`** — essentially nothing operational leaves the boundary public here.
+  (Non-sensitive enums like a hold `status` string are `internal`, surfaced only
+  to the finance/board reader.)
+
+**`reimbursementFor` and `submitterId` are person-linked** — treat them at least
+`internal` and consider whether the reimbursee's identity warrants `pii`
+handling if it is ever joined to a name in a response; default to `internal` +
+the narrow read gate, and raise it to `pii` if a route ever returns the person's
+contact details alongside.
+
+### The QB token entry ships fail-closed, on its own
+
+Registering the QB token store is a **boundary change** governed by
+`AGENTS.md` + the `security-boundary-isolation` workflow: the registry /
+scopeBindings / generator changes ship in their **own PR(s)**, ahead of the route
+code — **registry-first** (an unused `defineRoute` is inert). The QB-token entry
+must land such that **no view can grant `secret`** (the token grammar forbids it),
+so the tokens are structurally unreturnable before any QB route exists. This is
+**QB-0's** security half (§9) and is the single most process-heavy part of the
+port; plan it as its own PR track (§11).
+
+**Route inventory to register** (~20 registry entries, one per verb×route family):
+`expenses` (GET/POST-intake) + `expenses/[id]` (+ `capital-review`,
+`set-depreciation-cycle`, `line-item-approvals[/*]` approve/reject/assign-owner/
+finance-assign/raise-exception/resolve-unknown); `expense-holds[/*]` resolve +
+resubmit + line-item account; `account-mapping[/*]` + `/catalog`; `qb-accounts[/*]`;
+`capital-assets/seed`; `local-owners`; `ownership-map`; `provisional-items`;
+`org-settings`; `system-data`; `queue`; `counts`; `expense-events`;
+`received-expense-payloads`. The **inbound** machine seams — `POST /api/expenses`
+(receipt intake, org-bearer) and `POST /api/capital-assets/seed` (capital seed,
+service/finance token) — are registered with a **service/bearer token grant**, not
+the read gate (§8). The **QB OAuth callback route** (QB-0) is registered as an
+unauthenticated-but-state-checked endpoint that writes only to the `secret` store.
+
+---
+
+## 6. Auth and roles
+
+**Retire the source auth entirely.** Delete `lib/auth.ts`, `auth-shared.ts`,
+`route-auth.ts` (except the pieces re-expressed below), the login page, and
+`/api/auth/{login,logout}`. checkin already owns login and session. Every
+route/page guard is re-expressed against the checkin session.
+
+### Role mapping — a new `FINANCE` role, existing `BOARD`, budget owner as data
+
+The source has four auth predicates: `isFinance` (dominant — 60 uses),
+`isOrgManager`, `isBudgetOwner`, `isAdmin`. checkin's `PersonRoleKind` today is
+`SYSADMIN, BOARD, KEYHOLDER, BG_REVIEWER, OPERATIONS` — **no finance role.** The
+mapping:
+
+| Source guard | checkin (this port) | Notes |
+|---|---|---|
+| `isFinance` (hold resolution, capital seed/review, QB queues, account/vendor mapping, owner-map management, finance-assign, resolve-unknown, raise-exception) | **`FINANCE`** — new `PersonRoleKind` | RB2 "Finance" umbrella (Treasurer / Bookkeeper / Accountant) that GC-ROLES **explicitly keeps** — a kept role, not a net-new invention. Follows the `isOperations` precedent: PersonRole-table-only, **no legacy mirror column**. |
+| `isOrgManager` (account-mapping + owner-assignment management) | **`FINANCE`** (collapsed) | The source's org-manager is finance-staff pipeline management; collapse onto `FINANCE` rather than standing up a second role. Split later only if a real duty boundary appears. |
+| `isBudgetOwner` (approve/reject *your own* lines) | **budget-owner predicate on `Person`** — a data relationship, not an RBAC role | The line's owner is a `Person` (resolved via `PartOwnerMap`, FE2); "is this session the owner of this line?" is a per-row check, not a global role. Program Treasurer / Assistant Lead map here too (relationship-attached, GC-ROLES). |
+| `isAdmin` (a few admin-only ops) | **`SYSADMIN`** (existing) | Direct. |
+| board-level threshold / COI escalation (net-new, GC-FIN-CONTROL) | **`BOARD`** (existing) | The escalation target for threshold-crossed and conflict flags. |
+
+**Adding `FINANCE`** touches checkin's role foundation (all in checkin's own
+schema, not the expense schema) exactly as #1286 §6 added `INVENTORY_MANAGER`:
+`PersonRoleKind` enum, `src/lib/roles.ts` `FLAG_TO_KIND`, `src/types/next-auth.d.ts`,
+`RoleBadge` + the `/api/roles` grant UI. This is **its own PR track** (§11). It is
+independent of #1286's `INVENTORY_MANAGER` — expense is finance, not inventory
+management, so it does **not** reuse that role.
+
+### Reads are narrow — the port's main divergence from #1286/#1287
+
+Both prior docs widened reads with a broad `isCatalogViewer` /
+`isInventoryViewer` gate (any RBAC role / program leader / volunteer), justified
+because the data was non-personal public reference data. **Expense inverts that.**
+Expense data is financial and person-linked (§5), so least-privilege *narrows*
+reads:
+
+- **Finance / board** read the whole expense surface (queues, holds, capital
+  register, QB queues).
+- **A budget owner** reads **their own lines and the expenses containing them** —
+  a per-row scope, not the whole ledger.
+- **Program leads / assistant leads / program treasurer** read the
+  **budget-vs-actual view for their program** (FE8, later) — a scoped, aggregated
+  read, not raw line access.
+- **No broad viewer gate.** A volunteer or arbitrary RBAC-role holder does **not**
+  read expenses.
+
+**Least-privilege note** (`docs/rules/principles.md`): unlike #1286/#1287 this gate
+does not widen anything — it confines financial data to finance, board, and the
+row's own owner. Stated here so the divergence from the prior ports is a decision
+on the record, not an oversight.
+
+### Flag / checkoff / audit — surface, don't enforce (GC-FIN-CONTROL)
+
+The app **does not enforce approval tiers, COI, or segregation-of-duties.** It
+surfaces a **flag** to the right human for a **checkoff**, all **audit-logged**
+(`ExpenseAuditLog`). Humans decide; the software records, routes, and proves.
+Flags: **tax-attached**, **threshold-crossed** ($500 / $2k / $50 awareness, from
+Procurement policy H — *awareness, not enforcement*), **missing-receipt**,
+**non-Everyday**, and **COI/conflict**. Each routes to finance or board and lands
+a checkoff + audit row. This **replaces** the source's implicit tiering with the
+lightweight flag pattern GC-FIN-CONTROL specifies — the flags are low-volume
+(~1–2 of each per year) even though the expense process itself is high-volume, so
+the flag machinery stays deliberately thin.
+
+### The household-aware COI flag — the port gets *better* in checkin
+
+**The conflict flag is the one flag with real logic**, and it is *buildable here
+and was not buildable in the source*: a **household-aware "approver is in the
+submitter's household" check** (Q27). The ported `expense-app` never had a
+household model, so it could not express COI at all. checkin **has** households, so
+this is a genuine port-gets-better item: when a line's would-be approver (owner /
+finance-assignee) shares a household with the expense's `submitterId`, raise the
+COI flag and route it to `BOARD` for checkoff. Design it as a real predicate over
+checkin's household graph (read via the injected principal/port, not a cross-DB
+join — §4), not as another rubber-stamp. This directly discharges GC-ROLES'
+"expense approval + conflict constraints" duty gap.
+
+### Org + user identity — one injected source, shared with catalog + inventory
+
+Resolved by #1286 §6 — expense **adopts the same decision, not a variant**. Org
+identity is a **checkin-owned `Org` registry row** (seeded on the initial
+migration with a stable well-known id), injected as an accessor `getOrg()` into
+`configureExpense()` — not an env scalar, not a `SettingsData` row, not a cross-DB
+read. checkin-app injects the **same** id into catalog, inventory, and expense, so
+the `orgId` stamped on `ExpenseEvent`, the S5 provisional events, and the
+cross-DB uniques all line up. The `org_id` / `org_name` columns are **kept**
+(String). User ids map to checkin **`Person.id`** via the injected
+`ExpensePrincipal` (`getPrincipal()`); attribution columns store the principal id
++ a username snapshot, no FK to checkin (separate DB).
+
+---
+
+## 7. UI — reskin in place
+
+All UI lives in the library (`packages/expense/src/{components,pages}`);
+checkin-app only re-exports pages (§3) and wires nav. Same Mantine version →
+component-level reskin, not a rewrite. **Keep the source's `"use client"` +
+`/api/*` pattern** (matches checkin; #1286 §7). Drop `AppShellLayout` /
+`NavbarLogout` / `AuthContext`; pages render inside checkin's shell and read
+`useSession` client-side + the checkin session in the route handlers.
+
+Pages, each an A13 surface / exception screen:
+
+- `expenses` (list, filtered by the `queue` view) + `expenses/[id]` (detail with
+  `LineItemOwnerApprovals`) — surfaces 1/2.
+- `expense-holds` **exception screen** — `NO_MATCH` / `MULTIPLE_MATCHES` /
+  `NO_PART_NUMBER` account-mapping holds; resolve + resubmit (surface 5).
+- `account-mapping` + `qb-accounts` — the rules that map a resolved item to one QB
+  account (**one account per line, no category splits, by design**) + the QB
+  account list (surface, feeds §9 QB-2).
+- `ownership-map` / `local-owners` — budget owners and owner↔PN associations;
+  owner-conflict resolution (surface 3, FE2).
+- capital review + depreciation panels (`CapitalReviewPanel`,
+  `SetDepreciationCyclePanel`) on the expense detail — surface 4, FE4; the
+  loop-closing "assign ITFA → log in QB → sticker reminder" step (Q66) lands here.
+- `provisional-items` — provisional resolution view (consumes catalog S5 events,
+  §8).
+- `received-expense-payloads` — receipt-intake ledger (surface for the receipt→
+  expense crossing, §8).
+- `expense-events` — the QB **outbox** ledger, and (§9 QB-2+) the **QB
+  sync-failure / ambiguity queue**.
+- `org-settings` (capital thresholds) + `system-data` (settings). The
+  `SettingsData` poll fields (`pollIntervalMinutes` / `globalServerUrl`) are **dead
+  on arrival** — the S5 crossing is in-process and push-driven (§8), so there is no
+  timer to configure. Keep the row (the model ports cleaner intact); drop the
+  fields with the deferred cleanup, exactly as #1287 §7 decided.
+
+### Nav placement — a finance area, gated by finance/board (not the Inventory area)
+
+Unlike local-inventory (which joined the catalog's **Inventory** section, #1287
+§7), **expense is finance-facing, not inventory-facing**, and its read gate is
+narrow (§6). So expense's screens go in a **finance area**, next to checkin's
+existing **Finance Ops**, gated by `FINANCE` / `BOARD` — **not** under the
+Inventory nav and **not** behind the broad Inventory viewer gate. The library
+exports its `NavLink[]` descriptor; checkin-app places it (order is a
+checkin-shell concern). Whether this is a new `Expense` / `Finance` section tab
+group or folds into the existing Finance Ops tabs is a checkin-shell UI call —
+the port just contributes its `NavLink[]` and the `FINANCE`/`BOARD` gate. Badges
+(open holds, pending checkoffs, QB queue depth) use checkin's existing `navBadges`
+— optional, not first-landing.
+
+*(Open question — whether finance-side Inventory surfaces should eventually share
+one area with the Inventory ports is a checkin-shell IA decision, not this port's;
+§12.)*
+
+---
+
+## 8. Pipeline couplings — expense is the money-side tail
+
+Expense sits mid-pipeline: **receipt → expense → (catalog lookups) → inventory
+load → QuickBooks**. Four crossings, all designed with the **same per-crossing
+rule #1286 §8 set**: *keep the JSON/contract shapes; convert transport, not
+architecture; every crossing sits behind a port with an `http` adapter (today) and
+an `in-process` adapter (after co-residence); converting a crossing = swap one
+adapter binding in `configureExpense()`, zero call-site churn; trigger =
+co-residence.*
+
+| Crossing | Direction | Kind | Contract | Today's transport |
+|---|---|---|---|---|
+| **R — receipt intake** | receipt-app → expense | **sync RPC — callee** | `CompletedReceiptSchema` (`@inventory/receipt-types`) | `POST /api/expenses`, org-bearer; idempotent on `receiptId` via `ReceivedExpensePayload` |
+| **C — catalog lookups** | expense → catalog | **sync RPC — caller** | `catalog-schemas` (categories, subcategories, item info, item lookup) | `service-client` → catalog `/api/internal/*`, org-bearer |
+| **I — inventory load** | expense → local-inventory | **sync RPC — caller** (new co-resident wiring) | `ResolvedInventoryDeltaSchema` (local-inventory's apply surface, #1287 §8b) | today mediated by the orchestrator; in checkin, an in-process call into local-inventory's apply port |
+| **QB — post** | expense → QuickBooks | **async outbox** | `QbExpenseEventSchema` / `QbLineItemSchema` (schemaVersion 1) | `ExpenseEvent` outbox row; drained by the write path (§9) |
+
+### 8a. Receipt intake (R) — sync RPC, expense is callee
+
+The receipt's **money side** (total / tax / shipping / discount / vendor / lines)
+arrives as a `CompletedReceipt` at `POST /api/expenses` (org-bearer), is stored
+idempotently in `ReceivedExpensePayload` (keyed on `receiptId` — a re-push is a
+safe retry), and `processCompletedReceipt` creates the `Expense` + lines and calls
+`initFinancialFlow`. **Idempotency is part of the contract**, preserve it exactly.
+At co-residence (when receipt-app migrates) bind the in-process adapter — receipt
+calls `processCompletedReceipt` **directly via the port** — and **retire the
+org-bearer route last**, after the final remote caller flips. First landing: keep
+the `http` route **live** (checkin org-bearer) so a still-remote receipt-app can
+drive intake during the overlap.
+
+### 8b. Catalog lookups (C) — sync RPC, expense is caller, catalog already co-resident
+
+The QB processor resolves each line's account by calling the catalog:
+`lookupItems` (3-pass matcher) → `getItem` → `listCategories` / `listSubcategories`
+(`inventory-client.ts`). **Catalog is already ported (#1286) and co-resident from
+expense's first day**, so this crossing binds the **in-process** adapter
+immediately — the caller imports the catalog library's service functions via the
+port instead of the `service-client` HTTP stub. Keep the `catalog-schemas` zod
+shapes as the function param/return types. The `http`/`service-client` adapter
+stays in the port only as the fallback for a *remote* catalog (not the case here).
+
+### 8c. Inventory load (I) — sync RPC into local-inventory's apply surface
+
+TOPDOWN GC-FIN-CONTROL describes the high-volume flow as **"signoff → inventory
+load → QB"**: when an expense's lines are signed off, the received stock is loaded
+into org inventory. In the source monorepo the **orchestrator** (workflow-mapping,
+CI4/#1289 — out of scope here) mediates this; expense does not call
+local-inventory directly. In checkin, co-resident, the pipeline step is realized as
+an **explicit port from expense into local-inventory's apply surface** (defined in
+#1287 §8b): on owner-signoff, expense hands the resolved delta to
+`receiptService.applyReceipt` / `enqueueItem` via the port, preserving
+`ResolvedInventoryDeltaSchema` and its **idempotency on `receiptId`** (a re-push is
+a safe retry — that is why the orchestrator can "retry-apply"). Bind the
+in-process adapter once local-inventory is co-resident (it will be — #1287 lands
+before this); keep the orchestrator's HTTP contract as the `http` fallback for the
+overlap window while receipt/orchestrator are still remote. **Do not assume the
+orchestrator "collapses away"** — only its transport changes; the apply call is
+real and stays behind the port. The known fulfill/apply concurrency hazard
+(#1287 §8b, CONCURRENCY.md #2) is *local-inventory's* to close — track it there,
+do not re-solve it in expense.
+
+### 8d. Provisional resolution (S5) — async, second consumer of catalog events
+
+Expense is a **second consumer** of catalog's S5 provisional-resolution events
+(`provisional_approved` / `_rejected` / `_mapped_to_existing`) — it keeps its own
+`ProvisionalItemMap` / `ProvisionalResolution` in step so account resolution can
+proceed. This is **async and stays async** (#1286 §8 rule 4): reuse
+`@inventory/org-events-poller` but **drop the wall-clock timer** exactly as #1287
+§8a decided — boot catch-up drain + drain-on-emit from catalog's post-commit
+signal, no `setInterval`. Land the consumer **inert** until catalog emits.
+`conversion_challenge_*` events stay unconsumed (BYDESIGN, forward-only), same as
+#1287.
+
+### First landing (expense in; catalog + inventory in; receipt/orchestrator not yet)
+
+- Reuse the temporary vendored `receipt-types` / `receipt-contract-fixtures`
+  (#1286's copies).
+- **R (receipt intake)**: keep the `http` `POST /api/expenses` route **live**
+  (org-bearer) for a still-remote receipt-app; exercisable via seeded
+  `CompletedReceipt` fixtures.
+- **C (catalog)**: bind in-process immediately (catalog co-resident).
+- **I (inventory load)**: bind in-process once #1287 is merged (it is a dependency,
+  §11); keep the orchestrator HTTP contract as the fallback until receipt/
+  orchestrator co-reside.
+- **S5**: in-process push adapter, inert until catalog emits.
+
+All temporary duplication is **< 2 weeks, dev-only** — acceptable, tracked.
+
+---
+
+## 9. QuickBooks — the phase ladder
+
+**QuickBooks is not a stub.** `@inventory/quickbooks` (`packages/quickbooks/` in
+the Inventory monorepo) is a working **read-only QBO client**: OAuth2 in three
+`fetch` calls (authorize / code→token / refresh — no SDK), a `QuickBooksClient`
+that runs QBO SQL-ish queries and pages `Purchase` / `Bill` since a date, a
+`toGroundTruth` normalizer, and `QboTokens` / `QboPurchase` / `GroundTruthRecord`
+types. Its README states it **"later grows the write path for the `qb_pending`
+state-machine terminus"** — that write path is exactly what this port builds. QB
+is designed as an **incremental ladder**; each rung states plainly **what already
+exists in `@inventory/quickbooks` vs what is net-new.**
+
+Because checkin has **zero** prior QB integration (CUJS A15), this port also
+settles GC-QB's *"settle the QB connection/auth first"* — QB-0 is that settlement,
+and donations (GC-DONOR) / program-finance (GC-PROGRAM-FINANCE) reuse it.
+
+### QB-0 — bring the client in (connection + auth foundation)
+
+Port `@inventory/quickbooks` into `packages/quickbooks` as the first QB code in
+checkin.
+
+- **Exists:** the OAuth2 flow (`authUrl` / `exchangeCode` / `refreshTokens` /
+  `isExpired`), `oauthConfigFromEnv` (`QBO_CLIENT_ID` / `QBO_CLIENT_SECRET` /
+  `QBO_ENVIRONMENT` / `QBO_REDIRECT_URI`), the sandbox↔production `apiBase` switch,
+  `realmId` capture from the consent redirect, and refresh-token **rotation**.
+- **Net-new — token storage.** The source persists tokens to a gitignored
+  `.qbo-tokens.json` (mode 0600) via `saveTokens`/`loadTokens`. That does not
+  survive an ephemeral, multi-replica container and cannot hold a rotating secret
+  safely. **Replace the file store with a `secret`-tier row in the expense DB**
+  (§4/§5): the token record is `@sensitivity:secret`, structurally unreturnable to
+  any client (no view can grant `secret`), and `refreshTokens` **persists the
+  rotated refresh token back to the row** (the source's "don't hand-edit the token
+  file" invariant becomes "the row is the only writer"). Inject a
+  `TokenStore { load(): QboTokens | null; save(t): void }` port so the library
+  never imports checkin's DB directly; `configureExpense` binds the DB-backed
+  adapter. `QBO_CLIENT_ID` / `SECRET` / `ENVIRONMENT` / `REDIRECT_URI` stay as
+  **checkin secrets/env**, not DB rows.
+- **Net-new — consent as an operational step.** The source runs consent from a CLI
+  script (`npm run consent`) that spins a localhost server to catch the redirect.
+  In checkin, consent is a **one-time operator action**: a finance/sysadmin-gated
+  page kicks off `authUrl(state)`, and a **QB OAuth callback route**
+  (`/api/qb/callback`, registered §5, state-checked) runs `exchangeCode` and writes
+  the `secret` row. `QBO_REDIRECT_URI` becomes the deployed callback URL, not
+  `localhost:8087`. Sandbox first, production by switching `QBO_ENVIRONMENT` and
+  re-consenting.
+- **Security:** the whole of §5's `secret` tiering + the fail-closed registry entry
+  is QB-0's security half — **registry-first, its own PR.**
+
+### QB-1 — read / ground truth (account mapping + vendor bootstrap + capital seed)
+
+Pull `Purchase` / `Bill` since a date as **ground truth**; use it to bootstrap
+account mapping and vendor normalization, and to seed the capital register.
+
+- **Exists:** `purchasesSince` / `billsSince` / `query` / `pagedSince` /
+  `toGroundTruth` — the entire read path. The Inventory scripts already consume it
+  (`receipt-load-app/scripts/{capital-seed,match-run}.mts` read
+  `packages/quickbooks/.ground-truth.json`).
+- **Net-new — checkin wiring:** run the pull server-side (or as a checkin
+  scheduled job on the **external** scheduler, never an in-app timer), drive
+  `AccountMapping` / `ExpenseQbAccount` bootstrap and vendor alias normalization
+  from real QB accounts, and expose the **capital-seed intake** (`POST
+  /api/capital-assets/seed`, FE4) that parses ITFA tags out of QB memos into the
+  `CapitalAsset` register (`seeded=true`, idempotent per `(orgId, assetNumber)`).
+  This is also where **GC-QB reconciliation with 3 years of existing QB** starts:
+  the `backfill` / `qb_skipped` path (§2) reconciles an expense to an
+  already-booked QB transaction without re-posting.
+
+### QB-2 — write path (the `qb_pending` terminus)
+
+Post signed-off expense lines to QuickBooks. **This is the headline net-new
+work** and FE3's core.
+
+- **Exists in the source (checkin side of the port):** the `expense-qb-processor`
+  already builds and **validates** the outbound payload against `QbExpenseEventSchema`
+  / `QbLineItemSchema` (schemaVersion 1), resolves each line to **one** QB account
+  (rules → one account/line, **no category splits by design**), allocates
+  tax/shipping/discount, and commits the `ExpenseEvent` **outbox row** in one
+  transaction (`qb_pending → qb_complete`). The outbox, idempotency
+  (`expense_events_org_expense_unique`), holds, and crash-recovery
+  (`recoverStrandedQbExpenses`) all port verbatim.
+- **Net-new — the actual QBO write.** `@inventory/quickbooks` is read-only today;
+  QB-2 **grows its write methods** (create Purchase/Bill from a `QbExpenseEvent`,
+  map account name → QBO account ref, vendor ref → QBO vendor, with the same
+  OAuth/refresh machinery QB-0 established). A **drain worker** reads unposted
+  `ExpenseEvent` rows and posts them; run it from `instrumentation.ts` (boot
+  drain + drain-on-commit signal, **no wall-clock timer**, §3) — the outbox stays
+  async (rule 4, do not collapse to a direct call).
+- **Net-new — the QB sync-failure / ambiguity queue** (A13 step 6). A post can
+  fail (auth, validation, QBO rejection) or be **ambiguous** (vendor name matches
+  0 or >1 QBO vendors; account name unmatched). These land in a **queue screen**
+  (`expense-events`, §7) for finance to resolve — vendor mapping / alias, account
+  remap, retry. This mirrors the account-mapping `MULTIPLE_MATCHES` hold pattern
+  (§7) but on the QB side. **Idempotency across retries** is essential: a re-post
+  of the same `ExpenseEvent` must not double-book (key on the event / a QBO
+  idempotency token), per GC-QB "idempotent, sync-not-clobber".
+
+### QB-3 — drift detection & reconciliation (FE5)
+
+Detect and reconcile **external edits** to QB entries the system originated: a
+periodic (external-scheduler) re-pull compares system-originated QBO transactions
+(tracked by `sourceQbTxnId` / the outbox) against their current QBO state, flags
+drift (amount/account/vendor changed in QB after we posted), and routes it to a
+reconciliation queue. **Exists:** the read/pull path (QB-1). **Net-new:** the
+diff + drift queue. Grounds on GC-QB's "reverse-reconcile against existing QB to
+enumerate what the system still can't model."
+
+### Later — noted, not designed
+
+- **FE6** membership/plan payment → QB sync (primary adult; conflict → Financial
+  Ambiguity Record; retry → manual queue). Reuses QB-0's connection + the QB-2
+  ambiguity-queue pattern. Its own issue (#1277).
+- **FE7** shop-hour fee → QB **inter-class journals** (Q49, monthly cadence,
+  GC-PROGRAM-FINANCE): checkin has the hours; given rates + application rules it
+  initiates monthly journals between QBO classes. A different QBO write shape
+  (journal, not Purchase). Its own issue (#1278).
+- **FE8** budget-vs-actual view (view-only, per-program, semi-rolling). Depends on
+  FE1–FE3 data + FE7. Its own issue (#1279).
+
+These **reuse QB-0's settled connection** and the QB-2 write/ambiguity machinery;
+this design neither builds nor blocks them.
+
+---
+
+## 10. Infra / deploy
+
+Adds **no new service** — compiles into `checkin-app`'s build, ships in checkin's
+existing container. Same as #1286 §9 / #1287 §9, plus the QB specifics:
+
+- Build the new `packages/*` (`expense`, `quickbooks`, `service-client`); the
+  workspace build already covers `packages/*`.
+- **Provision the dedicated expense database** + `EXPENSE_DATABASE_URL` secret
+  (monitoring-db pattern in the Infra database module).
+- Add **expense `prisma migrate deploy`** (against `EXPENSE_DATABASE_URL`) to the
+  deploy sequence, ordered with checkin's / catalog's / inventory's steps.
+- **QB env/secrets:** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT`
+  (`sandbox` → `production`), `QBO_REDIRECT_URI` (the deployed callback URL) as
+  checkin secrets. The **QBO tokens themselves live in the expense DB `secret`
+  row**, not a secret manager and not a file (§9 QB-0).
+- **One-time operator step:** run **QB OAuth consent** against the sandbox company
+  after first deploy (and again against the real company at production cutover) —
+  the only manual step this port adds. Document it in the deploy runbook.
+- **Org registry** — the checkin-owned `Org` table + seeded Treehouse row is
+  **#1286's** deploy artifact; already present once catalog lands. Expense adds no
+  env and no seed here — it receives the injected `org` accessor at boot.
+- **Outbox / recovery lifecycle:** **no background timer.** The QB drain worker and
+  `recoverStrandedQbExpenses` run once at boot from `instrumentation.ts` (server
+  runtime only, never during `next build`); thereafter the drain is woken by the
+  in-process commit signal. The QB-1 ground-truth pull and QB-3 drift scan, if
+  scheduled, run on checkin's **external** scheduler (cron/Lambda), never an in-app
+  `setInterval` — same discipline as #1287 §9.
+- No new Caddy route, no new port, no new container.
+
+---
+
+## 11. Phasing (PR tracks)
+
+**Dependency gate.** Expense implementation **follows both prior ports**: it
+consumes the catalog's item/account lookups and S5 events (**#1286 must land**),
+and it calls local-inventory's apply surface (**#1287 must land** — its §8b apply
+port is expense's crossing I target). Track 1 can start once #1286 track 1 (catalog
+library skeleton + shared packages) has landed; the inventory-load crossing (track
+6) gates on #1287.
+
+1. **Library skeleton** — `packages/expense` (+ new `packages/service-client`;
+   reuse `gtin`/`workflows`/`receipt-types`/`org-events-poller`/`money`), expense
+   schema + client + migrations, domain (repositories / services / the xstate
+   machine / QB processor / capital register / financial-flow) ported,
+   unit/integration tests. No UI, no QB write, no checkin wiring. Green in
+   isolation.
+2. **`FINANCE` role foundation** — add the `FINANCE` `PersonRoleKind` (RB2, a kept
+   role) + `roles.ts` + next-auth types + grant UI. Own PR (role-system change).
+   Defines the budget-owner per-row predicate + the household-COI predicate over
+   checkin's household graph.
+3. **Security boundary** — `@sensitivity` annotations (incl. the **`secret`** QB
+   token tier), `generator security` for the expense schema, registry +
+   scopeBindings entries, the **fail-closed QB-token registry entry**. Own PR
+   track, **registry-first**. (This is QB-0's security half.)
+4. **Routes + auth + inbound seams** — library route-handler factories +
+   `contract.ts` (incl. the crossing ports + the QB `TokenStore` port) +
+   `configureExpense` wired in `instrumentation.ts`; API stub tree + narrow read
+   guards + the household-COI flag; the `R` (receipt intake, org-bearer) and
+   capital-seed inbound surfaces with their `http` adapters live; the `C` (catalog)
+   crossing bound in-process. Depends on 1–3.
+5. **UI + nav** — reskinned pages/components (in the library), page stub tree +
+   `pageRegistry` entries, the library's `NavLink[]` in a **finance area** gated by
+   `FINANCE`/`BOARD` (not the Inventory area — §7), `transpilePackages` (if tsx
+   needs it — verify), A13 flow test.
+6. **Inventory-load crossing (I)** — bind the in-process call into local-inventory's
+   apply port on owner-signoff (#1287 §8b), keeping the orchestrator HTTP contract
+   as the `http` fallback. Depends on #1287 landed.
+7. **S5 provisional consumer** — bind the in-process catalog-events adapter
+   (push-driven, no timer), inert until catalog emits. Depends on #1286's
+   post-commit signal hook.
+
+**QB sub-sequence** (its own explicit ladder, interleaved with the tracks above):
+
+- **QB-0** (connection + auth) — the QB client package + OAuth consent page +
+  callback route + the **`secret` token store**. Its security half **is track 3**
+  (registry-first, fail-closed); its code half is a small PR after track 3.
+  **Everything QB depends on QB-0.**
+- **QB-1** (read / ground truth) — pull + account-mapping / vendor bootstrap +
+  capital-seed intake (FE4). After QB-0. Feeds tracks 4–5.
+- **QB-2** (write path / `qb_pending` terminus) — the net-new QBO **write methods**
+  in `@inventory/quickbooks`, the outbox **drain worker**, and the **QB
+  sync-failure / ambiguity queue** (FE3, A13 step 6). After QB-0 and after the
+  domain/outbox tracks (1, 4). **The QB write path follows the QB read/client-port
+  — QB-2 cannot precede QB-0/QB-1.**
+- **QB-3** (drift / reconciliation, FE5) — after QB-2.
+
+8. **Infra** — deploy sequence + expense DB provisioning + QB env/secrets + the
+   consent runbook step.
+9. **(Deferred — each a tracked follow-up issue vs the FE issues, not prose
+   "later")** retire the `http`-adapter routes when receipt-app / orchestrator
+   co-reside and flip to in-process; drop the dead `SettingsData` poll fields;
+   FE6 (membership→QB, #1277), FE7 (shop-hour journals, #1278), FE8
+   (budget-vs-actual, #1279); QB-3 drift-queue polish. File these at merge.
+
+---
+
+## 12. Open items / assumptions
+
+- **`FINANCE` role naming.** This design introduces a `FINANCE` `PersonRoleKind`
+  as the RB2 "Finance" umbrella actor. GC-ROLES keeps RB2 and says "no net-new
+  RBAC rows"; `FINANCE` is the *umbrella* row, with Treasurer / Bookkeeper /
+  Accountant as sub-actors that are **not** separate rows. If the owner wants a
+  different label (e.g. `TREASURER`) or wants finance folded onto `BOARD` instead
+  of a distinct row, that is a one-line change in track 2 — **flag for owner
+  confirmation.** Not a STOP-AND-ASK blocker (a sensible default is chosen), but
+  the one product choice worth a nod.
+- **Narrow read gate is a deliberate divergence** from #1286/#1287's broad viewer
+  gate (§6). Confirmed by least-privilege + the sensitivity of financial data; if
+  the owner wants finance data more broadly visible (e.g. all board, all program
+  leads), that widens the gate — but the default is narrow. On the record here.
+- **`reimbursementFor` / reimbursee identity tiering** — defaulted to `internal`
+  behind the narrow gate; raise to `pii` if a route ever returns the person's
+  contact details alongside (§5). Assumption, not a blocker.
+- **Nav IA — finance area vs shared Inventory area.** Expense lands in a
+  finance-gated area next to Finance Ops (§7). Whether checkin later unifies the
+  finance-side and inventory-side surfaces into one IA is a checkin-shell decision,
+  not this port's — noted, not resolved.
+- **QuickBooks account/vendor identity.** QB-2's account-name → QBO-account-ref and
+  vendor-name → QBO-vendor-ref mapping assumes the QBO chart of accounts + vendor
+  list are the authority; QB-1's ground-truth pull bootstraps the mapping tables.
+  The **ambiguity queue** (QB-2) is the designed escape hatch when a name matches 0
+  or >1 — so no STOP-AND-ASK: ambiguity is handled in-band by a human, not guessed.
+- **Production data: none to migrate; existing QB is reconciled, not imported.**
+  There is no expense data to import. Expenses arrive **by receipt intake** (the
+  R crossing, §8) — the high-volume path — or by hand for reimbursements. The
+  **existing 3 years of QuickBooks** are **reconciled against, not clobbered**
+  (GC-QB): QB-1's ground-truth pull + the `backfill`/`qb_skipped` path recognize
+  already-booked transactions; the capital register is seeded from QB memos
+  (FE4). "No bulk expense import" and "reconcile existing QB" do not conflict —
+  different mechanisms.
+- **Dev/test seed.** Lift the expense baseline (org settings / account mappings /
+  a `CompletedReceipt` fixture / a capital-seed sample) from the Inventory
+  monorepo's `scripts/setup-test-data.sh` + the QB `.ground-truth.json` sample;
+  **drop the transport** (the checkin seed writes directly via the expense library
+  services / Prisma client against `EXPENSE_DATABASE_URL`). Stamp rows with the
+  same seeded `Org` id (§6). Add `VolunteerDesignation` / household rows (project
+  memory: seed has 0 volunteer designations) so the household-COI flag and the
+  budget-owner per-row gate are exercisable in dev and flow tests. **QB tests use
+  the sandbox company, never live production QB** (§ testing below) — no test tier
+  posts to a real books.
+- **Deferral discipline.** Anything past the first landing (track 9) is a **GitHub
+  follow-up issue referencing the relevant FE issue**, filed at merge — never a
+  bare "later" in prose or a code comment.
+
+### Testing (posture; mirrors #1286 §10 / #1287 §10)
+
+- **Unit/integration — keep vitest, port ~verbatim.** `expense` is a `packages/`
+  package → keeps vitest (jest is checkin-app's convention). Reuse
+  `@inventory/pg-test-harness`. **CI wiring is not automatic** — add an explicit
+  root run (or extend the aggregation #1286/#1287 added) so its suites execute.
+- **Security tests** — registry/stripper coverage for expense routes (and
+  **especially** that no view can return the `secret` QB tokens) lives in
+  `checkin-app/src/security/__tests__` (jest — checkin boundary wiring). Companion
+  to the track-3 boundary PR.
+- **e2e = flow tests, not Playwright.** Re-express the source's Playwright specs as
+  `flow-tests/*.flow.test.ts`. Priority journey: **A13 end to end** — receipt
+  intake → per-line owner approval → capital review + depreciation → account
+  resolution (incl. a `MULTIPLE_MATCHES` hold + resubmit) → QB outbox emit → (QB-2)
+  QB post → ambiguity-queue resolve. Land in track 5 (domain flow) + a QB-2 flow
+  once the write path exists.
+- **QB tests hit the QBO sandbox only.** The write path and OAuth are tested
+  against a QBO **sandbox** company (the source's model), gated out of the default
+  CI run (they need external creds + network) exactly as the Inventory monorepo's
+  `*.shopify-live.ts` are (`AGENTS.md` shopify-live precedent). **No CI tier posts
+  to production QuickBooks.**
+- **Coupling tests** — the crossing ports (R/C/I) get contract tests on both
+  adapters (`http` and `in-process` produce identical results for the same input).
+
+**Resolved by reuse of #1286/#1287:** own dedicated database
+(`EXPENSE_DATABASE_URL`); checkin security regime over a separate schema; retire
+source auth for checkin next-auth; org+user identity from the checkin-owned `Org`
+registry row injected as an accessor; keep-JSON-contracts / convert-transport
+crossing rule; vitest + flow-tests (no Playwright); no table renames; no in-app
+timers.
+**New to this port (resolved here):** the `FINANCE` role + narrow read gate;
+the household-aware COI flag (port gets better); QuickBooks as `@inventory/quickbooks`
+brought into checkin on the QB-0…QB-3 ladder with `secret`-tier DB token storage.
+**Left open (non-blocking):** the `FINANCE`-vs-`TREASURER` label nod; the finance/
+inventory nav IA question; the tracked deferrals (track 9) and FE6–FE8.
+
+---
+
+*Design for #1272 (FE1) and epic FE (#1272–#1279). Third app of the whole-Inventory
+migration; downstream of receipt-app, coupled to the catalog (#1286) and
+local-inventory (#1287), both of which land first. Brings the first QuickBooks
+integration into checkin via `@inventory/quickbooks` on an explicit phase ladder.
+Temporary duplication at the receipt-app / orchestrator boundaries is expected and
+tracked.*
