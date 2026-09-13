@@ -128,8 +128,8 @@ describe("getFullAttendance() — privileged caller (unchanged)", () => {
 
 describe("held PARKED_CLOSED scans (#1782)", () => {
     const heldRows = [
-        { id: 900, occurredAt: new Date("2026-07-01T09:00:00Z"), person: { name: "Held Person", email: "held@example.com" } },
-        { id: 901, occurredAt: new Date("2026-07-01T09:05:00Z"), person: { name: null, email: "noname@example.com" } },
+        { id: 900, occurredAt: new Date("2026-07-01T09:00:00Z"), person: { name: "Held Person", nickname: "Hp", email: "held@example.com" } },
+        { id: 901, occurredAt: new Date("2026-07-01T09:05:00Z"), person: { name: null, nickname: null, email: "noname@example.com" } },
     ];
 
     it("queries only unprojected closed-facility IN scans, oldest first, LIVE persons", async () => {
@@ -141,13 +141,13 @@ describe("held PARKED_CLOSED scans (#1782)", () => {
         });
     });
 
-    it("ships id/name/time only — no email — on both the privileged and kiosk paths", async () => {
+    it("ships id/name/nickname/time only — no email — on both the privileged and kiosk paths", async () => {
         heldFindMany.mockResolvedValue(heldRows);
         for (const kiosk of [false, true]) {
             const { held } = await getFullAttendance({ kiosk });
             expect(held).toEqual([
-                { id: 900, occurredAt: heldRows[0].occurredAt, name: "Held Person" },
-                { id: 901, occurredAt: heldRows[1].occurredAt, name: "noname" },
+                { id: 900, occurredAt: heldRows[0].occurredAt, name: "Held Person", nickname: "Hp" },
+                { id: 901, occurredAt: heldRows[1].occurredAt, name: "noname", nickname: null },
             ]);
             expect(JSON.stringify(held)).not.toContain("@example.com");
         }

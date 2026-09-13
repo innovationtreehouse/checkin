@@ -172,16 +172,18 @@ export async function getFullAttendance(opts: { kiosk?: boolean } = {}) {
     // Held scans: badged IN while the facility was closed, awaiting a keyholder.
     // Ordered as they occurred (the order the flush will project them). Only the
     // display name resolves out — email is read for the same fallback the roster
-    // uses and never ships. LIVE_PERSON drops merge tombstones, as everywhere else.
+    // uses and never ships. nickname rides along so the kiosk shows the name the
+    // person goes by, same as the roster (#1813). LIVE_PERSON drops tombstones.
     const heldEvents = await prisma.presenceEvent.findMany({
         where: { classification: PresenceClass.PARKED_CLOSED, direction: "IN", person: LIVE_PERSON },
         orderBy: { occurredAt: "asc" },
-        include: { person: { select: { name: true, email: true } } },
+        include: { person: { select: { name: true, nickname: true, email: true } } },
     });
     const held = heldEvents.map((ev) => ({
         id: ev.id,
         occurredAt: ev.occurredAt,
         name: ev.person.name?.trim() || ev.person.email?.split("@")[0] || null,
+        nickname: ev.person.nickname,
     }));
 
     return { attendance, held, counts, safety };

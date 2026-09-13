@@ -47,7 +47,7 @@ type Visit = {
 
 // A PARKED_CLOSED scan: someone badged in while the facility was closed and has
 // no Visit yet. Display-only — id/name/time, never PII (the kiosk re-broadcasts it).
-type Held = { id: number; name: string | null; occurredAt: string };
+type Held = { id: number; name: string | null; nickname?: string | null; occurredAt: string };
 
 type Counts = { keyholders: number; volunteers: number; youth: number; total: number };
 type SafetyFlags = { isLastKeyholder: boolean; isTwoDeepViolation: boolean };
@@ -336,7 +336,7 @@ function KioskDisplayInner() {
 
   const kioskHeldNames = useMemo(() => {
     if (!isKioskMode) return new Map<number, string>();
-    return getKioskDisplayNames(heldList.map(h => ({ id: h.id, name: h.name })));
+    return getKioskDisplayNames(heldList.map(h => ({ id: h.id, name: h.name, nickname: h.nickname })));
   }, [isKioskMode, heldList]);
 
   const canSeeNames = !isKioskMode && (currentUserIsKeyholder || currentUserIsSysadmin || currentUserIsBoardMember);

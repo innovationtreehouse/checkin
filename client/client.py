@@ -247,6 +247,9 @@ class AttendanceState:
         # Offline these decide whether a keyholder's OUT is a last-out-with-others
         # close, and whether to show a (yellow-only) supervision caution.
         self.keyholder_ids = set()
+        # False until the first successful attendance poll: before that the
+        # zeroed counts must not read as a closed facility.
+        self.attendance_seen = False
         self.last_two_deep_violation = False
         self.clock_watch = ClockWatch()
 
@@ -375,15 +378,16 @@ class AttendanceState:
             self.present_ids = present
             self.keyholder_ids = keyholders
             self.last_two_deep_violation = bool(safety.get("isTwoDeepViolation"))
+            self.attendance_seen = True
 
     def facility_closed(self):
         """Best-effort local view of whether the facility is closed (no keyholder
-        present), from the last successful attendance poll. Offline this is the
-        only signal: a keyholder who badges while disconnected is not reflected
-        here until the next poll. ponytail: last-poll count, not a local keyholder
-        set — the badge alone doesn't tell the client who is a keyholder."""
+        present), from the last successful attendance poll. Never claims closed
+        before the first poll — zeroed startup counts are unknown, not closed.
+        Offline it can't tell an arriving keyholder from a member (keyholder_ids
+        holds only present keyholders); the offline hold copy is hedged for that."""
         with self.lock:
-            return self.current_counts.get("keyholders", 0) == 0
+            return self.attendance_seen and self.current_counts.get("keyholders", 0) == 0
 
 # ---------------------------------------------------------------------------
 # Transparent Signing Proxy & Kiosk Handler
@@ -867,6 +871,11 @@ def stdin_scanner_listener(backend, state, outbox):
 # event replaces it early.
 CLOSED_HOLD_DWELL_S = 30
 CLOSED_HOLD_COPY = "Scan successful, waiting for key holder before opening the building"
+# Offline hold copy. The kiosk can't tell whether the scanner is a keyholder
+# (keyholder_ids holds only PRESENT keyholders), so — unlike the server-gated
+# CLOSED_HOLD_COPY — this must read true for a keyholder arriving to open too:
+# no "waiting for key holder" claim, just a hedged not-yet-checked-in.
+OFFLINE_HOLD_COPY = "Scan saved — you'll be checked in once the building is open"
 
 # Offline force-close: the kiosk runs the last-keyholder warning + two-scan
 # confirm itself when the server is unreachable. Same window as the server's.
@@ -952,10 +961,11 @@ def _saved_banner_html(queued, intent=None, facility_closed=False):
     # Returns (html, dwell_seconds); dwell 0 means the default dwell.
     if facility_closed and intent == "IN":
         # No keyholder present per the last poll, so an offline IN is held, not an
-        # open — mirror the online closed-facility hold (_scan_result_banner_html)
-        # rather than claiming a completed check-in, and hold it as long.
+        # open — amber and hedged rather than a confident check-in. Hedged copy,
+        # not CLOSED_HOLD_COPY: this also fires for a keyholder arriving to open,
+        # whom the client can't distinguish offline.
         return (
-            f'<div class="banner banner-warning">✓ {CLOSED_HOLD_COPY} (will sync, {queued} waiting)</div>',
+            f'<div class="banner banner-warning">✓ {OFFLINE_HOLD_COPY} (will sync, {queued} waiting)</div>',
             CLOSED_HOLD_DWELL_S,
         )
     label = "CHECKED IN" if intent == "IN" else "CHECKED OUT" if intent == "OUT" else "Saved"
