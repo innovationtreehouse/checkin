@@ -303,10 +303,10 @@ a database query rather than a function call, so it is the one place the rule is
 restated rather than shared. It has to be, and that is a reason to test it
 directly.
 
-One further place treats absent dates as open on purpose: the sweep that decides
-who is recently attached to a program deliberately lets a null date match, so an
-ongoing program counts. That stays as it is. It is not reading a bound, it is
-avoiding a silent exclusion, and legacy rows can still be null for either date.
+One further place reads program dates: the sweep that decides who is recently
+attached to a program (`recentProgramWhere` in `src/lib/person/filters.ts`). It
+bounds attachment by the program's window, not by the declared year, so it stays
+as it is. `startAt`/`endAt` are NOT NULL, so there is no null-date case.
 
 ## Interface
 
