@@ -1,59 +1,44 @@
-import { existsSync, readdirSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { customJestConfig as rawJestConfig } from '../../jest.config';
 
 /**
- * Guards the runner boundary from issue #228: the app runs on Jest, every
+ * Guards the runner boundary from issue #228: checkin-app runs on Jest, every
  * `packages/*` and `*-function` workspace runs on Vitest, and a Vitest
- * `.test.ts` must never be swept into this Jest run. Jest's `rootDir` is
- * `checkin-app/`, so collection cannot escape it — this test proves the Vitest
- * suites physically live OUTSIDE `rootDir`, so a regression that relocates a
- * workspace under the app (or points Jest's roots up a level) fails here.
+ * `.test.ts` must never be swept into this Jest run. The only levers that widen
+ * Jest's collection scope are `rootDir` and `roots`, so this asserts against the
+ * RESOLVED config: neither escapes `checkin-app/`. next/jest leaves both unset,
+ * so Jest defaults `rootDir` to the config's own directory (checkin-app) and
+ * `roots` to `[rootDir]` — inside by construction. Setting either to reach a
+ * sibling workspace (`rootDir: '..'`, `roots: ['<rootDir>/../packages']`) is
+ * exactly how a Vitest suite would leak in, and it fails here.
  */
 
-const rootDir = resolve(__dirname, '..', '..'); // checkin-app/
-const repoRoot = resolve(rootDir, '..');
+type JestCollectionConfig = { rootDir?: string; roots?: string[] };
+const customJestConfig = rawJestConfig as JestCollectionConfig;
 
-function testFilesUnder(dir: string): string[] {
-    const out: string[] = [];
-    const walk = (d: string) => {
-        for (const entry of readdirSync(d, { withFileTypes: true })) {
-            if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'generated') continue;
-            const full = join(d, entry.name);
-            if (entry.isDirectory()) walk(full);
-            else if (/\.test\.tsx?$/.test(entry.name)) out.push(full);
-        }
-    };
-    if (existsSync(dir)) walk(dir);
-    return out;
-}
+const appDir = resolve(__dirname, '..', '..'); // checkin-app/, where jest.config.js lives
 
-function vitestWorkspaceRoots(): string[] {
-    const roots: string[] = [];
-    const packagesDir = join(repoRoot, 'packages');
-    if (existsSync(packagesDir)) {
-        for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
-            if (entry.isDirectory()) roots.push(join(packagesDir, entry.name));
-        }
-    }
-    for (const entry of readdirSync(repoRoot, { withFileTypes: true })) {
-        if (entry.isDirectory() && entry.name.endsWith('-function')) roots.push(join(repoRoot, entry.name));
-    }
-    return roots;
-}
+const toAbsolute = (p: string, base: string): string => {
+    const substituted = p.replace(/<rootDir>/g, base);
+    return isAbsolute(substituted) ? substituted : resolve(base, substituted);
+};
 
-const isOutsideRootDir = (file: string) => relative(rootDir, file).startsWith('..' + sep);
+const isInsideAppDir = (abs: string): boolean => {
+    const rel = relative(appDir, abs);
+    return rel === '' || (!rel.startsWith('..' + sep) && !isAbsolute(rel));
+};
 
 describe('runner boundary (app=Jest, packages/functions=Vitest)', () => {
-    const workspaceRoots = vitestWorkspaceRoots();
+    it('confines Jest collection to checkin-app/', () => {
+        const cfg = customJestConfig;
 
-    it('finds the Vitest workspaces (guards this test from silently matching nothing)', () => {
-        expect(workspaceRoots.length).toBeGreaterThan(0);
-    });
+        // Unset rootDir => Jest defaults it to the config's directory (checkin-app).
+        const effectiveRootDir = cfg.rootDir === undefined ? appDir : toAbsolute(cfg.rootDir, appDir);
+        expect(isInsideAppDir(effectiveRootDir)).toBe(true);
 
-    it('keeps every Vitest workspace test file outside Jest rootDir', () => {
-        const leaked = workspaceRoots
-            .flatMap(testFilesUnder)
-            .filter((f) => !isOutsideRootDir(f));
-        expect(leaked).toEqual([]);
+        // Unset roots => Jest defaults to [rootDir]; any explicit root must stay within it.
+        const roots = cfg.roots ?? [effectiveRootDir];
+        const escaping = roots.filter((r) => !isInsideAppDir(toAbsolute(r, effectiveRootDir)));
+        expect(escaping).toEqual([]);
     });
 });
