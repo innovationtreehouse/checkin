@@ -438,6 +438,37 @@ schema, not the expense schema) exactly as #1286 §6 added `INVENTORY_MANAGER`:
 independent of #1286's `INVENTORY_MANAGER` — expense is finance, not inventory
 management, so it does **not** reuse that role.
 
+**What `isOrgManager` folds into `FINANCE` — two curation task-sets, not
+per-expense approval.** The source's org-manager role does not *approve* expenses
+(that is the budget owner's per-line job); it keeps the two reference tables that
+drive the pipeline correct. Both fold onto `FINANCE`:
+
+1. **Account-mapping management** — curating the rules that turn a catalog item
+   into **one** QB account. Tables: `AccountMapping` (rules —
+   `(category, subcategory, partNumber, isDelayed?, isCapital?) → qbAccount`, with
+   `*` wildcards) + `ExpenseQbAccount` (valid QB account names). Routes
+   `/api/account-mapping[/*]`, `/api/account-mapping/catalog`, `/api/qb-accounts[/*]`.
+   At QB time `resolveAccountsForExpense` matches each line against these rules; a
+   line matching **0** rules raises a `NO_MATCH` hold and **>1** a
+   `MULTIPLE_MATCHES` hold. So this curation is exactly how finance keeps the
+   account-mapping exception queue (§7, surface 5) empty — config work, not
+   per-receipt work.
+2. **Owner-assignment management** — curating **who owns which parts** and clearing
+   lines that did not auto-assign. Standing map: `PartOwnerMap` (owner `Person` per
+   GTIN), routes `/api/ownership-map`, `/api/local-owners`; at intake
+   `initFinancialFlow` calls `resolveItemOwner(gtin)` so a mapped line routes
+   straight to its owner for signoff. Queue side: an unmapped line lands in
+   `assign_ownership` and is resolved via `assign-owner` / `finance-assign` /
+   `resolve-unknown` on the `LineItemOwnerApproval` (owner-conflict resolution,
+   FE2/#1273). This is what routes each line to the *right* budget owner — the
+   approval itself stays the owner's.
+
+Owner-assignment (task 2) is the one with a real candidate elsewhere: a program's
+**Treasurer / Assistant Lead** (relationship-attached, GC-ROLES) knows their own
+budget owners better than central finance. First landing keeps it on `FINANCE` (no
+second role); whether owner-assignment should route to the program treasurer
+instead is an **open item** (§12).
+
 ### Reads are narrow — the port's main divergence from #1286/#1287
 
 Both prior docs widened reads with a broad `isCatalogViewer` /
@@ -920,6 +951,16 @@ library skeleton + shared packages) has landed; the inventory-load crossing (tra
   the sensible default — **not a STOP-AND-ASK blocker** — but this is the product
   choice worth the owner's nod, and it is #1314's to settle. Track 2 references
   #1314 without closing it.
+- **Owner-assignment role — `FINANCE` for first landing, program-treasurer split
+  open.** §6 folds both source `isOrgManager` curation tasks (account-mapping +
+  owner-assignment) onto `FINANCE`. Account-mapping is unambiguously central
+  finance. **Owner-assignment** (curating `PartOwnerMap` + clearing unassigned
+  lines) is the one that arguably belongs to a program's **Treasurer / Assistant
+  Lead** (relationship-attached, GC-ROLES) — they know their own budget owners.
+  **Default: keep it on `FINANCE`** (no second role at first landing); routing
+  owner-assignment to the program treasurer instead is a later, mechanical duty
+  split, tracked against #1273 (FE2) and the GC-ROLES relationship work — not a
+  first-landing blocker.
 - **Narrow read gate is a deliberate divergence** from #1286/#1287's broad viewer
   gate (§6). Confirmed by least-privilege + the sensitivity of financial data; if
   the owner wants finance data more broadly visible (e.g. all board, all program
