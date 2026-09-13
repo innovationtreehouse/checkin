@@ -39,7 +39,8 @@ the two.
 §6.
 
 **Status:** design. No board decision gates the mechanics below; the one product
-choice (which staff may operate the catalog) is resolved in §6 against RB4.
+choice (which staff may operate the catalog) is resolved in §6 as an interim
+single role; the strategic two-role model (RB4/#1316) stays open.
 
 **Source:** `global-catalog-app/` in the `innovationtreehouse/Inventory` repo
 (not vendored here — it is a separate repo). Not currently deployed in Infra.
@@ -328,24 +329,33 @@ logout,me}`. checkin already owns login and session.
 Every catalog route/page guard is re-expressed against the checkin session
 (`getServerSession(authOptions)` + role/predicate check).
 
-### Role mapping — one manager role (RB4) + a broad viewer gate
+### Role mapping — one interim manager role + a broad viewer gate
 
-**This role is not net-new — it is RB4.** The backlog already carries RB4
-"Catalog Manager" ([#1316](https://github.com/innovationtreehouse/checkin/issues/1316),
-open DECISION), and `docs/backlog/TOPDOWN.md` (GC-ROLES) resolves that RB4 is a
-**kept** role (basis external to the app) and asks the **owner to supply its
-official name**. `INVENTORY_MANAGER` is that owner-supplied name (chosen
-forward-looking, since the whole Inventory suite follows the catalog). So this
-does **not** violate GC-ROLES' "no net-new RBAC roles" — RB4 is one of the two
-role rows GC-ROLES explicitly keeps, and this port is its implementation. **Track
-2 references and closes #1316.**
+**`INVENTORY_MANAGER` is an interim reduction, not the strategic model.**
+[#1316](https://github.com/innovationtreehouse/checkin/issues/1316) (RB4) is the
+**strategic** two-role solution — a **Catalog Manager** *and* an **Org Manager**
+(the source's two manager tiers kept distinct). For the first landing this port
+**collapses both into one role, `INVENTORY_MANAGER`**, to avoid standing up the
+full two-role model before it's needed. So:
+
+- This port **does not close #1316** — it partially addresses it with a
+  simplification. Track 2 **references #1316 and leaves it open** as the
+  strategic target.
+- **Doing #1316 fully later means adding `ORG_MANAGER`** (splitting the collapsed
+  role back into Catalog Manager + Org Manager) — that is a #1316 decision, not
+  this port's.
+- GC-ROLES' "no net-new RBAC roles" is respected: RB4 "Catalog Manager" is a
+  role `docs/backlog/TOPDOWN.md` explicitly keeps, and `INVENTORY_MANAGER` is a
+  single interim role standing in for it (owner-supplied name), not a second new
+  row. The *strategic* Org Manager is added only if/when #1316 lands.
 
 Source tiers → checkin:
 
-| Source tier | checkin |
-|---|---|
-| **global-manager** + **org-manager** | **one role `INVENTORY_MANAGER` (= RB4 "Catalog Manager")** — the source's two manager tiers collapse into it; split only if a real multi-org need appears |
-| **viewer** | any **RBAC-role holder, program leader, or volunteer** — not any authenticated user (least-privilege note below) |
+| Source tier | checkin (this port) | strategic (#1316) |
+|---|---|---|
+| **global-manager** (≈ Catalog Manager) | `INVENTORY_MANAGER` | `CATALOG_MANAGER` |
+| **org-manager** | `INVENTORY_MANAGER` (collapsed) | `ORG_MANAGER` (net-new, gated on #1316) |
+| **viewer** | any RBAC-role holder, program leader, or volunteer — not any authenticated user (least-privilege note below) | (unchanged) |
 
 **Adding the role** touches checkin's role foundation (all in checkin's own
 schema, not the catalog schema):
@@ -613,7 +623,9 @@ ships in checkin's existing container (`deploy/docker-compose.prod.yml` +
    `workflows`, temporary `receipt-types`), catalog schema + client + migrations,
    domain services/repositories/workflows ported, unit/integration tests. No UI,
    no checkin wiring. Green in isolation.
-2. **Roles foundation** — add the `INVENTORY_MANAGER` `PersonRoleKind` value +
+2. **Roles foundation** — add the `INVENTORY_MANAGER` `PersonRoleKind` value (the
+   interim reduction; references #1316, does **not** close it — strategic
+   Catalog+Org split stays open) +
    roles.ts + next-auth types + grant UI. Own PR (role-system change).
 3. **Security boundary** — `@sensitivity` annotations, second `generator
    security`, registry + scopeBindings entries. Own PR track, **registry-first**.
