@@ -130,14 +130,14 @@ path on an explicit phase ladder (§9).
 | Question | Decision |
 |---|---|
 | DB topology | **Own dedicated database** (`EXPENSE_DATABASE_URL`) on the **same Postgres server** — separate `schema.prisma` + own Prisma client + own migrations. Same `@inventory/monitoring-db` precedent #1286 followed. |
-| Security regime | **Adopt checkin's** registry + `@sensitivity` generator + stripper + scopeBindings over the separate schema (§5). QBO tokens are the first `secret`-tier data the Inventory suite carries. |
+| Security regime | **Adopt checkin's** registry + `@sensitivity` generator + stripper + scopeBindings over the separate schema (§5). **QBO OAuth tokens never touch a checkin/expense DB** — they live in an external secret backend (§9), so there is no `secret`-tier schema field to guard, only a callback route that writes to that backend and returns nothing. |
 | Auth | **Retire** `expense-app`'s `@inventory/auth` + `@inventory/web-auth` (+ `jose`, the login page, `/api/auth/{login,logout}`). checkin next-auth session is the only auth (§6). |
 | Roles | **New `FINANCE` role** (RB2 "Finance" umbrella — a role `docs/backlog/TOPDOWN.md` GC-ROLES explicitly *keeps*, not a net-new invention) for the checkoff/queue actor; **existing `BOARD`** for threshold/COI escalation; per-line approval routes to the line's **budget owner** (a `Person`, a data relationship not an RBAC role). **Reads narrow** — no broad viewer gate (§6). This is the port's main divergence from #1286/#1287. |
 | Scope | **Full port** of the A13 / FE1–FE5 surface (§ below), with temporary shims at the not-yet-migrated receipt-app / orchestrator boundaries (§8). FE6–FE8 noted, not designed (§9, §12). |
 | UI location | **All UI in the library** — components, pages, route handlers. checkin-app only re-exports and mounts (§3). |
 | UI style | **Keep the client pattern** — `"use client"` pages + `/api/*` routes; re-auth + re-theme only. Matches checkin's dominant pattern, same as #1286 §7 / #1287 §7. |
 | `orgId` / user identity | **Keep the columns; inject the values** — resolved by #1286 §6. Org identity comes from the **checkin-owned `Org` registry table** (seeded on the initial migration with a stable well-known id), injected as an accessor `getOrg(): OrgIdentity` — **not** an env scalar, **not** a `SettingsData` row, **not** a cross-DB read. The heavy user-id columns (`submitterId`, `ownerId`, `budgetOwnerUserId`, `decidedByUserId`, `capitalOwnerId`, `userId`) map to checkin **`Person.id`** via the injected principal. Both flow through the single `configureExpense()` injection (§6). |
-| QuickBooks | **Incremental phase ladder** QB-0…QB-3 (§9), grounded in `@inventory/quickbooks` (read client + OAuth already built; write path + checkin token storage + the `qb_pending` terminus net-new). Tokens stored `secret`-tier in the DB, never a gitignored file. |
+| QuickBooks | **Incremental phase ladder** QB-0…QB-3 (§9), grounded in `@inventory/quickbooks` (read client + OAuth already built; write path + checkin token storage + the `qb_pending` terminus net-new). Static creds (`QBO_CLIENT_ID/SECRET/ENVIRONMENT/REDIRECT_URI`) are **Infra-managed env/secrets**; the **rotating OAuth tokens live in an external, runtime-writable secret backend** (AWS Secrets Manager / the Infra secret store) via a `TokenStore` port — **never** a gitignored file and **never** a DB row (§9 QB-0). |
 
 ### The A13 / FE1–FE5 surface (scope)
 
@@ -268,7 +268,7 @@ checkin/
     src/instrumentation.ts                + one configureExpense({...}) call at boot (+ QB outbox drain, §9)
     src/app/(finance)/**/{page,route}.tsx  re-export stubs
     src/lib/nav/…                           the library's NavLink[] in the finance section tabs (§7)
-    src/security/{registry,scopeBindings}.ts   + expense entries incl. the QB-token secret entry (§5)
+    src/security/{registry,scopeBindings}.ts   + expense entries incl. the QB OAuth callback route (writes to the external secret store, returns nothing — §5/§9)
     next.config.ts                        + transpilePackages (if tsx needs it — verify, §3)
 ```
 
@@ -335,8 +335,10 @@ Implications (same as #1286 §4 / #1287 §4, plus):
   are the idempotency/dedup backstops. Use `migrate deploy`, not `db push`, for
   any DB the uniqueness tests run against.
 
-**The QB token store lives here too** — a small `secret`-tier table (or one
-row) in the expense DB, not a gitignored file. See §9.
+**The QB OAuth tokens do NOT live here.** They are held in an external,
+runtime-writable secret backend (AWS Secrets Manager / the Infra secret store),
+never a row in this — or any — checkin/expense database. See §9 QB-0 for why (a
+rotating refresh token is a live secret, not app data).
 
 ---
 
@@ -355,11 +357,13 @@ amounts, `reimbursementFor` (names a person and why they were paid),
 `submitterId`, and the audit log's before/after values are financial and
 person-linked. So the tiering is heavier and the **read audience is narrow** (§6):
 
-- **`secret`** — **QBO OAuth tokens and the client secret** (access token, refresh
-  token, `realmId` optional). `secret` fields **never** leave to any client and
-  cannot appear in any registry view (a type error if you try). This is the first
-  `secret`-tier data the Inventory suite carries; getting it right is the point of
-  §9's token-storage decision.
+- **No `secret`-tier schema field.** QBO OAuth tokens and the client secret are
+  the obvious "never return this" data — but they **do not live in any expense/
+  checkin table** (§4/§9): the client secret is an Infra-managed env var, and the
+  rotating OAuth tokens live in an external secret backend. So there is nothing to
+  annotate `@sensitivity:secret` on the schema. The boundary story for QB is not a
+  field tier but a **route**: the OAuth callback writes to the external store and
+  returns nothing (below).
 - **`internal`** — **money + vendor + attribution + free text + plumbing**:
   amounts (`*Cents`, `unitPriceCents`, `taxCents`, thresholds), `vendorName`,
   `receiptNumber` / `orderNumber`, `reimbursementFor`, `qbAccount` / account
@@ -379,16 +383,17 @@ handling if it is ever joined to a name in a response; default to `internal` +
 the narrow read gate, and raise it to `pii` if a route ever returns the person's
 contact details alongside.
 
-### The QB token entry ships fail-closed, on its own
+### The QB OAuth callback route ships fail-closed, on its own
 
-Registering the QB token store is a **boundary change** governed by
-`AGENTS.md` + the `security-boundary-isolation` workflow: the registry /
-scopeBindings / generator changes ship in their **own PR(s)**, ahead of the route
-code — **registry-first** (an unused `defineRoute` is inert). The QB-token entry
-must land such that **no view can grant `secret`** (the token grammar forbids it),
-so the tokens are structurally unreturnable before any QB route exists. This is
-**QB-0's** security half (§9) and is the single most process-heavy part of the
-port; plan it as its own PR track (§11).
+The QB boundary concern is the **OAuth callback route**, not a data tier (the
+tokens never enter a guarded DB — §4/§9). Registering any route is still a
+**boundary change** governed by `AGENTS.md` + the `security-boundary-isolation`
+workflow: the registry / scopeBindings / generator changes ship in their **own
+PR(s)**, ahead of the route code — **registry-first** (an unused `defineRoute` is
+inert). The callback is registered as a **state-checked endpoint that returns no
+body** — it exchanges the auth code and writes the tokens straight to the external
+secret store, so a token value can never appear in any response. This is **QB-0's**
+security half (§9); plan it with the boundary PR track (§11).
 
 **Route inventory to register** (~20 registry entries, one per verb×route family):
 `expenses` (GET/POST-intake) + `expenses/[id]` (+ `capital-review`,
@@ -400,8 +405,9 @@ resubmit + line-item account; `account-mapping[/*]` + `/catalog`; `qb-accounts[/
 `received-expense-payloads`. The **inbound** machine seams — `POST /api/expenses`
 (receipt intake, org-bearer) and `POST /api/capital-assets/seed` (capital seed,
 service/finance token) — are registered with a **service/bearer token grant**, not
-the read gate (§8). The **QB OAuth callback route** (QB-0) is registered as an
-unauthenticated-but-state-checked endpoint that writes only to the `secret` store.
+the read gate (§8). The **QB OAuth callback route** (QB-0) is registered as a
+state-checked endpoint that writes only to the external secret store and returns
+no token in its response.
 
 ---
 
@@ -668,28 +674,53 @@ checkin.
   `isExpired`), `oauthConfigFromEnv` (`QBO_CLIENT_ID` / `QBO_CLIENT_SECRET` /
   `QBO_ENVIRONMENT` / `QBO_REDIRECT_URI`), the sandbox↔production `apiBase` switch,
   `realmId` capture from the consent redirect, and refresh-token **rotation**.
-- **Net-new — token storage.** The source persists tokens to a gitignored
-  `.qbo-tokens.json` (mode 0600) via `saveTokens`/`loadTokens`. That does not
-  survive an ephemeral, multi-replica container and cannot hold a rotating secret
-  safely. **Replace the file store with a `secret`-tier row in the expense DB**
-  (§4/§5): the token record is `@sensitivity:secret`, structurally unreturnable to
-  any client (no view can grant `secret`), and `refreshTokens` **persists the
-  rotated refresh token back to the row** (the source's "don't hand-edit the token
-  file" invariant becomes "the row is the only writer"). Inject a
-  `TokenStore { load(): QboTokens | null; save(t): void }` port so the library
-  never imports checkin's DB directly; `configureExpense` binds the DB-backed
-  adapter. `QBO_CLIENT_ID` / `SECRET` / `ENVIRONMENT` / `REDIRECT_URI` stay as
-  **checkin secrets/env**, not DB rows.
+- **Net-new — token storage in an external secret backend, NOT a DB and NOT a
+  file.** The source persists tokens to a gitignored `.qbo-tokens.json` (mode 0600)
+  via `saveTokens`/`loadTokens`. That does not survive an ephemeral, multi-replica
+  container. **Secret data does not go in the inventory/expense database** — it
+  lives where the rest of the deployment's secrets live: an **Infra-managed
+  external secret backend** (AWS Secrets Manager, or whatever the Infra repo uses),
+  provisioned and wired by Infra, not by an app migration. QB has **three** secrets
+  with **three** homes — the split matters, because they have different lifetimes:
+  - **Static credentials** — `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, plus
+    `QBO_ENVIRONMENT` / `QBO_REDIRECT_URI` — are plain **env vars loaded by Infra**
+    at boot (`oauthConfigFromEnv` already reads them). Never change at runtime.
+    These are the "keys to generate the key."
+  - **The access token** (~1h) — **RAM only, never persisted anywhere.**
+    Regenerated from the refresh token on demand (`ensureFresh`). There is no reason
+    to store a value that is cheaply re-mintable and dead within the hour.
+  - **The refresh token** (~100 days) — **the one value that must be persisted to a
+    runtime-writable store, and the reason RAM-only is not enough.** Intuit
+    **rotates** it on every refresh: each refresh returns a *new* refresh token and
+    invalidates the old one. Hold the rotated value only in RAM and the first
+    container restart / redeploy / crash (constant with ephemeral Next containers)
+    falls back to the now-**stale** token in the seed store → locked out → manual
+    re-consent. So `refreshTokens` **writes the rotated refresh token back** to the
+    writable backend (Secrets Manager `PutSecretValue`) on every rotation — the
+    source's "the store is the only writer, don't hand-edit" invariant, preserved.
+  Inject a `TokenStore { load(): QboTokens | null; save(t): void }` port so the
+  library never imports the backend SDK directly; `configureExpense` binds the
+  Secrets-Manager-backed adapter (`save` persists only the refresh token + realm;
+  the access token stays in the client instance's RAM), with a file adapter for
+  local dev matching the source. **No token ever touches Postgres.**
+- **Net-new — refresh concurrency (multi-replica hazard).** Because the refresh
+  token rotates and writes back, two replicas refreshing at once race: A rotates and
+  persists, B refreshes with the token it still holds — now invalid — and fails. Mitigate
+  with a **single writer** (only the boot/QB-drain worker refreshes; read-path
+  replicas re-load the token the writer persisted) or a **lock + re-read** around
+  refresh. Flag it here; settle the exact mechanism in QB-0 implementation.
 - **Net-new — consent as an operational step.** The source runs consent from a CLI
   script (`npm run consent`) that spins a localhost server to catch the redirect.
   In checkin, consent is a **one-time operator action**: a finance/sysadmin-gated
   page kicks off `authUrl(state)`, and a **QB OAuth callback route**
   (`/api/qb/callback`, registered §5, state-checked) runs `exchangeCode` and writes
-  the `secret` row. `QBO_REDIRECT_URI` becomes the deployed callback URL, not
+  the tokens straight to the secret backend via the `TokenStore` port (no token in
+  the response body). `QBO_REDIRECT_URI` becomes the deployed callback URL, not
   `localhost:8087`. Sandbox first, production by switching `QBO_ENVIRONMENT` and
   re-consenting.
-- **Security:** the whole of §5's `secret` tiering + the fail-closed registry entry
-  is QB-0's security half — **registry-first, its own PR.**
+- **Security:** the fail-closed OAuth-callback registry entry (§5) is QB-0's
+  security half — **registry-first, its own PR.** There is no `secret` schema tier
+  to add (tokens are external, not DB fields — §4/§5).
 
 ### QB-1 — read / ground truth (account mapping + vendor bootstrap + capital seed)
 
@@ -777,10 +808,14 @@ existing container. Same as #1286 §9 / #1287 §9, plus the QB specifics:
   (monitoring-db pattern in the Infra database module).
 - Add **expense `prisma migrate deploy`** (against `EXPENSE_DATABASE_URL`) to the
   deploy sequence, ordered with checkin's / catalog's / inventory's steps.
-- **QB env/secrets:** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`, `QBO_ENVIRONMENT`
-  (`sandbox` → `production`), `QBO_REDIRECT_URI` (the deployed callback URL) as
-  checkin secrets. The **QBO tokens themselves live in the expense DB `secret`
-  row**, not a secret manager and not a file (§9 QB-0).
+- **QB static creds (env):** `QBO_CLIENT_ID`, `QBO_CLIENT_SECRET`,
+  `QBO_ENVIRONMENT` (`sandbox` → `production`), `QBO_REDIRECT_URI` (the deployed
+  callback URL) — **Infra-managed env vars / secrets**, loaded at boot.
+- **QB rotating tokens (external secret backend, Infra-provisioned):** the OAuth
+  **refresh token** is persisted to a **runtime-writable** secret store (AWS
+  Secrets Manager or the Infra secret backend), written back on every rotation; the
+  **access token stays in RAM** only; **neither ever lands in Postgres or a file**
+  (§9 QB-0). Infra provisions the secret + the app's read/write IAM grant to it.
 - **One-time operator step:** run **QB OAuth consent** against the sandbox company
   after first deploy (and again against the real company at production cutover) —
   the only manual step this port adds. Document it in the deploy runbook.
@@ -817,10 +852,11 @@ library skeleton + shared packages) has landed; the inventory-load crossing (tra
    DECISION) + `roles.ts` + next-auth types + grant UI. Own PR (role-system
    change). Defines the budget-owner per-row predicate + the household-COI
    predicate over checkin's household graph.
-3. **Security boundary** — `@sensitivity` annotations (incl. the **`secret`** QB
-   token tier), `generator security` for the expense schema, registry +
-   scopeBindings entries, the **fail-closed QB-token registry entry**. Own PR
-   track, **registry-first**. (This is QB-0's security half.)
+3. **Security boundary** — `@sensitivity` annotations (`internal` for money /
+   vendor / attribution / plumbing; **no `secret` field — QB tokens are external**,
+   §5/§9), `generator security` for the expense schema, registry + scopeBindings
+   entries, the **fail-closed QB OAuth-callback registry entry** (returns no token
+   body). Own PR track, **registry-first**. (This is QB-0's security half.)
 4. **Routes + auth + inbound seams** — library route-handler factories +
    `contract.ts` (incl. the crossing ports + the QB `TokenStore` port) +
    `configureExpense` wired in `instrumentation.ts`; API stub tree + narrow read
@@ -841,8 +877,10 @@ library skeleton + shared packages) has landed; the inventory-load crossing (tra
 **QB sub-sequence** (its own explicit ladder, interleaved with the tracks above):
 
 - **QB-0** (connection + auth) — the QB client package + OAuth consent page +
-  callback route + the **`secret` token store**. Its security half **is track 3**
-  (registry-first, fail-closed); its code half is a small PR after track 3.
+  callback route + the **external `TokenStore`** (Infra-provisioned secret backend;
+  refresh token written back on rotation, access token in RAM, nothing in Postgres).
+  Its security half **is track 3** (registry-first, fail-closed callback); its code
+  half is a small PR after track 3. Needs the Infra secret + IAM grant (§10).
   **Everything QB depends on QB-0.**
 - **QB-1** (read / ground truth) — pull + account-mapping / vendor bootstrap +
   capital-seed intake (FE4). After QB-0. Feeds tracks 4–5.
@@ -921,10 +959,11 @@ library skeleton + shared packages) has landed; the inventory-load crossing (tra
   package → keeps vitest (jest is checkin-app's convention). Reuse
   `@inventory/pg-test-harness`. **CI wiring is not automatic** — add an explicit
   root run (or extend the aggregation #1286/#1287 added) so its suites execute.
-- **Security tests** — registry/stripper coverage for expense routes (and
-  **especially** that no view can return the `secret` QB tokens) lives in
-  `checkin-app/src/security/__tests__` (jest — checkin boundary wiring). Companion
-  to the track-3 boundary PR.
+- **Security tests** — registry/stripper coverage for expense routes, and a test
+  that the **QB OAuth callback returns no token in its body** (tokens go straight to
+  the external store), live in `checkin-app/src/security/__tests__` (jest — checkin
+  boundary wiring). Companion to the track-3 boundary PR. (No "can a view leak the
+  secret token" test — the tokens are not in any DB the stripper guards.)
 - **e2e = flow tests, not Playwright.** Re-express the source's Playwright specs as
   `flow-tests/*.flow.test.ts`. Priority journey: **A13 end to end** — receipt
   intake → per-line owner approval → capital review + depreciation → account
@@ -947,7 +986,10 @@ crossing rule; vitest + flow-tests (no Playwright); no table renames; no in-app
 timers.
 **New to this port (resolved here):** the `FINANCE` role + narrow read gate;
 the household-aware COI flag (port gets better); QuickBooks as `@inventory/quickbooks`
-brought into checkin on the QB-0…QB-3 ladder with `secret`-tier DB token storage.
+brought into checkin on the QB-0…QB-3 ladder with **Infra-managed secret handling** —
+static creds as env vars, the rotating OAuth refresh token in an external
+runtime-writable secret backend (written back on rotation), the access token in RAM,
+**no token in Postgres**.
 **Left open (non-blocking):** the `FINANCE`-vs-`TREASURER` label nod; the finance/
 inventory nav IA question; the tracked deferrals (track 9) and FE6–FE8.
 
