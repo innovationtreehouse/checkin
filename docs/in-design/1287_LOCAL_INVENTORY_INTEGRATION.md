@@ -1,5 +1,40 @@
 # Org inventory: porting `local-inventory-app` into checkin
 
+## Problem
+
+The organization tracks what it physically *has* on hand — parts, tools, and
+consumables, by location, with a running log of every quantity change — and
+turns received receipts into inventory. Today that lives in a separate
+application, on separate infrastructure, behind its own login, that the
+organization is retiring. Staff who receive stock, resolve mismatches, or read
+on-hand counts cannot do it where they already work (checkin), and it is one
+piece of a larger set of inventory tools that must all move to one place — it
+sits at the *end* of the receipt→catalog→inventory pipeline, so it only earns
+its value once the pieces upstream of it move too.
+
+## Objective
+
+Org inventory is available inside the existing staff application as ordinary
+navigation, under the same **Inventory** area as the catalog, using the same
+sign-in and look and feel, deployed and operated as one system — with the
+inventory logic kept cleanly separable, and the two upstream couplings (catalog
+org-events in, orchestrator delta-apply in) designed as explicit, swappable
+seams so the rest of the pipeline can land on them rather than around them.
+
+## Executive summary
+
+- **Staff** reach org inventory under the existing **Inventory** nav area (new
+  section tabs, not a second top-level item); writes need the one interim
+  `INVENTORY_MANAGER` role, everyone with a staff relationship can read.
+- **Operators** get nothing new to run — same one application, same deploy; org
+  inventory adds its own database on the shared server and no background timer.
+- **Developers** get org inventory as an isolated library: logic, data, and
+  screens in one package; the host application only wires it in.
+- **The organization** gets the pipeline's terminal sink moved onto the same seam
+  the catalog established, so receipt-app and the orchestrator migrate onto it.
+
+---
+
 **Issue:** [#1287](https://github.com/innovationtreehouse/checkin/issues/1287)
 — backlog item CI2 (PORT · NEEDS-DESIGN · L). Journey **A12** in
 `docs/backlog/CUJS.md`.
@@ -9,17 +44,24 @@
 `docs/in-design/1286_GLOBAL_CATALOG_INTEGRATION.md`) and **reuses its base
 architecture decisions verbatim** — read that doc first. Everything here is the
 same shape applied to the org-inventory app, plus the two upstream couplings
-that make local-inventory a *sink* rather than a leaf.
+that make local-inventory a *sink* rather than a leaf. The write role
+(`INVENTORY_MANAGER`) is #1286's interim reduction; the strategic role split
+stays open in RB4 ([#1316](https://github.com/innovationtreehouse/checkin/issues/1316))
+— see §6.
 
 **Source:** `local-inventory-app/` in the `innovationtreehouse/Inventory` repo
-(local: `/Volumes/Untitled/Inventory/local-inventory-app`). Not currently
-deployed in Infra.
+(a separate repo — not vendored here). Not currently deployed in Infra.
+
+**Domain rules relied on:** `docs/rules/principles.md` (least-privilege — the
+viewer gate in §6 widens read access and is justified there); the
+security-boundary and migration-order rules cited inline in §5 and §4.
 
 **Dependency:** local-inventory is **downstream of the global catalog** in the
 E-PIPELINE (`receipt → workflow-mapping orchestrator → catalog + local-inventory`).
-Its implementation **follows** #1286 — it consumes catalog org-events (§8) and
-reuses the shared packages #1286 vendors (§2). Do not land local-inventory before
-the catalog library exists.
+Its implementation **follows** #1286 — it consumes catalog org-events (§8),
+reuses the shared packages #1286 vendors (§2), and joins the **Inventory** nav
+area #1286 creates (§7). Do not land local-inventory before the catalog library
+exists.
 
 ---
 
@@ -140,7 +182,7 @@ checkin/
         components/                        ALL inventory UI (Mantine, reskinned)
         pages/                             page components — client
         routes/                            route-handler factories (GET/POST/…)
-        nav.ts                             exported nav manifest (inventoryNav: NavItem[])
+        nav.ts                             section-tab links (NavLink[]) for the Inventory area (§7)
         runtime.ts                         configureLocalInventory() + getPrincipal()/db/org accessors
         contract.ts                        InventoryAuth / InventoryPrincipal / OrgIdentity + crossing ports (§8)
       package.json
@@ -148,10 +190,10 @@ checkin/
     gtin/  workflows/  receipt-types/     REUSED — vendored by #1286
   checkin-app/                            ← WIRING ONLY, no inventory logic
     src/instrumentation.ts                + one configureLocalInventory({...}) call at boot
-    src/app/(inventory)/**/{page,route}.tsx  re-export stubs
-    src/lib/nav*                          splice in `inventoryNav` from the library
+    src/app/(inventory)/**/{page,route}.tsx  re-export stubs (under the Inventory area #1286 opened)
+    src/lib/nav/…                           append the library's NavLink[] to the Inventory section tabs (§7)
     src/security/{registry,scopeBindings}.ts   + inventory entries (boundary is checkin's)
-    next.config.ts                        + transpilePackages: ['@inventory/local-inventory', …]
+    next.config.ts                        + transpilePackages (if tsx needs it — verify, §3)
 ```
 
 ### The cut — same as #1286
@@ -208,7 +250,11 @@ needed.
 Implications (same as #1286 §4, plus):
 
 - **Three Prisma clients** now load in the checkin-app process (catalog +
-  local-inventory + checkin), each its own connection string / pool.
+  local-inventory + checkin), each its own connection string / pool. Catalog
+  (#1286) is the **first** second client inside checkin-app (monitoring-db is
+  consumed only by Lambdas/`packages/*`, never by checkin-app — it is the own-DB
+  *packaging* precedent, not the second-client-in-Next precedent). local-inventory
+  is the **third** — the incremental cost is one more bounded connection pool.
 - **No cross-database SQL.** local-inventory ↔ catalog ↔ checkin crossings are
   service-level (§8), never SQL joins. The S5 consumer reads catalog's OrgEvent
   rows via the catalog **service/port**, not a cross-DB join.
@@ -273,12 +319,12 @@ session.
 Every route/page guard is re-expressed against the checkin session. The source's
 guards map cleanly:
 
-| Source guard | checkin |
-|---|---|
-| `canEditOrg(user, orgId)` (writes: fulfill, apply, reassign, resolve, org-item edit) | **`INVENTORY_MANAGER`** (the role #1286 adds — reuse, no new role) |
-| `canViewOrg(user, orgId)` (reads: queues, lists, logs) | **the viewer gate #1286 defined** — authenticated **and** any RBAC-role holder / program leader / volunteer |
-| `requireOrgBearer` (`/api/inventory/apply`, S3 delta from orchestrator) | checkin's **org-bearer / internal token** — the inbound machine seam (§8) |
-| `requireServiceKey` (`X-Service-Key`, `/api/internal/*` from receipt/orchestrator) | checkin's **internal service-key** grant — the inbound machine seam (§8) |
+| Source guard | checkin (this port) | strategic (#1316) |
+|---|---|---|
+| `canEditOrg` (writes: fulfill, apply, reassign, resolve, org-item edit) — the source's `organization_manager` | **`INVENTORY_MANAGER`** (the interim role #1286 adds — reuse, no new role) | **`ORG_MANAGER`** (net-new, gated on #1316) |
+| `canViewOrg` (reads: queues, lists, logs) | the viewer gate #1286 defined — authenticated **and** any RBAC-role holder / program leader / volunteer | (unchanged) |
+| `requireOrgBearer` (`/api/inventory/apply`, S3 delta from orchestrator) | checkin's **org-bearer / internal token** — the inbound machine seam (§8) | (unchanged) |
+| `requireServiceKey` (`X-Service-Key`, `/api/internal/*` from receipt/orchestrator) | checkin's **internal service-key** grant — the inbound machine seam (§8) | (unchanged) |
 
 **No role-foundation change is needed for local-inventory** — `INVENTORY_MANAGER`
 already lands in #1286's track 2. This doc's implementation simply *depends on*
@@ -287,6 +333,24 @@ composition as #1286's `isCatalogViewer`) as the single read chokepoint, or reus
 `isCatalogViewer` directly if the eligibility sets are identical (they are — both
 are "any legitimate operational user reads; managers write"). **Prefer reusing
 the one predicate** over a near-duplicate.
+
+**Interim role — strategic split is #1316's, not this port's.** The source's write
+tier is `organization_manager`, which in the strategic two-role model (RB4,
+[#1316](https://github.com/innovationtreehouse/checkin/issues/1316)) becomes a
+distinct **`ORG_MANAGER`** (the catalog side becomes `CATALOG_MANAGER`). This port
+**collapses onto the single interim `INVENTORY_MANAGER`** #1286 introduces, so it
+neither adds a role nor closes #1316. When #1316 lands, local-inventory's write
+gate would move from `INVENTORY_MANAGER` → `ORG_MANAGER` — a small,
+mechanical follow-up tracked against #1316, called out here so the interim choice
+is on the record.
+
+**Least-privilege note** (`docs/rules/principles.md`): the viewer gate *widens*
+read access — a broad set of staff can read all org inventory (on-hand counts,
+locations, logs). Deliberate and proportionate: inventory is operational
+reference data, tiered `public`/`internal` with **no `pii`** (§5), so a wide read
+audience exposes no personal data; write access stays narrow
+(`INVENTORY_MANAGER`). The widening is confined to non-personal operational data,
+which is what least-privilege permits — stated so the decision is on the record.
 
 ### Org + user identity — one injected source, shared with catalog
 
@@ -327,8 +391,8 @@ injection — one source per process.
 ## 7. UI — reskin in place
 
 All UI lives in the library (`packages/local-inventory/src/{components,pages}`);
-checkin-app only re-exports pages (§3) and splices `inventoryNav`. Same Mantine
-version → component-level reskin, not a rewrite. **Keep the source's
+checkin-app only re-exports pages (§3) and wires nav (see Nav placement). Same
+Mantine version → component-level reskin, not a rewrite. **Keep the source's
 `"use client"` + `/api/*` pattern** (matches checkin; #1286 §7).
 
 Eight pages, each an A12 surface / exception screen:
@@ -354,6 +418,29 @@ Eight pages, each an A12 surface / exception screen:
 
 Drop the source `AppShell`/nav shell; pages render inside checkin's shell. Wire
 auth via `useSession` client-side + the checkin session in the route handlers.
+
+### Nav placement — join the Inventory area, don't add a top-level
+
+#1286 §7 establishes checkin's two nav layers and creates **one top-level
+`Inventory` entry** in `AppFrame.tsx`'s `NAV_ITEMS`, explicitly forward-looking:
+"catalog is the first Inventory surface; more arrive as the migration proceeds."
+**local-inventory is those "more."**
+
+- **No second top-level entry.** local-inventory adds its screens as **more
+  section tabs** (`NavLink[]`, rendered by `SectionTabs`) under the **existing**
+  `Inventory` top-level item, appended to that section's tab array. The library
+  exports its `NavLink[]` descriptor; checkin-app places it (order is a
+  checkin-shell concern).
+- The catalog's tabs (Items, Categories, Proposals, Conversion Challenges) and
+  local-inventory's tabs (Org Inventory, Locations, Receive Queue, Merge
+  Conflicts, Provisional, Org Events, …) live side by side under one `Inventory`
+  section. Whether that becomes a long single tab row or the section grows
+  sub-grouping is a checkin-shell UI call, not this port's — the port just
+  contributes its `NavLink[]`.
+- **Gate: `isInventoryViewer`** (= `isCatalogViewer`, §6) — the same broad gate as
+  the catalog tabs, broader than the board-only `*-Ops` items. Intended.
+- **Badges** (e.g. open merge-conflicts / provisional count) use checkin's
+  existing `navBadges` keyed on the tab href — optional, not first-landing.
 
 ---
 
@@ -523,8 +610,12 @@ Same posture as #1286 §10:
 - **Unit/integration — keep vitest, port ~verbatim.** `local-inventory` is a
   `packages/` package → keeps vitest (jest is checkin-app's convention, not the
   packages'). Its `src/__tests__/{unit,api,components}` port with little change,
-  reusing `@inventory/pg-test-harness`. Wire the package's `test` /
-  `test:integration` scripts into the workspace test aggregation.
+  reusing `@inventory/pg-test-harness`. **CI wiring is not automatic** (#1286 §10):
+  the root `test` scripts only run `-w checkin-app` and there is no package-test
+  aggregation — so add an explicit run for this package (a root script, e.g.
+  `npm -w @inventory/local-inventory run test`, its `test:integration`
+  counterpart, and/or a CI job) so its vitest suites actually execute. If #1286
+  already added a package-test aggregation, extend it rather than duplicating.
 - **Security tests**: registry/stripper coverage for inventory routes lives in
   `checkin-app/src/security/__tests__` (jest — checkin-app boundary wiring).
   Companion to the boundary PR (track 3).
@@ -553,9 +644,11 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
    `packages/utils`), inventory schema + client + migrations (port the six),
    domain services/repositories/workflows ported, unit/integration tests. No UI,
    no checkin wiring. Green in isolation.
-2. **Roles** — **none new**; depends on #1286 track 2 having landed
-   `INVENTORY_MANAGER`. Define `isInventoryViewer` (or reuse `isCatalogViewer`).
-   No separate PR unless the viewer predicate diverges.
+2. **Roles** — **none new**; depends on #1286 track 2 having landed the interim
+   `INVENTORY_MANAGER` (which references #1316 and does not close it — the
+   strategic Catalog/Org split stays open). Define `isInventoryViewer` (or reuse
+   `isCatalogViewer`). No separate PR unless the viewer predicate diverges. (When
+   #1316 lands, a mechanical follow-up moves writes → `ORG_MANAGER`; §6.)
 3. **Security boundary** — `@sensitivity` annotations, `generator security` for
    the inventory schema, registry + scopeBindings entries. Own PR track,
    **registry-first**.
@@ -565,8 +658,9 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
    the `/api/internal/*` + `/api/inventory/apply` inbound surface with the
    `http` adapter live. Depends on 1–3.
 5. **UI + nav** — reskinned pages/components (in the library), page stub tree +
-   `pageRegistry` entries, `inventoryNav` splice, `transpilePackages`, A12 flow
-   test.
+   `pageRegistry` entries, the library's `NavLink[]` **appended to the existing
+   `Inventory` section tabs** #1286 created (no new top-level entry — §7),
+   `transpilePackages` (if tsx needs it — verify), A12 flow test.
 6. **S5 consumer** — bind the in-process catalog-events adapter (push-driven, §8a:
    boot drain + drain-on-emit, **no timer**); wired from `instrumentation.ts`,
    inert until catalog emits. Requires #1286's `emitOrgEvent` to expose the
@@ -592,9 +686,25 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
   S5 events and cross-DB uniques to line up). Multi-org later = more rows + a
   per-request accessor, no library change. Columns kept. **No STOP-AND-ASK
   remains.**
-- **Production data: none to migrate.** The source populates org inventory by
-  running the pipeline (receive → apply) or manual UI edits; there is no bulk
-  import to build, and none is wanted. Out of scope.
+- **Production data: none to migrate. Two orthogonal population paths — not
+  alternatives** (mirrors #1286 §12). There is no existing inventory to import.
+  - **Direct** (this design): org-items / locations / quantities are set **by
+    hand through the UI** or corrected there. There is **no *direct* bulk-import
+    endpoint** — the source has none and none is wanted.
+  - **Indirect** (receipt-driven, later — and this is *local-inventory's* load
+    path, not a side effect): `docs/backlog/TOPDOWN.md` GC-INVENTORY (Q22/Q30)
+    describes replaying 1,000–2,000 stored **receipts** to load inventory. That
+    replay flows through the **orchestrator → local-inventory apply/enqueue
+    surface (§8b)** — each receipt line becomes a delta-apply or a receive-queue
+    entry, which is exactly how on-hand stock is meant to arrive. It **triggers**
+    catalog growth upstream (provisional GTINs, item-reference proposals — §8's S4
+    crossings) as a side effect. This design **builds the inbound apply surface
+    that receives the replay** (§8b) but does not drive it — the replay is the
+    receipt pipeline's job and arrives **when receipt-app migrates**.
+
+  So "no bulk load" (direct hand-entry) and receipt-replay (the real inventory
+  load) do not conflict — different mechanisms, different sources; §8b is the seam
+  the replay lands on.
 - **Dev/test seed — lift from `scripts/setup-test-data.sh`** (Inventory monorepo),
   the same script #1286 §12 draws catalog rows from. It seeds locations, org-items,
   and a receive-queue entry over `curl` + the retired `/api/auth/login`; **lift
@@ -617,13 +727,16 @@ local-inventory consumes, and local-inventory reuses catalog's vendored packages
 
 **Resolved by reuse of #1286:** own dedicated database
 (`LOCAL_INVENTORY_DATABASE_URL`); checkin security regime over a separate schema;
-retire source auth for checkin next-auth; `INVENTORY_MANAGER` for writes + broad
-viewer gate for reads (no new role); org+user identity from a checkin-owned `Org`
-registry row (seeded, stable id) injected as an accessor through
-`configureLocalInventory()` — not env, not a settings row, not cross-DB;
+retire source auth for checkin next-auth; interim `INVENTORY_MANAGER` for writes
+(strategic Org/Catalog split stays open in #1316) + broad viewer gate for reads
+(no new role); org+user identity from a checkin-owned `Org` registry row (seeded,
+stable id) injected as an accessor through `configureLocalInventory()` — not env,
+not a settings row, not cross-DB; nav = **section tabs under the existing
+`Inventory` area** #1286 created (no second top-level entry, §7);
 keep-JSON-contracts / convert-transport crossing rule; vitest + flow-tests
 (no Playwright); no table renames.
-**Left open:** nothing blocking — only the tracked deferrals (§11 track 8).
+**Left open:** nothing blocking — only the tracked deferrals (§11 track 8) and the
+strategic role split (#1316).
 
 ---
 
