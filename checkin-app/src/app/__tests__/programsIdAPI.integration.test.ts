@@ -522,10 +522,13 @@ describe('Individual Program API Integration Tests', () => {
 
         // #1397: dues paid, background check still with the board. Not a member
         // (nothing else in the app treats them as one), but priced as one and
-        // admitted to members-only programs.
+        // admitted to members-only programs. Paid BEFORE the renewal window opened
+        // (#1811: an in-window payment buys the coming year), so coverage stops at
+        // the upcoming boundary and the past-boundary case below still bites.
         describe('a household that has paid but is awaiting background clearance', () => {
             let paidPendingId: number;
             let paidPendingHouseholdId: number;
+            const paidBeforeWindow = new Date(Date.now() - 90 * DAY_MS);
 
             beforeAll(async () => {
                 const person = await prisma.person.create({
@@ -538,7 +541,7 @@ describe('Individual Program API Integration Tests', () => {
                                 orgMembership: {
                                     create: {
                                         status: 'NONE',
-                                        processes: { create: { kind: 'INITIAL', status: 'PENDING_BG_CLEARANCE', paidAt: new Date() } },
+                                        processes: { create: { kind: 'INITIAL', status: 'PENDING_BG_CLEARANCE', paidAt: paidBeforeWindow, stageEnteredAt: paidBeforeWindow } },
                                     },
                                 },
                             },
